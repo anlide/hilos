@@ -14,6 +14,7 @@ use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Migration;
+use Hilos\Database\MysqlExceptionMapper;
 use Hilos\Database\Seed;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -82,6 +83,7 @@ HELP;
      * @throws DatabaseConnectionException When database connect or SET NAMES fails
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails
+     * @throws DatabaseException When migration or seed execution fails
      */
     public function execute(array $options, array $args): int
     {
@@ -99,8 +101,7 @@ HELP;
         // Connect without database to run DROP/CREATE
         $conn = @mysqli_connect($host, $user, $pass, '', $port);
         if ($conn === false) {
-            fwrite(STDERR, "Cannot connect to MySQL: " . mysqli_connect_error() . "\n");
-            return ExitCode::ERROR;
+            MysqlExceptionMapper::connectionException(mysqli_connect_errno(), mysqli_connect_error());
         }
 
         $dbEscaped = '`' . mysqli_real_escape_string($conn, $database) . '`';
@@ -112,7 +113,7 @@ HELP;
 
         // Configure and connect base Database for migrations and seeds
         Database::configure(
-            index: 0,
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
             host: $host,
             user: $user,
             password: $pass,
@@ -120,20 +121,15 @@ HELP;
             port: $port,
             charset: DatabaseConnectionDefaults::CHARSET,
         );
-        Database::connect(0);
+        Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
         Database::sql(DatabaseConnectionDefaults::setNamesSql());
 
-        try {
-            Migration::initialize();
-            $applied = Migration::migrateUp();
-            echo "Migrations applied: {$applied}\n";
+        Migration::initialize();
+        $applied = Migration::migrateUp();
+        echo "Migrations applied: {$applied}\n";
 
-            $seedCount = Seed::apply();
-            echo "Seeds applied: {$seedCount}\n";
-        } catch (DatabaseException $e) {
-            echo "✗ " . $e->getMessage() . "\n\n";
-            return ExitCode::ERROR;
-        }
+        $seedCount = Seed::apply();
+        echo "Seeds applied: {$seedCount}\n";
 
         echo "\n✓ Done.\n\n";
         return ExitCode::SUCCESS;

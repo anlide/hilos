@@ -25,7 +25,7 @@ class Database
     private static array $connections = [];
 
     /** @var int Current active connection index */
-    private static int $currentIndex = 0;
+    private static int $currentIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
 
     /** @var array<int, ?ResultSet> Cached ResultSet instances for each connection */
     private static array $resultSets = [];
@@ -62,9 +62,9 @@ class Database
      * ```php
      * public static function initialize(): void
      * {
-     *     self::configure(0, DatabaseConnectionDefaults::HOST, 'user', 'pass', 'db');
-     *     self::connect(0);
-     *     Schema::initialize(0);
+     *     self::configure(DatabaseConnectionDefaults::PRIMARY_INDEX, DatabaseConnectionDefaults::HOST, 'user', 'pass', 'db');
+     *     self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+     *     Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
      * }
      * ```
      */
@@ -86,7 +86,7 @@ class Database
      * @param int $reconnectDelay Delay between reconnects in milliseconds
      */
     public static function configure(
-        int $index = 0,
+        int $index = DatabaseConnectionDefaults::PRIMARY_INDEX,
         string $host = DatabaseConnectionDefaults::HOST,
         string $user = DatabaseConnectionDefaults::USER,
         string $password = DatabaseConnectionDefaults::PASSWORD,
@@ -148,7 +148,7 @@ class Database
             ?? throw new DatabaseConnectionException("Connection {$index} is not configured");
         
         // Determine retry parameters
-        $retries = $maxRetries ?? ($retryOnConnectionError ? DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS : 1);
+        $retries = $maxRetries ?? ($retryOnConnectionError ? DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT);
         $delaySeconds = $retryDelaySeconds ?? ($retryOnConnectionError ? DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS : 0);
         
         $lastException = null;
@@ -292,7 +292,7 @@ class Database
         }
 
         $attempts = 0;
-        $maxAttempts = $tryReconnect ? $config['reconnect_attempts'] : 1;
+        $maxAttempts = $tryReconnect ? $config['reconnect_attempts'] : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
 
         while ($attempts < $maxAttempts) {
             $attempts++;
@@ -346,7 +346,7 @@ class Database
                     }
 
                     // Sleep using sleep() for seconds (minimum 1 second)
-                    $delaySeconds = (int)ceil($delayMs / 1000);
+                    $delaySeconds = (int)ceil($delayMs / DatabaseConnectionPolicy::MS_PER_SECOND);
                     sleep($delaySeconds);
 
                     self::close($index);
@@ -416,7 +416,7 @@ class Database
 
         // Set max execution time
         $oldTimeout = @mysqli_query($mysqli, DatabaseSql::SESSION_MAX_STATEMENT_TIME_GET);
-        @mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * 1000));
+        @mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * DatabaseConnectionPolicy::MS_PER_SECOND));
 
         try {
             self::sql($sql, $params, $tryReconnect);
@@ -637,7 +637,7 @@ class Database
 
                 // Escape value
                 if ($value === null) {
-                    $parsedSql .= 'NULL';
+                    $parsedSql .= DatabaseSql::SQL_NULL;
                 } elseif ($param->type->isNumeric()) {
                     $parsedSql .= $value;
                 } else {

@@ -15,7 +15,22 @@ final class DatabaseSql
 
     public const string LOCK_TABLES_PREFIX = 'LOCK TABLES';
 
+    public const string LOCK_TYPE_READ = 'READ';
+
+    public const string LOCK_TYPE_WRITE = 'WRITE';
+
+    public const string SQL_NULL = 'NULL';
+
     public const string SESSION_MAX_STATEMENT_TIME_GET = 'SELECT @@max_statement_time';
 
     public const string SESSION_MAX_STATEMENT_TIME_SET = 'SET SESSION max_statement_time = %d';
+
+    /**
+     * @param string $table Table name (unescaped, used for probe only)
+     * @return string SQL that succeeds when table exists and fails otherwise
+     */
+    public static function tableExistsProbe(string $table): string
+    {
+        return 'SELECT 1 FROM `' . $table . '` LIMIT 1';
+    }
 }

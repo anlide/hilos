@@ -8,6 +8,7 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Database\DatabaseConnectionDefaults;
 
 /**
  * Framework default catalog for environment variables.
@@ -32,19 +33,19 @@ final class EnvCatalogStub implements CatalogProviderInterface
             ),
             EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::WORKER_COMM_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
-            EnvConstants::DB_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'localhost', emptyIsMissing: true),
-            EnvConstants::DB_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3306, emptyIsMissing: true),
+            EnvConstants::DB_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::HOST, emptyIsMissing: true),
+            EnvConstants::DB_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, DatabaseConnectionDefaults::PORT, emptyIsMissing: true),
             EnvConstants::DB_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_db', emptyIsMissing: true),
             EnvConstants::DB_USER->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_user', emptyIsMissing: true),
-            EnvConstants::DB_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::DB_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
             EnvConstants::DB_ROOT_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::DB_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'root', emptyIsMissing: true),
+            EnvConstants::DB_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::USER, emptyIsMissing: true),
             EnvConstants::DB_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::DB_SECONDARY_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'localhost', emptyIsMissing: true),
-            EnvConstants::DB_SECONDARY_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'root', emptyIsMissing: true),
-            EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::DB_SECONDARY_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::HOST, emptyIsMissing: true),
+            EnvConstants::DB_SECONDARY_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::USER, emptyIsMissing: true),
+            EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
             EnvConstants::DB_SECONDARY_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_secondary'),
-            EnvConstants::DB_SECONDARY_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3306, emptyIsMissing: true),
+            EnvConstants::DB_SECONDARY_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, DatabaseConnectionDefaults::PORT, emptyIsMissing: true),
             EnvConstants::DAEMON_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::DAEMON_ERROR_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::DOCKER_NETWORK_SUBNET->name => self::entry(

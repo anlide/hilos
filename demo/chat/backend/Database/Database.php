@@ -54,7 +54,7 @@ final class Database extends BaseDatabase
     {
         // Configure primary database connection (index 0)
         self::configure(
-            index: 0,
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
             host: Hilos::$env[EnvConstants::DB_HOST],
             user: Hilos::$env[EnvConstants::DB_USERNAME],
             password: Hilos::$env[EnvConstants::DB_PASSWORD],
@@ -64,12 +64,12 @@ final class Database extends BaseDatabase
         );
 
         // Connect to primary database
-        self::connect(0, retryOnConnectionError: $retryConnection);
+        self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX, retryOnConnectionError: $retryConnection);
 
         self::sql(DatabaseConnectionDefaults::setNamesSql());
 
         // Initialize database schema structure
-        Schema::initialize(0);
+        Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
         // Initialize Hilos facade with storage (for read-only data access).
         // Hilos depends on Database, so initialize it here.

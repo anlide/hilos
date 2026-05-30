@@ -9,6 +9,8 @@ namespace Hilos\Database;
  */
 final class DatabaseConnectionDefaults
 {
+    public const int PRIMARY_INDEX = 0;
+
     public const string HOST = 'localhost';
 
     public const string USER = 'root';

@@ -56,7 +56,7 @@ class Migration
 
         try {
             // Check if table exists
-            Database::sql('SELECT 1 FROM `migration` LIMIT 1');
+            Database::sql(DatabaseSql::tableExistsProbe('migration'));
             self::$initialized = true;
             return;
         } catch (DatabaseException $e) {

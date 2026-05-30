@@ -38,7 +38,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         }
 
         Database::configure(
-            index: 0,
+            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
             host: Hilos::$env[EnvConstants::DB_HOST],
             user: Hilos::$env[EnvConstants::DB_USERNAME],
             password: Hilos::$env[EnvConstants::DB_PASSWORD],
@@ -48,7 +48,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
         );
 
         Database::connect(
-            0,
+            DatabaseConnectionDefaults::PRIMARY_INDEX,
             retryOnConnectionError: true,
             maxRetries: DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS,
             retryDelaySeconds: DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS,
@@ -61,7 +61,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     protected function tearDown(): void
     {
         if (Database::isConnected()) {
-            Database::close(0);
+            Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
         }
         parent::tearDown();
     }

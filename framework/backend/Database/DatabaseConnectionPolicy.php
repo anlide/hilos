@@ -9,6 +9,10 @@ namespace Hilos\Database;
  */
 final class DatabaseConnectionPolicy
 {
+    public const int MS_PER_SECOND = 1000;
+
+    public const int ATTEMPTS_WITHOUT_RECONNECT = 1;
+
     public const int RECONNECT_DELAY_MIN_MS = 1000;
 
     public const int RECONNECT_TIMEOUT_MAX_MS = 5000;
