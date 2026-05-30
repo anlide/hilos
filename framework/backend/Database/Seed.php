@@ -9,11 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Hilos;
 
 /**
- * Database seed management system.
- *
- * Runs SQL seed files from a configured directory.
- * Seeds are idempotent and safe to run multiple times.
- * Blocked when APP_ENV is PROD or STAGING (see AppEnv).
+ * Idempotent SQL seed runner blocked when APP_ENV is PROD or STAGING.
  */
 class Seed
 {
@@ -21,9 +17,7 @@ class Seed
     private static ?string $seedPath = null;
 
     /**
-     * Set seed directory path.
-     *
-     * @param string $path Absolute or relative path to directory containing .sql seed files
+     * @param string $path Absolute or relative path to .sql seed files
      */
     public static function setSeedPath(string $path): void
     {
@@ -31,9 +25,7 @@ class Seed
     }
 
     /**
-     * Get configured seed directory path.
-     *
-     * @return ?string Path or null when not configured
+     * @return ?string Configured seed directory path
      */
     public static function getSeedPath(): ?string
     {
@@ -41,9 +33,7 @@ class Seed
     }
 
     /**
-     * Get basenames of .sql files that do not match seed pattern (NNN_name.sql).
-     *
-     * Useful to hint user when no valid seeds exist but directory has .sql files.
+     * Useful when directory has .sql files that do not match NNN_name.sql.
      *
      * @return list<string> Basenames of non-matching .sql files
      */
@@ -70,11 +60,9 @@ class Seed
     }
 
     /**
-     * Get list of available seed files (sorted by numeric prefix).
+     * Only files matching NNN_name.sql are included.
      *
-     * Only files matching pattern NNN_name.sql are included.
-     *
-     * @return list<string> Full paths to seed files
+     * @return list<string> Full paths to seed files sorted by numeric prefix
      */
     public static function getAvailableSeeds(): array
     {
@@ -100,12 +88,9 @@ class Seed
     }
 
     /**
-     * Check if running in production-like environment (seeds are disabled).
+     * Unrecognized APP_ENV values default to DEV (seeds allowed).
      *
-     * Seeds are disabled when APP_ENV is PROD or STAGING (AppEnv).
-     * Unrecognized values default to DEV (seeds allowed).
-     *
-     * @return bool True when APP_ENV is PROD or STAGING
+     * @return bool Whether APP_ENV is PROD or STAGING
      */
     public static function isProduction(): bool
     {
@@ -120,14 +105,11 @@ class Seed
     }
 
     /**
-     * Apply a single seed file by identifier.
-     *
-     * Identifier can be numeric prefix (e.g. "001") or full basename (e.g. "001_some_name").
-     * Blocked when APP_ENV=production.
+     * Identifier can be numeric prefix (001) or full basename (001_some_name).
      *
      * @param string $seedId Seed identifier (numeric prefix or basename)
-     * @return bool True if seed was applied
-     * @throws DatabaseException If production, seed not found, file read fails, or SQL execution fails
+     * @return bool Whether seed was applied
+     * @throws DatabaseException When production-like env, seed not found, read fails, or SQL fails
      */
     public static function applyOne(string $seedId): bool
     {
@@ -171,13 +153,8 @@ class Seed
     }
 
     /**
-     * Apply all seed files from configured directory.
-     *
-     * Executes each .sql file in order (sorted by numeric prefix).
-     * Blocked when APP_ENV=production.
-     *
      * @return int Number of seed files applied
-     * @throws DatabaseException If production, seed path not configured, file read fails, or SQL execution fails
+     * @throws DatabaseException When production-like env, read fails, or SQL fails
      */
     public static function apply(): int
     {
@@ -202,13 +179,10 @@ class Seed
     }
 
     /**
-     * Run SQL content with custom delimiter support.
-     *
      * Handles DELIMITER statements for stored procedures and functions.
-     * Skips empty lines and comment lines (--, #).
      *
      * @param string $content Raw SQL file content
-     * @throws DatabaseException If SQL execution fails
+     * @throws DatabaseException When SQL execution fails
      */
     private static function runSqlWithDelimiter(string $content): void
     {

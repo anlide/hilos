@@ -31,9 +31,7 @@ use mysqli;
 use mysqli_result;
 
 /**
- * Database connection and query management class.
- *
- * Supports multiple database connections with static methods.
+ * Static multi-connection MySQL access layer with reconnect and result-set caching.
  */
 class Database
 {
@@ -56,12 +54,8 @@ class Database
     private static array $resultSets = [];
 
     /**
-     * Get current result set (for ResultSetCollection).
-     *
-     * Returns mysqli_result from cached ResultSet.
-     *
-     * @param ?int $index Connection index
-     * @return ?mysqli_result mysqli_result from cached ResultSet or null
+     * @param ?int $index Connection index (defaults to current)
+     * @return ?mysqli_result Cached mysqli result or null
      */
     public static function getCurrentResult(?int $index = null): ?mysqli_result
     {
@@ -70,10 +64,8 @@ class Database
     }
 
     /**
-     * Get cached ResultSet for current result (preserves pointer position).
-     *
-     * @param ?int $index Connection index
-     * @return ?ResultSet Cached ResultSet or null
+     * @param ?int $index Connection index (defaults to current)
+     * @return ?ResultSet Cached result set or null
      */
     public static function getCachedResultSet(?int $index = null): ?ResultSet
     {
@@ -105,9 +97,7 @@ class Database
     }
 
     /**
-     * Configure a database connection (doesn't connect yet).
-     *
-     * @param int $index Connection index (0 by default for primary)
+     * @param int $index Connection index (0 for primary)
      * @param string $host Database host
      * @param string $user Database user
      * @param string $password Database password
@@ -115,7 +105,7 @@ class Database
      * @param int $port Database port
      * @param string $charset Character set with collation
      * @param ?string $socket Unix socket path
-     * @param int $reconnectAttempts Number of reconnect attempts
+     * @param int $reconnectAttempts Reconnect attempt count for sql()
      * @param int $reconnectDelay Delay between reconnects in milliseconds
      */
     public static function configure(
@@ -146,10 +136,8 @@ class Database
     }
 
     /**
-     * Set current connection index.
-     *
-     * @param int $index Connection index
-     * @throws DatabaseException If connection not configured
+     * @param int $index Connection index to activate
+     * @throws DatabaseException When connection index is not configured
      */
     public static function useConnection(int $index): void
     {
@@ -160,9 +148,7 @@ class Database
     }
 
     /**
-     * Get current connection index.
-     *
-     * @return int Active connection index (0 by default)
+     * @return int Active connection index
      */
     public static function getCurrentIndex(): int
     {
@@ -170,13 +156,12 @@ class Database
     }
 
     /**
-     * Connect to database using configured settings.
-     *
-     * @param ?int $index Connection index (uses current if null)
-     * @param bool $retryOnConnectionError If true, retry connection on temporary errors (2002, 2003)
-     * @param ?int $maxRetries Maximum retry attempts (uses reconnect_attempts from config if null)
-     * @param ?int $retryDelaySeconds Delay between retries in seconds (uses reconnect_delay/1000 from config if null)
-     * @throws DatabaseConnectionException On connection failure
+     * @param ?int $index Connection index (defaults to current)
+     * @param bool $retryOnConnectionError Whether to retry temporary connection errors
+     * @param ?int $maxRetries Max attempts (uses config when null)
+     * @param ?int $retryDelaySeconds Delay between retries in seconds (uses config when null)
+     * @throws DatabaseConnectionException When connection or charset setup fails
+     * @throws CantConnectToMysqlServerException When retries are exhausted on temporary errors
      */
     public static function connect(?int $index = null, bool $retryOnConnectionError = false, ?int $maxRetries = null, ?int $retryDelaySeconds = null): void
     {
@@ -251,9 +236,7 @@ class Database
     }
 
     /**
-     * Closes database connection.
-     *
-     * @param ?int $index Connection index (uses current if null)
+     * @param ?int $index Connection index (defaults to current)
      */
     public static function close(?int $index = null): void
     {
@@ -275,10 +258,9 @@ class Database
     }
 
     /**
-     * Gets active mysqli connection.
-     *
-     * @param ?int $index Connection index
-     * @throws DatabaseConnectionException If not connected
+     * @param ?int $index Connection index (defaults to current)
+     * @return mysqli Active connection
+     * @throws DatabaseConnectionException When not connected at index
      */
     private static function getConnection(?int $index = null): mysqli
     {
@@ -292,10 +274,8 @@ class Database
     }
 
     /**
-     * Check if connection is active.
-     *
-     * @param ?int $index Connection index (uses current if null)
-     * @return bool True if connected
+     * @param ?int $index Connection index (defaults to current)
+     * @return bool Whether connection is active
      */
     public static function isConnected(?int $index = null): bool
     {
@@ -304,13 +284,13 @@ class Database
     }
 
     /**
-     * Executes SQL query with parameters.
-     *
-     * @param string $sql SQL query with ? placeholders
-     * @param array|SqlParamCollection|null $params Query parameters
-     * @param bool $tryReconnect Try to reconnect on connection loss
-     * @return ResultSetCollection Collection of result sets (even for single result set)
-     * @throws DatabaseException On query failure
+     * @param string $sql SQL with ? placeholders
+     * @param array|SqlParamCollection|null $params Bound parameters
+     * @param bool $tryReconnect Whether to reconnect on connection loss
+     * @return ResultSetCollection First result set collection
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When query execution fails
      */
     public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): ResultSetCollection
     {
@@ -440,13 +420,13 @@ class Database
     }
 
     /**
-     * Execute SQL with timeout.
-     *
      * @param string $sql SQL query
-     * @param array|SqlParamCollection|null $params Query parameters
-     * @param int $timeout Timeout in seconds
-     * @param bool $tryReconnect Try to reconnect on connection loss
-     * @throws DatabaseException On query failure or timeout
+     * @param array|SqlParamCollection|null $params Bound parameters
+     * @param int $timeout Max execution time in seconds
+     * @param bool $tryReconnect Whether to reconnect on connection loss
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When query execution fails or times out
      */
     public static function sqlRun(string $sql, array|SqlParamCollection|null $params = null, int $timeout = 30, bool $tryReconnect = true): void
     {
@@ -471,10 +451,8 @@ class Database
     }
 
     /**
-     * Get next result set from multi-query.
-     *
-     * @return bool True if there is a next result set
-     * @throws DatabaseConnectionException If not connected
+     * @return bool Whether another result set was loaded
+     * @throws DatabaseConnectionException When not connected
      */
     public static function nextResult(): bool
     {
@@ -505,11 +483,9 @@ class Database
     }
 
     /**
-     * Returns all rows from current result set.
+     * Loads all rows from the current result set into memory.
      *
-     * Note: loads all rows into memory. For large datasets, use row() in a loop.
-     *
-     * @return list<array<string, mixed>> Row arrays in order
+     * @return list<array<string, mixed>> Result rows in order
      */
     public static function rows(): array
     {
@@ -524,11 +500,9 @@ class Database
     }
 
     /**
-     * Returns single row from current result set.
+     * Fetches the next row from the current result set.
      *
-     * Advances internal pointer; each call returns the next row.
-     *
-     * @return ?array<string, mixed> Row as associative array or null if no more rows
+     * @return ?array<string, mixed> Next row or null when exhausted
      */
     public static function row(): ?array
     {
@@ -543,10 +517,8 @@ class Database
     }
 
     /**
-     * Get single field value from current result set.
-     *
-     * @param string $fieldName Field name
-     * @return mixed Field value or null
+     * @param string $fieldName Column name
+     * @return mixed Column value or null when row or field is missing
      */
     public static function field(string $fieldName): mixed
     {
@@ -555,9 +527,7 @@ class Database
     }
 
     /**
-     * Get number of rows in current result set.
-     *
-     * @return int Row count
+     * @return int Row count in current result set
      */
     public static function count(): int
     {
@@ -572,10 +542,8 @@ class Database
     }
 
     /**
-     * Get number of affected rows from last query.
-     *
-     * @return int Number of affected rows
-     * @throws DatabaseConnectionException If not connected
+     * @return int Affected row count from last query
+     * @throws DatabaseConnectionException When not connected
      */
     public static function affectedRows(): int
     {
@@ -584,10 +552,8 @@ class Database
     }
 
     /**
-     * Get last insert ID.
-     *
      * @return int Last insert ID or 0
-     * @throws DatabaseConnectionException If not connected
+     * @throws DatabaseConnectionException When not connected
      */
     public static function lastInsertId(): int
     {
@@ -596,9 +562,7 @@ class Database
     }
 
     /**
-     * Start transaction.
-     *
-     * @throws DatabaseConnectionException If not connected
+     * @throws DatabaseConnectionException When not connected
      */
     public static function transactionStart(): void
     {
@@ -607,9 +571,7 @@ class Database
     }
 
     /**
-     * Commit transaction.
-     *
-     * @throws DatabaseConnectionException If not connected
+     * @throws DatabaseConnectionException When not connected
      */
     public static function transactionCommit(): void
     {
@@ -618,9 +580,7 @@ class Database
     }
 
     /**
-     * Rollback transaction.
-     *
-     * @throws DatabaseConnectionException If not connected
+     * @throws DatabaseConnectionException When not connected
      */
     public static function transactionRollback(): void
     {
@@ -629,10 +589,10 @@ class Database
     }
 
     /**
-     * Lock tables.
-     *
-     * @param array<string, string> $tables Table name => lock type (READ or WRITE)
-     * @throws DatabaseException On query failure
+     * @param array<string, string> $tables Table name to lock type (READ or WRITE)
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When query execution fails
      */
     public static function lockTables(array $tables): void
     {
@@ -645,9 +605,9 @@ class Database
     }
 
     /**
-     * Unlock all tables.
-     *
-     * @throws DatabaseException On query failure
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When query execution fails
      */
     public static function unlockTables(): void
     {
@@ -655,13 +615,11 @@ class Database
     }
 
     /**
-     * Parse SQL query with parameters.
-     *
-     * @param string $sql SQL query with ? placeholders
-     * @param ?SqlParamCollection $params Query parameters
-     * @param mysqli $mysqli mysqli connection for escaping
-     * @return string Parsed SQL with values substituted
-     * @throws DatabaseParamsException When parameter count does not match placeholders
+     * @param string $sql SQL with ? placeholders
+     * @param ?SqlParamCollection $params Bound parameters
+     * @param mysqli $mysqli Connection used for escaping
+     * @return string SQL with substituted values
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
      */
     private static function parseSqlWithParams(string $sql, ?SqlParamCollection $params, mysqli $mysqli): string
     {
@@ -719,10 +677,8 @@ class Database
     }
 
     /**
-     * Check if error is connection lost error.
-     *
      * @param int $errno MySQL error number
-     * @return bool True if error indicates connection lost (2006, 2013)
+     * @return bool Whether errno indicates connection loss (2006, 2013)
      */
     private static function isConnectionLostError(int $errno): bool
     {
@@ -730,11 +686,9 @@ class Database
     }
 
     /**
-     * Throw appropriate connection exception based on error code.
-     *
      * @param int $errno MySQL error number
      * @param string $error Error message
-     * @throws DatabaseConnectionException When MySQL connection error occurs
+     * @throws DatabaseConnectionException When MySQL reports a connection error
      */
     private static function throwConnectionException(int $errno, string $error): never
     {
@@ -755,12 +709,10 @@ class Database
     }
 
     /**
-     * Throw appropriate runtime exception based on error code.
-     *
      * @param int $errno MySQL error number
      * @param string $error Error message
      * @param string $query SQL query that failed
-     * @throws DatabaseRuntimeException When MySQL runtime error occurs during query
+     * @throws DatabaseRuntimeException When MySQL reports a runtime query error
      */
     private static function throwRuntimeException(int $errno, string $error, string $query): never
     {
@@ -793,11 +745,9 @@ class Database
     }
 
     /**
-     * Escape string for SQL query.
-     *
-     * @param string $value Value to escape
-     * @return string Escaped string
-     * @throws DatabaseConnectionException If not connected
+     * @param string $value Raw string value
+     * @return string Escaped string for SQL
+     * @throws DatabaseConnectionException When not connected
      */
     public static function escape(string $value): string
     {
@@ -806,10 +756,8 @@ class Database
     }
 
     /**
-     * Get server info.
-     *
      * @return string MySQL server version
-     * @throws DatabaseConnectionException If not connected
+     * @throws DatabaseConnectionException When not connected
      */
     public static function getServerInfo(): string
     {
@@ -818,9 +766,7 @@ class Database
     }
 
     /**
-     * Get client info.
-     *
-     * @return string mysqli client version
+     * @return string mysqli client library version
      */
     public static function getClientInfo(): string
     {
@@ -828,11 +774,9 @@ class Database
     }
 
     /**
-     * Check if connection is alive by attempting a simple query.
+     * Uses SELECT 1 instead of mysqli_ping() for PHP compatibility.
      *
-     * Uses SELECT 1 instead of mysqli_ping() for current PHP compatibility.
-     *
-     * @return bool True if connection is alive, false otherwise
+     * @return bool Whether the active connection responds
      */
     public static function ping(): bool
     {

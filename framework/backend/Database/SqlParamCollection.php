@@ -8,24 +8,23 @@ use Hilos\Database\Exception\DatabaseParamsException;
 use Iterator;
 
 /**
- * Type-safe collection of SQL parameters.
+ * Type-safe ordered collection of SqlParam values.
  *
  * @implements ArrayAccess<int, SqlParam>
  * @implements Iterator<int, SqlParam>
  */
 class SqlParamCollection implements ArrayAccess, Countable, Iterator
 {
-    /** @var list<SqlParam> parameters for prepared statement */
+    /** @var list<SqlParam> Bound parameters */
     private array $params = [];
 
-    /** @var int current iterator position */
+    /** @var int Iterator position */
     private int $position = 0;
 
     /**
-     * Creates collection from array of values (auto-detects types for non-SqlParam).
-     *
-     * @param list<mixed> $values Values (SqlParam preserved, others wrapped with auto())
+     * @param list<mixed> $values SqlParam values preserved, others wrapped with auto()
      * @return self New collection
+     * @throws DatabaseParamsException When value wrapping produces invalid SqlParam
      */
     public static function fromArray(array $values): self
     {
@@ -41,9 +40,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Creates empty collection.
-     *
-     * @return self New empty collection
+     * @return self Empty collection
      */
     public static function empty(): self
     {
@@ -51,10 +48,8 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Adds parameter to collection.
-     *
-     * @param SqlParam $param Parameter to add
-     * @return self For chaining
+     * @param SqlParam $param Parameter to append
+     * @return self Fluent append
      */
     public function add(SqlParam $param): self
     {
@@ -63,9 +58,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Returns all parameter values for bind_param.
-     *
-     * @return list<mixed> Values in order
+     * @return list<mixed> Bound values in order
      */
     public function getValues(): array
     {
@@ -73,9 +66,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Returns type string for bind_param (e.g. "iss" for int, string, string).
-     *
-     * @return string Concatenated type chars
+     * @return string Concatenated bind type chars (e.g. iss)
      */
     public function getTypeString(): string
     {
@@ -83,9 +74,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Returns value references for bind_param (kept for future use).
-     *
-     * @return list<mixed> Value references (or copies for readonly)
+     * @return list<mixed> Value copies for bind_param compatibility
      */
     public function getValueReferences(): array
     {
@@ -99,10 +88,8 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * ArrayAccess: checks if parameter exists at offset.
-     *
-     * @param mixed $offset Index
-     * @return bool True if exists
+     * @param mixed $offset Parameter index
+     * @return bool Whether parameter exists at index
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -110,9 +97,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * ArrayAccess: returns parameter at offset.
-     *
-     * @param mixed $offset Index
+     * @param mixed $offset Parameter index
      * @return SqlParam Parameter at index
      * @throws DatabaseParamsException When index does not exist
      */
@@ -125,8 +110,6 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * ArrayAccess: sets parameter at offset (or appends if offset is null).
-     *
      * @param mixed $offset Index or null to append
      * @param mixed $value SqlParam instance
      * @throws DatabaseParamsException When value is not SqlParam
@@ -145,9 +128,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * ArrayAccess: removes parameter at offset and re-indexes.
-     *
-     * @param mixed $offset Index to unset
+     * @param mixed $offset Parameter index to remove
      */
     public function offsetUnset(mixed $offset): void
     {
@@ -156,8 +137,6 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Countable: returns number of parameters.
-     *
      * @return int Parameter count
      */
     public function count(): int
@@ -166,8 +145,6 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Iterator: returns current parameter.
-     *
      * @return SqlParam Current parameter
      */
     public function current(): SqlParam
@@ -176,9 +153,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Iterator: returns current key (position).
-     *
-     * @return int Current position
+     * @return int Current iterator position
      */
     public function key(): int
     {
@@ -186,7 +161,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Iterator: advances to next element.
+     * Iterator position increment.
      */
     public function next(): void
     {
@@ -194,7 +169,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Iterator: resets position to start.
+     * Iterator position reset.
      */
     public function rewind(): void
     {
@@ -202,13 +177,10 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Iterator: checks if current position is valid.
-     *
-     * @return bool True if valid
+     * @return bool Whether current iterator position is valid
      */
     public function valid(): bool
     {
         return isset($this->params[$this->position]);
     }
 }
-

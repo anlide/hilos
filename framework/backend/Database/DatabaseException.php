@@ -3,41 +3,36 @@
 namespace Hilos\Database;
 
 use Hilos\HilosException;
+use Throwable;
 
 /**
- * Base SQL exception class.
- *
- * Carries MySQL error details and query for debugging.
+ * Base SQL exception carrying MySQL error details and the failing query.
  */
 class DatabaseException extends HilosException
 {
-    /** @var int MySQL error code (0 if not set) */
+    /** @var int MySQL error code (0 when unset) */
     protected int $mysqlErrorCode = 0;
 
-    /** @var string MySQL error message (empty if not set) */
+    /** @var string MySQL error message (empty when unset) */
     protected string $mysqlErrorMessage = '';
 
-    /** @var string SQL query that caused the error (empty if not set) */
+    /** @var string SQL query that caused the error (empty when unset) */
     protected string $query = '';
 
     /**
-     * Creates database exception.
-     *
      * @param string $message Exception message
      * @param int $code Exception code
-     * @param ?\Throwable $previous Previous exception for chaining
+     * @param ?Throwable $previous Chained exception
      */
-    public function __construct(string $message = '', int $code = 0, ?\Throwable $previous = null)
+    public function __construct(string $message = '', int $code = 0, ?Throwable $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }
 
     /**
-     * Sets MySQL error code and message from failed query.
-     *
      * @param int $errorCode MySQL error code
      * @param string $errorMessage MySQL error message
-     * @return self For chaining
+     * @return self Fluent setter
      */
     public function setMysqlError(int $errorCode, string $errorMessage): self
     {
@@ -47,10 +42,8 @@ class DatabaseException extends HilosException
     }
 
     /**
-     * Sets SQL query that caused the error.
-     *
      * @param string $query SQL query string
-     * @return self For chaining
+     * @return self Fluent setter
      */
     public function setQuery(string $query): self
     {
@@ -59,9 +52,7 @@ class DatabaseException extends HilosException
     }
 
     /**
-     * Gets MySQL error code.
-     *
-     * @return int MySQL error code (0 if not set)
+     * @return int MySQL error code (0 when unset)
      */
     public function getMysqlErrorCode(): int
     {
@@ -69,9 +60,7 @@ class DatabaseException extends HilosException
     }
 
     /**
-     * Gets MySQL error message.
-     *
-     * @return string MySQL error message (empty if not set)
+     * @return string MySQL error message (empty when unset)
      */
     public function getMysqlErrorMessage(): string
     {
@@ -79,13 +68,10 @@ class DatabaseException extends HilosException
     }
 
     /**
-     * Gets SQL query that caused the error.
-     *
-     * @return string SQL query string (empty if not set)
+     * @return string SQL query string (empty when unset)
      */
     public function getQuery(): string
     {
         return $this->query;
     }
 }
-

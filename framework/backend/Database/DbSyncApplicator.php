@@ -21,8 +21,6 @@ use Hilos\Hilos;
 final class DbSyncApplicator
 {
     /**
-     * Applies DB_SYNC_CREATED payload to Hilos::$db.
-     *
      * @param DbSyncCreatedSignalData $data Full created row payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
@@ -58,8 +56,6 @@ final class DbSyncApplicator
     }
 
     /**
-     * Applies DB_SYNC_UPDATED payload by merging diff columns into the in-memory Object.
-     *
      * Row keys are entity column names (same as DB_SYNC_CREATED / fromRow).
      *
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
@@ -85,8 +81,6 @@ final class DbSyncApplicator
     }
 
     /**
-     * Applies DB_SYNC_DELETED payload by removing Object from its collection.
-     *
      * @param DbSyncDeletedSignalData $data Deleted row identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
@@ -107,12 +101,11 @@ final class DbSyncApplicator
     }
 
     /**
-     * Returns false when row payload is invalid or this process should skip applying the sync.
-     *
      * @param string $collectionKey DB collection key from sync payload
      * @param string $idString Target object id from sync payload
      * @param array<string, mixed> $row Full row or diff row
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
+     * @return bool Whether sync row should be applied
      */
     private static function shouldApplyDbSyncRow(
         string $collectionKey,
@@ -128,11 +121,10 @@ final class DbSyncApplicator
     }
 
     /**
-     * Returns false when identity is invalid or self-broadcast guard says to skip applying.
-     *
      * @param string $collectionKey DB collection key from sync payload
      * @param string $idString Target object id from sync payload
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
+     * @return bool Whether sync should be applied
      */
     private static function shouldApplyDbSync(
         string $collectionKey,

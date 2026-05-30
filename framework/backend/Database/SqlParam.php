@@ -4,36 +4,31 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
-use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\Exception\DatabaseParamsException;
 
 /**
- * Single SQL parameter with type information for prepared statements.
- *
- * Type chars: i=integer, d=double, s=string, b=blob.
+ * Single SQL parameter with bind type (i, d, s, b).
  */
 readonly class SqlParam
 {
     /**
-     * Creates SQL parameter with explicit type.
-     *
      * @param mixed $value Bound value
      * @param string $type Type char: i, d, s, b
-     * @throws InvalidArgumentException When type is not one of i, d, s, b
+     * @throws DatabaseParamsException When type is not one of i, d, s, b
      */
     public function __construct(
         public mixed $value,
         public string $type = 's' // i=integer, d=double, s=string, b=blob
     ) {
         if (!in_array($type, ['i', 'd', 's', 'b'], true)) {
-            throw new InvalidArgumentException("Invalid parameter type: {$type}. Must be one of: i, d, s, b");
+            throw new DatabaseParamsException("Invalid parameter type: {$type}. Must be one of: i, d, s, b");
         }
     }
 
     /**
-     * Auto-detects type from value (int→i, float→d, bool→i, null→s, else→s).
-     *
      * @param mixed $value Value to bind
-     * @return self Parameter instance
+     * @return self Parameter with inferred type
+     * @throws DatabaseParamsException When inferred bind type is invalid
      */
     public static function auto(mixed $value): self
     {
@@ -49,10 +44,9 @@ readonly class SqlParam
     }
 
     /**
-     * Creates integer parameter.
-     *
      * @param int $value Integer value
-     * @return self Parameter instance
+     * @return self Integer parameter
+     * @throws DatabaseParamsException When bind type is invalid
      */
     public static function int(int $value): self
     {
@@ -60,10 +54,9 @@ readonly class SqlParam
     }
 
     /**
-     * Creates double parameter.
-     *
      * @param float $value Float value
-     * @return self Parameter instance
+     * @return self Double parameter
+     * @throws DatabaseParamsException When bind type is invalid
      */
     public static function double(float $value): self
     {
@@ -71,10 +64,9 @@ readonly class SqlParam
     }
 
     /**
-     * Creates string parameter.
-     *
      * @param string $value String value
-     * @return self Parameter instance
+     * @return self String parameter
+     * @throws DatabaseParamsException When bind type is invalid
      */
     public static function string(string $value): self
     {
@@ -82,10 +74,9 @@ readonly class SqlParam
     }
 
     /**
-     * Creates blob parameter.
-     *
      * @param string $value Blob value
-     * @return self Parameter instance
+     * @return self Blob parameter
+     * @throws DatabaseParamsException When bind type is invalid
      */
     public static function blob(string $value): self
     {
@@ -93,14 +84,12 @@ readonly class SqlParam
     }
 
     /**
-     * Creates boolean parameter (stored as integer 0/1).
-     *
-     * @param bool $value Boolean value
-     * @return self Parameter instance
+     * @param bool $value Boolean value stored as 0/1
+     * @return self Integer parameter
+     * @throws DatabaseParamsException When bind type is invalid
      */
     public static function bool(bool $value): self
     {
         return new self($value ? 1 : 0, 'i');
     }
 }
-

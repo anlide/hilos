@@ -5,27 +5,23 @@ namespace Hilos\Database;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Database migration management system.
- *
- * Handles up/down migrations with SQL files.
+ * SQL migration track management with up/down SQL files.
  */
 class Migration
 {
-    /** @var ?string path to migration list directory */
+    /** @var ?string Path to migration list directory */
     private static ?string $migrationListPath = null;
 
-    /** @var string migration track name */
+    /** @var string Migration track name */
     private static string $migrationName = 'main';
 
-    /** @var ?string path to routines (stored procedures) directory */
+    /** @var ?string Path to routines (stored procedures) directory */
     private static ?string $routinesPath = null;
 
-    /** @var bool whether migration system is initialized */
+    /** @var bool Whether migration system is initialized */
     private static bool $initialized = false;
 
     /**
-     * Sets migration list path (directory with migration SQL files).
-     *
      * @param string $path Path to migration list directory
      */
     public static function setMigrationListPath(string $path): void
@@ -34,8 +30,6 @@ class Migration
     }
 
     /**
-     * Sets migration name for multiple migration tracks.
-     *
      * @param string $name Migration track name (e.g. main)
      */
     public static function setMigrationName(string $name): void
@@ -44,8 +38,6 @@ class Migration
     }
 
     /**
-     * Sets routines path (stored procedures directory).
-     *
      * @param string $path Path to routines directory
      */
     public static function setRoutinesPath(string $path): void
@@ -54,9 +46,7 @@ class Migration
     }
 
     /**
-     * Initializes migration system (creates migration table if not exists).
-     *
-     * @throws DatabaseException If database connection or table creation fails
+     * @throws DatabaseException When connection fails or migration table cannot be created
      */
     public static function initialize(): void
     {
@@ -86,10 +76,8 @@ class Migration
     }
 
     /**
-     * Returns current migration index (last successfully applied).
-     *
-     * @return int Current migration index (0 if none applied)
-     * @throws DatabaseException If migration table or query fails
+     * @return int Last successfully applied migration index (0 when none)
+     * @throws DatabaseException When migration table query fails
      */
     public static function getCurrentIndex(): int
     {
@@ -102,8 +90,6 @@ class Migration
     }
 
     /**
-     * Returns list of available migrations from migration path.
-     *
      * @return list<int> Sorted unique migration indices
      */
     public static function getAvailableMigrations(): array
@@ -133,11 +119,9 @@ class Migration
     }
 
     /**
-     * Migrates up to target version (or latest if null).
-     *
-     * @param ?int $targetIndex Target migration index (null = latest)
+     * @param ?int $targetIndex Target migration index (null applies through latest)
      * @return int Number of migrations applied
-     * @throws DatabaseException If migration file not found, read fails, or SQL execution fails
+     * @throws DatabaseException When migration file is missing, unreadable, or SQL fails
      */
     public static function migrateUp(?int $targetIndex = null): int
     {
@@ -169,11 +153,9 @@ class Migration
     }
 
     /**
-     * Migrates down to target version.
-     *
      * @param int $targetIndex Target migration index
      * @return int Number of migrations rolled back
-     * @throws DatabaseException If rollback file not found, read fails, or SQL execution fails
+     * @throws DatabaseException When rollback file is missing, unreadable, or SQL fails
      */
     public static function migrateDown(int $targetIndex): int
     {
@@ -204,13 +186,11 @@ class Migration
     }
 
     /**
-     * Finds migration file by index and type.
-     *
-     * Supports both formats: 1_up.sql and 001_create_users.sql.
+     * Supports both 1_up.sql and 001_create_users.sql naming.
      *
      * @param int $index Migration index
      * @param string $type Migration type (up or down)
-     * @return ?string Full file path or null if not found
+     * @return ?string Full file path or null when not found
      */
     private static function findMigrationFile(int $index, string $type): ?string
     {
@@ -243,11 +223,8 @@ class Migration
     }
 
     /**
-     * Applies single migration up by index.
-     *
      * @param int $index Migration index
-     *
-     * @throws DatabaseException If file not found, read fails, or SQL execution fails
+     * @throws DatabaseException When up file is missing, unreadable, or SQL fails
      */
     private static function applyMigrationUp(int $index): void
     {
@@ -284,11 +261,8 @@ class Migration
     }
 
     /**
-     * Applies single migration down (rollback) by index.
-     *
      * @param int $index Migration index
-     *
-     * @throws DatabaseException If rollback file not found, read fails, or SQL execution fails
+     * @throws DatabaseException When down file is missing, unreadable, or SQL fails
      */
     private static function applyMigrationDown(int $index): void
     {
@@ -324,13 +298,10 @@ class Migration
     }
 
     /**
-     * Runs SQL content with custom delimiter support.
-     *
-     * Handles DELIMITER statements for stored procedures/functions.
+     * Handles DELIMITER statements for stored procedures and functions.
      *
      * @param string $content Raw SQL content (may contain DELIMITER)
-     *
-     * @throws DatabaseException If SQL execution fails
+     * @throws DatabaseException When SQL execution fails
      */
     private static function runSqlWithDelimiter(string $content): void
     {
@@ -381,11 +352,9 @@ class Migration
     }
 
     /**
-     * Applies all routines from configured routines directory.
+     * Executes each .sql file in the configured routines path.
      *
-     * Executes each .sql file in the routines path (e.g. stored procedures).
-     *
-     * @throws DatabaseException If SQL execution fails
+     * @throws DatabaseException When SQL execution fails
      */
     public static function applyRoutines(): void
     {
@@ -409,11 +378,9 @@ class Migration
     }
 
     /**
-     * Create new migration files.
-     *
-     * @param string $name Migration name/description
+     * @param string $name Migration name or description
      * @return int New migration index
-     * @throws DatabaseException If migration path is not configured
+     * @throws DatabaseException When migration path is not configured
      */
     public static function create(string $name): int
     {
@@ -457,11 +424,8 @@ class Migration
     }
 
     /**
-     * Returns migration status (current index, available, failed, pending).
-     *
-     * @return array<string, mixed> Migration info (current_index, latest_available, available_migrations, failed_migrations, pending_count)
-     *
-     * @throws DatabaseException If migration table query fails
+     * @return array<string, mixed> current_index, latest_available, available_migrations, failed_migrations, pending_count
+     * @throws DatabaseException When migration table query fails
      */
     public static function getStatus(): array
     {
@@ -488,13 +452,10 @@ class Migration
     }
 
     /**
-     * Retries previously failed migration.
-     *
      * Deletes failed record and re-applies migration up.
      *
      * @param int $index Migration index to retry
-     *
-     * @throws DatabaseException If migration not found, not failed, or re-apply fails
+     * @throws DatabaseException When migration is missing, not failed, or re-apply fails
      */
     public static function retryFailed(int $index): void
     {

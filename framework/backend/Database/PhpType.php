@@ -3,13 +3,10 @@
 namespace Hilos\Database;
 
 /**
- * Entity column type representation enum.
+ * Entity _types column identifiers for PHP-side database mapping.
  *
- * Represents types used in Entity _types arrays for database column mapping.
- * 
- * Note: Some types (datetime, date, time, text, json, binary) are not native PHP types,
- * but are used for semantic representation of database column types in PHP context.
- * In PHP, these are all handled as strings (except decimal which is handled as float).
+ * Non-native types (datetime, date, time, text, json, binary) are stored as strings in PHP;
+ * decimal and double are handled as float.
  */
 enum PhpType: string
 {
