@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -16,11 +17,9 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
 
     /**
      * Creates RT sync deleted message DTO.
-     *
-     * @param array<string, mixed> $signalData Payload (collectionKey, stateId)
      */
     public function __construct(
-        public readonly array $signalData,
+        public readonly RtSyncDeletedSignalData $signalData,
     ) {
     }
 
@@ -43,7 +42,7 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
     {
         return [
             self::TYPE => $this->getType(),
-            'signalData' => $this->signalData,
+            'signalData' => $this->signalData->toArray(),
         ];
     }
 
@@ -55,8 +54,10 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
      */
     public static function fromArray(array $data): static
     {
+        $signalData = $data['signalData'] ?? [];
+
         return new self(
-            signalData: $data['signalData'] ?? [],
+            signalData: RtSyncDeletedSignalData::fromArray(is_array($signalData) ? $signalData : []),
         );
     }
 }

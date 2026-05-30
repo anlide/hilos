@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -16,11 +17,9 @@ class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO
 
     /**
      * Creates worker DB sync updated message.
-     *
-     * @param array<string, mixed> $signalData Signal data (collectionKey, idString, row diff)
      */
     public function __construct(
-        public readonly array $signalData,
+        public readonly DbSyncUpdatedSignalData $signalData,
     ) {
     }
 
@@ -43,7 +42,7 @@ class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO
     {
         return [
             self::TYPE => $this->getType(),
-            'signalData' => $this->signalData,
+            'signalData' => $this->signalData->toArray(),
         ];
     }
 
@@ -55,8 +54,10 @@ class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO
      */
     public static function fromArray(array $data): static
     {
+        $signalData = $data['signalData'] ?? [];
+
         return new self(
-            signalData: $data['signalData'] ?? [],
+            signalData: DbSyncUpdatedSignalData::fromArray(is_array($signalData) ? $signalData : []),
         );
     }
 }

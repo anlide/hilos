@@ -22,6 +22,12 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -606,15 +612,26 @@ abstract class DaemonManager extends BaseManager
     private function sendSyncToWorkers(WorkerServer $workerServer, SignalDTO $signal): void
     {
         $signalName = $signal->signalName->getName();
-        $signalData = $signal->data->toArray();
 
         $dto = match ($signalName) {
-            SignalConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($signalData),
-            SignalConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($signalData),
-            SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($signalData),
-            SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($signalData),
-            SignalConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($signalData),
-            SignalConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($signalData),
+            SignalConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO(
+                self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
+            ),
+            SignalConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO(
+                self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
+            ),
+            SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO(
+                self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+            ),
+            SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
+                self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
+            ),
+            SignalConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO(
+                self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
+            ),
+            SignalConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO(
+                self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
+            ),
             default => null,
         };
 
@@ -640,14 +657,41 @@ abstract class DaemonManager extends BaseManager
     {
         $signalType = $signal->signalType->getType();
         match ($signalType) {
-            SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated($signal->data->toArray()),
-            SignalTypeConstants::DB_SYNC_UPDATED => DbSyncApplicator::applyUpdated($signal->data->toArray()),
-            SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted($signal->data->toArray()),
-            SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated($signal->data->toArray()),
-            SignalTypeConstants::RT_SYNC_UPDATED => RtSyncApplicator::applyUpdated($signal->data->toArray()),
-            SignalTypeConstants::RT_SYNC_DELETED => RtSyncApplicator::applyDeleted($signal->data->toArray()),
+            SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated(
+                self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
+            ),
+            SignalTypeConstants::DB_SYNC_UPDATED => DbSyncApplicator::applyUpdated(
+                self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
+            ),
+            SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted(
+                self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+            ),
+            SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
+                self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
+            ),
+            SignalTypeConstants::RT_SYNC_UPDATED => RtSyncApplicator::applyUpdated(
+                self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
+            ),
+            SignalTypeConstants::RT_SYNC_DELETED => RtSyncApplicator::applyDeleted(
+                self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
+            ),
             default => null,
         };
+    }
+
+    /**
+     * @template T of SignalDataInterface
+     *
+     * @param class-string<T> $expectedClass
+     * @return T
+     */
+    private static function syncSignalData(SignalDataInterface $data, string $expectedClass): SignalDataInterface
+    {
+        if ($data instanceof $expectedClass) {
+            return $data;
+        }
+
+        return $expectedClass::fromArray($data->toArray());
     }
 
     /**

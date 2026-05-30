@@ -15,6 +15,7 @@ use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\Exception\LLMClientBusyException;
@@ -54,15 +55,15 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
     public function testRuntimeChatContextAppliesRtSyncAsStandaloneItem(): void
     {
         RtSyncApplicator::applyUpdated(
-            [
-                'collectionKey' => ChatRtContext::chatContext,
-                'stateId' => StateChatContext::ID_MAIN,
-                'row' => [
+            new RtSyncUpdatedSignalData(
+                collectionKey: ChatRtContext::chatContext,
+                stateId: StateChatContext::ID_MAIN,
+                row: [
                     ChatContextUpdateData::topic => 'AI',
                     ChatContextUpdateData::topicConfidence => 0.9,
                     ChatContextUpdateData::summary => 'Synced summary',
                 ],
-            ],
+            ),
             skipSelfBroadcastCheck: false,
         );
 

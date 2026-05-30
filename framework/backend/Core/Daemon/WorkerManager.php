@@ -22,6 +22,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
@@ -477,8 +478,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
-        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchDbSyncToAgents($data->signalData);
     }
 
     /**
@@ -492,8 +493,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
-        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchDbSyncToAgents($data->signalData);
     }
 
     /**
@@ -507,29 +508,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
-        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
-    }
-
-    /**
-     * Consume a DB sync self-broadcast marker before applying a daemon echo.
-     *
-     * The originating worker already recorded the local DB change for browser
-     * state when it sent the sync to the daemon. The echoed worker message
-     * must therefore neither re-apply nor re-emit the same fact.
-     *
-     * @param array<string, mixed> $signalData DB sync payload
-     * @return bool True when this worker should ignore the daemon echo
-     */
-    private function consumeIncomingDbSyncSelfBroadcast(array $signalData): bool
-    {
-        $collectionKey = (string)($signalData['collectionKey'] ?? '');
-        $idString = (string)($signalData['idString'] ?? '');
-        if ($collectionKey === '' || $idString === '') {
-            return false;
-        }
-
-        return Hilos::$sr?->shouldSkipDbSyncApply($collectionKey, $idString) ?? false;
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchDbSyncToAgents($data->signalData);
     }
 
     /**
@@ -537,31 +517,33 @@ abstract class WorkerManager extends BaseManager
      *
      * Each agent can filter by collectionKey/idString in its onSignal* handler.
      *
-     * @param string $signalName DB sync signal name
-     * @param array<string, mixed> $signalData DB sync payload
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $data DB sync payload
      */
-    private function dispatchDbSyncToAgents(string $signalName, array $signalData): void
+    private function dispatchDbSyncToAgents(DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $data): void
     {
         $source = 'db';
-        $data = match ($signalName) {
-            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::fromArray($signalData),
-            SignalConstants::DB_SYNC_UPDATED => DbSyncUpdatedSignalData::fromArray($signalData),
-            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::fromArray($signalData),
-            default => null,
-        };
-        if ($data === null) {
-            return;
-        }
 
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             if (!$agent instanceof AgentInterface) {
                 continue;
             }
             $this->setCurrentAgentId($agent->getId());
-            match ($signalName) {
-                SignalConstants::DB_SYNC_CREATED => $agent->onSignalDbSyncCreated($data, $source, $signalName),
-                SignalConstants::DB_SYNC_UPDATED => $agent->onSignalDbSyncUpdated($data, $source, $signalName),
-                SignalConstants::DB_SYNC_DELETED => $agent->onSignalDbSyncDeleted($data, $source, $signalName),
+            match (true) {
+                $data instanceof DbSyncCreatedSignalData => $agent->onSignalDbSyncCreated(
+                    $data,
+                    $source,
+                    SignalConstants::DB_SYNC_CREATED,
+                ),
+                $data instanceof DbSyncUpdatedSignalData => $agent->onSignalDbSyncUpdated(
+                    $data,
+                    $source,
+                    SignalConstants::DB_SYNC_UPDATED,
+                ),
+                $data instanceof DbSyncDeletedSignalData => $agent->onSignalDbSyncDeleted(
+                    $data,
+                    $source,
+                    SignalConstants::DB_SYNC_DELETED,
+                ),
                 default => null,
             };
         }
@@ -574,31 +556,33 @@ abstract class WorkerManager extends BaseManager
      *
      * Each agent can filter by collectionKey/stateId in its onSignal* handler.
      *
-     * @param string $signalName RT sync signal name
-     * @param array<string, mixed> $signalData RT sync payload
+     * @param RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $data RT sync payload
      */
-    private function dispatchRtSyncToAgents(string $signalName, array $signalData): void
+    private function dispatchRtSyncToAgents(RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $data): void
     {
         $source = 'rt';
-        $data = match ($signalName) {
-            SignalConstants::RT_SYNC_CREATED => RtSyncCreatedSignalData::fromArray($signalData),
-            SignalConstants::RT_SYNC_UPDATED => RtSyncUpdatedSignalData::fromArray($signalData),
-            SignalConstants::RT_SYNC_DELETED => RtSyncDeletedSignalData::fromArray($signalData),
-            default => null,
-        };
-        if ($data === null) {
-            return;
-        }
 
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             if (!$agent instanceof AgentInterface) {
                 continue;
             }
             $this->setCurrentAgentId($agent->getId());
-            match ($signalName) {
-                SignalConstants::RT_SYNC_CREATED => $agent->onSignalRtSyncCreated($data, $source, $signalName),
-                SignalConstants::RT_SYNC_UPDATED => $agent->onSignalRtSyncUpdated($data, $source, $signalName),
-                SignalConstants::RT_SYNC_DELETED => $agent->onSignalRtSyncDeleted($data, $source, $signalName),
+            match (true) {
+                $data instanceof RtSyncCreatedSignalData => $agent->onSignalRtSyncCreated(
+                    $data,
+                    $source,
+                    SignalConstants::RT_SYNC_CREATED,
+                ),
+                $data instanceof RtSyncUpdatedSignalData => $agent->onSignalRtSyncUpdated(
+                    $data,
+                    $source,
+                    SignalConstants::RT_SYNC_UPDATED,
+                ),
+                $data instanceof RtSyncDeletedSignalData => $agent->onSignalRtSyncDeleted(
+                    $data,
+                    $source,
+                    SignalConstants::RT_SYNC_DELETED,
+                ),
                 default => null,
             };
         }
@@ -617,8 +601,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
-        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchRtSyncToAgents($data->signalData);
     }
 
     /**
@@ -632,8 +616,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
-        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchRtSyncToAgents($data->signalData);
     }
 
     /**
@@ -647,25 +631,44 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
-        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
+        $this->recordBrowserSourceChange($data->signalData);
+        $this->dispatchRtSyncToAgents($data->signalData);
+    }
+
+    /**
+     * Consume a DB sync self-broadcast marker before applying a daemon echo.
+     *
+     * The originating worker already recorded the local DB change for browser
+     * state when it sent the sync to the daemon. The echoed worker message
+     * must therefore neither re-apply nor re-emit the same fact.
+     *
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $signalData DB sync payload
+     * @return bool True when this worker should ignore the daemon echo
+     */
+    private function consumeIncomingDbSyncSelfBroadcast(
+        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $signalData,
+    ): bool {
+        if ($signalData->collectionKey === '' || $signalData->idString === '') {
+            return false;
+        }
+
+        return Hilos::$sr?->shouldSkipDbSyncApply($signalData->collectionKey, $signalData->idString) ?? false;
     }
 
     /**
      * Consume an RT sync self-broadcast marker before applying a daemon echo.
      *
-     * @param array<string, mixed> $signalData RT sync payload
+     * @param RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData RT sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingRtSyncSelfBroadcast(array $signalData): bool
-    {
-        $collectionKey = (string)($signalData['collectionKey'] ?? '');
-        $stateId = (string)($signalData['stateId'] ?? '');
-        if ($collectionKey === '' || $stateId === '') {
+    private function consumeIncomingRtSyncSelfBroadcast(
+        RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
+    ): bool {
+        if ($signalData->collectionKey === '' || $signalData->stateId === '') {
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipRtSyncApply($collectionKey, $stateId) ?? false;
+        return Hilos::$sr?->shouldSkipRtSyncApply($signalData->collectionKey, $signalData->stateId) ?? false;
     }
 
     /**
@@ -676,40 +679,46 @@ abstract class WorkerManager extends BaseManager
      * accepted. Incoming self-broadcast echoes are consumed before this method,
      * so one backend fact becomes one browser invalidation per worker.
      *
-     * @param string $signalType DB/RT sync signal type
-     * @param array<string, mixed> $signalData Sync payload
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
      */
-    private function recordBrowserSourceChange(string $signalType, array $signalData): void
-    {
+    private function recordBrowserSourceChange(
+        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
+    ): void {
         if (Hilos::$browser === null) {
             return;
         }
 
-        $change = match ($signalType) {
-            SignalTypeConstants::DB_SYNC_CREATED => (static function () use ($signalData): SourceChange {
-                $data = DbSyncCreatedSignalData::fromArray($signalData);
-                return SourceChange::dbCreated($data->collectionKey, $data->idString, $data->row);
-            })(),
-            SignalTypeConstants::DB_SYNC_UPDATED => (static function () use ($signalData): SourceChange {
-                $data = DbSyncUpdatedSignalData::fromArray($signalData);
-                return SourceChange::dbUpdated($data->collectionKey, $data->idString, $data->row);
-            })(),
-            SignalTypeConstants::DB_SYNC_DELETED => (static function () use ($signalData): SourceChange {
-                $data = DbSyncDeletedSignalData::fromArray($signalData);
-                return SourceChange::dbDeleted($data->collectionKey, $data->idString, $data->row);
-            })(),
-            SignalTypeConstants::RT_SYNC_CREATED => (static function () use ($signalData): SourceChange {
-                $data = RtSyncCreatedSignalData::fromArray($signalData);
-                return SourceChange::rtCreated($data->collectionKey, $data->stateId, $data->row);
-            })(),
-            SignalTypeConstants::RT_SYNC_UPDATED => (static function () use ($signalData): SourceChange {
-                $data = RtSyncUpdatedSignalData::fromArray($signalData);
-                return SourceChange::rtUpdated($data->collectionKey, $data->stateId, $data->row);
-            })(),
-            SignalTypeConstants::RT_SYNC_DELETED => (static function () use ($signalData): SourceChange {
-                $data = RtSyncDeletedSignalData::fromArray($signalData);
-                return SourceChange::rtDeleted($data->collectionKey, $data->stateId, $data->row);
-            })(),
+        $change = match (true) {
+            $signalData instanceof DbSyncCreatedSignalData => SourceChange::dbCreated(
+                $signalData->collectionKey,
+                $signalData->idString,
+                $signalData->row,
+            ),
+            $signalData instanceof DbSyncUpdatedSignalData => SourceChange::dbUpdated(
+                $signalData->collectionKey,
+                $signalData->idString,
+                $signalData->row,
+            ),
+            $signalData instanceof DbSyncDeletedSignalData => SourceChange::dbDeleted(
+                $signalData->collectionKey,
+                $signalData->idString,
+                $signalData->row,
+            ),
+            $signalData instanceof RtSyncCreatedSignalData => SourceChange::rtCreated(
+                $signalData->collectionKey,
+                $signalData->stateId,
+                $signalData->row,
+            ),
+            $signalData instanceof RtSyncUpdatedSignalData => SourceChange::rtUpdated(
+                $signalData->collectionKey,
+                $signalData->stateId,
+                $signalData->row,
+            ),
+            $signalData instanceof RtSyncDeletedSignalData => SourceChange::rtDeleted(
+                $signalData->collectionKey,
+                $signalData->stateId,
+                $signalData->row,
+            ),
             default => null,
         };
 
@@ -724,18 +733,18 @@ abstract class WorkerManager extends BaseManager
      * The daemon echo is intentionally consumed as a self-broadcast, so local
      * agents must see the sync when the worker first drains the queued signal.
      *
-     * @param string $signalType DB/RT sync signal type
-     * @param array<string, mixed> $signalData Sync payload
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
      */
-    private function dispatchSyncToLocalAgents(string $signalType, array $signalData): void
-    {
-        match ($signalType) {
-            SignalTypeConstants::DB_SYNC_CREATED,
-            SignalTypeConstants::DB_SYNC_UPDATED,
-            SignalTypeConstants::DB_SYNC_DELETED => $this->dispatchDbSyncToAgents($signalType, $signalData),
-            SignalTypeConstants::RT_SYNC_CREATED,
-            SignalTypeConstants::RT_SYNC_UPDATED,
-            SignalTypeConstants::RT_SYNC_DELETED => $this->dispatchRtSyncToAgents($signalType, $signalData),
+    private function dispatchSyncToLocalAgents(
+        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
+    ): void {
+        match (true) {
+            $signalData instanceof DbSyncCreatedSignalData,
+            $signalData instanceof DbSyncUpdatedSignalData,
+            $signalData instanceof DbSyncDeletedSignalData => $this->dispatchDbSyncToAgents($signalData),
+            $signalData instanceof RtSyncCreatedSignalData,
+            $signalData instanceof RtSyncUpdatedSignalData,
+            $signalData instanceof RtSyncDeletedSignalData => $this->dispatchRtSyncToAgents($signalData),
             default => null,
         };
     }
@@ -1371,27 +1380,35 @@ abstract class WorkerManager extends BaseManager
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $signalType = $signal->signalType->getType();
-            $signalName = $signal->signalName->getName();
-            $signalData = $signal->data->toArray();
 
             $json = json_encode($signal->toArray());
             Logger::debug("Signal going to transmit: {$json}");
 
-            // DB/RT sync: worker-level broadcast (daemon + all workers)
-            $syncDto = match ($signalType) {
-                SignalTypeConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($signalData),
-                SignalTypeConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($signalData),
-                SignalTypeConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($signalData),
-                SignalTypeConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($signalData),
-                SignalTypeConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($signalData),
-                SignalTypeConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($signalData),
+            $syncSignalData = match ($signalType) {
+                SignalTypeConstants::DB_SYNC_CREATED => self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
+                SignalTypeConstants::DB_SYNC_UPDATED => self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
+                SignalTypeConstants::DB_SYNC_DELETED => self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+                SignalTypeConstants::RT_SYNC_CREATED => self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
+                SignalTypeConstants::RT_SYNC_UPDATED => self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
+                SignalTypeConstants::RT_SYNC_DELETED => self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
                 default => null,
             };
 
-            if ($syncDto !== null) {
-                $this->recordBrowserSourceChange($signalType, $signalData);
-                $this->dispatchSyncToLocalAgents($signalType, $signalData);
-                $this->daemonClient->send($syncDto);
+            if ($syncSignalData !== null) {
+                $syncDto = match ($signalType) {
+                    SignalTypeConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($syncSignalData),
+                    SignalTypeConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($syncSignalData),
+                    SignalTypeConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($syncSignalData),
+                    SignalTypeConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($syncSignalData),
+                    SignalTypeConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($syncSignalData),
+                    SignalTypeConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($syncSignalData),
+                    default => null,
+                };
+                if ($syncDto !== null) {
+                    $this->recordBrowserSourceChange($syncSignalData);
+                    $this->dispatchSyncToLocalAgents($syncSignalData);
+                    $this->daemonClient->send($syncDto);
+                }
                 continue;
             }
 
@@ -1504,5 +1521,20 @@ abstract class WorkerManager extends BaseManager
     protected function onRestartSignal(): void
     {
         // Worker-specific restart logic (none needed)
+    }
+
+    /**
+     * @template T of SignalDataInterface
+     *
+     * @param class-string<T> $expectedClass
+     * @return T
+     */
+    private static function syncSignalData(SignalDataInterface $data, string $expectedClass): SignalDataInterface
+    {
+        if ($data instanceof $expectedClass) {
+            return $data;
+        }
+
+        return $expectedClass::fromArray($data->toArray());
     }
 }

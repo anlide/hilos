@@ -10,12 +10,6 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
-use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
-use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
-use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
-use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
-use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
@@ -318,12 +312,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerDbSyncCreated(WorkerDbSyncCreatedMessageDTO $dto): void
     {
-        $signalData = DbSyncCreatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_CREATED),
             signalName: new SignalName(SignalConstants::DB_SYNC_CREATED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 
@@ -334,12 +327,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerDbSyncUpdated(WorkerDbSyncUpdatedMessageDTO $dto): void
     {
-        $signalData = DbSyncUpdatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_UPDATED),
             signalName: new SignalName(SignalConstants::DB_SYNC_UPDATED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 
@@ -350,12 +342,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerDbSyncDeleted(WorkerDbSyncDeletedMessageDTO $dto): void
     {
-        $signalData = DbSyncDeletedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_DELETED),
             signalName: new SignalName(SignalConstants::DB_SYNC_DELETED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 
@@ -366,12 +357,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerRtSyncCreated(WorkerRtSyncCreatedMessageDTO $dto): void
     {
-        $signalData = RtSyncCreatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
             signalName: new SignalName(SignalConstants::RT_SYNC_CREATED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 
@@ -382,12 +372,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerRtSyncUpdated(WorkerRtSyncUpdatedMessageDTO $dto): void
     {
-        $signalData = RtSyncUpdatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
             signalName: new SignalName(SignalConstants::RT_SYNC_UPDATED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 
@@ -398,12 +387,11 @@ abstract class AgentManagerDaemon
      */
     public function handleWorkerRtSyncDeleted(WorkerRtSyncDeletedMessageDTO $dto): void
     {
-        $signalData = RtSyncDeletedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_DELETED),
             signalName: new SignalName(SignalConstants::RT_SYNC_DELETED),
-            signalData: $signalData,
+            signalData: $dto->signalData,
         );
     }
 }

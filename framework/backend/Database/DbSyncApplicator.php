@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -18,107 +21,132 @@ use Hilos\Hilos;
 final class DbSyncApplicator
 {
     /**
-     * Apply DB sync created: create Object from row and add to collection.
+     * Applies DB_SYNC_CREATED payload to Hilos::$db.
      *
-     * @param array<string, mixed> $signalData collectionKey, idString, row
+     * @param DbSyncCreatedSignalData $data Full created row payload from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
-    public static function applyCreated(array $signalData, bool $skipSelfBroadcastCheck = true): void
+    public static function applyCreated(DbSyncCreatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        $collectionKey = $signalData['collectionKey'] ?? '';
-        $idString = $signalData['idString'] ?? '';
-        $row = $signalData['row'] ?? [];
-
-        if ($collectionKey === '' || $idString === '' || $row === []) {
+        if (!self::shouldApplyDbSyncRow($data->collectionKey, $data->idString, $data->row, $skipSelfBroadcastCheck)) {
             return;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
-            return;
-        }
-
-        $collection = Hilos::$db->getObjectCollection($collectionKey);
+        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }
 
         $objectClass = $collection::OBJECT_CLASS;
-        if ($objectClass === '' || !is_subclass_of($objectClass, Object_::class)) {
+        if (!is_subclass_of($objectClass, Object_::class)) {
             return;
         }
 
         /** @var class-string<Entity> $entityClass */
         $entityClass = $objectClass::ENTITY_CLASS;
-        if ($entityClass === '' || !is_subclass_of($entityClass, Entity::class)) {
+        if (!is_subclass_of($entityClass, Entity::class)) {
             return;
         }
 
-        if (isset($collection[$idString])) {
+        if (isset($collection[$data->idString])) {
             return;
         }
 
-        $entity = $entityClass::fromRow($row);
+        $entity = $entityClass::fromRow($data->row);
         $object = $objectClass::fromEntity($entity);
-        $collection[$idString] = $object;
+        $collection[$data->idString] = $object;
     }
 
     /**
-     * Apply DB sync updated: find Object by idString, merge diff into wrapped Entity.
+     * Applies DB_SYNC_UPDATED payload by merging diff columns into the in-memory Object.
+     *
      * Row keys are entity column names (same as DB_SYNC_CREATED / fromRow).
      *
-     * @param array<string, mixed> $signalData collectionKey, idString, row (diff)
+     * @param DbSyncUpdatedSignalData $data Diff payload from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
-    public static function applyUpdated(array $signalData, bool $skipSelfBroadcastCheck = true): void
+    public static function applyUpdated(DbSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        $collectionKey = $signalData['collectionKey'] ?? '';
-        $idString = $signalData['idString'] ?? '';
-        $row = $signalData['row'] ?? [];
-
-        if ($collectionKey === '' || $idString === '' || $row === []) {
+        if (!self::shouldApplyDbSyncRow($data->collectionKey, $data->idString, $data->row, $skipSelfBroadcastCheck)) {
             return;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
-            return;
-        }
-
-        $collection = Hilos::$db->getObjectCollection($collectionKey);
+        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }
 
-        $object = $collection[$idString] ?? null;
+        $object = $collection[$data->idString] ?? null;
         if (!$object instanceof Object_) {
             return;
         }
 
-        $object->applyDbSyncEntityUpdate($row);
+        $object->applyDbSyncEntityUpdate($data->row);
     }
 
     /**
-     * Apply DB sync deleted: remove Object by idString from collection.
+     * Applies DB_SYNC_DELETED payload by removing Object from its collection.
      *
-     * @param array<string, mixed> $signalData collectionKey, idString
+     * @param DbSyncDeletedSignalData $data Deleted row identity from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
-    public static function applyDeleted(array $signalData, bool $skipSelfBroadcastCheck = true): void
+    public static function applyDeleted(DbSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        $collectionKey = $signalData['collectionKey'] ?? '';
-        $idString = $signalData['idString'] ?? '';
-
-        if ($collectionKey === '' || $idString === '') {
+        if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $skipSelfBroadcastCheck)) {
             return;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
-            return;
-        }
-
-        $collection = Hilos::$db->getObjectCollection($collectionKey);
+        $collection = Hilos::$db->getObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
             return;
         }
 
-        if (isset($collection[$idString])) {
-            unset($collection[$idString]);
+        if (isset($collection[$data->idString])) {
+            unset($collection[$data->idString]);
         }
+    }
+
+    /**
+     * Returns false when row payload is invalid or this process should skip applying the sync.
+     *
+     * @param string $collectionKey DB collection key from sync payload
+     * @param string $idString Target object id from sync payload
+     * @param array<string, mixed> $row Full row or diff row
+     * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
+     */
+    private static function shouldApplyDbSyncRow(
+        string $collectionKey,
+        string $idString,
+        array $row,
+        bool $skipSelfBroadcastCheck,
+    ): bool {
+        if ($collectionKey === '' || $idString === '' || $row === []) {
+            return false;
+        }
+
+        return self::shouldApplyDbSync($collectionKey, $idString, $skipSelfBroadcastCheck);
+    }
+
+    /**
+     * Returns false when identity is invalid or self-broadcast guard says to skip applying.
+     *
+     * @param string $collectionKey DB collection key from sync payload
+     * @param string $idString Target object id from sync payload
+     * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
+     */
+    private static function shouldApplyDbSync(
+        string $collectionKey,
+        string $idString,
+        bool $skipSelfBroadcastCheck,
+    ): bool {
+        if ($collectionKey === '' || $idString === '') {
+            return false;
+        }
+
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
+            return false;
+        }
+
+        return true;
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -13,6 +12,12 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -38,22 +43,22 @@ final class WorkerManagerBrowserContextTest extends TestCase
         $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
 
         $recordSourceChange = \Closure::bind(
-            static function (WorkerManager $manager, string $signalType, array $signalData): void {
-                $manager->recordBrowserSourceChange($signalType, $signalData);
+            static function (WorkerManager $manager, DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData): void {
+                $manager->recordBrowserSourceChange($signalData);
             },
             null,
             WorkerManager::class,
         );
 
         foreach ([
-            [SignalTypeConstants::DB_SYNC_CREATED, ['collectionKey' => 'users', 'idString' => '1', 'row' => ['name' => 'Ada']]],
-            [SignalTypeConstants::DB_SYNC_UPDATED, ['collectionKey' => 'users', 'idString' => '1', 'row' => ['name' => 'Grace']]],
-            [SignalTypeConstants::DB_SYNC_DELETED, ['collectionKey' => 'users', 'idString' => '1', 'row' => ['name' => 'Grace']]],
-            [SignalTypeConstants::RT_SYNC_CREATED, ['collectionKey' => 'connections', 'stateId' => 'ak-1', 'row' => ['userId' => 1]]],
-            [SignalTypeConstants::RT_SYNC_UPDATED, ['collectionKey' => 'connections', 'stateId' => 'ak-1', 'row' => ['presence' => 'online']]],
-            [SignalTypeConstants::RT_SYNC_DELETED, ['collectionKey' => 'connections', 'stateId' => 'ak-1', 'row' => ['presence' => 'online']]],
-        ] as [$signalType, $signalData]) {
-            $recordSourceChange($manager, $signalType, $signalData);
+            new DbSyncCreatedSignalData('users', '1', ['name' => 'Ada']),
+            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace']),
+            new DbSyncDeletedSignalData('users', '1', ['name' => 'Grace']),
+            new RtSyncCreatedSignalData('connections', 'ak-1', ['userId' => 1]),
+            new RtSyncUpdatedSignalData('connections', 'ak-1', ['presence' => 'online']),
+            new RtSyncDeletedSignalData('connections', 'ak-1', ['presence' => 'online']),
+        ] as $signalData) {
+            $recordSourceChange($manager, $signalData);
         }
 
         $this->assertTrue($browser->hasChanges());
