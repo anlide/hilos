@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Database\Context;
 
 use Hilos\Core\Table\Actions\TableItemActions;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
@@ -146,6 +148,8 @@ abstract class DbContext
      * Convert all collections to array.
      *
      * @return array<string, array<int|string, array<string, mixed>>> Collection name => items array
+     * @throws LogicException When a represented collection class is misconfigured
+     * @throws InvalidArgumentException When an object type does not match its collection
      */
     public function toArray(): array
     {

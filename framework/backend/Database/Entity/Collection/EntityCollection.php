@@ -3,6 +3,8 @@
 namespace Hilos\Database\Entity\Collection;
 
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\DatabaseException;
+use Hilos\Core\Exception\LogicException;
 use ArrayAccess;
 use Countable;
 use Iterator;
@@ -52,13 +54,14 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      * Initialize collection with all entities from database.
      *
      * @return static collection with all entities loaded
-     * @throws \LogicException If ENTITY_CLASS is not defined
+     * @throws LogicException If ENTITY_CLASS is not defined
+     * @throws DatabaseException When SQL execution fails
      */
     public static function initFullDB(): static
     {
         $entityClass = static::ENTITY_CLASS;
         if ($entityClass === '') {
-            throw new \LogicException('initFullDB must be called on a specific collection class');
+            throw new LogicException('initFullDB must be called on a specific collection class');
         }
         return static::fromEntityCollection($entityClass::getAll());
     }

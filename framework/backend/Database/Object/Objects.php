@@ -12,9 +12,9 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
-use Hilos\Database\SqlParamCollection;
 use Iterator;
 
 /**
@@ -133,6 +133,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param int|string|null $key Object key (usually primary key), or null for a missing optional relation key
      * @return ?T Object instance or null if not found
+     * @throws DatabaseException When SQL execution fails
      */
     protected function lazyLoadObject(int|string|null $key): ?Object_
     {
@@ -149,6 +150,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Lazy load total count from database.
      *
      * @return int Row count for collection
+     * @throws DatabaseException When SQL execution fails
      */
     protected function lazyLoadCount(): int
     {
@@ -168,6 +170,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Load all objects from database (for batch strategy)
      * Only loads objects that aren't already in memory.
+     *
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
     protected function lazyLoadAll(): void
     {
@@ -186,6 +191,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Preload all objects (explicit full load)
+     *
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
     public function preloadAll(): void
     {
@@ -314,6 +322,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * For batch strategy, loads all objects on first iteration.
      *
      * @return ?T Current Object_ or null if position invalid
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When loading the full object collection from the database fails
      */
     public function current(): ?Object_
     {
@@ -438,6 +448,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param mixed $offset Array key, or null for a missing optional relation key
      * @return ?T Object instance or null if not found
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function offsetGet($offset): ?Object_
     {
@@ -473,6 +485,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Supports lazy loading count from database.
      *
      * @return int Number of objects in collection
+     * @throws DatabaseException When SQL execution fails
      */
     public function count(): int
     {
@@ -592,6 +605,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param int|string|null $key Object key (id or string), or null for a missing optional relation key
      * @return ?T Object or null if not found
+     * @throws LogicException When entity collection class is not configured
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function get(int|string|null $key): ?Object_
     {

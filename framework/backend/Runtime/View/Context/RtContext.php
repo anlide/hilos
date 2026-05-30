@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Context;
 
 use Closure;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
@@ -253,7 +254,8 @@ abstract class RtContext
     /**
      * Convert all collections to array.
      *
-     * @return array<string, array<string, array<string, mixed>>> Collection name => items array
+     * @return array<string, array<string|int, array<string, mixed>>> Collection name => items array
+     * @throws RtActionsStateCollectionNullException When a represented runtime collection has no backing state collection
      */
     public function toArray(): array
     {
@@ -266,7 +268,8 @@ abstract class RtContext
     /**
      * Debug info for var_dump (returns all collections as array).
      *
-     * @return array<string, array<string, array<string, mixed>>> Collection name => items array
+     * @return array<string, array<string|int, array<string, mixed>>> Collection name => items array
+     * @throws RtActionsStateCollectionNullException When a represented runtime collection has no backing state collection
      */
     public function __debugInfo(): array
     {

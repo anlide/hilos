@@ -251,6 +251,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param Object_ $object Object instance (reference)
      * @return T DbItem instance for the given Object
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     protected function createDbItem(Object_ &$object): DbItem
     {
@@ -315,6 +317,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param int|string|null $key Primary key ID, or null for a missing optional relation key
      * @return ?T DbItem instance for object at key, or null if not found (e.g. deleted)
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     protected function getItemForKey(int|string|null $key): ?DbItem
     {
@@ -331,7 +336,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($objectCollection === null) {
             return null;
         }
-        $object = $objectCollection[$key] ?? null;
+        $object = $objectCollection->offsetGet($key);
         if ($object === null) {
             return null;
         }
@@ -341,7 +346,31 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
+     * Get or create DbItem for an already-loaded Object row.
+     *
+     * @param int|string $key Primary key ID
+     * @param Object_ $object Loaded object row
+     * @return T DbItem instance for the object
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    protected function getOrCreateItemForLoadedObject(int|string $key, Object_ &$object): DbItem
+    {
+        if (isset($this->items[$key])) {
+            return $this->items[$key];
+        }
+
+        $item = $this->createDbItem($object);
+        $this->items[$key] = $item;
+
+        return $item;
+    }
+
+    /**
      * Convert to array.
+     *
+     * Serializes already-loaded rows only: uses getOrCreateItemForLoadedObject()
+     * with Object rows from in-memory iteration, so lazy-load SQL is not triggered.
      *
      * @param bool $withId Include ID fields
      * @param bool $idAsIndex Use ID as array index
@@ -349,6 +378,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken)
      * @return array<int|string, array<string, mixed>> Items keyed by ID or sequential
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
@@ -366,14 +397,12 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             $objectCollection = $this->getObjectCollection();
             if ($objectCollection !== null) {
                 foreach ($objectCollection as $key => $object) {
-                    $item = $this->getItemForKey($key);
-                    if ($item !== null) {
-                        $data = $item->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
-                        if ($idAsIndex) {
-                            $result[$key] = $data;
-                        } else {
-                            $result[] = $data;
-                        }
+                    $item = $this->getOrCreateItemForLoadedObject($key, $object);
+                    $data = $item->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
+                    if ($idAsIndex) {
+                        $result[$key] = $data;
+                    } else {
+                        $result[] = $data;
                     }
                 }
             }
@@ -593,6 +622,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset Primary key ID, or null for a missing optional relation key
      * @return ?T Item or null
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function offsetGet(mixed $offset): ?DbItem
     {
@@ -700,6 +732,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Rewind iterator to first element.
+     *
+     * Rebuilds DbItem cache from in-memory Object rows via getOrCreateItemForLoadedObject().
+     *
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function rewind(): void
     {
@@ -711,7 +748,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($objectCollection !== null) {
             $this->items = [];
             foreach ($objectCollection as $key => $object) {
-                $this->items[$key] = $this->createDbItem($object);
+                $this->items[$key] = $this->getOrCreateItemForLoadedObject($key, $object);
                 unset($object);
             }
             $objectCollection->rewind();
@@ -733,6 +770,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Debug info for var_dump (returns collection as array).
      *
      * @return array<int|string, array<string, mixed>> Collection data
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function __debugInfo(): array
     {
