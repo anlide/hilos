@@ -17,7 +17,7 @@ final class AgentSignalRouteRegistry
     /**
      * Returns agent-owned signal routes declared by agent classes.
      *
-     * @param array<mixed, mixed> $agents Agent registry
+     * @param array $agents Agent registry
      * @return array<string, string> Agent type keyed by signal name
      */
     public static function routes(array $agents): array
@@ -52,7 +52,7 @@ final class AgentSignalRouteRegistry
     /**
      * Returns agent-owned signal inner payload DTO classes.
      *
-     * @param array<mixed, mixed> $agents Agent registry
+     * @param array $agents Agent registry
      * @return array<string, class-string<SignalDataInterface>> DTO class keyed by signal name
      */
     public static function dtoRoutes(array $agents): array
@@ -87,7 +87,7 @@ final class AgentSignalRouteRegistry
     /**
      * Returns index field names for indexed agent signal routes.
      *
-     * @param array<mixed, mixed> $agents Agent registry
+     * @param array $agents Agent registry
      * @return array<string, string> Payload field name keyed by signal name
      */
     public static function indexFields(array $agents): array

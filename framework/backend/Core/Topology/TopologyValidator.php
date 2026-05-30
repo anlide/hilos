@@ -71,7 +71,7 @@ final class TopologyValidator
      * @param class-string<Hilos> $hilosClass Project facade class
      * @param string $constant Constant name
      * @param list<string> $errors Validation error accumulator
-     * @return array<mixed, mixed> Constant value, or an empty array when invalid
+     * @return array Constant value, or an empty array when invalid
      */
     private function constantArray(string $hilosClass, string $constant, array &$errors): array
     {
@@ -92,7 +92,7 @@ final class TopologyValidator
     /**
      * Validates page registry keys and page classes.
      *
-     * @param array<mixed, mixed> $pages Page registry
+     * @param array $pages Page registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePages(array $pages, array &$errors): void
@@ -127,7 +127,7 @@ final class TopologyValidator
     /**
      * Validates group registry keys and group classes.
      *
-     * @param array<mixed, mixed> $groups Group registry
+     * @param array $groups Group registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateGroups(array $groups, array &$errors): void
@@ -158,8 +158,8 @@ final class TopologyValidator
     /**
      * Validates computed group route declarations against registered groups.
      *
-     * @param array<mixed, mixed> $groups Group registry
-     * @param array<mixed, mixed> $groupRoutes Computed group route registry
+     * @param array $groups Group registry
+     * @param array $groupRoutes Computed group route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateGroupRoutes(array $groups, array $groupRoutes, array &$errors): void
@@ -199,7 +199,7 @@ final class TopologyValidator
     /**
      * Validates agent registry keys and agent classes.
      *
-     * @param array<mixed, mixed> $agents Agent registry
+     * @param array $agents Agent registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateAgents(array $agents, array &$errors): void
@@ -278,7 +278,7 @@ final class TopologyValidator
     /**
      * Validates registered table classes.
      *
-     * @param array<mixed, mixed> $tables Registered table registry
+     * @param array $tables Registered table registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateRegisteredTables(array $tables, array &$errors): void
@@ -302,7 +302,7 @@ final class TopologyValidator
     /**
      * Validates browser-only table registry keys and config classes.
      *
-     * @param array<mixed, mixed> $browserTables Browser-only table registry
+     * @param array $browserTables Browser-only table registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateBrowserTables(array $browserTables, array &$errors): void
@@ -346,8 +346,8 @@ final class TopologyValidator
     /**
      * Validates computed page route declarations against registered pages.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $pageRoutes Computed page route registry
+     * @param array $pages Page registry
+     * @param array $pageRoutes Computed page route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageRoutes(array $pages, array $pageRoutes, array &$errors): void
@@ -387,8 +387,8 @@ final class TopologyValidator
     /**
      * Validates page-owned WebSocket action route declarations.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $pageActionRoutes Computed action route registry
+     * @param array $pages Page registry
+     * @param array $pageActionRoutes Computed action route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageActionRoutes(array $pages, array $pageActionRoutes, array &$errors): void
@@ -454,8 +454,8 @@ final class TopologyValidator
     /**
      * Validates page-owned WebSocket action payload DTO route declarations.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $actionDtoRoutes Computed action DTO route registry
+     * @param array $pages Page registry
+     * @param array $actionDtoRoutes Computed action DTO route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateActionDtoRoutes(array $pages, array $actionDtoRoutes, array &$errors): void
@@ -496,8 +496,8 @@ final class TopologyValidator
     /**
      * Validates page-owned non-action signal route declarations.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $pageSignalRoutes Computed page signal route registry
+     * @param array $pages Page registry
+     * @param array $pageSignalRoutes Computed page signal route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageSignalRoutes(array $pages, array $pageSignalRoutes, array &$errors): void
@@ -621,8 +621,8 @@ final class TopologyValidator
     /**
      * Validates page-owned named signal inner payload DTO route declarations.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $pageSignalDtoRoutes Computed page signal DTO route registry
+     * @param array $pages Page registry
+     * @param array $pageSignalDtoRoutes Computed page signal DTO route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageSignalDtoRoutes(array $pages, array $pageSignalDtoRoutes, array &$errors): void
@@ -664,9 +664,9 @@ final class TopologyValidator
     /**
      * Validates agent-owned agent signal route declarations.
      *
-     * @param array<mixed, mixed> $agents Agent registry
-     * @param array<mixed, mixed> $agentSignalRoutes Computed agent signal route registry
-     * @param array<mixed, mixed> $pageSignalAgentRoutes Computed page signal owner agent routes
+     * @param array $agents Agent registry
+     * @param array $agentSignalRoutes Computed agent signal route registry
+     * @param array $pageSignalAgentRoutes Computed page signal owner agent routes
      * @param list<string> $errors Validation error accumulator
      */
     private function validateAgentSignalRoutes(
@@ -807,8 +807,8 @@ final class TopologyValidator
     /**
      * Validates agent-owned signal inner payload DTO route declarations.
      *
-     * @param array<mixed, mixed> $agents Agent registry
-     * @param array<mixed, mixed> $agentSignalDtoRoutes Computed agent signal DTO route registry
+     * @param array $agents Agent registry
+     * @param array $agentSignalDtoRoutes Computed agent signal DTO route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validateAgentSignalDtoRoutes(array $agents, array $agentSignalDtoRoutes, array &$errors): void
@@ -836,10 +836,10 @@ final class TopologyValidator
     /**
      * Validates page-table bindings against registered pages and tables.
      *
-     * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $tables Registered table registry
-     * @param array<mixed, mixed> $browserTables Browser-only table registry
-     * @param array<mixed, mixed> $pageTables Page-table binding registry
+     * @param array $pages Page registry
+     * @param array $tables Registered table registry
+     * @param array $browserTables Browser-only table registry
+     * @param array $pageTables Page-table binding registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageTables(

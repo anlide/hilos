@@ -15,7 +15,7 @@ final class PageSignalRouteRegistry
     /**
      * Returns page-owned non-action signal routes declared by page classes.
      *
-     * @param array<mixed, mixed> $pages Page registry
+     * @param array $pages Page registry
      * @return array<string, string|array<string, string>> Page route keyed by signal type, then signal name
      */
     public static function routes(array $pages): array
@@ -63,7 +63,7 @@ final class PageSignalRouteRegistry
     /**
      * Returns page-owned named signal inner payload DTO classes.
      *
-     * @param array<mixed, mixed> $pages Page registry
+     * @param array $pages Page registry
      * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal type, then signal name
      */
     public static function dtoRoutes(array $pages): array
