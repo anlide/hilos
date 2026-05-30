@@ -18,7 +18,7 @@ use mysqli_result;
  */
 class Database
 {
-    /** @var array<int, array{host: string, user: string, password: string, database: string, port: int, charset: string, socket: ?string, reconnect_attempts: int, reconnect_delay: int}> */
+    /** @var array<int, DatabaseConnectionConfig> */
     private static array $configurations = [];
 
     /** @var array<int, ?mysqli> */
@@ -97,17 +97,17 @@ class Database
         int $reconnectAttempts = DatabaseConnectionPolicy::DEFAULT_RECONNECT_ATTEMPTS,
         int $reconnectDelay = DatabaseConnectionPolicy::DEFAULT_RECONNECT_DELAY_MS
     ): void {
-        self::$configurations[$index] = [
-            'host' => $host,
-            'user' => $user,
-            'password' => $password,
-            'database' => $database,
-            'port' => $port,
-            'charset' => $charset,
-            'socket' => $socket,
-            'reconnect_attempts' => $reconnectAttempts,
-            'reconnect_delay' => $reconnectDelay,
-        ];
+        self::$configurations[$index] = new DatabaseConnectionConfig(
+            $host,
+            $user,
+            $password,
+            $database,
+            $port,
+            $charset,
+            $socket,
+            $reconnectAttempts,
+            $reconnectDelay,
+        );
         self::$connections[$index] = null;
         self::$resultSets[$index] = null;
     }
@@ -162,12 +162,12 @@ class Database
                 mysqli_report(MYSQLI_REPORT_OFF);
 
                 $mysqli = @mysqli_connect(
-                    $config['host'],
-                    $config['user'],
-                    $config['password'],
-                    $config['database'],
-                    $config['port'],
-                    $config['socket'],
+                    $config->host,
+                    $config->user,
+                    $config->password,
+                    $config->database,
+                    $config->port,
+                    $config->socket,
                 );
 
                 if ($mysqli === false) {
@@ -184,7 +184,7 @@ class Database
                 }
 
                 // Set charset
-                if (!@mysqli_set_charset($mysqli, $config['charset'])) {
+                if (!@mysqli_set_charset($mysqli, $config->charset)) {
                     $errno = mysqli_errno($mysqli);
                     $error = mysqli_error($mysqli);
                     mysqli_close($mysqli);
@@ -292,7 +292,7 @@ class Database
         }
 
         $attempts = 0;
-        $maxAttempts = $tryReconnect ? $config['reconnect_attempts'] : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
+        $maxAttempts = $tryReconnect ? $config->reconnectAttempts : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
 
         while ($attempts < $maxAttempts) {
             $attempts++;
@@ -337,7 +337,7 @@ class Database
                 // Check if we should try to reconnect
                 if ($tryReconnect && MysqlClientErrorCode::isConnectionLost($errno) && $attempts < $maxAttempts) {
                     // Use minimum delay (at least 1 second) to prevent rapid retry attempts
-                    $delayMs = max($config['reconnect_delay'], DatabaseConnectionPolicy::RECONNECT_DELAY_MIN_MS);
+                    $delayMs = max($config->reconnectDelay, DatabaseConnectionPolicy::RECONNECT_DELAY_MIN_MS);
                     // Ensure total retry time doesn't exceed maximum
                     $totalTimeMs = $attempts * $delayMs;
                     if ($totalTimeMs >= DatabaseConnectionPolicy::RECONNECT_TIMEOUT_MAX_MS) {
