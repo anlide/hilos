@@ -43,8 +43,11 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 5. After changing a PHP method, update the affected PHPDoc so it describes the
    current local contract: what the method sends, mutates, routes, validates,
    returns, throws, or deliberately ignores.
-6. Always add PHPDoc when creating or changing a method; keep it meaningful, not
-   boilerplate (see `docs/agents/code-style/phpdoc.md` rule 6).
+6. Always add PHPDoc when creating or changing a public/protected method; include
+   applicable `@param`, `@return` (non-void), and `@throws` tags, each with a very
+   short comment after the type. Omit the free-text summary only when it would
+   repeat the signature or tag comments (see `docs/agents/code-style/phpdoc.md`
+   rules 3-6).
 7. Keep action routing and handler code aligned with the page action handler guide.
 8. Keep named signal routing aligned with the signal handler guide.
 9. Use typed parameters, DTOs, value objects, or typed collections for internal

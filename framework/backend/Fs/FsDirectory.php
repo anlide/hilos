@@ -7,35 +7,37 @@ namespace Hilos\Fs;
 use ArrayAccess;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryCreateException;
-use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileMoveException;
+use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Fs\Exception\FileWriteException;
 use LogicException;
 
 /**
- * Named file directory registered in {@see FsContext} (e.g. quarantine, published).
+ * Named file directory registered in FsContext (e.g. quarantine, published).
  *
  * @implements ArrayAccess<string, FsFile>
  */
-final class FsDirectory implements ArrayAccess
+final readonly class FsDirectory implements ArrayAccess
 {
     /**
-     * @param FsContext $context Owning FS context (used by {@see FsFile::move()})
+     * @param FsContext $context Owning FS context for cross-directory file operations
      * @param string $name Logical directory name as registered in the context
      * @param string $path Absolute filesystem path
      */
     public function __construct(
-        private readonly FsContext $context,
-        private readonly string $name,
-        private readonly string $path,
+        private FsContext $context,
+        private string $name,
+        private string $path,
     ) {
     }
 
     /**
-     * Create a new empty file in this directory.
+     * @param string $filename Target basename inside this directory
+     * @return FsFile Created file handle
      *
-     * @throws FileWriteException If the file cannot be created
      * @throws DirectoryCreateException If the directory cannot be created
+     * @throws FileWriteException If the file cannot be created
      */
     public function create(string $filename): FsFile
     {
@@ -50,13 +52,14 @@ final class FsDirectory implements ArrayAccess
     }
 
     /**
-     * Move a tmp file into this directory under the given name.
-     *
      * @param string $filename Target basename inside this directory
      * @param string $tmpIndex Hex index of the source tmp file
-     * @throws FileNotFoundException If the tmp source file does not exist
-     * @throws FileMoveException If the rename operation fails
+     * @return FsFile Created file handle
+     *
      * @throws DirectoryCreateException If the directory cannot be created
+     * @throws DirectoryNotFoundException If the tmp directory is not configured
+     * @throws FileMoveException If the rename operation fails
+     * @throws FileNotFoundException If the tmp source file does not exist
      */
     public function createFromTmp(string $filename, string $tmpIndex): FsFile
     {
@@ -96,6 +99,8 @@ final class FsDirectory implements ArrayAccess
 
     /**
      * Total size of all files in the directory (non-recursive).
+     *
+     * @return int Total size in bytes
      */
     public function size(): int
     {
@@ -126,16 +131,25 @@ final class FsDirectory implements ArrayAccess
         }
     }
 
+    /**
+     * @return FsContext Owning FS context
+     */
     public function getContext(): FsContext
     {
         return $this->context;
     }
 
+    /**
+     * @return string Logical directory name
+     */
     public function getName(): string
     {
         return $this->name;
     }
 
+    /**
+     * @return string Absolute filesystem path
+     */
     public function getPath(): string
     {
         return $this->path;
@@ -145,6 +159,7 @@ final class FsDirectory implements ArrayAccess
 
     /**
      * @param string $offset Filename inside this directory
+     * @return bool Whether the filename exists as a regular file
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -153,17 +168,29 @@ final class FsDirectory implements ArrayAccess
 
     /**
      * @param string $offset Filename inside this directory
+     * @return FsFile File handle without existence check
      */
     public function offsetGet(mixed $offset): FsFile
     {
         return new FsFile($this, (string)$offset);
     }
 
+    /**
+     * @param mixed $offset ArrayAccess offset
+     * @param mixed $value Ignored write value
+     *
+     * @throws LogicException Always; use create() or createFromTmp() instead
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         throw new LogicException('FsDirectory is read-only via ArrayAccess; use create() or createFromTmp()');
     }
 
+    /**
+     * @param mixed $offset ArrayAccess offset
+     *
+     * @throws LogicException Always; use FsFile::unlink() instead
+     */
     public function offsetUnset(mixed $offset): void
     {
         throw new LogicException('FsDirectory is read-only via ArrayAccess; use $file->unlink()');

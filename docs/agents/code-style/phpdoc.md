@@ -7,42 +7,49 @@ Read this when writing or changing PHPDoc in project PHP code.
 1. Do not use `{@inheritDoc}`, `@inheritDoc`, or `@inheritdoc` in project code.
    Overrides must have their own PHPDoc that describes the local behavior.
    Vendor code is outside this rule.
-2. For overridden public/protected methods, restate the meaningful local
-   contract: what the method sends, mutates, routes, validates, or deliberately
-   ignores. Do not leave the reader to jump to a parent class for page-specific
-   behavior.
-   Include meaningful `@return` tags for contract methods even when the native
-   return type is explicit, such as runtime collection key and item id methods.
-3. Keep the free-text PHPDoc body compact. Prefer a one-line summary. Add
-   extra description only when it explains a non-obvious local contract, side
+2. Every public and protected method must have a PHPDoc block when the method is
+   created or changed. Private methods need PHPDoc when they expose a local
+   contract that callers inside the class should rely on.
+3. Mandatory tags on every applicable method docblock:
+   - `@param` for each parameter when the method has parameters
+   - `@return` for each non-void method; omit for `void` methods and for ordinary
+     constructors
+   - `@throws` for each exception the method throws directly or propagates without
+     catching or converting
+   Every `@param`, `@return`, and `@throws` line must include a very short comment
+   after the type. Repeating the native return type in `@return` is intentional
+   and required for consistency.
+4. The free-text summary is optional. Omit it when it would only repeat the method
+   name, parameter names, native types, return type, or the short tag comments.
+   Keep a compact summary only when it explains a non-obvious local contract, side
    effect, routing decision, validation rule, deliberate ignore, or
-   caller-visible error behavior. As a rule of thumb, keep the description body
-   within 1-3 lines. Do not restate the method body step by step.
-4. Separate the description body from `@param`, `@return`, `@throws`, and other
-   tags with one blank PHPDoc line. Do not place tags directly after the summary
-   or details text.
-5. Keep `@param` entries specific to the local meaning of the argument. Add
-   `@throws` for exceptions the caller or caller-facing error path should know
-   about.
-6. Avoid empty PHPDoc. Always add PHPDoc when creating or changing a method.
-   A boilerplate docblock merely repeats parameter names, types, and the return
-   type without explaining any local contract; write a compact meaningful
-   summary instead of omitting the docblock or restating the signature.
-7. Avoid `{@see ...}` in normal prose. Use it only when the docblock needs to
+   caller-visible behavior that tags do not already express. As a rule of thumb,
+   keep the summary within 1-3 lines. Do not restate the method body step by step.
+5. Separate the free-text summary from `@param`, `@return`, `@throws`, and other
+   tags with one blank PHPDoc line. When there is no summary, start the tag block
+   immediately after the opening `/**`.
+6. Keep tag comments compact: a few words for `@param` and `@return`, and a short
+   caller-facing reason for `@throws`. Do not leave bare `@param Type $name`,
+   `@return Type`, or `@throws Exception` lines without a comment.
+7. For overridden public/protected methods, restate the meaningful local
+   contract in the summary and/or tags: what the method sends, mutates, routes,
+   validates, or deliberately ignores. Do not leave the reader to jump to a
+   parent class for page-specific behavior.
+8. Avoid `{@see ...}` in normal prose. Use it only when the docblock needs to
    point to a contract symbol that is not already visible in the method
    signature or method body, or when the target lives outside the local code path
    being documented. Do not wrap constants, DTOs, methods, or properties in
    `{@see ...}` just because they are mentioned by the code below.
-8. In PHPDoc `{@see ...}` references, import the class with `use` and reference
+9. In PHPDoc `{@see ...}` references, import the class with `use` and reference
    the short class name or alias:
    `{@see UserActions::rename}`, not
    `{@see \Demo\Chat\Database\Actions\Item\UserActions::rename}`.
-9. If two imported names conflict, alias the import and use the alias in
-   PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
-10. Prefer `self::`, `static::`, or a short imported class name for links inside
+10. If two imported names conflict, alias the import and use the alias in
+    PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
+11. Prefer `self::`, `static::`, or a short imported class name for links inside
     the current namespace. Do not use leading-backslash fully qualified names in
     docblocks unless there is no importable symbol.
-11. PHPDoc type references must use imported class names too. For
+12. PHPDoc type references must use imported class names too. For
     `@property-read`, `@method`, `@param`, `@return`, `@var`, and `@throws`,
     add a `use` import and reference the short class name or alias instead of
     writing a leading-backslash fully qualified class name in the docblock.
@@ -106,7 +113,7 @@ documenting non-obvious error contracts.
 
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee
-documents it, whether the caller can act on it, and whether the method summary
+documents it, whether the caller can act on it, and whether any kept summary
 still describes the local behavior.
 
 ## Example
@@ -115,13 +122,27 @@ still describes the local behavior.
 use Hilos\Core\Exception\ValidationException;
 
 /**
- * Routes user-detail actions to their page handlers.
- *
  * @param string $acceptKey WebSocket accept key for the client
  * @param string $action Action name from the WebSocket envelope
  * @param ActionPayloadDTO $dto Parsed action payload
  */
 public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+{
+}
+
+/**
+ * @return FsContext Owning FS context
+ */
+public function getContext(): FsContext
+{
+}
+
+/**
+ * Delete the file (no-op when already absent).
+ *
+ * @throws FileDeleteException If the file exists but cannot be removed
+ */
+public function unlink(): void
 {
 }
 

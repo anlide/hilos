@@ -30,8 +30,10 @@ catalog for small code-style rules.
   layers.
 - Use typed parameters, DTOs, value objects, or typed collections for internal
   backend API. Keep unstructured arrays at system boundaries.
-- Keep comments and PHPDoc contractual; remove boilerplate that repeats the
-  signature.
+- Keep comments and PHPDoc contractual. Every public/protected method docblock
+  must include applicable `@param`, `@return` (non-void), and `@throws` tags,
+  each with a very short comment after the type. Omit the free-text summary when
+  it would only repeat the signature or tag comments.
 
 ## Planned Rule Areas
 

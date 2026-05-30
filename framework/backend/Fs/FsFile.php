@@ -6,6 +6,8 @@ namespace Hilos\Fs;
 
 use finfo;
 use Hilos\Constants\HttpConstants;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
@@ -13,27 +15,27 @@ use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 
 /**
- * Handle for a single file inside a named {@see FsDirectory}.
+ * Handle for a single file inside a named FsDirectory.
  *
  * Lightweight value object — no existence check on construction.
  */
-final class FsFile
+final readonly class FsFile
 {
-    private readonly string $path;
+    private string $path;
 
     /**
      * @param FsDirectory $directory Owning named directory
      * @param string $filename Basename inside the directory
      */
     public function __construct(
-        private readonly FsDirectory $directory,
-        private readonly string $filename,
+        private FsDirectory $directory,
+        private string $filename,
     ) {
         $this->path = $this->directory->getPath() . DIRECTORY_SEPARATOR . basename($this->filename);
     }
 
     /**
-     * Append binary payload to the file.
+     * @param string $data Binary payload to append
      *
      * @throws FileWriteException If append fails
      */
@@ -57,7 +59,7 @@ final class FsFile
     }
 
     /**
-     * Detect MIME type via finfo.
+     * @return string Detected MIME type
      *
      * @throws FileNotFoundException If the file does not exist
      */
@@ -73,6 +75,7 @@ final class FsFile
 
     /**
      * @return int File size in bytes
+     *
      * @throws FileNotFoundException If the file does not exist
      */
     public function size(): int
@@ -85,11 +88,12 @@ final class FsFile
     }
 
     /**
-     * Move this file to another named directory (same basename).
-     *
      * @param string $targetDirectoryName Registered directory name (e.g. 'published')
-     * @throws FileNotFoundException If the source file does not exist
+     *
+     * @throws DirectoryCreateException If the target directory cannot be created
+     * @throws DirectoryNotFoundException If the target directory is not registered
      * @throws FileMoveException If the rename operation fails
+     * @throws FileNotFoundException If the source file does not exist
      */
     public function move(string $targetDirectoryName): void
     {
@@ -105,7 +109,7 @@ final class FsFile
     }
 
     /**
-     * Read entire file contents.
+     * @return string File contents
      *
      * @throws FileNotFoundException If the file does not exist
      * @throws FileReadException If the read operation fails
@@ -123,16 +127,25 @@ final class FsFile
         return $content;
     }
 
+    /**
+     * @return bool Whether the file exists on disk
+     */
     public function exists(): bool
     {
         return is_file($this->path);
     }
 
+    /**
+     * @return string Absolute filesystem path
+     */
     public function getPath(): string
     {
         return $this->path;
     }
 
+    /**
+     * @return string Basename in the owning directory
+     */
     public function getFilename(): string
     {
         return $this->filename;
@@ -140,6 +153,9 @@ final class FsFile
 
     /**
      * Map MIME type to a conventional file extension (with leading dot).
+     *
+     * @param string $mimeType MIME type to map
+     * @return string Extension with leading dot
      */
     public static function extensionForMime(string $mimeType): string
     {
