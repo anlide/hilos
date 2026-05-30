@@ -61,8 +61,16 @@ It must not query daemon state directly.
 The default `AbstractPage::onSubscribe()` delegates to
 `Hilos::$browser?->subscribeSnapshot(...)` for page-shaped browser payloads.
 
-Pages override `onSubscribe()` only when they need domain or routing parameter
-checks before delegating to the browser layer.
+Prefer leaving that default in place. Override `onSubscribe()` when the page
+needs route-param validation, domain checks, or specialized subscribe behavior
+(for example a custom snapshot that is not browser-table shaped). After
+validation, call `parent::onSubscribe()` so `subscribeSnapshot()` still owns
+page-shaped payloads.
+
+As a convention, avoid overriding `onSubscribe()` only to send an empty
+subscription ack via `sendToUser()` with blank `SignalData` or
+`BrowserPageSignalData`. Hub pages without `PAGE_TABLES` normally send no
+initial snapshot, and that is fine.
 
 ## Browser Tables
 

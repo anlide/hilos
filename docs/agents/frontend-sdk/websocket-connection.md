@@ -10,7 +10,9 @@ The frontend connects to the backend via a single persistent WebSocket.
 4. Server validates token → `onSignalHandshake()` in agent
 5. Agent sends `HANDSHAKE_RESPONSE` back with initial data
 6. Frontend subscribes to a page: sends `PAGE_SUBSCRIBE { page, params }`
-7. Server routes to page agent → `onSubscribe()` → agent sends initial page data
+7. Server routes to page agent → `onSubscribe()` → by default
+   `subscribeSnapshot()` when the page has browser tables; hub pages without
+   `PAGE_TABLES` may send no initial payload
 8. Normal bidirectional signal exchange
 
 ## Message format

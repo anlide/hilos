@@ -24,5 +24,4 @@ abstract class AbstractHilosGuardianPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
     ];
-
 }

@@ -26,9 +26,9 @@ signals back to their source.
 
 ## Workflow
 
-1. Decide whether the page has real route params. If it has none, keep
-   `onSubscribe(string $acceptKey, PageRouteParams $params): void` empty and
-   skip the DTO.
+1. Decide whether the page has real route params. If it has none, omit
+   `onSubscribe()` and rely on `AbstractPage::onSubscribe()` unless the page
+   needs specialized subscribe behavior; skip the DTO in that case.
 2. When adding a page or changing its subscription owner, update project
    topology through `Hilos::PAGES` and page `SUBSCRIPTION_AGENT_TYPE` as
    described in `docs/agents/app-topology.md`; `SignalRouter` reads these
@@ -57,10 +57,13 @@ signals back to their source.
 8. `PageRouteParams` never performs DB lookups. Do not import collections,
    actions, or `Hilos::$db` inside `fromPageRouteParams()`.
 9. When the concrete page has no subclasses and no shared subscribe logic,
-   parse the DTO directly in its own `onSubscribe()` without a template method;
-   reserve the `final`/`abstract` split for abstract pages with more than one
-   concrete subclass.
-10. Run `composer test:framework:unit` after changing `PageRouteParams`, its
+   parse the DTO directly in its own `onSubscribe()` and call
+   `parent::onSubscribe()` when browser snapshots are needed; reserve the
+   `final`/`abstract` split for abstract pages with more than one concrete
+   subclass.
+10. Prefer `parent::onSubscribe()` over manual `sendToUser()` with empty
+    `SignalData` or `BrowserPageSignalData` for subscription acks.
+11. Run `composer test:framework:unit` after changing `PageRouteParams`, its
    DTOs, or any abstract page's subscribe contract.
 
 ## Hard Rules

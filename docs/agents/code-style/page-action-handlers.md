@@ -88,6 +88,12 @@ public function onActionException(string $acceptKey, string $action, ActionPaylo
 
 ## Subscribe handlers and route params
 
+Most pages should rely on the default `AbstractPage::onSubscribe()` and declare
+browser tables in `PAGE_TABLES` instead of hand-rolling subscription payloads.
+Override `onSubscribe()` when route params or domain checks are required, or
+when the page needs specialized subscribe behavior; then prefer
+`parent::onSubscribe()` for browser snapshots.
+
 `AbstractPage::onSubscribe()` and `AbstractPage::onUpdateSubscription()` receive
 a typed `PageRouteParams` value object, not a raw `array<string, string>`. All
 route-param parsing goes through its accessors, which keep "missing" and
@@ -127,6 +133,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        parent::onSubscribe($acceptKey, $params);
         $this->onHilosUserSubscribe(
             $acceptKey,
             HilosUserPageSubscribeParams::fromPageRouteParams($params),

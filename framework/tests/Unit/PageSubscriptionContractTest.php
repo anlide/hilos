@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Hilos\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -10,39 +10,14 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Guard tests for browser-owned page subscription payload contracts.
+ * Guard tests for framework page subscription handler contracts.
  */
-final class BrowserPageSubscriptionContractTest extends TestCase
+final class PageSubscriptionContractTest extends TestCase
 {
-    public function testBrowserPageSubscribeHandlersDoNotInstantiateLegacyChatEventDto(): void
-    {
-        $violations = [];
-        foreach ($this->backendPageFiles() as $file) {
-            $contents = file_get_contents($file->getPathname());
-            if (
-                $contents === false
-                || !str_contains($contents, 'public const array BROWSER')
-                || !str_contains($contents, 'function onSubscribe')
-                || !str_contains($contents, 'new ChatEventSignalDTO')
-            ) {
-                continue;
-            }
-
-            $violations[] = $this->relativePath($file->getPathname());
-        }
-
-        $this->assertSame(
-            [],
-            $violations,
-            "BROWSER page subscribe handlers must not instantiate ChatEventSignalDTO:\n"
-                . implode("\n", $violations),
-        );
-    }
-
     public function testBrowserPagesDoNotUseLegacyEmptySubscribePayloads(): void
     {
         $violations = [];
-        foreach ($this->backendPageFiles() as $file) {
+        foreach ($this->frameworkPageFiles() as $file) {
             $contents = file_get_contents($file->getPathname());
             if ($contents === false || !$this->usesLegacyEmptySubscribePayload($contents)) {
                 continue;
@@ -77,11 +52,11 @@ final class BrowserPageSubscriptionContractTest extends TestCase
     }
 
     /**
-     * Iterates chat demo backend page PHP files.
+     * Iterates framework backend page PHP files.
      *
      * @return iterable<SplFileInfo>
      */
-    private function backendPageFiles(): iterable
+    private function frameworkPageFiles(): iterable
     {
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator(dirname(__DIR__, 2) . '/backend/Pages'),

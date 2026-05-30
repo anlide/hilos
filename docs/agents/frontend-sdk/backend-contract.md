@@ -42,7 +42,9 @@ ws.on('subscription_page_main', (data) => {
 // Subscribe to page
 ws.send('PAGE_SUBSCRIBE', { page: 'main', params: {} })
 
-// Server responds with subscription signal carrying initial state.
+// Server may respond with a subscription signal carrying initial state when
+// the page has browser tables bound in PAGE_TABLES. Hub pages without tables
+// often send no initial snapshot; the frontend must not wait for one.
 // Page-shaped DB/RT state should normally ride in BrowserPageSignalData.
 ```
 

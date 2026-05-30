@@ -34,27 +34,15 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class PageSubscriptionBrowserPayloadTest extends IntegrationTestCase
 {
-    public function testAdminAndModeratorSubscriptionsReturnEmptyBrowserPayloads(): void
+    public function testAdminAndModeratorSubscriptionsDoNotEmitBrowserSnapshots(): void
     {
         $this->resetFrontendRouter();
 
         (new AdminPage($this->pageAgent()))->onSubscribe('admin-subscribe-ak', new PageRouteParams([]));
-        $adminPayload = $this->drainSingleWebSocketPayload(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN,
-            'admin-subscribe-ak',
-        );
-
-        $this->assertInstanceOf(BrowserPageSignalData::class, $adminPayload->data);
-        $this->assertSame([], $adminPayload->data->toArray());
+        $this->assertNoQueuedSignals();
 
         (new ModeratorPage($this->pageAgent()))->onSubscribe('moderator-subscribe-ak', new PageRouteParams([]));
-        $moderatorPayload = $this->drainSingleWebSocketPayload(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_MODERATOR,
-            'moderator-subscribe-ak',
-        );
-
-        $this->assertInstanceOf(BrowserPageSignalData::class, $moderatorPayload->data);
-        $this->assertSame([], $moderatorPayload->data->toArray());
+        $this->assertNoQueuedSignals();
     }
 
     public function testBotSubscriptionReturnsBrowserSnapshotPayload(): void
@@ -183,6 +171,19 @@ final class PageSubscriptionBrowserPayloadTest extends IntegrationTestCase
                 return new SignalSource(SignalSource::AGENT, 'test-page-agent');
             }
         };
+    }
+
+    /**
+     * Asserts that page subscribe did not queue any WebSocket signals.
+     */
+    private function assertNoQueuedSignals(): void
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $signals[] = $signal;
+        }
+
+        $this->assertSame([], $signals);
     }
 
     /**

@@ -8,8 +8,6 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Router\SignalData;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AbstractHilosLogsViewPage - Abstract base for Hilos logs viewer page.
@@ -23,19 +21,4 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
     ];
-
-    /**
-     * Handle page subscription.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param PageRouteParams $params Page params from route (e.g. ['id' => '123'])
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW,
-            $acceptKey,
-            new SignalData(),
-        );
-    }
 }
