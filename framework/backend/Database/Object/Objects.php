@@ -76,7 +76,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
      * @return static Collection instance
-     * @throws DatabaseException If configuration fails
      */
     public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
     {
@@ -103,6 +102,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * Clears existing objects and loads all from database.
      *
+     * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException If database query fails
      */
     public function loadAllFromDB(): void
@@ -620,7 +620,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param FilterInterface $filter Filter criteria
      * @return FilteredCollection Filtered collection
-     * @throws DatabaseException If truth source check or filter fails
+     * @throws LogicException When filtering a lazy-loaded collection that is not fully loaded (unsupported)
      */
     public function filter(FilterInterface $filter): FilteredCollection
     {
@@ -657,7 +657,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
                     }
                 }
             } else {
-                throw new DatabaseException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
+                throw new LogicException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
             }
         }
 
