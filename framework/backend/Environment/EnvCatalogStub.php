@@ -193,7 +193,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
     }
 
     /**
-     * @return array<string, mixed>
+     * @param string $type Catalog value type
+     * @return array<string, mixed> Required catalog entry
      */
     private static function required(string $type): array
     {
@@ -205,7 +206,10 @@ final class EnvCatalogStub implements CatalogProviderInterface
     }
 
     /**
-     * @return array<string, mixed>
+     * @param string $type Catalog value type
+     * @param mixed $default Default value
+     * @param bool $emptyIsMissing Whether empty values fall back to defaults
+     * @return array<string, mixed> Catalog entry
      */
     private static function entry(string $type, mixed $default, bool $emptyIsMissing = false): array
     {

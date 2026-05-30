@@ -127,6 +127,7 @@ class EnvAccessor implements ArrayAccess
      * Returns true when the key is declared in the catalog and can resolve to a string value.
      *
      * @param mixed $offset Env key
+     * @return bool Whether the key resolves to a string value
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -214,7 +215,7 @@ class EnvAccessor implements ArrayAccess
      *
      * @param EnvConstants|string $name Environment variable name
      * @return int Effective integer value
-     * @throws EnvInvalidValueException When the value is not a valid integer
+     * @throws EnvInvalidValueException When catalog metadata or integer value is invalid
      * @throws EnvKeyInvalidException When the key is invalid
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws EnvTypeMismatchException When the key is not cataloged as integer
@@ -240,7 +241,7 @@ class EnvAccessor implements ArrayAccess
      *
      * @param EnvConstants|string $name Environment variable name
      * @return float Effective float value
-     * @throws EnvInvalidValueException When the value is not a valid float
+     * @throws EnvInvalidValueException When catalog metadata or float value is invalid
      * @throws EnvKeyInvalidException When the key is invalid
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws EnvTypeMismatchException When the key is not cataloged as float
@@ -266,7 +267,7 @@ class EnvAccessor implements ArrayAccess
      *
      * @param EnvConstants|string $name Environment variable name
      * @return bool Effective boolean value
-     * @throws EnvInvalidValueException When the value is not a valid boolean
+     * @throws EnvInvalidValueException When catalog metadata or boolean value is invalid
      * @throws EnvKeyInvalidException When the key is invalid
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws EnvTypeMismatchException When the key is not cataloged as boolean
@@ -300,6 +301,11 @@ class EnvAccessor implements ArrayAccess
      * @param EnvConstants|string $urlKey Primary URL env key
      * @param EnvConstants|string|null $fallbackKey Fallback URL env key when primary is empty
      * @return string Normalized URL without trailing slash or /api/generate suffix
+     * @throws EnvInvalidValueException When catalog metadata or URL value is invalid
+     * @throws EnvKeyInvalidException When a URL key is invalid
+     * @throws EnvNotInCatalogException When a URL key is not declared in the catalog
+     * @throws EnvTypeMismatchException When a URL key is not cataloged as string
+     * @throws MissingEnvironmentVariableException When a required URL value is missing
      */
     public function normalizedLlmUrl(EnvConstants|string $urlKey, EnvConstants|string|null $fallbackKey = null): string
     {
@@ -335,7 +341,10 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
-     * @return array<string, string>
+     * Parses a dotenv-style key/value file.
+     *
+     * @param string $filePath Env file path
+     * @return array<string, string> Parsed env values
      */
     private function parseEnvFile(string $filePath): array
     {
@@ -367,6 +376,11 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * Resolves an env value using loaded values, defaults, and missing-value rules.
+     *
+     * @param string $key Environment variable name
+     * @param string $expectedType Expected catalog type
+     * @return mixed Effective env value
      * @throws EnvInvalidValueException When catalog metadata is invalid
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      * @throws EnvTypeMismatchException When the catalog type does not match
@@ -400,6 +414,7 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * @param string $key Environment variable name
      * @return ?string Raw value from .env, system env, or .env.example
      */
     private function rawValue(string $key): ?string
@@ -416,6 +431,10 @@ class EnvAccessor implements ArrayAccess
         return $this->exampleValue($key);
     }
 
+    /**
+     * @param string $key Environment variable name
+     * @return ?string Raw value from .env.example, or null when absent
+     */
     private function exampleValue(string $key): ?string
     {
         if ($this->exampleCache === null) {
@@ -428,7 +447,8 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
-     * @return array<string, mixed>
+     * @param string $key Environment variable name
+     * @return array<string, mixed> Catalog entry
      * @throws EnvNotInCatalogException When the key is not declared in the catalog
      */
     private function entryFor(string $key): array
@@ -442,13 +462,15 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * @param string $key Environment variable name
      * @param array<string, mixed> $entry Catalog entry
+     * @return string Catalog type
      * @throws EnvInvalidValueException When the catalog type is invalid
      */
     private function entryType(string $key, array $entry): string
     {
         $type = $entry[EnvCatalogConstants::CATALOG_ENTRY_TYPE] ?? null;
-        if (!is_string($type) || !in_array($type, [
+        if (!in_array($type, [
             EnvCatalogConstants::TYPE_STRING,
             EnvCatalogConstants::TYPE_INTEGER,
             EnvCatalogConstants::TYPE_FLOAT,
@@ -461,7 +483,11 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * @param string $key Environment variable name
      * @param array<string, mixed> $entry Catalog entry
+     * @param string $field Catalog boolean flag name
+     * @param bool $default Default flag value
+     * @return bool Catalog flag value
      * @throws EnvInvalidValueException When the catalog flag is invalid
      */
     private function entryBool(string $key, array $entry, string $field, bool $default): bool
@@ -477,6 +503,8 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * @param EnvConstants|string $name Environment variable name
+     * @return string Normalized environment variable name
      * @throws EnvKeyInvalidException When the key is invalid
      */
     private function keyName(EnvConstants|string $name): string
