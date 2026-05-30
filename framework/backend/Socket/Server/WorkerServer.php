@@ -21,7 +21,7 @@ use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Exception\Process\FailedToReadStdOutException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
-use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
+use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Process;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -422,13 +422,13 @@ abstract class WorkerServer extends AbstractServer
 
             try {
                 $this->tickWorkerProcess($process, $type, $index, $key);
-            } catch (FailedToClosePipeException | FailedToTerminateProcessExceptionException $e) {
+            } catch (FailedToClosePipeException | FailedToTerminateProcessException $e) {
                 // Worker error, remove from tracking
                 $this->removeWorker($key, $type, $index);
             } catch (FailedToGetStatusException | FailedToReadStdOutException | FailedToSetStdErrException $e) {
                 try {
                     $process->stop();
-                } catch (FailedToGetStatusException | FailedToTerminateProcessExceptionException $e) {
+                } catch (FailedToGetStatusException | FailedToTerminateProcessException $e) {
                     // Ignore errors during halt
                 }
                 // Process error, remove from tracking

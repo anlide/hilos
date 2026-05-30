@@ -13,7 +13,7 @@ use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Exception\Process\FailedToReadStdOutException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
-use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
+use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -56,7 +56,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      * @throws FailedToReadStdOutException If stdout data cannot be read
      * @throws FailedToSetStdErrException If stderr data cannot be read
-     * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
+     * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
      * @throws EnvException If required env values are missing or invalid
      * @throws LogRotationException If log rotation fails
@@ -152,7 +152,7 @@ class DockerManager extends BaseManager
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws FailedToReadStdOutException If stdout data cannot be read
      * @throws FailedToSetStdErrException If stderr data cannot be read
-     * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
+     * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
      * @throws EnvException If restart interval env value is missing or invalid
      */
@@ -262,7 +262,7 @@ class DockerManager extends BaseManager
             $this->process->stop();
         } catch (FailedToGetStatusException $e) {
             Logger::errorLog('Failed to get status while stopping daemon: ' . $e->getMessage());
-        } catch (FailedToTerminateProcessExceptionException $e) {
+        } catch (FailedToTerminateProcessException $e) {
             Logger::errorLog('Failed to terminate daemon process: ' . $e->getMessage());
         }
     }
