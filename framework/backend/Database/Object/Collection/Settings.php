@@ -58,6 +58,7 @@ final class Settings extends Objects
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return list<ObjectSetting> Orphan settings
+     * @throws DatabaseException When loading all settings from the database fails
      */
     public function getOrphans(array $catalog): array
     {

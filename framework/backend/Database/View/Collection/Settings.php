@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\SettingsActions;
-use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\View\Item\Setting;
-use Hilos\Database\View\Collection\DbCollection;
 
 /**
  * Settings Db collection.
@@ -30,7 +30,9 @@ final class Settings extends DbCollection
      *
      * @param mixed $offset Setting key string or primary id integer
      * @return bool True when the setting exists
-     * @throws DatabaseException On database error
+     * @throws DatabaseException On database error while resolving the setting
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -42,7 +44,9 @@ final class Settings extends DbCollection
      *
      * @param mixed $offset Setting key string or primary id integer
      * @return ?Setting Setting Db item or null if not found
-     * @throws DatabaseException On database error
+     * @throws DatabaseException On database error while resolving the setting
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function offsetGet(mixed $offset): ?Setting
     {
@@ -63,7 +67,9 @@ final class Settings extends DbCollection
      *
      * @param string $key Setting key
      * @return ?Setting Setting Db item or null if not found
-     * @throws DatabaseException On database error
+     * @throws DatabaseException On database error while loading the setting
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     private function findByKey(string $key): ?Setting
     {
@@ -83,6 +89,9 @@ final class Settings extends DbCollection
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return list<Setting> Orphan Db items
+     * @throws DatabaseException On database error while loading settings
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function getOrphans(array $catalog): array
     {
