@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
@@ -32,7 +33,9 @@ final class SettingActions extends DbActions
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting write
      */
     public function updateValue(mixed $value): void
@@ -56,6 +59,7 @@ final class SettingActions extends DbActions
      * @throws ObjectGetIdStringNotImplementedException When the setting object cannot expose its id string
      * @throws DatabaseException When collection loading or setting deletion fails
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws LogicException When the settings object collection entity class is not configured
      * @throws WriteNotAllowedException When the truth source rejects the setting delete
      */
     public function delete(): void

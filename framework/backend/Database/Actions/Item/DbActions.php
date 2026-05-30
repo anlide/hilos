@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Item\DbItem;
@@ -67,8 +69,10 @@ abstract class DbActions
      * Ensures write is allowed and collection is loaded if needed.
      *
      * @throws ObjectCollectionNullException If object collection is null (manual)
+     * @throws ObjectGetIdStringNotImplementedException When the item primary key is null during the per-item write check
      * @throws UnknownLazyStrategyException If lazy strategy is unknown
      * @throws WriteNotAllowedException If write not allowed by truth source
+     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException If load fails
      */
     protected function ensureCanWrite(): void

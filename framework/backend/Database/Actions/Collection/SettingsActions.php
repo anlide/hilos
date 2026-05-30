@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -39,8 +41,10 @@ final class SettingsActions extends DbActions
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws DuplicateIdException When the created setting id already exists in the collection
+     * @throws ObjectGetIdStringNotImplementedException When the created setting has no persisted id
      * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws LogicException When the settings object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects settings collection creation
      */
     public function add(string $key, mixed $value, array $catalog): Setting

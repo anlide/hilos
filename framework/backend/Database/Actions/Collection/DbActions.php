@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -14,6 +15,7 @@ use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
 use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
@@ -77,6 +79,7 @@ abstract class DbActions
      * @param string $name Property name (objectCollection)
      * @return Objects Object collection instance
      * @throws ObjectCollectionNullException If ObjectCollection is null (manual collection)
+     * @throws InvalidArgumentException When the property name is not a known DbActions property
      */
     public function __get(string $name): mixed
     {
@@ -153,11 +156,11 @@ abstract class DbActions
     }
 
     /**
-     * Get table name from ObjectCollection
-     * Uses Objects::getTableName() or creates temporary object if collection is empty
+     * Get table name from the ObjectCollection.
+     * Converts any failure to resolve the table name into TableNameUndeterminedException.
      *
      * @return string Table name
-     * @throws TableNameUndeterminedException If table name cannot be determined
+     * @throws TableNameUndeterminedException If the table name cannot be determined
      */
     protected function getTableName(): string
     {
@@ -172,9 +175,9 @@ abstract class DbActions
      * Ensure write is allowed and data is loaded if needed
      * Checks TruthSourceRegistry and loads data based on lazy loading strategy
      *
-     * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
+     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException On connection or load error
      */
     protected function ensureCanWrite(): void
@@ -210,6 +213,7 @@ abstract class DbActions
      *
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
+     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException On connection or load error
      */
     protected function ensureCanCreate(): void
@@ -245,8 +249,8 @@ abstract class DbActions
      * Checks for duplicate IDs and throws exception if object already exists
      *
      * @param Object_ $object Object instance to add
+     * @throws ObjectGetIdStringNotImplementedException When the object primary key is null
      * @throws DuplicateIdException If object with same ID already exists
-     * @throws DatabaseException On connection error
      * @throws TableNameUndeterminedException If table name cannot be determined
      */
     protected function addObjectToCollection(Object_ $object): void
