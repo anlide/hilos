@@ -57,7 +57,11 @@ abstract class AbstractTruthSourceRegistry
         $sources = &static::getSources();
         if (isset($sources[$collection][$agentId])) {
             unset($sources[$collection][$agentId]);
+            // PhpStorm keeps the non-empty narrowing from the isset above and
+            // does not model the unset, so it wrongly flags this as always false.
+            /** @noinspection PhpConditionAlreadyCheckedInspection */
             if (empty($sources[$collection])) {
+                /** @noinspection PhpConditionAlreadyCheckedInspection */
                 unset($sources[$collection]);
             }
         }
@@ -74,7 +78,11 @@ abstract class AbstractTruthSourceRegistry
         foreach ($sources as $collection => $agents) {
             if (isset($agents[$agentId])) {
                 unset($sources[$collection][$agentId]);
+                // PhpStorm keeps the non-empty narrowing from the isset above and
+                // does not model the unset, so it wrongly flags this as always false.
+                /** @noinspection PhpConditionAlreadyCheckedInspection */
                 if (empty($sources[$collection])) {
+                    /** @noinspection PhpConditionAlreadyCheckedInspection */
                     unset($sources[$collection]);
                 }
             }
@@ -90,7 +98,7 @@ abstract class AbstractTruthSourceRegistry
     public static function hasTruthSource(string $collection): bool
     {
         $sources = &static::getSources();
-        return isset($sources[$collection]) && !empty($sources[$collection]);
+        return !empty($sources[$collection]);
     }
 
     /**
