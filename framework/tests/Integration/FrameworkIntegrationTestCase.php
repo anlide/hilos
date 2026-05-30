@@ -6,7 +6,11 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseConnectionPolicy;
 use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -21,7 +25,9 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     /**
      * Configures connection index 0 from environment and opens the mysqli link.
      *
-     * @throws DatabaseConnectionException When the server is unreachable or credentials fail.
+     * @throws EnvException When env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
      */
     protected function setUp(): void
     {
@@ -38,10 +44,15 @@ abstract class FrameworkIntegrationTestCase extends TestCase
             password: Hilos::$env[EnvConstants::DB_PASSWORD],
             database: Hilos::$env[EnvConstants::DB_DATABASE],
             port: Hilos::$env->int(EnvConstants::DB_PORT),
-            charset: 'utf8mb4',
+            charset: DatabaseConnectionDefaults::CHARSET,
         );
 
-        Database::connect(0, retryOnConnectionError: true, maxRetries: 30, retryDelaySeconds: 2);
+        Database::connect(
+            0,
+            retryOnConnectionError: true,
+            maxRetries: DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS,
+            retryDelaySeconds: DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS,
+        );
     }
 
     /**

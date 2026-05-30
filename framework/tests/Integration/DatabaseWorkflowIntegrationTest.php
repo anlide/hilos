@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\Depends;
@@ -82,10 +83,10 @@ final class DatabaseWorkflowIntegrationTest extends FrameworkIntegrationTestCase
         $ddl = self::DDL_TABLE;
         Database::sql("DROP TABLE IF EXISTS `{$ddl}`");
 
-        Database::sql("CREATE TABLE `{$ddl}` (
+        Database::sql('CREATE TABLE `' . $ddl . '` (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             `label` VARCHAR(32) NOT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        ) ENGINE=InnoDB DEFAULT CHARSET=' . DatabaseConnectionDefaults::CHARSET);
 
         Database::sql("ALTER TABLE `{$ddl}` ADD COLUMN `extra` VARCHAR(10) NOT NULL DEFAULT ''");
 
@@ -119,17 +120,17 @@ final class DatabaseWorkflowIntegrationTest extends FrameworkIntegrationTestCase
         Database::sql("DROP TABLE IF EXISTS `{$child}`");
         Database::sql("DROP TABLE IF EXISTS `{$parent}`");
 
-        Database::sql("CREATE TABLE `{$parent}` (
+        Database::sql('CREATE TABLE `' . $parent . '` (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             `name` VARCHAR(64) NOT NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        ) ENGINE=InnoDB DEFAULT CHARSET=' . DatabaseConnectionDefaults::CHARSET);
 
-        Database::sql("CREATE TABLE `{$child}` (
+        Database::sql('CREATE TABLE `' . $child . '` (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             `parent_id` INT UNSIGNED NOT NULL,
             `note` VARCHAR(64) NOT NULL,
-            CONSTRAINT `fk_hilos_fw_child_parent` FOREIGN KEY (`parent_id`) REFERENCES `{$parent}`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            CONSTRAINT `fk_hilos_fw_child_parent` FOREIGN KEY (`parent_id`) REFERENCES `' . $parent . '`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=' . DatabaseConnectionDefaults::CHARSET);
 
         Database::sql(
             'SELECT COUNT(*) AS c FROM information_schema.KEY_COLUMN_USAGE

@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
  */
 class LostConnectionException extends DatabaseRuntimeException
 {
+    public const int MYSQL_ERROR_CODE = 2013;
 }

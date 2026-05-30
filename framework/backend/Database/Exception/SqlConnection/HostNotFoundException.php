@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class HostNotFoundException extends DatabaseConnectionException
 {
+    public const int MYSQL_ERROR_CODE = 2005;
 }

@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class SslConnectionExceptionErrorException extends DatabaseConnectionException
 {
+    public const int MYSQL_ERROR_CODE = 2026;
 }

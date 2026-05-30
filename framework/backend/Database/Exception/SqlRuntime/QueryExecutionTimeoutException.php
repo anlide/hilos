@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
  */
 class QueryExecutionTimeoutException extends DatabaseRuntimeException
 {
+    public const int MYSQL_ERROR_CODE = 3024;
 }

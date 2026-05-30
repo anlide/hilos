@@ -69,7 +69,7 @@ class Migration
                 `index` int(10) UNSIGNED NOT NULL,
                 `failed` tinyint(1) NOT NULL DEFAULT 1,
                 PRIMARY KEY (`index`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci'
+            ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
 
         self::$initialized = true;

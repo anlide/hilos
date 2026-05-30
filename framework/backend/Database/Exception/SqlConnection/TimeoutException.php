@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class TimeoutException extends DatabaseConnectionException
 {
+    public const int MYSQL_ERROR_CODE = 2013;
 }

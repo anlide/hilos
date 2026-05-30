@@ -10,4 +10,6 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class CantConnectToMysqlServerException extends DatabaseConnectionException
 {
+    /** @var list<int> */
+    public const array MYSQL_ERROR_CODES = [2002, 2003];
 }

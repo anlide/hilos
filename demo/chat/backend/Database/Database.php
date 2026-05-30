@@ -6,10 +6,16 @@ namespace Demo\Chat\Database;
 
 use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Database as BaseDatabase;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 
 /**
  * Database - Database connection configuration for WebSocket Test Demo.
@@ -26,9 +32,9 @@ final class Database extends BaseDatabase
      * Additional database connections can be configured here if needed.
      *
      * Environment variables used:
-     * - DB_HOST: Database host (default: localhost)
-     * - DB_PORT: Database port (default: 3306)
-     * - DB_USERNAME: Database username (default: root)
+     * - DB_HOST: Database host (default: DatabaseConnectionDefaults::HOST)
+     * - DB_PORT: Database port (default: DatabaseConnectionDefaults::PORT)
+     * - DB_USERNAME: Database username (default: DatabaseConnectionDefaults::USER)
      * - DB_PASSWORD: Database password (default: empty)
      * - DB_DATABASE: Database name (default: hilos_demo)
      *
@@ -36,8 +42,13 @@ final class Database extends BaseDatabase
      *                       Set to false when migrations or DB bootstrap commands must run before Hilos is ready.
      *                       Call Hilos::init() manually after migrations when using false.
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
-     * @throws DatabaseException If connection or configuration fails
-     * @throws EnvException If an environment value is missing or invalid
+     * @throws EnvException When required env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect or SET NAMES fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
+     * @throws DatabaseRuntimeException When SET NAMES query fails
+     * @throws DatabaseException When schema initialization fails
+     * @throws InvalidTopologyException When Hilos topology constants are inconsistent
+     * @throws HilosException When Hilos facade initialization fails
      */
     public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {
@@ -49,14 +60,13 @@ final class Database extends BaseDatabase
             password: Hilos::$env[EnvConstants::DB_PASSWORD],
             database: Hilos::$env[EnvConstants::DB_DATABASE],
             port: Hilos::$env->int(EnvConstants::DB_PORT),
-            charset: 'utf8mb4',
+            charset: DatabaseConnectionDefaults::CHARSET,
         );
 
         // Connect to primary database
         self::connect(0, retryOnConnectionError: $retryConnection);
 
-        // Set collation (utf8mb4_0900_ai_ci for MySQL 8.0+)
-        self::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+        self::sql(DatabaseConnectionDefaults::setNamesSql());
 
         // Initialize database schema structure
         Schema::initialize(0);
@@ -77,9 +87,9 @@ final class Database extends BaseDatabase
         //     password: Hilos::$env[EnvConstants::DB_SECONDARY_PASSWORD],
         //     database: Hilos::$env[EnvConstants::DB_SECONDARY_DATABASE],
         //     port: Hilos::$env->int(EnvConstants::DB_SECONDARY_PORT),
-        //     charset: 'utf8mb4',
+        //     charset: DatabaseConnectionDefaults::CHARSET,
         // );
         // self::connect(1);
-        // self::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+        // self::sql(DatabaseConnectionDefaults::setNamesSql());
     }
 }

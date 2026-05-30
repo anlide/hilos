@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class UnknownDatabaseException extends DatabaseConnectionException
 {
+    public const int MYSQL_ERROR_CODE = 1049;
 }

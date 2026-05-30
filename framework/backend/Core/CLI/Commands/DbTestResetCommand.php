@@ -8,9 +8,14 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -73,7 +78,10 @@ HELP;
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
-     * @throws DatabaseException If migration or seed fails
+     * @throws EnvException When DB env variables are missing or invalid
+     * @throws DatabaseConnectionException When database connect or SET NAMES fails
+     * @throws CantConnectToMysqlServerException When MySQL is unreachable
+     * @throws DatabaseRuntimeException When SET NAMES query fails
      */
     public function execute(array $options, array $args): int
     {
@@ -97,7 +105,7 @@ HELP;
 
         $dbEscaped = '`' . mysqli_real_escape_string($conn, $database) . '`';
         mysqli_query($conn, "DROP DATABASE IF EXISTS {$dbEscaped}");
-        mysqli_query($conn, "CREATE DATABASE {$dbEscaped} CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+        mysqli_query($conn, "CREATE DATABASE {$dbEscaped} " . DatabaseConnectionDefaults::createDatabaseCharsetClause());
         mysqli_close($conn);
 
         echo "Database reset: {$database}\n";
@@ -110,10 +118,10 @@ HELP;
             password: $pass,
             database: $database,
             port: $port,
-            charset: 'utf8mb4',
+            charset: DatabaseConnectionDefaults::CHARSET,
         );
         Database::connect(0);
-        Database::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");
+        Database::sql(DatabaseConnectionDefaults::setNamesSql());
 
         try {
             Migration::initialize();

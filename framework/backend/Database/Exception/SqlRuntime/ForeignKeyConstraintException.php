@@ -10,4 +10,6 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
  */
 class ForeignKeyConstraintException extends DatabaseRuntimeException
 {
+    /** @var list<int> */
+    public const array MYSQL_ERROR_CODES = [1451, 1452];
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database;
 
 use Hilos\HilosException;
@@ -10,6 +12,9 @@ use Throwable;
  */
 class DatabaseException extends HilosException
 {
+    /** @var int Maximum SQL query preview length in error messages */
+    public const int QUERY_PREVIEW_MAX_LENGTH = 200;
+
     /** @var int MySQL error code (0 when unset) */
     protected int $mysqlErrorCode = 0;
 

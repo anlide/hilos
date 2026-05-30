@@ -10,4 +10,5 @@ use Hilos\Database\Exception\DatabaseConnectionException;
  */
 class TooManyConnectionsException extends DatabaseConnectionException
 {
+    public const int MYSQL_ERROR_CODE = 1040;
 }
