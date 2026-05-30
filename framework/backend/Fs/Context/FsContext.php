@@ -12,13 +12,14 @@ use Hilos\Hilos;
 /**
  * Base filesystem context — project subclasses register named directories.
  *
- * @property-read FsTmpDirectory $tmp
+ * @property-read FsTmpDirectory $tmp Built-in temporary directory
  */
 abstract class FsContext
 {
     /** Reserved logical name for the built-in temporary directory. */
     public const string TMP = 'tmp';
 
+    /** @var FsTmpDirectory|null */
     protected ?FsTmpDirectory $_tmp = null;
 
     /** @var array<string, FsDirectory> */
@@ -31,7 +32,7 @@ abstract class FsContext
     abstract public function configure(): void;
 
     /**
-     * Set the path for the built-in tmp directory.
+     * @param string $path Absolute filesystem path for tmp storage
      */
     protected function setTmpPath(string $path): void
     {
@@ -39,7 +40,8 @@ abstract class FsContext
     }
 
     /**
-     * Register a named directory (e.g. quarantine, published).
+     * @param string $name Logical directory name
+     * @param string $path Absolute filesystem path
      */
     protected function registerDirectory(string $name, string $path): void
     {
@@ -47,6 +49,9 @@ abstract class FsContext
     }
 
     /**
+     * @param string $name Registered logical directory name
+     * @return FsDirectory Named directory handle
+     *
      * @throws DirectoryNotFoundException If the directory is not registered
      */
     public function getDirectory(string $name): FsDirectory
@@ -59,6 +64,8 @@ abstract class FsContext
     }
 
     /**
+     * @return FsTmpDirectory Configured tmp directory
+     *
      * @throws DirectoryNotFoundException If tmp path has not been configured
      */
     public function getTmp(): FsTmpDirectory
@@ -73,7 +80,10 @@ abstract class FsContext
     /**
      * Magic getter for `$fs->tmp`, `$fs->quarantine`, etc.
      *
-     * @throws DirectoryNotFoundException If the name is unknown
+     * @param string $name Logical directory name or TMP constant
+     * @return FsTmpDirectory|FsDirectory Resolved directory handle
+     *
+     * @throws DirectoryNotFoundException If the name is unknown or tmp is not configured
      */
     public function __get(string $name): FsTmpDirectory|FsDirectory
     {

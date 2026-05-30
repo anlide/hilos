@@ -8,27 +8,27 @@ use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileWriteException;
 
 /**
- * Handle for a single file inside {@see FsTmpDirectory}.
+ * Handle for a single file inside FsTmpDirectory.
  *
  * Lightweight value object — no existence check on construction.
  */
-final class FsTmpFile
+final readonly class FsTmpFile
 {
-    private readonly string $path;
+    private string $path;
 
     /**
      * @param FsTmpDirectory $directory Owning tmp directory
      * @param string $index Filename (hex index) inside the tmp directory
      */
     public function __construct(
-        private readonly FsTmpDirectory $directory,
-        private readonly string $index,
+        private FsTmpDirectory $directory,
+        private string $index,
     ) {
         $this->path = $this->directory->getPath() . DIRECTORY_SEPARATOR . basename($this->index);
     }
 
     /**
-     * Append binary payload to the file.
+     * @param string $data Binary payload to append
      *
      * @throws FileWriteException If append fails
      */
@@ -59,16 +59,25 @@ final class FsTmpFile
         return is_file($this->path) ? (filesize($this->path) ?: 0) : 0;
     }
 
+    /**
+     * @return bool Whether the file exists on disk
+     */
     public function exists(): bool
     {
         return is_file($this->path);
     }
 
+    /**
+     * @return string Absolute filesystem path
+     */
     public function getPath(): string
     {
         return $this->path;
     }
 
+    /**
+     * @return string Hex index in the owning tmp directory
+     */
     public function getIndex(): string
     {
         return $this->index;
