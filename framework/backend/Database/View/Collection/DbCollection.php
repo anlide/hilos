@@ -137,8 +137,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param DbItem $item Single item to wrap
      * @return static New manual collection with one item
-     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
-     * @throws CollectionNotManualException If collection is not manual (add() is only supported for manual collections, as it uses ID as key)
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (thrown by add() while keying the item by ID)
+     * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
     public static function fromSingleItem(DbItem $item): static
     {
@@ -293,8 +293,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param DbCollection $other Collection whose items to merge in (only those not already in $this)
      * @return static New manual collection
-     * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString()
-     * @throws CollectionNotManualException If this collection is not manual (merging is only supported for manual collections, as it returns a new manual collection)
+     * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString() (thrown by add() while keying items by ID)
+     * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
      */
     public function mergeWith(DbCollection $other): static
     {
@@ -417,8 +417,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param callable $callback Filter predicate (receives DbItem, key; returns bool)
      * @return static New filtered manual collection
-     * @throws DatabaseException If DbItem has no associated Object ID
-     * @throws CollectionNotManualException If collection is not manual (filtering is only supported for manual collections, as it returns a new manual collection)
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading objects from the database fails
+     * @throws ObjectGetIdStringNotImplementedException If a filtered item's Object does not implement getIdString() (thrown by add() while keying items by ID)
+     * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
      */
     public function filter(callable $callback): static
     {
@@ -457,6 +460,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int)
      * @throws DatabaseException On query or connection error
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -480,6 +485,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @return array{rows: list<T>, totalCount: int} Keys: rows (list of DbItems), totalCount (int)
      * @throws DatabaseException On query or connection error
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
      */
     public function queryPageItems(TableQueryDTO $query): array
     {
@@ -520,6 +527,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Get first DbItem.
      *
      * @return ?T First DbItem or null if collection empty
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function first(): ?DbItem
     {
@@ -544,6 +554,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Get last DbItem.
      *
      * @return ?T Last DbItem or null if collection empty
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function last(): ?DbItem
     {
@@ -686,6 +699,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * For automatic collections, delegates to underlying ObjectCollection.
      *
      * @return int Number of elements
+     * @throws DatabaseException When counting the underlying ObjectCollection hits the database and fails
      */
     public function count(): int
     {
