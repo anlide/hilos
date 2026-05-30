@@ -224,7 +224,7 @@ class Database
             $resultSet = self::$resultSets[$index] ?? null;
             if ($resultSet !== null) {
                 $mysqliResult = $resultSet->getMysqliResult();
-                if ($mysqliResult !== null && $mysqliResult instanceof mysqli_result) {
+                if ($mysqliResult !== null) {
                     @mysqli_free_result($mysqliResult);
                 }
             }
