@@ -125,15 +125,19 @@ composer run install-deps
 hilos/
 ├── framework/                      # Core framework
 │   ├── backend/                    # PHP backend
+│   │   ├── AI/                     # AI agents (Guardian, moderation, etc.)
 │   │   ├── API/                    # HTTP routing, async client
+│   │   ├── Bootstrap/              # Process bootstrap entrypoints
 │   │   ├── Constants/              # Constants
 │   │   ├── Core/                   # Daemon, Worker, Agent, Router, CLI, Page, EventLoop
 │   │   ├── Database/               # ORM (Entity, Object, Db, Migrations, Schema, Filter)
-│   │   ├── DTO/                    # Data Transfer Objects
-│   │   ├── Exception/              # Exception hierarchy
-│   │   ├── Logging/                # Logging
+│   │   ├── Environment/            # Environment / config access
+│   │   ├── Fs/                     # Filesystem access
+│   │   ├── LLM/                    # LLM integration (local + external)
+│   │   ├── Pages/                  # Application page controllers
 │   │   ├── Runtime/                # Runtime (RtContext, RtState)
 │   │   ├── Socket/                 # Servers and clients (HTTP, WebSocket, Worker)
+│   │   ├── TruthSource/            # Truth-source registry / ownership
 │   │   └── Utils/                  # Utilities
 │   ├── frontend/                   # TypeScript/Vue SDK
 │   │   └── src/
