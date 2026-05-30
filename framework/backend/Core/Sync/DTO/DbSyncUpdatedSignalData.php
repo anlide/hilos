@@ -36,9 +36,9 @@ class DbSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
     public function toArray(): array
     {
         return [
-            'collectionKey' => $this->collectionKey,
-            'idString' => $this->idString,
-            'row' => $this->row,
+            SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
+            SyncSignalDataKey::ID_STRING => $this->idString,
+            SyncSignalDataKey::ROW => $this->row,
         ];
     }
 
@@ -51,9 +51,9 @@ class DbSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
     public static function fromArray(array $data): static
     {
         return new self(
-            collectionKey: $data['collectionKey'] ?? '',
-            idString: $data['idString'] ?? '',
-            row: $data['row'] ?? [],
+            collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
+            idString: $data[SyncSignalDataKey::ID_STRING] ?? '',
+            row: $data[SyncSignalDataKey::ROW] ?? [],
         );
     }
 }

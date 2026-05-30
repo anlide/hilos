@@ -36,9 +36,9 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
     public function toArray(): array
     {
         return [
-            'collectionKey' => $this->collectionKey,
-            'stateId' => $this->stateId,
-            'row' => $this->row,
+            SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
+            SyncSignalDataKey::STATE_ID => $this->stateId,
+            SyncSignalDataKey::ROW => $this->row,
         ];
     }
 
@@ -51,9 +51,9 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
     public static function fromArray(array $data): static
     {
         return new self(
-            collectionKey: $data['collectionKey'] ?? '',
-            stateId: $data['stateId'] ?? '',
-            row: $data['row'] ?? [],
+            collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
+            stateId: $data[SyncSignalDataKey::STATE_ID] ?? '',
+            row: $data[SyncSignalDataKey::ROW] ?? [],
         );
     }
 }

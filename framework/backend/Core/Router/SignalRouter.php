@@ -13,6 +13,7 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
@@ -291,8 +292,8 @@ class SignalRouter
         }
 
         $data = $signalData->toArray();
-        $collectionKey = $data['collectionKey'] ?? '';
-        $idString = $data['idString'] ?? '';
+        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
+        $idString = $data[SyncSignalDataKey::ID_STRING] ?? '';
         if ($collectionKey !== '' && $idString !== '') {
             $this->dbSyncBroadcastedIds[$collectionKey . ':' . $idString] = true;
         }
@@ -332,8 +333,8 @@ class SignalRouter
     public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
     {
         $data = $signalData->toArray();
-        $collectionKey = $data['collectionKey'] ?? '';
-        $stateId = $data['stateId'] ?? '';
+        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
+        $stateId = $data[SyncSignalDataKey::STATE_ID] ?? '';
         if ($collectionKey !== '' && $stateId !== '') {
             $this->rtSyncBroadcastedIds[$collectionKey . ':' . $stateId] = true;
         }
