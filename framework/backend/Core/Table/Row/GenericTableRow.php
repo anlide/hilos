@@ -26,6 +26,8 @@ final class GenericTableRow extends AbstractTableRow
      *
      * Uses `id` first, then `key`, and falls back to `null` when neither field
      * is a scalar row key.
+     *
+     * @return string|int|null Scalar row key from `id` or `key`, or null when absent
      */
     public function getRowKey(): string|int|null
     {
@@ -37,7 +39,7 @@ final class GenericTableRow extends AbstractTableRow
     /**
      * Serializes the generic row back to the raw table payload.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Stored raw row payload
      */
     public function toArray(): array
     {
@@ -48,6 +50,7 @@ final class GenericTableRow extends AbstractTableRow
      * Rebuilds a generic row from raw table payload.
      *
      * @param array<string, mixed> $data Raw row payload
+     * @return static Generic row wrapping the payload
      */
     public static function fromArray(array $data): static
     {

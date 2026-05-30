@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Definition;
 
 use ArrayAccess;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
@@ -199,6 +201,8 @@ abstract class TableDefinition implements ArrayAccess
      * @param TableQueryDTO $query Query parameters
      * @return TableSnapshotDTO Snapshot with raw rows
      * @throws DatabaseException When query execution fails
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the object type does not match the collection
      */
     protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableSnapshotDTO
     {

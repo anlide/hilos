@@ -26,7 +26,7 @@ abstract class AbstractTableRow extends BaseDTO
      *
      * Reserved for future table-aware signal routing. Default: no subjects.
      *
-     * @return list<string>
+     * @return list<string> Routing subject keys derived from the row, empty by default
      */
     public function getRoutingSubjects(): array
     {

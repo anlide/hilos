@@ -46,7 +46,7 @@ class TableMutationSignalData extends SignalData implements SignalDataInterface
      * Not supported: this signal is server-to-client only.
      *
      * @param array<string, mixed> $data Source data (ignored)
-     *
+     * @return static Declared return type; never returned because the method always throws
      * @throws TableSignalNotDeserializableException Always, deserialization not supported
      */
     public static function fromArray(array $data): static

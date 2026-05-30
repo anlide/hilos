@@ -30,7 +30,7 @@ final class TableMutationSignalCollection implements Countable, IteratorAggregat
     }
 
     /**
-     * Returns the number of mutation payloads in the collection.
+     * @return int Number of mutation payloads in the collection
      */
     public function count(): int
     {
@@ -40,7 +40,7 @@ final class TableMutationSignalCollection implements Countable, IteratorAggregat
     /**
      * Iterates table mutation payloads in insertion order.
      *
-     * @return Traversable<int, TableMutationSignalData>
+     * @return Traversable<int, TableMutationSignalData> Mutation payloads in insertion order
      */
     public function getIterator(): Traversable
     {

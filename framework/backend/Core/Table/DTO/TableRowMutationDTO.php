@@ -8,6 +8,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
+use ValueError;
 
 /**
  * DTO for one table row mutation (create/update/delete).
@@ -54,6 +55,8 @@ readonly class TableRowMutationDTO
      * row is restored as {@see GenericTableRow}.
      *
      * @param array<string, mixed> $data Serialized mutation payload
+     * @return self Reconstructed row mutation DTO
+     * @throws ValueError When the serialized type is not a valid TableMutationType value
      */
     public static function fromArray(array $data): self
     {
