@@ -22,6 +22,24 @@ class Schema
     private const string MYSQL_INDEX_PRIMARY = 'PRIMARY';
     private const string MYSQL_NON_UNIQUE_FALSE = '0';
 
+    // MySQL DESCRIBE result columns
+    private const string COL_FIELD = 'Field';
+    private const string COL_TYPE = 'Type';
+    private const string COL_NULL = 'Null';
+    private const string COL_DEFAULT = 'Default';
+    private const string COL_KEY = 'Key';
+    private const string COL_EXTRA = 'Extra';
+
+    // MySQL SHOW INDEXES result columns
+    private const string IDX_KEY_NAME = 'Key_name';
+    private const string IDX_NON_UNIQUE = 'Non_unique';
+    private const string IDX_COLUMN_NAME = 'Column_name';
+
+    // Foreign-key query aliases
+    private const string ALIAS_DB_NAME = 'db_name';
+    private const string ALIAS_COLUMNS = 'columns';
+    private const string ALIAS_REFERENCED_TABLE = 'referenced_table';
+
     // Statistics keys
     private const string STAT_KEY_CONNECTION_INDEX = 'connection_index';
     private const string STAT_KEY_INITIALIZED = 'initialized';
@@ -109,12 +127,12 @@ class Schema
         $primaryKeys = [];
 
         foreach ($columns as $column) {
-            $field = $column['Field'];
-            $type = $column['Type'];
-            $nullable = $column['Null'] === self::MYSQL_NULL_YES;
-            $default = $column['Default'];
-            $key = $column['Key'];
-            $extra = $column['Extra'] ?? '';
+            $field = $column[self::COL_FIELD];
+            $type = $column[self::COL_TYPE];
+            $nullable = $column[self::COL_NULL] === self::MYSQL_NULL_YES;
+            $default = $column[self::COL_DEFAULT];
+            $key = $column[self::COL_KEY];
+            $extra = $column[self::COL_EXTRA] ?? '';
 
             $phpType = self::mysqlTypeToPhp($type);
 
@@ -138,18 +156,18 @@ class Schema
         $indexInfo = [];
         $indexGroups = [];
         foreach ($indexes as $index) {
-            $keyName = $index['Key_name'];
+            $keyName = $index[self::IDX_KEY_NAME];
             if ($keyName === self::MYSQL_INDEX_PRIMARY) {
                 continue; // Already handled in columns
             }
 
             if (!isset($indexGroups[$keyName])) {
                 $indexGroups[$keyName] = [
-                    'unique' => $index['Non_unique'] === self::MYSQL_NON_UNIQUE_FALSE,
+                    'unique' => $index[self::IDX_NON_UNIQUE] === self::MYSQL_NON_UNIQUE_FALSE,
                     'columns' => []
                 ];
             }
-            $indexGroups[$keyName]['columns'][] = $index['Column_name'];
+            $indexGroups[$keyName]['columns'][] = $index[self::IDX_COLUMN_NAME];
         }
 
         foreach ($indexGroups as $keyName => $info) {
@@ -187,9 +205,9 @@ class Schema
     {
         try {
             // Get database name from current connection
-            Database::sql('SELECT DATABASE() as db_name');
+            Database::sql('SELECT DATABASE() as ' . self::ALIAS_DB_NAME);
             $dbRow = Database::row();
-            $dbName = $dbRow['db_name'] ?? null;
+            $dbName = $dbRow[self::ALIAS_DB_NAME] ?? null;
 
             if ($dbName === null) {
                 return [];
@@ -198,9 +216,9 @@ class Schema
             // Query INFORMATION_SCHEMA for foreign keys
             // GROUP_CONCAT with ORDER BY to handle composite keys correctly
             Database::sql("
-                SELECT 
-                    GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') as columns,
-                    kcu.REFERENCED_TABLE_NAME as referenced_table
+                SELECT
+                    GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') as " . self::ALIAS_COLUMNS . ",
+                    kcu.REFERENCED_TABLE_NAME as " . self::ALIAS_REFERENCED_TABLE . "
                 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
                 WHERE kcu.TABLE_SCHEMA = ?
                   AND kcu.TABLE_NAME = ?
@@ -211,8 +229,8 @@ class Schema
 
             $foreignKeys = [];
             while ($row = Database::row()) {
-                $columns = $row['columns'];
-                $referencedTable = $row['referenced_table'];
+                $columns = $row[self::ALIAS_COLUMNS];
+                $referencedTable = $row[self::ALIAS_REFERENCED_TABLE];
 
                 // For composite keys, use comma-separated string as key
                 // For simple keys, use single column name
