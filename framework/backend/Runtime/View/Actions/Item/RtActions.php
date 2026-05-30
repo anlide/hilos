@@ -16,7 +16,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use InvalidArgumentException;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * Base class for Rt item actions (write operations for a single RtItem).

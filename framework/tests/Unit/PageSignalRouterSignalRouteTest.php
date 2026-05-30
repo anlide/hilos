@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
@@ -361,7 +362,7 @@ final class PageSignalRouterTestSignalData extends SignalData
     public static function fromArray(array $data): static
     {
         if (!array_key_exists('message', $data)) {
-            throw new \InvalidArgumentException('Missing message');
+            throw new InvalidArgumentException('Missing message');
         }
 
         return new self((string)$data['message']);

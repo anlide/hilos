@@ -18,7 +18,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use InvalidArgumentException;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * RtActions - create, bulk, and collection-wide write operations for runtime collections.

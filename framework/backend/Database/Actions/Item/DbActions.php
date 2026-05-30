@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -42,13 +43,13 @@ abstract class DbActions
      *
      * @param string $name Property name (object only)
      * @return Object_ Object instance
-     * @throws \InvalidArgumentException If property unknown
+     * @throws InvalidArgumentException If property unknown
      */
     public function __get(string $name): mixed
     {
         return match ($name) {
             self::object => $this->item->getObject(),
-            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+            default => throw new InvalidArgumentException("Unknown property: {$name}"),
         };
     }
 

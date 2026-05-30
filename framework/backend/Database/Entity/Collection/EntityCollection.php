@@ -4,6 +4,7 @@ namespace Hilos\Database\Entity\Collection;
 
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\DatabaseException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use ArrayAccess;
 use Countable;
@@ -115,6 +116,18 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      */
     public function add(Entity $entity, int|string|null $key = null): self
     {
+        $this->store($entity, $key);
+        return $this;
+    }
+
+    /**
+     * Store entity at key (or append when key is null), keeping key order in sync.
+     *
+     * @param Entity $entity Entity to store
+     * @param int|string|null $key Storage key (null = append)
+     */
+    private function store(Entity $entity, int|string|null $key): void
+    {
         if ($key === null) {
             $this->entities[] = $entity;
             $this->keys = array_keys($this->entities);
@@ -124,7 +137,6 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
                 $this->keys[] = $key;
             }
         }
-        return $this;
     }
 
     /**
@@ -269,12 +281,12 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset Entity key (null to append)
      * @param mixed $value Entity instance
-     * @throws \InvalidArgumentException If value is not Entity instance
+     * @throws InvalidArgumentException If value is not Entity instance
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if (!($value instanceof Entity)) {
-            throw new \InvalidArgumentException("Value must be instance of Entity");
+            throw new InvalidArgumentException("Value must be instance of Entity");
         }
 
         $entityClass = static::ENTITY_CLASS;
@@ -282,15 +294,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
             return;
         }
 
-        if ($offset === null) {
-            $this->entities[] = $value;
-            $this->keys = array_keys($this->entities);
-        } else {
-            $this->entities[$offset] = $value;
-            if (!in_array($offset, $this->keys, true)) {
-                $this->keys[] = $offset;
-            }
-        }
+        $this->store($value, $offset);
     }
 
     /**

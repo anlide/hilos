@@ -2,6 +2,8 @@
 
 namespace Hilos\Database\Filter;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+
 /**
  * Builder for creating filters.
  *
@@ -73,12 +75,12 @@ class FilterBuilder
      * Builds final filter from accumulated conditions.
      *
      * @return FilterInterface Single filter or composite
-     * @throws \InvalidArgumentException When no filters added
+     * @throws InvalidArgumentException When no filters added
      */
     public function build(): FilterInterface
     {
         if (empty($this->filters)) {
-            throw new \InvalidArgumentException("Cannot build empty filter");
+            throw new InvalidArgumentException("Cannot build empty filter");
         }
 
         if (count($this->filters) === 1) {

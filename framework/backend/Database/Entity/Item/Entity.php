@@ -6,6 +6,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
+use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -281,6 +282,7 @@ abstract class Entity
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
      * @return array Tuple of [whereClause, params]
+     * @throws DatabaseParamsException When raw filter params cannot be wrapped into SqlParam
      */
     private static function buildWhere(array|string $filters = [], array|string $filtersParam = []): array
     {

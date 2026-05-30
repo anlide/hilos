@@ -13,6 +13,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -394,7 +395,7 @@ final class IndexedAgentSignalDtoTestPayload extends BaseDTO implements SignalDa
     public static function fromArray(array $data): static
     {
         if (!array_key_exists('message', $data)) {
-            throw new \InvalidArgumentException('Missing message');
+            throw new InvalidArgumentException('Missing message');
         }
 
         $entityId = $data['entityId'] ?? null;
