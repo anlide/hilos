@@ -14,7 +14,7 @@ use Hilos\Hilos;
 /**
  * Typed reader for one catalog-backed setting.
  */
-final class SettingValue
+final readonly class SettingValue
 {
     /**
      * Creates a typed setting value reader.
@@ -22,7 +22,7 @@ final class SettingValue
      * @param string $key Setting key
      */
     public function __construct(
-        private readonly string $key,
+        private string $key,
     ) {
     }
 
