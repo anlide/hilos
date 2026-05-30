@@ -32,7 +32,6 @@ use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
 
@@ -72,8 +71,7 @@ final class ChatDbContext extends HilosDbContext
     /**
      * Configures database context with object collections and view representations.
      *
-     * @throws ObjectCollectionNotFoundException If object collection init fails
-     * @throws DatabaseException On connection or schema error
+     * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      */
     public function configure(): void
     {

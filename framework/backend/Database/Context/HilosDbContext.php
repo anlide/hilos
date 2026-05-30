@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Context;
 
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Objects;
@@ -28,8 +27,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Configures Hilos-level collections (settings).
      *
-     * @throws ObjectCollectionNotFoundException If object collection init fails
-     * @throws DatabaseException On connection or schema error
+     * @throws ObjectCollectionNotFoundException When the settings object collection is missing
      */
     public function configure(): void
     {

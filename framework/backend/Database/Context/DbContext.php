@@ -106,6 +106,7 @@ abstract class DbContext
      * @return DbCollection DB collection instance
      * @throws CollectionNotFoundException When collection does not exist
      * @throws UnknownLazyStrategyException When lazy strategy is unknown
+     * @throws LogicException When the object collection entity class is not configured
      * @throws DatabaseException On connection or schema error
      */
     public function __get(string $name)
