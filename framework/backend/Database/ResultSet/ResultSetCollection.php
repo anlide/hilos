@@ -2,9 +2,11 @@
 
 namespace Hilos\Database\ResultSet;
 
+use Countable;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\CloneNotAllowedException;
-use mysqli;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Iterator;
 use mysqli_result;
 
 /**
@@ -13,10 +15,10 @@ use mysqli_result;
  * Used for stored procedures that return multiple result sets.
  * Also used as primary way to work with database results (even single result set).
  *
- * @implements \Iterator<int, ResultSet>
- * @implements \Countable
+ * @implements Iterator<int, ResultSet>
+ * @implements Countable
  */
-class ResultSetCollection implements \Iterator, \Countable
+class ResultSetCollection implements Iterator, Countable
 {
     /** @var list<ResultSet> result sets in collection */
     private array $resultSets = [];
@@ -242,6 +244,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Useful for UPDATE/DELETE/INSERT queries.
      *
      * @return int Number of affected rows
+     * @throws DatabaseConnectionException When not connected
      */
     public function affectedRows(): int
     {
@@ -379,6 +382,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Automatically calls nextResult() until all result sets are collected.
      *
      * @return self Self for chaining
+     * @throws DatabaseConnectionException When not connected
      */
     public function collectAll(): self
     {
@@ -400,6 +404,7 @@ class ResultSetCollection implements \Iterator, \Countable
      *
      * @param int $index Result set index (0-based)
      * @return ?ResultSet Result set or null if index is out of bounds
+     * @throws DatabaseConnectionException When not connected
      */
     public function getResultSet(int $index): ?ResultSet
     {
@@ -442,6 +447,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Automatically collects all result sets if not already collected.
      *
      * @return list<ResultSet> Array of result sets
+     * @throws DatabaseConnectionException When not connected
      */
     public function all(): array
     {

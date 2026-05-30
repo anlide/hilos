@@ -2,9 +2,11 @@
 
 namespace Hilos\Database\ResultSet;
 
+use Countable;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Exception\CloneNotAllowedException;
+use Iterator;
 use mysqli_result;
 
 /**
@@ -12,10 +14,10 @@ use mysqli_result;
  *
  * Stores raw data from database and provides lazy conversion to Entity collections.
  *
- * @implements \Iterator<int|string, array<string, mixed>>
- * @implements \Countable
+ * @implements Iterator<int|string, array<string, mixed>>
+ * @implements Countable
  */
-class ResultSet implements \Iterator, \Countable
+class ResultSet implements Iterator, Countable
 {
     /** @var ?mysqli_result Original mysqli result (if not loaded yet) */
     private ?mysqli_result $mysqliResult = null;
