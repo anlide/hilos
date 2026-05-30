@@ -40,6 +40,10 @@ class Schema
     private const string ALIAS_COLUMNS = 'columns';
     private const string ALIAS_REFERENCED_TABLE = 'referenced_table';
 
+    // Internal index-group accumulator keys
+    private const string IDX_GROUP_UNIQUE = 'unique';
+    private const string IDX_GROUP_COLUMNS = 'columns';
+
     // Statistics keys
     private const string STAT_KEY_CONNECTION_INDEX = 'connection_index';
     private const string STAT_KEY_INITIALIZED = 'initialized';
@@ -163,18 +167,18 @@ class Schema
 
             if (!isset($indexGroups[$keyName])) {
                 $indexGroups[$keyName] = [
-                    'unique' => $index[self::IDX_NON_UNIQUE] === self::MYSQL_NON_UNIQUE_FALSE,
-                    'columns' => []
+                    self::IDX_GROUP_UNIQUE => $index[self::IDX_NON_UNIQUE] === self::MYSQL_NON_UNIQUE_FALSE,
+                    self::IDX_GROUP_COLUMNS => []
                 ];
             }
-            $indexGroups[$keyName]['columns'][] = $index[self::IDX_COLUMN_NAME];
+            $indexGroups[$keyName][self::IDX_GROUP_COLUMNS][] = $index[self::IDX_COLUMN_NAME];
         }
 
         foreach ($indexGroups as $keyName => $info) {
             $indexInfo[$keyName] = new IndexInfo(
                 name: $keyName,
-                columns: $info['columns'],
-                unique: $info['unique']
+                columns: $info[self::IDX_GROUP_COLUMNS],
+                unique: $info[self::IDX_GROUP_UNIQUE]
             );
         }
 
