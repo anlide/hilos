@@ -70,7 +70,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
      */
     public function getTypeString(): string
     {
-        return implode('', array_map(fn(SqlParam $p) => $p->type, $this->params));
+        return implode('', array_map(fn(SqlParam $p) => $p->type->value, $this->params));
     }
 
     /**

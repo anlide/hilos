@@ -657,7 +657,7 @@ class Database
                 // Escape value
                 if ($value === null) {
                     $parsedSql .= 'NULL';
-                } elseif ($param->type === 'i' || $param->type === 'd') {
+                } elseif ($param->type->isNumeric()) {
                     $parsedSql .= $value;
                 } else {
                     $parsedSql .= "'" . mysqli_real_escape_string($mysqli, (string)$value) . "'";
