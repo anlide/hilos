@@ -6,7 +6,7 @@ Read this before sending DB or RT data to the browser.
 
 Use explicit browser-facing contracts for DB/RT payloads: `BrowserContext` and
 `BrowserPageSignalData` for page-shaped table state, or typed
-`FrontendChangesDTO` collections for project-wide frontend state. Do not add new
+`BrowserChangesDTO` collections for project-wide frontend state. Do not add new
 browser shaping, privacy filtering, or runtime overlays to DB/RT View item
 `toArray()` methods.
 
@@ -21,9 +21,8 @@ project-specific browser state.
 | Public browser state for one DB item on a page | `BrowserContext` / `BrowserPageSignalData` row sources |
 | Runtime-backed browser state on a page | `BrowserContext` computed fields fed by `Hilos::$rt` typed APIs |
 | Page-specific table state | `BrowserContext` / `BrowserPageSignalData` rows |
-| Project-wide frontend state collection | `FrontendChangesDTO` with project-owned collection key constants |
+| Project-wide frontend state collection | `BrowserChangesDTO` with project-owned collection key constants |
 | Table row payload | Concrete table row DTO or table helper |
-| Generic legacy entity payload | Existing `EntitiesChangesDTO` path only when already established |
 | RT sync or delete tombstone row | Concrete `Runtime/State/Item/*::toArray()` |
 | Backend object/entity row | Object/entity `toArray()` |
 
@@ -40,7 +39,7 @@ sync row contract.
 2. For page-shaped browser state, inspect `BrowserContext`, page/table
    `BROWSER` config, `BrowserPageSignalData`, and the matching TypeScript
    parser/store shape.
-3. For project-wide frontend state, inspect existing `FrontendChangesDTO`
+3. For project-wide frontend state, inspect existing `BrowserChangesDTO`
    producers, project collection key constants, and the matching TypeScript
    parser/store shape.
 4. Keep DB/RT View items as typed model access APIs: expose reusable properties
@@ -104,22 +103,6 @@ public function toArray(): array
 
 That RT state row is input for sync and browser/source-change decisions; it is not the
 browser payload.
-
-## Legacy Entity Paths
-
-Some existing entity payloads still use `EntitiesChangesDTO`, which serializes
-DB collections through `DbCollection::toArray(idAsIndex: false, toFrontend:
-true)`. Treat this as a generic legacy entity path, not as the default for new
-browser contracts.
-
-When touching one of those paths:
-
-- prefer migrating the affected model to BrowserContext rows or typed
-  `FrontendChangesDTO` collections;
-- do not add new model-specific browser filters to `DbItem::toArray()`;
-- do not send private fields such as tokens through `EntitiesChangesDTO`;
-- keep existing `toFrontend` behavior only when a legacy entity path still
-  depends on it and no frontend representation migration is in scope.
 
 ## Anti-Patterns
 

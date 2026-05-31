@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-representation
-description: Work with Hilos browser-facing DB/RT payloads, BrowserContext page-shaped rows, page-table topology, typed frontend state payloads, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
+description: Work with Hilos browser-facing DB/RT payloads, BrowserContext page-shaped rows, page-table topology, typed frontend state payloads, BrowserChangesDTO collections, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
 ---
 
 # Hilos Frontend Representation
@@ -29,7 +29,7 @@ payloads, table rows, or legacy payloads that still call
 
 - Page-shaped DB/RT browser state should go through `BrowserContext` and
   `BrowserPageSignalData`; project-wide frontend state should go through typed
-  `FrontendChangesDTO` collections.
+  `BrowserChangesDTO` collections.
 - DB/RT `toArray()` methods are backend serializers, legacy entity serializers,
   table row serializers, DTO serializers, or RT sync row serializers depending
   on the owning class. They are not the default owner for new browser payloads.
@@ -55,7 +55,7 @@ payloads, table rows, or legacy payloads that still call
 5. If runtime data is involved, inspect the RT collection helper first, such as
    `connections->summaryForUser($userId)`.
 6. Use `BrowserPageSignalData` for page-shaped browser rows and typed
-   `FrontendChangesDTO` payloads for project-wide frontend state.
+   `BrowserChangesDTO` payloads for project-wide frontend state.
 7. Keep legacy `toFrontend` entity paths only when the existing generic entity
    channel still depends on them and migration is out of scope.
 8. Keep table/page code as orchestration that calls existing model APIs, typed

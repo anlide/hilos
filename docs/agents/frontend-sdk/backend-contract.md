@@ -81,7 +81,7 @@ shape — `errorCode` is stable, `message` is for diagnostics only.
 
 ## Frontend state snapshots
 
-Project-wide frontend state collections can be sent as `FrontendChangesDTO`
+Project-wide frontend state collections can be sent as `BrowserChangesDTO`
 under the `frontend` payload key:
 
 ```json
@@ -124,27 +124,8 @@ Page-shaped DB/RT state should normally be sent as `BrowserPageSignalData`:
 
 The frontend applies this through `useBrowserStore().applyPagePayload(...)`.
 Use this shape for page/table browser state produced by `BrowserContext`; use
-`FrontendChangesDTO` for project-wide frontend collections that are not tied to
+`BrowserChangesDTO` for project-wide frontend collections that are not tied to
 one subscribed page table.
-
-## Entity snapshots
-
-Generic entity payloads use `EntitiesChangesDTO`:
-
-```json
-{
-  "entities": {
-    "full": { "events": [...] },
-    "updates": {},
-    "deleted": {}
-  }
-}
-```
-
-Treat entity snapshots as a generic or legacy channel. Do not add new
-project-specific browser filtering to DB/RT `toArray()` just to make an entity
-payload safe; prefer a BrowserContext row for page state or a typed
-`FrontendChangesDTO` collection for project-wide state.
 
 ## Table snapshots
 

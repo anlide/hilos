@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\SignalPayloadConstants;
 
 /**
  * WebSocketSignalData - Signal data for WebSocket signals.
@@ -37,17 +38,7 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      */
     public function toArray(): array
     {
-        $dataArray = $this->data instanceof BaseDTO
-            ? $this->data->toArray()
-            : [];
-
-        // Store data class name for deserialization
-        $dataType = get_class($this->data);
-
-        $result = [
-            'data' => $dataArray,
-            'dataType' => $dataType,
-        ];
+        $result = SignalDataEnvelope::encode($this->data);
 
         if ($this->targetAcceptKey !== null) {
             $result['targetAcceptKey'] = $this->targetAcceptKey;
@@ -72,44 +63,14 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
-        $innerDataArray = $data['data'] ?? [];
-        $dataType = $data['dataType'] ?? null;
-
-        // Deserialize inner data using dataType if provided
-        $signalData = self::deserializeInnerData($innerDataArray, $dataType);
-
         return new self(
-            data: $signalData,
+            data: SignalDataEnvelope::decode(
+                $data[SignalPayloadConstants::FIELD_DATA] ?? [],
+                $data[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null,
+            ),
             targetAcceptKey: $data['targetAcceptKey'] ?? null,
             targetGroup: $data['targetGroup'] ?? null,
             excludeAcceptKey: $data['excludeAcceptKey'] ?? null,
         );
-    }
-
-    /**
-     * Deserializes inner signal data from array.
-     *
-     * @param array<string, mixed> $dataArray Signal data array
-     * @param ?class-string $dataType Signal data class name for deserialization
-     * @return SignalDataInterface Deserialized signal data
-     */
-    private static function deserializeInnerData(array $dataArray, ?string $dataType): SignalDataInterface
-    {
-        // If dataType is provided, try to deserialize using that class
-        if (is_string($dataType) && class_exists($dataType)) {
-            // Check if class implements SignalDataInterface
-            if (is_a($dataType, SignalDataInterface::class, true)) {
-                // All SignalDataInterface implementations extend BaseDTO and have fromArray()
-                try {
-                    return $dataType::fromArray($dataArray);
-                } catch (\Throwable $e) {
-                    // If deserialization fails, fall back to SignalData with data
-                    // Some SignalData implementations may not support fromArray
-                }
-            }
-        }
-
-        // Fallback: create SignalData with provided data array
-        return new SignalData($dataArray);
     }
 }

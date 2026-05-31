@@ -56,20 +56,17 @@ class SignalRouter
     private array $queuedSignals = [];
 
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
-    public bool $dbSyncBroadcastEnabled = true {
-        get {
-            return $this->dbSyncBroadcastEnabled;
-        }
-        set {
-            $this->dbSyncBroadcastEnabled = $value;
-        }
-    }
+    public bool $dbSyncBroadcastEnabled = true;
 
     /** @var array<string, true> Keys "collectionKey:idString" for self-broadcast skip */
     private array $dbSyncBroadcastedIds = [];
 
     /** @var array<string, true> Keys "collectionKey:stateId" for self-broadcast skip */
     private array $rtSyncBroadcastedIds = [];
+
+    // TODO: [tables-refac] Replace the loosely typed subscription storage below with a
+    // small typed value object (page key + params) so getPageSubscriptions() no longer
+    // has to defensively re-check is_string()/is_array() on every read (see key rule #8).
 
     /**
      * User page subscriptions storage
@@ -226,7 +223,7 @@ class SignalRouter
      * Normalizes static route config to agent route rows.
      *
      * @param string|list<string> $routeConfig Single agent type or list of agent types
-     * @return list<array{agentType: string, agentIndex: null}>
+     * @return list<array{agentType: string, agentIndex: null}> Agent route rows with null index
      */
     private function normalizeStaticRoutes(string|array $routeConfig): array
     {
@@ -538,7 +535,10 @@ class SignalRouter
     /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
-     * @return list<string>
+     * @param string $page Page identifier to match subscriptions against
+     * @param ?string $paramKey Route param key to filter on, or null for no filter
+     * @param ?string $paramValue Expected route param value (compared as string), or null for no filter
+     * @return list<string> Accept keys subscribed to the page
      */
     public function getAcceptKeysForPage(string $page, ?string $paramKey = null, ?string $paramValue = null): array
     {
@@ -623,7 +623,7 @@ class SignalRouter
      * fan-out; in the daemon this is the global routing registry used for
      * broadcasts.
      *
-     * @return list<string>
+     * @return list<string> Unique accept keys from page and group subscriptions
      */
     public function getSubscribedAcceptKeys(): array
     {
@@ -944,8 +944,8 @@ class SignalRouter
                 // Return single client destination
                 if ($targetAcceptKey !== null && $targetAcceptKey !== '') {
                     $destinations[] = [
-                        'type' => 'websocket',
-                        'acceptKey' => $targetAcceptKey,
+                        SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
+                        SignalPayloadConstants::FIELD_ACCEPT_KEY => $targetAcceptKey,
                     ];
                 }
                 break;
@@ -957,8 +957,8 @@ class SignalRouter
                         continue;
                     }
                     $destinations[] = [
-                        'type' => 'websocket',
-                        'acceptKey' => $acceptKey,
+                        SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
+                        SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
                     ];
                 }
                 break;
@@ -972,8 +972,8 @@ class SignalRouter
                         }
                         if (isset($groups[$targetGroup])) {
                             $destinations[] = [
-                                'type' => 'websocket',
-                                'acceptKey' => $acceptKey,
+                                SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
+                                SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
                             ];
                         }
                     }

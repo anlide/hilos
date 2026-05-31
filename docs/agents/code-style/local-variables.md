@@ -78,7 +78,7 @@ $this->sendToUser(
     ChatSignalConstants::SUBSCRIPTION_PAGE_USERS,
     $acceptKey,
     new ChatEventSignalDTO(
-        new EntitiesChangesDTO(),
+        new BrowserChangesDTO(),
         [ChatTableContext::users => Hilos::$table->users->getFullSnapshot()],
     ),
 );
@@ -93,7 +93,7 @@ $this->sendToUser(
     ChatSignalConstants::SUBSCRIPTION_PAGE_USERS,
     $acceptKey,
     new ChatEventSignalDTO(
-        new EntitiesChangesDTO(),
+        new BrowserChangesDTO(),
         [ChatTableContext::users => $snapshot],
     ),
 );

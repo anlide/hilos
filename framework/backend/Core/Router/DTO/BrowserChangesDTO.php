@@ -7,13 +7,13 @@ namespace Hilos\Core\Router\DTO;
 use Hilos\BaseDTO;
 
 /**
- * Frontend state changes payload.
+ * Browser state changes payload.
  *
- * Carries explicit client-side state collection snapshots and mutations. Unlike
- * {@see EntitiesChangesDTO}, these collections do not need to be backed by
- * DbCollection and may be DB-backed, runtime-backed, or derived.
+ * Carries explicit client-side state collection snapshots and mutations. These
+ * collections do not need to be backed by DbCollection and may be DB-backed,
+ * runtime-backed, or derived.
  */
-final class FrontendChangesDTO extends BaseDTO
+final class BrowserChangesDTO extends BaseDTO
 {
     /**
      * @var array<string, list<array<string, mixed>>>
@@ -103,7 +103,7 @@ final class FrontendChangesDTO extends BaseDTO
      * Reads a string-keyed map of item payload lists.
      *
      * @param mixed $value Raw transport value
-     * @return array<string, list<array<string, mixed>>>
+     * @return array<string, list<array<string, mixed>>> Item payload lists keyed by collection key
      */
     private static function readItemCollections(mixed $value): array
     {
@@ -134,7 +134,7 @@ final class FrontendChangesDTO extends BaseDTO
      * Reads a string-keyed map of deleted IDs.
      *
      * @param mixed $value Raw transport value
-     * @return array<string, list<int|string>>
+     * @return array<string, list<int|string>> Deleted item IDs keyed by collection key
      */
     private static function readDeletedCollections(mixed $value): array
     {
@@ -165,7 +165,7 @@ final class FrontendChangesDTO extends BaseDTO
      * Reads a list of string keys.
      *
      * @param mixed $value Raw transport value
-     * @return list<string>
+     * @return list<string> String keys from the transport value
      */
     private static function readStringList(mixed $value): array
     {

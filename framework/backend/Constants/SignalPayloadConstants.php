@@ -27,6 +27,15 @@ class SignalPayloadConstants
     /** @var string Payload field key for data payload */
     public const string FIELD_DATA = 'data';
 
+    /** @var string Payload field key for inner payload class name (deserialization hint) */
+    public const string FIELD_DATA_TYPE = 'dataType';
+
+    /** @var string Payload field key for WebSocket accept key */
+    public const string FIELD_ACCEPT_KEY = 'acceptKey';
+
+    /** @var string Signal routing destination type for WebSocket delivery */
+    public const string DESTINATION_TYPE_WEBSOCKET = 'websocket';
+
     /** @var string Subscription payload key for page */
     public const string SUBSCRIPTION_PAGE_KEY = 'page';
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
 /**
@@ -25,6 +26,11 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
     ) {
     }
 
+    /**
+     * Accept key from the inner payload, or empty string when it carries none.
+     *
+     * @return string Inner payload accept key, or empty string
+     */
     public function getAcceptKey(): string
     {
         return $this->data instanceof WebSocketAcceptKeySignalDTO ? $this->data->getAcceptKey() : '';
@@ -37,14 +43,7 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
      */
     public function toArray(): array
     {
-        $dataArray = $this->data instanceof BaseDTO
-            ? $this->data->toArray()
-            : [];
-
-        return [
-            'data' => $dataArray,
-            'dataType' => get_class($this->data),
-        ];
+        return SignalDataEnvelope::encode($this->data);
     }
 
     /**
@@ -55,33 +54,11 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
      */
     public static function fromArray(array $data): static
     {
-        $innerDataArray = $data['data'] ?? [];
-        $dataType = $data['dataType'] ?? null;
-
-        $signalData = self::deserializeInnerData($innerDataArray, $dataType);
-
-        return new self(data: $signalData);
-    }
-
-    /**
-     * Deserializes inner signal data from array.
-     *
-     * @param array<string, mixed> $dataArray Signal data array
-     * @param ?class-string $dataType Signal data class name for deserialization
-     * @return SignalDataInterface Deserialized signal data
-     */
-    private static function deserializeInnerData(array $dataArray, ?string $dataType): SignalDataInterface
-    {
-        if (is_string($dataType) && class_exists($dataType)) {
-            if (is_a($dataType, SignalDataInterface::class, true)) {
-                try {
-                    return $dataType::fromArray($dataArray);
-                } catch (\Throwable $e) {
-                    // Fall through to fallback
-                }
-            }
-        }
-
-        return new SignalData($dataArray);
+        return new self(
+            data: SignalDataEnvelope::decode(
+                $data[SignalPayloadConstants::FIELD_DATA] ?? [],
+                $data[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null,
+            ),
+        );
     }
 }

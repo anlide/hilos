@@ -576,14 +576,14 @@ abstract class DaemonManager extends BaseManager
                         }
                         break;
 
-                    case 'websocket':
+                    case SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET:
                         // Send signal to WebSocket client
                         if ($webSocketServer === null) {
                             Logger::debug("No WebSocket server available for routing signal to client");
                             break;
                         }
 
-                        $acceptKey = $destination['acceptKey'] ?? '';
+                        $acceptKey = $destination[SignalPayloadConstants::FIELD_ACCEPT_KEY] ?? '';
                         if ($acceptKey === '') {
                             Logger::error("Accept key is missing in WebSocket destination");
                             break;

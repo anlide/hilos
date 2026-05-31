@@ -22,14 +22,14 @@ interface WebSocketEnvelopeAware
     /**
      * Envelope-level outcome marker.
      *
-     * @return 'success'|'fail'|null
+     * @return 'success'|'fail'|null Action acknowledgement outcome, or null when absent
      */
     public function getEnvelopeOutcome(): ?string;
 
     /**
      * Envelope-level server clock tick in milliseconds, if this signal carries one.
      *
-     * @return int|null
+     * @return int|null Server clock tick in milliseconds, or null when absent
      */
     public function getEnvelopeTime(): ?int;
 }

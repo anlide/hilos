@@ -48,13 +48,8 @@ class SignalDTO extends BaseDTO
      */
     public function toArray(): array
     {
-        // Serialize signalData - check if it has toArray() method
-        // SignalDataInterface requires toArray() method, so we can safely call it
-        $dataArray = method_exists($this->data, 'toArray')
-            ? $this->data->toArray()
-            : [];
-
-        // Store data class name for deserialization
+        // SignalDataInterface guarantees toArray(); store class name for deserialization
+        $dataArray = $this->data->toArray();
         $dataType = get_class($this->data);
 
         // Serialize signalSource - always serialize to array

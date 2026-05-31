@@ -1,6 +1,6 @@
 /**
- * Transport shape for entity changes payload.
- * Matches backend EntitiesChangesDTO when serialized (toArray with toFrontend).
+ * Transport shape for collection changes payload.
+ * Matches backend BrowserChangesDTO when serialized (toArray).
  * Keys are collection names (e.g. 'users', 'events'); values are arrays.
  */
 export interface EntitiesEnvelope {

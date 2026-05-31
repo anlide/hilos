@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Core\Router\DTO\FrontendChangesDTO;
+use Hilos\Core\Router\DTO\BrowserChangesDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for {@see FrontendChangesDTO}.
+ * Unit tests for {@see BrowserChangesDTO}.
  */
-final class FrontendChangesDTOTest extends TestCase
+final class BrowserChangesDTOTest extends TestCase
 {
     public function testSerializesFrontendStateChanges(): void
     {
-        $dto = new FrontendChangesDTO(
+        $dto = new BrowserChangesDTO(
             full: ['users' => [['id' => 1, 'name' => 'Ada']]],
             updates: ['userPresence' => [['userId' => 1, 'presence' => 'online']]],
             deleted: ['userConnectionStats' => [1]],
@@ -34,7 +34,7 @@ final class FrontendChangesDTOTest extends TestCase
 
     public function testRoundtripKeepsOnlyValidCollectionShapes(): void
     {
-        $dto = FrontendChangesDTO::fromArray([
+        $dto = BrowserChangesDTO::fromArray([
             'full' => [
                 'users' => [['id' => 1], 'bad'],
                 7 => [['ignored' => true]],

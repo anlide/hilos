@@ -13,13 +13,15 @@ interface ActionErrorSignalDataInterface extends SignalDataInterface, WebSocketA
 {
     /**
      * Action name to pass into AbstractPage::onActionException().
+     *
+     * @return string Action name for the error path
      */
     public function getActionErrorName(): string;
 
     /**
      * Payload data used to recreate the matching ActionPayloadDTO.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Raw payload for the failed action
      */
     public function getActionErrorPayload(): array;
 }
