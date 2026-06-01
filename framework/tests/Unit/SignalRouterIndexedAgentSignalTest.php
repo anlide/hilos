@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\BaseDTO;
-use Hilos\Constants\AgentConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -15,6 +13,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -37,8 +36,8 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => 42]),
         );
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => '42'],
+        $this->assertEquals([
+            new AgentDestination(IndexedAgentSignalTestAgent::AGENT_TYPE, '42'),
         ], $destinations);
     }
 
@@ -48,8 +47,8 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => 'abc']),
         );
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => 'abc'],
+        $this->assertEquals([
+            new AgentDestination(IndexedAgentSignalTestAgent::AGENT_TYPE, 'abc'),
         ], $destinations);
     }
 
@@ -95,8 +94,8 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
             $this->agentSignal(IndexedAgentSignalTestAgent::SINGLETON_SIGNAL, []),
         );
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(IndexedAgentSignalTestAgent::AGENT_TYPE),
         ], $destinations);
     }
 
@@ -161,8 +160,8 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
             ),
         );
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalDtoTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => '7'],
+        $this->assertEquals([
+            new AgentDestination(IndexedAgentSignalDtoTestAgent::AGENT_TYPE, '7'),
         ], $destinations);
     }
 

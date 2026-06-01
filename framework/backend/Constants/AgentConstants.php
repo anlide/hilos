@@ -23,7 +23,4 @@ final class AgentConstants
 
     /** @var int Maximum number of parts when splitting agent ID by ID_SEPARATOR */
     public const int ID_MAX_PARTS = 2;
-
-    /** @var string Signal routing destination type for agent delivery */
-    public const string DESTINATION_TYPE_AGENT = 'agent';
 }

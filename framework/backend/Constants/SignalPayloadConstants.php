@@ -33,9 +33,6 @@ class SignalPayloadConstants
     /** @var string Payload field key for WebSocket accept key */
     public const string FIELD_ACCEPT_KEY = 'acceptKey';
 
-    /** @var string Signal routing destination type for WebSocket delivery */
-    public const string DESTINATION_TYPE_WEBSOCKET = 'websocket';
-
     /** @var string Subscription payload key for page */
     public const string SUBSCRIPTION_PAGE_KEY = 'page';
 

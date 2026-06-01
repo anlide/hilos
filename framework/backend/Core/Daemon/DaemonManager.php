@@ -6,15 +6,15 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
-use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -540,64 +540,56 @@ abstract class DaemonManager extends BaseManager
                     break;
                 }
 
-                $destinationType = $destination[SignalPayloadConstants::FIELD_TYPE] ?? AgentConstants::DESTINATION_TYPE_AGENT;
+                if ($destination instanceof AgentDestination) {
+                    // Send signal to agent via worker server
+                    $agentType = $destination->agentType;
+                    $agentIndex = $destination->agentIndex;
+                    $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+                    $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
+                    Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
 
-                switch ($destinationType) {
-                    case AgentConstants::DESTINATION_TYPE_AGENT:
-                        // Send signal to agent via worker server
-                        $agentType = $destination[AgentConstants::FIELD_AGENT_TYPE] ?? 'unknown';
-                        $agentIndex = $destination[AgentConstants::FIELD_AGENT_INDEX] ?? null;
-                        $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
-                        $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
-                        Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
+                    // Wrap signal in DaemonAgentMessageDTO
+                    $messageDto = new DaemonAgentMessageDTO(
+                        agentId: $agentId,
+                        signal: $signal,
+                    );
 
-                        // Wrap signal in DaemonAgentMessageDTO
-                        $messageDto = new DaemonAgentMessageDTO(
-                            agentId: $agentId,
-                            signal: $signal,
+                    try {
+                        $workerServer->sendSignalToAgent(
+                            $agentType,
+                            $agentIndex,
+                            $messageDto,
                         );
-
-                        try {
-                            $workerServer->sendSignalToAgent(
-                                $agentType,
-                                $agentIndex,
-                                $messageDto,
-                            );
-                        } catch (NoSuitableWorkerException $e) {
-                            // During shutdown, workers may be unavailable - ignore this error
-                            if ($this->shouldExit) {
-                                Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
-                                $skipSignal = true;
-                                break;
-                            }
-                            // Re-throw if not shutting down
-                            Logger::error("Failed to send signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
-                            throw $e;
+                    } catch (NoSuitableWorkerException $e) {
+                        // During shutdown, workers may be unavailable - ignore this error
+                        if ($this->shouldExit) {
+                            Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                            $skipSignal = true;
+                            continue;
                         }
-                        break;
+                        // Re-throw if not shutting down
+                        Logger::error("Failed to send signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                        throw $e;
+                    }
+                } elseif ($destination instanceof WebSocketDestination) {
+                    // Send signal to WebSocket client
+                    if ($webSocketServer === null) {
+                        Logger::debug("No WebSocket server available for routing signal to client");
+                        continue;
+                    }
 
-                    case SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET:
-                        // Send signal to WebSocket client
-                        if ($webSocketServer === null) {
-                            Logger::debug("No WebSocket server available for routing signal to client");
-                            break;
-                        }
+                    $acceptKey = $destination->acceptKey;
+                    if ($acceptKey === '') {
+                        Logger::error("Accept key is missing in WebSocket destination");
+                        continue;
+                    }
 
-                        $acceptKey = $destination[SignalPayloadConstants::FIELD_ACCEPT_KEY] ?? '';
-                        if ($acceptKey === '') {
-                            Logger::error("Accept key is missing in WebSocket destination");
-                            break;
-                        }
+                    Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket acceptKey: {$acceptKey}");
 
-                        Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket acceptKey: {$acceptKey}");
-
-                        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
-                        break;
-
-                    default:
-                        // Unknown destination type, skip
-                        Logger::error("Unknown destination type: {$destinationType} for signal: {$signalType}/{$signalName}");
-                        break;
+                    $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+                } else {
+                    // Unknown destination type, skip
+                    Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
                 }
             }
         }

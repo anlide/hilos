@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\AgentConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -34,13 +33,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 {
     public function testPageSubscribeRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(
                 $this->pageSubscribeSignal(SignalRouterTopologyTestPage::PAGE),
@@ -50,13 +45,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testBinaryFrameRoutesThroughPageSignalTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -69,13 +60,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testNamedAgentSignalRoutesThroughPageSignalTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::AGENT),
@@ -88,7 +75,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testPageOwnedSignalDoesNotRouteFromWrongSource(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::DAEMON),
@@ -101,13 +88,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testNamedCronSignalRoutesThroughPageSignalTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::DAEMON),
@@ -120,7 +103,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testPageOwnedCronDoesNotRouteFromWrongSource(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -133,13 +116,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testActionRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -152,13 +131,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testAgentOwnedSignalRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologySignalTestAgent::AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologySignalTestAgent::AGENT_TYPE),
             ],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::AGENT),
@@ -171,7 +146,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testAgentOwnedSignalDoesNotRouteFromWrongSource(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [],
             (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -184,13 +159,9 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testUnregisteredPageUsesProjectFallback(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE),
             ],
             (new SignalRouterTopologyFallbackTestRouter())->getDestinations(
                 $this->pageSubscribeSignal('unregistered_page'),
@@ -200,7 +171,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testBaseRouterDoesNotRouteUnregisteredPageWithoutFallback(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [],
             (new SignalRouter())->getDestinations($this->pageSubscribeSignal('unregistered_page')),
         );

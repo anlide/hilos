@@ -8,10 +8,11 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\BaseDTO;
-use Hilos\Constants\AgentConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\Destination;
+use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Hilos;
@@ -22,6 +23,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
+use SplQueue;
 
 /**
  * SignalRouter - Base class for routing signals from sources to agents.
@@ -52,8 +54,8 @@ class SignalRouter
         SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
     ];
 
-    /** @var list<SignalDTO> queued signals to dispatch */
-    private array $queuedSignals = [];
+    /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
+    private SplQueue $queuedSignals;
 
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
     public bool $dbSyncBroadcastEnabled = true;
@@ -68,10 +70,11 @@ class SignalRouter
     private SubscriptionRegistry $subscriptions;
 
     /**
-     * Initializes the worker-local subscription mirror and self-broadcast registries.
+     * Initializes the signal queue, worker-local subscription mirror, and self-broadcast registries.
      */
     public function __construct()
     {
+        $this->queuedSignals = new SplQueue();
         $this->dbSelfBroadcast = new SelfBroadcastRegistry();
         $this->rtSelfBroadcast = new SelfBroadcastRegistry();
         $this->subscriptions = new SubscriptionRegistry();
@@ -153,48 +156,24 @@ class SignalRouter
     }
 
     /**
-     * Route signal to target
+     * Resolves service-signal owner agent types from the project router protected hooks.
      *
-     * Returns routing information for signal, or null if no route found.
-     * Supports routing by page, group, or direct routing.
-     *
-     * @param SignalSourceInterface $signalSource Signal source identifier
-     * @param SignalTypeInterface $signalType Signal type (e.g., 'frame', 'handshake', 'close', 'subscribe', 'action')
-     * @param SignalDataInterface $dto Signal data DTO
-     * @return list<array{agentType: string, agentIndex: ?string}> List of routes, or empty list if no route
-     */
-    public function route(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalDataInterface $dto): array
-    {
-        $source = $signalSource->getSource();
-        $signalTypeValue = $signalType->getType();
-
-        $routeConfig = $this->resolveServiceSignalRouteConfig($source, $signalTypeValue);
-        if ($routeConfig === null) {
-            return [];
-        }
-
-        return $this->normalizeStaticRoutes($routeConfig);
-    }
-
-    /**
-     * Resolves service-signal routes from project router protected hooks.
+     * Covers DAEMON/SYSTEM bootstrap, generic DAEMON/CRON, and WebSocket lifecycle
+     * (HANDSHAKE, CONNECTION_CLOSE, WEBSOCKET/CRON). Returns an empty list for any
+     * signal these hooks do not own.
      *
      * @param string $source Signal source identifier
      * @param string $signalTypeValue Signal type value
-     * @return string|list<string>|null Route config or null when no route exists
+     * @return list<string> Owner agent types, empty when no service-signal route exists
      */
-    private function resolveServiceSignalRouteConfig(string $source, string $signalTypeValue): string|array|null
+    private function resolveServiceSignalAgentTypes(string $source, string $signalTypeValue): array
     {
         if ($source === SignalSource::DAEMON && $signalTypeValue === SignalTypeConstants::SYSTEM) {
-            $bootstrapAgentTypes = $this->getDefaultSystemBootstrapAgentTypes();
-
-            return $bootstrapAgentTypes !== [] ? $bootstrapAgentTypes : null;
+            return $this->nonEmptyAgentTypes($this->getDefaultSystemBootstrapAgentTypes());
         }
 
         if ($source === SignalSource::DAEMON && $signalTypeValue === SignalTypeConstants::CRON) {
-            $agentType = $this->getDefaultDaemonCronAgentType();
-
-            return is_string($agentType) && $agentType !== '' ? $agentType : null;
+            return $this->nonEmptyAgentTypes([$this->getDefaultDaemonCronAgentType()]);
         }
 
         if ($source === SignalSource::WEBSOCKET && in_array($signalTypeValue, [
@@ -202,91 +181,45 @@ class SignalRouter
             SignalTypeConstants::CONNECTION_CLOSE,
             SignalTypeConstants::CRON,
         ], true)) {
-            $agentType = $this->getDefaultWebSocketLifecycleAgentType();
-
-            return is_string($agentType) && $agentType !== '' ? $agentType : null;
+            return $this->nonEmptyAgentTypes([$this->getDefaultWebSocketLifecycleAgentType()]);
         }
 
-        return null;
+        return [];
     }
 
     /**
-     * Normalizes static route config to agent route rows.
+     * Filters raw project-hook agent types down to non-empty string entries.
      *
-     * @param string|list<string> $routeConfig Single agent type or list of agent types
-     * @return list<array{agentType: string, agentIndex: null}> Agent route rows with null index
+     * @param list<?string> $agentTypes Raw agent types from project hooks
+     * @return list<string> Non-empty agent types
      */
-    private function normalizeStaticRoutes(string|array $routeConfig): array
+    private function nonEmptyAgentTypes(array $agentTypes): array
     {
-        if (is_string($routeConfig)) {
-            return [
-                [AgentConstants::FIELD_AGENT_TYPE => $routeConfig, AgentConstants::FIELD_AGENT_INDEX => null],
-            ];
-        }
-
-        $routes = [];
-        foreach ($routeConfig as $agentType) {
+        $result = [];
+        foreach ($agentTypes as $agentType) {
             if (is_string($agentType) && $agentType !== '') {
-                $routes[] = [AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null];
+                $result[] = $agentType;
             }
         }
 
-        return $routes;
-    }
-
-    // TODO: [signal-destinations-vo] Replace the bare destination shape arrays built here
-    // and in webSocketDestination() (and the array{type, agentType?, agentIndex?, acceptKey?}
-    // return of getDestinations()) with a typed Destination VO hierarchy
-    // (AgentDestination / WebSocketDestination). DaemonManager::dispatchSignals() reads
-    // FIELD_TYPE / FIELD_AGENT_TYPE / FIELD_AGENT_INDEX / FIELD_ACCEPT_KEY off these arrays,
-    // so this changes the routing contract — go through the contract approval gate first.
-    /**
-     * Builds an agent destination config row.
-     *
-     * @param string $agentType Target agent type
-     * @param ?string $agentIndex Agent instance index, or null for unindexed agents
-     * @return array{type: string, agentType: string, agentIndex: ?string} Agent destination config
-     */
-    private function agentDestination(string $agentType, ?string $agentIndex = null): array
-    {
-        return [
-            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-            AgentConstants::FIELD_AGENT_TYPE => $agentType,
-            AgentConstants::FIELD_AGENT_INDEX => $agentIndex,
-        ];
+        return $result;
     }
 
     /**
-     * Builds a WebSocket client destination config row.
-     *
-     * @param string $acceptKey Target client accept key
-     * @return array{type: string, acceptKey: string} WebSocket destination config
-     */
-    private function webSocketDestination(string $acceptKey): array
-    {
-        return [
-            SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
-            SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
-        ];
-    }
-
-    /**
-     * Resolves static service-signal routes and wraps them as agent destinations.
+     * Resolves service-signal routes and wraps them as agent destinations.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: ?string}> Agent destination configs
+     * @return list<AgentDestination> Agent destinations, empty when no service-signal route exists
      */
     private function routeToAgentDestinations(SignalDTO $signal): array
     {
-        $destinations = [];
-        foreach ($this->route($signal->signalSource, $signal->signalType, $signal->data) as $route) {
-            $destinations[] = $this->agentDestination(
-                $route[AgentConstants::FIELD_AGENT_TYPE],
-                $route[AgentConstants::FIELD_AGENT_INDEX],
-            );
-        }
-
-        return $destinations;
+        return array_map(
+            static fn (string $agentType): AgentDestination => new AgentDestination($agentType),
+            $this->resolveServiceSignalAgentTypes(
+                $signal->signalSource->getSource(),
+                $signal->signalType->getType(),
+            ),
+        );
     }
 
     /**
@@ -311,7 +244,7 @@ class SignalRouter
             $signalData,
             Hilos::$ac?->captureSignalMeta() ?? [],
         );
-        $this->queuedSignals[] = $signal;
+        $this->queuedSignals->enqueue($signal);
     }
 
     /**
@@ -407,11 +340,7 @@ class SignalRouter
      */
     public function getNextQueuedSignal(): ?SignalDTO
     {
-        if ($this->queuedSignals === []) {
-            return null;
-        }
-
-        return array_shift($this->queuedSignals);
+        return $this->queuedSignals->isEmpty() ? null : $this->queuedSignals->dequeue();
     }
 
     /**
@@ -467,7 +396,6 @@ class SignalRouter
         $this->subscriptions->updateGroupSubscription($data->acceptKey, $group, $data->params);
     }
 
-
     /**
      * Unsubscribe user from page.
      *
@@ -489,7 +417,6 @@ class SignalRouter
     {
         $this->subscriptions->unsubscribeFromGroup($data->acceptKey, $group);
     }
-
 
     /**
      * Unsubscribe user from all subscriptions
@@ -562,8 +489,7 @@ class SignalRouter
      * does not pull signals — it receives them based on routing rules.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}>
-     *         List of destination configs (agent or websocket)
+     * @return list<Destination> Resolved delivery targets (agent and/or WebSocket), de-duplicated
      */
     public function getDestinations(SignalDTO $signal): array
     {
@@ -588,8 +514,7 @@ class SignalRouter
      * framework contributors and de-duplicated.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}>
-     *         Extra destination configs
+     * @return list<Destination> Extra delivery targets merged with the framework contributors
      */
     protected function additionalDestinations(SignalDTO $signal): array
     {
@@ -601,7 +526,7 @@ class SignalRouter
      * service-signal defaults when no page owns the signal.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: ?string}> Agent destination configs
+     * @return list<AgentDestination> Agent destinations for the page-owned signal, or the service-signal fallback
      */
     private function getPageOwnedSignalDestinations(SignalDTO $signal): array
     {
@@ -617,19 +542,28 @@ class SignalRouter
      *
      * Two contributors can legitimately resolve the same page-owned signal to the
      * same agent; a signal must never be delivered to one destination twice.
+     * Destination types the framework does not know are keyed by object identity,
+     * so a project's custom destinations are never collapsed.
      *
-     * @param list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}> $destinations
-     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}> Unique destinations
+     * @param list<Destination> $destinations Destinations from all contributors
+     * @return list<Destination> Unique destinations
      */
     private function dedupeDestinations(array $destinations): array
     {
+        if (count($destinations) < 2) {
+            return $destinations;
+        }
+
         $seen = [];
         $unique = [];
         foreach ($destinations as $destination) {
-            $key = ($destination[SignalPayloadConstants::FIELD_TYPE] ?? '')
-                . '|' . ($destination[AgentConstants::FIELD_AGENT_TYPE] ?? '')
-                . '|' . ($destination[AgentConstants::FIELD_AGENT_INDEX] ?? '')
-                . '|' . ($destination[SignalPayloadConstants::FIELD_ACCEPT_KEY] ?? '');
+            $key = match (true) {
+                $destination instanceof AgentDestination =>
+                    AgentDestination::class . '|' . $destination->agentType . '|' . ($destination->agentIndex ?? ''),
+                $destination instanceof WebSocketDestination =>
+                    WebSocketDestination::class . '|' . $destination->acceptKey,
+                default => (string) spl_object_id($destination),
+            };
             if (isset($seen[$key])) {
                 continue;
             }
@@ -646,8 +580,7 @@ class SignalRouter
      * Uses page ACTIONS ownership through the active project topology.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: null}>
-     *         List of agent destination configs
+     * @return list<AgentDestination> Single agent destination, or empty when no action route exists
      */
     private function getActionDestinations(SignalDTO $signal): array
     {
@@ -669,7 +602,7 @@ class SignalRouter
             return [];
         }
 
-        return [$this->agentDestination($agentType)];
+        return [new AgentDestination($agentType)];
     }
 
     /**
@@ -679,8 +612,7 @@ class SignalRouter
      * Falls back to getDefaultPageSubscriptionAgentType() for unregistered pages.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: null}>
-     *         List of agent destination configs
+     * @return list<AgentDestination> Single agent destination, or empty when no page route exists
      */
     private function getPageSubscriptionDestinations(SignalDTO $signal): array
     {
@@ -703,7 +635,7 @@ class SignalRouter
             return [];
         }
 
-        return [$this->agentDestination($agentType)];
+        return [new AgentDestination($agentType)];
     }
 
     /**
@@ -734,8 +666,7 @@ class SignalRouter
      * Falls back to getDefaultGroupSubscriptionAgentType() for unregistered groups.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: null}>
-     *         List of agent destination configs
+     * @return list<AgentDestination> Single agent destination, or empty when no group route exists
      */
     private function getGroupSubscriptionDestinations(SignalDTO $signal): array
     {
@@ -760,7 +691,7 @@ class SignalRouter
             return [];
         }
 
-        return [$this->agentDestination($agentType)];
+        return [new AgentDestination($agentType)];
     }
 
     /**
@@ -791,8 +722,7 @@ class SignalRouter
      * through the active project topology.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: null}>
-     *         List of agent destination configs
+     * @return list<AgentDestination> Single agent destination, or empty when no page-owned signal route exists
      */
     private function getPageSignalDestinations(SignalDTO $signal): array
     {
@@ -801,7 +731,7 @@ class SignalRouter
             return [];
         }
 
-        return [$this->agentDestination($agentType)];
+        return [new AgentDestination($agentType)];
     }
 
     /**
@@ -844,8 +774,7 @@ class SignalRouter
      * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, acceptKey: string}>
-     *         List of WebSocket client destination configs
+     * @return list<WebSocketDestination> WebSocket client destinations matching the signal targeting
      */
     private function getWebSocketDestinations(SignalDTO $signal): array
     {
@@ -869,7 +798,7 @@ class SignalRouter
             case SignalTypeConstants::WS_USER:
                 // Return single client destination
                 if ($targetAcceptKey !== null && $targetAcceptKey !== '') {
-                    $destinations[] = $this->webSocketDestination($targetAcceptKey);
+                    $destinations[] = new WebSocketDestination($targetAcceptKey);
                 }
                 break;
 
@@ -879,7 +808,7 @@ class SignalRouter
                     if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                         continue;
                     }
-                    $destinations[] = $this->webSocketDestination($acceptKey);
+                    $destinations[] = new WebSocketDestination($acceptKey);
                 }
                 break;
 
@@ -890,7 +819,7 @@ class SignalRouter
                         if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                             continue;
                         }
-                        $destinations[] = $this->webSocketDestination($acceptKey);
+                        $destinations[] = new WebSocketDestination($acceptKey);
                     }
                 }
                 break;
@@ -912,8 +841,7 @@ class SignalRouter
      * produce no destination and a warning is logged.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: ?string}>
-     *         List of agent destination configs
+     * @return list<AgentDestination> Single agent destination (optionally indexed), or empty when unrouted
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {
@@ -952,7 +880,7 @@ class SignalRouter
             }
         }
 
-        return [$this->agentDestination($agentType, $agentIndex)];
+        return [new AgentDestination($agentType, $agentIndex)];
     }
 
     /**

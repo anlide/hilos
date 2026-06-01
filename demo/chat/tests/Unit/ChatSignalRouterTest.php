@@ -14,11 +14,10 @@ use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
-use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -54,8 +53,8 @@ final class ChatSignalRouterTest extends TestCase
                 new WebSocketActionSignalDTO('accept-key', $action),
             ));
 
-            $this->assertSame([
-                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::LIBRARY, AgentConstants::FIELD_AGENT_INDEX => null],
+            $this->assertEquals([
+                new AgentDestination(AgentType::LIBRARY),
             ], $destinations);
         }
     }
@@ -72,8 +71,8 @@ final class ChatSignalRouterTest extends TestCase
                 new WebSocketActionSignalDTO('accept-key', $action),
             ));
 
-            $this->assertSame([
-                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
+            $this->assertEquals([
+                new AgentDestination($agentType),
             ], $destinations);
         }
     }
@@ -114,8 +113,8 @@ final class ChatSignalRouterTest extends TestCase
                 new WebSocketPageSubscribeSignalDTO('accept-key', $page),
             ));
 
-            $this->assertSame([
-                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::LIBRARY, AgentConstants::FIELD_AGENT_INDEX => null],
+            $this->assertEquals([
+                new AgentDestination(AgentType::LIBRARY),
             ], $destinations);
         }
     }
@@ -131,8 +130,8 @@ final class ChatSignalRouterTest extends TestCase
             new WebSocketGroupSubscribeSignalDTO('accept-key', GroupConstants::SESSION),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => Hilos::getGroupRoutes()[GroupConstants::SESSION], AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(Hilos::getGroupRoutes()[GroupConstants::SESSION]),
         ], $destinations);
     }
 
@@ -145,8 +144,8 @@ final class ChatSignalRouterTest extends TestCase
             new WebSocketGroupSubscribeSignalDTO('accept-key', 'unknown_group'),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(AgentType::CHAT),
         ], $destinations);
     }
 
@@ -162,8 +161,8 @@ final class ChatSignalRouterTest extends TestCase
                 new WebSocketPageSubscribeSignalDTO('accept-key', $page),
             ));
 
-            $this->assertSame([
-                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => Hilos::getPageRoutes()[$page], AgentConstants::FIELD_AGENT_INDEX => null],
+            $this->assertEquals([
+                new AgentDestination(Hilos::getPageRoutes()[$page]),
             ], $destinations);
         }
     }
@@ -177,7 +176,7 @@ final class ChatSignalRouterTest extends TestCase
             new SystemSignalDTO(SignalConstants::INITIAL_AGENTS_START),
         ));
 
-        $agentTypes = array_map(static fn (array $destination): ?string => $destination[AgentConstants::FIELD_AGENT_TYPE] ?? null, $destinations);
+        $agentTypes = array_map(static fn (AgentDestination $destination): string => $destination->agentType, $destinations);
 
         $this->assertContains(AgentType::LIBRARY, $agentTypes);
     }
@@ -191,8 +190,8 @@ final class ChatSignalRouterTest extends TestCase
             new AgentSignalData(new BotMessageSignalData(botId: 7, message: 'hello')),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(AgentType::CHAT),
         ], $destinations);
     }
 
@@ -211,8 +210,8 @@ final class ChatSignalRouterTest extends TestCase
             )),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(AgentType::CHAT),
         ], $destinations);
     }
 
@@ -231,8 +230,8 @@ final class ChatSignalRouterTest extends TestCase
             )),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(AgentType::CHAT),
         ], $destinations);
     }
 
@@ -245,8 +244,8 @@ final class ChatSignalRouterTest extends TestCase
             new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
+        $this->assertEquals([
+            new AgentDestination(AgentType::CHAT),
         ], $destinations);
     }
 
@@ -259,8 +258,8 @@ final class ChatSignalRouterTest extends TestCase
             new AgentSignalData(new BotAgentSignalData(botId: 42)),
         ));
 
-        $this->assertSame([
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::BOT, AgentConstants::FIELD_AGENT_INDEX => '42'],
+        $this->assertEquals([
+            new AgentDestination(AgentType::BOT, '42'),
         ], $destinations);
     }
 

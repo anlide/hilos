@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Constants\AgentConstants;
-use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Group\AbstractGroup;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Context\DbContext;
 use Hilos\Core\Router\SignalName;
@@ -27,13 +26,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 {
     public function testGroupSubscribeRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(
                 $this->groupSubscribeSignal(SignalRouterTopologyTestGroup::GROUP),
@@ -43,13 +38,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 
     public function testGroupUpdateSubscriptionRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -62,13 +53,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 
     public function testGroupUnsubscribeRoutesThroughProjectTopology(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -81,13 +68,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 
     public function testUnregisteredGroupUsesProjectFallback(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [
-                [
-                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE,
-                    AgentConstants::FIELD_AGENT_INDEX => null,
-                ],
+                new AgentDestination(SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE),
             ],
             (new SignalRouterGroupTopologyFallbackTestRouter())->getDestinations(
                 $this->groupSubscribeSignal('unregistered_group'),
@@ -97,7 +80,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 
     public function testBaseRouterDoesNotRouteUnregisteredGroupWithoutFallback(): void
     {
-        $this->assertSame(
+        $this->assertEquals(
             [],
             (new SignalRouter())->getDestinations($this->groupSubscribeSignal('unregistered_group')),
         );
