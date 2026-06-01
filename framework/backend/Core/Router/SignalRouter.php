@@ -244,6 +244,55 @@ class SignalRouter
     }
 
     /**
+     * Builds an agent destination config row.
+     *
+     * @param string $agentType Target agent type
+     * @param ?string $agentIndex Agent instance index, or null for unindexed agents
+     * @return array{type: string, agentType: string, agentIndex: ?string} Agent destination config
+     */
+    private function agentDestination(string $agentType, ?string $agentIndex = null): array
+    {
+        return [
+            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+            AgentConstants::FIELD_AGENT_TYPE => $agentType,
+            AgentConstants::FIELD_AGENT_INDEX => $agentIndex,
+        ];
+    }
+
+    /**
+     * Builds a WebSocket client destination config row.
+     *
+     * @param string $acceptKey Target client accept key
+     * @return array{type: string, acceptKey: string} WebSocket destination config
+     */
+    private function webSocketDestination(string $acceptKey): array
+    {
+        return [
+            SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
+            SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
+        ];
+    }
+
+    /**
+     * Resolves static service-signal routes and wraps them as agent destinations.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType: string, agentIndex: ?string}> Agent destination configs
+     */
+    private function routeToAgentDestinations(SignalDTO $signal): array
+    {
+        $destinations = [];
+        foreach ($this->route($signal->signalSource, $signal->signalType, $signal->data) as $route) {
+            $destinations[] = $this->agentDestination(
+                $route[AgentConstants::FIELD_AGENT_TYPE],
+                $route[AgentConstants::FIELD_AGENT_INDEX],
+            );
+        }
+
+        return $destinations;
+    }
+
+    /**
      * Queue signal for dispatch
      *
      * Called by servers to queue signals for later dispatch.
@@ -288,12 +337,7 @@ class SignalRouter
             return;
         }
 
-        $data = $signalData->toArray();
-        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
-        $idString = $data[SyncSignalDataKey::ID_STRING] ?? '';
-        if ($collectionKey !== '' && $idString !== '') {
-            $this->dbSyncBroadcastedIds[$collectionKey . ':' . $idString] = true;
-        }
+        $this->registerSelfBroadcast($this->dbSyncBroadcastedIds, $signalData, SyncSignalDataKey::ID_STRING);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
@@ -312,12 +356,7 @@ class SignalRouter
      */
     public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
     {
-        $key = $collectionKey . ':' . $idString;
-        if (isset($this->dbSyncBroadcastedIds[$key])) {
-            unset($this->dbSyncBroadcastedIds[$key]);
-            return true;
-        }
-        return false;
+        return $this->consumeSelfBroadcast($this->dbSyncBroadcastedIds, $collectionKey, $idString);
     }
 
     /**
@@ -329,12 +368,7 @@ class SignalRouter
      */
     public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
     {
-        $data = $signalData->toArray();
-        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
-        $stateId = $data[SyncSignalDataKey::STATE_ID] ?? '';
-        if ($collectionKey !== '' && $stateId !== '') {
-            $this->rtSyncBroadcastedIds[$collectionKey . ':' . $stateId] = true;
-        }
+        $this->registerSelfBroadcast($this->rtSyncBroadcastedIds, $signalData, SyncSignalDataKey::STATE_ID);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
@@ -353,11 +387,42 @@ class SignalRouter
      */
     public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool
     {
-        $key = $collectionKey . ':' . $stateId;
-        if (isset($this->rtSyncBroadcastedIds[$key])) {
-            unset($this->rtSyncBroadcastedIds[$key]);
+        return $this->consumeSelfBroadcast($this->rtSyncBroadcastedIds, $collectionKey, $stateId);
+    }
+
+    /**
+     * Registers a self-broadcast id so the originating worker can skip re-applying it.
+     *
+     * @param array<string, true> $registry Broadcast registry to write into (by reference)
+     * @param SignalDataInterface $signalData Sync signal data carrying collectionKey and the id
+     * @param string $idKey Payload key holding the entity id (ID_STRING for DB, STATE_ID for RT)
+     */
+    private function registerSelfBroadcast(array &$registry, SignalDataInterface $signalData, string $idKey): void
+    {
+        $data = $signalData->toArray();
+        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
+        $id = $data[$idKey] ?? '';
+        if ($collectionKey !== '' && $id !== '') {
+            $registry[$collectionKey . ':' . $id] = true;
+        }
+    }
+
+    /**
+     * Consumes a self-broadcast registration; true when this was our own broadcast.
+     *
+     * @param array<string, true> $registry Broadcast registry to read and clear (by reference)
+     * @param string $collectionKey Collection key for sync
+     * @param string $id Entity id (idString for DB, stateId for RT)
+     * @return bool True if registered (now removed), so the apply should be skipped
+     */
+    private function consumeSelfBroadcast(array &$registry, string $collectionKey, string $id): bool
+    {
+        $key = $collectionKey . ':' . $id;
+        if (isset($registry[$key])) {
+            unset($registry[$key]);
             return true;
         }
+
         return false;
     }
 
@@ -372,7 +437,7 @@ class SignalRouter
      */
     public function getNextQueuedSignal(): ?SignalDTO
     {
-        if (empty($this->queuedSignals)) {
+        if ($this->queuedSignals === []) {
             return null;
         }
 
@@ -514,7 +579,7 @@ class SignalRouter
             unset($this->subscriptionGroups[$acceptKey][$group]);
 
             // Clean up empty client entry
-            if (empty($this->subscriptionGroups[$acceptKey])) {
+            if ($this->subscriptionGroups[$acceptKey] === []) {
                 unset($this->subscriptionGroups[$acceptKey]);
             }
         }
@@ -650,10 +715,7 @@ class SignalRouter
      */
     public function getDestinations(SignalDTO $signal): array
     {
-        Logger::debug('getDestinations called for signal: ' . $signal->toJson());
-
         $signalType = $signal->signalType->getType();
-        Logger::debug("getDestinations Signal type: " . $signalType);
 
         $destinations = [];
 
@@ -679,27 +741,18 @@ class SignalRouter
             $destinations = array_merge($destinations, $this->getGroupSubscriptionDestinations($signal));
         } elseif ($signalType === SignalTypeConstants::ACTION) {
             $actionDestinations = $this->getActionDestinations($signal);
-
-            if ($actionDestinations !== []) {
-                $destinations = array_merge($destinations, $actionDestinations);
-            } else {
-                $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
-                foreach ($routes as $route) {
-                    $destinations[] = array_merge([SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT], $route);
-                }
-            }
+            $destinations = array_merge(
+                $destinations,
+                $actionDestinations !== [] ? $actionDestinations : $this->routeToAgentDestinations($signal),
+            );
         } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
             $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
         } else {
             $pageSignalDestinations = $this->getPageSignalDestinations($signal);
-            if ($pageSignalDestinations !== []) {
-                $destinations = array_merge($destinations, $pageSignalDestinations);
-            } else {
-                $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
-                foreach ($routes as $route) {
-                    $destinations[] = array_merge([SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT], $route);
-                }
-            }
+            $destinations = array_merge(
+                $destinations,
+                $pageSignalDestinations !== [] ? $pageSignalDestinations : $this->routeToAgentDestinations($signal),
+            );
         }
 
         return $destinations;
@@ -730,11 +783,7 @@ class SignalRouter
             return [];
         }
 
-        return [[
-            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-            AgentConstants::FIELD_AGENT_TYPE => $agentType,
-            AgentConstants::FIELD_AGENT_INDEX => null,
-        ]];
+        return [$this->agentDestination($agentType)];
     }
 
     /**
@@ -768,9 +817,7 @@ class SignalRouter
             return [];
         }
 
-        return [
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
-        ];
+        return [$this->agentDestination($agentType)];
     }
 
     /**
@@ -827,9 +874,7 @@ class SignalRouter
             return [];
         }
 
-        return [
-            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
-        ];
+        return [$this->agentDestination($agentType)];
     }
 
     /**
@@ -870,11 +915,7 @@ class SignalRouter
             return [];
         }
 
-        return [[
-            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-            AgentConstants::FIELD_AGENT_TYPE => $agentType,
-            AgentConstants::FIELD_AGENT_INDEX => null,
-        ]];
+        return [$this->agentDestination($agentType)];
     }
 
     /**
@@ -922,7 +963,6 @@ class SignalRouter
      */
     private function getWebSocketDestinations(SignalDTO $signal): array
     {
-        Logger::debug("Getting WebSocket destinations for signal type: " . $signal->toJson());
         $signalType = $signal->signalType->getType();
         $signalData = $signal->data;
 
@@ -943,10 +983,7 @@ class SignalRouter
             case SignalTypeConstants::WS_USER:
                 // Return single client destination
                 if ($targetAcceptKey !== null && $targetAcceptKey !== '') {
-                    $destinations[] = [
-                        SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
-                        SignalPayloadConstants::FIELD_ACCEPT_KEY => $targetAcceptKey,
-                    ];
+                    $destinations[] = $this->webSocketDestination($targetAcceptKey);
                 }
                 break;
 
@@ -956,10 +993,7 @@ class SignalRouter
                     if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                         continue;
                     }
-                    $destinations[] = [
-                        SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
-                        SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
-                    ];
+                    $destinations[] = $this->webSocketDestination($acceptKey);
                 }
                 break;
 
@@ -971,10 +1005,7 @@ class SignalRouter
                             continue;
                         }
                         if (isset($groups[$targetGroup])) {
-                            $destinations[] = [
-                                SignalPayloadConstants::FIELD_TYPE => SignalPayloadConstants::DESTINATION_TYPE_WEBSOCKET,
-                                SignalPayloadConstants::FIELD_ACCEPT_KEY => $acceptKey,
-                            ];
+                            $destinations[] = $this->webSocketDestination($acceptKey);
                         }
                     }
                 }
@@ -1033,11 +1064,7 @@ class SignalRouter
             }
         }
 
-        return [[
-            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
-            AgentConstants::FIELD_AGENT_TYPE => $agentType,
-            AgentConstants::FIELD_AGENT_INDEX => $agentIndex,
-        ]];
+        return [$this->agentDestination($agentType, $agentIndex)];
     }
 
     /**
