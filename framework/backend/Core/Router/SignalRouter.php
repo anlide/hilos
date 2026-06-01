@@ -58,33 +58,24 @@ class SignalRouter
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
     public bool $dbSyncBroadcastEnabled = true;
 
-    /** @var array<string, true> Keys "collectionKey:idString" for self-broadcast skip */
-    private array $dbSyncBroadcastedIds = [];
+    /** @var SelfBroadcastRegistry DB sync ids this worker broadcast, pending self-apply skip */
+    private SelfBroadcastRegistry $dbSelfBroadcast;
 
-    /** @var array<string, true> Keys "collectionKey:stateId" for self-broadcast skip */
-    private array $rtSyncBroadcastedIds = [];
+    /** @var SelfBroadcastRegistry RT sync ids this worker broadcast, pending self-apply skip */
+    private SelfBroadcastRegistry $rtSelfBroadcast;
 
-    // TODO: [tables-refac] Replace the loosely typed subscription storage below with a
-    // small typed value object (page key + params) so getPageSubscriptions() no longer
-    // has to defensively re-check is_string()/is_array() on every read (see key rule #8).
-
-    /**
-     * User page subscriptions storage
-     *
-     * Format: [acceptKey => [pageKey => string, paramsKey => array<string, mixed>]]
-     *
-     * @var array<string, array<string, mixed>>
-     */
-    private array $subscriptionPages = [];
+    /** @var SubscriptionRegistry Worker-local page and group subscription store */
+    private SubscriptionRegistry $subscriptions;
 
     /**
-     * User group subscriptions storage
-     *
-     * Format: [acceptKey => [groupName => params, ...]]
-     *
-     * @var array<string, array<string, array<string, mixed>>>
+     * Initializes the worker-local subscription mirror and self-broadcast registries.
      */
-    private array $subscriptionGroups = [];
+    public function __construct()
+    {
+        $this->dbSelfBroadcast = new SelfBroadcastRegistry();
+        $this->rtSelfBroadcast = new SelfBroadcastRegistry();
+        $this->subscriptions = new SubscriptionRegistry();
+    }
 
     /**
      * Returns the active project facade class for topology registry reads.
@@ -243,6 +234,12 @@ class SignalRouter
         return $routes;
     }
 
+    // TODO: [signal-destinations-vo] Replace the bare destination shape arrays built here
+    // and in webSocketDestination() (and the array{type, agentType?, agentIndex?, acceptKey?}
+    // return of getDestinations()) with a typed Destination VO hierarchy
+    // (AgentDestination / WebSocketDestination). DaemonManager::dispatchSignals() reads
+    // FIELD_TYPE / FIELD_AGENT_TYPE / FIELD_AGENT_INDEX / FIELD_ACCEPT_KEY off these arrays,
+    // so this changes the routing contract — go through the contract approval gate first.
     /**
      * Builds an agent destination config row.
      *
@@ -315,13 +312,6 @@ class SignalRouter
             Hilos::$ac?->captureSignalMeta() ?? [],
         );
         $this->queuedSignals[] = $signal;
-
-        // Log signal queued
-        $source = $signalSource->getSource();
-        $signalTypeValue = $signalType->getType();
-        $signalNameValue = $signalName->getName();
-        Logger::debug("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
-        Logger::debug('Now count of queued signals: ' . count($this->queuedSignals));
     }
 
     /**
@@ -337,7 +327,7 @@ class SignalRouter
             return;
         }
 
-        $this->registerSelfBroadcast($this->dbSyncBroadcastedIds, $signalData, SyncSignalDataKey::ID_STRING);
+        $this->registerSelfBroadcast($this->dbSelfBroadcast, $signalData, SyncSignalDataKey::ID_STRING);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
@@ -356,7 +346,7 @@ class SignalRouter
      */
     public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
     {
-        return $this->consumeSelfBroadcast($this->dbSyncBroadcastedIds, $collectionKey, $idString);
+        return $this->dbSelfBroadcast->consume($collectionKey, $idString);
     }
 
     /**
@@ -368,7 +358,7 @@ class SignalRouter
      */
     public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
     {
-        $this->registerSelfBroadcast($this->rtSyncBroadcastedIds, $signalData, SyncSignalDataKey::STATE_ID);
+        $this->registerSelfBroadcast($this->rtSelfBroadcast, $signalData, SyncSignalDataKey::STATE_ID);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
@@ -387,43 +377,23 @@ class SignalRouter
      */
     public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool
     {
-        return $this->consumeSelfBroadcast($this->rtSyncBroadcastedIds, $collectionKey, $stateId);
+        return $this->rtSelfBroadcast->consume($collectionKey, $stateId);
     }
 
     /**
-     * Registers a self-broadcast id so the originating worker can skip re-applying it.
+     * Adapts sync signal data to a SelfBroadcastRegistry registration.
      *
-     * @param array<string, true> $registry Broadcast registry to write into (by reference)
+     * @param SelfBroadcastRegistry $registry Registry to record the broadcast id in
      * @param SignalDataInterface $signalData Sync signal data carrying collectionKey and the id
      * @param string $idKey Payload key holding the entity id (ID_STRING for DB, STATE_ID for RT)
      */
-    private function registerSelfBroadcast(array &$registry, SignalDataInterface $signalData, string $idKey): void
+    private function registerSelfBroadcast(SelfBroadcastRegistry $registry, SignalDataInterface $signalData, string $idKey): void
     {
         $data = $signalData->toArray();
-        $collectionKey = $data[SyncSignalDataKey::COLLECTION_KEY] ?? '';
-        $id = $data[$idKey] ?? '';
-        if ($collectionKey !== '' && $id !== '') {
-            $registry[$collectionKey . ':' . $id] = true;
-        }
-    }
-
-    /**
-     * Consumes a self-broadcast registration; true when this was our own broadcast.
-     *
-     * @param array<string, true> $registry Broadcast registry to read and clear (by reference)
-     * @param string $collectionKey Collection key for sync
-     * @param string $id Entity id (idString for DB, stateId for RT)
-     * @return bool True if registered (now removed), so the apply should be skipped
-     */
-    private function consumeSelfBroadcast(array &$registry, string $collectionKey, string $id): bool
-    {
-        $key = $collectionKey . ':' . $id;
-        if (isset($registry[$key])) {
-            unset($registry[$key]);
-            return true;
-        }
-
-        return false;
+        $registry->register(
+            (string) ($data[SyncSignalDataKey::COLLECTION_KEY] ?? ''),
+            (string) ($data[$idKey] ?? ''),
+        );
     }
 
     /**
@@ -441,7 +411,6 @@ class SignalRouter
             return null;
         }
 
-        Logger::debug('Was count of queued signals: ' . count($this->queuedSignals));
         return array_shift($this->queuedSignals);
     }
 
@@ -453,14 +422,7 @@ class SignalRouter
      */
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        $this->subscriptionPages[$acceptKey] = [
-            SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY => $page,
-            SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY => $data->params,
-        ];
+        $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params);
     }
 
     /**
@@ -476,22 +438,7 @@ class SignalRouter
      */
     public function updatePageSubscription(string $page, WebSocketPageUpdateSubscriptionSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        if (!isset($this->subscriptionPages[$acceptKey])) {
-            throw new PageSubscriptionNotFoundException($acceptKey);
-        }
-
-        $currentPage = $this->subscriptionPages[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? null;
-        if ($currentPage !== $page) {
-            throw new PageSubscriptionMismatchException($currentPage ?? '', $page);
-        }
-
-        // Merge new params with existing params
-        $existingParams = $this->subscriptionPages[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-        $this->subscriptionPages[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] = array_merge($existingParams, $data->params);
+        $this->subscriptions->updatePageSubscription($data->acceptKey, $page, $data->params);
     }
 
     /**
@@ -502,15 +449,7 @@ class SignalRouter
      */
     public function subscribeToGroup(string $group, WebSocketGroupSubscribeSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        if (!isset($this->subscriptionGroups[$acceptKey])) {
-            $this->subscriptionGroups[$acceptKey] = [];
-        }
-
-        $this->subscriptionGroups[$acceptKey][$group] = $data->params;
+        $this->subscriptions->subscribeToGroup($data->acceptKey, $group, $data->params);
     }
 
     /**
@@ -525,17 +464,7 @@ class SignalRouter
      */
     public function updateGroupSubscription(string $group, WebSocketGroupUpdateSubscriptionSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        if (!isset($this->subscriptionGroups[$acceptKey]) || !isset($this->subscriptionGroups[$acceptKey][$group])) {
-            throw new GroupSubscriptionNotFoundException($acceptKey, $group);
-        }
-
-        // Merge new params with existing params
-        $existingParams = $this->subscriptionGroups[$acceptKey][$group];
-        $this->subscriptionGroups[$acceptKey][$group] = array_merge($existingParams, $data->params);
+        $this->subscriptions->updateGroupSubscription($data->acceptKey, $group, $data->params);
     }
 
 
@@ -547,20 +476,7 @@ class SignalRouter
      */
     public function unsubscribeFromPage(string $page, WebSocketPageUnsubscribeSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        if (!isset($this->subscriptionPages[$acceptKey])) {
-            return;
-        }
-
-        $currentPage = $this->subscriptionPages[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? null;
-        if ($currentPage !== $page) {
-            return;
-        }
-
-        unset($this->subscriptionPages[$acceptKey]);
+        $this->subscriptions->unsubscribeFromPage($data->acceptKey, $page);
     }
 
     /**
@@ -571,18 +487,7 @@ class SignalRouter
      */
     public function unsubscribeFromGroup(string $group, WebSocketGroupUnsubscribeSignalDTO $data): void
     {
-        $acceptKey = $data->acceptKey;
-        if ($acceptKey === '') {
-            return;
-        }
-        if (isset($this->subscriptionGroups[$acceptKey])) {
-            unset($this->subscriptionGroups[$acceptKey][$group]);
-
-            // Clean up empty client entry
-            if ($this->subscriptionGroups[$acceptKey] === []) {
-                unset($this->subscriptionGroups[$acceptKey]);
-            }
-        }
+        $this->subscriptions->unsubscribeFromGroup($data->acceptKey, $group);
     }
 
 
@@ -593,8 +498,7 @@ class SignalRouter
      */
     public function unsubscribeFromAll(string $acceptKey): void
     {
-        unset($this->subscriptionPages[$acceptKey]);
-        unset($this->subscriptionGroups[$acceptKey]);
+        $this->subscriptions->unsubscribeFromAll($acceptKey);
     }
 
     /**
@@ -607,24 +511,7 @@ class SignalRouter
      */
     public function getAcceptKeysForPage(string $page, ?string $paramKey = null, ?string $paramValue = null): array
     {
-        $keys = [];
-        foreach ($this->subscriptionPages as $acceptKey => $subscription) {
-            $subPage = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? '';
-            if ($subPage !== $page) {
-                continue;
-            }
-            if ($paramKey === null || $paramValue === null) {
-                $keys[] = $acceptKey;
-                continue;
-            }
-            $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-            $v = $params[$paramKey] ?? null;
-            if ((string) $v === $paramValue) {
-                $keys[] = $acceptKey;
-            }
-        }
-
-        return $keys;
+        return $this->subscriptions->getAcceptKeysForPage($page, $paramKey, $paramValue);
     }
 
     /**
@@ -637,48 +524,7 @@ class SignalRouter
      */
     public function getPageSubscriptions(): array
     {
-        $subscriptions = [];
-        foreach ($this->subscriptionPages as $acceptKey => $subscription) {
-            if (!is_string($acceptKey) || $acceptKey === '') {
-                continue;
-            }
-
-            $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? '';
-            $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-            if (!is_string($page) || $page === '') {
-                continue;
-            }
-
-            $subscriptions[$acceptKey] = [
-                SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY => $page,
-                SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY => is_array($params)
-                    ? $this->stringParams($params)
-                    : [],
-            ];
-        }
-
-        return $subscriptions;
-    }
-
-    /**
-     * Keeps only string subscription params for browser config reference resolution.
-     *
-     * @param array<mixed> $params Raw subscription params from the mirror
-     * @return array<string, string> String-keyed params
-     */
-    private function stringParams(array $params): array
-    {
-        $result = [];
-        foreach ($params as $key => $value) {
-            if (!is_string($key)) {
-                continue;
-            }
-            if (is_string($value) || is_int($value)) {
-                $result[$key] = (string) $value;
-            }
-        }
-
-        return $result;
+        return $this->subscriptions->getPageSubscriptions();
     }
 
     /**
@@ -692,18 +538,24 @@ class SignalRouter
      */
     public function getSubscribedAcceptKeys(): array
     {
-        return array_values(array_unique(array_merge(
-            array_keys($this->subscriptionPages),
-            array_keys($this->subscriptionGroups),
-        )));
+        return $this->subscriptions->getSubscribedAcceptKeys();
     }
 
     /**
      * Get destinations for signal
      *
-     * Resolves signal destinations from project topology and service-signal hooks. Override in
-     * child routers only for dynamic routing that depends on signal content
-     * (e.g. extracting agentIndex from payload).
+     * Resolves signal destinations from project topology and service-signal hooks.
+     *
+     * Composition is ADDITIVE: a single signal may fan out to any combination of
+     * destination kinds (WebSocket clients and/or agents). Each contributor below
+     * inspects the signal independently and returns zero or more destinations; the
+     * results are merged and de-duplicated. This is intentionally not an exclusive
+     * switch — nothing caps a signal at a single destination category. Contributors
+     * self-gate on signal type/source, so adding one never leaks routes to types it
+     * does not own.
+     *
+     * Projects add their own contributors by overriding additionalDestinations();
+     * override this method only for routing the topology registry cannot express.
      *
      * Design principle: route by sender (signal source + type), not by destination.
      * The signal source and type determine where the signal goes; the destination agent
@@ -715,47 +567,77 @@ class SignalRouter
      */
     public function getDestinations(SignalDTO $signal): array
     {
-        $signalType = $signal->signalType->getType();
+        $destinations = [
+            ...$this->getWebSocketDestinations($signal),
+            ...$this->getPageSubscriptionDestinations($signal),
+            ...$this->getGroupSubscriptionDestinations($signal),
+            ...$this->getActionDestinations($signal),
+            ...$this->getAgentDestinations($signal),
+            ...$this->getPageOwnedSignalDestinations($signal),
+            ...$this->additionalDestinations($signal),
+        ];
 
-        $destinations = [];
+        return $this->dedupeDestinations($destinations);
+    }
 
-        if (in_array($signalType, [
-            SignalTypeConstants::WS_USER,
-            SignalTypeConstants::WS_ALL,
-            SignalTypeConstants::WS_GROUP,
-        ], true)) {
-            $destinations = array_merge($destinations, $this->getWebSocketDestinations($signal));
+    /**
+     * Project hook for additional destination contributors.
+     *
+     * Override to fan a signal out to extra agent or WebSocket destinations that the
+     * topology registry cannot express. Returned destinations are merged with the
+     * framework contributors and de-duplicated.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}>
+     *         Extra destination configs
+     */
+    protected function additionalDestinations(SignalDTO $signal): array
+    {
+        return [];
+    }
+
+    /**
+     * Resolve agent destination for page-owned non-action signals, falling back to
+     * service-signal defaults when no page owns the signal.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType: string, agentIndex: ?string}> Agent destination configs
+     */
+    private function getPageOwnedSignalDestinations(SignalDTO $signal): array
+    {
+        $pageSignalDestinations = $this->getPageSignalDestinations($signal);
+
+        return $pageSignalDestinations !== []
+            ? $pageSignalDestinations
+            : $this->routeToAgentDestinations($signal);
+    }
+
+    /**
+     * Removes duplicate destinations produced by overlapping contributors.
+     *
+     * Two contributors can legitimately resolve the same page-owned signal to the
+     * same agent; a signal must never be delivered to one destination twice.
+     *
+     * @param list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}> $destinations
+     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}> Unique destinations
+     */
+    private function dedupeDestinations(array $destinations): array
+    {
+        $seen = [];
+        $unique = [];
+        foreach ($destinations as $destination) {
+            $key = ($destination[SignalPayloadConstants::FIELD_TYPE] ?? '')
+                . '|' . ($destination[AgentConstants::FIELD_AGENT_TYPE] ?? '')
+                . '|' . ($destination[AgentConstants::FIELD_AGENT_INDEX] ?? '')
+                . '|' . ($destination[SignalPayloadConstants::FIELD_ACCEPT_KEY] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $unique[] = $destination;
         }
 
-        if (in_array($signalType, [
-            SignalTypeConstants::PAGE_SUBSCRIBE,
-            SignalTypeConstants::PAGE_UNSUBSCRIBE,
-            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION,
-        ], true)) {
-            $destinations = array_merge($destinations, $this->getPageSubscriptionDestinations($signal));
-        } elseif (in_array($signalType, [
-            SignalTypeConstants::GROUP_SUBSCRIBE,
-            SignalTypeConstants::GROUP_UNSUBSCRIBE,
-            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION,
-        ], true)) {
-            $destinations = array_merge($destinations, $this->getGroupSubscriptionDestinations($signal));
-        } elseif ($signalType === SignalTypeConstants::ACTION) {
-            $actionDestinations = $this->getActionDestinations($signal);
-            $destinations = array_merge(
-                $destinations,
-                $actionDestinations !== [] ? $actionDestinations : $this->routeToAgentDestinations($signal),
-            );
-        } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
-            $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
-        } else {
-            $pageSignalDestinations = $this->getPageSignalDestinations($signal);
-            $destinations = array_merge(
-                $destinations,
-                $pageSignalDestinations !== [] ? $pageSignalDestinations : $this->routeToAgentDestinations($signal),
-            );
-        }
-
-        return $destinations;
+        return $unique;
     }
 
     /**
@@ -769,6 +651,10 @@ class SignalRouter
      */
     private function getActionDestinations(SignalDTO $signal): array
     {
+        if ($signal->signalType->getType() !== SignalTypeConstants::ACTION) {
+            return [];
+        }
+
         $actionName = $signal->signalName->getName();
         if ($actionName === '') {
             return [];
@@ -989,7 +875,7 @@ class SignalRouter
 
             case SignalTypeConstants::WS_ALL:
                 // Return all subscribed clients, excluding excludeAcceptKey
-                foreach ($this->subscriptionPages as $acceptKey => $subscription) {
+                foreach ($this->subscriptions->pageAcceptKeys() as $acceptKey) {
                     if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                         continue;
                     }
@@ -1000,13 +886,11 @@ class SignalRouter
             case SignalTypeConstants::WS_GROUP:
                 // Return clients subscribed to targetGroup, excluding excludeAcceptKey
                 if ($targetGroup !== null && $targetGroup !== '') {
-                    foreach ($this->subscriptionGroups as $acceptKey => $groups) {
+                    foreach ($this->subscriptions->acceptKeysForGroup($targetGroup) as $acceptKey) {
                         if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                             continue;
                         }
-                        if (isset($groups[$targetGroup])) {
-                            $destinations[] = $this->webSocketDestination($acceptKey);
-                        }
+                        $destinations[] = $this->webSocketDestination($acceptKey);
                     }
                 }
                 break;
@@ -1033,6 +917,10 @@ class SignalRouter
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {
+        if ($signal->signalType->getType() !== SignalTypeConstants::AGENT_SIGNAL) {
+            return [];
+        }
+
         $pageSignalDestinations = $this->getPageSignalDestinations($signal);
         if ($pageSignalDestinations !== []) {
             return $pageSignalDestinations;
