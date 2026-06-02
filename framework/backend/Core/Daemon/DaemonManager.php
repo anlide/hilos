@@ -75,16 +75,6 @@ abstract class DaemonManager extends BaseManager
     /** @var AgentManagerDaemon Agent manager daemon instance */
     protected AgentManagerDaemon $agentManagerDaemon;
 
-    /**
-     * Get agent manager daemon instance.
-     *
-     * @return AgentManagerDaemon Agent manager daemon instance
-     */
-    public function getAgentManagerDaemon(): AgentManagerDaemon
-    {
-        return $this->agentManagerDaemon;
-    }
-
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
 
@@ -131,6 +121,16 @@ abstract class DaemonManager extends BaseManager
      * @return AgentManagerDaemon Agent manager daemon instance
      */
     abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
+
+    /**
+     * Get agent manager daemon instance.
+     *
+     * @return AgentManagerDaemon Agent manager daemon instance
+     */
+    public function getAgentManagerDaemon(): AgentManagerDaemon
+    {
+        return $this->agentManagerDaemon;
+    }
 
     /**
      * Run daemon - main method.
@@ -220,10 +220,8 @@ abstract class DaemonManager extends BaseManager
             return false;
         }
 
-        // Check if all servers are ready
+        // Continue running while any server is not yet ready to shut down
         return array_any($this->servers, fn(ServerInterface $server) => !$server->isReadyToShutdown());
-
-        // All servers ready, can exit
     }
 
     /**

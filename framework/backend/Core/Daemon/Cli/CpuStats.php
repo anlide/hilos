@@ -9,8 +9,6 @@ namespace Hilos\Core\Daemon\Cli;
  *
  * Represents CPU statistics from /proc/stat for comparison between measurements.
  * Stores user, nice, system, idle, and iowait values for CPU usage calculation.
- *
- * @package Hilos\Core\Daemon
  */
 class CpuStats
 {

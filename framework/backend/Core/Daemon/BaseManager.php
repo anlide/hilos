@@ -245,7 +245,6 @@ abstract class BaseManager
     /**
      * Logs an error message for this manager.
      *
-     *
      * @param string $message Error message to log
      */
     abstract protected function logError(string $message): void;

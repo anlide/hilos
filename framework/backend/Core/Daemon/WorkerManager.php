@@ -24,6 +24,7 @@ use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
@@ -521,7 +522,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function dispatchDbSyncToAgents(DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $data): void
     {
-        $source = 'db';
+        $source = SignalSource::DB;
 
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             if (!$agent instanceof AgentInterface) {
@@ -560,7 +561,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function dispatchRtSyncToAgents(RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $data): void
     {
-        $source = 'rt';
+        $source = SignalSource::RT;
 
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             if (!$agent instanceof AgentInterface) {
