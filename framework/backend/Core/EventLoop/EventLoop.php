@@ -8,24 +8,24 @@ use EventBase;
 use Event;
 
 /**
- * EventLoop - Manages epoll-based event loop.
+ * Thin wrapper around the ext-event (libevent) EventBase owned by the daemon's
+ * main loop. It watches sockets for readability, drains all ready events once
+ * per non-blocking tick, and frees the underlying events on close.
  *
- * Wrapper around PHP event extension for managing socket events.
- * Works with DaemonManager main loop.
+ * Read callbacks are wrapped so a throwing handler is swallowed instead of
+ * aborting the loop; the originating handler logs the failure. Always
+ * unregister() a socket before closing it, otherwise libevent keeps a dangling
+ * reference to a closed descriptor.
  */
-class EventLoop
+final class EventLoop
 {
-    /** @var EventBase Event base instance */
     private EventBase $base;
 
-    /** @var array<int|string, Event> Registered events indexed by socket resource ID or "id_write" */
+    /** @var array<int, Event> Registered read events keyed by socket id */
     private array $events = [];
 
-    /** @var int Counter for active events (for debugging) */
-    private int $activeEvents = 0;
-
     /**
-     * Creates event loop instance.
+     * Allocates the underlying libevent event base.
      */
     public function __construct()
     {
@@ -33,142 +33,70 @@ class EventLoop
     }
 
     /**
-     * Register socket for read events.
+     * Watches a socket for readability, replacing any existing registration for it.
      *
      * @param resource|object $socket Socket resource or Socket object
-     * @param callable $callback Callback function(resource $socket, int $flags)
+     * @param callable $callback Read handler called as ($socket, int $flags)
      */
     public function registerRead($socket, callable $callback): void
     {
-        $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-
-        // Remove existing event if any
-        if (isset($this->events[$socketId])) {
+        $socketKey = $this->socketKey($socket);
+        if (isset($this->events[$socketKey])) {
             $this->unregister($socket);
         }
 
-        // Wrap callback to catch exceptions (logging is handled in onClientRead/onServerAccept)
-        $wrappedCallback = function($socket, $flags) use ($callback) {
-            try {
-                return $callback($socket, $flags);
-            } catch (\Throwable $e) {
-                // Don't rethrow - allow event loop to continue
-                // Exception will be logged in onClientRead/onServerAccept handlers
-                return false;
-            }
-        };
-
+        // Swallow handler exceptions so one bad read cannot abort the loop;
+        // the originating handler is responsible for logging the failure.
         $event = new Event(
             $this->base,
             $socket,
             Event::READ | Event::PERSIST,
-            $wrappedCallback,
+            function ($socket, $flags) use ($callback) {
+                try {
+                    return $callback($socket, $flags);
+                } catch (\Throwable) {
+                    return false;
+                }
+            },
         );
 
         /** @noinspection PhpExpressionResultUnusedInspection */
         $event->add();
-        $this->events[$socketId] = $event;
-        $this->activeEvents++;
+        $this->events[$socketKey] = $event;
     }
 
     /**
-     * Register socket for write events.
+     * Removes and frees the read event for a socket; a no-op when none is registered.
      *
-     * @param resource|object $socket Socket resource or Socket object
-     * @param callable $callback Callback function(resource $socket, int $flags)
-     */
-    public function registerWrite($socket, callable $callback): void
-    {
-        $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-
-        // Wrap callback to catch exceptions (logging is handled in handler methods)
-        $wrappedCallback = function($socket, $flags) use ($callback) {
-            try {
-                return $callback($socket, $flags);
-            } catch (\Throwable $e) {
-                // Don't rethrow - allow event loop to continue
-                // Exception will be logged in handler methods
-                return false;
-            }
-        };
-
-        $event = new Event(
-            $this->base,
-            $socket,
-            Event::WRITE | Event::PERSIST,
-            $wrappedCallback,
-        );
-
-        /** @noinspection PhpExpressionResultUnusedInspection */
-        $event->add();
-        $this->events[$socketId . '_write'] = $event;
-        $this->activeEvents++;
-    }
-
-    /**
-     * Unregister socket events.
+     * Must run before the socket is closed so libevent drops its reference first.
      *
      * @param resource|object $socket Socket resource or Socket object
      */
     public function unregister($socket): void
     {
-        $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-
-        // Remove read event
-        if (isset($this->events[$socketId])) {
-            /** @noinspection PhpExpressionResultUnusedInspection */
-            $this->events[$socketId]->del();
-            /** @noinspection PhpExpressionResultUnusedInspection */
-            $this->events[$socketId]->free();
-            unset($this->events[$socketId]);
-            $this->activeEvents--;
+        $socketKey = $this->socketKey($socket);
+        if (!isset($this->events[$socketKey])) {
+            return;
         }
 
-        // Remove write event if exists
-        if (isset($this->events[$socketId . '_write'])) {
-            /** @noinspection PhpExpressionResultUnusedInspection */
-            $this->events[$socketId . '_write']->del();
-            /** @noinspection PhpExpressionResultUnusedInspection */
-            $this->events[$socketId . '_write']->free();
-            unset($this->events[$socketId . '_write']);
-            $this->activeEvents--;
-        }
+        /** @noinspection PhpExpressionResultUnusedInspection */
+        $this->events[$socketKey]->del();
+        /** @noinspection PhpExpressionResultUnusedInspection */
+        $this->events[$socketKey]->free();
+        unset($this->events[$socketKey]);
     }
 
     /**
-     * Run event loop iteration (non-blocking).
-     *
-     * Processes all ready events and returns immediately.
+     * Processes every ready event once and returns immediately (non-blocking).
      */
     public function tick(): void
     {
-        // Non-blocking loop - process ready events and return
-        // Exceptions in callbacks are handled by wrapper functions
         /** @noinspection PhpExpressionResultUnusedInspection */
         $this->base->loop(EventBase::LOOP_NONBLOCK);
     }
 
     /**
-     * Get number of active events.
-     *
-     * @return int Active events count
-     */
-    public function getActiveEventsCount(): int
-    {
-        return $this->activeEvents;
-    }
-
-    /**
-     * Stops event loop.
-     */
-    public function stop(): void
-    {
-        /** @noinspection PhpExpressionResultUnusedInspection */
-        $this->base->stop();
-    }
-
-    /**
-     * Frees all registered events.
+     * Removes and frees every registered event.
      */
     public function cleanup(): void
     {
@@ -179,14 +107,24 @@ class EventLoop
             $event->free();
         }
         $this->events = [];
-        $this->activeEvents = 0;
     }
 
     /**
-     * Destructor. Cleans up all events.
+     * Frees every registered event when the loop is destroyed.
      */
     public function __destruct()
     {
         $this->cleanup();
+    }
+
+    /**
+     * Computes the stable integer key under which a socket's event is stored.
+     *
+     * @param resource|object $socket Socket resource or Socket object
+     * @return int Resource id for a resource/int, otherwise the spl object id
+     */
+    private function socketKey($socket): int
+    {
+        return is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
     }
 }
