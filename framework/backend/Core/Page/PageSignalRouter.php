@@ -33,18 +33,22 @@ use Throwable;
  */
 class PageSignalRouter
 {
+    /** Signal-to-page route config for non-action routed signals. */
+    private SignalRouteConfig $signalRoutes;
+
     /**
      * Creates page signal router with factory and action routes.
      *
      * @param AbstractPageFactory $pageFactory Page factory for resolving pages
      * @param ActionRouteConfig $actionRoutes Action-to-page route config
-     * @param array<string, string|array<string, string>> $signalRoutes Optional signal-to-page route config
+     * @param ?SignalRouteConfig $signalRoutes Optional signal-to-page route config; empty config when null
      */
     public function __construct(
         private AbstractPageFactory $pageFactory,
         private ActionRouteConfig $actionRoutes,
-        private array $signalRoutes = [],
+        ?SignalRouteConfig $signalRoutes = null,
     ) {
+        $this->signalRoutes = $signalRoutes ?? new SignalRouteConfig();
     }
 
     /**
@@ -74,41 +78,21 @@ class PageSignalRouter
             $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
         } catch (PageSubscriptionException $e) {
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-            Hilos::$sr->queueSignal(
-                signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::WS_USER),
-                signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
-                signalData: new WebSocketSignalData(
-                    data: new PageSubscriptionErrorSignalData(
-                        page: $page,
-                        httpCode: $e->httpCode,
-                        errorCode: $e->errorCode,
-                        message: $e->getMessage(),
-                    ),
-                    targetAcceptKey: $data->acceptKey,
-                ),
-            );
+            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
         } catch (Throwable $e) {
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
-            Hilos::$sr->queueSignal(
-                signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::WS_USER),
-                signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
-                signalData: new WebSocketSignalData(
-                    data: new PageSubscriptionErrorSignalData(
-                        page: $page,
-                        httpCode: 500,
-                        errorCode: 'internal_error',
-                        message: 'Internal error during subscription',
-                    ),
-                    targetAcceptKey: $data->acceptKey,
-                ),
-            );
+            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, 500, 'internal_error', 'Internal error during subscription');
         }
     }
 
     /**
      * Dispatch page update subscription signal to page handler
+     *
+     * Mirrors {@see self::dispatchPageSubscribe} error handling: a
+     * PageSubscriptionException from onUpdateSubscription (e.g. re-validating the
+     * merged route params) becomes a structured subscription error signal, and
+     * any other exception becomes a generic internal error. The subscription is
+     * preserved either way.
      *
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
@@ -126,7 +110,15 @@ class PageSignalRouter
             return;
         }
 
-        $pageInstance->onUpdateSubscription($data->acceptKey, new PageRouteParams($data->params));
+        try {
+            $pageInstance->onUpdateSubscription($data->acceptKey, new PageRouteParams($data->params));
+        } catch (PageSubscriptionException $e) {
+            Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
+        } catch (Throwable $e) {
+            Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
+            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, 500, 'internal_error', 'Internal error during subscription update');
+        }
     }
 
     /**
@@ -217,17 +209,17 @@ class PageSignalRouter
             return;
         }
 
-        try {
-            $innerPayload = $this->pageFactory->createPageSignalPayloadDTO(
-                SignalTypeConstants::AGENT_SIGNAL,
-                $name,
-                $data->data,
-            );
-            $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload);
+        $innerPayload = $this->pageFactory->createPageSignalPayloadDTO(
+            SignalTypeConstants::AGENT_SIGNAL,
+            $name,
+            $data->data,
+        );
+        $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload);
 
+        try {
             $pageInstance->onSignalAgent($signalData, $source, $name);
         } catch (ValidationException $e) {
-            $this->dispatchAgentSignalActionException($pageInstance, $signalData ?? $data, $e);
+            $this->dispatchAgentSignalActionException($pageInstance, $signalData, $e);
         }
     }
 
@@ -278,7 +270,7 @@ class PageSignalRouter
      */
     private function resolveSignalPage(string $signalType, string $name): ?AbstractPage
     {
-        $page = $this->getPageForSignal($signalType, $name);
+        $page = $this->signalRoutes->getPageForSignal($signalType, $name);
         if ($page === null) {
             return null;
         }
@@ -287,26 +279,40 @@ class PageSignalRouter
     }
 
     /**
-     * Resolve page name from signal route config.
+     * Queues a structured subscription error signal to the originating connection.
      *
-     * @param string $signalType Signal type constant
-     * @param string $name Signal name
-     * @return ?string Page name or null if no route exists
+     * Shared by the subscribe and update-subscription dispatchers so both emit
+     * the same SUBSCRIPTION_PAGE_ERROR contract without tearing down the connection.
+     *
+     * @param AbstractPage $pageInstance Page whose agent owns the signal source
+     * @param string $page Page name that failed
+     * @param string $acceptKey Target connection acceptKey
+     * @param int $httpCode HTTP status code for the error
+     * @param string $errorCode Machine-readable error code
+     * @param string $message Human-readable error message
      */
-    private function getPageForSignal(string $signalType, string $name): ?string
-    {
-        $route = $this->signalRoutes[$signalType] ?? null;
-
-        if (is_string($route)) {
-            return $route !== '' ? $route : null;
-        }
-
-        if (is_array($route)) {
-            $page = $route[$name] ?? null;
-            return is_string($page) && $page !== '' ? $page : null;
-        }
-
-        return null;
+    private function sendSubscriptionError(
+        AbstractPage $pageInstance,
+        string $page,
+        string $acceptKey,
+        int $httpCode,
+        string $errorCode,
+        string $message,
+    ): void {
+        Hilos::$sr->queueSignal(
+            signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+            signalData: new WebSocketSignalData(
+                data: new PageSubscriptionErrorSignalData(
+                    page: $page,
+                    httpCode: $httpCode,
+                    errorCode: $errorCode,
+                    message: $message,
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**

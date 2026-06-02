@@ -16,6 +16,21 @@ error handling in Hilos PHP code.
 | `LogicException` | Framework or application invariant violations, not user-correctable input |
 | `HilosException` | Broad public contract when the caller only needs "Hilos failure" |
 
+### Page subscription exception vocabulary
+
+`PageSubscriptionException` has a deliberately complete set of HTTP-status
+children: `PageBadRequestException` (400), `PageUnauthorizedException` (401),
+`PageForbiddenException` (403), `PageResourceNotFoundException` (404),
+`PageConflictException` (409), `PageGoneException` (410), and
+`PageInternalErrorException` (500), plus the route-param pair
+`MissingPageRouteParamException` / `InvalidPageRouteParamException` (both 400).
+
+This is intentional public API for projects to throw from `onSubscribe()` /
+`onUpdateSubscription()` domain checks. Some classes are not thrown anywhere in
+framework or demo code yet — that is expected. Do not delete them as "dead code":
+they exist so a project always has the right status class without re-inventing
+one, and `PageSignalRouter` maps each to a `subscription_page_error` signal.
+
 ## Validation rules
 
 Use `ValidationException` or a child for business-level validation, even when

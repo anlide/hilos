@@ -24,6 +24,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -309,11 +310,11 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         $router = new PageSignalRouter(
             new HilosPageFactory($agent, Hilos::class),
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::AGENT_SIGNAL => [
                     ChatSignalConstants::MODERATION_RESULT => MainPage::PAGE,
                 ],
-            ],
+            ]),
         );
 
         $agentSignalData = new AgentSignalData($result);

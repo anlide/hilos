@@ -7,14 +7,14 @@ namespace Hilos\Core\Page;
 /**
  * ActionRouteConfig - Maps action names to page names.
  */
-class ActionRouteConfig
+final class ActionRouteConfig
 {
     /**
      * Create action route config with action-to-page mapping.
      *
      * @param array<string, string> $routes Action name to page name mapping
      */
-    public function __construct(private array $routes = [])
+    public function __construct(private readonly array $routes = [])
     {
     }
 

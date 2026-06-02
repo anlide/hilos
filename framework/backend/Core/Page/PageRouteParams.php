@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use BackedEnum;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use TypeError;
 use ValueError;
 
 /**
@@ -197,7 +198,12 @@ final class PageRouteParams
             throw new InvalidPageRouteParamException($key, "not an integer: '{$value}'");
         }
 
-        return (int) $value;
+        $parsed = (int) $value;
+        if (!$this->intRoundTrips($value, $parsed)) {
+            throw new InvalidPageRouteParamException($key, "integer out of range: '{$value}'");
+        }
+
+        return $parsed;
     }
 
     /**
@@ -223,7 +229,7 @@ final class PageRouteParams
     {
         try {
             return $enumClass::from($value);
-        } catch (ValueError $e) {
+        } catch (ValueError | TypeError $e) {
             throw new InvalidPageRouteParamException(
                 $key,
                 "unknown {$enumClass} case: '{$value}'",
@@ -240,5 +246,32 @@ final class PageRouteParams
         }
 
         return $candidate !== '' && ctype_digit($candidate);
+    }
+
+    /**
+     * Confirms a value validated by {@see self::looksLikeInt()} fits in a native int.
+     *
+     * Guards against silent saturation when a digit string exceeds PHP_INT_MAX:
+     * `(int) "99999999999999999999"` clamps to PHP_INT_MAX instead of failing.
+     *
+     * @param string $value Raw route value already passed through looksLikeInt()
+     * @param int $parsed Result of casting $value to int
+     * @return bool True when re-stringifying $parsed reproduces $value's canonical form
+     */
+    private function intRoundTrips(string $value, int $parsed): bool
+    {
+        $sign = '';
+        $digits = $value;
+        if ($digits[0] === '-' || $digits[0] === '+') {
+            $sign = $digits[0];
+            $digits = substr($digits, 1);
+        }
+
+        $digits = ltrim($digits, '0');
+        if ($digits === '') {
+            return $parsed === 0;
+        }
+
+        return (string) $parsed === ($sign === '-' ? '-' : '') . $digits;
     }
 }

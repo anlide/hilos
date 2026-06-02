@@ -21,6 +21,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -157,11 +158,11 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         $router = new PageSignalRouter(
             new HilosPageFactory($agent, Hilos::class),
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::AGENT_SIGNAL => [
                     ChatSignalConstants::RENAME_MODERATION_RESULT => ProfilePage::PAGE,
                 ],
-            ],
+            ]),
         );
 
         $agentSignalData = new AgentSignalData($result);

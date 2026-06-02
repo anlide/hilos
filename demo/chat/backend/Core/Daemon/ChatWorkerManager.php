@@ -15,6 +15,7 @@ use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\SignalRouter;
 
 /**
@@ -60,7 +61,7 @@ final class ChatWorkerManager extends WorkerManager
 
         $pageFactory = new HilosPageFactory($agent, Hilos::class);
         $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
-        $signalRoutes = Hilos::getPageSignalRoutes();
+        $signalRoutes = new SignalRouteConfig(Hilos::getPageSignalRoutes());
 
         return new PageSignalRouter($pageFactory, $actionRoutes, $signalRoutes);
     }

@@ -15,6 +15,7 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -40,11 +41,11 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::AGENT_SIGNAL => [
                     'moderation_result' => PageSignalRouterTestPage::PAGE,
                 ],
-            ],
+            ]),
         );
         $data = new AgentSignalData(new SignalData(['message' => 'ok']));
 
@@ -62,9 +63,9 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::FRAME_BINARY => PageSignalRouterTestPage::PAGE,
-            ],
+            ]),
         );
         $data = new WebSocketFrameBinarySignalDTO('accept-key', 'payload');
 
@@ -81,11 +82,11 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::CRON => [
                     'cleanup_history' => PageSignalRouterTestPage::PAGE,
                 ],
-            ],
+            ]),
         );
         $data = new SignalData(['cronName' => 'cleanup_history']);
 
@@ -120,11 +121,11 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::AGENT_SIGNAL => [
                     'validation_error' => PageSignalRouterTestPage::PAGE,
                 ],
-            ],
+            ]),
         );
 
         $router->dispatchAgentSignal(
@@ -152,11 +153,11 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            [
+            new SignalRouteConfig([
                 SignalTypeConstants::AGENT_SIGNAL => [
                     'validation_error' => PageSignalRouterTestPage::PAGE,
                 ],
-            ],
+            ]),
         );
 
         $this->expectException(ValidationException::class);
@@ -176,7 +177,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            PageSignalRouterTestHilos::getPageSignalRoutes(),
+            new SignalRouteConfig(PageSignalRouterTestHilos::getPageSignalRoutes()),
         );
 
         $router->dispatchAgentSignal(
@@ -198,7 +199,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            PageSignalRouterTestHilos::getPageSignalRoutes(),
+            new SignalRouteConfig(PageSignalRouterTestHilos::getPageSignalRoutes()),
         );
         $payload = new PageSignalRouterTestSignalData('already-typed');
 
@@ -220,7 +221,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $router = new PageSignalRouter(
             $factory,
             new ActionRouteConfig(),
-            PageSignalRouterTestHilos::getPageSignalRoutes(),
+            new SignalRouteConfig(PageSignalRouterTestHilos::getPageSignalRoutes()),
         );
 
         $this->expectException(InvalidAgentSignalPayloadException::class);

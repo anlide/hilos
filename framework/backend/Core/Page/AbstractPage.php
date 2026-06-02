@@ -103,16 +103,6 @@ abstract class AbstractPage
     }
 
     /**
-     * Logs a debug message under this page's owning agent id when debug logging is enabled.
-     *
-     * @param string $message Debug message to log
-     */
-    protected function logAgentDebug(string $message): void
-    {
-        Logger::logAgentDebug($this->agent->getId(), $message);
-    }
-
-    /**
      * Logs an info message when a static page workflow only has an agent id.
      *
      * @param string $agentId Agent id to use as the log source
@@ -121,28 +111,6 @@ abstract class AbstractPage
     protected static function logAgentInfoForId(string $agentId, string $message): void
     {
         Logger::logAgentInfo($agentId, $message);
-    }
-
-    /**
-     * Logs an error message when a static page workflow only has an agent id.
-     *
-     * @param string $agentId Agent id to use as the log source
-     * @param string $message Error message to log
-     */
-    protected static function logAgentErrorForId(string $agentId, string $message): void
-    {
-        Logger::logAgentError($agentId, $message);
-    }
-
-    /**
-     * Logs a debug message when a static page workflow only has an agent id.
-     *
-     * @param string $agentId Agent id to use as the log source
-     * @param string $message Debug message to log
-     */
-    protected static function logAgentDebugForId(string $agentId, string $message): void
-    {
-        Logger::logAgentDebug($agentId, $message);
     }
 
     /**

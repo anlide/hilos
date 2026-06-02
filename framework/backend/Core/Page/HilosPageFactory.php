@@ -23,6 +23,78 @@ use Hilos\Hilos;
 class HilosPageFactory extends AbstractPageFactory
 {
     /**
+     * All Hilos admin page ids (dashboard, i18n subtree, guardian, etc.) as a
+     * lookup set keyed by page id, so membership checks stay O(1) and the list
+     * is built once at class load instead of on every hasPage() call.
+     *
+     * @var array<string, true>
+     */
+    private const array HILOS_PAGE_IDS = [
+        HilosPageConstants::HILOS_DASHBOARD => true,
+        HilosPageConstants::HILOS_SETTINGS => true,
+        HilosPageConstants::HILOS_I18N => true,
+        HilosPageConstants::HILOS_I18N_LANGUAGES => true,
+        HilosPageConstants::HILOS_I18N_COUNTRIES => true,
+        HilosPageConstants::HILOS_I18N_ENTITIES => true,
+        HilosPageConstants::HILOS_I18N_UI_PAGES => true,
+        HilosPageConstants::HILOS_I18N_GROUPS => true,
+        HilosPageConstants::HILOS_I18N_ACTIONS => true,
+        HilosPageConstants::HILOS_I18N_EMAILS => true,
+        HilosPageConstants::HILOS_I18N_LANGUAGE => true,
+        HilosPageConstants::HILOS_I18N_COUNTRY => true,
+        HilosPageConstants::HILOS_I18N_UI_PAGE => true,
+        HilosPageConstants::HILOS_I18N_GROUP => true,
+        HilosPageConstants::HILOS_I18N_ACTION => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_ENTITY => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE_ITEM => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR => true,
+        HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL => true,
+        HilosPageConstants::HILOS_GUARDIAN => true,
+        HilosPageConstants::HILOS_GUARDIAN_AGENT => true,
+        HilosPageConstants::HILOS_ANALYTICS => true,
+        HilosPageConstants::HILOS_BACKUP => true,
+        HilosPageConstants::HILOS_DAEMON => true,
+        HilosPageConstants::HILOS_DAEMON_WORKERS => true,
+        HilosPageConstants::HILOS_DAEMON_AGENTS => true,
+        HilosPageConstants::HILOS_DAEMON_CRON => true,
+        HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => true,
+        HilosPageConstants::HILOS_DAEMON_HTTP_SERVER => true,
+        HilosPageConstants::HILOS_LOGS => true,
+        HilosPageConstants::HILOS_LOGS_KEYS => true,
+        HilosPageConstants::HILOS_LOGS_WORKERS => true,
+        HilosPageConstants::HILOS_LOGS_ROTATIONS => true,
+        HilosPageConstants::HILOS_LOGS_VIEW => true,
+        HilosPageConstants::HILOS_OPERATIONS => true,
+        HilosPageConstants::HILOS_USERS => true,
+        HilosPageConstants::HILOS_USER => true,
+        HilosPageConstants::HILOS_ROLES => true,
+        HilosPageConstants::HILOS_MCP_SKILLS => true,
+        HilosPageConstants::HILOS_MCP_SKILLS_MCP => true,
+        HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS => true,
+        HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW => true,
+        HilosPageConstants::HILOS_SIL => true,
+        HilosPageConstants::HILOS_SIL_REQUESTS => true,
+        HilosPageConstants::HILOS_SIL_USER_HISTORY => true,
+        HilosPageConstants::HILOS_COMMUNICATIONS => true,
+        HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => true,
+        HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => true,
+        HilosPageConstants::HILOS_SECURITY => true,
+        HilosPageConstants::HILOS_SECURITY_2FA => true,
+        HilosPageConstants::HILOS_SECURITY_OAUTH => true,
+        HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => true,
+        HilosPageConstants::HILOS_BILLING => true,
+        HilosPageConstants::HILOS_BILLING_PROVIDER => true,
+        HilosPageConstants::HILOS_BILLING_PAYMENTS => true,
+        HilosPageConstants::HILOS_BILLING_REFUNDS => true,
+        HilosPageConstants::HILOS_CHANGE_LOG => true,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLES => true,
+        HilosPageConstants::HILOS_CHANGE_LOG_TABLE => true,
+    ];
+
+    /**
      * Creates a page factory bound to a project topology registry.
      *
      * @param PageAgentInterface $agent Agent instance
@@ -34,93 +106,26 @@ class HilosPageFactory extends AbstractPageFactory
     }
 
     /**
-     * All Hilos admin page ids (dashboard, i18n subtree, guardian, etc.).
-     *
-     * @return list<string>
-     */
-    private static function hilosPageIds(): array
-    {
-        return [
-            HilosPageConstants::HILOS_DASHBOARD,
-            HilosPageConstants::HILOS_SETTINGS,
-            HilosPageConstants::HILOS_I18N,
-            HilosPageConstants::HILOS_I18N_LANGUAGES,
-            HilosPageConstants::HILOS_I18N_COUNTRIES,
-            HilosPageConstants::HILOS_I18N_ENTITIES,
-            HilosPageConstants::HILOS_I18N_UI_PAGES,
-            HilosPageConstants::HILOS_I18N_GROUPS,
-            HilosPageConstants::HILOS_I18N_ACTIONS,
-            HilosPageConstants::HILOS_I18N_EMAILS,
-            HilosPageConstants::HILOS_I18N_LANGUAGE,
-            HilosPageConstants::HILOS_I18N_COUNTRY,
-            HilosPageConstants::HILOS_I18N_UI_PAGE,
-            HilosPageConstants::HILOS_I18N_GROUP,
-            HilosPageConstants::HILOS_I18N_ACTION,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_ENTITY,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE_ITEM,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR,
-            HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL,
-            HilosPageConstants::HILOS_GUARDIAN,
-            HilosPageConstants::HILOS_GUARDIAN_AGENT,
-            HilosPageConstants::HILOS_ANALYTICS,
-            HilosPageConstants::HILOS_BACKUP,
-            HilosPageConstants::HILOS_DAEMON,
-            HilosPageConstants::HILOS_DAEMON_WORKERS,
-            HilosPageConstants::HILOS_DAEMON_AGENTS,
-            HilosPageConstants::HILOS_DAEMON_CRON,
-            HilosPageConstants::HILOS_DAEMON_WEBSOCKETS,
-            HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
-            HilosPageConstants::HILOS_LOGS,
-            HilosPageConstants::HILOS_LOGS_KEYS,
-            HilosPageConstants::HILOS_LOGS_WORKERS,
-            HilosPageConstants::HILOS_LOGS_ROTATIONS,
-            HilosPageConstants::HILOS_LOGS_VIEW,
-            HilosPageConstants::HILOS_OPERATIONS,
-            HilosPageConstants::HILOS_USERS,
-            HilosPageConstants::HILOS_USER,
-            HilosPageConstants::HILOS_ROLES,
-            HilosPageConstants::HILOS_MCP_SKILLS,
-            HilosPageConstants::HILOS_MCP_SKILLS_MCP,
-            HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS,
-            HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW,
-            HilosPageConstants::HILOS_SIL,
-            HilosPageConstants::HILOS_SIL_REQUESTS,
-            HilosPageConstants::HILOS_SIL_USER_HISTORY,
-            HilosPageConstants::HILOS_COMMUNICATIONS,
-            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
-            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
-            HilosPageConstants::HILOS_SECURITY,
-            HilosPageConstants::HILOS_SECURITY_2FA,
-            HilosPageConstants::HILOS_SECURITY_OAUTH,
-            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
-            HilosPageConstants::HILOS_BILLING,
-            HilosPageConstants::HILOS_BILLING_PROVIDER,
-            HilosPageConstants::HILOS_BILLING_PAYMENTS,
-            HilosPageConstants::HILOS_BILLING_REFUNDS,
-            HilosPageConstants::HILOS_CHANGE_LOG,
-            HilosPageConstants::HILOS_CHANGE_LOG_TABLES,
-            HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
-        ];
-    }
-
-    /**
      * Create page instance from the project topology registry.
      *
      * @param string $pageName Page constant
      * @return AbstractPage Page instance
-     * @throws PageNotFoundException When page cannot be created
+     * @throws PageNotFoundException When the page is unregistered, maps to a non-AbstractPage class, or is a known Hilos id without a project implementation
      */
     protected function createPage(string $pageName): AbstractPage
     {
         $pageClass = $this->hilosClass::PAGES[$pageName] ?? null;
         if (is_string($pageClass)) {
+            if (!is_subclass_of($pageClass, AbstractPage::class)) {
+                throw new PageNotFoundException(
+                    "Page '{$pageName}' maps to '{$pageClass}', which is not a " . AbstractPage::class . ' subclass.'
+                );
+            }
+
             return new $pageClass($this->agent);
         }
 
-        if (in_array($pageName, self::hilosPageIds(), true)) {
+        if (isset(self::HILOS_PAGE_IDS[$pageName])) {
             throw new PageNotFoundException(
                 "Hilos page '{$pageName}' requires implementation in project. "
                 . "Create concrete page extending AbstractHilos*Page in your project (e.g. Demo\\Chat\\Pages\\Hilos\\SettingsPage)."
@@ -139,7 +144,7 @@ class HilosPageFactory extends AbstractPageFactory
     public function hasPage(string $pageName): bool
     {
         return isset($this->hilosClass::PAGES[$pageName])
-            || in_array($pageName, self::hilosPageIds(), true);
+            || isset(self::HILOS_PAGE_IDS[$pageName]);
     }
 
     /**
