@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Core\Http\Exception;
 
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Http\RequestQueryParams;
 use Throwable;
 
 /**
- * Exception thrown when a required request query param is missing.
+ * Required request query param is missing.
+ *
+ * Thrown by {@see RequestQueryParams::requireString()} when the key is absent;
+ * a present-but-empty value is reported as an empty-value error instead.
  */
 class MissingRequestQueryParamException extends ValidationException
 {

@@ -162,6 +162,12 @@ class HttpConstants
     /** @var string Query string separator in request paths */
     public const string QUERY_STRING_SEPARATOR = '?';
 
+    /** @var string Separator between query string key-value pairs */
+    public const string QUERY_PAIR_SEPARATOR = '&';
+
+    /** @var string Separator between a query param key and its value */
+    public const string QUERY_KEY_VALUE_SEPARATOR = '=';
+
     /** @var string Content type for JSON */
     public const string CONTENT_TYPE_JSON = 'application/json';
 
