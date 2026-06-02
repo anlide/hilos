@@ -40,26 +40,6 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
-     * Set the agent whose code is currently executing.
-     *
-     * @param ?string $agentId Current agent id, or null outside an agent callback
-     */
-    public static function setCurrentAgentId(?string $agentId): void
-    {
-        ExecutionContext::setCurrentAgentId($agentId);
-    }
-
-    /**
-     * Returns the agent whose code is currently executing.
-     *
-     * @return ?string Current agent id, or null outside an agent callback
-     */
-    public static function getCurrentAgentId(): ?string
-    {
-        return ExecutionContext::currentAgentId();
-    }
-
-    /**
      * Unregister agent and clear it from the current RT writer context.
      *
      * @param string $agentId Agent ID
@@ -86,7 +66,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             if (self::getTruthSourceKeys($collection) === true) {
                 return;
             }
@@ -103,7 +83,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new RtTruthSourceWriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a collection-wide " .
+            "Write operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not a collection-wide " .
             "truth source for runtime collection '{$collection}'."
         );
     }
@@ -124,7 +104,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             if (self::isTruthSource($collection, [$stateId])) {
                 return;
             }
@@ -141,7 +121,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new RtTruthSourceWriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a truth source for " .
+            "Write operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not a truth source for " .
             "runtime collection '{$collection}' state '{$stateId}'."
         );
     }
@@ -154,12 +134,12 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function getCurrentAgentKeys(string $collection): array|true|null
     {
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             return null;
         }
 
         $sources = &self::getSources();
 
-        return $sources[$collection][self::getCurrentAgentId()] ?? null;
+        return $sources[$collection][ExecutionContext::currentAgentId()] ?? null;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -19,7 +20,7 @@ final class RtTruthSourceRegistryTest extends TestCase
 
     public function tearDown(): void
     {
-        RtTruthSourceRegistry::setCurrentAgentId(null);
+        ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_A);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_B);
 
@@ -30,7 +31,7 @@ final class RtTruthSourceRegistryTest extends TestCase
     {
         RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
         RtTruthSourceRegistry::register(self::COLLECTION, ['2'], self::AGENT_B);
-        RtTruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
 
@@ -41,7 +42,7 @@ final class RtTruthSourceRegistryTest extends TestCase
     public function testKeyedRtSourceCannotPerformCollectionWideWrite(): void
     {
         RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
-        RtTruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
         RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
@@ -50,7 +51,7 @@ final class RtTruthSourceRegistryTest extends TestCase
     public function testCollectionWideRtSourceCanWriteAnyStateKey(): void
     {
         RtTruthSourceRegistry::register(self::COLLECTION, true, self::AGENT_A);
-        RtTruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
         RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
@@ -62,10 +63,10 @@ final class RtTruthSourceRegistryTest extends TestCase
     public function testUnregisterCurrentAgentClearsRtContext(): void
     {
         RtTruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
-        RtTruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_A);
 
-        $this->assertNull(RtTruthSourceRegistry::getCurrentAgentId());
+        $this->assertNull(ExecutionContext::currentAgentId());
     }
 }

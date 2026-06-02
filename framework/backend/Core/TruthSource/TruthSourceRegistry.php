@@ -62,26 +62,6 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
-     * Set the agent whose code is currently executing.
-     *
-     * @param ?string $agentId Current agent id, or null outside an agent callback
-     */
-    public static function setCurrentAgentId(?string $agentId): void
-    {
-        ExecutionContext::setCurrentAgentId($agentId);
-    }
-
-    /**
-     * Returns the agent whose code is currently executing.
-     *
-     * @return ?string Current agent id, or null outside an agent callback
-     */
-    public static function getCurrentAgentId(): ?string
-    {
-        return ExecutionContext::currentAgentId();
-    }
-
-    /**
      * Unregister agent from create permission for collection
      *
      * @param string $collection Collection/table name
@@ -129,11 +109,11 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             return;
         }
 
-        if (isset(self::$createSources[$collection][self::getCurrentAgentId()])) {
+        if (isset(self::$createSources[$collection][ExecutionContext::currentAgentId()])) {
             return;
         }
 
@@ -142,7 +122,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new CreateNotAllowedException(
-            "Create operation not allowed: agent '" . self::getCurrentAgentId() . "' is not allowed to create in " .
+            "Create operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not allowed to create in " .
             "table '{$collection}'."
         );
     }
@@ -183,7 +163,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             if (self::getTruthSourceKeys($collection) === true) {
                 return;
             }
@@ -198,7 +178,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new WriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a collection-wide " .
+            "Write operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not a collection-wide " .
             "truth source for table '{$collection}'."
         );
     }
@@ -219,7 +199,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             if (self::isTruthSource($collection, [$idString])) {
                 return;
             }
@@ -235,7 +215,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new WriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a truth source for " .
+            "Write operation not allowed: agent '" . ExecutionContext::currentAgentId() . "' is not a truth source for " .
             "table '{$collection}' item '{$idString}'."
         );
     }
@@ -248,12 +228,12 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function getCurrentAgentKeys(string $collection): array|true|null
     {
-        if (self::getCurrentAgentId() === null) {
+        if (ExecutionContext::currentAgentId() === null) {
             return null;
         }
 
         $sources = &self::getSources();
 
-        return $sources[$collection][self::getCurrentAgentId()] ?? null;
+        return $sources[$collection][ExecutionContext::currentAgentId()] ?? null;
     }
 }

@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -21,7 +22,7 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
 
         $agentId = 'bot:' . $bot->id . ':bridge-test';
         RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, [(string)$bot->id], $agentId);
-        RtTruthSourceRegistry::setCurrentAgentId($agentId);
+        ExecutionContext::setCurrentAgentId($agentId);
 
         try {
             $status = Hilos::$rt->botAgentStatuses->actions->ensure($bot->id);
@@ -31,7 +32,7 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
             $this->assertSame(StateBotAgentStatus::STATUS_LEFT, $bot->agentStatus?->status);
         } finally {
             RtTruthSourceRegistry::unregisterAgent($agentId);
-            RtTruthSourceRegistry::setCurrentAgentId(null);
+            ExecutionContext::setCurrentAgentId(null);
         }
     }
 

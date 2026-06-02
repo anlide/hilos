@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Execution;
 
-use LogicException;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
 
 /**
  * Process-global record of the worker callback in flight: which agent is running
  * and which WebSocket accept key it serves.
  *
- * Frames are held on a stack so nested callbacks restore the previous frame on
- * return (run()/push()/pop()). The setCurrent* methods are a compatibility layer
- * that mutates the current frame in place for call sites that scope only one
- * field. Truth-source registries and runtime view contexts read currentAgentId()
- * and currentAcceptKey() to decide who may write or which connection is "self".
+ * Two scoping idioms share one current frame. The worker event loop sets the
+ * top-level scope imperatively with setCurrentAgentId() / setCurrentAcceptKey();
+ * nested callbacks use run() / push() / pop(), which restore the previous frame
+ * on return. Truth-source registries and runtime view contexts read
+ * currentAgentId() and currentAcceptKey() to decide who may write or which
+ * connection is "self".
  */
 final class ExecutionContext
 {
@@ -32,7 +33,7 @@ final class ExecutionContext
      * @param ExecutionFrame $frame Frame active during the callback
      * @param callable(): T $callback Work to execute in this frame
      * @return T Callback result
-     * @throws LogicException When the callback leaves the frame stack imbalanced
+     * @throws FramePopOrderException When the callback leaves the frame stack imbalanced
      */
     public static function run(ExecutionFrame $frame, callable $callback): mixed
     {
@@ -65,20 +66,20 @@ final class ExecutionContext
      * Pops the current execution frame.
      *
      * @param int $token Token returned by {@see self::push()}
-     * @throws LogicException When popping a non-current frame
+     * @throws FramePopOrderException When popping a non-current frame
      */
     public static function pop(int $token): void
     {
         $lastKey = array_key_last(self::$frames);
         if ($lastKey === null || self::$frames[$lastKey]['token'] !== $token) {
-            throw new LogicException('Execution context frame pop order mismatch.');
+            throw new FramePopOrderException('Execution context frame pop order mismatch.');
         }
 
         array_pop(self::$frames);
     }
 
     /**
-     * Compatibility setter for code that still scopes only the current agent.
+     * Sets the agent on the current frame for the worker event loop's top-level scope.
      *
      * @param ?string $agentId Agent to scope to, or null outside an agent callback
      */
@@ -88,7 +89,7 @@ final class ExecutionContext
     }
 
     /**
-     * Compatibility setter for code that still scopes only the current WebSocket connection.
+     * Sets the WebSocket accept key on the current frame for the top-level scope.
      *
      * @param ?string $acceptKey Accept key to scope to, or null outside a WebSocket-scoped signal
      */

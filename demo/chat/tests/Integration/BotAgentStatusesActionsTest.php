@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 final class BotAgentStatusesActionsTest extends IntegrationTestCase
@@ -15,7 +16,7 @@ final class BotAgentStatusesActionsTest extends IntegrationTestCase
     {
         $agentId = 'bot:901';
         RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, ['901'], $agentId);
-        RtTruthSourceRegistry::setCurrentAgentId($agentId);
+        ExecutionContext::setCurrentAgentId($agentId);
 
         try {
             $status = Hilos::$rt->botAgentStatuses->actions->ensure(901);
@@ -30,7 +31,7 @@ final class BotAgentStatusesActionsTest extends IntegrationTestCase
             );
         } finally {
             RtTruthSourceRegistry::unregisterAgent($agentId);
-            RtTruthSourceRegistry::setCurrentAgentId(null);
+            ExecutionContext::setCurrentAgentId(null);
         }
     }
 }

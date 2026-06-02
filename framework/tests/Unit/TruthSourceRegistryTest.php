@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -20,7 +21,7 @@ final class TruthSourceRegistryTest extends TestCase
 
     public function tearDown(): void
     {
-        TruthSourceRegistry::setCurrentAgentId(null);
+        ExecutionContext::setCurrentAgentId(null);
         TruthSourceRegistry::unregisterAgent(self::AGENT_A);
         TruthSourceRegistry::unregisterAgent(self::AGENT_B);
 
@@ -31,7 +32,7 @@ final class TruthSourceRegistryTest extends TestCase
     {
         TruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
         TruthSourceRegistry::register(self::COLLECTION, ['2'], self::AGENT_B);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1');
 
@@ -42,7 +43,7 @@ final class TruthSourceRegistryTest extends TestCase
     public function testKeyedDbSourceCannotPerformCollectionWideWrite(): void
     {
         TruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         $this->expectException(WriteNotAllowedException::class);
         TruthSourceRegistry::checkCanWrite(self::COLLECTION);
@@ -51,7 +52,7 @@ final class TruthSourceRegistryTest extends TestCase
     public function testCollectionWideDbSourceCanWriteAnyItemKey(): void
     {
         TruthSourceRegistry::register(self::COLLECTION, true, self::AGENT_A);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::checkCanWrite(self::COLLECTION);
         TruthSourceRegistry::checkCanWriteItem(self::COLLECTION, '1');
@@ -63,7 +64,7 @@ final class TruthSourceRegistryTest extends TestCase
     public function testCreateSourceCanCreateButNotWrite(): void
     {
         TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::checkCanCreate(self::COLLECTION);
 
@@ -74,7 +75,7 @@ final class TruthSourceRegistryTest extends TestCase
     public function testCurrentAgentCannotUseOtherAgentCreateSource(): void
     {
         TruthSourceRegistry::registerCreate(self::COLLECTION, self::AGENT_A);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_B);
+        ExecutionContext::setCurrentAgentId(self::AGENT_B);
 
         $this->expectException(CreateNotAllowedException::class);
         TruthSourceRegistry::checkCanCreate(self::COLLECTION);
@@ -83,10 +84,10 @@ final class TruthSourceRegistryTest extends TestCase
     public function testUnregisterCurrentAgentClearsDbContext(): void
     {
         TruthSourceRegistry::register(self::COLLECTION, ['1'], self::AGENT_A);
-        TruthSourceRegistry::setCurrentAgentId(self::AGENT_A);
+        ExecutionContext::setCurrentAgentId(self::AGENT_A);
 
         TruthSourceRegistry::unregisterAgent(self::AGENT_A);
 
-        $this->assertNull(TruthSourceRegistry::getCurrentAgentId());
+        $this->assertNull(ExecutionContext::currentAgentId());
     }
 }
