@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -585,6 +586,20 @@ abstract class DaemonManager extends BaseManager
                     Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket acceptKey: {$acceptKey}");
 
                     $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+                } elseif ($destination instanceof AllClientsDestination) {
+                    // Broadcast signal to every connected WebSocket client
+                    if ($webSocketServer === null) {
+                        Logger::debug("No WebSocket server available for broadcasting signal to all clients");
+                        continue;
+                    }
+
+                    Logger::debug("Broadcasting signal to all clients: {$signalType}/{$signalName}");
+
+                    $this->sendToAllClients(
+                        $webSocketServer,
+                        $this->encodeSignalFrame($signal),
+                        $destination->excludeAcceptKey,
+                    );
                 } else {
                     // Unknown destination type, skip
                     Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
@@ -711,9 +726,7 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Send signal to WebSocket client
-     *
-     * Serializes signal data and sends it to specific WebSocket client.
+     * Send a signal to one WebSocket client by accept key.
      *
      * @param WebSocketServer $server WebSocket server
      * @param SignalDTO $signal Signal DTO
@@ -721,7 +734,21 @@ abstract class DaemonManager extends BaseManager
      */
     private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
     {
-        $signalName = $signal->signalName->getName();
+        $this->sendToClient($server, $acceptKey, $this->encodeSignalFrame($signal));
+    }
+
+    /**
+     * Serialize a signal into the outgoing WebSocket frame JSON.
+     *
+     * Unwraps WebSocketSignalData targeting metadata down to the inner payload,
+     * then builds the type/data frame with optional envelope metadata. Shared by
+     * single-client and all-clients delivery so both send an identical frame.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return string Frame JSON ready for sendFrame(), or '' if encoding fails
+     */
+    private function encodeSignalFrame(SignalDTO $signal): string
+    {
         $signalData = $signal->data;
 
         // Extract inner data from WebSocketSignalData if present
@@ -735,15 +762,14 @@ abstract class DaemonManager extends BaseManager
             : [];
 
         $message = [
-            'type' => $signalName,
+            'type' => $signal->signalName->getName(),
             'data' => $dataArray,
         ];
         $this->mergeEnvelopeMetadata($message, $innerData);
 
         $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        // Send to specific client
-        $this->sendToClient($server, $acceptKey, $messageJson);
+        return $messageJson !== false ? $messageJson : '';
     }
 
     /**
@@ -771,11 +797,13 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Send message to all clients
+     * Broadcast a pre-serialized frame to every connected WebSocket client in a
+     * single pass, skipping excludeAcceptKey. Per-client send failures are logged
+     * by accept key and do not stop the broadcast.
      *
      * @param WebSocketServer $server WebSocket server
      * @param string $message Message JSON
-     * @param ?string $excludeAcceptKey Accept key to exclude (optional)
+     * @param ?string $excludeAcceptKey Accept key to exclude, or null to send to all
      */
     private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeAcceptKey = null): void
     {

@@ -11,6 +11,7 @@ use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -562,6 +563,8 @@ class SignalRouter
                     AgentDestination::class . '|' . $destination->agentType . '|' . ($destination->agentIndex ?? ''),
                 $destination instanceof WebSocketDestination =>
                     WebSocketDestination::class . '|' . $destination->acceptKey,
+                $destination instanceof AllClientsDestination =>
+                    AllClientsDestination::class . '|' . ($destination->excludeAcceptKey ?? ''),
                 default => (string) spl_object_id($destination),
             };
             if (isset($seen[$key])) {
@@ -770,11 +773,12 @@ class SignalRouter
      *
      * Returns array of WebSocket client destinations based on signal type and subscriptions.
      * For ws_user: returns single client with targetAcceptKey
-     * For ws_all: returns all subscribed clients, excluding excludeAcceptKey
+     * For ws_all: returns all page-subscribed clients, excluding excludeAcceptKey
+     * For ws_all_connected: returns a single all-clients broadcast marker, excluding excludeAcceptKey
      * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<WebSocketDestination> WebSocket client destinations matching the signal targeting
+     * @return list<Destination> WebSocket client destinations, or a single all-clients broadcast marker
      */
     private function getWebSocketDestinations(SignalDTO $signal): array
     {
@@ -810,6 +814,11 @@ class SignalRouter
                     }
                     $destinations[] = new WebSocketDestination($acceptKey);
                 }
+                break;
+
+            case SignalTypeConstants::WS_ALL_CONNECTED:
+                // Single broadcast marker; daemon fans out to all connected clients
+                $destinations[] = new AllClientsDestination($excludeAcceptKey);
                 break;
 
             case SignalTypeConstants::WS_GROUP:

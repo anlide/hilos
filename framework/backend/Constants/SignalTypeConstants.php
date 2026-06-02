@@ -53,8 +53,11 @@ class SignalTypeConstants
     /** @var string WebSocket signal to single user */
     public const string WS_USER = 'ws_user';
 
-    /** @var string WebSocket signal to all users */
+    /** @var string WebSocket signal to all page-subscribed users */
     public const string WS_ALL = 'ws_all';
+
+    /** @var string WebSocket signal to every connected client (broadcast) */
+    public const string WS_ALL_CONNECTED = 'ws_all_connected';
 
     /** @var string WebSocket signal to group */
     public const string WS_GROUP = 'ws_group';

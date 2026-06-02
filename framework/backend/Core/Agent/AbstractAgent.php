@@ -194,6 +194,25 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
+     * Broadcast signal to every connected WebSocket client, including connections
+     * not subscribed to any page. Use sendToAllUsers() for the usual page-subscriber
+     * broadcast; reserve this for the rare all-connections case.
+     *
+     * @param string $signalName Signal name
+     * @param SignalDataInterface $data Signal payload
+     * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     */
+    public function sendToAllConnected(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
      * Send signal to all users subscribed to a group.
      *
      * @param string $signalName Signal name
