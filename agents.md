@@ -148,7 +148,7 @@ additional change in one of these surfaces, stop and ask again before editing it
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
-8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
+8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
 9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
 10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 

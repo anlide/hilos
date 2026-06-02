@@ -120,5 +120,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Do not add unapproved convenience helpers or predicates during refactors.
 - Do not write repeated payload/model/table keys as magic strings when an owner
   constant exists or should exist.
+- Do not leave magic-string keys in an internal structured array; use named
+  constants at minimum and a value object preferably (see
+  `internal-backend-api.md`).
 - Declare PHP class constants before properties; read `php-class-members.md`
   when adding or reordering class members.

@@ -19,7 +19,7 @@ use Hilos\Core\Execution\Exception\FramePopOrderException;
  */
 final class ExecutionContext
 {
-    /** @var list<array{token: int, frame: ExecutionFrame}> */
+    /** @var list<FrameStackEntry> */
     private static array $frames = [];
 
     private static ?ExecutionFrame $ambientFrame = null;
@@ -54,10 +54,7 @@ final class ExecutionContext
     public static function push(ExecutionFrame $frame): int
     {
         $token = self::$nextFrameToken++;
-        self::$frames[] = [
-            'token' => $token,
-            'frame' => $frame,
-        ];
+        self::$frames[] = new FrameStackEntry($token, $frame);
 
         return $token;
     }
@@ -71,7 +68,7 @@ final class ExecutionContext
     public static function pop(int $token): void
     {
         $lastKey = array_key_last(self::$frames);
-        if ($lastKey === null || self::$frames[$lastKey]['token'] !== $token) {
+        if ($lastKey === null || self::$frames[$lastKey]->token !== $token) {
             throw new FramePopOrderException('Execution context frame pop order mismatch.');
         }
 
@@ -144,7 +141,7 @@ final class ExecutionContext
     private static function currentFrame(): ExecutionFrame
     {
         if (self::$frames !== []) {
-            return self::$frames[array_key_last(self::$frames)]['frame'];
+            return self::$frames[array_key_last(self::$frames)]->frame;
         }
 
         return self::$ambientFrame ?? new ExecutionFrame();
@@ -158,7 +155,8 @@ final class ExecutionContext
     private static function replaceCurrentFrame(ExecutionFrame $frame): void
     {
         if (self::$frames !== []) {
-            self::$frames[array_key_last(self::$frames)]['frame'] = $frame;
+            $lastKey = array_key_last(self::$frames);
+            self::$frames[$lastKey] = new FrameStackEntry(self::$frames[$lastKey]->token, $frame);
             return;
         }
 
