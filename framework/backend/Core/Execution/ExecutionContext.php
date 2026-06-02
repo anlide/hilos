@@ -7,7 +7,14 @@ namespace Hilos\Core\Execution;
 use LogicException;
 
 /**
- * Stack-scoped metadata for the currently executing worker callback.
+ * Process-global record of the worker callback in flight: which agent is running
+ * and which WebSocket accept key it serves.
+ *
+ * Frames are held on a stack so nested callbacks restore the previous frame on
+ * return (run()/push()/pop()). The setCurrent* methods are a compatibility layer
+ * that mutates the current frame in place for call sites that scope only one
+ * field. Truth-source registries and runtime view contexts read currentAgentId()
+ * and currentAcceptKey() to decide who may write or which connection is "self".
  */
 final class ExecutionContext
 {
@@ -25,6 +32,7 @@ final class ExecutionContext
      * @param ExecutionFrame $frame Frame active during the callback
      * @param callable(): T $callback Work to execute in this frame
      * @return T Callback result
+     * @throws LogicException When the callback leaves the frame stack imbalanced
      */
     public static function run(ExecutionFrame $frame, callable $callback): mixed
     {
@@ -71,6 +79,8 @@ final class ExecutionContext
 
     /**
      * Compatibility setter for code that still scopes only the current agent.
+     *
+     * @param ?string $agentId Agent to scope to, or null outside an agent callback
      */
     public static function setCurrentAgentId(?string $agentId): void
     {
@@ -79,6 +89,8 @@ final class ExecutionContext
 
     /**
      * Compatibility setter for code that still scopes only the current WebSocket connection.
+     *
+     * @param ?string $acceptKey Accept key to scope to, or null outside a WebSocket-scoped signal
      */
     public static function setCurrentAcceptKey(?string $acceptKey): void
     {
@@ -87,6 +99,8 @@ final class ExecutionContext
 
     /**
      * Clears the current agent only when it matches the stopped/unregistered agent.
+     *
+     * @param string $agentId Agent id that is being stopped or unregistered
      */
     public static function clearCurrentAgentIdIf(string $agentId): void
     {
@@ -95,11 +109,17 @@ final class ExecutionContext
         }
     }
 
+    /**
+     * @return ?string Agent whose callback is executing, or null when outside one
+     */
     public static function currentAgentId(): ?string
     {
         return self::currentFrame()->agentId;
     }
 
+    /**
+     * @return ?string WebSocket accept key for the current callback, or null when none
+     */
     public static function currentAcceptKey(): ?string
     {
         return self::currentFrame()->acceptKey;
@@ -115,6 +135,11 @@ final class ExecutionContext
         self::$nextFrameToken = 1;
     }
 
+    /**
+     * Resolves the active frame, falling back to the ambient frame and then an empty one.
+     *
+     * @return ExecutionFrame Top-of-stack frame, the ambient frame, or a fresh empty frame
+     */
     private static function currentFrame(): ExecutionFrame
     {
         if (self::$frames !== []) {
@@ -124,6 +149,11 @@ final class ExecutionContext
         return self::$ambientFrame ?? new ExecutionFrame();
     }
 
+    /**
+     * Replaces the top-of-stack frame, or the ambient frame when the stack is empty.
+     *
+     * @param ExecutionFrame $frame Frame to store as current
+     */
     private static function replaceCurrentFrame(ExecutionFrame $frame): void
     {
         if (self::$frames !== []) {
