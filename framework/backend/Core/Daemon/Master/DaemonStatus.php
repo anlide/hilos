@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon\Master;
 
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
+use Hilos\Core\Daemon\Cli\CpuStats;
 
 /**
  * Holds daemon status information.
@@ -16,6 +17,9 @@ class DaemonStatus
 {
     /** @var float Daemon start time (microtime) */
     private float $startTime;
+
+    /** @var ?CpuStats Previous /proc/stat sample for delta-based CPU calculation */
+    private ?CpuStats $previousCpuStats = null;
 
     /** @var int Memory usage in bytes */
     public private(set) int $memoryUsage = 0;
@@ -43,14 +47,16 @@ class DaemonStatus
     }
 
     /**
-     * Updates status information (memory, CPU, workers).
+     * Refreshes memory usage and samples CPU usage as the delta since the
+     * previous call.
+     *
+     * The first call, and non-Linux hosts without a readable /proc/stat, leave
+     * cpuUsage at its last-known value (0.0 until the first successful delta).
      */
     public function update(): void
     {
         $this->memoryUsage = memory_get_usage(true);
-        // CPU usage calculation would require more complex logic
-        // For now just set to 0
-        $this->cpuUsage = 0.0;
+        $this->updateCpuUsage();
     }
 
     /**
@@ -82,5 +88,52 @@ class DaemonStatus
         $status->workersMaxRegular = $dto->workersMaxRegular;
 
         return $status;
+    }
+
+    /**
+     * Samples CPU usage from /proc/stat against the previous sample and stores
+     * the current sample for the next call.
+     *
+     * Leaves cpuUsage unchanged when no sample is available (non-Linux) or the
+     * delta is not yet meaningful (first call, or zero total time between
+     * samples).
+     */
+    private function updateCpuUsage(): void
+    {
+        $current = $this->readCpuStats();
+        if ($current === null) {
+            return;
+        }
+
+        if ($this->previousCpuStats !== null) {
+            $usage = $current->getUsagePercentage($this->previousCpuStats);
+            if ($usage !== null) {
+                $this->cpuUsage = $usage;
+            }
+        }
+
+        $this->previousCpuStats = $current;
+    }
+
+    /**
+     * Reads the aggregate CPU sample from the first line of /proc/stat.
+     *
+     * @return ?CpuStats Current sample, or null when /proc/stat is unreadable (non-Linux hosts)
+     */
+    private function readCpuStats(): ?CpuStats
+    {
+        $contents = @file_get_contents('/proc/stat', false, null, 0, 256);
+        if ($contents === false) {
+            return null;
+        }
+
+        // The aggregate "cpu" line is space-padded; collapse whitespace runs so
+        // CpuStats::fromProcStat() splits the columns at the right offsets.
+        $cpuLine = preg_replace('/\s+/', ' ', trim(explode("\n", $contents, 2)[0]));
+        if ($cpuLine === null || !str_starts_with($cpuLine, 'cpu ')) {
+            return null;
+        }
+
+        return CpuStats::fromProcStat($cpuLine);
     }
 }
