@@ -460,15 +460,6 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Reserved handler for daemon-scoped agent messages.
-     *
-     * @param WorkerDTO $data Daemon message DTO
-     */
-    private function handleDaemonAgentMessage(WorkerDTO $data): void
-    {
-    }
-
-    /**
      * Applies and forwards a DB create sync received from the daemon.
      *
      * @param WorkerDbSyncCreatedMessageDTO $data Worker-level DB create sync message
