@@ -18,39 +18,19 @@ class DaemonStatus
     private float $startTime;
 
     /** @var int Memory usage in bytes */
-    public int $memoryUsage = 0 {
-        get {
-            return $this->memoryUsage;
-        }
-    }
+    public private(set) int $memoryUsage = 0;
 
     /** @var float CPU usage percentage */
-    public float $cpuUsage = 0.0 {
-        get {
-            return $this->cpuUsage;
-        }
-    }
+    public private(set) float $cpuUsage = 0.0;
 
     /** @var int Number of active regular workers */
-    public int $workersRegular = 0 {
-        get {
-            return $this->workersRegular;
-        }
-    }
+    public private(set) int $workersRegular = 0;
 
     /** @var int Number of active monopolistic workers */
-    public int $workersMonopolistic = 0 {
-        get {
-            return $this->workersMonopolistic;
-        }
-    }
+    public private(set) int $workersMonopolistic = 0;
 
     /** @var int Maximum number of regular workers */
-    public int $workersMaxRegular = 0 {
-        get {
-            return $this->workersMaxRegular;
-        }
-    }
+    public private(set) int $workersMaxRegular = 0;
 
     /**
      * Creates daemon status with optional start time.
