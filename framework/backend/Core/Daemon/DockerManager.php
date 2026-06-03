@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
@@ -28,6 +29,15 @@ use Hilos\Utils\Logger;
  */
 class DockerManager extends BaseManager
 {
+    /** @var list<string> Signal functions plus the proc_* functions used to run and monitor the daemon process */
+    private const array REQUIRED_FUNCTIONS = [
+        'pcntl_signal',
+        'pcntl_signal_dispatch',
+        'proc_open',
+        'proc_get_status',
+        'proc_terminate',
+    ];
+
     /** @var bool Flag for daemon restart mode */
     private bool $shouldRestart = false;
 
@@ -50,6 +60,7 @@ class DockerManager extends BaseManager
      * @param string $daemonScript Path to daemon.php script
      * @throws InvalidScriptPathException If script path validation fails
      * @throws MissingRequiredParameterException If required process-control functions are unavailable
+     * @throws InvalidArgumentException If the required-function list is empty
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
@@ -66,7 +77,7 @@ class DockerManager extends BaseManager
         $daemonScript = $this->validateScriptPath($daemonScript);
 
         // Check the availability of required functions
-        $this->checkRequiredFunctions();
+        $this->checkRequiredFunctions(self::REQUIRED_FUNCTIONS);
 
         // Setup error handling and signal handlers
         $this->setupErrorHandling();

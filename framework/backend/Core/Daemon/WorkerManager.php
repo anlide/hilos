@@ -17,6 +17,8 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
@@ -75,6 +77,9 @@ use Throwable;
  */
 abstract class WorkerManager extends BaseManager
 {
+    /** @var list<string> Signal functions the worker needs; the anchor set other managers extend */
+    private const array REQUIRED_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch'];
+
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
 
@@ -143,9 +148,15 @@ abstract class WorkerManager extends BaseManager
      * Sets up process handlers, opens the daemon connection, handles daemon
      * messages, ticks worker-local agents, and drains queued signals until a
      * shutdown condition requests exit.
+     *
+     * @throws MissingRequiredParameterException When required signal functions are unavailable
+     * @throws InvalidArgumentException When the required-function list is empty
      */
     public function run(): void
     {
+        // Check the availability of required functions
+        $this->checkRequiredFunctions(self::REQUIRED_FUNCTIONS);
+
         // Setup error handling and signal handlers
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
@@ -217,7 +228,13 @@ abstract class WorkerManager extends BaseManager
 
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
-                        $this->runAgentStopHook($agent);
+                        try {
+                            $this->runAgentStopHook($agent);
+                        } catch (Throwable $e) {
+                            // A failing self-stop hook must not crash the worker loop;
+                            // truth sources are already unregistered in the hook's finally.
+                            Logger::logAgentError($agent->getId(), "Self-requested stop hook failed: {$e->getMessage()}");
+                        }
                         Logger::logAgentStop($agent->getId(), $agent->getType());
                         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
                         $this->agentManager->removeAgent($agentId);

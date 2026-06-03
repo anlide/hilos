@@ -8,6 +8,7 @@ use ErrorException;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
 
@@ -206,19 +207,20 @@ abstract class BaseManager
     }
 
     /**
-     * Ensures process-management functions required by daemon managers exist.
+     * Ensures the process-management functions a manager relies on exist.
      *
-     * @throws MissingRequiredParameterException When required functions are unavailable
+     * Each manager passes the set it actually uses, so the guard validates
+     * exactly those functions and nothing more.
+     *
+     * @param list<string> $requiredFunctions Function names the calling manager uses
+     * @throws InvalidArgumentException When the required-function list is empty
+     * @throws MissingRequiredParameterException When any required function is unavailable
      */
-    protected function checkRequiredFunctions(): void
+    protected function checkRequiredFunctions(array $requiredFunctions): void
     {
-        $requiredFunctions = [
-            'pcntl_signal',
-            'pcntl_signal_dispatch',
-            'proc_open',
-            'proc_get_status',
-            'proc_terminate',
-        ];
+        if ($requiredFunctions === []) {
+            throw new InvalidArgumentException('checkRequiredFunctions() requires a non-empty list of function names');
+        }
 
         $missingFunctions = [];
         foreach ($requiredFunctions as $function) {
