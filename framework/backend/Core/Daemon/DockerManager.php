@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
+use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -51,6 +52,7 @@ class DockerManager extends BaseManager
      *
      * @param string $daemonScript Path to daemon.php script
      * @throws InvalidScriptPathException If script path validation fails
+     * @throws MissingRequiredParameterException If required process-control functions are unavailable
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set

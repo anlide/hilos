@@ -11,6 +11,7 @@ use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -47,6 +48,7 @@ class CliMonitorManager extends BaseManager
      * UI updates every 1 second.
      * HTTP requests every 350ms after completion.
      *
+     * @throws MissingRequiredParameterException When required process-control functions are unavailable
      * @throws EnvException When daemon status env values are missing or invalid
      */
     public function run(): void

@@ -9,7 +9,7 @@ use Hilos\BaseDTO;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
-use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
@@ -140,8 +140,8 @@ abstract class DaemonManager extends BaseManager
      * and precise timing control. Runs until shutdown signal is received
      * and all servers are ready to shutdown (or timeout expires).
      *
-     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
-     * @throws NoSuitableWorkerException If no suitable worker is available for signal
+     * @throws AgentException When routing a signal to its agent fails (no suitable
+     *     worker, daemon creation, agent lookup, or worker-link failure)
      */
     public function run(): void
     {
@@ -459,8 +459,8 @@ abstract class DaemonManager extends BaseManager
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration.
      *
-     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
-     * @throws NoSuitableWorkerException If no suitable worker is available for signal
+     * @throws AgentException When routing a signal to its agent fails (no suitable
+     *     worker, daemon creation, agent lookup, or worker-link failure)
      */
     private function dispatchSignals(): void
     {
