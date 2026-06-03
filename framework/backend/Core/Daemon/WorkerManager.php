@@ -54,6 +54,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
@@ -258,11 +259,10 @@ abstract class WorkerManager extends BaseManager
         $this->daemonClient->connect();
 
         // Send worker registration message (will be sent when connection is established)
-        $this->daemonClient->send([
-            'type' => WorkerConstants::MESSAGE_WORKER_REGISTER,
-            'workerIndex' => $this->workerIndex,
-            'monopolistic' => $this->isMonopolistic,
-        ]);
+        $this->daemonClient->send(new WorkerRegisterDTO(
+            workerIndex: $this->workerIndex,
+            monopolistic: $this->isMonopolistic,
+        ));
     }
 
     /**

@@ -543,7 +543,7 @@ abstract class DaemonManager extends BaseManager
                     // Send signal to agent via worker server
                     $agentType = $destination->agentType;
                     $agentIndex = $destination->agentIndex;
-                    $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+                    $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex) ?? '';
                     $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
                     Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
 

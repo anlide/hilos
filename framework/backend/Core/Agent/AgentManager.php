@@ -43,7 +43,7 @@ abstract class AgentManager
         if ($agentType === null) {
             return null;
         }
-        return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+        return $agentIndex !== null ? $agentType . AgentConstants::ID_SEPARATOR . $agentIndex : $agentType;
     }
 
     /**
@@ -54,7 +54,7 @@ abstract class AgentManager
      */
     public function parseAgentId(string $agentId): array
     {
-        $parts = explode(':', $agentId, 2);
+        $parts = explode(AgentConstants::ID_SEPARATOR, $agentId, AgentConstants::ID_MAX_PARTS);
         return [
             AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
             AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,

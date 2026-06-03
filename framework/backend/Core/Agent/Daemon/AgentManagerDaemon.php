@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -68,7 +69,7 @@ abstract class AgentManagerDaemon
         if ($agentType === null) {
             return null;
         }
-        return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+        return $agentIndex !== null ? $agentType . AgentConstants::ID_SEPARATOR . $agentIndex : $agentType;
     }
 
     /**
