@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon\Cli;
 
 /**
- * CpuStats - CPU statistics data holder.
+ * CPU statistics data holder.
  *
  * Represents CPU statistics from /proc/stat for comparison between measurements.
  * Stores user, nice, system, idle, and iowait values for CPU usage calculation.

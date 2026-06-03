@@ -22,12 +22,9 @@ use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
 
 /**
- * DockerManager - manages daemon process in Docker container.
- *
- * Contains all logic from docker.php:
- * - Daemon process monitoring
- * - Automatic restart on failure
- * - Graceful shutdown
+ * Watchdog that runs the daemon process inside a Docker container: it starts
+ * daemon.php, monitors its health, restarts it on failure, and shuts it down
+ * gracefully on stop.
  */
 class DockerManager extends BaseManager
 {

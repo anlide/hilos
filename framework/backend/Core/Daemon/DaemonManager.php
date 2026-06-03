@@ -55,12 +55,14 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
- * DaemonManager - Abstract base class for daemon process management.
+ * Abstract base for daemon processes. run() owns the main loop: it drains ready
+ * socket events through the libevent event loop, ticks registered servers,
+ * dispatches due cron rules, and flushes accumulated signals once per
+ * non-blocking iteration.
  *
- * Provides simple interface for creating daemons:
- * - run() - Main daemon startup method with epoll-based event loop
- * - onTick() - Abstract method called regularly (must be implemented in child classes)
- * - processEventLoop() - Handles epoll events for registered servers
+ * Child classes supply the signal router and agent manager daemon through
+ * createSignalRouter() and createAgentManagerDaemon(); onTick() is an optional
+ * per-iteration hook that does nothing by default.
  */
 abstract class DaemonManager extends BaseManager
 {

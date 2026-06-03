@@ -7,7 +7,7 @@ namespace Hilos\Core\Daemon\Master;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 
 /**
- * DaemonStatus - Holds daemon status information.
+ * Holds daemon status information.
  *
  * Contains runtime information about daemon state that can be
  * exposed via HTTP status endpoint.

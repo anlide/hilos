@@ -20,14 +20,9 @@ use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
- * CliMonitorManager - manages real-time daemon monitoring.
- *
- * Provides interactive monitoring of daemon process with live updates:
- * - Terminal support checking
- * - Real-time status display
- * - Memory and CPU usage tracking
- * - Heartbeat monitoring
- * - Async HTTP requests to daemon status endpoint
+ * Interactive CLI monitor for a running daemon. Polls the daemon status
+ * endpoint over async HTTP and renders live status, memory, CPU, and heartbeat
+ * updates in the terminal.
  */
 class CliMonitorManager extends BaseManager
 {

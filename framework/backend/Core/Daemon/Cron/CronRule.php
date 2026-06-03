@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon\Cron;
 
 /**
- * CronRule - Represents a single cron rule with cron expression.
+ * Represents a single cron rule with cron expression.
  *
  * Stores cron job configuration: name, cron expression, and last execution time.
  * Supports standard cron expressions: "minute hour day month weekday".
