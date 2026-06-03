@@ -52,13 +52,13 @@ final class Connection extends RtState
     public const string uploadProgressLastSentAt = 'uploadProgressLastSentAt';
 
     /** WebSocket accept key (primary id). */
-    public private(set) string $acceptKey = '';
+    private(set) string $acceptKey = '';
 
     /** Owning database user id. */
-    public private(set) int $userId = 0;
+    private(set) int $userId = 0;
 
     /** Unix time when the socket was registered. */
-    public private(set) int $connectedAt = 0;
+    private(set) int $connectedAt = 0;
 
     /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
     public string $outboundModerationPhase = '';

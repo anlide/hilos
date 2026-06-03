@@ -18,7 +18,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * RtState is the single source of truth for runtime data (analogous to Object_).
  * Child classes should expose row fields as real typed properties; use PHP 8.4
- * asymmetric visibility (`public private(set)`) for immutable ids.
+ * asymmetric visibility (`private(set)`) for immutable ids.
  *
  * {@see sync()} broadcasts RT_SYNC_UPDATED for fields changed since {@see markRtSyncBaseline()} (worker sync only).
  * After inbound RT applyDiff, callers must call {@see markRtSyncBaseline()} so local sync() does not re-send stale diffs.

@@ -20,7 +20,7 @@ final class BotAgentStatus extends RtState
     public const string updatedAt = 'updatedAt';
 
     /** Bot database id. */
-    public private(set) int $botId = 0;
+    private(set) int $botId = 0;
 
     /** Lifecycle marker: joined or left. */
     public string $status = self::STATUS_LEFT;

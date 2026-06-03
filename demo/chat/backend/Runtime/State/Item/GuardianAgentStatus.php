@@ -18,7 +18,7 @@ final class GuardianAgentStatus extends RtState
     public const string updatedAt = 'updatedAt';
 
     /** Guardian agent identifier. */
-    public private(set) string $agentId = '';
+    private(set) string $agentId = '';
 
     /** Guardian run status value. */
     public string $status = GuardianRunStatus::NOT_STARTED->value;

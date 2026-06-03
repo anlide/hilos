@@ -14,7 +14,7 @@ final class MyState extends RtState {
     public const string status = 'status';
 
     // Real typed properties; prefer them over magic-only @property docs.
-    public private(set) int $userId = 0;
+    private(set) int $userId = 0;
     public string $status = '';
 
     // Factory methods
@@ -49,7 +49,7 @@ typed properties for mutable RT fields. Use PHP 8.4 asymmetric visibility for
 immutable ids:
 
 ```php
-public private(set) int $userId = 0;
+private(set) int $userId = 0;
 public string $moderationMessage = '';
 public int $moderationUpdatedAt = 0;
 ```

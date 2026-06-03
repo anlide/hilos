@@ -26,13 +26,13 @@ final class AttachmentDraft extends RtState
     public const string uploadedAt = 'uploadedAt';
 
     /** Draft id returned to the client and used by message submit. */
-    public private(set) string $draftId = '';
+    private(set) string $draftId = '';
 
     /** WebSocket connection that owns this draft. */
-    public private(set) string $acceptKey = '';
+    private(set) string $acceptKey = '';
 
     /** User that owns this draft. */
-    public private(set) int $userId = 0;
+    private(set) int $userId = 0;
 
     /** Quarantine filename, including extension. */
     public string $quarantineBasename = '';

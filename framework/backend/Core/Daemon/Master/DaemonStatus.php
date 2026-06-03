@@ -22,19 +22,19 @@ class DaemonStatus
     private ?CpuStats $previousCpuStats = null;
 
     /** @var int Memory usage in bytes */
-    public private(set) int $memoryUsage = 0;
+    private(set) int $memoryUsage = 0;
 
     /** @var float CPU usage percentage */
-    public private(set) float $cpuUsage = 0.0;
+    private(set) float $cpuUsage = 0.0;
 
     /** @var int Number of active regular workers */
-    public private(set) int $workersRegular = 0;
+    private(set) int $workersRegular = 0;
 
     /** @var int Number of active monopolistic workers */
-    public private(set) int $workersMonopolistic = 0;
+    private(set) int $workersMonopolistic = 0;
 
     /** @var int Maximum number of regular workers */
-    public private(set) int $workersMaxRegular = 0;
+    private(set) int $workersMaxRegular = 0;
 
     /**
      * Creates daemon status with optional start time.

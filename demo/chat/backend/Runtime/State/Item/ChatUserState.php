@@ -19,7 +19,7 @@ final class ChatUserState extends RtState
     public const string lastOutboundSubmittedAt = 'lastOutboundSubmittedAt';
 
     /** User ID (equals collection key as integer). */
-    public private(set) int $userId = 0;
+    private(set) int $userId = 0;
 
     /** Microtime of the last accepted outbound submit. */
     public float $lastOutboundSubmittedAt = 0.0;

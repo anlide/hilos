@@ -75,7 +75,7 @@ Start with `agents.md`, then read the matching runtime guide.
    on each collection actions class; the local annotation documents the
    concrete state collection contract.
 16. Prefer real PHP 8.4 typed properties on `RtState` classes over magic-only
-    `@property` fields; use `public private(set)` for immutable ids and property
+    `@property` fields; use `private(set)` for immutable ids and property
     hooks only when a field needs normalization or invariant logic.
 17. Do not implement `__get()` / `__set()` in concrete `RtState` classes for
     declared row fields; action code should read/write the declared properties
