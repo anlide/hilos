@@ -251,8 +251,6 @@ abstract class DaemonManager extends BaseManager
      */
     private function initiateShutdown(): void
     {
-        Logger::debug("Shutdown initiated, preparing servers for graceful shutdown");
-
         // Tell all servers to prepare for shutdown
         foreach ($this->servers as $server) {
             $server->prepareShutdown();
@@ -517,8 +515,6 @@ abstract class DaemonManager extends BaseManager
 
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            Logger::debug('getNextQueuedSignal called for signal: ' . $signal->toJson());
-
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
 
@@ -545,12 +541,10 @@ abstract class DaemonManager extends BaseManager
 
             if (empty($destinations)) {
                 // No destinations found, skip
-                Logger::debug("No destinations found for signal: {$signalType}/{$signalName}");
                 continue;
             }
 
             // Deliver signal to each destination
-            Logger::debug("Found " . count($destinations) . " destination(s) for signal: {$signalType}/{$signalName}");
             $skipSignal = false;
             while (($destination = array_shift($destinations)) !== null) {
                 if ($skipSignal) {
@@ -563,7 +557,6 @@ abstract class DaemonManager extends BaseManager
                     $agentIndex = $destination->agentIndex;
                     $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex) ?? '';
                     $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
-                    Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
 
                     // Wrap signal in DaemonAgentMessageDTO
                     $messageDto = new DaemonAgentMessageDTO(
@@ -591,7 +584,6 @@ abstract class DaemonManager extends BaseManager
                 } elseif ($destination instanceof WebSocketDestination) {
                     // Send signal to WebSocket client
                     if ($webSocketServer === null) {
-                        Logger::debug("No WebSocket server available for routing signal to client");
                         continue;
                     }
 
@@ -601,17 +593,12 @@ abstract class DaemonManager extends BaseManager
                         continue;
                     }
 
-                    Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket acceptKey: {$acceptKey}");
-
                     $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
                 } elseif ($destination instanceof AllClientsDestination) {
                     // Broadcast signal to every connected WebSocket client
                     if ($webSocketServer === null) {
-                        Logger::debug("No WebSocket server available for broadcasting signal to all clients");
                         continue;
                     }
-
-                    Logger::debug("Broadcasting signal to all clients: {$signalType}/{$signalName}");
 
                     $this->sendToAllClients(
                         $webSocketServer,
@@ -802,7 +789,6 @@ abstract class DaemonManager extends BaseManager
         foreach ($server->getClients() as $client) {
             if ($client instanceof WebSocketClient && $client->acceptKey === $acceptKey) {
                 try {
-                    Logger::debug("Sending message to acceptKey {$acceptKey}: {$message}");
                     $client->sendFrame($message);
                     return;
                 } catch (\Throwable $e) {
@@ -810,8 +796,6 @@ abstract class DaemonManager extends BaseManager
                 }
             }
         }
-
-        Logger::debug("Accept key not found: {$acceptKey}");
     }
 
     /**

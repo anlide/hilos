@@ -293,7 +293,6 @@ abstract class WorkerManager extends BaseManager
     {
         $this->setCurrentAgentId(null);
         $type = $data->getType();
-        Logger::debug("Received message from daemon: type={$type}, data=" . json_encode($data->toArray()));
 
         switch ($type) {
             case WorkerConstants::MESSAGE_WORKER_REGISTERED:
@@ -784,7 +783,6 @@ abstract class WorkerManager extends BaseManager
         $name = $data->signal->signalName->getName();
         $signalData = $data->signal->data;
 
-        Logger::debug('Signal routing: agentId=' . $agentId . ', signalType=' . $signalType . ', signalName=' . $name);
         $apiRequestId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_API_REQUEST_ID);
         $userActionId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_USER_ACTION_ID);
 
@@ -850,7 +848,7 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalAction($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchAction($signalData, $source);
                 } else {
-                    Logger::error("handleActionSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalAction - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -860,7 +858,7 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalFrameBinary($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchFrameBinary($signalData, $source, $name);
                 } else {
-                    Logger::error("handleFrameBinarySignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalFrameBinary - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -871,7 +869,7 @@ abstract class WorkerManager extends BaseManager
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
                 } else {
-                    Logger::error("handlePageSubscribeSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalPageSubscribe - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -881,7 +879,7 @@ abstract class WorkerManager extends BaseManager
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
                     $this->mergePageSubscriptionParamsOnUpdate($signalData);
                 } else {
-                    Logger::error("handlePageUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalPageUpdateSubscription - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -895,7 +893,7 @@ abstract class WorkerManager extends BaseManager
                         unset($this->pageSubscriptionByAcceptKey[$signalData->acceptKey]);
                     }
                 } else {
-                    Logger::error("handlePageUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalPageUnsubscribe - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -905,7 +903,7 @@ abstract class WorkerManager extends BaseManager
                     $group = $signalData->group !== '' ? $signalData->group : $name;
                     Hilos::$sr?->subscribeToGroup($group, $signalData);
                 } else {
-                    Logger::error("handleGroupSubscribeSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalGroupSubscribe - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -915,7 +913,7 @@ abstract class WorkerManager extends BaseManager
                     $group = $signalData->group !== '' ? $signalData->group : $name;
                     Hilos::$sr?->unsubscribeFromGroup($group, $signalData);
                 } else {
-                    Logger::error("handleGroupUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalGroupUnsubscribe - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -929,7 +927,7 @@ abstract class WorkerManager extends BaseManager
                         Logger::error("WorkerManager: cannot mirror group subscription update: acceptKey={$signalData->acceptKey} group={$group}, {$e->getMessage()}");
                     }
                 } else {
-                    Logger::error("handleGroupUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
+                    Logger::error("onSignalGroupUpdateSubscription - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -1389,9 +1387,6 @@ abstract class WorkerManager extends BaseManager
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $signalType = $signal->signalType->getType();
-
-            $json = json_encode($signal->toArray());
-            Logger::debug("Signal going to transmit: {$json}");
 
             $syncSignalData = match ($signalType) {
                 SignalTypeConstants::DB_SYNC_CREATED => self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
