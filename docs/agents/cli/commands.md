@@ -35,8 +35,8 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 
 | Command | Description |
 |---|---|
-| `status` | Show daemon status (workers, memory, uptime) |
-| `monitor` | Live monitoring of daemon |
+| `daemon:status` | Show daemon status (workers, memory, uptime) |
+| `daemon:monitor` | Live monitoring of daemon |
 | `help` | List available commands |
 
 ## Typical development flow

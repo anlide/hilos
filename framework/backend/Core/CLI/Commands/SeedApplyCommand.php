@@ -21,7 +21,7 @@ class SeedApplyCommand implements CommandInterface
     /**
      * Get command name.
      *
-     * @return string Command identifier (seed:apply)
+     * @return string Command identifier (db:seed:apply)
      */
     public function getName(): string
     {
@@ -46,7 +46,7 @@ class SeedApplyCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: seed:apply
+Command: db:seed:apply
 
 Description:
   Apply a specific seed file. Without <seed> argument, lists available seeds only.
@@ -54,7 +54,7 @@ Description:
   Disabled when APP_ENV is PROD or STAGING (see AppEnv constants).
 
 Usage:
-  php cli.php seed:apply <seed> [options]
+  php cli.php db:seed:apply <seed> [options]
 
 Arguments:
   <seed>   Seed identifier: numeric prefix (001) or basename (001_some_name)
@@ -64,9 +64,9 @@ Options:
   --db-index=<N>     Database connection index (default: 0)
 
 Examples:
-  php cli.php seed:apply
-  php cli.php seed:apply 001
-  composer run seed:apply -- 001
+  php cli.php db:seed:apply
+  php cli.php db:seed:apply 001
+  composer run db:seed:apply -- 001
 HELP;
     }
 
@@ -116,7 +116,7 @@ HELP;
             $first = basename($seeds[0], '.sql');
             $firstShort = preg_match('/^\d+/', $first, $m) ? $m[0] : $first;
             echo "\nTo apply a seed, specify it explicitly. Example:\n";
-            echo "  composer run seed:apply -- {$firstShort}\n\n";
+            echo "  composer run db:seed:apply -- {$firstShort}\n\n";
             return ExitCode::SUCCESS;
         }
 

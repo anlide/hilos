@@ -13,19 +13,19 @@ php cli.php help              # Show help; use "php cli.php help <command>" for 
 ## Database Migrations
 
 ```bash
-php cli.php migration:up [options]           # Apply pending migrations
-php cli.php migration:down <version> [options]  # Rollback to specific version
-php cli.php migration:status [options]       # Check migration status
-php cli.php migration:retry <version> [options] # Retry failed migration
+php cli.php db:migration:up [options]           # Apply pending migrations
+php cli.php db:migration:down <version> [options]  # Rollback to specific version
+php cli.php db:migration:status [options]       # Check migration status
+php cli.php db:migration:retry <version> [options] # Retry failed migration
 ```
 
 ### Migration options
 
 | Option | Commands | Description |
 |--------|----------|-------------|
-| `--db-index=<N>` | migration:*, db:* | Database connection index (default: 0) |
-| `--to=<version>` | migration:up | Migrate up to specific version only |
-| `--force` | migration:up, migration:down | Force despite failures (use with caution) |
+| `--db-index=<N>` | db:migration:*, db:* | Database connection index (default: 0) |
+| `--to=<version>` | db:migration:up | Migrate up to specific version only |
+| `--force` | db:migration:up, db:migration:down | Force despite failures (use with caution) |
 
 ## Database Schema
 
@@ -70,10 +70,10 @@ composer run daemon-monitor      # Real-time daemon monitoring
 composer run cli -- <command> [options]   # Run any CLI command in Docker
 
 # Migrations
-composer run migration:up
-composer run migration:down
-composer run migration:status
-composer run migration:retry
+composer run db:migration:up
+composer run db:migration:down
+composer run db:migration:status
+composer run db:migration:retry
 
 # Database schema & ORM
 composer run db:schema:status

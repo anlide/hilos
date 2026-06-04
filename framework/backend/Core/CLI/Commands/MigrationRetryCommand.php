@@ -19,7 +19,7 @@ class MigrationRetryCommand implements CommandInterface
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (e.g. migration:retry)
+     * @return string Command name (e.g. db:migration:retry)
      */
     public function getName(): string
     {
@@ -44,13 +44,13 @@ class MigrationRetryCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: migration:retry
+Command: db:migration:retry
 
 Description:
   Retry a migration that previously failed.
 
 Usage:
-  php cli.php migration:retry <version> [options]
+  php cli.php db:migration:retry <version> [options]
 
 Arguments:
   <version>          Version number of the failed migration to retry
@@ -59,9 +59,9 @@ Options:
   --db-index=<N>     Database connection index (default: 0)
 
 Examples:
-  php cli.php migration:retry 5
-  php cli.php migration:retry 5 --db-index=0
-  composer run migration:retry
+  php cli.php db:migration:retry 5
+  php cli.php db:migration:retry 5 --db-index=0
+  composer run db:migration:retry
 
 This command:
   1. Removes the failed migration record
@@ -89,8 +89,8 @@ HELP;
 
         if ($version === null) {
             echo "✗ ERROR: Migration version is required\n";
-            echo "\nUsage: php cli.php migration:retry <version>\n";
-            echo "Example: php cli.php migration:retry 5\n\n";
+            echo "\nUsage: php cli.php db:migration:retry <version>\n";
+            echo "Example: php cli.php db:migration:retry 5\n\n";
             return ExitCode::ERROR;
         }
 

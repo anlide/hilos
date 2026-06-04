@@ -19,7 +19,7 @@ class MigrationDownCommand implements CommandInterface
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (e.g. migration:down)
+     * @return string Command name (e.g. db:migration:down)
      */
     public function getName(): string
     {
@@ -44,13 +44,13 @@ class MigrationDownCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: migration:down
+Command: db:migration:down
 
 Description:
   Rollback migrations to a specific version.
 
 Usage:
-  php cli.php migration:down <version> [options]
+  php cli.php db:migration:down <version> [options]
 
 Arguments:
   <version>          Target version to rollback to (required)
@@ -60,11 +60,11 @@ Options:
   --force            Force rollback even if there are failures (use with caution)
 
 Examples:
-  php cli.php migration:down 1
-  php cli.php migration:down 0
-  php cli.php migration:down 1 --force
-  php cli.php migration:down 1 --db-index=0
-  composer run migration:down
+  php cli.php db:migration:down 1
+  php cli.php db:migration:down 0
+  php cli.php db:migration:down 1 --force
+  php cli.php db:migration:down 1 --db-index=0
+  composer run db:migration:down
 
 Warning:
   Rollback operations can result in data loss!
@@ -92,8 +92,8 @@ HELP;
 
         if ($targetVersion === null) {
             echo "✗ ERROR: Target version is required\n";
-            echo "\nUsage: php cli.php migration:down <version>\n";
-            echo "Example: php cli.php migration:down 1\n\n";
+            echo "\nUsage: php cli.php db:migration:down <version>\n";
+            echo "Example: php cli.php db:migration:down 1\n\n";
             return ExitCode::ERROR;
         }
 

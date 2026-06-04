@@ -22,19 +22,19 @@ class CliCommands
     public const string HELP = 'help';
 
     /** @var string Command: Apply pending migrations */
-    public const string MIGRATION_UP = 'migration:up';
+    public const string MIGRATION_UP = 'db:migration:up';
 
     /** @var string Command: Rollback migrations */
-    public const string MIGRATION_DOWN = 'migration:down';
+    public const string MIGRATION_DOWN = 'db:migration:down';
 
     /** @var string Command: Show migration status */
-    public const string MIGRATION_STATUS = 'migration:status';
+    public const string MIGRATION_STATUS = 'db:migration:status';
 
     /** @var string Command: Retry failed migration */
-    public const string MIGRATION_RETRY = 'migration:retry';
+    public const string MIGRATION_RETRY = 'db:migration:retry';
 
     /** @var string Command: Apply database seeds */
-    public const string SEED_APPLY = 'seed:apply';
+    public const string SEED_APPLY = 'db:seed:apply';
 
     /** @var string Command: Show database schema status */
     public const string DB_SCHEMA_STATUS = 'db:schema:status';

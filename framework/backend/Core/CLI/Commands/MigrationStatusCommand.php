@@ -20,7 +20,7 @@ class MigrationStatusCommand implements CommandInterface
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (e.g. migration:status)
+     * @return string Command name (e.g. db:migration:status)
      */
     public function getName(): string
     {
@@ -45,21 +45,21 @@ class MigrationStatusCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: migration:status
+Command: db:migration:status
 
 Description:
   Display the current status of database migrations.
 
 Usage:
-  php cli.php migration:status [options]
+  php cli.php db:migration:status [options]
 
 Options:
   --db-index=<N>     Database connection index (default: 0)
 
 Examples:
-  php cli.php migration:status
-  php cli.php migration:status --db-index=0
-  composer run migration:status
+  php cli.php db:migration:status
+  php cli.php db:migration:status --db-index=0
+  composer run db:migration:status
 HELP;
     }
 
@@ -129,11 +129,11 @@ HELP;
             echo "⚠ HAS FAILURES\n";
             echo "\nAction required:\n";
             echo "  - Fix failed migrations manually\n";
-            echo "  - Retry with: php cli.php migration:retry <version>\n";
+            echo "  - Retry with: php cli.php db:migration:retry <version>\n";
         } elseif ($status['pending_count'] > 0) {
             echo "○ PENDING\n";
             echo "\nAction:\n";
-            echo "  php cli.php migration:up\n";
+            echo "  php cli.php db:migration:up\n";
         } else {
             echo "✓ UP TO DATE\n";
         }

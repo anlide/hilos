@@ -20,7 +20,7 @@ class MigrationUpCommand implements CommandInterface
     /**
      * Returns command name for CLI routing.
      *
-     * @return string Command name (e.g. migration:up)
+     * @return string Command name (e.g. db:migration:up)
      */
     public function getName(): string
     {
@@ -45,13 +45,13 @@ class MigrationUpCommand implements CommandInterface
     public function getHelp(): string
     {
         return <<<HELP
-Command: migration:up
+Command: db:migration:up
 
 Description:
   Apply all pending database migrations.
 
 Usage:
-  php cli.php migration:up [options]
+  php cli.php db:migration:up [options]
 
 Options:
   --db-index=<N>     Database connection index (default: 0)
@@ -59,11 +59,11 @@ Options:
   --force            Force migration even if there are failures (use with caution)
 
 Examples:
-  php cli.php migration:up
-  php cli.php migration:up --to=5
-  php cli.php migration:up --db-index=0
-  php cli.php migration:up --force
-  composer run migration:up
+  php cli.php db:migration:up
+  php cli.php db:migration:up --to=5
+  php cli.php db:migration:up --db-index=0
+  php cli.php db:migration:up --force
+  composer run db:migration:up
 
 The migration system will:
   1. Initialize migration table if not exists
@@ -121,9 +121,9 @@ HELP;
             echo "\n✗ ERROR: Found failed migrations: " . implode(', ', $status['failed_migrations']) . "\n";
             echo "\nThese migrations failed previously and must be fixed manually.\n";
             echo "To retry a failed migration after fixing:\n";
-            echo "  php cli.php migration:retry <version>\n";
+            echo "  php cli.php db:migration:retry <version>\n";
             echo "\nOr use --force to ignore failures (not recommended):\n";
-            echo "  php cli.php migration:up --force\n\n";
+            echo "  php cli.php db:migration:up --force\n\n";
             return ExitCode::ERROR;
         }
 

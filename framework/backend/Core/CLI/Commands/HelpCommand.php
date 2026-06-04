@@ -70,7 +70,7 @@ Arguments:
 Examples:
   php cli.php help
   php cli.php help daemon:status
-  php cli.php migration:up --help
+  php cli.php db:migration:up --help
 HELP;
     }
 
