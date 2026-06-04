@@ -13,6 +13,39 @@ namespace Hilos\Core\Daemon\Cron;
  */
 class CronRule
 {
+    /** Number of whitespace-separated fields in a cron expression. */
+    private const int FIELD_COUNT = 5;
+
+    /** Seconds per minute, used to derive minute-level run timestamps. */
+    private const int SECONDS_PER_MINUTE = 60;
+
+    /** Field separator inside a cron expression. */
+    private const string FIELD_SEPARATOR = ' ';
+
+    /** Token matching every value in a field. */
+    private const string WILDCARD = '*';
+
+    /** Step separator, as in every-N expressions like "*\/5". */
+    private const string STEP_SEPARATOR = '/';
+
+    /** Range separator, as in "1-5". */
+    private const string RANGE_SEPARATOR = '-';
+
+    /** List separator, as in "1,15,30". */
+    private const string LIST_SEPARATOR = ',';
+
+    // Inclusive value bounds per cron field.
+    private const int MINUTE_MIN = 0;
+    private const int MINUTE_MAX = 59;
+    private const int HOUR_MIN = 0;
+    private const int HOUR_MAX = 23;
+    private const int DAY_MIN = 1;
+    private const int DAY_MAX = 31;
+    private const int MONTH_MIN = 1;
+    private const int MONTH_MAX = 12;
+    private const int WEEKDAY_MIN = 0;
+    private const int WEEKDAY_MAX = 6;
+
     /** @var string Cron job name (unique identifier) */
     public readonly string $name;
 
@@ -35,7 +68,7 @@ class CronRule
 
         // Store creation time as initial reference point (prevents immediate execution)
         // Use minute-level timestamp for consistent comparison
-        $this->lastRun = floor(time() / 60);
+        $this->lastRun = floor(time() / self::SECONDS_PER_MINUTE);
     }
 
     /**
@@ -52,7 +85,7 @@ class CronRule
 
         // Don't run if already executed in current minute
         // Compare minute-level timestamps (lastRun is already stored at minute level)
-        $currentMinuteTimestamp = floor($currentTime / 60);
+        $currentMinuteTimestamp = floor($currentTime / self::SECONDS_PER_MINUTE);
 
         if ($this->lastRun === $currentMinuteTimestamp) {
             return false;
@@ -68,7 +101,7 @@ class CronRule
 
         // Parse and check cron expression
         $parts = $this->parseExpression();
-        if (count($parts) !== 5) {
+        if (count($parts) !== self::FIELD_COUNT) {
             return false;
         }
 
@@ -100,8 +133,8 @@ class CronRule
      */
     private function parseExpression(): array
     {
-        $parts = explode(' ', trim($this->expression));
-        if (count($parts) !== 5) {
+        $parts = explode(self::FIELD_SEPARATOR, trim($this->expression));
+        if (count($parts) !== self::FIELD_COUNT) {
             return [];
         }
         return $parts;
@@ -131,12 +164,12 @@ class CronRule
 
         // Optimize: check most common cases first (wildcard and simple numbers)
         // Wildcard - matches all (most common case)
-        if ($part === '*') {
+        if ($part === self::WILDCARD) {
             return true;
         }
 
-        // Check for step value: */N or N-N/N
-        $slashPos = strpos($part, '/');
+        // Check for step value: */N or N-M/N
+        $slashPos = strpos($part, self::STEP_SEPARATOR);
         if ($slashPos !== false) {
             $range = substr($part, 0, $slashPos);
             $stepStr = substr($part, $slashPos + 1);
@@ -150,68 +183,41 @@ class CronRule
                 return false;
             }
 
-            if ($range === '*') {
+            if ($range === self::WILDCARD) {
                 // */N - every N values starting from min
                 // Safe: value is already validated to be >= min, so (value - min) >= 0
                 return (($value - $min) % $step) === 0;
             }
 
-            // N-N/N - range with step
-            $dashPos = strpos($range, '-');
-            if ($dashPos !== false) {
-                $rangeMinStr = substr($range, 0, $dashPos);
-                $rangeMaxStr = substr($range, $dashPos + 1);
-
-                if ($rangeMinStr === '' || $rangeMaxStr === '' ||
-                    !ctype_digit($rangeMinStr) || !ctype_digit($rangeMaxStr)) {
-                    return false;
-                }
-
-                $rangeMin = (int)$rangeMinStr;
-                $rangeMax = (int)$rangeMaxStr;
-
-                // Validate range
-                if ($rangeMin < $min || $rangeMax > $max || $rangeMin > $rangeMax) {
-                    return false;
-                }
-
-                // Check if value is within range
-                if ($value >= $rangeMin && $value <= $rangeMax) {
-                    // Safe: value >= rangeMin, so (value - rangeMin) >= 0
-                    return (($value - $rangeMin) % $step) === 0;
-                }
+            // N-M/N - range with step; a missing dash means an invalid step format
+            $bounds = $this->parseRange($range, $min, $max);
+            if ($bounds === null) {
                 return false;
             }
+            [$rangeMin, $rangeMax] = $bounds;
 
-            // Invalid format: something/N without * or range
+            // Check if value is within range
+            if ($value >= $rangeMin && $value <= $rangeMax) {
+                // Safe: value >= rangeMin, so (value - rangeMin) >= 0
+                return (($value - $rangeMin) % $step) === 0;
+            }
             return false;
         }
 
         // Check for range: N-M (before list check, as ranges are more common)
-        $dashPos = strpos($part, '-');
-        if ($dashPos !== false) {
-            $rangeMinStr = substr($part, 0, $dashPos);
-            $rangeMaxStr = substr($part, $dashPos + 1);
-
-            if ($rangeMinStr === '' || $rangeMaxStr === '' ||
-                !ctype_digit($rangeMinStr) || !ctype_digit($rangeMaxStr)) {
+        if (str_contains($part, self::RANGE_SEPARATOR)) {
+            $bounds = $this->parseRange($part, $min, $max);
+            if ($bounds === null) {
                 return false;
             }
-
-            $rangeMin = (int)$rangeMinStr;
-            $rangeMax = (int)$rangeMaxStr;
-
-            // Validate range
-            if ($rangeMin < $min || $rangeMax > $max || $rangeMin > $rangeMax) {
-                return false;
-            }
+            [$rangeMin, $rangeMax] = $bounds;
 
             return $value >= $rangeMin && $value <= $rangeMax;
         }
 
         // Check for list: N,M,K (less common, check after ranges)
-        if (str_contains($part, ',')) {
-            $values = explode(',', $part);
+        if (str_contains($part, self::LIST_SEPARATOR)) {
+            $values = explode(self::LIST_SEPARATOR, $part);
             foreach ($values as $v) {
                 $v = trim($v);
                 if ($v === '' || !ctype_digit($v)) {
@@ -237,6 +243,39 @@ class CronRule
         }
 
         return $intPart === $value;
+    }
+
+    /**
+     * Parse and validate an "N-M" range token against field bounds.
+     *
+     * @param string $range Range token such as "1-5"
+     * @param int $min Minimum value allowed for this field
+     * @param int $max Maximum value allowed for this field
+     * @return array{int, int}|null [rangeMin, rangeMax], or null when malformed or out of bounds
+     */
+    private function parseRange(string $range, int $min, int $max): ?array
+    {
+        $dashPos = strpos($range, self::RANGE_SEPARATOR);
+        if ($dashPos === false) {
+            return null;
+        }
+
+        $rangeMinStr = substr($range, 0, $dashPos);
+        $rangeMaxStr = substr($range, $dashPos + 1);
+
+        if ($rangeMinStr === '' || $rangeMaxStr === '' ||
+            !ctype_digit($rangeMinStr) || !ctype_digit($rangeMaxStr)) {
+            return null;
+        }
+
+        $rangeMin = (int)$rangeMinStr;
+        $rangeMax = (int)$rangeMaxStr;
+
+        if ($rangeMin < $min || $rangeMax > $max || $rangeMin > $rangeMax) {
+            return null;
+        }
+
+        return [$rangeMin, $rangeMax];
     }
 
     /**
@@ -266,10 +305,10 @@ class CronRule
         int $currentMonth,
         int $currentWeekday,
     ): bool {
-        return $this->matchesPart($minuteExpr, $currentMinute, 0, 59)
-            && $this->matchesPart($hourExpr, $currentHour, 0, 23)
-            && $this->matchesPart($dayExpr, $currentDay, 1, 31)
-            && $this->matchesPart($monthExpr, $currentMonth, 1, 12)
-            && $this->matchesPart($weekdayExpr, $currentWeekday, 0, 6);
+        return $this->matchesPart($minuteExpr, $currentMinute, self::MINUTE_MIN, self::MINUTE_MAX)
+            && $this->matchesPart($hourExpr, $currentHour, self::HOUR_MIN, self::HOUR_MAX)
+            && $this->matchesPart($dayExpr, $currentDay, self::DAY_MIN, self::DAY_MAX)
+            && $this->matchesPart($monthExpr, $currentMonth, self::MONTH_MIN, self::MONTH_MAX)
+            && $this->matchesPart($weekdayExpr, $currentWeekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX);
     }
 }
