@@ -13,14 +13,14 @@ use Hilos\BaseDTO;
  */
 class DaemonStatusDTO extends BaseDTO
 {
-    // Field name constants (camelCase for brevity)
-    public const string uptime = 'uptime';
-    public const string memory = 'memory';
-    public const string cpu = 'cpu';
-    public const string timestamp = 'timestamp';
-    public const string workersRegular = 'workersRegular';
-    public const string workersMonopolistic = 'workersMonopolistic';
-    public const string workersMaxRegular = 'workersMaxRegular';
+    // Field name constants
+    public const string UPTIME = 'uptime';
+    public const string MEMORY = 'memory';
+    public const string CPU = 'cpu';
+    public const string TIMESTAMP = 'timestamp';
+    public const string WORKERS_REGULAR = 'workersRegular';
+    public const string WORKERS_MONOPOLISTIC = 'workersMonopolistic';
+    public const string WORKERS_MAX_REGULAR = 'workersMaxRegular';
 
     /**
      * Creates daemon status DTO.
@@ -52,13 +52,13 @@ class DaemonStatusDTO extends BaseDTO
     public function toArray(): array
     {
         return [
-            self::uptime => $this->uptime,
-            self::memory => $this->memory,
-            self::cpu => $this->cpu,
-            self::timestamp => $this->timestamp,
-            self::workersRegular => $this->workersRegular,
-            self::workersMonopolistic => $this->workersMonopolistic,
-            self::workersMaxRegular => $this->workersMaxRegular,
+            self::UPTIME => $this->uptime,
+            self::MEMORY => $this->memory,
+            self::CPU => $this->cpu,
+            self::TIMESTAMP => $this->timestamp,
+            self::WORKERS_REGULAR => $this->workersRegular,
+            self::WORKERS_MONOPOLISTIC => $this->workersMonopolistic,
+            self::WORKERS_MAX_REGULAR => $this->workersMaxRegular,
         ];
     }
 
@@ -71,13 +71,13 @@ class DaemonStatusDTO extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            uptime: $data[self::uptime] ?? 0,
-            memory: $data[self::memory] ?? 0,
-            cpu: $data[self::cpu] ?? 0.0,
-            timestamp: $data[self::timestamp] ?? time(),
-            workersRegular: $data[self::workersRegular] ?? 0,
-            workersMonopolistic: $data[self::workersMonopolistic] ?? 0,
-            workersMaxRegular: $data[self::workersMaxRegular] ?? 0,
+            uptime: $data[self::UPTIME] ?? 0,
+            memory: $data[self::MEMORY] ?? 0,
+            cpu: $data[self::CPU] ?? 0.0,
+            timestamp: $data[self::TIMESTAMP] ?? time(),
+            workersRegular: $data[self::WORKERS_REGULAR] ?? 0,
+            workersMonopolistic: $data[self::WORKERS_MONOPOLISTIC] ?? 0,
+            workersMaxRegular: $data[self::WORKERS_MAX_REGULAR] ?? 0,
         );
     }
 }

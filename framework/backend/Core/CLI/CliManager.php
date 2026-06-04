@@ -24,26 +24,9 @@ use Hilos\Database\DatabaseException;
 /**
  * CliManager - Main CLI management class.
  *
- * Handles CLI command parsing, argument processing and command execution.
- * Provides centralized interface for all CLI operations.
- *
- * Example usage in commands:
- * ```php
- * // In executeStatus() or other command methods:
- * $verbose = $this->getOption('verbose', false);
- * $refreshRate = $this->getOption('refresh-rate', 1);
- *
- * if ($verbose) {
- *     echo "Verbose mode enabled\n";
- * }
- * echo "Refresh rate: {$refreshRate}s\n";
- * ```
- *
- * Command line examples:
- * ```bash
- * composer run cli -- daemon:status --verbose --refresh-rate=5
- * composer run cli -- daemon:monitor --refresh-rate=2 --debug
- * ```
+ * Parses the command name, positional arguments and `--key=value` / `--flag`
+ * options from argv, then routes execution to the matching registered command.
+ * Each command receives the parsed options and arguments through its execute().
  */
 class CliManager
 {
@@ -179,39 +162,6 @@ class CliManager
                 $this->args[] = $arg;
             }
         }
-    }
-
-    /**
-     * Gets option value.
-     *
-     * @param string $name Option name
-     * @param mixed $default Default value if option not set
-     * @return mixed Option value or default
-     */
-    public function getOption(string $name, mixed $default = null): mixed
-    {
-        return $this->options[$name] ?? $default;
-    }
-
-    /**
-     * Checks if option exists.
-     *
-     * @param string $name Option name
-     * @return bool True if option is set
-     */
-    public function hasOption(string $name): bool
-    {
-        return isset($this->options[$name]);
-    }
-
-    /**
-     * Returns positional arguments (non-option CLI arguments).
-     *
-     * @return list<string> Positional arguments
-     */
-    public function getArgs(): array
-    {
-        return $this->args;
     }
 
     /**

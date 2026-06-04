@@ -12,7 +12,7 @@ use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Hilos;
-use Hilos\Core\CLI\Exception\CommandException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -41,7 +41,7 @@ final class EventsActions extends DbActions
      *
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addChatStarted(): DbEvent
     {
@@ -53,7 +53,7 @@ final class EventsActions extends DbActions
      *
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addChatStopped(): DbEvent
     {
@@ -65,7 +65,7 @@ final class EventsActions extends DbActions
      *
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addChatCleared(): DbEvent
     {
@@ -78,7 +78,7 @@ final class EventsActions extends DbActions
      * @param int $userId Registered user id
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addUserRegistered(int $userId): DbEvent
     {
@@ -96,7 +96,7 @@ final class EventsActions extends DbActions
      * @param string $newName New display name
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addUserRenamed(int $userId, string $oldName, string $newName): DbEvent
     {
@@ -121,7 +121,7 @@ final class EventsActions extends DbActions
      * @param ?int $adminUserId Initiator user id, when known
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addUserRenamedByAdmin(
         int $userId,
@@ -153,7 +153,7 @@ final class EventsActions extends DbActions
      * @param ?PublishedAttachmentInputs $attachments Published attachment metadata
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function addMessage(
         string $message,
@@ -190,7 +190,7 @@ final class EventsActions extends DbActions
      * @param string $type Event type
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     private function add(string $type): DbEvent
     {
@@ -202,7 +202,7 @@ final class EventsActions extends DbActions
         $objectEvent->sync();
 
         if ($objectEvent->id === null) {
-            throw new CommandException("Failed to save event to database: id is null after sync");
+            throw new LogicException("Failed to save event to database: id is null after sync");
         }
 
         $this->addObjectToCollection($objectEvent);

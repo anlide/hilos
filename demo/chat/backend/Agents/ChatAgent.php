@@ -16,9 +16,9 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Http\Exception\MissingRequestQueryParamException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -180,7 +180,7 @@ final class ChatAgent extends AbstractAgent
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws HilosException On bot message publish failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -201,7 +201,7 @@ final class ChatAgent extends AbstractAgent
      *
      * @param BotMessageSignalData $message Bot id and generated message body
      * @throws HilosException On bot message persistence failure
-     * @throws CommandException If event id is null after sync
+     * @throws LogicException If event id is null after sync
      */
     private function handleBotMessage(BotMessageSignalData $message): void
     {
