@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\BaseDTO;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
+use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
@@ -56,11 +57,19 @@ interface AgentDaemonInterface
     public function setWorkerClient(WorkerClient $workerClient): void;
 
     /**
+     * Check whether the daemon is already linked to a worker client
+     *
+     * @return bool True when a worker client is attached
+     */
+    public function hasWorkerClient(): bool;
+
+    /**
      * Get worker client connection
      *
-     * @return ?WorkerClient Worker client or null if not set
+     * @return WorkerClient Worker client connection
+     * @throws AgentNotLinkedToWorkerException When the daemon is not yet linked to a worker
      */
-    public function getWorkerClient(): ?WorkerClient;
+    public function getWorkerClient(): WorkerClient;
 
     /**
      * Send message to worker agent (from external user)

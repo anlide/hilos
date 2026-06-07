@@ -58,3 +58,24 @@ if ($client->hasResult()) {
 
 `hasResult()` is a predicate. `consumeResult()` is a command/query hybrid whose
 name explicitly advertises that it mutates the result buffer.
+
+## Preconditions vs domain absence
+
+Distinguish two kinds of "no value":
+
+- Domain absence — a lookup that may legitimately miss, such as
+  `findById(): ?Item` or `getAgent(): ?Agent`. Keep the nullable return.
+- Precondition / lifecycle state — a dependency that is wired up during a setup
+  phase and must be present before use, such as a worker client attached after
+  the agent daemon is linked. Do not expose this as a nullable getter. Provide a
+  predicate plus a throwing accessor:
+
+```php
+if ($daemon->hasWorkerClient()) {
+    $client = $daemon->getWorkerClient(); // never null, never throws here
+}
+```
+
+`getWorkerClient(): WorkerClient` throws the subsystem exception
+(`AgentNotLinkedToWorkerException`) when called out of order. The backing field
+may stay nullable for two-phase initialization; the public contract must not.

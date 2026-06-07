@@ -8,6 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
+use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Logger;
 
@@ -60,11 +61,21 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * @return ?WorkerClient Worker client or null if not set
+     * @return bool True when a worker client is attached
      */
-    public function getWorkerClient(): ?WorkerClient
+    public function hasWorkerClient(): bool
     {
-        return $this->workerClient;
+        return $this->workerClient !== null;
+    }
+
+    /**
+     * @return WorkerClient Worker client connection
+     * @throws AgentNotLinkedToWorkerException When the daemon is not yet linked to a worker
+     */
+    public function getWorkerClient(): WorkerClient
+    {
+        return $this->workerClient
+            ?? throw new AgentNotLinkedToWorkerException($this->getId());
     }
 
     /**

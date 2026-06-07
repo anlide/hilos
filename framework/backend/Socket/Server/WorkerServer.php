@@ -763,7 +763,7 @@ abstract class WorkerServer extends AbstractServer
         // Check if agent already exists and is linked
         if ($this->agentManager->hasAgent($agentId)) {
             $agentDaemon = $this->agentManager->getAgent($agentId);
-            if ($agentDaemon !== null && $agentDaemon->getWorkerClient() !== null) {
+            if ($agentDaemon !== null && $agentDaemon->hasWorkerClient()) {
                 return; // Agent already running and linked to worker
             }
         }
@@ -917,7 +917,7 @@ abstract class WorkerServer extends AbstractServer
             $this->startAgent($parsedAgentType, $parsedAgentIndex);
         } else {
             $agentDaemon = $this->agentManager->getAgent($agentId);
-            if ($agentDaemon === null || $agentDaemon->getWorkerClient() === null) {
+            if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
                 $this->startAgent($parsedAgentType, $parsedAgentIndex);
             }
         }
@@ -935,8 +935,9 @@ abstract class WorkerServer extends AbstractServer
             ?? throw new AgentNotLinkedToWorkerException($agentId);
 
         // Ensure agent daemon has worker client set
-        $workerClient = $agentDaemon->getWorkerClient();
-        if ($workerClient === null) {
+        if ($agentDaemon->hasWorkerClient()) {
+            $workerClient = $agentDaemon->getWorkerClient();
+        } else {
             $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId))
                 ?? throw new WorkerClientNotFoundException($agentId, $workerInfo->workerIndex, $workerInfo->isMonopolistic);
 
