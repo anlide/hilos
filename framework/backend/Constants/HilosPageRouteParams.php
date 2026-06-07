@@ -10,7 +10,7 @@ namespace Hilos\Constants;
  * Keys match Vue Router params and WebSocket `page_subscribe.params`.
  * Keep in sync with `framework/frontend/src/constants/hilosPageRouteParams.ts`.
  */
-class HilosPageRouteParams
+final class HilosPageRouteParams
 {
     /**
      * Route param for {@see HilosPageConstants::HILOS_USER} (`/hilos/users/{userId}`).

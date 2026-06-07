@@ -10,7 +10,7 @@ namespace Hilos\Constants;
  * Defines page identifiers for framework-level Hilos admin pages.
  * Projects inherit these pages via HilosPageFactory.
  */
-class HilosPageConstants
+final class HilosPageConstants
 {
     /** @var string Hilos dashboard (main page of hilos section) */
     public const string HILOS_DASHBOARD = 'hilos';

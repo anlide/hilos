@@ -7,7 +7,7 @@ namespace Hilos\Constants;
 /**
  * Signal names used by framework-level Hilos admin pages.
  */
-class HilosSignalConstants
+final class HilosSignalConstants
 {
     /** Subscription signal for Hilos dashboard page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DASHBOARD = 'subscription_page_hilos';

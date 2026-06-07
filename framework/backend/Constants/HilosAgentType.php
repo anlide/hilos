@@ -11,7 +11,7 @@ namespace Hilos\Constants;
  * Projects must create concrete agent classes extending the corresponding
  * abstract agents, or not use the related Hilos pages.
  */
-class HilosAgentType
+final class HilosAgentType
 {
     /** @var string Hilos index agent (dashboard, settings, i18n) */
     public const string HILOS_INDEX = 'hilos_index';

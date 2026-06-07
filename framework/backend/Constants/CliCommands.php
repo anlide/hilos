@@ -10,7 +10,7 @@ namespace Hilos\Constants;
  * Defines all available CLI command names used throughout the framework.
  * Centralized command name management prevents typos and ensures consistency.
  */
-class CliCommands
+final class CliCommands
 {
     /** @var string Command: Show daemon status */
     public const string DAEMON_STATUS = 'daemon:status';

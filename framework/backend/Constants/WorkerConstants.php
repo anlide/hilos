@@ -11,7 +11,7 @@ namespace Hilos\Constants;
  * Formats are derived in ArgumentHelper.
  * Also defines message types for worker-daemon communication.
  */
-class WorkerConstants
+final class WorkerConstants
 {
     /** @var string Worker ID command line argument name */
     public const string WORKER_ID_ARG = 'worker-id';
@@ -56,23 +56,23 @@ class WorkerConstants
     /** @var string Daemon agent message signal (daemon -> worker) */
     public const string MESSAGE_DAEMON_AGENT_MESSAGE = 'daemon_agent_message';
 
-    /** @var string DB sync created (daemon/worker broadcast) */
-    public const string MESSAGE_DB_SYNC_CREATED = 'db_sync_created';
+    /** @var string DB sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
 
-    /** @var string DB sync updated (daemon/worker broadcast) */
-    public const string MESSAGE_DB_SYNC_UPDATED = 'db_sync_updated';
+    /** @var string DB sync updated (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_DB_SYNC_UPDATED = SignalTypeConstants::DB_SYNC_UPDATED;
 
-    /** @var string DB sync deleted (daemon/worker broadcast) */
-    public const string MESSAGE_DB_SYNC_DELETED = 'db_sync_deleted';
+    /** @var string DB sync deleted (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_DB_SYNC_DELETED = SignalTypeConstants::DB_SYNC_DELETED;
 
-    /** @var string RT sync created (daemon/worker broadcast) */
-    public const string MESSAGE_RT_SYNC_CREATED = 'rt_sync_created';
+    /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
 
-    /** @var string RT sync updated (daemon/worker broadcast) */
-    public const string MESSAGE_RT_SYNC_UPDATED = 'rt_sync_updated';
+    /** @var string RT sync updated (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;
 
-    /** @var string RT sync deleted (daemon/worker broadcast) */
-    public const string MESSAGE_RT_SYNC_DELETED = 'rt_sync_deleted';
+    /** @var string RT sync deleted (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_RT_SYNC_DELETED = SignalTypeConstants::RT_SYNC_DELETED;
 
     // Message types from worker to daemon
     /** @var string Worker registration request */

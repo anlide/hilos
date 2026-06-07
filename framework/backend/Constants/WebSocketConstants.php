@@ -7,7 +7,7 @@ namespace Hilos\Constants;
 /**
  * WebSocketConstants - WebSocket protocol and application contract constants.
  */
-class WebSocketConstants
+final class WebSocketConstants
 {
     /** @var string RFC 6455 Sec-WebSocket-Accept magic string */
     public const string RFC6455_ACCEPT_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';

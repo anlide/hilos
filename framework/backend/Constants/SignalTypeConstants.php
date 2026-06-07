@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Defines standard signal type names used throughout the framework.
  */
-class SignalTypeConstants
+final class SignalTypeConstants
 {
     /** @var string System signal type */
     public const string SYSTEM = 'system';

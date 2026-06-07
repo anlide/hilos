@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Contains constants for HTTP operations, response keys, and status codes.
  */
-class HttpConstants
+final class HttpConstants
 {
     /** @var string HTTP response key for body */
     public const string RESPONSE_KEY_BODY = 'body';
@@ -78,9 +78,12 @@ class HttpConstants
     public const array HTTP_STATUS_TEXTS = [
         self::HTTP_OK => 'OK',
         self::HTTP_STATUS_SWITCHING_PROTOCOLS => self::HTTP_REASON_SWITCHING_PROTOCOLS,
+        self::HTTP_BAD_REQUEST => 'Bad Request',
         self::HTTP_UNAUTHORIZED => 'Unauthorized',
         self::HTTP_FORBIDDEN => 'Forbidden',
         self::HTTP_NOT_FOUND => 'Not Found',
+        self::HTTP_CONFLICT => 'Conflict',
+        self::HTTP_GONE => 'Gone',
         self::HTTP_INTERNAL_ERROR => 'Internal Server Error',
     ];
 

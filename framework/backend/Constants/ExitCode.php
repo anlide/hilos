@@ -10,7 +10,7 @@ namespace Hilos\Constants;
  * Provides standardized exit codes for consistent process termination
  * across the entire framework. Based on Unix/Linux conventions.
  */
-class ExitCode
+final class ExitCode
 {
     /** @var int Success exit code */
     public const int SUCCESS = 0;
@@ -33,6 +33,6 @@ class ExitCode
     /** @var int Timeout occurred */
     public const int TIMEOUT = 6;
 
-    /** @var int Signal received (SIGTERM, SIGINT, etc) */
+    /** @var int Terminated by Ctrl+C / SIGINT (128 + signal number 2) */
     public const int SIGNAL_RECEIVED = 130;
 }

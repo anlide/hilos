@@ -11,7 +11,7 @@ namespace Hilos\Constants;
  * These constants control the maximum length of error messages and stack traces
  * to prevent log overflow and ensure manageable log file sizes.
  */
-class ErrorConstants
+final class ErrorConstants
 {
     /** @var int Maximum length of error message in characters */
     public const int ERROR_MESSAGE_MAX_LENGTH = 2000;

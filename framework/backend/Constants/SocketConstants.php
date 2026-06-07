@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Defines limits and constraints for socket operations.
  */
-class SocketConstants
+final class SocketConstants
 {
     /** @var int Maximum read buffer size in bytes (1GB) */
     public const int MAX_READ_BUFFER_SIZE = 1073741824;

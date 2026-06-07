@@ -30,22 +30,6 @@ enum AppEnv: string
     case TEST = 'test';
 
     /**
-     * Map: canonical value (enum case value) -> aliases including canonical.
-     *
-     * @return array<string, list<string>> Mapping from canonical value to alias list
-     */
-    private static function aliases(): array
-    {
-        return [
-            self::PROD->value => [self::PROD->value, 'production', 'live', 'pro'],
-            self::STAGING->value => [self::STAGING->value, 'stage', 'stg'],
-            self::DEV->value => [self::DEV->value, 'development'],
-            self::LOCAL->value => [self::LOCAL->value, 'localhost'],
-            self::TEST->value => [self::TEST->value, 'testing', 'ci'],
-        ];
-    }
-
-    /**
      * Parse APP_ENV string into AppEnv.
      *
      * Accepts canonical values and common aliases (case-insensitive).
@@ -88,5 +72,21 @@ enum AppEnv: string
     public function isProductionLike(): bool
     {
         return !$this->isSeedsAllowed();
+    }
+
+    /**
+     * Map: canonical value (enum case value) -> aliases including canonical.
+     *
+     * @return array<string, list<string>> Mapping from canonical value to alias list
+     */
+    private static function aliases(): array
+    {
+        return [
+            self::PROD->value => [self::PROD->value, 'production', 'live', 'pro'],
+            self::STAGING->value => [self::STAGING->value, 'stage', 'stg'],
+            self::DEV->value => [self::DEV->value, 'development'],
+            self::LOCAL->value => [self::LOCAL->value, 'localhost'],
+            self::TEST->value => [self::TEST->value, 'testing', 'ci'],
+        ];
     }
 }

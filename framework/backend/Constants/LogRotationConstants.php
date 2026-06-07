@@ -29,7 +29,7 @@ final class LogRotationConstants
     /**
      * Regex matching a single rotation batch directory name under the archive subdirectory.
      *
-     * Must correspond to {@see TIMESTAMP_FORMAT}.
+     * Must correspond to {@see self::TIMESTAMP_FORMAT}.
      */
     public const string TIMESTAMP_DIR_NAME_PATTERN = '/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/';
 }

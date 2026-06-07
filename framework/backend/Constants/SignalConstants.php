@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Defines standard signal names used throughout the framework.
  */
-class SignalConstants
+final class SignalConstants
 {
     /** @var string Workers ready signal - sent when initial workers are ready */
     public const string WORKERS_READY = 'workers_ready';
@@ -17,15 +17,15 @@ class SignalConstants
     /** @var string Initial agents start signal - queued by WorkerServer when workers are ready */
     public const string INITIAL_AGENTS_START = 'initial_agents_start';
 
-    /** @var string DB sync signal names (operation) */
-    public const string DB_SYNC_CREATED = 'db_sync_created';
-    public const string DB_SYNC_UPDATED = 'db_sync_updated';
-    public const string DB_SYNC_DELETED = 'db_sync_deleted';
+    /** @var string DB sync signal names (operation); canonical values in SignalTypeConstants */
+    public const string DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
+    public const string DB_SYNC_UPDATED = SignalTypeConstants::DB_SYNC_UPDATED;
+    public const string DB_SYNC_DELETED = SignalTypeConstants::DB_SYNC_DELETED;
 
-    /** @var string RT sync signal names (operation) */
-    public const string RT_SYNC_CREATED = 'rt_sync_created';
-    public const string RT_SYNC_UPDATED = 'rt_sync_updated';
-    public const string RT_SYNC_DELETED = 'rt_sync_deleted';
+    /** @var string RT sync signal names (operation); canonical values in SignalTypeConstants */
+    public const string RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
+    public const string RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;
+    public const string RT_SYNC_DELETED = SignalTypeConstants::RT_SYNC_DELETED;
 
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';

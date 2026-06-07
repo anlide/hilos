@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Contains constants for daemon status display values.
  */
-class DaemonConstants
+final class DaemonConstants
 {
     /** @var string Daemon status display: online */
     public const string STATUS_ONLINE = 'ONLINE';

@@ -9,7 +9,7 @@ namespace Hilos\Constants;
  *
  * Centralized constants for local and external LLM backends.
  */
-class LLMConstants
+final class LLMConstants
 {
     /** @var float Default request timeout in seconds */
     public const float DEFAULT_TIMEOUT_SEC = 20.0;
