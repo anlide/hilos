@@ -83,7 +83,7 @@ interface AgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @throws ValidationException
+     * @throws ValidationException When the handshake payload fails validation
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void;
 

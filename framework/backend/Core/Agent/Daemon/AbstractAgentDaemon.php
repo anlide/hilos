@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Socket\Client\WorkerClient;
@@ -138,7 +139,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         if ($index === null) {
             return $this->getType();
         }
-        return $this->getType() . ':' . $index;
+        return $this->getType() . AgentConstants::ID_SEPARATOR . $index;
     }
 
     /**

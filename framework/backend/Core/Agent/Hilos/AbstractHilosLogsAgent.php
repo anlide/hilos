@@ -19,11 +19,21 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_LOGS;
 
+    /**
+     * Delegates the per-tick logs overview refresh to the logs page.
+     */
     public function onTick(): void
     {
         AbstractHilosLogsPage::onAgentTick($this);
     }
 
+    /**
+     * Drops the closed connection from the logs overview subscriber set.
+     *
+     * @param WebSocketCloseSignalDTO $data Close signal payload (carries the acceptKey)
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         AbstractHilosLogsPage::removeSubscriber($data->acceptKey);

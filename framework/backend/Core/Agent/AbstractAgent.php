@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
@@ -39,8 +40,8 @@ use Hilos\Utils\Logger;
  *
  * Provides base implementation for agents. Child classes should define:
  * - AGENT_TYPE constant - agent type identifier
- * - $agentIndex property (set in constructor) - for multi-instance agents
- * - doTick() - agent work logic (override this instead of tick())
+ * - $agentIndex property - for multi-instance agents (set by the indexed constructor)
+ * - onTick() - agent work logic run on each worker loop iteration
  * - Signal handling methods (can override onSignal* methods for specific signal types).
  */
 abstract class AbstractAgent implements AgentInterface, PageAgentInterface
@@ -90,7 +91,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
         if ($index === null) {
             return $this->getType();
         }
-        return $this->getType() . ':' . $index;
+        return $this->getType() . AgentConstants::ID_SEPARATOR . $index;
     }
 
     /**

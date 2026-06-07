@@ -253,7 +253,7 @@ abstract class AgentManagerDaemon
     {
         $agentId = $dto->agentId;
 
-        // Create and link agent daemon if it doesn't exist
+        // The worker only reports agents the daemon already registered; a missing one is a registration bug
         if (!$this->hasAgent($agentId)) {
             throw new AgentDaemonCreationFailedException("Agent daemon '{$agentId}' does not exist in daemon manager.");
         }
