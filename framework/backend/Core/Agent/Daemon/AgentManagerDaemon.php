@@ -226,9 +226,8 @@ abstract class AgentManagerDaemon
             throw new AgentDaemonNotRegisteredException($agentId);
         }
 
-        $agentDaemon = $this->getAgent($agentId);
-        $agentDaemon->onStart();
-        $workerIndex = $agentDaemon->getWorkerClient()->getWorkerIndex();
+        $this->getAgent($agentId)?->onStart();
+        $workerIndex = $this->getAgentWorkerInfo($agentId)?->workerIndex ?? 'unknown';
 
         Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");
     }
@@ -242,15 +241,15 @@ abstract class AgentManagerDaemon
      */
     public function handleAgentStopped(WorkerAgentStoppedDTO $dto): void
     {
-        // Remove agent daemon
-        if ($this->hasAgent($dto->agentId)) {
-            $agentDaemon = $this->getAgent($dto->agentId);
-            $workerIndex = $agentDaemon->getWorkerClient()->getWorkerIndex();
-            $agentDaemon->onStop();
-            $this->removeAgent($dto->agentId);
-
-            Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
+        if (!$this->hasAgent($dto->agentId)) {
+            return;
         }
+
+        $workerIndex = $this->getAgentWorkerInfo($dto->agentId)?->workerIndex ?? 'unknown';
+        $this->getAgent($dto->agentId)?->onStop();
+        $this->removeAgent($dto->agentId);
+
+        Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
     }
 
     /**
