@@ -148,6 +148,16 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     }
 
     /**
+     * Hook for projects that mirror guardian run statuses into runtime state.
+     *
+     * @param string $agentId Guardian agent identifier
+     * @param GuardianRunStatus $status Run status
+     */
+    protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
+    {
+    }
+
+    /**
      * Get guardian agent ids supported by the project.
      *
      * @return list<string> Guardian agent identifiers
@@ -170,16 +180,6 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
                 0,
             );
         }
-    }
-
-    /**
-     * Hook for projects that mirror guardian run statuses into runtime state.
-     *
-     * @param string $agentId Guardian agent identifier
-     * @param GuardianRunStatus $status Run status
-     */
-    protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
-    {
     }
 
     /**
