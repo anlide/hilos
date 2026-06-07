@@ -38,7 +38,7 @@ final class BotPageSubscribeParams extends AbstractPageSubscribeParamsDTO
      */
     public static function fromPageRouteParams(PageRouteParams $params): static
     {
-        return new self(
+        return new static(
             botId: $params->requirePositiveInt(self::BOT_ID),
         );
     }

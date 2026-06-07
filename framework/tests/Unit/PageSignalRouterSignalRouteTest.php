@@ -366,7 +366,7 @@ final class PageSignalRouterTestSignalData extends SignalData
             throw new InvalidArgumentException('Missing message');
         }
 
-        return new self((string)$data['message']);
+        return new static((string)$data['message']);
     }
 }
 

@@ -170,7 +170,7 @@ final class SourceChange extends BaseDTO
         $sourceId = $data[self::FIELD_SOURCE_ID] ?? '';
         $row = $data[self::FIELD_ROW] ?? [];
 
-        return new self(
+        return new static(
             kind: (string) ($data[self::FIELD_KIND] ?? self::KIND_DB),
             sourceKey: (string) ($data[self::FIELD_SOURCE_KEY] ?? ''),
             sourceId: is_string($sourceId) || is_int($sourceId) ? (string) $sourceId : '',

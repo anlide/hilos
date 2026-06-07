@@ -77,7 +77,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: (string)($data['acceptKey'] ?? ''),
             userId: (int)($data['userId'] ?? 0),
             message: (string)($data['message'] ?? ''),

@@ -69,7 +69,7 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? '',
             params: $data[self::PARAMS] ?? [],

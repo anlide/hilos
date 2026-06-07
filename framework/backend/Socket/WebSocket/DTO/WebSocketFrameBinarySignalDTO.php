@@ -62,7 +62,7 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
         $encoded = $data[self::PAYLOAD] ?? '';
         $encoded = is_string($encoded) ? $encoded : '';
 
-        return new self(
+        return new static(
             acceptKey: is_string($data[self::ACCEPT_KEY] ?? null) ? $data[self::ACCEPT_KEY] : '',
             payload: self::decodePayloadFromTransport($encoded),
         );

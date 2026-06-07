@@ -70,7 +70,7 @@ class DaemonStatusDTO extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             uptime: $data[self::UPTIME] ?? 0,
             memory: $data[self::MEMORY] ?? 0,
             cpu: $data[self::CPU] ?? 0.0,

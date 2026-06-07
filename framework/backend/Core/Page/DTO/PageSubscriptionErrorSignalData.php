@@ -54,7 +54,7 @@ class PageSubscriptionErrorSignalData extends BaseDTO implements SignalDataInter
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             page: (string) ($data['page'] ?? ''),
             httpCode: (int) ($data['httpCode'] ?? 500),
             errorCode: (string) ($data['errorCode'] ?? 'error'),

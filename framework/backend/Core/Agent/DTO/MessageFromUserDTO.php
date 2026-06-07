@@ -54,7 +54,7 @@ class MessageFromUserDTO extends BaseDTO implements AgentMessageDTOInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             userId: $data[self::USER_ID] ?? '',
             action: $data[self::ACTION] ?? '',
             payload: $data[self::PAYLOAD] ?? [],

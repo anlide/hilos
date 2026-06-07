@@ -45,7 +45,7 @@ final class BotMessageSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             botId: (int)($data['botId'] ?? 0),
             message: (string)($data['message'] ?? ''),
         );

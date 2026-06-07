@@ -77,6 +77,6 @@ final class ActionSuccessSignalData extends SignalData implements SignalDataInte
             $message = $data['message'];
             unset($data['message']);
         }
-        return new self($data, $message);
+        return new static($data, $message);
     }
 }

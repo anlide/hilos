@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style
-description: Apply Hilos PHP and TypeScript code style, PHPDoc conventions, strict types, page action handler style, local variable rules, DTO routing style, and project quality rules. Use when writing, reviewing, or refactoring Hilos code where naming, typing, comments, PHPDoc, handlers, method signatures, method contracts, or method behavior matter.
+description: Apply Hilos PHP and TypeScript code style, PHPDoc conventions, strict types, page action handler style, local variable rules, DTO routing style, and project quality rules. Use when writing, reviewing, or refactoring Hilos code where naming, typing, comments, PHPDoc, handlers, method signatures, method contracts, static factory return contracts, or method behavior matter.
 ---
 
 # Hilos Code Style
@@ -24,6 +24,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Internal backend API contracts: `docs/agents/code-style/internal-backend-api.md`
 - Method command/predicate/result contracts:
   `docs/agents/code-style/method-contracts.md`
+- Static factory `self`/`static` return contract:
+  `docs/agents/code-style/static-factories.md` - read when adding or changing a
+  static factory (`fromArray`, `fromRow`, `create`, named constructors).
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - PHP class member order: `docs/agents/code-style/php-class-members.md` -
   read when adding or reordering class constants, properties, or methods.
@@ -115,6 +118,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
+- A static factory typed `: static` or `@return static` must return
+  `new static()`, never `new self()`. Mark a class with no subclasses `final`
+  and keep its body, native return type, and `@return` aligned.
 - Use `?type` for nullable PHP types in code and regular PHPDoc, unless a documented exception applies.
 - Do not add unrelated refactors while applying style cleanup.
 - Do not add unapproved convenience helpers or predicates during refactors.

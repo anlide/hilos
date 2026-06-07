@@ -42,6 +42,6 @@ class SignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self($data);
+        return new static($data);
     }
 }

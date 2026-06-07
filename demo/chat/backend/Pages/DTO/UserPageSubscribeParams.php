@@ -33,7 +33,7 @@ final class UserPageSubscribeParams extends AbstractPageSubscribeParamsDTO
      */
     public static function fromPageRouteParams(PageRouteParams $params): static
     {
-        return new self(
+        return new static(
             userId: $params->requirePositiveInt(self::USER_ID),
         );
     }

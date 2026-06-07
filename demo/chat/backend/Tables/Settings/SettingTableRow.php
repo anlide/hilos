@@ -74,7 +74,7 @@ final class SettingTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             id: isset($data[self::id]) ? (int) $data[self::id] : null,
             key: (string) ($data[self::key] ?? ''),
             type: (string) ($data[self::type] ?? ''),

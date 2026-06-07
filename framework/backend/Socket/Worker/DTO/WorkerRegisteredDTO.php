@@ -66,7 +66,7 @@ class WorkerRegisteredDTO extends WorkerDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             workerIndex: $data[self::WORKER_INDEX] ?? 0,
             monopolistic: $data[self::MONOPOLISTIC] ?? false,
         );

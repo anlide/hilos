@@ -48,7 +48,7 @@ class SystemSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterf
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             systemName: $data[self::SYSTEM_NAME] ?? '',
         );
     }

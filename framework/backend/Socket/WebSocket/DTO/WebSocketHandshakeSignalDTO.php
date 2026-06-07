@@ -72,7 +72,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             headers: $data[self::HEADERS] ?? [],
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],

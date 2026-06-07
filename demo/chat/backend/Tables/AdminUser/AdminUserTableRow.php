@@ -58,7 +58,7 @@ final class AdminUserTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             id: (int) ($data[self::id] ?? 0),
             name: (string) ($data[self::name] ?? ''),
             lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,

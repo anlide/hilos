@@ -1243,7 +1243,7 @@ final class TopologyTestActionPayloadDTO extends ActionPayloadDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self();
+        return new static();
     }
 
     /**

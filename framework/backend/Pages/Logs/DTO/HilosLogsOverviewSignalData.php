@@ -61,7 +61,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
         $total = $data['totalRotationsAllTime'] ?? null;
         $last = $data['lastRotationAt'] ?? null;
 
-        return new self(
+        return new static(
             available: is_bool($available) ? $available : false,
             totalRotationsAllTime: is_int($total) ? $total : (is_numeric($total) ? (int) $total : null),
             lastRotationAt: is_string($last) ? $last : null,

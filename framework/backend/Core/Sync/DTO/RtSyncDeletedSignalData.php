@@ -50,7 +50,7 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
             stateId: $data[SyncSignalDataKey::STATE_ID] ?? '',
             row: isset($data[SyncSignalDataKey::ROW]) && is_array($data[SyncSignalDataKey::ROW])

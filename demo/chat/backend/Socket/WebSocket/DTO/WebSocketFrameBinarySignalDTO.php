@@ -26,7 +26,7 @@ final class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinaryS
     {
         $base = parent::fromArray($data);
 
-        return new self(
+        return new static(
             acceptKey: $base->acceptKey,
             payload: $base->payload,
         );

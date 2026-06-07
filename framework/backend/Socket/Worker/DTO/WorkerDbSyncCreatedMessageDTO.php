@@ -56,7 +56,7 @@ class WorkerDbSyncCreatedMessageDTO extends WorkerDTO
     {
         $signalData = $data['signalData'] ?? [];
 
-        return new self(
+        return new static(
             signalData: DbSyncCreatedSignalData::fromArray(is_array($signalData) ? $signalData : []),
         );
     }

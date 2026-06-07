@@ -128,7 +128,7 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
             $signalData = new SignalData();
         }
 
-        return new self(
+        return new static(
             signalSource: $signalSource,
             signalType: $signalType,
             signalName: $signalName,

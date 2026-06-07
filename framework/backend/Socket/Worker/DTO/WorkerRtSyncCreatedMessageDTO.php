@@ -56,7 +56,7 @@ class WorkerRtSyncCreatedMessageDTO extends WorkerDTO
     {
         $signalData = $data['signalData'] ?? [];
 
-        return new self(
+        return new static(
             signalData: RtSyncCreatedSignalData::fromArray(is_array($signalData) ? $signalData : []),
         );
     }

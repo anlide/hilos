@@ -50,7 +50,7 @@ class ImageResult extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             url: isset($data[LLMApiConstants::KEY_URL]) ? (string) $data[LLMApiConstants::KEY_URL] : null,
             base64: isset($data[LLMApiConstants::KEY_BASE64]) ? (string) $data[LLMApiConstants::KEY_BASE64] : null,
         );

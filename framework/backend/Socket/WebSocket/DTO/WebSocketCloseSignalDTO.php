@@ -53,7 +53,7 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
         );
     }

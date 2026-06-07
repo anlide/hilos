@@ -49,6 +49,6 @@ final class BrowserPageSignalData extends BaseDTO implements SignalDataInterface
     {
         $tables = $data[self::tables] ?? [];
 
-        return new self(is_array($tables) ? $tables : []);
+        return new static(is_array($tables) ? $tables : []);
     }
 }

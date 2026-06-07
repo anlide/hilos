@@ -57,6 +57,6 @@ final class ActionFailSignalData extends SignalData implements SignalDataInterfa
     public static function fromArray(array $data): static
     {
         $reason = isset($data['reason']) && is_string($data['reason']) ? $data['reason'] : '';
-        return new self($reason);
+        return new static($reason);
     }
 }

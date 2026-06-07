@@ -68,7 +68,7 @@ final class RenameModerationResultSignalData extends BaseDTO implements ActionEr
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: (string)($data['acceptKey'] ?? ''),
             userId: (int)($data['userId'] ?? 0),
             newName: (string)($data['newName'] ?? ''),

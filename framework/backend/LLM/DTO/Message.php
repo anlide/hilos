@@ -59,7 +59,7 @@ class Message extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             role: $data[LLMApiConstants::KEY_ROLE] ?? self::ROLE_USER,
             content: (string) ($data[LLMApiConstants::KEY_CONTENT] ?? ''),
         );

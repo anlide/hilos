@@ -53,7 +53,7 @@ class ImageGenerateOptions extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             model: isset($data[LLMApiConstants::KEY_MODEL]) ? (string) $data[LLMApiConstants::KEY_MODEL] : null,
             size: isset($data[LLMApiConstants::KEY_SIZE]) ? (string) $data[LLMApiConstants::KEY_SIZE] : null,
             timeoutSec: isset($data[LLMApiConstants::KEY_TIMEOUT_SEC]) ? (float) $data[LLMApiConstants::KEY_TIMEOUT_SEC] : LLMConstants::DEFAULT_TIMEOUT_SEC,

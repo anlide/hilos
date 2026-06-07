@@ -69,7 +69,7 @@ class WorkerAgentStartedDTO extends WorkerDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
             agentType: $data[AgentConstants::FIELD_AGENT_TYPE] ?? '',
             agentIndex: $data[AgentConstants::FIELD_AGENT_INDEX] ?? null,

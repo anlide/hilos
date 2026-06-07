@@ -54,6 +54,6 @@ final class GenericTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        return new self($data);
+        return new static($data);
     }
 }

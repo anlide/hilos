@@ -14,6 +14,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [signal-handlers.md](signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [internal-backend-api.md](internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, typed collections, or magic-string keys in structured arrays |
 | [method-contracts.md](method-contracts.md) | changing method return types, success/failure contracts, command methods, predicates, or result consumption APIs |
+| [static-factories.md](static-factories.md) | adding or changing a static factory (`fromArray`, `fromRow`, `create`, named constructors) or its `self`/`static` return contract |
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |

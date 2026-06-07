@@ -54,7 +54,7 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             data: SignalDataEnvelope::decode(
                 $data[SignalPayloadConstants::FIELD_DATA] ?? [],
                 $data[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null,

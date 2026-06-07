@@ -22,7 +22,7 @@ use Hilos\Core\Page\Exception\MissingPageRouteParamException;
  *
  *       public static function fromPageRouteParams(PageRouteParams $params): static
  *       {
- *           return new self(
+ *           return new static(
  *               userId: $params->requirePositiveInt(HilosPageRouteParams::HILOS_USER_USER_ID),
  *           );
  *       }

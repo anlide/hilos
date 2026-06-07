@@ -32,7 +32,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Create empty collection.
      *
-     * @return static empty collection instance
+     * @return self empty collection instance
      */
     public static function empty(): self
     {
@@ -43,7 +43,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
      * Create collection from array of objects.
      *
      * @param array<int|string, Object_> $objects Objects keyed by int or string
-     * @return static Collection instance
+     * @return self Collection instance
      */
     public static function fromArray(array $objects): self
     {

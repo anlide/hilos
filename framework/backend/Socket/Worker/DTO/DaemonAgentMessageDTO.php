@@ -71,7 +71,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
             ? $signalData
             : SignalDTO::fromArray($signalData);
 
-        return new self(
+        return new static(
             agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
             signal: $signal,
         );

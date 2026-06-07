@@ -140,7 +140,7 @@ class SignalDTO extends BaseDTO
         $dataType = $data['dataType'] ?? null;
         $signalData = self::deserializeSignalData($dataArray, $dataType);
 
-        return new self(
+        return new static(
             signalSource: $signalSource,
             signalType: $signalType,
             signalName: $signalName,

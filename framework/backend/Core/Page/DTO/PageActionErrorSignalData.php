@@ -42,7 +42,7 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             action: (string)($data['action'] ?? ''),
             reason: (string)($data['reason'] ?? ''),
         );

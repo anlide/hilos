@@ -66,7 +66,7 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             action: $data[self::ACTION] ?? '',
             data: $data[self::DATA] ?? [],

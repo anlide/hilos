@@ -36,7 +36,7 @@ final class HilosGuardianAgentPageSubscribeParams extends AbstractPageSubscribeP
      */
     public static function fromPageRouteParams(PageRouteParams $params): static
     {
-        return new self(
+        return new static(
             agentId: $params->requireString(HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID),
         );
     }

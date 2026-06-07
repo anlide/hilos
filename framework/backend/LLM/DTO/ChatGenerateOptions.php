@@ -56,7 +56,7 @@ class ChatGenerateOptions extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             model: isset($data[LLMApiConstants::KEY_MODEL]) ? (string) $data[LLMApiConstants::KEY_MODEL] : null,
             temperature: isset($data[LLMApiConstants::KEY_TEMPERATURE]) ? (float) $data[LLMApiConstants::KEY_TEMPERATURE] : 0.0,
             timeoutSec: isset($data[LLMApiConstants::KEY_TIMEOUT_SEC]) ? (float) $data[LLMApiConstants::KEY_TIMEOUT_SEC] : LLMConstants::DEFAULT_TIMEOUT_SEC,

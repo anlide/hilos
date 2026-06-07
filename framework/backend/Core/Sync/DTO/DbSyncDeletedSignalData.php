@@ -50,7 +50,7 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
             idString: $data[SyncSignalDataKey::ID_STRING] ?? '',
             row: isset($data[SyncSignalDataKey::ROW]) && is_array($data[SyncSignalDataKey::ROW])

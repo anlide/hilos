@@ -48,7 +48,7 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             cronName: $data[self::CRON_NAME] ?? '',
         );
     }

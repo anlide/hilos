@@ -573,7 +573,7 @@ final class BrowserContextEmitSignalsTestState extends RtState
 
     public static function fromRow(array $row): static
     {
-        return new self(
+        return new static(
             (string) ($row['id'] ?? ''),
             (string) ($row['name'] ?? ''),
         );

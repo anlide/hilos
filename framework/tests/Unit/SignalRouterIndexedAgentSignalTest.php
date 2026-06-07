@@ -357,7 +357,7 @@ final class IndexedAgentSignalTestPayload extends BaseDTO implements SignalDataI
      */
     public static function fromArray(array $data): static
     {
-        return new self($data);
+        return new static($data);
     }
 }
 
@@ -399,7 +399,7 @@ final class IndexedAgentSignalDtoTestPayload extends BaseDTO implements SignalDa
 
         $entityId = $data['entityId'] ?? null;
 
-        return new self(
+        return new static(
             message: is_string($data['message']) ? $data['message'] : '',
             entityId: is_int($entityId) ? $entityId : null,
         );

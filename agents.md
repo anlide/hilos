@@ -104,6 +104,7 @@ Minimum ORM rules before editing:
 |---|---|
 | [code-style/README.md](docs/agents/code-style/README.md) | choosing which small style rule applies to a code change |
 | [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | writing PHPDoc, overriding inherited methods, adding `@see` links |
+| [code-style/static-factories.md](docs/agents/code-style/static-factories.md) | writing or changing static factories (`fromArray`, `fromRow`, `create`) and their `self`/`static` return contract |
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |

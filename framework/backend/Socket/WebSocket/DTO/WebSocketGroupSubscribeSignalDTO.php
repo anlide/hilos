@@ -69,7 +69,7 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             group: $data[self::GROUP] ?? '',
             params: $data[self::PARAMS] ?? [],

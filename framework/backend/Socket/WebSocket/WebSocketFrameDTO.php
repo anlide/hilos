@@ -58,7 +58,7 @@ class WebSocketFrameDTO extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             fin: $data[self::FIN] ?? 0,
             opcode: $data[self::OPCODE] ?? 0,
             masked: $data[self::MASKED] ?? 0,

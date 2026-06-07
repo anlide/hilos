@@ -82,7 +82,7 @@ final class BotTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             id: (int) ($data[self::id] ?? 0),
             name: (string) ($data[self::name] ?? ''),
             description: isset($data[self::description]) ? (string) $data[self::description] : null,

@@ -55,7 +55,7 @@ class MessageFromDaemonDTO extends BaseDTO implements AgentMessageDTOInterface
      */
     public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             action: $data[self::ACTION] ?? '',
             payload: $data[self::PAYLOAD] ?? [],
         );
