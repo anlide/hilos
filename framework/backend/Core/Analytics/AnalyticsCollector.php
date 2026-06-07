@@ -10,6 +10,18 @@ use Hilos\Utils\Logger;
 
 /**
  * Collects raw analytics data into normalized SQL tables.
+ *
+ * This subsystem deliberately bypasses the Hilos ORM and issues raw
+ * `Database::sql()` statements. It is high-frequency telemetry whose shape the
+ * row-oriented ORM does not serve well: dictionary tables deduplicated by SHA-1
+ * hash via `INSERT IGNORE`, and event rows accumulated in memory then written in
+ * batched multi-row inserts on a timer or size threshold. Failures are
+ * contained - any error disables the collector for the rest of the process
+ * instead of propagating into application code, so the public methods never
+ * throw.
+ *
+ * Insert buffers are intentionally array-shaped (raw DB rows keyed by column
+ * name); internal session caches use typed value objects instead of arrays.
  */
 final class AnalyticsCollector
 {
@@ -60,10 +72,10 @@ final class AnalyticsCollector
     /** @var array<string, int> */
     private array $payloadIds = [];
 
-    /** @var array<string, array<string, int|null>> Map of session token to browser session (id, currentUserAgentId, currentAcceptLanguageId) */
+    /** @var array<string, BrowserSessionState> Map of session token to cached browser session state */
     private array $browserSessions = [];
 
-    /** @var array<string, array<string, int|string|null>> Map of accept key to WS connection (id, browserSessionId, currentIpv4, currentIpv6Hex) */
+    /** @var array<string, WsConnectionState> Map of accept key to cached WS connection state */
     private array $wsConnections = [];
 
     /** @var array<string, int> */
@@ -81,11 +93,25 @@ final class AnalyticsCollector
     /** @var ?int Active user action ID for signal correlation */
     private ?int $activeUserActionId = null;
 
+    /**
+     * Initializes the flush timer baseline.
+     */
     public function __construct()
     {
         $this->lastFlushTs = $this->nowTs();
     }
 
+    /**
+     * Creates or refreshes the browser session for the token and returns its id.
+     *
+     * On an existing session, records user-agent and accept-language changes in
+     * their history tables and updates the cached current values.
+     *
+     * @param ?string $sessionToken Browser session token; null/empty yields null
+     * @param ?string $userAgent Raw User-Agent header, or null
+     * @param ?string $acceptLanguage Raw Accept-Language header, or null
+     * @return ?int Browser session id, or null when the token is empty or collection is disabled
+     */
     public function ensureBrowserSession(?string $sessionToken, ?string $userAgent, ?string $acceptLanguage): ?int
     {
         if ($sessionToken === null || $sessionToken === '') {
@@ -107,11 +133,7 @@ final class AnalyticsCollector
                 );
 
                 $id = Database::lastInsertId();
-                $this->browserSessions[$sessionToken] = [
-                    'id' => $id,
-                    'currentUserAgentId' => $userAgentId,
-                    'currentAcceptLanguageId' => $acceptLanguageId,
-                ];
+                $this->browserSessions[$sessionToken] = new BrowserSessionState($id, $userAgentId, $acceptLanguageId);
 
                 return $id;
             }
@@ -119,41 +141,48 @@ final class AnalyticsCollector
             $updates = ['`last_seen_ts` = ?'];
             $params = [$nowTs];
 
-            if ($existing['currentUserAgentId'] !== $userAgentId && $userAgentId !== null) {
+            if ($existing->currentUserAgentId !== $userAgentId && $userAgentId !== null) {
                 Database::sql(
                     'INSERT INTO `hilos_analytics_browser_session_user_agent_change`
                         (`browser_session_id`, `old_user_agent_id`, `new_user_agent_id`, `changed_ts`)
                      VALUES (?, ?, ?, ?)',
-                    [$existing['id'], $existing['currentUserAgentId'], $userAgentId, $nowTs],
+                    [$existing->id, $existing->currentUserAgentId, $userAgentId, $nowTs],
                 );
                 $updates[] = '`current_user_agent_id` = ?';
                 $params[] = $userAgentId;
-                $existing['currentUserAgentId'] = $userAgentId;
+                $existing->currentUserAgentId = $userAgentId;
             }
 
-            if ($existing['currentAcceptLanguageId'] !== $acceptLanguageId && $acceptLanguageId !== null) {
+            if ($existing->currentAcceptLanguageId !== $acceptLanguageId && $acceptLanguageId !== null) {
                 Database::sql(
                     'INSERT INTO `hilos_analytics_browser_session_accept_language_change`
                         (`browser_session_id`, `old_accept_language_id`, `new_accept_language_id`, `changed_ts`)
                      VALUES (?, ?, ?, ?)',
-                    [$existing['id'], $existing['currentAcceptLanguageId'], $acceptLanguageId, $nowTs],
+                    [$existing->id, $existing->currentAcceptLanguageId, $acceptLanguageId, $nowTs],
                 );
                 $updates[] = '`current_accept_language_id` = ?';
                 $params[] = $acceptLanguageId;
-                $existing['currentAcceptLanguageId'] = $acceptLanguageId;
+                $existing->currentAcceptLanguageId = $acceptLanguageId;
             }
 
-            $params[] = $existing['id'];
+            $params[] = $existing->id;
             Database::sql(
                 'UPDATE `hilos_analytics_browser_session` SET ' . implode(', ', $updates) . ' WHERE `id` = ?',
                 $params,
             );
 
             $this->browserSessions[$sessionToken] = $existing;
-            return $existing['id'];
+            return $existing->id;
         });
     }
 
+    /**
+     * Persists an external identity (type/value) on the browser session.
+     *
+     * @param string $sessionToken Browser session token; empty is ignored
+     * @param string $type Identity type tag; empty is ignored
+     * @param string $value Identity value; empty is ignored
+     */
     public function setBrowserSessionIdentity(string $sessionToken, string $type, string $value): void
     {
         if ($sessionToken === '' || $type === '' || $value === '') {
@@ -186,6 +215,17 @@ final class AnalyticsCollector
         $this->setBrowserSessionIdentity($sessionToken, self::IDENTITY_TYPE_USER_ID, (string)$userId);
     }
 
+    /**
+     * Opens a WebSocket connection row and caches its state.
+     *
+     * Resolves the owning browser session from the token when present and
+     * records the opening client IP.
+     *
+     * @param string $acceptKey WebSocket accept key; empty yields null
+     * @param ?string $sessionToken Browser session token, or null for anonymous
+     * @param string $clientIp Client IP address (IPv4 or IPv6)
+     * @return ?int WS connection id, or null when the accept key is empty or collection is disabled
+     */
     public function openWsConnection(string $acceptKey, ?string $sessionToken, string $clientIp): ?int
     {
         if ($acceptKey === '') {
@@ -194,7 +234,7 @@ final class AnalyticsCollector
 
         return $this->runSafely(function () use ($acceptKey, $sessionToken, $clientIp): ?int {
             $browserSessionId = $sessionToken !== null && $sessionToken !== ''
-                ? ($this->browserSessions[$sessionToken]['id'] ?? $this->ensureBrowserSession($sessionToken, null, null))
+                ? (($this->browserSessions[$sessionToken] ?? null)?->id ?? $this->ensureBrowserSession($sessionToken, null, null))
                 : null;
 
             $ip = $this->parseIp($clientIp);
@@ -204,21 +244,22 @@ final class AnalyticsCollector
                 'INSERT INTO `hilos_analytics_ws_connection`
                     (`browser_session_id`, `accept_key`, `opened_ipv4`, `opened_ipv6`, `opened_ts`, `closed_ts`)
                  VALUES (?, ?, ?, UNHEX(?), ?, NULL)',
-                [$browserSessionId, $acceptKey, $ip['ipv4'], $ip['ipv6Hex'], $nowTs],
+                [$browserSessionId, $acceptKey, $ip->ipv4, $ip->ipv6Hex, $nowTs],
             );
 
             $id = Database::lastInsertId();
-            $this->wsConnections[$acceptKey] = [
-                'id' => $id,
-                'browserSessionId' => $browserSessionId,
-                'currentIpv4' => $ip['ipv4'],
-                'currentIpv6Hex' => $ip['ipv6Hex'],
-            ];
+            $this->wsConnections[$acceptKey] = new WsConnectionState($id, $browserSessionId, $ip->ipv4, $ip->ipv6Hex);
 
             return $id;
         });
     }
 
+    /**
+     * Records IPv4/IPv6 changes for an open WS connection against its cached state.
+     *
+     * @param string $acceptKey WebSocket accept key; empty is ignored
+     * @param string $clientIp Current client IP address; empty is ignored
+     */
     public function trackWsConnectionIpChange(string $acceptKey, string $clientIp): void
     {
         if ($acceptKey === '' || $clientIp === '') {
@@ -234,30 +275,35 @@ final class AnalyticsCollector
             $parsed = $this->parseIp($clientIp);
             $nowTs = $this->nowTs();
 
-            if ($connection['currentIpv4'] !== $parsed['ipv4']) {
+            if ($connection->currentIpv4 !== $parsed->ipv4) {
                 Database::sql(
                     'INSERT INTO `hilos_analytics_ws_connection_ipv4_change`
                         (`ws_connection_id`, `old_ipv4`, `new_ipv4`, `changed_ts`)
                      VALUES (?, ?, ?, ?)',
-                    [$connection['id'], $connection['currentIpv4'], $parsed['ipv4'], $nowTs],
+                    [$connection->id, $connection->currentIpv4, $parsed->ipv4, $nowTs],
                 );
-                $connection['currentIpv4'] = $parsed['ipv4'];
+                $connection->currentIpv4 = $parsed->ipv4;
             }
 
-            if ($connection['currentIpv6Hex'] !== $parsed['ipv6Hex']) {
+            if ($connection->currentIpv6Hex !== $parsed->ipv6Hex) {
                 Database::sql(
                     'INSERT INTO `hilos_analytics_ws_connection_ipv6_change`
                         (`ws_connection_id`, `old_ipv6`, `new_ipv6`, `changed_ts`)
                      VALUES (?, UNHEX(?), UNHEX(?), ?)',
-                    [$connection['id'], $connection['currentIpv6Hex'], $parsed['ipv6Hex'], $nowTs],
+                    [$connection->id, $connection->currentIpv6Hex, $parsed->ipv6Hex, $nowTs],
                 );
-                $connection['currentIpv6Hex'] = $parsed['ipv6Hex'];
+                $connection->currentIpv6Hex = $parsed->ipv6Hex;
             }
 
             $this->wsConnections[$acceptKey] = $connection;
         });
     }
 
+    /**
+     * Marks an open WS connection closed; no-op when the key is unknown.
+     *
+     * @param string $acceptKey WebSocket accept key; empty is ignored
+     */
     public function closeWsConnection(string $acceptKey): void
     {
         if ($acceptKey === '') {
@@ -272,11 +318,19 @@ final class AnalyticsCollector
 
             Database::sql(
                 'UPDATE `hilos_analytics_ws_connection` SET `closed_ts` = ? WHERE `id` = ?',
-                [$this->nowTs(), $connection['id']],
+                [$this->nowTs(), $connection->id],
             );
         });
     }
 
+    /**
+     * Opens a page session on a WS connection, closing any prior one first.
+     *
+     * @param string $acceptKey WebSocket accept key; empty yields null
+     * @param string $pageName Page name being opened; empty yields null
+     * @param ?array<string, mixed> $params Page route params, or null
+     * @return ?int Page session id, or null when the connection is unknown or collection is disabled
+     */
     public function openPageSession(string $acceptKey, string $pageName, ?array $params = null): ?int
     {
         if ($acceptKey === '' || $pageName === '') {
@@ -298,7 +352,7 @@ final class AnalyticsCollector
                 'INSERT INTO `hilos_analytics_page_session`
                     (`ws_connection_id`, `page_id`, `page_params_id`, `opened_ts`, `closed_ts`)
                  VALUES (?, ?, ?, ?, NULL)',
-                [$connection['id'], $pageId, $pageParamsId, $this->nowTs()],
+                [$connection->id, $pageId, $pageParamsId, $this->nowTs()],
             );
 
             $id = Database::lastInsertId();
@@ -308,6 +362,12 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Updates the route params of the current page session.
+     *
+     * @param string $acceptKey WebSocket accept key; empty is ignored
+     * @param ?array<string, mixed> $params New page route params, or null
+     */
     public function updatePageSession(string $acceptKey, ?array $params): void
     {
         if ($acceptKey === '') {
@@ -327,6 +387,11 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Marks the current page session closed and drops it from the cache.
+     *
+     * @param string $acceptKey WebSocket accept key; empty is ignored
+     */
     public function closePageSession(string $acceptKey): void
     {
         if ($acceptKey === '') {
@@ -348,6 +413,13 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Opens a worker session row and stores it as the active worker session.
+     *
+     * @param int $workerIndex Worker index within the daemon
+     * @param bool $isMonopolistic Whether the worker runs monopolistic agents
+     * @return ?int Worker session id, or null when collection is disabled
+     */
     public function openWorkerSession(int $workerIndex, bool $isMonopolistic): ?int
     {
         return $this->runSafely(function () use ($workerIndex, $isMonopolistic): ?int {
@@ -363,6 +435,9 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Marks the active worker session stopped; no-op when none is open.
+     */
     public function closeWorkerSession(): void
     {
         $this->runSafely(function (): void {
@@ -377,6 +452,13 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Opens an agent session under the active worker session and caches it.
+     *
+     * @param string $agentType Agent type identifier; empty yields null
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @return ?int Agent session id, or null when there is no worker session or collection is disabled
+     */
     public function openAgentSession(string $agentType, ?string $agentIndex): ?int
     {
         if ($agentType === '' || $this->workerSessionId === null) {
@@ -398,6 +480,12 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Marks an agent session stopped and drops it from the cache.
+     *
+     * @param string $agentType Agent type identifier; empty is ignored
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     */
     public function closeAgentSession(string $agentType, ?string $agentIndex): void
     {
         if ($agentType === '') {
@@ -420,6 +508,14 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Persists a user action against the WS connection and current page session.
+     *
+     * @param string $acceptKey WebSocket accept key; empty yields null
+     * @param string $actionName Client action name; empty yields null
+     * @param ?array<string, mixed> $payload Action payload, or null
+     * @return ?int User action id, or null when the connection is unknown or collection is disabled
+     */
     public function logUserAction(string $acceptKey, string $actionName, ?array $payload): ?int
     {
         if ($acceptKey === '' || $actionName === '') {
@@ -437,7 +533,7 @@ final class AnalyticsCollector
                     (`ws_connection_id`, `page_session_id`, `action_name_id`, `payload_json_id`, `created_ts`)
                  VALUES (?, ?, ?, ?, ?)',
                 [
-                    $connection['id'],
+                    $connection->id,
                     $this->pageSessions[$acceptKey] ?? null,
                     $this->ensureActionName($actionName),
                     $this->ensurePayloadJson($payload),
@@ -449,6 +545,15 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Buffers an agent reaction to a user action for the next flush.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @param ?int $userActionId Originating user action id, or null when uncorrelated
+     * @param string $signalName Signal name handled by the agent; empty is ignored
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     */
     public function logAgentUserAction(string $agentType, ?string $agentIndex, ?int $userActionId, string $signalName, ?array $payload): void
     {
         if ($signalName === '') {
@@ -471,6 +576,14 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Buffers an agent system-signal event for the next flush.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @param string $signalName System signal name; empty is ignored
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     */
     public function logAgentSystemSignal(string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
         if ($signalName === '') {
@@ -492,6 +605,14 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Buffers an agent cron-signal event for the next flush.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @param string $cronName Cron job name; empty is ignored
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     */
     public function logAgentCronSignal(string $agentType, ?string $agentIndex, string $cronName, ?array $payload): void
     {
         if ($cronName === '') {
@@ -513,6 +634,12 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Buffers a worker system-signal event for the next flush.
+     *
+     * @param string $signalName System signal name; empty is ignored
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     */
     public function logWorkerSystemSignal(string $signalName, ?array $payload): void
     {
         if ($signalName === '') {
@@ -533,6 +660,17 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Opens an API request row, resolving its browser session, and marks it active.
+     *
+     * @param ?string $sessionToken Browser session token, or null for anonymous
+     * @param string $method HTTP method
+     * @param string $path Request path
+     * @param ?array<string, mixed> $params Request params, or null
+     * @param ?string $userAgent Raw User-Agent header, or null
+     * @param ?string $acceptLanguage Raw Accept-Language header, or null
+     * @return ?int API request id, or null when collection is disabled
+     */
     public function startApiRequest(?string $sessionToken, string $method, string $path, ?array $params, ?string $userAgent, ?string $acceptLanguage): ?int
     {
         return $this->runSafely(function () use ($sessionToken, $method, $path, $params, $userAgent, $acceptLanguage): ?int {
@@ -550,6 +688,13 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Finalizes an API request row with status, duration and finish time.
+     *
+     * @param ?int $apiRequestId API request id; null is ignored
+     * @param ?int $statusCode HTTP status code, or null
+     * @param ?int $durationMs Request duration in milliseconds, or null
+     */
     public function finishApiRequest(?int $apiRequestId, ?int $statusCode, ?int $durationMs): void
     {
         if ($apiRequestId === null) {
@@ -570,6 +715,15 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Buffers an agent action triggered by an API request for the next flush.
+     *
+     * @param int $apiRequestId Originating API request id
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @param string $signalName Signal name dispatched to the agent; empty is ignored
+     * @param ?array<string, mixed> $payload Signal payload, or null
+     */
     public function logApiAgentAction(int $apiRequestId, string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
         if ($signalName === '') {
@@ -592,6 +746,12 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Returns the dictionary id for a User-Agent value, inserting it on first use.
+     *
+     * @param ?string $value Raw User-Agent header; null/empty yields null
+     * @return ?int Dictionary id, or null when empty or collection is disabled
+     */
     public function ensureUserAgent(?string $value): ?int
     {
         if ($value === null || $value === '') {
@@ -606,6 +766,12 @@ final class AnalyticsCollector
         );
     }
 
+    /**
+     * Returns the dictionary id for an Accept-Language value, inserting it on first use.
+     *
+     * @param ?string $value Raw Accept-Language header; null/empty yields null
+     * @return ?int Dictionary id, or null when empty or collection is disabled
+     */
     public function ensureAcceptLanguage(?string $value): ?int
     {
         if ($value === null || $value === '') {
@@ -620,6 +786,12 @@ final class AnalyticsCollector
         );
     }
 
+    /**
+     * Returns the dictionary id for a page name, inserting it on first use.
+     *
+     * @param string $pageName Page name
+     * @return int Dictionary id (0 when collection is disabled)
+     */
     public function ensurePage(string $pageName): int
     {
         if (isset($this->pageIds[$pageName])) {
@@ -643,43 +815,83 @@ final class AnalyticsCollector
         }, 0);
     }
 
+    /**
+     * Returns the dictionary id for normalized page params, inserting it on first use.
+     *
+     * @param ?array<string, mixed> $params Page route params; null/empty yields null
+     * @return ?int Dictionary id, or null when empty or collection is disabled
+     */
     public function ensurePageParams(?array $params): ?int
     {
         return $this->ensureJsonDictionaryValue($params, 'hilos_analytics_page_params', 'params_json', $this->pageParamsIds);
     }
 
+    /**
+     * Returns the dictionary id for an action name, inserting it on first use.
+     *
+     * @param string $name Action name
+     * @return int Dictionary id (0 when collection is disabled)
+     */
     public function ensureActionName(string $name): int
     {
         return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_action_name', $this->actionNameIds);
     }
 
+    /**
+     * Returns the dictionary id for a signal name, inserting it on first use.
+     *
+     * @param string $name Signal name
+     * @return int Dictionary id (0 when collection is disabled)
+     */
     public function ensureSignalName(string $name): int
     {
         return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_signal_name', $this->signalNameIds);
     }
 
+    /**
+     * Returns the dictionary id for a cron name, inserting it on first use.
+     *
+     * @param string $name Cron job name
+     * @return int Dictionary id (0 when collection is disabled)
+     */
     public function ensureCronName(string $name): int
     {
         return $this->ensureNamedDictionaryValue($name, 'hilos_analytics_cron_name', $this->cronNameIds);
     }
 
+    /**
+     * Returns the dictionary id for a normalized JSON payload, inserting it on first use.
+     *
+     * @param ?array<string, mixed> $payload Payload; null/empty yields null
+     * @return ?int Dictionary id, or null when empty or collection is disabled
+     */
     public function ensurePayloadJson(?array $payload): ?int
     {
         return $this->ensureJsonDictionaryValue($payload, 'hilos_analytics_payload_json', 'payload_json', $this->payloadIds);
     }
 
+    /**
+     * Sets the active user action id used to correlate subsequent signals.
+     *
+     * @param ?int $userActionId User action id to correlate, or null to clear
+     */
     public function startUserActionCapture(?int $userActionId): void
     {
         $this->activeUserActionId = $userActionId;
     }
 
+    /**
+     * Clears the active user action correlation id.
+     */
     public function clearUserActionCapture(): void
     {
         $this->activeUserActionId = null;
     }
 
     /**
-     * @return array<string, int>
+     * Builds correlation metadata for an outgoing signal from the active ids.
+     *
+     * @return array<string, int> Meta keyed by META_* constants; empty when nothing is active
      */
     public function captureSignalMeta(): array
     {
@@ -696,6 +908,13 @@ final class AnalyticsCollector
         return $meta;
     }
 
+    /**
+     * Reads an integer correlation value from signal metadata.
+     *
+     * @param SignalDTO $signal Signal carrying meta
+     * @param string $key Meta key (a META_* constant)
+     * @return ?int Integer value, or null when absent or non-numeric
+     */
     public function getSignalMetaInt(SignalDTO $signal, string $key): ?int
     {
         $value = $signal->meta[$key] ?? null;
@@ -706,6 +925,9 @@ final class AnalyticsCollector
         return is_numeric($value) ? (int)$value : null;
     }
 
+    /**
+     * Flushes buffered rows when the flush interval has elapsed.
+     */
     public function tick(): void
     {
         if (!$this->enabled) {
@@ -717,6 +939,9 @@ final class AnalyticsCollector
         }
     }
 
+    /**
+     * Writes all buffered rows in batched inserts and resets the flush timer.
+     */
     public function flush(): void
     {
         $this->runSafely(function (): void {
@@ -733,6 +958,9 @@ final class AnalyticsCollector
         });
     }
 
+    /**
+     * Flushes remaining rows and clears active correlation ids.
+     */
     public function shutdown(): void
     {
         $this->flush();
@@ -740,6 +968,14 @@ final class AnalyticsCollector
         $this->activeUserActionId = null;
     }
 
+    /**
+     * Returns the cached or inserted id for a name-keyed dictionary table.
+     *
+     * @param string $name Lookup name
+     * @param string $table Dictionary table name
+     * @param array<string, int> $cache By-name id cache, updated in place
+     * @return int Dictionary id (0 when collection is disabled)
+     */
     private function ensureNamedDictionaryValue(string $name, string $table, array &$cache): int
     {
         if (isset($cache[$name])) {
@@ -764,7 +1000,13 @@ final class AnalyticsCollector
     }
 
     /**
-     * @param array<string, int> $cache
+     * Returns the cached or inserted id for a SHA-1-deduplicated dictionary table.
+     *
+     * @param string $table Dictionary table name
+     * @param string $valueColumn Column holding the raw value
+     * @param string $value Raw value deduplicated by hash
+     * @param array<string, int> $cache By-value id cache, updated in place
+     * @return ?int Dictionary id, or null when collection is disabled
      */
     private function ensureHashedDictionaryValue(string $table, string $valueColumn, string $value, array &$cache): ?int
     {
@@ -795,7 +1037,13 @@ final class AnalyticsCollector
     }
 
     /**
-     * @param array<string, int> $cache
+     * Returns the cached or inserted id for a SHA-1-deduplicated JSON dictionary table.
+     *
+     * @param ?array<string, mixed> $value Value to normalize and store; null/empty yields null
+     * @param string $table Dictionary table name
+     * @param string $column Column holding the JSON text
+     * @param array<string, int> $cache By-JSON id cache, updated in place
+     * @return ?int Dictionary id, or null when empty or collection is disabled
      */
     private function ensureJsonDictionaryValue(?array $value, string $table, string $column, array &$cache): ?int
     {
@@ -831,14 +1079,14 @@ final class AnalyticsCollector
     }
 
     /**
-     * Load browser session by token.
+     * Loads and caches the browser session row for a token.
      *
      * @param string $sessionToken Session token
-     * @return array<string, int|null>|null Associative array with id, currentUserAgentId, currentAcceptLanguageId or null
+     * @return ?BrowserSessionState Cached state, or null when absent or collection is disabled
      */
-    private function loadBrowserSession(string $sessionToken): ?array
+    private function loadBrowserSession(string $sessionToken): ?BrowserSessionState
     {
-        return $this->runSafely(function () use ($sessionToken): ?array {
+        return $this->runSafely(function () use ($sessionToken): ?BrowserSessionState {
             Database::sql(
                 'SELECT `id`, `current_user_agent_id`, `current_accept_language_id`
                  FROM `hilos_analytics_browser_session`
@@ -852,29 +1100,46 @@ final class AnalyticsCollector
                 return null;
             }
 
-            $result = [
-                'id' => (int)$row['id'],
-                'currentUserAgentId' => isset($row['current_user_agent_id']) ? (int)$row['current_user_agent_id'] : null,
-                'currentAcceptLanguageId' => isset($row['current_accept_language_id']) ? (int)$row['current_accept_language_id'] : null,
-            ];
-            $this->browserSessions[$sessionToken] = $result;
+            $session = new BrowserSessionState(
+                (int)$row['id'],
+                isset($row['current_user_agent_id']) ? (int)$row['current_user_agent_id'] : null,
+                isset($row['current_accept_language_id']) ? (int)$row['current_accept_language_id'] : null,
+            );
+            $this->browserSessions[$sessionToken] = $session;
 
-            return $result;
+            return $session;
         });
     }
 
+    /**
+     * Returns the cached agent session id for a type/index pair, or null.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @return ?int Cached agent session id, or null when not open
+     */
     private function getAgentSessionId(string $agentType, ?string $agentIndex): ?int
     {
         return $this->agentSessions[$this->buildAgentKey($agentType, $agentIndex)] ?? null;
     }
 
+    /**
+     * Builds the cache key for an agent type/index pair.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent instance index, or null for a singleton agent
+     * @return string Composite cache key
+     */
     private function buildAgentKey(string $agentType, ?string $agentIndex): string
     {
         return $agentType . '::' . ($agentIndex ?? '');
     }
 
     /**
-     * @param array<string, int|string|null> $row
+     * Appends a row to a table buffer and flushes when the size threshold is hit.
+     *
+     * @param string $table Target analytics table name
+     * @param array<string, int|string|null> $row Column-keyed row payload
      */
     private function queueBufferedInsert(string $table, array $row): void
     {
@@ -885,6 +1150,11 @@ final class AnalyticsCollector
         }
     }
 
+    /**
+     * Returns the total number of rows currently buffered across all tables.
+     *
+     * @return int Buffered row count
+     */
     private function getBufferedRowsCount(): int
     {
         $count = 0;
@@ -895,7 +1165,10 @@ final class AnalyticsCollector
     }
 
     /**
-     * @param list<array<string, int|string|null>> $rows
+     * Writes buffered rows for one table in a single multi-row insert.
+     *
+     * @param string $table Target analytics table name
+     * @param list<array<string, int|string|null>> $rows Column-keyed rows to insert
      */
     private function bulkInsert(string $table, array $rows): void
     {
@@ -926,41 +1199,54 @@ final class AnalyticsCollector
     }
 
     /**
-     * Parse IP address to IPv4 or IPv6 components.
+     * Parses an IP address into its IPv4 or IPv6 representation.
      *
-     * @param string $ip IP address string
-     * @return array<string, int|string|null> Associative array with ipv4 (int|null) and ipv6Hex (string|null) keys
+     * @param string $ip IP address string; empty or invalid yields a null/null result
+     * @return ParsedIp Parsed components (exactly one set for a valid address)
      */
-    private function parseIp(string $ip): array
+    private function parseIp(string $ip): ParsedIp
     {
         if ($ip === '') {
-            return ['ipv4' => null, 'ipv6Hex' => null];
+            return new ParsedIp(null, null);
         }
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             $ipv4 = ip2long($ip);
-            return [
-                'ipv4' => $ipv4 === false ? null : (int)sprintf('%u', $ipv4),
-                'ipv6Hex' => null,
-            ];
+            return new ParsedIp(
+                $ipv4 === false ? null : (int)sprintf('%u', $ipv4),
+                null,
+            );
         }
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $binary = inet_pton($ip);
-            return [
-                'ipv4' => null,
-                'ipv6Hex' => $binary === false ? null : bin2hex($binary),
-            ];
+            return new ParsedIp(
+                null,
+                $binary === false ? null : bin2hex($binary),
+            );
         }
 
-        return ['ipv4' => null, 'ipv6Hex' => null];
+        return new ParsedIp(null, null);
     }
 
+    /**
+     * Returns the current timestamp in milliseconds.
+     *
+     * @return int Current Unix time in milliseconds
+     */
     private function nowTs(): int
     {
         return (int)floor(microtime(true) * 1000);
     }
 
+    /**
+     * Normalizes an array to canonical JSON for stable hashing.
+     *
+     * Recursively sorts associative keys so equivalent payloads hash identically.
+     *
+     * @param ?array<string, mixed> $value Value to encode; null/empty yields null
+     * @return ?string Canonical JSON, or null when empty or not encodable
+     */
     private function normalizeJson(?array $value): ?string
     {
         if ($value === null || $value === []) {
@@ -973,6 +1259,12 @@ final class AnalyticsCollector
         return $json === false ? null : $json;
     }
 
+    /**
+     * Recursively sorts associative arrays by key, leaving lists in order.
+     *
+     * @param mixed $value Value to sort
+     * @return mixed Value with associative arrays key-sorted
+     */
     private function sortRecursive(mixed $value): mixed
     {
         if (!is_array($value)) {
@@ -990,6 +1282,17 @@ final class AnalyticsCollector
         return $value;
     }
 
+    /**
+     * Runs a collector operation, containing any failure.
+     *
+     * Returns the default immediately when the collector is disabled. On any
+     * throwable, disables the collector for the rest of the process, logs the
+     * error, and returns the default instead of propagating.
+     *
+     * @param callable $callback Operation to run
+     * @param mixed $default Value returned when disabled or on failure
+     * @return mixed The callback result, or the default
+     */
     private function runSafely(callable $callback, mixed $default = null): mixed
     {
         if (!$this->enabled) {
