@@ -10,5 +10,4 @@ namespace Hilos\Core\Browser\Config;
 final class BrowserGuardType
 {
     public const string DB_EXISTS = 'db_exists';
-    public const string PERMISSION = 'permission';
 }

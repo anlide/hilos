@@ -22,6 +22,7 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
@@ -45,10 +46,10 @@ use Throwable;
  */
 abstract class BrowserContext
 {
+    protected SourceChangeSet $changes;
+
     /** @var class-string<Hilos> Active project facade class for topology registry reads. */
     private string $hilosClass = Hilos::class;
-
-    protected SourceChangeSet $changes;
 
     /**
      * Starts with an empty worker-local browser source-change buffer.
@@ -329,6 +330,7 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $tableParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
+     * @return mixed Computed browser field value, or null when the field is unknown
      */
     protected function computeBrowserField(
         string $tableKey,
@@ -1280,14 +1282,16 @@ abstract class BrowserContext
      * @param BrowserPageConfig $pageConfig Browser page config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @throws PageSubscriptionException When a guard rejects the subscription
+     * @throws PageSubscriptionException When a guard rejects the subscription or declares an unsupported type
      */
     private function assertPageGuards(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
     {
         foreach ($pageConfig->guardConfigs() as $guard) {
-            if (($guard[BrowserGuardKey::TYPE] ?? '') === BrowserGuardType::DB_EXISTS) {
-                $this->assertDbExistsGuard($guard, $acceptKey, $pageParams);
+            if (($guard[BrowserGuardKey::TYPE] ?? '') !== BrowserGuardType::DB_EXISTS) {
+                throw new PageInternalErrorException('Unsupported browser guard type');
             }
+
+            $this->assertDbExistsGuard($guard, $acceptKey, $pageParams);
         }
     }
 
@@ -1338,8 +1342,8 @@ abstract class BrowserContext
         int|string $rowKey,
         array $row,
     ): void {
-        unset($signalTables[$acceptKey][$signalName][$tableKey]['deleted'][(string) $rowKey]);
-        $signalTables[$acceptKey][$signalName][$tableKey]['rows'][(string) $rowKey] = $row;
+        unset($signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey]);
+        $signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::rows][(string) $rowKey] = $row;
     }
 
     /**
@@ -1358,8 +1362,8 @@ abstract class BrowserContext
         string $tableKey,
         int|string $rowKey,
     ): void {
-        unset($signalTables[$acceptKey][$signalName][$tableKey]['rows'][(string) $rowKey]);
-        $signalTables[$acceptKey][$signalName][$tableKey]['deleted'][(string) $rowKey] = $rowKey;
+        unset($signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::rows][(string) $rowKey]);
+        $signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey] = $rowKey;
     }
 
     /**
@@ -1374,8 +1378,8 @@ abstract class BrowserContext
         foreach ($signalTables as $acceptKey => $signals) {
             foreach ($signals as $signalName => $tables) {
                 foreach ($tables as $tableKey => $changes) {
-                    $rows = $changes['rows'] ?? [];
-                    $deleted = $changes['deleted'] ?? [];
+                    $rows = $changes[BrowserPageSignalData::rows] ?? [];
+                    $deleted = $changes[BrowserPageSignalData::deleted] ?? [];
                     $payload = [];
                     if ($rows !== []) {
                         $payload[BrowserPageSignalData::rows] = array_values($rows);

@@ -13,6 +13,4 @@ final class BrowserGuardKey
     public const string SOURCE = 'source';
     public const string KEY = 'key';
     public const string ERROR = 'error';
-    public const string PERMISSION = 'permission';
-    public const string SUBJECT = 'subject';
 }
