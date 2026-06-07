@@ -18,7 +18,7 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_GUARDIAN;
 
     /**
-     * @var array<string, array{status: GuardianRunStatus, completeAt: ?float, generation: int}>
+     * @var array<string, GuardianRunState>
      */
     private array $guardianRunStates = [];
 
@@ -31,9 +31,10 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     {
         $this->initializeGuardianRunStates();
 
-        return array_map(function ($state) {
-            return $state['status']->value;
-        }, $this->guardianRunStates);
+        return array_map(
+            static fn (GuardianRunState $state): string => $state->status->value,
+            $this->guardianRunStates,
+        );
     }
 
     /**
@@ -64,14 +65,16 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
         }
 
         $state = $this->guardianRunStates[$agentId];
-        $state['generation']++;
-        $state['status'] = GuardianRunStatus::IN_PROGRESS;
-        $state['completeAt'] = microtime(true) + 5.0;
-        $this->guardianRunStates[$agentId] = $state;
+        $updated = new GuardianRunState(
+            GuardianRunStatus::IN_PROGRESS,
+            microtime(true) + 5.0,
+            $state->generation + 1,
+        );
+        $this->guardianRunStates[$agentId] = $updated;
 
-        $this->broadcastGuardianRunStatus($agentId, $state['status']);
+        $this->broadcastGuardianRunStatus($agentId, $updated->status);
 
-        return $state['status'];
+        return $updated->status;
     }
 
     /**
@@ -89,18 +92,20 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
         }
 
         $state = $this->guardianRunStates[$agentId];
-        if ($state['status'] !== GuardianRunStatus::IN_PROGRESS) {
-            return $state['status'];
+        if ($state->status !== GuardianRunStatus::IN_PROGRESS) {
+            return $state->status;
         }
 
-        $state['generation']++;
-        $state['status'] = GuardianRunStatus::STOPPED;
-        $state['completeAt'] = null;
-        $this->guardianRunStates[$agentId] = $state;
+        $updated = new GuardianRunState(
+            GuardianRunStatus::STOPPED,
+            null,
+            $state->generation + 1,
+        );
+        $this->guardianRunStates[$agentId] = $updated;
 
-        $this->broadcastGuardianRunStatus($agentId, $state['status']);
+        $this->broadcastGuardianRunStatus($agentId, $updated->status);
 
-        return $state['status'];
+        return $updated->status;
     }
 
     /**
@@ -116,17 +121,19 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
 
         foreach ($this->guardianRunStates as $agentId => $state) {
             if (
-                $state['status'] !== GuardianRunStatus::IN_PROGRESS
-                || $state['completeAt'] === null
-                || $state['completeAt'] > $now
+                $state->status !== GuardianRunStatus::IN_PROGRESS
+                || $state->completeAt === null
+                || $state->completeAt > $now
             ) {
                 continue;
             }
 
             $nextStatus = RandomHelper::integer(0, 1) === 0 ? GuardianRunStatus::DONE : GuardianRunStatus::FAILED;
-            $state['status'] = $nextStatus;
-            $state['completeAt'] = null;
-            $this->guardianRunStates[$agentId] = $state;
+            $this->guardianRunStates[$agentId] = new GuardianRunState(
+                $nextStatus,
+                null,
+                $state->generation,
+            );
 
             $this->broadcastGuardianRunStatus($agentId, $nextStatus);
         }
@@ -157,11 +164,11 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
         }
 
         foreach ($this->getKnownGuardianAgentIds() as $agentId) {
-            $this->guardianRunStates[$agentId] = [
-                'status' => GuardianRunStatus::NOT_STARTED,
-                'completeAt' => null,
-                'generation' => 0,
-            ];
+            $this->guardianRunStates[$agentId] = new GuardianRunState(
+                GuardianRunStatus::NOT_STARTED,
+                null,
+                0,
+            );
         }
     }
 

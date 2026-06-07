@@ -8,6 +8,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -33,12 +34,6 @@ use Hilos\Utils\Logger;
  */
 abstract class AgentManagerDaemon
 {
-    /** @var string Worker index key in getAgentWorkerInfo() / extractWorkerInfo() result */
-    public const string WORKER_INFO_INDEX = 'workerIndex';
-
-    /** @var string Monopolistic flag key in getAgentWorkerInfo() / extractWorkerInfo() result */
-    public const string WORKER_INFO_IS_MONOPOLISTIC = 'isMonopolistic';
-
     /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
     protected array $agentDaemons = [];
 
@@ -58,8 +53,6 @@ abstract class AgentManagerDaemon
     abstract protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface;
 
     /**
-     * Build agent ID from type and index
-     *
      * @param ?string $agentType Agent type (null for non-agent sources like DB sync)
      * @param ?string $agentIndex Agent index (optional)
      * @return ?string Agent ID (format: "type" or "type:index") or null if agentType is null
@@ -73,8 +66,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Calculate workerId from worker index and monopolistic flag
-     *
      * @param int $workerIndex Worker index
      * @param bool $isMonopolistic True if worker is monopolistic
      * @return int Worker ID (negative = monopolistic, positive = regular)
@@ -85,22 +76,17 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Extract worker info from workerId.
+     * Derives worker placement from a workerId.
      *
-     * @param int $workerId Worker ID
-     * @return array<string, int|bool> Associative array with 'workerIndex' (int) and 'isMonopolistic' (bool) keys
+     * @param int $workerId Worker ID (negative = monopolistic, positive = regular)
+     * @return WorkerInfo Worker index and monopolistic flag
      */
-    public function extractWorkerInfo(int $workerId): array
+    public function extractWorkerInfo(int $workerId): WorkerInfo
     {
-        return [
-            self::WORKER_INFO_INDEX => abs($workerId),
-            self::WORKER_INFO_IS_MONOPOLISTIC => $workerId < 0,
-        ];
+        return new WorkerInfo(abs($workerId), $workerId < 0);
     }
 
     /**
-     * Add agent daemon to manager
-     *
      * @param string $agentId Agent ID
      * @param AgentDaemonInterface $agentDaemon Agent daemon instance
      * @param int $workerIndex Worker index
@@ -113,8 +99,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Remove agent daemon from manager
-     *
      * @param string $agentId Agent ID
      */
     public function removeAgent(string $agentId): void
@@ -124,8 +108,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get agent daemon by ID
-     *
      * @param string $agentId Agent ID
      * @return ?AgentDaemonInterface Agent daemon instance or null if not found
      */
@@ -135,8 +117,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get worker ID for agent
-     *
      * @param string $agentId Agent ID
      * @return ?int Worker ID (negative = monopolistic, positive = regular) or null if not found
      */
@@ -146,12 +126,12 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get worker info for agent.
+     * Returns worker placement for an agent, or null when the agent is not mapped to a worker.
      *
      * @param string $agentId Agent ID
-     * @return array<string, int|bool>|null Associative array with 'workerIndex' (int) and 'isMonopolistic' (bool) keys, or null if not found
+     * @return ?WorkerInfo Worker index and monopolistic flag, or null if not found
      */
-    public function getAgentWorkerInfo(string $agentId): ?array
+    public function getAgentWorkerInfo(string $agentId): ?WorkerInfo
     {
         $workerId = $this->getAgentWorkerId($agentId);
         if ($workerId === null) {
@@ -162,8 +142,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Check if agent exists
-     *
      * @param string $agentId Agent ID
      * @return bool True if agent exists
      */
@@ -173,8 +151,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get all agent daemons
-     *
      * @return array<string, AgentDaemonInterface> All agent daemons indexed by agent ID
      */
     public function getAgents(): array
@@ -183,8 +159,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get agent count
-     *
      * @return int Number of active agent daemons
      */
     public function getAgentCount(): int
@@ -193,8 +167,6 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get agent count on specific worker
-     *
      * @param int $workerIndex Worker index
      * @param bool $isMonopolistic True if worker is monopolistic
      * @return int Number of agents on worker
@@ -214,15 +186,13 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Create and add agent daemon
-     *
-     * Factory method that creates agent daemon and adds it to manager.
+     * Returns the agent daemon already registered for this id, or creates and registers a new one.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param int $workerIndex Worker index
      * @param bool $isMonopolistic True if worker is monopolistic
-     * @return AgentDaemonInterface Created agent daemon instance
+     * @return AgentDaemonInterface Created or existing agent daemon instance
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      */
     public function createAndAddAgent(string $agentType, ?string $agentIndex, int $workerIndex, bool $isMonopolistic): AgentDaemonInterface
@@ -242,12 +212,10 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle agent_started signal from worker
-     *
-     * Creates or updates agent daemon and links it to worker client.
+     * Runs the daemon-side onStart hook for an already-registered agent and logs it.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
-     * @throws AgentDaemonCreationFailedException If agent daemon does not exist in manager
+     * @throws AgentDaemonNotRegisteredException When the worker reports an agent the manager never registered
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {
@@ -255,7 +223,7 @@ abstract class AgentManagerDaemon
 
         // The worker only reports agents the daemon already registered; a missing one is a registration bug
         if (!$this->hasAgent($agentId)) {
-            throw new AgentDaemonCreationFailedException("Agent daemon '{$agentId}' does not exist in daemon manager.");
+            throw new AgentDaemonNotRegisteredException($agentId);
         }
 
         $agentDaemon = $this->getAgent($agentId);

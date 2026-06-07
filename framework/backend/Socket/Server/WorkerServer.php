@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotFoundException;
@@ -186,18 +187,14 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Parse agent ID to extract type and index.
+     * Parses an agent ID into its type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
-     * @return array<string, string|null> Parsed agent type and index (keys: agentType, agentIndex)
+     * @return AgentId Parsed agent identity
      */
-    final protected function parseAgentId(string $agentId): array
+    final protected function parseAgentId(string $agentId): AgentId
     {
-        $parts = explode(AgentConstants::ID_SEPARATOR, $agentId, AgentConstants::ID_MAX_PARTS);
-        return [
-            AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
-            AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,
-        ];
+        return AgentId::fromId($agentId);
     }
 
     /**
@@ -778,7 +775,7 @@ abstract class WorkerServer extends AbstractServer
         }
 
         $agentDaemon = $this->agentManager->getAgent($agentId)
-            ?? throw new AgentDaemonCreationFailedException("Failed to create agent daemon for {$agentId}");
+            ?? throw new AgentDaemonCreationFailedException($agentType, $agentIndex);
 
         // Select appropriate worker
         $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
@@ -912,8 +909,8 @@ abstract class WorkerServer extends AbstractServer
 
         // Parse agentId to get type and index for startAgent if needed
         $parsed = $this->parseAgentId($agentId);
-        $parsedAgentType = $parsed[AgentConstants::FIELD_AGENT_TYPE];
-        $parsedAgentIndex = $parsed[AgentConstants::FIELD_AGENT_INDEX];
+        $parsedAgentType = $parsed->type;
+        $parsedAgentIndex = $parsed->index;
 
         // If agent doesn't exist or not linked to worker, try to start it
         if (!$this->agentManager->hasAgent($agentId)) {
@@ -941,7 +938,7 @@ abstract class WorkerServer extends AbstractServer
         $workerClient = $agentDaemon->getWorkerClient();
         if ($workerClient === null) {
             $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId))
-                ?? throw new WorkerClientNotFoundException($agentId, $workerInfo[AgentManagerDaemon::WORKER_INFO_INDEX], $workerInfo[AgentManagerDaemon::WORKER_INFO_IS_MONOPOLISTIC]);
+                ?? throw new WorkerClientNotFoundException($agentId, $workerInfo->workerIndex, $workerInfo->isMonopolistic);
 
             $agentDaemon->setWorkerClient($workerClient);
         }
@@ -969,8 +966,8 @@ abstract class WorkerServer extends AbstractServer
         }
 
         $workerId = $this->agentManager->calculateWorkerId(
-            $workerInfo[AgentManagerDaemon::WORKER_INFO_INDEX],
-            $workerInfo[AgentManagerDaemon::WORKER_INFO_IS_MONOPOLISTIC],
+            $workerInfo->workerIndex,
+            $workerInfo->isMonopolistic,
         );
         $workerClient = $this->findWorkerClientById($workerId);
         if ($workerClient === null) {

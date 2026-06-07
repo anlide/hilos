@@ -59,8 +59,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     private bool $shouldStop = false;
 
     /**
-     * Get agent type identifier.
-     *
      * @return string Agent type from AGENT_TYPE constant
      */
     public function getType(): string
@@ -69,8 +67,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Get agent index (optional identifier for multi-instance agents).
-     *
      * @return ?string Agent index or null for singleton agents
      */
     public function getIndex(): ?string
@@ -95,8 +91,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Get signal source for this agent.
-     *
      * @return SignalSourceInterface Agent signal source
      */
     public function getAgentSignalSource(): SignalSourceInterface
@@ -264,8 +258,6 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Check if agent has requested stop.
-     *
      * @return bool True if agent has requested stop
      */
     public function shouldStop(): bool

@@ -424,8 +424,8 @@ abstract class WorkerManager extends BaseManager
 
         // Parse agentId to extract agentType and agentIndex
         $parsed = $this->agentManager->parseAgentId($agentId);
-        $agentType = $parsed[AgentConstants::FIELD_AGENT_TYPE];
-        $agentIndex = $parsed[AgentConstants::FIELD_AGENT_INDEX];
+        $agentType = $parsed->type;
+        $agentIndex = $parsed->index;
 
         // Create agent using factory method
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);

@@ -47,23 +47,17 @@ abstract class AgentManager
     }
 
     /**
-     * Parse agent ID to extract type and index.
+     * Parses an agent ID into its type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
-     * @return array<string, string|null> Associative array with agent type and index field keys
+     * @return AgentId Parsed agent identity
      */
-    public function parseAgentId(string $agentId): array
+    public function parseAgentId(string $agentId): AgentId
     {
-        $parts = explode(AgentConstants::ID_SEPARATOR, $agentId, AgentConstants::ID_MAX_PARTS);
-        return [
-            AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
-            AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,
-        ];
+        return AgentId::fromId($agentId);
     }
 
     /**
-     * Add agent to manager.
-     *
      * @param string $agentId Agent ID
      * @param AgentInterface $agent Agent instance
      */
@@ -73,8 +67,6 @@ abstract class AgentManager
     }
 
     /**
-     * Remove agent from manager.
-     *
      * @param string $agentId Agent ID
      */
     public function removeAgent(string $agentId): void
@@ -83,8 +75,6 @@ abstract class AgentManager
     }
 
     /**
-     * Get agent by ID.
-     *
      * @param string $agentId Agent ID
      * @return ?AgentInterface Agent instance or null if not found
      */
@@ -94,8 +84,6 @@ abstract class AgentManager
     }
 
     /**
-     * Check if agent exists.
-     *
      * @param string $agentId Agent ID
      * @return bool True if agent exists
      */
@@ -105,8 +93,6 @@ abstract class AgentManager
     }
 
     /**
-     * Get all agents.
-     *
      * @return array<string, AgentInterface> All agents indexed by agent ID
      */
     public function getAgents(): array
@@ -115,8 +101,6 @@ abstract class AgentManager
     }
 
     /**
-     * Get agent count.
-     *
      * @return int Number of active agents
      */
     public function getAgentCount(): int
@@ -125,13 +109,11 @@ abstract class AgentManager
     }
 
     /**
-     * Create and add agent.
-     *
-     * Factory method that creates agent and adds it to manager.
+     * Returns the agent already registered for this id, or creates and registers a new one.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return AgentInterface Created agent instance
+     * @return AgentInterface Created or existing agent instance
      * @throws AgentCreationFailedException If agent cannot be created
      */
     public function createAndAddAgent(string $agentType, ?string $agentIndex): AgentInterface

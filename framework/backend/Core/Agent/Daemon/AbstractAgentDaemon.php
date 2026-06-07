@@ -31,8 +31,6 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     private ?WorkerClient $workerClient = null;
 
     /**
-     * Get agent type identifier.
-     *
      * @return string Agent type from AGENT_TYPE constant
      */
     public function getType(): string
@@ -41,8 +39,6 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Get agent index (optional identifier for multi-instance agents).
-     *
      * @return ?string Agent index or null for singleton agents
      */
     public function getIndex(): ?string
@@ -51,8 +47,6 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Sets worker client connection.
-     *
      * @param WorkerClient $workerClient Worker client connection
      */
     public function setWorkerClient(WorkerClient $workerClient): void
@@ -66,8 +60,6 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Gets worker client connection.
-     *
      * @return ?WorkerClient Worker client or null if not set
      */
     public function getWorkerClient(): ?WorkerClient
