@@ -5,12 +5,19 @@
   "type": "module",
   "description": "Chat demo — an end project that consumes the Hilos frontend SDK (@hilos/vue).",
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@hilos/vue": "file:../../../framework/frontend/vue"
+    "@hilos/vue": "file:../../../framework/frontend/vue",
+    "vue": "^3.5.35"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.0.0",
+    "vue-tsc": "^3.3.4"
   }
 }

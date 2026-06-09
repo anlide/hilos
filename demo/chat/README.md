@@ -1,227 +1,196 @@
-# WebSocket Test Demo Project
+# Hilos Chat Demo
 
 **Complexity: 3/5**
 
-Demo project demonstrating real-time chat with WebSocket and enhanced capabilities.
-Shows basic agent architecture in worker processes.
+Demo project: real-time chat over WebSocket with AI-assisted moderation, built on
+the Hilos framework. Shows the agent architecture running in worker processes.
 
 ## What is this?
 
-This is a chat application demo that showcases WebSocket real-time communication with extended features:
+A chat application demo that showcases WebSocket real-time communication with
+extended features:
 
 ### Base Functionality
 - **Backend**: PHP daemon with WebSocket server (Hilos framework)
-- **Frontend**: Vue 3 + TypeScript chat interface with auto-reconnect
+- **Frontend**: Vue 3 + TypeScript SPA consuming the Hilos frontend SDK (`@hilos/vue`)
 - Real-time message exchange
 - Conversational bots supporting chat
 - Bot-moderator for chat management
 
 ### Enhanced Capabilities
-- **AI moderation**: AI bot-moderator analyzes messages in real-time, automatically removes spam, insults, unwanted content
-- **User management**: Can ban users, issue warnings
-- **Donation integration**: Notifications about donations in chat
-- **High-frequency processing**: Message processing, scaling to many users
-- **Advanced frontend**: Fast message scrolling, filtering, moderator panel
+- **AI moderation**: an AI bot-moderator analyzes messages in real-time and
+  removes spam, insults, and unwanted content
+- **User management**: ban users, issue warnings
+- **Donation integration**: donation notifications in chat
+- **High-frequency processing**: message processing scaling to many users
+- **Advanced frontend**: fast message scrolling, filtering, moderator panel
 
 ## Quick Start
 
+All tooling runs in Docker — backend (Composer/PHP) and frontend (Node/Vite)
+alike. **Nothing is installed on the host.**
+
 ### Prerequisites
 
-- Docker and Docker Compose
-- **Full Hilos repository** — clone the repo at `hilos` root so that `framework/` is a sibling of `demo/`. The frontend uses `@hilos/sdk` from `framework/frontend/src`; TypeScript and Vite resolve it via path mapping.
+- Docker and Docker Compose (Docker Desktop with the WSL2 backend, or native
+  Linux Docker).
+- The full Hilos repository, so `framework/` is a sibling of `demo/`. The frontend
+  consumes the SDK package `@hilos/vue` through a local `file:` dependency into
+  `framework/frontend/vue`; Vite and TypeScript resolve it via a `development`
+  export condition into the SDK source, so HMR reaches into the SDK too.
 
-### Setup
+### First run
 
-1. **Setup environment file** (creates `.env` from `.env.example` if needed):
+From `demo/chat/`, everything in containers:
+
+1. **Environment file** (creates `.env` from `.env.example` if missing):
    ```bash
    composer run setup-env
    ```
-
-2. **Install dependencies** (backend Composer packages):
+2. **Backend dependencies** (Composer → `vendor/`):
    ```bash
    composer run install-deps
    ```
-
-3. **Install frontend dependencies** (npm packages):
+3. **Frontend dependencies** (npm, in the Node container):
    ```bash
-   composer run frontend-install
+   composer run frontend:install
    ```
+4. **Start the dev stack** (MySQL + phpMyAdmin + daemon + Vite dev server):
+   ```bash
+   composer run daemon-start
+   ```
+   The daemon applies database migrations on startup.
+5. **Seed default data** (bots, moderation rules, chat settings):
+   ```bash
+   composer run db:seed:apply -- 001
+   composer run db:seed:apply -- 002
+   composer run db:seed:apply -- 003
+   composer run db:seed:apply -- 004
+   composer run db:seed:apply -- 005
+   ```
+6. Open the app and tooling:
+   - **Frontend (Vite dev, HMR):** http://localhost:5173
+   - **phpMyAdmin:** http://localhost:8080 — server `mysql-local`, user `root` /
+     `hilos_root_pass`, database `hilos-demo-chat`
+   - Daemon HTTP status: http://localhost:8090 · WebSocket: `ws://localhost:8092`
 
-### Running
+### Stop the stack
 
-All components run in Docker containers. See Docker configuration in `docker/` directory for details.
-
-**1. Start Ollama (framework, separate project).** Required for AI moderation and bots. See [Docker + Ollama + GPU](../../docs/docker-ollama-gpu.md).
-
-From repo root:
 ```bash
-composer run ollama:start
-# Or GPU: ollama:start-gpu-nvidia / ollama:start-gpu-amd
+composer run daemon-stop      # stop containers (data is preserved)
+# or: docker compose -f docker/docker-compose.local.yml down
 ```
 
-**2. Choose mode: Dev or Build**
+## Running modes
 
-| Mode | Use case | Frontend | Daemon |
-|------|----------|----------|--------|
-| **Dev** | Local development, hot reload | Vite on :5173 | :8090, :8092 |
-| **Build** | Production-like, prerendered SEO, HTTPS | Nginx on :80, :443 | :8090, :8092, :8093 |
+| Mode | Frontend | When |
+|------|----------|------|
+| **Dev** (default) | Vite dev server on :5173 with HMR | local development |
+| **Build / prod serving** | static `dist/` behind Nginx | production-like; **being reworked** |
 
-**Dev mode** (profile `dev`): Vite serves SPA, no Nginx. WebSocket direct to daemon.
-```bash
-composer run daemon-start
-composer run frontend-dev    # Vite on http://localhost:5173
-```
+**Dev mode** is the default `daemon-start`: the Vite dev server
+(`chat-frontend-local`) comes up with the backend and serves the SPA on :5173, and
+the browser talks WebSocket directly to the daemon. HMR runs on native filesystem
+events (no polling) when the repository lives on the WSL2 filesystem.
 
-**Build mode** (profile `full`): Nginx serves static assets + prerendered HTML. HTTPS only: port 80 redirects to 443.
-```bash
-composer run frontend-build      # One-time: npm run build in Docker → dist/
-composer run daemon-start-build  # MySQL + daemon + Nginx on :80, :443
-# Open https://localhost (browser will warn about self-signed cert — accept to continue)
-# Direct SPA deep-links also work, for example:
-# https://localhost/admin/users
-# https://localhost/hilos/users
-```
+**Build / prod serving** (static build behind Nginx, HTTPS, and SSG prerender for
+public pages) is being rebuilt as part of the current frontend rewrite — see
+[docs/agents/frontend/README.md](../../docs/agents/frontend/README.md). `composer run frontend:build`
+already produces a `dist/` via `vite build`; the Nginx serving path and the SSG
+prerender are not finalized here yet.
 
-### Frontend and daemon commands
+## Commands
+
+### Stack
 
 | Command | Description |
 |---------|-------------|
-| `composer run frontend-build` | Build frontend in Docker (vite-ssg prerender → `dist/`); required for Build mode |
-| `composer run frontend-dev` | Start Vite dev server (profile `dev`); hot reload on :5173 |
-| `composer run frontend-stop` | Stop Vite dev server |
-| `composer run daemon-start` | Start Docker stack (MySQL + daemon), Dev mode — no Nginx |
-| `composer run daemon-start-build` | Start stack with Nginx — Build mode, app at **https://localhost** |
-| `composer run daemon-stop` | Stop Docker stack |
-| `composer run daemon-restart` | Restart daemon container |
+| `composer run setup-env` | create `.env` from `.env.example` if missing |
+| `composer run install-deps` | install backend Composer packages (PHP container) |
+| `composer run daemon-start` | start the dev stack: MySQL + phpMyAdmin + daemon + Vite dev server |
+| `composer run daemon-stop` | stop the stack |
+| `composer run daemon-restart` | restart the daemon container |
+| `composer run daemon-status` | daemon status snapshot |
+| `composer run daemon-monitor` | live daemon monitor |
+| `composer run pma` / `pma-stop` | start / stop phpMyAdmin only |
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `composer run db:migration:up` / `down` / `status` / `retry` | migrations |
+| `composer run db:seed:apply -- <NNN>` | apply seed `NNN` (e.g. `001`) |
+| `composer run db:schema:status` | schema status |
+| `composer run db:entity:diff` | entity ↔ schema diff |
+
+### Frontend (Node, in container)
+
+| Command | Description |
+|---------|-------------|
+| `composer run frontend:install` | install frontend npm dependencies |
+| `composer run frontend:check` | type-check (`vue-tsc`) |
+| `composer run frontend:build` | production build (`vite build` → `dist/`) |
+| `composer run frontend:logs` | follow the Vite dev server logs |
+
+Frontend tooling runs in the `chat-frontend-cli-local` (on-demand) and
+`chat-frontend-local` (dev server) containers. The SDK build and packaging are
+documented in [framework/frontend/README.md](../../framework/frontend/README.md).
 
 ## AI moderation (Ollama)
 
-AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency allow/block classification. Override via Hilos Settings at `/hilos/settings` (seed 003 populates defaults).
+AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency
+allow/block classification. Override via Hilos Settings at `/hilos/settings`
+(seed `003` populates defaults).
 
-Ollama runs as a **standalone** framework project, port 11434 exposed to host. Demo connects via `LLM_LOCAL_URL` (default `http://host.docker.internal:11434`) and does not depend on framework internals—it may be external AI farm too. See [Docker + Ollama + GPU (framework)](../../docs/docker-ollama-gpu.md).
+Ollama runs as a **standalone** framework project, port `11434` exposed to the
+host. The demo connects via `LLM_LOCAL_URL` (default
+`http://host.docker.internal:11434`) and does not depend on framework internals —
+it may be an external AI farm too. See
+[Docker + Ollama + GPU](../../docs/docker-ollama-gpu.md).
 
-### GPU acceleration (optional)
-
-| Vendor | Command (from repo root) | Prerequisites |
-|--------|--------------------------|---------------|
-| **NVIDIA** | `composer run ollama:start-gpu-nvidia` | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
-| **AMD** | `composer run ollama:start-gpu-amd` | ROCm, `/dev/kfd` and `/dev/dri` |
-
-**Model initialization:** After starting Ollama, from repo root: `composer run ollama:pull` / `ollama:pull-gpu-nvidia` / `ollama:pull-gpu-amd`
+From the repo root:
+```bash
+composer run ollama:start
+# GPU: ollama:start-gpu-nvidia / ollama:start-gpu-amd
+composer run ollama:pull        # pull the models
+```
 
 ## Testing
 
-Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated from the development environment.
+Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated
+from the development environment.
 
-### Prerequisites
-
-- Docker and Docker Compose
-- Test stack dependencies installed (see below)
-
-### First-time setup
-
-1. **Install test dependencies** (PHPUnit and dev packages):
-   ```bash
-   composer run test:install-deps
-   ```
-
-2. **Copy test environment**:
-   ```bash
-   cp tests/.env.example tests/.env
-   ```
-   This file is used by PHPUnit and Docker-based test bootstraps. Adjust `tests/.env` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
-
-### Commands
+### Unit and integration (PHPUnit)
 
 | Command | Description |
 |---------|-------------|
-| `composer run test:up` | Start MySQL test container |
-| `composer run test:down` | Stop test stack |
-| `composer run test:down-volumes` | Stop and remove test volumes |
-| `composer run test:db-reset` | Reset test DB (DROP → migrate → seed) |
-| `composer run test:db-wait` | Wait for MySQL to be ready |
-| `composer run test:unit` | Run unit tests |
-| `composer run test:integration` | Run integration tests |
-| `composer run test:phpunit` | Run all PHPUnit tests |
-| `composer run test:all` | Reset DB and run all PHPUnit tests |
-| `composer run test:e2e-build` | Build frontend in Docker (required before E2E) |
-| `composer run test:e2e-up` | Start E2E stack (MySQL + daemon + Nginx) |
-| `composer run test:e2e-down` | Stop E2E stack |
-| `composer run test:e2e-install` | Install Playwright deps and browsers |
-| `composer run test:e2e` | Run Playwright E2E tests |
-| `composer run test:e2e-full` | Full E2E flow: build → up → db-wait → db-reset → install → test → down |
+| `composer run test:install-deps` | install PHPUnit and dev packages |
+| `composer run test:up` | start the MySQL test container |
+| `composer run test:db-reset` | reset the test DB (drop → migrate → seed) |
+| `composer run test:db-wait` | wait for MySQL to be ready |
+| `composer run test:unit` / `test:integration` / `test:phpunit` | run tests |
+| `composer run test:all` | reset DB and run all PHPUnit tests |
+| `composer run test:down` / `test:down-volumes` | stop the test stack |
 
-### Typical flow
-
+Typical flow:
 ```bash
-# Start MySQL
 composer run test:up
-
-# Reset DB and run tests
 composer run test:all
 ```
 
-To run only PHPUnit (without resetting the DB):
-
-```bash
-composer run test:phpunit
-```
-
-### Playwright (E2E)
-
-If you use the **local** Docker stack with Nginx (`docker/docker-compose.local.yml`, profile `full`, e.g. `composer run daemon-start-build`), **stop local Nginx** before starting the E2E test stack (`test:e2e-up` / `test:e2e-full`). Both stacks default to host ports **80** and **443**; leaving `chat-nginx-local` running causes a port conflict or wrong server. See [tests/e2e/README.md](tests/e2e/README.md) for commands and details.
-
-The E2E stack is self-contained. You do **not** need to start the main local application first. `test:e2e-build` builds the frontend for the test stack, and `test:e2e-up` starts dedicated MySQL, daemon, and Nginx containers for tests.
-
-**Full flow (recommended):**
-
-```bash
-composer run test:e2e-full
-```
-
-This builds the frontend, starts the stack (MySQL + daemon + Nginx), waits for MySQL, resets the DB, installs Playwright deps, runs E2E tests, then stops the stack. E2E tests run over HTTPS (`https://localhost`).
-
-**Manual flow:**
-
-0. Build frontend (required; produces `dist/` for Nginx):
-   ```bash
-   composer run test:e2e-build
-   ```
-
-1. Start the E2E stack:
-   ```bash
-   composer run test:e2e-up
-   ```
-
-2. Wait for MySQL and reset the DB:
-   ```bash
-   composer run test:db-wait
-   composer run test:db-reset
-   ```
-
-3. Install Playwright (first time only) and run tests:
-   ```bash
-   composer run test:e2e-install
-   composer run test:e2e
-   ```
-
-4. Stop the stack when done:
-   ```bash
-   composer run test:e2e-down
-   ```
-
-### Test structure
-
 - `tests/Unit/` — unit tests (no DB)
 - `tests/Integration/` — integration tests (require MySQL)
-- `tests/e2e/` — Playwright E2E tests (full app)
 
----
+### End-to-end (Playwright)
+
+The frontend e2e harness is being rebuilt as part of the frontend rewrite (the
+built artifact driven by Playwright against a booted daemon) — see
+[docs/agents/frontend/testing-strategy.md](../../docs/agents/frontend/testing-strategy.md).
+Until it lands, the previous frontend's e2e commands are not available.
 
 ## Documentation
 
-For detailed instructions on:
-- Frontend development and build: see [frontend/README.md](frontend/README.md)
-- Backend setup: see framework documentation
-- Docker configuration: see `docker/` directory
-- Test environment: see [Testing](#testing) above
+- Frontend SDK (packaging, build, dev): [framework/frontend/README.md](../../framework/frontend/README.md)
+- Frontend architecture and rules: [docs/agents/frontend/README.md](../../docs/agents/frontend/README.md)
+- Backend: framework documentation
+- Docker configuration: the `docker/` directory

@@ -1,5 +1,8 @@
-# Docker Compose configuration for LOCAL development (Windows)
-# Backend runs in Docker, frontend can run locally or in Docker (via chat-frontend-local service)
+# Docker Compose configuration for LOCAL development.
+# The full dev stack runs in Docker: MySQL, phpMyAdmin, the daemon, and the Vite
+# frontend dev server (chat-frontend-local, HMR). `composer run daemon-start` brings
+# the whole stack up; the chat-frontend-cli-local service (profile cli) runs on-demand
+# npm commands (see the composer frontend:* scripts).
 
 name: hilos-chat-local
 
@@ -149,19 +152,6 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
-  chat-frontend-builder:
-    image: node:20-alpine
-    container_name: chat-frontend-builder
-    volumes:
-      - ../../..:/workspace
-    working_dir: /workspace/demo/chat/frontend
-    environment:
-      - NODE_ENV=production
-      - DOCKER=true
-    command: sh -c "npm ci --include=dev && npm run build:docker"
-    profiles:
-      - build
-
   chat-nginx-local:
     build:
       context: .
@@ -183,23 +173,39 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # Vite dev server with HMR for the chat frontend. No profile: it is part of the
+  # default local stack, so `daemon-start` brings it up with the backend. Mounts the
+  # whole repo at /hilos so the @hilos/vue `file:` symlink into framework/frontend
+  # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor is
+  # picked up. Native WSL2 filesystem events drive HMR — no polling (see vite.config.ts).
   chat-frontend-local:
-    image: node:20-alpine
+    image: node:22-bookworm-slim
     container_name: chat-frontend-local
     volumes:
-      - ../../..:/workspace
-    working_dir: /workspace/demo/chat/frontend
+      - ../../..:/hilos
+    working_dir: /hilos/demo/chat/frontend
     environment:
-      - NODE_ENV=development
-      - DOCKER=true
-    command: npm run dev
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    command: sh -c "npm install && npm run dev"
     ports:
       - "${FRONTEND_DEV_PORT:-5173}:5173"
     restart: unless-stopped
-    profiles:
-      - dev
     networks:
       - hilos-demo-chat-local-network
+
+  # On-demand Node toolchain for the chat frontend (npm install / build / check).
+  # Profile cli so it never starts with the stack — invoked per command via
+  # `run --rm` (see the composer frontend:* scripts).
+  chat-frontend-cli-local:
+    image: node:22-bookworm-slim
+    container_name: chat-frontend-cli-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/chat/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
 
 volumes:
   nginx-ssl-local:

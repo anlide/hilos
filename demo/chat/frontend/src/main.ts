@@ -4,4 +4,8 @@
 // the way any real Hilos project does. The chat application entry point lands
 // here.
 
-export {}
+import { createApp } from 'vue'
+
+import App from './App.vue'
+
+createApp(App).mount('#app')
