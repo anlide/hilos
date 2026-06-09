@@ -31,6 +31,17 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [app-topology.md](docs/agents/app-topology.md) | adding pages, page subscription routes, registered tables, browser-only tables, or page-table bindings |
 
+## Frontend
+
+| File | Read when... |
+|---|---|
+| [frontend/README.md](docs/agents/frontend/README.md) | any frontend change — routes to the core/connection, wire-protocol, data-model, table-subscription, conflict-resolution, SDK-packaging, multiframework-core, styling, testing, and build specs, plus the AI-first premise and the rules/violations catalog |
+
+The frontend is rebuilt from zero on this branch (Path 1 rewrite) and its
+specification is graduated ahead of the code. Frontend FE↔BE contract changes
+(signals, signal/action DTOs, routes, entity/RT shapes) pass the Contract
+approval gate below.
+
 ## Agent System
 
 | File | Read when... |
