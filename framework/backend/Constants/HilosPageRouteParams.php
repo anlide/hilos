@@ -8,7 +8,7 @@ namespace Hilos\Constants;
  * HilosPageRouteParams - Dynamic segment names for Hilos admin routes.
  *
  * Keys match Vue Router params and WebSocket `page_subscribe.params`.
- * Keep in sync with `framework/frontend/src/constants/hilosPageRouteParams.ts`.
+ * Keep in sync with the frontend page-route-param constants.
  */
 final class HilosPageRouteParams
 {

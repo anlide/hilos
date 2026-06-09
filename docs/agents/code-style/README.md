@@ -18,7 +18,6 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
-| [frontend-vue.md](frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 The rules here complement the architecture guides in `docs/agents/`.
 Architecture rules decide where code belongs; code style rules decide how the

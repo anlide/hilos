@@ -51,8 +51,6 @@
         "test:framework:unit": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit",
         "test:framework:integration": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration",
         "test:framework:phpunit": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml",
-        "test:framework:frontend-install": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-frontend-test npm install",
-        "test:framework:frontend": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-frontend-test sh -c \"npm ci && npm test\"",
-        "test:framework:all": "composer run test:framework:install-deps && composer run test:framework:frontend && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
+        "test:framework:all": "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
     }
 }

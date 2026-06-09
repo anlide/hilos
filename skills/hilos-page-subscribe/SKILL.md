@@ -19,8 +19,6 @@ signals back to their source.
   "Subscribe handlers and route params")
 - Subscription lifecycle (`PAGE_SUBSCRIBE` / `PAGE_UPDATE_SUBSCRIPTION`):
   `docs/agents/signals/subscriptions.md`
-- Subscription error signals on the wire:
-  `docs/agents/frontend-sdk/backend-contract.md` (section "Subscription errors")
 - `PageSubscriptionException` taxonomy and `@throws` style: use
   `$hilos-exception`
 
@@ -34,9 +32,7 @@ signals back to their source.
    described in `docs/agents/app-topology.md`; `SignalRouter` reads these
    owners through the project facade hook.
 3. For pages with params, add the key to `Hilos\Constants\HilosPageRouteParams`
-   (or a page-level constant for demo-only pages) and mirror it in
-   `framework/frontend/src/constants/hilosPageRouteParams.ts` if the frontend
-   also uses the key.
+   (or a page-level constant for demo-only pages).
 4. Create a `SomePageSubscribeParams` DTO extending
    `AbstractPageSubscribeParamsDTO` with readonly promoted properties and a
    `public static function fromPageRouteParams(PageRouteParams $params): static`

@@ -50,8 +50,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 ## ORM
 
 Start with [orm/README.md](docs/agents/orm/README.md) for any ORM change; it
-routes to the mandatory entity, object, collection, bridge, accessor,
-frontend representation, and migration documents.
+routes to the mandatory entity, object, collection, bridge, accessor, and
+migration documents.
 
 Minimum ORM rules before editing:
 
@@ -70,14 +70,6 @@ Minimum ORM rules before editing:
 |---|---|
 | [runtime/rt-context.md](docs/agents/runtime/rt-context.md) | Hilos::$rt usage, runtime collections, sync between workers |
 | [runtime/rt-state.md](docs/agents/runtime/rt-state.md) | creating RtState subclasses, writing/reading state items |
-
-## Frontend SDK
-
-| File | Read when... |
-|---|---|
-| [frontend-sdk/websocket-connection.md](docs/agents/frontend-sdk/websocket-connection.md) | WS connection lifecycle, acceptKey, reconnect |
-| [frontend-sdk/backend-contract.md](docs/agents/frontend-sdk/backend-contract.md) | actions (client→server), signals (server→client), page subscription |
-| [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md) | editing an entity from a Vue page (rename, update fields) — always use Modal, never inline forms |
 
 ## Anti-patterns (read before writing code)
 
@@ -110,7 +102,6 @@ Minimum ORM rules before editing:
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
-| [code-style/frontend-vue.md](docs/agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## AI Tool Integration
 
@@ -147,11 +138,10 @@ additional change in one of these surfaces, stop and ask again before editing it
 3. **Only the truth source agent** writes to its DB/RT collection
 4. All PHP files: `declare(strict_types=1)` at top
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
-6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
-7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
-8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
-9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
-10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
+6. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
+7. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
+8. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
+9. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 
 ## Project docs (existing)
 

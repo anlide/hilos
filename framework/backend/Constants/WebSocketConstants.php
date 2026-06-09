@@ -18,7 +18,7 @@ final class WebSocketConstants
     /**
      * Text-frame keepalive payload from the frontend SDK.
      *
-     * Must match framework/frontend WebSocketService default pingMessage.
+     * Must match the frontend WebSocket client's default ping message.
      */
     public const string KEEPALIVE_TEXT_PING = 'ping';
 }

@@ -17,16 +17,12 @@ switch to the focused data-layer skill first.
   `$hilos-runtime`.
 - Adding DB/RT shape, lookup APIs, or write paths: use `$hilos-data-extension`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- BrowserContext rows, frontend state payloads, legacy `toFrontend`, and computed item fields:
-  use `$hilos-frontend-representation`.
 - Page/table topology registry and page-table bindings:
   `docs/agents/app-topology.md`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
 - Page action routing and action error behavior:
   `docs/agents/code-style/page-action-handlers.md`.
-- Frontend page subscription and signal contracts: use `$hilos-frontend-sdk`
-  when data crosses the browser boundary.
 - Signal routing and DTO payloads: use `$hilos-signals`.
 
 ## Mental Model

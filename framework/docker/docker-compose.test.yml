@@ -53,22 +53,6 @@ services:
     networks:
       - hilos-framework-test-network
 
-  # Vitest runner for framework/frontend.
-  # Self-contained node-22 container; no DB, no network to app stack.
-  # node_modules live in an anonymous volume to avoid leaking into the
-  # host repo and to survive compose up/run cycles (wiped on `down -v`).
-  hilos-frontend-test:
-    image: node:22-alpine
-    container_name: hilos-frontend-test
-    volumes:
-      - ../..:/hilos
-      - /hilos/framework/tests/frontend/node_modules
-    working_dir: /hilos/framework/tests/frontend
-    environment:
-      CI: "1"
-    profiles:
-      - cli
-
 volumes:
   mysql-framework-test-data:
     name: hilos-framework-mysql-test-data

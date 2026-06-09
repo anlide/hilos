@@ -54,10 +54,6 @@
         "db:entity:diff": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:diff",
         "pma": "docker-compose -f docker/docker-compose.local.yml up -d phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8080",
         "pma-stop": "docker-compose -f docker/docker-compose.local.yml stop phpmyadmin-local",
-        "frontend-install": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm install",
-        "frontend-build": "docker-compose -f docker/docker-compose.local.yml --profile build run --rm chat-frontend-builder",
-        "frontend-dev": "docker-compose -f docker/docker-compose.local.yml up -d chat-frontend-local",
-        "frontend-stop": "docker-compose -f docker/docker-compose.local.yml stop chat-frontend-local",
         "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test composer update phpunit/phpunit --no-interaction",
         "test:up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test",
         "test:down": "docker compose -f docker/docker-compose.test.yml down",
@@ -67,16 +63,7 @@
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:frontend-install": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-test npm install",
-        "test:frontend": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-test sh -c \"npm ci && npm test\"",
-        "test:all": "composer run test:frontend && composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full",
-        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile build run --rm chat-frontend-builder",
-        "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d --build mysql-test chat-test chat-nginx-test",
-        "test:e2e-down": "docker compose -f docker/docker-compose.test.yml down",
-        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"npm ci && npx playwright test\"",
-        "test:e2e-realtime": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"npm ci && npx playwright test --grep @realtime\"",
-        "test:e2e-realtime-full": "composer run test:e2e-build && composer run test:up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-up && composer run test:e2e-realtime && composer run test:e2e-down",
-        "test:e2e-full": "composer run test:e2e-build && composer run test:up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-up && composer run test:e2e && composer run test:e2e-down"
+        "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down"
     }
 }
 

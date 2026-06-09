@@ -20,7 +20,6 @@ API and component reference documentation.
    - **Runtime layer:** RtContext, RtCollection, RtItem, RtState, RtStates, RtActions — runtime data complementing DB
    - Schema, TableInfo, IndexInfo, Filter, migrations
    - Generator, PhpType
-   - *Frontend ORM subset:* `framework/frontend/src/stores`, `framework/frontend/src/types` (part of ORM, implementation in progress)
 
 2a. **Migrations**
    - Framework provides stub migrations in `framework/backend/Database/Migration/Stub/`
@@ -37,12 +36,7 @@ API and component reference documentation.
    - Logger, log levels, rotation, agent-specific logs
    - Exception hierarchy: DatabaseException, MissingEnvironmentVariableException, Process\*, Runtime\*, Worker\*, etc.
 
-5. **Frontend SDK**
-   - WebSocketService, WebSocket plugin
-   - Components: Modal, Table, ConflictHeader, ConflictActions, LoadingButton
-   - Stores (base connection store), router, types
-
-6. **Constants + DTO**
+5. **Constants + DTO**
    - CliCommands, DaemonConstants, EnvConstants, ExitCode, WorkerConstants
    - DaemonStatusDTO, WorkerRegisterDTO, SignalDTO, WebSocket\*, etc.
 
