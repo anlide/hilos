@@ -18,7 +18,7 @@ document.
 
 - [ai-first-premise.md](ai-first-premise.md) — why this specification is large and precise, and why
   collapsing a page definition into one place or one language is a non-goal.
-- `rules-and-violations.md` — the enforced rules and the catalog of "gross Hilos
+- [rules-and-violations.md](rules-and-violations.md) — the enforced rules and the catalog of "gross Hilos
   violation" patterns that apply across every topic below.
 
 ## Reading Matrix
@@ -44,7 +44,7 @@ before editing.
 - [ai-first-premise.md](ai-first-premise.md) — the framing premise: Hilos is built and extended by an
   AI agent reading a large, precise spec, so the dense rule-set is the product,
   not overhead.
-- `rules-and-violations.md` — the cross-cutting enforced rules and gross-violation
+- [rules-and-violations.md](rules-and-violations.md) — the cross-cutting enforced rules and gross-violation
   catalog referenced by every topic document.
 - `core-and-connection.md` — the no-refresh SPA model: three orthogonal state
   machines (connection / authentication / authorization), the per-datum state
