@@ -13,6 +13,9 @@ import configPrettier from 'eslint-config-prettier'
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/dist-pack/**'] },
   js.configs.recommended,
+  // As of PhpStorm 2026.1, the IDE type inspection falsely flags the next line —
+  // it rejects typescript-eslint's CompatibleConfigArray for config()'s parameter,
+  // which tsc, vue-tsc and eslint all accept (typescript-eslint#11519, closed wontfix).
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {
