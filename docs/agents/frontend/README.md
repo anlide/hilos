@@ -30,7 +30,7 @@ document.
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
 | tables: viewport subscriptions, pending changes and Apply, row-id deltas, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
-| SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | `sdk-packaging.md` |
+| SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | `multiframework-core.md` |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | `styling-rules.md` |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | `testing-strategy.md` |
@@ -58,7 +58,7 @@ before editing.
   pending / Apply taxonomy, and row-id-anchored deltas.
 - [conflict-resolution.md](conflict-resolution.md) — modal-owned editing with a baseline / draft /
   incoming 3-way merge and its edge cases.
-- `sdk-packaging.md` — the dev monorepo, the two-tier SDK, the slot-first
+- [sdk-packaging.md](sdk-packaging.md) — the dev monorepo, the two-tier SDK, the slot-first
   extension model, and Composer-vendored distribution.
 - `multiframework-core.md` — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
