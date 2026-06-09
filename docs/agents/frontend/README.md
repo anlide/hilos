@@ -16,7 +16,7 @@ document.
 
 ## Foundations (read first)
 
-- `ai-first-premise.md` — why this specification is large and precise, and why
+- [ai-first-premise.md](ai-first-premise.md) — why this specification is large and precise, and why
   collapsing a page definition into one place or one language is a non-goal.
 - `rules-and-violations.md` — the enforced rules and the catalog of "gross Hilos
   violation" patterns that apply across every topic below.
@@ -41,7 +41,7 @@ before editing.
 
 ## Document Roles
 
-- `ai-first-premise.md` — the framing premise: Hilos is built and extended by an
+- [ai-first-premise.md](ai-first-premise.md) — the framing premise: Hilos is built and extended by an
   AI agent reading a large, precise spec, so the dense rule-set is the product,
   not overhead.
 - `rules-and-violations.md` — the cross-cutting enforced rules and gross-violation
