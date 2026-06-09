@@ -4,7 +4,13 @@
   "private": true,
   "type": "module",
   "description": "Chat demo — an end project that consumes the Hilos frontend SDK (@hilos/vue).",
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
   "dependencies": {
     "@hilos/vue": "file:../../../framework/frontend/vue"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }
