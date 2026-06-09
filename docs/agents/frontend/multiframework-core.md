@@ -9,17 +9,17 @@ core** in plain TypeScript with **thin per-framework view layers** over it.
 
 A single core, plain TypeScript, owns everything that is not rendering:
 
-- WS transport, handshake, and reconnect (`wire-protocol.md`,
-  `core-and-connection.md`);
+- WS transport, handshake, and reconnect ([wire-protocol.md](wire-protocol.md),
+  [core-and-connection.md](core-and-connection.md));
 - the signal / action protocol and its discriminated-union parsers
-  (`wire-protocol.md`);
+  ([wire-protocol.md](wire-protocol.md));
 - the subscription manager — page, group, and row-id viewport
-  (`table-subscription.md`);
-- the normalized entity store and the per-scope stores (`data-model.md`);
+  ([table-subscription.md](table-subscription.md));
+- the normalized entity store and the per-scope stores ([data-model.md](data-model.md));
 - table logic (filter / sort / paginate / pending) as **headless state
   machines**;
 - modal and conflict logic as **headless state machines**
-  (`conflict-resolution.md`).
+  ([conflict-resolution.md](conflict-resolution.md)).
 
 A view layer renders over this core and emits user intents; it holds no protocol,
 store, or table logic of its own.
@@ -50,7 +50,7 @@ Each framework gets a thin adapter over the core:
   zones, RxJS), so it is the most valuable portability proof.
 
 The reference resolver (`useEntity` in Vue) is a per-framework wrapper over the
-same plain-function core selector (`data-model.md`).
+same plain-function core selector ([data-model.md](data-model.md)).
 
 ## Templates cannot be shared
 
@@ -77,7 +77,7 @@ project's planned demos, so they double as real demos and as portability proofs.
 
 Unit tests run framework-free against the core (most logic needs no browser); the
 React slice uses vitest + `@testing-library/react`, and the Angular slice uses
-vitest via the Analog plugin (`testing-strategy.md`).
+vitest via the Analog plugin ([testing-strategy.md](testing-strategy.md)).
 
 ## Sequencing
 

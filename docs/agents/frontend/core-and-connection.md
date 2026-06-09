@@ -13,7 +13,7 @@ self-updating to the current backend state. Because almost everything is
 deferred-loaded, **there is a placeholder for nearly every piece of data** — a
 view renders its structure immediately and fills each region as data arrives
 (see the per-datum state machine below and the tier-1 skeleton / empty / error
-components in `sdk-packaging.md`).
+components in [sdk-packaging.md](sdk-packaging.md)).
 
 There is an explicit, separate behavior when there is **no** connection — never
 an undefined or frozen state. What that behavior is per view is a project choice
@@ -38,7 +38,7 @@ including reconnects — transparently, unless the credential is missing, expire
 or revoked. An `auth-failed` outcome surfaces **globally** (a login or "session
 expired" screen), because it concerns the whole session. The handshake, the
 cookie credential, and the server-side session store are specified in
-`wire-protocol.md`.
+[wire-protocol.md](wire-protocol.md).
 
 ### Authorization — permission, per resource
 
@@ -69,7 +69,7 @@ Every datum a view shows carries a state, not just a value:
 everything" means concretely — the universal skeleton/placeholder system is tied
 to this state, not bolted on per component. `stale` is a real internal state
 (see Stale data), and the normalized entity store that holds loaded values is
-specified in `data-model.md`.
+specified in [data-model.md](data-model.md).
 
 ## Authoritative backend — no optimistic updates
 
@@ -89,8 +89,8 @@ The one edge to handle deliberately: an action whose reply never arrives (the
 socket dropped mid-action). The UI must exit its loading state via the action
 timeout, tied to the Connection machine — the form never hangs forever. The full
 action lifecycle (deferred ~0.3s loading, `requestId`-correlated reply, ~30s
-timeout, orphan reconciliation) is in `wire-protocol.md`. Every action also
-produces a success/fail toast (catalogued in `rules-and-violations.md`).
+timeout, orphan reconciliation) is in [wire-protocol.md](wire-protocol.md). Every action also
+produces a success/fail toast (catalogued in [rules-and-violations.md](rules-and-violations.md)).
 
 ## Disconnect behavior
 
@@ -124,11 +124,11 @@ surfaced only by the banner.
   non-guest page renders the auth form in place (it morphs by state: login /
   register / recover); a logged-in user lacking rights renders "no access" in
   place. The URL is the source of truth for the page subscription on cold load.
-  The subscription mechanics are in `wire-protocol.md`.
+  The subscription mechanics are in [wire-protocol.md](wire-protocol.md).
 
 ## SSG and the SPA shell
 
 The authenticated, real-time area is a pure SPA shell (skeletons fill it as data
 streams). A public, SEO-relevant surface is statically prerendered. The build
 supports both; the prerender path and the env/test matrix are in
-`build-and-docker.md`.
+[build-and-docker.md](build-and-docker.md).

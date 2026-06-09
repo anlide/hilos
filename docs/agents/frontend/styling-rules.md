@@ -56,7 +56,7 @@ Accessibility ships from day one, out of the box — a serious framework support
 without trouble. The rules are not complex:
 
 - **focus-trap and focus-return** in modals (ties to edit-in-modal,
-  `conflict-resolution.md`);
+  [conflict-resolution.md](conflict-resolution.md));
 - **full keyboard navigation** of every interactive element;
 - **ARIA** roles and labels;
 - **visible focus** and adequate **contrast** (via the Bootstrap theme).

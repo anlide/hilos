@@ -2,8 +2,8 @@
 
 How the browser payload becomes frontend state: one ingest boundary, a
 normalized entity store, references instead of copies, and scope-partitioned
-lifetimes. Tables build on this (`table-subscription.md`), and editing builds on
-it (`conflict-resolution.md`).
+lifetimes. Tables build on this ([table-subscription.md](table-subscription.md)), and editing builds on
+it ([conflict-resolution.md](conflict-resolution.md)).
 
 ## The "don't dilute" rule
 
@@ -90,7 +90,7 @@ active-scope data is always fresh because it is always re-streamed.
 
 A reference is a small value: `EntityRef = { type, id }`. It is resolved through
 a selector — `useEntity(ref)` in the Vue adapter, a plain function in the
-agnostic core (`multiframework-core.md`). Data lives once; references are
+agnostic core ([multiframework-core.md](multiframework-core.md)). Data lives once; references are
 everywhere. A single update propagates to every reference, and freshness comes
 for free.
 
@@ -134,7 +134,7 @@ cannot happen. (Forbidding multiple tables per page was considered and rejected 
 the same entity can also sit in a modal and in page-data, so the invariant, not a
 ban, is the real guarantee.) Uncommitted edit drafts stay with the editing modal
 (edit-session-scoped), never smeared onto the shared entity — other views show
-committed data until merge (`conflict-resolution.md`).
+committed data until merge ([conflict-resolution.md](conflict-resolution.md)).
 
 ## Entity-store upsert — field-merge, absence ≠ null
 
@@ -152,7 +152,7 @@ the merge is a safety net, not a license for divergent projections.
   N:M is not provided.** To show "the same" table on another page, make a second
   table from a shared config *template* — reuse is at the definition level, never
   a binding that spans pages. Row data is page-scoped and dropped on navigation.
-  The subscription mechanics are in `table-subscription.md`.
+  The subscription mechanics are in [table-subscription.md](table-subscription.md).
 - **A list is a lighter primitive** — an ordered collection of entity references
   or simple items, with no pending/Apply — for catalogs, option sets, and menus;
   an append-stream (chat log) is its live variant.

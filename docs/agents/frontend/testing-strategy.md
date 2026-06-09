@@ -8,7 +8,7 @@ first-class, not an afterthought.
 ## Unit tests — vitest across the monorepo
 
 Unit testing is **vitest** everywhere. Because the agnostic core is framework-free
-(`multiframework-core.md`), most logic — protocol parsing, stores, the headless
+([multiframework-core.md](multiframework-core.md)), most logic — protocol parsing, stores, the headless
 table and conflict state machines — is unit-tested with **no browser** at all.
 Per-framework view layers test with vitest too:
 
@@ -27,10 +27,10 @@ cross-user features testable at all.
 
 1. **Main features** — a single client exercising a feature end to end.
 2. **Same-user broadcast** — two tabs of the **same user**: an edit in one tab
-   must appear in the other (the User scope fan-out, `data-model.md`).
+   must appear in the other (the User scope fan-out, [data-model.md](data-model.md)).
 3. **Three different users** — three users exercising cross-user behavior:
-   **conflict resolution** (`conflict-resolution.md`) and **group subscriptions**
-   (`wire-protocol.md`). The hardest features require this category to test, so it
+   **conflict resolution** ([conflict-resolution.md](conflict-resolution.md)) and **group subscriptions**
+   ([wire-protocol.md](wire-protocol.md)). The hardest features require this category to test, so it
    is built in from the start.
 
 ## Backend state — full reset per test
@@ -50,4 +50,4 @@ e2e robust against copy and layout changes.
 
 Unit tests run against **source**; e2e runs against the **built artifact** with a
 **booted daemon** — you test what you ship. The full environment and test matrix
-is in `build-and-docker.md`.
+is in [build-and-docker.md](build-and-docker.md).

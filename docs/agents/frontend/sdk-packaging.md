@@ -28,7 +28,7 @@ workspaces) with **conditional exports** resolves both:
   typed package.
 
 The SDK, the demo apps, and the React / Angular conformance demos
-(`multiframework-core.md`) all develop together in this workspace.
+([multiframework-core.md](multiframework-core.md)) all develop together in this workspace.
 
 ## Distribution: a Composer-vendored tarball
 
@@ -45,7 +45,7 @@ vendored SDK.
 A consumer project is **not** part of the monorepo — it vendors Hilos through
 Composer. (A spike alternative, if the built `dist` is self-contained, is a pure
 Vite `resolve.alias` + tsconfig `paths` straight into `vendor/.../dist`, removing
-the install hop; see `build-and-docker.md`.)
+the install hop; see [build-and-docker.md](build-and-docker.md).)
 
 ## Keep the agnostic core a separate package
 
@@ -93,10 +93,10 @@ Three tier-1 components are part of the contract, so pages never reinvent them:
   SPA;
 - standard **skeleton / empty / error** components for a data block's three
   states — the concrete form of "a placeholder for everything"
-  (`core-and-connection.md`).
+  ([core-and-connection.md](core-and-connection.md)).
 
 Per-page code-splitting (a dynamic `import()` per route) pairs with these: the
-loading state during a chunk fetch is the skeleton (`build-and-docker.md`).
+loading state during a chunk fetch is the skeleton ([build-and-docker.md](build-and-docker.md)).
 
 ## IDE correctness
 

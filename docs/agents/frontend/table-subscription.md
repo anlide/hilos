@@ -3,10 +3,10 @@
 How a table stays current without "jumping" under a live update stream: the
 client subscribes to the specific rows its viewport shows, and every change hangs
 as a pending update the user applies deliberately. Tables are the heavy durable
-primitive; the lighter list and append-stream primitives are in `data-model.md`.
+primitive; the lighter list and append-stream primitives are in [data-model.md](data-model.md).
 
 A table belongs to exactly one page, and a page may host many tables (1:1 and
-1:N; never N:M — see `data-model.md`). This document is about how that table's
+1:N; never N:M — see [data-model.md](data-model.md)). This document is about how that table's
 rows are subscribed and kept in sync.
 
 ## The viewport descriptor
@@ -93,7 +93,7 @@ changing the client's pending model.
 
 Table logic — the viewport descriptor, pending accumulation, and Apply — is a
 **headless state machine** in the agnostic core, with a thin per-framework view
-on top (`multiframework-core.md`). The view renders rows and badges and emits
+on top ([multiframework-core.md](multiframework-core.md)). The view renders rows and badges and emits
 user intents; it holds no table logic of its own.
 
 ## Backend contract surface (the gate)

@@ -14,7 +14,7 @@ spans several layers and languages:
 - **PHP backend** — what data the page needs, who may see it, and how the
   payload is shaped for the browser.
 - **The view** — the route and the component that renders it (Vue first; see
-  `multiframework-core.md`).
+  [multiframework-core.md](multiframework-core.md)).
 - **Table / list / entity configuration** — columns and their sources, filters,
   and which entities the page composes.
 
@@ -40,7 +40,7 @@ documentation written after the fact.
 
 ### No converters or codegen in v1
 
-Under the authoritative-backend model (see `core-and-connection.md`) every
+Under the authoritative-backend model (see [core-and-connection.md](core-and-connection.md)) every
 signal, entity, and action shape is defined on the PHP side, and the TypeScript
 frontend needs matching types. In v1 the **AI agent keeps the two sides
 consistent from the specification** — no PHP→TS generator is built. A
@@ -59,7 +59,7 @@ is not.
 
 ## Relationship to the rest of the section
 
-This premise frames the SDK developer experience (`sdk-packaging.md`) and
+This premise frames the SDK developer experience ([sdk-packaging.md](sdk-packaging.md)) and
 supersedes any "single-place page definition" goal. The cross-cutting rules it
-justifies are catalogued in `rules-and-violations.md`, and each topic document
+justifies are catalogued in [rules-and-violations.md](rules-and-violations.md), and each topic document
 applies them to its own surface.

@@ -3,7 +3,7 @@
 Collaborative editing is designed in from day one. All editing happens in a
 modal, and the modal owns a three-way merge so a user always knows whether a
 conflict exists and whether it is resolvable. This builds on the entity store and
-the authoritative-backend rule (`data-model.md`, `core-and-connection.md`).
+the authoritative-backend rule ([data-model.md](data-model.md), [core-and-connection.md](core-and-connection.md)).
 
 ## Edit only in a modal
 
@@ -22,7 +22,7 @@ session — and only the edit session — holds the in-flight state, as three la
 - **incoming** — committed changes that arrive while the modal is open, because
   the edited entity stays **live-subscribed** for the modal's lifetime.
 
-Drafts never smear onto the shared entity (`data-model.md`); other views keep
+Drafts never smear onto the shared entity ([data-model.md](data-model.md)); other views keep
 showing committed data until the user's save commits.
 
 ### The per-field three-way merge
@@ -53,10 +53,10 @@ that conflicts.
 ## Save is authoritative-backend, not Apply
 
 A modal save is **submit → loading → backend echo**, not the tables' pending /
-Apply mechanism (Apply is tables-only — see `table-subscription.md`). The save
+Apply mechanism (Apply is tables-only — see [table-subscription.md](table-subscription.md)). The save
 emits an action; frontend state changes only when the backend echoes it
-(`core-and-connection.md`). Validation is backend-only: field errors return via
-the action's `::fail` (`rules-and-violations.md`). On a successful echo the store
+([core-and-connection.md](core-and-connection.md)). Validation is backend-only: field errors return via
+the action's `::fail` ([rules-and-violations.md](rules-and-violations.md)). On a successful echo the store
 updates and the modal closes.
 
 ## Entity deleted while the modal is open

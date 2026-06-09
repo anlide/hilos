@@ -2,7 +2,7 @@
 
 How the frontend is built and served across environments, the Windows-Docker
 dev-server problem, and the public-prerender path. Distribution of the SDK as a
-package is separate and lives in `sdk-packaging.md`.
+package is separate and lives in [sdk-packaging.md](sdk-packaging.md).
 
 ## The environment and test matrix
 
@@ -20,7 +20,7 @@ Source is used only for dev and unit tests; everything that resembles production
 
 A single `vite build` produces the artifact that e2e, staging, and prod all run:
 you **test what you ship**. e2e drives that artifact against a booted daemon
-(`testing-strategy.md`), which is also why e2e needs a deterministic backend
+([testing-strategy.md](testing-strategy.md)), which is also why e2e needs a deterministic backend
 reset per test.
 
 ## Windows-Docker dev server (the HMR spike)
@@ -46,9 +46,9 @@ the only environment that uses the dev server.
 
 Each route component is a dynamic `import()`, so the bundler splits one chunk per
 page automatically — "just config", no special build setup. The loading state
-during a chunk fetch is the standard skeleton (`sdk-packaging.md`), and a stale
+during a chunk fetch is the standard skeleton ([sdk-packaging.md](sdk-packaging.md)), and a stale
 chunk after a redeploy is caught by the build-version → forced-refresh check
-(`wire-protocol.md`).
+([wire-protocol.md](wire-protocol.md)).
 
 ## SSG and the public surface
 
@@ -57,4 +57,4 @@ The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 auth). A public, SEO-relevant surface (marketing pages) is **statically
 prerendered**. SSG stays in v1 but is low priority; the build must support the
 prerender path for public routes without forcing it on the authed area
-(`core-and-connection.md`).
+([core-and-connection.md](core-and-connection.md)).

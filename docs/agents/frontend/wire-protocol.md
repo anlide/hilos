@@ -4,7 +4,7 @@ The contract between the browser and the Hilos daemon: how a connection is
 authorized, how messages are framed and parsed, and the three kinds of message
 that flow over the socket. The runtime behavior that consumes this protocol
 (state machines, authoritative-backend, loading UX) is in
-`core-and-connection.md`; this document is the protocol itself.
+[core-and-connection.md](core-and-connection.md); this document is the protocol itself.
 
 All communication rides one WebSocket connection. There are three kinds of
 message:
@@ -27,7 +27,7 @@ the server. Because it is `httpOnly`, application code physically cannot read it
 — and must never try. It rides the handshake automatically.
 
 - A cookie carries **only** the auth credential. Any non-auth use of a cookie is
-  a gross violation (see `rules-and-violations.md`).
+  a gross violation (see [rules-and-violations.md](rules-and-violations.md)).
 - Non-secret UI state (theme, layout, drafts) goes in **localStorage**. Secrets
   never go in localStorage — it is a JS-readable API and cannot be made
   `httpOnly`.
@@ -93,7 +93,7 @@ Every new socket — including a reconnect — performs a fresh handshake and
 re-authenticates. The cookie rides automatically, so re-auth is invisible unless
 the credential is missing, expired, or revoked, in which case the connection
 goes to `auth-failed` (a global login / "session expired" screen; see
-`core-and-connection.md`). No trust is remembered across sockets.
+[core-and-connection.md](core-and-connection.md)). No trust is remembered across sockets.
 
 ### The auth seam
 
@@ -188,7 +188,7 @@ abstraction.
 
 ### Page-signal routing by page key
 
-Every page signal carries its page key. The normalizer (see `data-model.md`)
+Every page signal carries its page key. The normalizer (see [data-model.md](data-model.md))
 applies a signal only to the matching current page subscription and **drops** any
 signal for a page the client has left, so a late signal for a page you navigated
 away from is never misapplied. There is no subscription generation / epoch token
@@ -202,7 +202,7 @@ Every action and every page-subscribe carries a **declared** authorizer. The
 dispatch and subscribe layer refuses anything with no authorizer attached, and
 "public" is an explicit declared authorizer — never a silent default. This makes
 "forgot to check server-side" impossible by construction; client-side hiding
-stays pure UX (see `rules-and-violations.md`).
+stays pure UX (see [rules-and-violations.md](rules-and-violations.md)).
 
 ## File upload via frame_binary
 
@@ -224,7 +224,7 @@ that serializes the open-modal descriptor and draft to localStorage, forces the
 refresh, then rehydrates the modal and draft on load. The fallback is that a
 successful save or closing the modal triggers the refresh. A restored draft is
 re-judged by the backend under backend-only validation; credential-like fields
-are never persisted (see `conflict-resolution.md`).
+are never persisted (see [conflict-resolution.md](conflict-resolution.md)).
 
 ## Backend contract surface (the gate)
 
