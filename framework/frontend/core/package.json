@@ -1,0 +1,7 @@
+{
+  "name": "@hilos/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-agnostic Hilos frontend core: transport, signal/action protocol, subscriptions, normalized stores, and headless state machines."
+}

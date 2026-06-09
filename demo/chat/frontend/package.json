@@ -1,0 +1,10 @@
+{
+  "name": "demo-chat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chat demo — an end project that consumes the Hilos frontend SDK (@hilos/vue).",
+  "dependencies": {
+    "@hilos/vue": "file:../../../framework/frontend/vue"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@hilos/vue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vue view layer over @hilos/core — the Hilos frontend SDK.",
+  "dependencies": {
+    "@hilos/core": "*"
+  }
+}

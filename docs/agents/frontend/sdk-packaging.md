@@ -27,8 +27,13 @@ workspaces) with **conditional exports** resolves both:
 - a build condition resolves to `dist` — consumers and the IDE get the built,
   typed package.
 
-The SDK, the demo apps, and the React / Angular conformance demos
-([multiframework-core.md](multiframework-core.md)) all develop together in this workspace.
+The workspace contains only the SDK packages — the agnostic core and the view
+layers. Demos and end-projects (including the React / Angular conformance demos,
+[multiframework-core.md](multiframework-core.md)) are **consumers**, never
+members: each lives in its own project and pulls the SDK (a local `file:`
+dependency in dev, the vendored tarball when shipping). The `development`
+dev-link is what lets a consumer's bundler resolve the SDK to `src` for HMR while
+the two are developed together.
 
 ## Distribution: a Composer-vendored tarball
 

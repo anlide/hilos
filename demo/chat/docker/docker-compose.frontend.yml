@@ -1,0 +1,20 @@
+# Node CLI runner for the chat demo frontend — an end project consuming the
+# Hilos SDK (@hilos/vue). install, build, dev server, and e2e run here, never on
+# the host Node.
+#
+# The container only provides the pinned Node/npm toolchain and mounts the repo
+# at /hilos so the local `file:` dependency on the SDK resolves. node_modules
+# lives in the project on the host (the bind-mount), so PhpStorm resolves
+# @hilos/vue like any other project.
+
+name: hilos-chat-frontend
+
+services:
+  chat-frontend-cli:
+    image: node:22-bookworm-slim
+    container_name: chat-frontend-cli
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/chat/frontend
+    profiles:
+      - cli

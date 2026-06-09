@@ -20,6 +20,9 @@ vendor/
 node_modules/
 npm-debug.log*
 
+# Frontend build output
+/frontend/dist/
+
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/
