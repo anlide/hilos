@@ -51,6 +51,11 @@
         "test:framework:unit": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit",
         "test:framework:integration": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration",
         "test:framework:phpunit": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml",
-        "test:framework:all": "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
+        "test:framework:all": "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down",
+        "test:framework:frontend:install": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm ci",
+        "test:framework:frontend:check": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run check",
+        "test:framework:frontend:lint": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run lint",
+        "test:framework:frontend:format-check": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run format:check",
+        "test:framework:frontend": "composer run test:framework:frontend:check && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check"
     }
 }
