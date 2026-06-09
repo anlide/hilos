@@ -14,5 +14,9 @@ services:
     volumes:
       - ../..:/hilos
     working_dir: /hilos/framework/frontend
+    # Silence npm's "new version available" update-notifier; the npm version is
+    # pinned by the image, so the upgrade hint is just noise in every command.
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles:
       - cli

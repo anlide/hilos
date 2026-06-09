@@ -8,7 +8,9 @@
     "vue"
   ],
   "scripts": {
-    "check": "npm run check --workspaces --if-present"
+    "check": "npm run check --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "pack": "npm run build && mkdir -p dist-pack && npm pack --workspaces --pack-destination ./dist-pack"
   },
   "devDependencies": {
     "typescript": "^6.0.3"

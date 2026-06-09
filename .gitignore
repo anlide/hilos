@@ -12,6 +12,7 @@ framework/agent-host/dist/
 framework/agent-host/.tmp-data/
 framework/frontend/core/dist/
 framework/frontend/vue/dist/
+framework/frontend/dist-pack/
 
 # IDE
 .vscode/
