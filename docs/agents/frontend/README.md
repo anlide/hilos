@@ -32,7 +32,7 @@ document.
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
-| styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | `styling-rules.md` |
+| styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | [styling-rules.md](styling-rules.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | `testing-strategy.md` |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | `build-and-docker.md` |
 
@@ -62,7 +62,7 @@ before editing.
   extension model, and Composer-vendored distribution.
 - [multiframework-core.md](multiframework-core.md) — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
-- `styling-rules.md` — Bootstrap-only styling, the Sass layer as the sole home
+- [styling-rules.md](styling-rules.md) — Bootstrap-only styling, the Sass layer as the sole home
   for custom declarations, theming, and accessibility.
 - `testing-strategy.md` — the unit and end-to-end strategy and the three e2e
   categories.
