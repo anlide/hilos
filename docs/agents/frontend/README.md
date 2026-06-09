@@ -34,7 +34,7 @@ document.
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | [styling-rules.md](styling-rules.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | [testing-strategy.md](testing-strategy.md) |
-| the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | `build-and-docker.md` |
+| the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | [build-and-docker.md](build-and-docker.md) |
 
 When a change touches more than one surface, read every matching document
 before editing.
@@ -66,7 +66,7 @@ before editing.
   for custom declarations, theming, and accessibility.
 - [testing-strategy.md](testing-strategy.md) — the unit and end-to-end strategy and the three e2e
   categories.
-- `build-and-docker.md` — the build, the environment and test matrix, and the
+- [build-and-docker.md](build-and-docker.md) — the build, the environment and test matrix, and the
   Windows-Docker dev-server research.
 
 ## Working Rule
