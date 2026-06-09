@@ -26,7 +26,7 @@ document.
 | Working on... | Read |
 |---|---|
 | connection / authentication / authorization state, the authoritative-backend rule, per-datum loading and placeholder state, disconnect and stale-data UX | [core-and-connection.md](core-and-connection.md) |
-| the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | `wire-protocol.md` |
+| the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | `data-model.md` |
 | tables: viewport subscriptions, pending changes and Apply, row-id deltas, custom filters, search-as-filter | `table-subscription.md` |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | `conflict-resolution.md` |
@@ -49,7 +49,7 @@ before editing.
 - [core-and-connection.md](core-and-connection.md) — the no-refresh SPA model: three orthogonal state
   machines (connection / authentication / authorization), the per-datum state
   machine, and the authoritative-backend / no-optimistic-update rule.
-- `wire-protocol.md` — the handshake as the authorization step, the cookie-only
+- [wire-protocol.md](wire-protocol.md) — the handshake as the authorization step, the cookie-only
   auth credential and server-side session store, and the signal / action /
   subscribe protocol with layered discriminated-union parsing.
 - `data-model.md` — the scope-partitioned entity store, the single normalizer
