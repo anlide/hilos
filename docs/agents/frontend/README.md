@@ -31,7 +31,7 @@ document.
 | tables: viewport subscriptions, pending changes and Apply, row-id deltas, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
-| the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | `multiframework-core.md` |
+| the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | `styling-rules.md` |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | `testing-strategy.md` |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | `build-and-docker.md` |
@@ -60,7 +60,7 @@ before editing.
   incoming 3-way merge and its edge cases.
 - [sdk-packaging.md](sdk-packaging.md) — the dev monorepo, the two-tier SDK, the slot-first
   extension model, and Composer-vendored distribution.
-- `multiframework-core.md` — the agnostic core, the neutral signal primitive,
+- [multiframework-core.md](multiframework-core.md) — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
 - `styling-rules.md` — Bootstrap-only styling, the Sass layer as the sole home
   for custom declarations, theming, and accessibility.
