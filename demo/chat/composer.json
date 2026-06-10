@@ -35,6 +35,9 @@
             "Demo\\Chat\\Tests\\": "tests/"
         }
     },
+    "config": {
+        "process-timeout": 0
+    },
     "scripts": {
         "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
         "post-install-cmd": "@hilos-frontend-reminder",
@@ -63,14 +66,20 @@
         "frontend:logs": "docker-compose -f docker/docker-compose.local.yml logs -f chat-frontend-local",
         "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test composer update phpunit/phpunit --no-interaction",
         "test:up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test",
-        "test:down": "docker compose -f docker/docker-compose.test.yml down",
-        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml down -v",
+        "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
         "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:test:reset",
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:wait",
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down"
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"npm install && npm run build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner npm install",
+        "test:e2e-up": "composer run test:up && composer run test:db-wait && composer run test:db-reset && docker compose -f docker/docker-compose.test.yml --profile e2e up -d chat-test chat-nginx-test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner npx playwright test",
+        "test:e2e-down": "composer run test:down",
+        "test:e2e-full": "composer run test:e2e-build && composer run test:e2e-install && composer run test:e2e-up && composer run test:e2e && composer run test:e2e-down",
+        "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full"
     }
 }
 

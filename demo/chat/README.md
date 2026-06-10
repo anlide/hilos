@@ -169,7 +169,7 @@ from the development environment.
 | `composer run test:db-reset` | reset the test DB (drop → migrate → seed) |
 | `composer run test:db-wait` | wait for MySQL to be ready |
 | `composer run test:unit` / `test:integration` / `test:phpunit` | run tests |
-| `composer run test:all` | reset DB and run all PHPUnit tests |
+| `composer run test:all` | reset DB, run all PHPUnit tests, then the full e2e cycle |
 | `composer run test:down` / `test:down-volumes` | stop the test stack |
 
 Typical flow:
@@ -183,10 +183,33 @@ composer run test:all
 
 ### End-to-end (Playwright)
 
-The frontend e2e harness is being rebuilt as part of the frontend rewrite (the
-built artifact driven by Playwright against a booted daemon) — see
-[docs/agents/frontend/testing-strategy.md](../../docs/agents/frontend/testing-strategy.md).
-Until it lands, the previous frontend's e2e commands are not available.
+e2e lives in `tests/e2e/` and drives the **built** frontend artifact served by
+the test nginx, with a booted daemon behind it — never the dev server (see
+[docs/agents/frontend/testing-strategy.md](../../docs/agents/frontend/testing-strategy.md)).
+Tests select elements by stable `data-id` attributes only.
+
+| Command | Description |
+|---------|-------------|
+| `composer run test:e2e-build` | build the frontend artifact (`frontend/dist`) |
+| `composer run test:e2e-install` | install the Playwright runner dependencies |
+| `composer run test:e2e-up` | start the e2e stack: MySQL (reset) + daemon + nginx |
+| `composer run test:e2e` | run e2e tests against the running stack |
+| `composer run test:e2e-down` | stop the e2e stack |
+| `composer run test:e2e-full` | the whole cycle: build → install → up → test → down |
+
+The stack stays up between runs, so the fast loop is one `test:e2e-up` and then
+any number of `test:e2e` invocations. Extra Playwright arguments pass through
+after `--`, which is how a single test or a tagged group is targeted:
+
+```bash
+composer run test:e2e-up
+composer run test:e2e                          # everything
+composer run test:e2e -- --grep "blank page"   # one test / future @group tag
+composer run test:e2e-down
+```
+
+Rebuild the artifact (`test:e2e-build`) after frontend changes; restart the
+stack (`test:e2e-up`) after backend changes.
 
 ## Documentation
 
