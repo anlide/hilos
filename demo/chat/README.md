@@ -190,12 +190,14 @@ Tests select elements by stable `data-id` attributes only.
 
 | Command | Description |
 |---------|-------------|
+| `composer run test:check` | install + typecheck the frontend app (test toolchain) |
 | `composer run test:e2e-build` | build the frontend artifact (`frontend/dist`) |
 | `composer run test:e2e-install` | install the Playwright runner dependencies |
+| `composer run test:e2e-check` | typecheck the e2e test code (in the runner) |
 | `composer run test:e2e-up` | start the e2e stack: MySQL (reset) + daemon + nginx |
 | `composer run test:e2e` | run e2e tests against the running stack |
 | `composer run test:e2e-down` | stop the e2e stack |
-| `composer run test:e2e-full` | the whole cycle: build → install → up → test → down |
+| `composer run test:e2e-full` | the whole cycle: build → install → check → up → test → down |
 
 The stack stays up between runs, so the fast loop is one `test:e2e-up` and then
 any number of `test:e2e` invocations. Extra Playwright arguments pass through

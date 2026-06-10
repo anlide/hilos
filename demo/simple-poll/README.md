@@ -63,12 +63,14 @@ any number of pointed `test:e2e` runs, one `test:e2e-down`.
 
 | Command | What it does |
 |---|---|
+| `composer run test:check` | install + typecheck the frontend app (test toolchain) |
 | `composer run test:e2e-build` | install + build the frontend for the test stack |
 | `composer run test:e2e-install` | install the Playwright deps |
+| `composer run test:e2e-check` | typecheck the e2e test code (in the runner) |
 | `composer run test:e2e-up` | start the e2e stack (nginx with the built artifact) |
 | `composer run test:e2e` | run the e2e suite (`-- --grep "..."` filters) |
 | `composer run test:e2e-down` | tear the e2e stack down |
-| `composer run test:e2e-full` | build → install → up → test → down |
+| `composer run test:e2e-full` | build → install → check → up → test → down |
 
 ## License
 

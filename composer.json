@@ -36,6 +36,9 @@
             "framework/tests/Unit/TopologyAgentsTestSupport.php"
         ]
     },
+    "config": {
+        "process-timeout": 0
+    },
     "scripts": {
         "ollama:start": "docker compose -f framework/docker/ollama-local.yml up -d",
         "ollama:start-gpu-nvidia": "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml up -d",
@@ -53,10 +56,12 @@
         "test:framework:phpunit": "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml",
         "test:framework:all": "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down",
         "test:framework:frontend:install": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm ci",
+        "test:framework:frontend:build": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run build",
         "test:framework:frontend:check": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run check",
         "test:framework:frontend:unit": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run test",
         "test:framework:frontend:lint": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run lint",
         "test:framework:frontend:format-check": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run format:check",
-        "test:framework:frontend": "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check"
+        "test:framework:frontend": "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check",
+        "test:frontend:all": "composer run test:framework:frontend:install && composer run test:framework:frontend:build && composer run test:framework:frontend && composer -d demo/chat run test:check && composer -d demo/chat run test:e2e-full && composer -d demo/simple-todo run test:check && composer -d demo/simple-todo run test:e2e-full && composer -d demo/simple-poll run test:check && composer -d demo/simple-poll run test:e2e-full"
     }
 }

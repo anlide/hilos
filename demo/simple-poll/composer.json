@@ -38,14 +38,17 @@
         "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm run build",
         "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f poll-frontend-local",
         "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-frontend-cli-test sh -c \"npm install && npm run check\"",
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-frontend-cli-test sh -c \"npm install && npm run build\"",
         "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npm install",
+        "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npm run check",
         "test:e2e-up": "docker compose -f docker/docker-compose.test.yml --profile e2e up -d poll-nginx-test",
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
             "@test:e2e-build",
             "@test:e2e-install",
+            "@test:e2e-check",
             "@test:e2e-up",
             "@test:e2e",
             "@test:e2e-down"
