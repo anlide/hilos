@@ -1,0 +1,25 @@
+{
+  "name": "demo-simple-todo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Simple-todo demo — an end project that consumes the Hilos frontend SDK (@hilos/react); doubles as the React conformance demo.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hilos/react": "file:../../../framework/frontend/react",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.0.0"
+  }
+}

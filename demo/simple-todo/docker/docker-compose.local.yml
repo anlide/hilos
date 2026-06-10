@@ -1,0 +1,49 @@
+# Docker Compose configuration for LOCAL development.
+# The local stack currently consists of the Vite frontend dev server (HMR); the
+# backend services (MySQL, the daemon) join it when the demo's backend lands at
+# rewrite step 7. Per the env split, local keeps the frontend in the default
+# `up` — no profile — so one start command brings the whole stack.
+
+name: hilos-simple-todo-local
+
+services:
+  # Vite dev server with HMR for the simple-todo frontend. Mounts the whole repo
+  # at /hilos so the @hilos/react `file:` symlink into framework/frontend
+  # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor
+  # is picked up. Native WSL2 filesystem events drive HMR — no polling (see
+  # frontend/vite.config.ts). The host port defaults away from the chat demo's
+  # 5173 so both local stacks can run side by side.
+  todo-frontend-local:
+    image: node:22-bookworm-slim
+    container_name: todo-frontend-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/simple-todo/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "${FRONTEND_DEV_PORT:-5174}:5173"
+    restart: unless-stopped
+    networks:
+      - hilos-simple-todo-local-network
+
+  # On-demand Node toolchain for the simple-todo frontend (npm install / build /
+  # check). Profile cli so it never starts with the stack — invoked per command
+  # via `run --rm` (see the composer frontend:* scripts).
+  todo-frontend-cli-local:
+    image: node:22-bookworm-slim
+    container_name: todo-frontend-cli-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/simple-todo/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
+    networks:
+      - hilos-simple-todo-local-network
+
+networks:
+  hilos-simple-todo-local-network:
+    driver: bridge

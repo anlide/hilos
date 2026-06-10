@@ -5,6 +5,7 @@
   "description": "Hilos frontend SDK workspace: the agnostic core and the framework view layers.",
   "workspaces": [
     "core",
+    "react",
     "vue"
   ],
   "scripts": {

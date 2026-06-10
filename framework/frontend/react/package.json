@@ -1,0 +1,32 @@
+{
+  "name": "@hilos/react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React view layer over @hilos/core — adapts the core stores to React via useSyncExternalStore.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@hilos/core": "*"
+  },
+  "peerDependencies": {
+    "react": "^19"
+  }
+}
