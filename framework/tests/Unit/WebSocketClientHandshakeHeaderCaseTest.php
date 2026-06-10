@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use PHPUnit\Framework\TestCase;
@@ -20,15 +21,21 @@ final class WebSocketClientHandshakeHeaderCaseTest extends TestCase
 {
     private ?SignalRouter $previousSignalRouter = null;
 
+    private ?EnvAccessor $previousEnv = null;
+
     protected function setUp(): void
     {
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
+        // The handshake welcome frame reads HILOS_BUILD_TIMESTAMP through Hilos::$env.
+        $this->previousEnv = Hilos::$env;
+        Hilos::$env = new EnvAccessor();
     }
 
     protected function tearDown(): void
     {
         Hilos::$sr = $this->previousSignalRouter;
+        Hilos::$env = $this->previousEnv;
     }
 
     public function testHandshakeSucceedsWithLowercaseHeaderNames(): void

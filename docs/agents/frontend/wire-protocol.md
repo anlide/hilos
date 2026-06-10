@@ -112,6 +112,23 @@ Every message is a tagged envelope. Signals are discriminated by a `type` /
 envelope does **not** carry a connection id — the connection is the socket it
 arrives on.
 
+### Signal envelope (BE→FE) and the handshake welcome
+
+Every server→client frame is the envelope `{type, data, outcome?, time?}`:
+`type` discriminates the signal, `data` carries its payload, `outcome`
+(`success` | `fail`) marks action acknowledgements, and `time` is a reserved
+server clock tick in milliseconds.
+
+The first frame the server sends on every connection — directly behind the 101
+upgrade response, before anything else — is the framework welcome:
+
+```json
+{"type": "handshake", "data": {"build": "<HILOS_BUILD_TIMESTAMP>"}}
+```
+
+`build` is the daemon's `HILOS_BUILD_TIMESTAMP` environment value (`dev` when
+unset); it feeds the build-version check below.
+
 ### Discriminated-union parsing (layered)
 
 Discriminated-union parsing is the **only** allowed way to interpret a message.
@@ -211,9 +228,11 @@ through any other channel (HTTP multipart, etc.) is a gross violation.
 
 ## Build-version check and forced refresh
 
-A build timestamp lives in `.env`, is bumped at build time, and is carried in
-the handshake response. The SPA compares it on every connect and reconnect; on
-mismatch it forces a page refresh to load the new build. There is one global
+A build timestamp lives in `.env` (`HILOS_BUILD_TIMESTAMP`, `dev` when unset),
+is bumped at build time, and is carried in the `handshake` welcome frame — the
+first frame the server sends on every connection. The SPA compares it on every
+connect and reconnect; on mismatch it forces a page refresh to load the new
+build. There is one global
 build-version, not a per-message-type version — this handles a long-lived
 no-refresh SPA outliving a backend redeploy.
 
@@ -240,5 +259,5 @@ listing the exact fields, signals, DTOs, and routes that change:
   stops crossing to the client;
 - the client-minted `requestId` echoed on `::success` / `::fail`;
 - the page key carried on every page signal;
-- the build timestamp carried in the handshake response;
+- the build timestamp carried in the `handshake` welcome frame;
 - a mandatory declared authorizer on every action and page-subscribe.

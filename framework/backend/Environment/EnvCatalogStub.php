@@ -190,6 +190,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 AppEnv::DEV->value,
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_BUILD_TIMESTAMP->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'dev',
+                emptyIsMissing: true,
+            ),
         ];
     }
 

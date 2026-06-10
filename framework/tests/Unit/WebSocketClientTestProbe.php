@@ -33,6 +33,9 @@ final class WebSocketClientTestProbe extends WebSocketClient
     /** @var array<string, string> Cookies captured from onHandshake() */
     public array $capturedCookies = [];
 
+    /** @var string Accept key captured from onHandshake() */
+    public string $capturedAcceptKey = '';
+
     /**
      * Build a probe without invoking the socket/env constructor chain.
      *
@@ -121,10 +124,10 @@ final class WebSocketClientTestProbe extends WebSocketClient
     }
 
     /**
-     * Captures handshake headers and cookies for assertions.
+     * Captures handshake headers, cookies, and the accept key for assertions.
      *
      * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
-     * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
+     * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
      * @param RequestQueryParams $queryParams Query parameters from request URL
@@ -138,5 +141,6 @@ final class WebSocketClientTestProbe extends WebSocketClient
     ): void {
         $this->capturedHeaders = $headers;
         $this->capturedCookies = $cookies;
+        $this->capturedAcceptKey = $acceptKey;
     }
 }

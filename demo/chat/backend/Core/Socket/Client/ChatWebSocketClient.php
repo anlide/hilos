@@ -33,7 +33,7 @@ final class ChatWebSocketClient extends WebSocketClient
      * Called when WebSocket handshake is completed.
      *
      * @param array<string, string> $headers All HTTP headers from handshake request (lowercase header names)
-     * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)
+     * @param string $acceptKey Daemon-minted connection identifier
      * @param array<string, string> $cookies Parsed cookies
      * @param string $clientIp Client IP address
      * @param RequestQueryParams $queryParams Query parameters from request URL

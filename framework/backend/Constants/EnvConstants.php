@@ -208,4 +208,11 @@ enum EnvConstants
      * When PROD or STAGING: database seeds are disabled.
      */
     case APP_ENV;
+
+    /**
+     * Build timestamp carried in the WebSocket handshake welcome frame.
+     * Bumped at frontend build time; the frontend compares it on every
+     * (re)connect and forces a page refresh on mismatch. 'dev' when unset.
+     */
+    case HILOS_BUILD_TIMESTAMP;
 }
