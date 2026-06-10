@@ -11,6 +11,7 @@
     "check": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@hilos/core": "file:../../../framework/frontend/core",
     "@hilos/vue": "file:../../../framework/frontend/vue",
     "vue": "^3.5.35"
   },

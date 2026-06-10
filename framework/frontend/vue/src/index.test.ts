@@ -1,8 +1,8 @@
-// Harness smoke: proves the vitest project wiring runs against this package's
-// source. Real tests replace it as the Vue view layer fills in.
+// Pins the public surface: everything a Vue consumer may import from
+// '@hilos/vue' is exported here. Behavior is covered by the module tests.
 import { expect, it } from 'vitest'
-import * as entry from './index'
+import { useConnectionState } from './index.js'
 
-it('loads the @hilos/vue entry module', () => {
-  expect(entry).toBeTypeOf('object')
+it('exports the @hilos/vue public surface', () => {
+  expect(useConnectionState).toBeTypeOf('function')
 })

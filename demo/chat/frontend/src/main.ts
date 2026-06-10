@@ -7,5 +7,7 @@
 import { createApp } from 'vue'
 
 import App from './App.vue'
+import { connection } from './connection'
 
+connection.connect()
 createApp(App).mount('#app')

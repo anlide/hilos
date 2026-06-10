@@ -186,6 +186,10 @@ services:
     working_dir: /hilos/demo/chat/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The dev page is served by Vite, not nginx, so the app's same-origin
+      # /ws default cannot reach the daemon; point it at the published
+      # WebSocket port instead (see frontend/src/connection.ts).
+      VITE_WS_URL: "ws://localhost:${WEBSOCKET_PORT:-8092}"
     command: sh -c "npm install && npm run dev"
     ports:
       - "${FRONTEND_DEV_PORT:-5173}:5173"
