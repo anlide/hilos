@@ -60,6 +60,33 @@ final class WebSocketClientHandshakeHeaderCaseTest extends TestCase
         $this->assertStringContainsString("Sec-WebSocket-Accept: {$expectedAccept}", $probe->outboundBytes());
         $this->assertSame(['session' => 'abc'], $probe->capturedCookies);
         $this->assertSame($key, $probe->capturedHeaders['sec-websocket-key'] ?? null);
+        // The first header line must not be lost (it used to be double-shifted
+        // away together with the request line).
+        $this->assertSame('localhost:8092', $probe->capturedHeaders['host'] ?? null);
+    }
+
+    public function testHandshakeSucceedsWithUpgradeHeaderFirst(): void
+    {
+        // nginx emits its proxy_set_header values (Upgrade, Connection) before
+        // the passed-through client headers, so unlike browsers it does not
+        // put Host first. The first header line must survive parsing.
+        $probe = WebSocketClientTestProbe::createSocketless();
+        $key = base64_encode('0123456789abcdef');
+
+        $probe->feed(
+            "GET /ws HTTP/1.1\r\n"
+            . "Upgrade: websocket\r\n"
+            . "Connection: upgrade\r\n"
+            . "Host: chat-nginx-test\r\n"
+            . "Sec-WebSocket-Version: 13\r\n"
+            . "Sec-WebSocket-Key: {$key}\r\n"
+            . "\r\n",
+        );
+
+        $this->assertTrue($probe->handshakeDone());
+        $this->assertStringContainsString('101 Switching Protocols', $probe->outboundBytes());
+        $this->assertSame('websocket', $probe->capturedHeaders['upgrade'] ?? null);
+        $this->assertSame('chat-nginx-test', $probe->capturedHeaders['host'] ?? null);
     }
 
     public function testHandshakeSucceedsWithBrowserCanonicalHeaderNames(): void

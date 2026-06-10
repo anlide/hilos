@@ -279,7 +279,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH] ?? '');
 
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
-        array_shift($lines);
         $headers = $this->parseHeaders($lines);
 
         // Check if it's a WebSocket upgrade request
