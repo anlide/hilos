@@ -1,6 +1,6 @@
-// The @hilos/angular test project: adapter logic over @hilos/core. Runs in the
-// node environment; the Analog Angular plugin and a DOM environment arrive
-// with the first component-level tests that need them
+// The @hilos/angular test project: adapter logic over @hilos/core. Signals
+// run framework-free, so the node environment suffices; component-level tests
+// live in the consumer demos under the Angular CLI's native unit-test builder
 // (docs/agents/frontend/testing-strategy.md).
 import { defineConfig } from 'vitest/config'
 

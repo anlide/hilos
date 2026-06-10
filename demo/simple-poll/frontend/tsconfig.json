@@ -12,7 +12,15 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "ES2022",
-    "module": "preserve"
+    "module": "preserve",
+    /* The @hilos/angular file: dependency reaches a second @angular/core copy
+       through its real path (an SDK-workspace devDependency for the adapter
+       unit tests). Pin the bare import onto this app's single copy: with two
+       copies the SDK's inject() cannot see this app's injection context and
+       bootstrap dies with NG0203. */
+    "paths": {
+      "@angular/core": ["./node_modules/@angular/core"]
+    }
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

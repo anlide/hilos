@@ -1,8 +1,8 @@
-// Harness smoke: proves the vitest project wiring runs against this package's
-// source. Real tests replace it as rewrite step 7 fills the adapter.
+// Pins the public surface: everything an Angular consumer may import from
+// '@hilos/angular' is exported here. Behavior is covered by the module tests.
 import { expect, it } from 'vitest'
-import * as entry from './index'
+import { connectionStateSignal } from './index.js'
 
-it('loads the @hilos/angular entry module', () => {
-  expect(entry).toBeTypeOf('object')
+it('exports the @hilos/angular public surface', () => {
+  expect(connectionStateSignal).toBeTypeOf('function')
 })
