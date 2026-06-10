@@ -77,7 +77,8 @@ project's planned demos, so they double as real demos and as portability proofs.
 
 Unit tests run framework-free against the core (most logic needs no browser); the
 React slice uses vitest + `@testing-library/react`, and the Angular slice uses
-vitest via the Analog plugin ([testing-strategy.md](testing-strategy.md)).
+vitest via the Angular CLI's native unit-test builder
+([testing-strategy.md](testing-strategy.md)).
 
 ## Sequencing
 

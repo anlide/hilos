@@ -13,9 +13,9 @@ table and conflict state machines — is unit-tested with **no browser** at all.
 Per-framework view layers test with vitest too:
 
 - the React slice uses vitest + `@testing-library/react`;
-- the Angular slice uses vitest via the Analog plugin (and leans on e2e for any
-  part too fiddly to drive in vitest — the core logic is already covered
-  framework-free).
+- the Angular slice uses vitest via the Angular CLI's native unit-test builder
+  (and leans on e2e for any part too fiddly to drive in vitest — the core logic
+  is already covered framework-free).
 
 ## End-to-end tests — Playwright, multi-context
 

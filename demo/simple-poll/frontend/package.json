@@ -1,0 +1,27 @@
+{
+  "name": "demo-simple-poll",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Simple-poll demo — an end project that consumes the Hilos frontend SDK (@hilos/angular); doubles as the Angular conformance demo.",
+  "scripts": {
+    "ng": "ng",
+    "dev": "ng serve --host 0.0.0.0 --port 5173",
+    "build": "ng build",
+    "check": "tsc --noEmit -p tsconfig.app.json"
+  },
+  "dependencies": {
+    "@angular/common": "^22.0.0",
+    "@angular/compiler": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "@angular/platform-browser": "^22.0.0",
+    "@hilos/angular": "file:../../../framework/frontend/angular",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.0.0",
+    "@angular/cli": "^22.0.0",
+    "@angular/compiler-cli": "^22.0.0",
+    "typescript": "~6.0.2"
+  }
+}

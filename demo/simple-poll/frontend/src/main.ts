@@ -1,0 +1,17 @@
+// demo-simple-poll — an end project consuming the Hilos frontend SDK
+// (@hilos/angular).
+//
+// This is a consumer, not a member of the SDK workspace: it pulls
+// @hilos/angular the way any real Hilos project does — through the canonical
+// Angular CLI toolchain — and doubles as the Angular conformance demo
+// (docs/agents/frontend/multiframework-core.md). The poll application entry
+// point lands here.
+
+import { bootstrapApplication } from '@angular/platform-browser'
+
+import { App } from './app/app'
+import { appConfig } from './app/app.config'
+
+bootstrapApplication(App, appConfig).catch((error: unknown) => {
+  console.error(error)
+})

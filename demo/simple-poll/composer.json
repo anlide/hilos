@@ -26,5 +26,32 @@
         "psr-4": {
             "Demo\\SimplePoll\\": "backend/"
         }
+    },
+    "scripts": {
+        "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
+        "post-install-cmd": "@hilos-frontend-reminder",
+        "post-update-cmd": "@hilos-frontend-reminder",
+        "frontend-start": "docker compose -f docker/docker-compose.local.yml up -d",
+        "frontend-stop": "docker compose -f docker/docker-compose.local.yml stop",
+        "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm install",
+        "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm run check",
+        "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm run build",
+        "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f poll-frontend-local",
+        "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-frontend-cli-test sh -c \"npm install && npm run build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npm install",
+        "test:e2e-up": "docker compose -f docker/docker-compose.test.yml --profile e2e up -d poll-nginx-test",
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npx playwright test",
+        "test:e2e-down": "@test:down",
+        "test:e2e-full": [
+            "@test:e2e-build",
+            "@test:e2e-install",
+            "@test:e2e-up",
+            "@test:e2e",
+            "@test:e2e-down"
+        ]
+    },
+    "config": {
+        "process-timeout": 0
     }
 }

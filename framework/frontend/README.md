@@ -2,11 +2,11 @@
 
 The framework frontend SDK as an npm workspace: the framework-agnostic core
 (`@hilos/core`) and the view layers — `@hilos/vue` (the canonical product
-layer) and `@hilos/react` (the React adapter; an Angular adapter follows).
-Consumer projects — the chat demo, the simple-todo React demo, and later the
-Angular demo — are not members of this workspace; they vendor the SDK. The
-normative spec lives under `docs/agents/frontend/` (`sdk-packaging.md`,
-`build-and-docker.md`, `multiframework-core.md`).
+layer), `@hilos/react` (the React adapter), and `@hilos/angular` (the Angular
+adapter). Consumer projects — the chat demo, the simple-todo React demo, and
+the simple-poll Angular demo — are not members of this workspace; they vendor
+the SDK. The normative spec lives under `docs/agents/frontend/`
+(`sdk-packaging.md`, `build-and-docker.md`, `multiframework-core.md`).
 
 ## Tooling runs in Docker, never on the host
 
@@ -33,10 +33,11 @@ For example, append `npm install` or `npm run build` as `<command>`.
 | `npm run pack` | build, then `npm pack` each package into `dist-pack/` |
 
 `@hilos/core` builds with `tsc` — it is a pure-TS, agnostic package we keep
-npm-publishable later, so it carries no bundler. `@hilos/react` is plain TS
-hooks over the core, so it builds with `tsc` too. `@hilos/vue` builds with Vite
-library mode because it compiles `.vue` single-file components. All emit
-`dist/index.js` plus `dist/index.d.ts`.
+npm-publishable later, so it carries no bundler. `@hilos/react` (plain TS hooks
+over the core) and `@hilos/angular` (plain TS signal bridges over the core)
+build with `tsc` too. `@hilos/vue` builds with Vite library mode because it
+compiles `.vue` single-file components. All emit `dist/index.js` plus
+`dist/index.d.ts`.
 
 Unit tests are vitest, colocated with the source as `*.test.ts`
 (`docs/agents/frontend/testing-strategy.md`). The workspace-root

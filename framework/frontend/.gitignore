@@ -1,5 +1,6 @@
 # Per-package build output and the npm-pack staging dir for the SDK workspace.
 /core/dist/
+/angular/dist/
 /react/dist/
 /vue/dist/
 /dist-pack/
