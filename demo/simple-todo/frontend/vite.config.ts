@@ -10,6 +10,14 @@ import { defineConfig } from 'vite'
 // docs/agents/frontend/build-and-docker.md).
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    // The @hilos/react file: dependency carries its own react copy (a
+    // devDependency for the adapter unit tests), reachable through the
+    // symlink's real path. Dedupe forces every react import — including the
+    // SDK's — onto this app's single copy; with two copies the SDK hooks
+    // would run against a second React with a null dispatcher.
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     host: true,
     port: 5173,

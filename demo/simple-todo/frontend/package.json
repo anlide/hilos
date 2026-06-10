@@ -11,6 +11,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@hilos/core": "file:../../../framework/frontend/core",
     "@hilos/react": "file:../../../framework/frontend/react",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

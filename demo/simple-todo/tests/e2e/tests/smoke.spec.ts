@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test'
 
-// Category-1 smoke (testing-strategy.md): the blank React app — the step-5.1
-// conformance shell — renders from the built artifact through the docker test
-// stack.
+// Category-1 smoke (testing-strategy.md): the React app renders from the
+// built artifact through the docker test stack. Contains, not equals: since
+// step 7.1 the root also carries the connection-state indicator.
 test('blank page renders', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByTestId('app-root')).toHaveText('Hilos simple-todo (React)')
+  await expect(page.getByTestId('app-root')).toContainText('Hilos simple-todo (React)')
 })
