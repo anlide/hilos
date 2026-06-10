@@ -11,6 +11,7 @@ use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -212,8 +213,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Parse HTTP headers from request lines after the request line.
      *
+     * Header names are normalized to lowercase (RFC 7230 treats field names as
+     * case-insensitive, and e.g. Node clients send them lowercase); header
+     * values keep their original case.
+     *
      * @param list<string> $lines Request lines from explode of raw request
-     * @return array<string, string> Header name to value map
+     * @return array<string, string> Lowercase header name to value map
      */
     protected function parseHeaders(array $lines): array
     {
@@ -224,7 +229,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             }
             $headerParts = explode(':', $lines[$i], 2);
             if (count($headerParts) === 2) {
-                $headers[trim($headerParts[0])] = trim($headerParts[1]);
+                $headers[strtolower(trim($headerParts[0]))] = trim($headerParts[1]);
             }
         }
 
@@ -242,7 +247,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         $cookies = [];
 
         // Cookie header format: "name1=value1; name2=value2; name3=value3"
-        $cookieHeader = $headers[HttpConstants::HEADER_COOKIE] ?? '';
+        $cookieHeader = HttpHeaderHelper::get($headers, HttpConstants::HEADER_COOKIE) ?? '';
         if (empty($cookieHeader)) {
             return $cookies;
         }

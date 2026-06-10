@@ -35,6 +35,7 @@ use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\WebSocketException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\JsonHelper;
 use Hilos\Utils\Logger;
 use Hilos\Core\Exception\InvalidStateException;
@@ -271,13 +272,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $headers = $this->parseHeaders($lines);
 
         // Check if it's a WebSocket upgrade request
-        if (!isset($headers[HttpConstants::HEADER_UPGRADE]) ||
-            strtolower($headers[HttpConstants::HEADER_UPGRADE]) !== HttpConstants::WEBSOCKET_PROTOCOL) {
+        $upgrade = HttpHeaderHelper::get($headers, HttpConstants::HEADER_UPGRADE);
+        if ($upgrade === null || strtolower($upgrade) !== HttpConstants::WEBSOCKET_PROTOCOL) {
             throw new HandshakeFailedException("Missing or invalid Upgrade header");
         }
 
         // Check WebSocket protocol version (RFC 6455 requires version 13)
-        $version = $headers[HttpConstants::HEADER_SEC_WEBSOCKET_VERSION] ?? '';
+        $version = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_VERSION) ?? '';
         if ($version !== WebSocketConstants::PROTOCOL_VERSION) {
             throw new UnsupportedProtocolVersionException($version ?: 'not specified');
         }
@@ -286,7 +287,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // RFC 6455 Section 4.2.2: The server must concatenate the client's Sec-WebSocket-Key
         // with the magic string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", compute SHA1 hash,
         // and encode it as base64 to get the Sec-WebSocket-Accept value.
-        $key = $headers[HttpConstants::HEADER_SEC_WEBSOCKET_KEY] ?? '';
+        $key = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_KEY) ?? '';
         if (empty($key)) {
             throw new HandshakeFailedException("Missing Sec-WebSocket-Key header");
         }
@@ -803,7 +804,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * This method is final to ensure framework-level handshake logic is always executed.
      * Child classes should override onHandshake() for custom behavior.
      *
-     * @param array<string, string> $headers HTTP headers from handshake request
+     * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
@@ -819,21 +820,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->acceptKey = $acceptKey;
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
-        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
-            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN)
-            ?? null;
-        $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
-        $acceptLanguage = $headers[HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? null;
-        Hilos::$ac?->ensureBrowserSession(
-            is_string($sessionToken) ? $sessionToken : null,
-            is_string($userAgent) ? $userAgent : null,
-            is_string($acceptLanguage) ? $acceptLanguage : null,
-        );
-        Hilos::$ac?->openWsConnection(
-            $acceptKey,
-            is_string($sessionToken) ? $sessionToken : null,
-            $clientIp,
-        );
+        $sessionToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
+            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
+        $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
+        $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
+        Hilos::$ac?->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
+        Hilos::$ac?->openWsConnection($acceptKey, $sessionToken, $clientIp);
 
         $dto = new WebSocketHandshakeSignalDTO(
             headers: $headers,
@@ -857,7 +849,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Called after successful handshake validation but before sending the response.
      * Can be used to inspect headers, cookies, client IP, etc.
      *
-     * @param array<string, string> $headers HTTP headers from handshake request
+     * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)

@@ -27,7 +27,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     /**
      * Creates WebSocket handshake signal DTO.
      *
-     * @param array<string, string> $headers HTTP headers
+     * @param array<string, string> $headers HTTP headers (lowercase header names)
      * @param string $acceptKey WebSocket accept key
      * @param array<string, string> $cookies Cookies
      * @param string $clientIp Client IP address

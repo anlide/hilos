@@ -11,6 +11,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 
 /**
  * FrontendHtmlClient - HTTP client that serves prerendered HTML from HtmlCache.
@@ -59,7 +60,10 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
 
         $request = $this->parseRequest($this->readBuffer);
         $path = $request[HttpConstants::REQUEST_KEY_PATH] ?? HttpConstants::PATH_ROOT;
-        $acceptLanguage = $request[HttpConstants::REQUEST_KEY_HEADERS][HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? '';
+        $acceptLanguage = HttpHeaderHelper::get(
+            $request[HttpConstants::REQUEST_KEY_HEADERS] ?? [],
+            HttpConstants::HEADER_ACCEPT_LANGUAGE,
+        ) ?? '';
 
         $resolved = $this->resolver->resolve($path, $acceptLanguage);
         $html = $this->cache->get($resolved['path'], $resolved['locale']);
