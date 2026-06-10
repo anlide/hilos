@@ -51,3 +51,20 @@ e2e robust against copy and layout changes.
 Unit tests run against **source**; e2e runs against the **built artifact** with a
 **booted daemon** — you test what you ship. The full environment and test matrix
 is in [build-and-docker.md](build-and-docker.md).
+
+## Running the whole suite
+
+One root aggregate answers "is the whole frontend green": `composer run
+test:frontend:all`. It installs and builds the SDK, runs the SDK checks
+(typecheck, unit, lint, format), then for every demo runs the app typecheck and
+the full e2e cycle. The SDK build comes first because consumers resolve
+`@hilos/*` to the built `dist` ([sdk-packaging.md](sdk-packaging.md)), so the aggregate passes
+on a fresh clone. Run it at milestones and before handing a change over.
+
+The aggregate is **not** the inner loop — do not re-run the whole matrix per
+iteration. Day-to-day stays pointed: bring one demo's e2e stack up once
+(`composer run test:e2e-up`), then run only the slice under work with
+`composer run test:e2e -- --grep <pattern>` — one feature, or one of the
+categories above — and tear down when done. Unit tests are pointed the same
+way: `npm run test` in the SDK container, or one package via `npm run test -w
+<package>`.

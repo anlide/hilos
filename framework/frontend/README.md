@@ -45,6 +45,14 @@ Unit tests are vitest, colocated with the source as `*.test.ts`
 the whole SDK; the build tsconfigs exclude test files, so nothing test-related
 reaches `dist/`.
 
+From the repo root every step has a Composer wrapper —
+`composer run test:framework:frontend:<install|build|check|unit|lint|format-check>`
+— and `composer run test:framework:frontend` aggregates the checks.
+`composer run test:frontend:all` goes further: the SDK suite plus every demo's
+app typecheck and full e2e cycle, building the SDK first so the demos' `dist`
+resolution works on a fresh clone. When to use which is in
+`docs/agents/frontend/testing-strategy.md`.
+
 ## Dev versus build resolution
 
 A `development` export condition resolves each package to its `src`, so a
