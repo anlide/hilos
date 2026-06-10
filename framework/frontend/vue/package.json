@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "check": "vue-tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
     "build": "vite build && vue-tsc --emitDeclarationOnly -p tsconfig.build.json"
   },
   "dependencies": {

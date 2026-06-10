@@ -26,6 +26,7 @@ For example, append `npm install` or `npm run build` as `<command>`.
 |---|---|
 | `npm install` | install the workspace toolchain into the host `node_modules` |
 | `npm run check` | type-check every package (`tsc` / `vue-tsc`, no emit) |
+| `npm run test` | run the unit tests (vitest, against source) |
 | `npm run build` | build every package from `src/` into `dist/` |
 | `npm run pack` | build, then `npm pack` each package into `dist-pack/` |
 
@@ -33,6 +34,12 @@ For example, append `npm install` or `npm run build` as `<command>`.
 npm-publishable later, so it carries no bundler. `@hilos/vue` builds with Vite
 library mode because it compiles `.vue` single-file components. Both emit
 `dist/index.js` plus `dist/index.d.ts`.
+
+Unit tests are vitest, colocated with the source as `*.test.ts`
+(`docs/agents/frontend/testing-strategy.md`). The workspace-root
+`vitest.config.ts` aggregates each package as a test project, so one run covers
+the whole SDK; the build tsconfigs exclude test files, so nothing test-related
+reaches `dist/`.
 
 ## Dev versus build resolution
 

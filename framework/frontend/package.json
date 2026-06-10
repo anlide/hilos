@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "check": "npm run check --workspaces --if-present",
+    "test": "vitest run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -23,6 +24,7 @@
     "eslint-plugin-vue": "^10.9.2",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.0"
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
   }
 }
