@@ -8,7 +8,7 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\CookieNames;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\MissingRequiredParameterException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -20,7 +20,9 @@ final class ChatAgentHandshakeValidationTest extends TestCase
 {
     public function testHandshakeWithoutSessionTokenCookieThrows(): void
     {
-        $this->expectException(MissingRequiredParameterException::class);
+        // The contained family: the worker handshake dispatcher rejects
+        // ValidationException without crashing (see WorkerManager).
+        $this->expectException(ValidationException::class);
         $this->expectExceptionMessage(CookieNames::SESSION_TOKEN . ' cookie is required');
 
         (new ChatAgent())->onSignalHandshake(

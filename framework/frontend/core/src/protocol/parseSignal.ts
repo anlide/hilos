@@ -1,7 +1,9 @@
 // The canonical parse boundary: the only place a raw socket frame may be
 // interpreted (wire-protocol.md). Narrowing is layered — raw unknown → signal
-// envelope → concrete signal by `type` tag. Shape-sniffing a message anywhere
-// else is a gross violation.
+// envelope → concrete signal by `type` tag. The framework owns the envelope
+// and category layers; the project supplies schemas for its concrete leaf
+// signals. Shape-sniffing a message anywhere else is a gross violation.
+import type { ZodType } from 'zod'
 import { SIGNAL_TYPE_HANDSHAKE } from './constants.js'
 import {
   signalEnvelopeSchema,
@@ -9,12 +11,22 @@ import {
   type SignalEnvelope,
 } from './envelope.js'
 
+/**
+ * Project-declared concrete signal schemas, keyed by signal `type`. Framework
+ * signal types take precedence and cannot be shadowed. `data` stays `unknown`
+ * on the parsed signal until the declaration-merging typing of the action
+ * step; the consumer narrows it with a typed selector per declared schema.
+ */
+export type ProjectSignalSchemas = Record<string, ZodType>
+
 /** A frame that parsed into a signal the core understands or tolerates. */
 export type ParsedSignal =
   | { kind: 'handshake'; build: string; envelope: SignalEnvelope }
+  | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
 export type HandshakeSignal = Extract<ParsedSignal, { kind: 'handshake' }>
+export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
 
 /**
@@ -35,11 +47,18 @@ export type ParseResult =
 /**
  * Parse one raw WebSocket frame into a typed signal.
  *
- * Unknown signal `type` values parse successfully as `kind: 'unknown'` — the
- * project layer narrows them further; only frames violating the envelope
- * contract itself come back as failures.
+ * A `type` with a project schema validates against it and parses as
+ * `kind: 'project'`. Unknown signal `type` values parse successfully as
+ * `kind: 'unknown'` — tolerated and observable; only frames violating the
+ * envelope contract or a declared schema come back as failures.
+ *
+ * @param raw The raw frame payload off the socket.
+ * @param projectSchemas Project-declared concrete signal schemas by `type`.
  */
-export function parseSignal(raw: unknown): ParseResult {
+export function parseSignal(
+  raw: unknown,
+  projectSchemas?: ProjectSignalSchemas,
+): ParseResult {
   if (typeof raw !== 'string') {
     return { ok: false, failure: { kind: 'non-text-frame' } }
   }
@@ -83,7 +102,32 @@ export function parseSignal(raw: unknown): ParseResult {
       }
     }
 
-    default:
+    default: {
+      const schema = projectSchemas?.[envelope.data.type]
+      if (schema) {
+        const data = schema.safeParse(envelope.data.data)
+        if (!data.success) {
+          return {
+            ok: false,
+            failure: {
+              kind: 'invalid-signal-data',
+              type: envelope.data.type,
+              message: data.error.message,
+            },
+          }
+        }
+
+        return {
+          ok: true,
+          signal: {
+            kind: 'project',
+            type: envelope.data.type,
+            data: data.data,
+            envelope: envelope.data,
+          },
+        }
+      }
+
       return {
         ok: true,
         signal: {
@@ -92,5 +136,6 @@ export function parseSignal(raw: unknown): ParseResult {
           envelope: envelope.data,
         },
       }
+    }
   }
 }

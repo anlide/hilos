@@ -4,9 +4,9 @@
 // transport, the signal/action protocol and its discriminated-union parsers,
 // the subscription manager, the normalized entity store, and the headless
 // table / modal / conflict state machines. Fills in across rewrite step 7;
-// shipped so far: the connection machine, the signal parse boundary, the
-// reactive signal primitive the stores build on, the scope-partitioned
-// stores, and the normalizer ingest boundary.
+// shipped so far: the connection machine, the signal parse boundary with the
+// project-signal schema seam, the reactive signal primitive the stores build
+// on, the scope-partitioned stores, and the normalizer ingest boundary.
 
 export {
   createSignal,
@@ -42,9 +42,16 @@ export {
   type HandshakeSignalData,
 } from './protocol/envelope.js'
 export {
+  entityFragmentSchema,
+  scopePayloadSchema,
+  type ScopePayloadWire,
+} from './protocol/scopePayload.js'
+export {
   parseSignal,
   type ParsedSignal,
   type HandshakeSignal,
+  type ProjectSignal,
+  type ProjectSignalSchemas,
   type UnknownSignal,
   type ParseFailure,
   type ParseResult,

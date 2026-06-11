@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { parseSignal } from './parseSignal.js'
 
 describe('parseSignal', () => {
@@ -96,5 +97,43 @@ describe('parseSignal', () => {
   it('rejects an invalid outcome marker', () => {
     const result = parseSignal('{"type":"x","data":{},"outcome":"maybe"}')
     expect(result.ok).toBe(false)
+  })
+
+  it('parses a type with a project schema as a project signal', () => {
+    const result = parseSignal('{"type":"greet","data":{"who":"hilos"}}', {
+      greet: z.looseObject({ who: z.string() }),
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'project',
+        type: 'greet',
+        data: { who: 'hilos' },
+      })
+    }
+  })
+
+  it('rejects a project signal violating its schema', () => {
+    const result = parseSignal('{"type":"greet","data":{"who":7}}', {
+      greet: z.looseObject({ who: z.string() }),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'greet',
+      })
+    }
+  })
+
+  it('keeps framework types ahead of a shadowing project schema', () => {
+    const result = parseSignal(
+      '{"type":"handshake","data":{"build":"1718000000"}}',
+      { handshake: z.looseObject({ hijacked: z.string() }) },
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal.kind).toBe('handshake')
+    }
   })
 })

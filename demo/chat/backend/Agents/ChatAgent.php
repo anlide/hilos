@@ -18,7 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\MissingRequiredParameterException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
@@ -72,15 +72,18 @@ final class ChatAgent extends AbstractAgent
      * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws MissingRequiredParameterException When the session token cookie is missing
+     * @throws ValidationException When the session token cookie is missing
      * @throws EmptyValueException When the session token cookie is empty
      * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
+        // The whole cookie validation throws inside the ValidationException
+        // family: the worker handshake dispatcher contains that family, so a
+        // client without a valid cookie is rejected, never a worker crash.
         if (!array_key_exists(CookieNames::SESSION_TOKEN, $data->cookies)) {
-            throw new MissingRequiredParameterException(CookieNames::SESSION_TOKEN . ' cookie is required');
+            throw new ValidationException(CookieNames::SESSION_TOKEN . ' cookie is required');
         }
 
         $sessionToken = $data->cookies[CookieNames::SESSION_TOKEN];

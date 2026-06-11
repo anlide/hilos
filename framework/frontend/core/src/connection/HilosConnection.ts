@@ -9,6 +9,8 @@ import {
   type HandshakeSignal,
   type ParsedSignal,
   type ParseFailure,
+  type ProjectSignal,
+  type ProjectSignalSchemas,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
 import {
@@ -53,6 +55,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   handshake: HandshakeSignal
   /** Welcome carried a different build than expected — the consumer forces the refresh. */
   buildMismatch: BuildMismatch
+  /** A signal validated against a project-declared schema. */
+  projectSignal: ProjectSignal
   /** A signal the core has no concrete schema for; tolerated and observable. */
   unknownSignal: UnknownSignal
   /** A frame that violated the envelope contract; reported, never fatal. */
@@ -72,6 +76,8 @@ export interface HilosConnectionOptions {
    * build is latched and later welcomes are compared against it.
    */
   expectedBuild?: string
+  /** Project-declared concrete signal schemas for the parse boundary. */
+  projectSchemas?: ProjectSignalSchemas
   /** Uniform `[0, 1)` source for reconnect jitter; injectable for tests. */
   random?: () => number
 }
@@ -94,6 +100,7 @@ export class HilosConnection {
   private readonly reconnectOptions: Required<ReconnectOptions>
   private readonly keepaliveIntervalMs: number
   private readonly expectedBuild: string | undefined
+  private readonly projectSchemas: ProjectSignalSchemas | undefined
   private readonly random: () => number
   private readonly emitter = new Emitter<HilosConnectionEventMap>()
 
@@ -117,6 +124,7 @@ export class HilosConnection {
     this.keepaliveIntervalMs =
       options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS
     this.expectedBuild = options.expectedBuild
+    this.projectSchemas = options.projectSchemas
     this.random = options.random ?? Math.random
   }
 
@@ -192,7 +200,7 @@ export class HilosConnection {
   }
 
   private handleFrame(data: unknown): void {
-    const result = parseSignal(data)
+    const result = parseSignal(data, this.projectSchemas)
     if (!result.ok) {
       this.emitter.emit('parseFailure', result.failure)
       return
@@ -202,6 +210,9 @@ export class HilosConnection {
     switch (signal.kind) {
       case 'handshake':
         this.handleHandshake(signal)
+        break
+      case 'project':
+        this.emitter.emit('projectSignal', signal)
         break
       case 'unknown':
         this.emitter.emit('unknownSignal', signal)

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   HilosConnection,
   type ConnectionState,
   type WebSocketLike,
 } from './HilosConnection.js'
+import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 
 /**
  * Scripted stand-in for the browser WebSocket. Nothing fires on its own —
@@ -78,7 +80,12 @@ class MockWebSocket implements WebSocketLike {
 const WELCOME_A = '{"type":"handshake","data":{"build":"build-a"}}'
 const WELCOME_B = '{"type":"handshake","data":{"build":"build-b"}}'
 
-function createConnection(overrides: { expectedBuild?: string } = {}) {
+function createConnection(
+  overrides: {
+    expectedBuild?: string
+    projectSchemas?: ProjectSignalSchemas
+  } = {},
+) {
   const connection = new HilosConnection({
     url: 'ws://test/ws',
     webSocketFactory: (url) => new MockWebSocket(url),
@@ -283,6 +290,22 @@ describe('signal routing', () => {
 
     expect(handshakes).toEqual(['build-a'])
     expect(signals).toEqual(['handshake'])
+  })
+
+  it('emits projectSignal for a schema-validated project type', () => {
+    const { connection } = createConnection({
+      projectSchemas: { greet: z.looseObject({ who: z.string() }) },
+    })
+    const received: { type: string; data: unknown }[] = []
+    connection.on('projectSignal', (signal) =>
+      received.push({ type: signal.type, data: signal.data }),
+    )
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message('{"type":"greet","data":{"who":"hilos"}}')
+
+    expect(received).toEqual([{ type: 'greet', data: { who: 'hilos' } }])
   })
 
   it('emits unknownSignal for unknown types and stays connected', () => {
