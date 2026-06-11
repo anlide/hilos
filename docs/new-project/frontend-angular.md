@@ -5,11 +5,6 @@ Reference implementation:
 Common ground (containers, connection, e2e, stable ids) is in
 [README.md](README.md); this part covers only what is Angular-specific.
 
-> **KNOWN BLOCKING ISSUE (open): `ng serve` dev mode crashes with NG0203.**
-> See the section at the bottom. `ng build`, the e2e stack, and production
-> serving are NOT affected — only the dev-server page. Until it is fixed, an
-> Angular consumer cannot run the live dev loop against the SDK.
-
 ## Toolchain
 
 - Canonical **Angular CLI** (v22), NOT a Vite app: `angular.json` with the
@@ -29,10 +24,22 @@ Common ground (containers, connection, e2e, stable ids) is in
 - deps `@angular/{common,compiler,core,platform-browser}` `^22`, `rxjs`,
   `tslib`, `@hilos/angular` (`file:`); devDeps `@angular/{build,cli,
   compiler-cli}` `^22`, `typescript ~6.0.x`; `cli.analytics: false` for
-  container runs. Under the CLI the SDK resolves to its built **dist** (no
-  development-condition pass-through at build time) — build the SDK first.
+  container runs. Under the CLI the SDK resolves to its built **dist** in
+  BOTH modes (`ng build` natively; `ng serve` via the dev-configuration
+  `conditions` override below) — build the SDK first, and rebuild it to see
+  SDK changes in a running dev server.
 - `angular.json` is NOT JSONC-tolerant in PhpStorm — keep comments out of it;
   put explanations in `tsconfig.json` (JSONC-tolerant) instead.
+- The Angular disk cache (`frontend/.angular/cache`) is an **lmdb** database
+  and must never be open in two containers at once: containers have
+  overlapping PID namespaces, which corrupts lmdb's reader lock table and
+  crashes `ng build` (`TypeError ... refCount` from lmdb, or a secondary
+  esbuild panic). The repo bind-mount shares the cache between the long-lived
+  dev server and every on-demand npm container, so the dev server OWNS the
+  cache and all cli/build containers set `CI: "true"` (the default
+  `cache.environment: "local"` disables the disk cache under CI) — see the
+  `*-frontend-cli-*` services in both compose files. This is Angular-only:
+  the Vite demos keep no lmdb-backed cache.
 
 ## SDK wiring
 
@@ -58,15 +65,17 @@ wired via `serve.options.proxyConfig` in `angular.json`. The proxy target is
 the compose service name — the dev container and the daemon share the local
 network.
 
-## Module duplication — two layers, one still open
+## Module duplication — two layers, both required
 
 The `file:` SDK reaches a second `@angular/core` copy through its real path
 (the SDK-workspace install used by the adapter unit tests). With two copies
 the SDK's `inject()` cannot see the app's injection context and bootstrap
-dies with **NG0203**.
+dies with **NG0203**. The fix has TWO independent layers — `ng build` and
+`ng serve` resolve modules through different pipelines, and each layer
+covers one of them:
 
-1. **Build path — SOLVED**: `tsconfig.json` pins the bare import onto the
-   app's single copy:
+1. **Build path**: `tsconfig.json` pins the bare import onto the app's
+   single copy:
 
    ```jsonc
    "paths": { "@angular/core": ["./node_modules/@angular/core"] }
@@ -75,20 +84,31 @@ dies with **NG0203**.
    The `@angular/build` esbuild pipeline resolves bare imports through
    tsconfig paths, so `ng build` (and therefore e2e/prod) emit one core.
 
-2. **Dev path — OPEN, BLOCKING**: the dev server's Vite dependency
-   PREBUNDLER ignores tsconfig paths and inlines the second core into the
-   prebundled `@hilos/angular` chunk (verifiable in
+2. **Dev path**: the dev server's Vite dependency PREBUNDLER ignores
+   tsconfig paths and inlines the second core into the prebundled
+   `@hilos/angular` chunk (verifiable in
    `frontend/.angular/cache/<ver>/<project>/vite/deps/@hilos_angular.js` —
    look for `framework/frontend/node_modules/@angular/core` in its header
    comments). The dev page then dies with NG0203 at bootstrap while the
    WebSocket itself (opened from `main.ts` before bootstrap) connects and
-   pings happily — a confusing symptom. Excluding the SDK from prebundling
-   (`serve.options.prebundle.exclude`) alone does NOT work: the dev pipeline
-   then pulls the SDK **TypeScript source** (development-condition export)
-   into the app build and fails with "file not found in TypeScript
-   compilation". The prepared next step is prebundle-exclude PLUS
-   `"conditions": ["module"]` in the development build configuration (forces
-   the SDK to resolve to dist in dev, matching `ng build`) — not yet
-   verified. Until this is fixed, treat the Angular dev loop as broken and
-   develop against the built artifact through nginx
-   (`composer run daemon-start-build`).
+   pings happily — a confusing symptom. The fix is TWO edits in
+   `angular.json`, applied TOGETHER:
+
+   ```json
+   "serve": { "options": { "prebundle": { "exclude": ["@hilos/angular", "@hilos/core"] } } }
+   ```
+
+   ```json
+   "build": { "configurations": { "development": { "conditions": ["module"] } } }
+   ```
+
+   Both are needed. Prebundle-exclude alone pulls the SDK **TypeScript
+   source** (development-condition export) into the app build and fails
+   with "file not found in TypeScript compilation"; `"conditions":
+   ["module"]` drops the `development` condition so the SDK resolves to its
+   **dist** in dev (matching `ng build`), and the exclude must stay or the
+   optimizer re-inlines the second core anyway. The trade-off: the dev
+   server serves the BUILT SDK — rebuild the SDK workspace to see SDK
+   changes (app-code HMR is unaffected). Keep the explanation in
+   `tsconfig.json`'s JSONC comment, since `angular.json` cannot hold
+   comments.

@@ -17,7 +17,16 @@
        through its real path (an SDK-workspace devDependency for the adapter
        unit tests). Pin the bare import onto this app's single copy: with two
        copies the SDK's inject() cannot see this app's injection context and
-       bootstrap dies with NG0203. */
+       bootstrap dies with NG0203.
+
+       This paths pin covers ng build only. The ng serve dependency PREBUNDLER
+       resolves @hilos/angular on its own, ignores this pin, and inlines the
+       SDK-workspace core copy into the prebundle — same NG0203, dev only. The
+       fix lives in angular.json (which cannot hold this comment): serve
+       prebundle.exclude lists @hilos/angular and @hilos/core so the optimizer
+       never touches them, and the development build configuration sets
+       conditions: ["module"] so the SDK's conditional exports resolve to dist
+       (build parity) instead of pulling SDK src into the app compilation. */
     "paths": {
       "@angular/core": ["./node_modules/@angular/core"]
     }

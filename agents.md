@@ -160,3 +160,4 @@ additional change in one of these surfaces, stop and ask again before editing it
 - [docs/quality.md](docs/quality.md) — application quality guidelines
 - [docs/reference.md](docs/reference.md) — API reference
 - [docs/cli-commands.md](docs/cli-commands.md) — CLI reference (legacy, prefer docs/agents/cli/commands.md)
+- [docs/new-project/README.md](docs/new-project/README.md) — creating a new Hilos project (backend + frontend), routes to the per-framework frontend parts

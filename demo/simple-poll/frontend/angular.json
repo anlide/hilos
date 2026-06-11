@@ -68,7 +68,8 @@
             "development": {
               "optimization": false,
               "extractLicenses": false,
-              "sourceMap": true
+              "sourceMap": true,
+              "conditions": ["module"]
             }
           },
           "defaultConfiguration": "production"
@@ -76,7 +77,10 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {
-            "proxyConfig": "proxy.conf.json"
+            "proxyConfig": "proxy.conf.json",
+            "prebundle": {
+              "exclude": ["@hilos/angular", "@hilos/core"]
+            }
           },
           "configurations": {
             "production": {
