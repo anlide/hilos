@@ -191,7 +191,7 @@ final class ChatAgent extends AbstractAgent
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws HilosException On bot message publish failure
-     * @throws LogicException If event id is null after sync
+     * @throws LogicException On payload type mismatch, or if event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -200,6 +200,11 @@ final class ChatAgent extends AbstractAgent
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
+                if (!$data->data instanceof BotMessageSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::BOT_MESSAGE . ' payload must be ' . BotMessageSignalData::class,
+                    );
+                }
                 $this->handleBotMessage($data->data);
                 return;
             default:
