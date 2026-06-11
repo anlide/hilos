@@ -112,3 +112,27 @@ covers one of them:
    changes (app-code HMR is unaffected). Keep the explanation in
    `tsconfig.json`'s JSONC comment, since `angular.json` cannot hold
    comments.
+
+## The core's signal engine — `@vue/reactivity` as a direct dependency
+
+`@hilos/core` ships a private signal engine, `@vue/reactivity` (app code
+never imports it). A real tarball install hoists it automatically; the
+monorepo `file:` link instead satisfies it from the SDK workspace's own copy
+and never places it in the consumer's `node_modules`. The Vite-Vue/React
+demos do not notice — they resolve the core to `src` in dev and prebundle the
+whole graph through the symlink's real path. The Angular dev server does: it
+resolves the core to **dist** and lists it in `prebundle.exclude` (the
+module-duplication fix above), so Vite serves the dist untouched and resolves
+its bare `@vue/reactivity` import from the consumer root, where the
+link-satisfied dep is absent — `Failed to resolve import "@vue/reactivity"`.
+
+The fix is one line: declare `@vue/reactivity` as a direct dependency of the
+Angular consumer so npm installs it locally:
+
+```json
+"dependencies": { "@vue/reactivity": "^3.5.35" }
+```
+
+Production `ng build` is unaffected — esbuild resolves the import through the
+symlink's real path either way; only the dev server reads it from the
+consumer root.

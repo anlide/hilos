@@ -48,6 +48,17 @@ auto-dedupes); Angular CLI = tsconfig `paths` pin for `ng build` PLUS
 full recipe is in
 [docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
 
+**Angular consumers also declare `@vue/reactivity`.** The core's signal engine
+is `@vue/reactivity` (private — app code never imports it). A real tarball
+install hoists it; the monorepo `file:` link satisfies it from the SDK
+workspace copy and leaves it out of the consumer's `node_modules`. The Angular
+dev server resolves the core to `dist` and `prebundle.exclude`s it, so Vite
+resolves its bare `@vue/reactivity` import from the consumer root and fails —
+so an Angular consumer adds `@vue/reactivity` as a direct dependency. The
+Vite-Vue/React demos resolve the core to `src` in dev and need nothing. Full
+recipe in
+[docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
+
 ## Distribution: a Composer-vendored tarball
 
 Distribution is **separate** from the dev monorepo and is **Composer-only for

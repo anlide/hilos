@@ -7,10 +7,13 @@
 // mechanism for a URL override, unlike the Vite demos).
 import { HilosConnection } from '@hilos/core'
 
+import { pollSignalSchemas } from './session'
+
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: sameOriginUrl,
+  projectSchemas: pollSignalSchemas,
 })
 
 // Forced-refresh check (docs/agents/frontend/wire-protocol.md): a welcome
