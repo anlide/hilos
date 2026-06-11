@@ -1,11 +1,17 @@
 # Environment configuration
 .env
 .env.local
+tests/.env
 .env.*.local
 
 # Log files
 data/logs/*.log
 data/logs/archive/
+data/logs-test/*.log
+data/logs-test/archive/
+
+# PHPUnit
+tests/.phpunit.cache/
 
 # Vendor
 vendor/

@@ -1,11 +1,10 @@
 // The todo application's single Hilos connection — one WebSocket drives the
 // whole SPA (docs/agents/frontend/core-and-connection.md).
 //
-// The endpoint defaults to the same-origin /ws route, overridable with
-// VITE_WS_URL. The demo ships no backend yet, so no environment answers it:
-// the Connection machine honestly cycles connecting → reconnecting until the
-// demo backend lands at step 7, which is exactly what the conformance slice
-// shows.
+// The endpoint defaults to the same-origin /ws route, which nginx proxies to
+// the daemon in the test and production environments. The local dev stack
+// overrides it with VITE_WS_URL, because there the page is served by the Vite
+// dev server while the daemon publishes its own WebSocket port.
 import { HilosConnection } from '@hilos/core'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
