@@ -7,10 +7,13 @@
 // dev server while the daemon publishes its own WebSocket port.
 import { HilosConnection } from '@hilos/core'
 
+import { todoSignalSchemas } from './session'
+
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: import.meta.env.VITE_WS_URL ?? sameOriginUrl,
+  projectSchemas: todoSignalSchemas,
 })
 
 // Forced-refresh check (docs/agents/frontend/wire-protocol.md): a welcome
