@@ -4,8 +4,9 @@
 // transport, the signal/action protocol and its discriminated-union parsers,
 // the subscription manager, the normalized entity store, and the headless
 // table / modal / conflict state machines. Fills in across rewrite step 7;
-// shipped so far: the connection machine, the signal parse boundary, and the
-// reactive signal primitive the stores build on.
+// shipped so far: the connection machine, the signal parse boundary, the
+// reactive signal primitive the stores build on, and the scope-partitioned
+// entity store.
 
 export {
   createSignal,
@@ -15,6 +16,13 @@ export {
   type WritableSignal,
   type Unsubscribe,
 } from './state/signal.js'
+export {
+  EntityStore,
+  type EntityId,
+  type EntityRef,
+  type EntitySnapshot,
+} from './state/EntityStore.js'
+export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
   KEEPALIVE_TEXT_PING,
