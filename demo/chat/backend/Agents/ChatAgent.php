@@ -7,10 +7,9 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\HttpHeaders;
+use Demo\Chat\Constants\CookieNames;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -19,7 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Http\Exception\MissingRequestQueryParamException;
+use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
@@ -62,29 +61,38 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the session token, registers the connection, emits registration updates, and sends
-     * the handshake response with the current user id and page catalog.
+     * Authenticates the session token cookie, registers the connection, emits registration updates, and
+     * sends the handshake response with the current-user entity fragment.
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only
      * first online transitions. Outbound moderation, draft, and file-upload session
      * state are sent on main page subscribe only.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and query params with a required session token
+     * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws MissingRequestQueryParamException When session token is missing
-     * @throws EmptyValueException When session token is empty
-     * @throws InvalidFormatException When session token is not a 32-character lowercase hex string
+     * @throws MissingRequiredParameterException When the session token cookie is missing
+     * @throws EmptyValueException When the session token cookie is empty
+     * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
-        $sessionToken = $data->queryParams->requireStringMatching(
-            HttpHeaders::SESSION_TOKEN,
-            self::SESSION_TOKEN_PATTERN,
-            HttpHeaders::SESSION_TOKEN . ' must be a 32-character lowercase hex token',
-        );
+        if (!array_key_exists(CookieNames::SESSION_TOKEN, $data->cookies)) {
+            throw new MissingRequiredParameterException(CookieNames::SESSION_TOKEN . ' cookie is required');
+        }
+
+        $sessionToken = $data->cookies[CookieNames::SESSION_TOKEN];
+        if ($sessionToken === '') {
+            throw new EmptyValueException(CookieNames::SESSION_TOKEN . ' cookie cannot be empty');
+        }
+
+        if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
+            throw new InvalidFormatException(
+                CookieNames::SESSION_TOKEN . ' cookie must be a 32-character lowercase hex token',
+            );
+        }
 
         $user = Hilos::$db->users->findBySession($sessionToken);
         $wasRegisteredNow = false;
@@ -108,7 +116,7 @@ final class ChatAgent extends AbstractAgent
             $data->acceptKey,
             new HandshakeResponseSignalData(
                 selfId: $userId,
-                pageCatalog: ChatPageCatalog::getCatalog(),
+                selfName: $user->name,
             ),
         );
     }

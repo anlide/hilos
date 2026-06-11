@@ -7,7 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\HttpHeaders;
+use Demo\Chat\Constants\CookieNames;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\ChatDbContext;
@@ -69,9 +69,9 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'presence-ak-1',
-                    cookies: [],
+                    cookies: [CookieNames::SESSION_TOKEN => $sessionToken],
                     clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
+                    queryParams: RequestQueryParams::empty(),
                 ),
                 '',
                 '',
@@ -140,9 +140,9 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'presence-ak-1',
-                    cookies: [],
+                    cookies: [CookieNames::SESSION_TOKEN => $sessionToken],
                     clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
+                    queryParams: RequestQueryParams::empty(),
                 ),
                 '',
                 '',
@@ -153,9 +153,9 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'presence-ak-2',
-                    cookies: [],
+                    cookies: [CookieNames::SESSION_TOKEN => $sessionToken],
                     clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
+                    queryParams: RequestQueryParams::empty(),
                 ),
                 '',
                 '',

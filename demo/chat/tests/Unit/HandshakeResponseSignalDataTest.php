@@ -15,31 +15,23 @@ final class HandshakeResponseSignalDataTest extends TestCase
 {
     public function testImplementsSignalDataInterface(): void
     {
-        $data = new HandshakeResponseSignalData(selfId: 7);
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
 
         $this->assertInstanceOf(SignalDataInterface::class, $data);
     }
 
-    public function testPayloadContainsSelfIdAndPageCatalog(): void
+    public function testPayloadCarriesCurrentUserEntityFragment(): void
     {
-        $pageCatalog = [
-            'main' => [
-                'label' => 'Main',
-                'pathTemplate' => '/',
-            ],
-        ];
-
-        $data = new HandshakeResponseSignalData(
-            selfId: 7,
-            pageCatalog: $pageCatalog,
-        );
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
 
         $this->assertSame(
             [
-                'self' => [
-                    'id' => 7,
+                'entities' => [
+                    'currentUser' => [
+                        'id' => 7,
+                        'name' => 'User 7',
+                    ],
                 ],
-                'pageCatalog' => $pageCatalog,
             ],
             $data->toArray(),
         );
@@ -47,19 +39,12 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testRoundtripPreservesPayload(): void
     {
-        $data = new HandshakeResponseSignalData(
-            selfId: 7,
-            pageCatalog: [
-                'main' => [
-                    'label' => 'Main',
-                ],
-            ],
-        );
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
         $this->assertSame(7, $restored->selfId);
-        $this->assertSame($data->pageCatalog, $restored->pageCatalog);
+        $this->assertSame('User 7', $restored->selfName);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 }
