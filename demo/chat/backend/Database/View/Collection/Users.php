@@ -5,6 +5,8 @@ namespace Demo\Chat\Database\View\Collection;
 use Demo\Chat\Database\Actions\Collection\UsersActions;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\View\Item\User;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
@@ -29,7 +31,9 @@ final class Users extends DbCollection
      *
      * @param string $sessionToken User session token (empty string returns null)
      * @return ?User User Db item or null if not found
-     * @throws DatabaseException On database error
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the session lookup or lazy user load fails
      */
     public function findBySession(string $sessionToken): ?User
     {
