@@ -9,18 +9,15 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\DTO\UsersPageResponseSignalData;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Throwable;
 
@@ -42,26 +39,6 @@ final class AdminUsersPage extends AbstractPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
     ];
-
-    /**
-     * Sends the admin users scope payload snapshot to the subscribing client.
-     *
-     * Replaces the legacy browser-table subscription default: the page answers
-     * with the page_response signal carrying the read-only users-table
-     * snapshot in the scope-payload wire form.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param PageRouteParams $params Route params from page subscription
-     * @throws DatabaseException When loading the user snapshot fails
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::PAGE_RESPONSE,
-            $acceptKey,
-            new UsersPageResponseSignalData(self::PAGE, Hilos::$db->users->snapshotRows()),
-        );
-    }
 
     /**
      * Routes admin user actions to typed handlers.

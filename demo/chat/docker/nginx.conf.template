@@ -77,10 +77,9 @@ http {
             try_files /index.html =404;
         }
 
-        # Hilos admin deep links cold-load the SPA shell; access control is
-        # backend-side at the WS subscription, never by hiding the HTML.
+        # Hilos admin is available only after the SPA handshake, not as public HTML.
         location /hilos {
-            try_files /index.html =404;
+            return 404;
         }
 
         # Prerendered/static routes; unknown public paths should stay 404.

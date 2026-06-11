@@ -14,22 +14,7 @@ export const entityFragmentSchema = z.looseObject({
 })
 
 /**
- * One table row on the wire: its identity within the table plus its source
- * slots. Slot values stay unknown here — the normalizer applies the
- * entity-fragment convention per slot.
- */
-export const tableRowSchema = z.looseObject({
-  rowKey: z.union([z.string(), z.number()]),
-  slots: z.record(z.string(), z.unknown()),
-})
-
-/** One table's wire payload: the full row set in backend order (snapshot-only). */
-export const tablePayloadSchema = z.looseObject({
-  rows: z.array(tableRowSchema),
-})
-
-/**
- * A scope-shaped payload as the backend serializes it. Every section is
+ * A scope-shaped payload as the backend serializes it. Both sections are
  * optional because empty sections are omitted on the wire (PHP would
  * serialize an empty map as a JSON array).
  */
@@ -41,18 +26,6 @@ export const scopePayloadSchema = z.looseObject({
     )
     .optional(),
   data: z.record(z.string(), z.unknown()).optional(),
-  tables: z.record(z.string(), tablePayloadSchema).optional(),
 })
 
 export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>
-
-/**
- * The page_response project-signal data: the page key that lets the client
- * drop a late signal for a page it has left, plus the page's scope payload.
- */
-export const pageResponseSchema = z.looseObject({
-  page: z.string().min(1),
-  payload: scopePayloadSchema,
-})
-
-export type PageResponseWire = z.infer<typeof pageResponseSchema>

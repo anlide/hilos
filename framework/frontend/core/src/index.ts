@@ -25,29 +25,13 @@ export {
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export {
-  TableRowsStore,
-  type TableRow,
-  type TableSnapshot,
-} from './state/TableRowsStore.js'
-export {
   ingest,
   type EntityFragment,
   type NormalizerOptions,
   type ScopePayload,
-  type TablePayload,
-  type TableRowPayload,
 } from './state/normalizer.js'
 export {
-  PageSubscription,
-  type PageSubscriptionConnection,
-} from './subscription/PageSubscription.js'
-export {
   SIGNAL_TYPE_HANDSHAKE,
-  SIGNAL_TYPE_PAGE_SUBSCRIBE,
-  SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
-  FIELD_TYPE,
-  FIELD_PAGE,
-  FIELD_PARAMS,
   KEEPALIVE_TEXT_PING,
 } from './protocol/constants.js'
 export { assertNever } from './protocol/assertNever.js'
@@ -60,11 +44,7 @@ export {
 export {
   entityFragmentSchema,
   scopePayloadSchema,
-  tablePayloadSchema,
-  tableRowSchema,
-  pageResponseSchema,
   type ScopePayloadWire,
-  type PageResponseWire,
 } from './protocol/scopePayload.js'
 export {
   parseSignal,

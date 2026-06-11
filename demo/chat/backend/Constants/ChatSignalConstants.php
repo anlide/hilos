@@ -38,9 +38,6 @@ final class ChatSignalConstants
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 
-    /** @var string Page scope payload signal name (snapshot answer to a page subscription) */
-    public const string PAGE_RESPONSE = 'page_response';
-
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
 
