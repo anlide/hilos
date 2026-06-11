@@ -4,8 +4,17 @@
 // transport, the signal/action protocol and its discriminated-union parsers,
 // the subscription manager, the normalized entity store, and the headless
 // table / modal / conflict state machines. Fills in across rewrite step 7;
-// shipped so far: the connection machine and the signal parse boundary.
+// shipped so far: the connection machine, the signal parse boundary, and the
+// reactive signal primitive the stores build on.
 
+export {
+  createSignal,
+  computedSignal,
+  subscribeSignal,
+  type ReadonlySignal,
+  type WritableSignal,
+  type Unsubscribe,
+} from './state/signal.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
   KEEPALIVE_TEXT_PING,

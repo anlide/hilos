@@ -1,4 +1,5 @@
-// ESLint flat config for the Hilos frontend SDK workspace (@hilos/core + @hilos/vue).
+// ESLint flat config for the Hilos frontend SDK workspace (@hilos/core + the
+// @hilos/vue, @hilos/react, and @hilos/angular view adapters).
 //
 // Minimal baseline: the recommended presets from ESLint, typescript-eslint, and
 // eslint-plugin-vue, with eslint-config-prettier last so all formatting defers to
@@ -17,7 +18,15 @@ export default tseslint.config(
   // it rejects typescript-eslint's CompatibleConfigArray for config()'s parameter,
   // which tsc, vue-tsc and eslint all accept (typescript-eslint#11519, closed wontfix).
   ...tseslint.configs.recommended,
-  ...pluginVue.configs['flat/recommended'],
+  // eslint-plugin-vue ships some Vue-idiom rules unscoped (e.g.
+  // prefer-import-from-vue, which is exactly wrong for the agnostic core — it
+  // imports the standalone @vue/reactivity and must never import vue). Confine
+  // those to the Vue adapter package; entries the plugin already scopes to
+  // *.vue files override the default with their own pattern.
+  ...pluginVue.configs['flat/recommended'].map((config) => ({
+    files: ['vue/**'],
+    ...config,
+  })),
   {
     files: ['**/*.vue'],
     languageOptions: {

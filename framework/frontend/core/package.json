@@ -19,6 +19,7 @@
     "dist"
   ],
   "dependencies": {
+    "@vue/reactivity": "^3.5.35",
     "zod": "^4.1.0"
   },
   "scripts": {
