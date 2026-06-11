@@ -62,6 +62,8 @@
         "test:framework:frontend:lint": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run lint",
         "test:framework:frontend:format-check": "docker compose -f framework/docker/docker-compose.frontend.yml --profile cli run --rm hilos-frontend-cli npm run format:check",
         "test:framework:frontend": "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check",
-        "test:frontend:all": "composer run test:framework:frontend:install && composer run test:framework:frontend:build && composer run test:framework:frontend && composer -d demo/chat run test:check && composer -d demo/chat run test:e2e-full && composer -d demo/simple-todo run test:check && composer -d demo/simple-todo run test:e2e-full && composer -d demo/simple-poll run test:check && composer -d demo/simple-poll run test:e2e-full"
+        "test:frontend:all": "composer run test:framework:frontend:install && composer run test:framework:frontend:build && composer run test:framework:frontend && composer -d demo/chat run test:check && composer -d demo/chat run test:e2e-full && composer -d demo/simple-todo run test:check && composer -d demo/simple-todo run test:e2e-full && composer -d demo/simple-poll run test:check && composer -d demo/simple-poll run test:e2e-full",
+        "ai:install": "@php scripts/install-ai-tooling.php",
+        "ai:install:check": "@php scripts/install-ai-tooling.php --check"
     }
 }
