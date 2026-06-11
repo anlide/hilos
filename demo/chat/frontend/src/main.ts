@@ -8,11 +8,16 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import { connection } from './connection'
+import { bindPageScope, pageForPath } from './page'
 import { bindSessionScope, ensureSessionTokenCookie } from './session'
 
 // The token must be in place before the socket opens — it rides the
 // handshake cookies.
 ensureSessionTokenCookie()
 bindSessionScope(connection)
+// The URL is the source of truth for the page subscription on cold load.
+// Subscribing before connect is safe — the manager sends on the `connected`
+// transition.
+bindPageScope(connection).subscribe(pageForPath(location.pathname))
 connection.connect()
 createApp(App).mount('#app')

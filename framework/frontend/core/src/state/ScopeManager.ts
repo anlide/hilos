@@ -7,6 +7,7 @@
 
 import { computedSignal, createSignal, type ReadonlySignal } from './signal.js'
 import { DataStore } from './DataStore.js'
+import { TableRowsStore } from './TableRowsStore.js'
 import {
   EntityStore,
   type EntityRef,
@@ -16,13 +17,15 @@ import {
 export type ScopeKind = 'page' | 'session' | 'user' | 'group'
 
 /**
- * One scope instance and the stores it owns: its normalized entities and its
- * own data.
+ * One scope instance and the stores it owns: its normalized entities, its
+ * own data, and its tables' rows.
  */
 export class Scope {
   readonly entities = new EntityStore()
 
   readonly data = new DataStore()
+
+  readonly tables = new TableRowsStore()
 
   constructor(
     /** The scope's lifetime class. */

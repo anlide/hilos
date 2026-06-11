@@ -158,6 +158,23 @@ export class HilosConnection {
     this.setState('disconnected')
   }
 
+  /**
+   * Send one raw text frame. Returns false — and sends nothing — unless the
+   * connection is currently `connected`; senders re-send on the next
+   * `connected` transition instead of queueing (every new socket starts a
+   * fresh protocol exchange).
+   *
+   * @param text The frame payload, already serialized.
+   */
+  send(text: string): boolean {
+    if (this.currentState !== 'connected' || this.socket === null) {
+      return false
+    }
+    this.socket.send(text)
+
+    return true
+  }
+
   private openSocket(): void {
     const generation = ++this.generation
     const socket = this.webSocketFactory(this.url)
