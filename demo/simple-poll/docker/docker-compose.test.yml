@@ -1,16 +1,77 @@
-# Docker Compose configuration for tests (Playwright e2e).
-# Isolated from the local stack (different ports, network).
+# Docker Compose configuration for tests (unit, Playwright e2e)
+# Isolated from the local stack (different ports, volumes, network).
 #
-# e2e runs against the BUILT frontend artifact served by poll-nginx-test
-# (docs/agents/frontend/testing-strategy.md). The demo has no backend yet, so
-# the stack is nginx-only; MySQL and a booted daemon join it when the backend
-# lands at rewrite step 7. The stack starts via `composer run test:e2e-up`,
-# then any number of `composer run test:e2e` invocations drive it, then
-# `test:e2e-down`. Services sit behind profiles so nothing starts implicitly.
+# e2e runs against the BUILT frontend artifact served by poll-nginx-test with a
+# booted daemon behind it (docs/agents/frontend/testing-strategy.md). The e2e
+# stack (mysql + daemon + nginx) starts via `composer run test:e2e-up`, then any
+# number of `composer run test:e2e` invocations drive it, then `test:e2e-down`.
+# Frontend services sit behind profiles so the PHP-only test commands never
+# start them.
 
 name: hilos-simple-poll-test
 
 services:
+  poll-mysql-test:
+    image: mariadb:11.4
+    container_name: poll-mysql-test
+    ports:
+      - "${MYSQL_TEST_HOST_PORT:-33066}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-simple-poll-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-simple-poll-test-network
+
+  poll-daemon-test:
+    build: .
+    env_file:
+      - ../tests/.env
+    container_name: poll-daemon-test
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      - DB_HOST=poll-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-simple-poll-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+    command: ["php", "backend/Bootstrap/docker.php"]
+    depends_on:
+      poll-mysql-test:
+        condition: service_healthy
+    ports:
+      - "${HTTP_TEST_PORT:-8107}:8090"
+      - "${WORKER_TEST_PORT:-8108}:8091"
+      - "${WEBSOCKET_TEST_PORT:-8109}:8092"
+    networks:
+      - hilos-simple-poll-test-network
+
   # On-demand Node toolchain for the simple-poll frontend (npm install / build /
   # check). Mounts the whole repo at /hilos so the @hilos/angular `file:`
   # dependency into framework/frontend resolves. Used by
@@ -28,22 +89,54 @@ services:
       - cli
 
   # Serves the built frontend artifact (`ng build` emits a flat dist — see
-  # outputPath in frontend/angular.json). Static-only for now: the demo ships
-  # no backend yet, so there is nothing to proxy; the prod-parity nginx
-  # (template, TLS, /ws proxy) arrives with the backend at rewrite step 7. The
-  # e2e runner reaches it in-network as http://poll-nginx-test; the host port
-  # is only for manual inspection and defaults away from the chat test stack's
-  # 8086 and the simple-todo test stack's 8087.
+  # outputPath in frontend/angular.json) over the same nginx image and config
+  # template as prod (test what you ship) and proxies /ws to the daemon. The
+  # e2e runner reaches it in-network as https://poll-nginx-test; host ports are
+  # only for manual inspection and default away from the chat test stack's
+  # 8086/8446 and the simple-todo test stack's 8087/8447.
   poll-nginx-test:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     container_name: poll-nginx-test
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
-      - ./nginx-test.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx-ssl-test:/etc/nginx/ssl
     ports:
       - "${NGINX_TEST_HTTP_PORT:-8088}:80"
+      - "${NGINX_TEST_HTTPS_PORT:-8448}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=poll-daemon-test
+    depends_on:
+      - poll-daemon-test
     profiles:
       - e2e
+    networks:
+      - hilos-simple-poll-test-network
+
+  poll-cli-test:
+    build: .
+    env_file:
+      - ../tests/.env
+    container_name: poll-cli-test
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - APP_ENV=test
+      - DB_HOST=poll-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-simple-poll-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      poll-mysql-test:
+        condition: service_healthy
     networks:
       - hilos-simple-poll-test-network
 
@@ -61,13 +154,18 @@ services:
       - ../../..:/hilos
     working_dir: /hilos/demo/simple-poll/tests/e2e
     environment:
-      BASE_URL: http://poll-nginx-test
+      BASE_URL: https://poll-nginx-test
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles:
       - e2e
     networks:
       - hilos-simple-poll-test-network
+
+volumes:
+  mysql-test-data:
+    name: hilos-simple-poll-mysql-test-data
+  nginx-ssl-test:
 
 networks:
   hilos-simple-poll-test-network:

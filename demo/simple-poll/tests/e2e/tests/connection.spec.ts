@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test'
 
-// Step-7.1 transport conformance (multiframework-core.md): the demo ships no
-// backend yet, so `connected` is unreachable; the spec asserts the Connection
-// machine runs through the Angular adapter — against the dead same-origin /ws
-// endpoint it cycles between the two connect-cycle states.
-test('connection machine runs through the Angular adapter', async ({ page }) => {
+// Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
+// live daemon through the test nginx /ws WebSocket upgrade proxy, and the
+// Connection machine — running through the Angular adapter — reports
+// `connected` on the page.
+test('websocket transport reaches connected', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText(/^(connecting|reconnecting)$/)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })

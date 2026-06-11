@@ -1,12 +1,160 @@
 # Docker Compose configuration for LOCAL development.
-# The local stack currently consists of the Vite frontend dev server (HMR); the
-# backend services (MySQL, the daemon) join it when the demo's backend lands at
-# rewrite step 7. Per the env split, local keeps the frontend in the default
-# `up` — no profile — so one start command brings the whole stack.
+# The full dev stack runs in Docker: MySQL, phpMyAdmin, the daemon, and the
+# Angular CLI dev server (poll-frontend-local, HMR). `composer run daemon-start`
+# brings the whole stack up; the cli services (profile cli) run on-demand
+# commands (see the composer scripts).
+#
+# Port plan: the daemon binds fixed in-container ports (8090 status / 8091
+# worker comm / 8092 websocket, same as every demo — the nginx template proxies
+# /ws to :8092); only the host-side publishes shift per demo so the stacks run
+# side by side (chat holds 8090-8097, simple-todo 8098-8103, simple-poll takes
+# 8104-8109).
 
 name: hilos-simple-poll-local
 
 services:
+  # MySQL: inside the network use poll-mysql-local:3306. From host use
+  # localhost:${MYSQL_HOST_PORT} (default 33065 — 33060-33064 belong to
+  # chat-local, chat-test, the framework test stack, and simple-todo).
+  poll-mysql-local:
+    image: mariadb:11.4
+    container_name: poll-mysql-local
+    ports:
+      - "${MYSQL_HOST_PORT:-33065}:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-poll}
+      - MYSQL_USER=${MYSQL_USER:-hilos}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - TZ=UTC
+    volumes:
+      - ../data/mysql:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --skip-character-set-client-handshake
+    restart: unless-stopped
+    networks:
+      hilos-simple-poll-local-network:
+        ipv4_address: ${DOCKER_MYSQL_IP:-172.28.0.10}
+
+  poll-phpmyadmin-local:
+    image: phpmyadmin:latest
+    container_name: poll-phpmyadmin-local
+    environment:
+      - PMA_HOST=poll-mysql-local
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - PMA_ARBITRARY=1
+      - UPLOAD_LIMIT=256M
+    depends_on:
+      - poll-mysql-local
+    ports:
+      - "${PHPMYADMIN_PORT:-8082}:80"
+    restart: unless-stopped
+    networks:
+      - hilos-simple-poll-local-network
+
+  # The Hilos daemon. The .env file is optional at the compose level: when it
+  # is missing, the in-container bootstrap copies .env.example to .env itself
+  # (Hilos::initEnv), so a fresh checkout starts without a setup step.
+  poll-daemon-local:
+    build: .
+    env_file:
+      - path: ../.env
+        required: false
+    container_name: poll-daemon-local
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      - DB_HOST=${DB_HOST:-poll-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-poll}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
+    depends_on:
+      - poll-mysql-local
+    ports:
+      # Host-side publishes: container ports stay fixed, the host side shifts
+      # per the demo port plan so several stacks run side by side.
+      - "${HTTP_STATUS_HOST_PORT:-8104}:8090"
+      - "${WORKER_COMM_HOST_PORT:-8105}:8091"
+      - "${WEBSOCKET_HOST_PORT:-8106}:8092"
+    restart: unless-stopped
+    networks:
+      hilos-simple-poll-local-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.28.0.11}
+
+  poll-cli-local:
+    build: .
+    env_file:
+      - path: ../.env
+        required: false
+    container_name: poll-cli-local
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - DOCKER=true
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.28.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - DB_HOST=${DB_HOST:-poll-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-poll}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      - poll-mysql-local
+    networks:
+      - hilos-simple-poll-local-network
+
+  # Prod-parity nginx over the BUILT frontend artifact (profile full — only
+  # `daemon-start-build` starts it; the dev loop uses the ng dev server instead).
+  poll-nginx-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: poll-nginx-local
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - nginx-ssl-local:/etc/nginx/ssl
+    ports:
+      - "${NGINX_HTTP_PORT:-82}:80"
+      - "${NGINX_HTTPS_PORT:-445}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=poll-daemon-local
+    depends_on:
+      - poll-daemon-local
+    restart: unless-stopped
+    profiles:
+      - full
+    networks:
+      - hilos-simple-poll-local-network
+
   # Angular CLI dev server (`ng serve`, Vite-based under the hood) with HMR for
   # the simple-poll frontend. Mounts the whole repo at /hilos so the
   # @hilos/angular `file:` symlink into framework/frontend resolves, and runs
@@ -14,7 +162,9 @@ services:
   # Native WSL2 filesystem events drive HMR — no polling
   # (docs/agents/frontend/build-and-docker.md). The host port defaults away
   # from the chat demo's 5173 and the simple-todo demo's 5174 so the local
-  # stacks can run side by side.
+  # stacks can run side by side. Angular has no import.meta.env mechanism, so
+  # instead of a VITE_WS_URL override the dev server proxies the app's
+  # same-origin /ws to the daemon (frontend/proxy.conf.json).
   poll-frontend-local:
     image: node:22-bookworm-slim
     container_name: poll-frontend-local
@@ -46,6 +196,12 @@ services:
     networks:
       - hilos-simple-poll-local-network
 
+volumes:
+  nginx-ssl-local:
+
 networks:
   hilos-simple-poll-local-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.28.0.0/16}

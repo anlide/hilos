@@ -1,10 +1,10 @@
 // The poll application's single Hilos connection — one WebSocket drives the
 // whole SPA (docs/agents/frontend/core-and-connection.md).
 //
-// The endpoint is the same-origin /ws route. The demo ships no backend yet,
-// so no environment answers it: the Connection machine honestly cycles
-// connecting → reconnecting until the demo backend lands at step 7, which is
-// exactly what the conformance slice shows.
+// The endpoint is the same-origin /ws route in every environment: nginx
+// proxies it to the daemon in test and production, and the Angular CLI dev
+// server proxies it via proxy.conf.json (Angular has no import.meta.env
+// mechanism for a URL override, unlike the Vite demos).
 import { HilosConnection } from '@hilos/core'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
