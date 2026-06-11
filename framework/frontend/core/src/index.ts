@@ -5,8 +5,8 @@
 // the subscription manager, the normalized entity store, and the headless
 // table / modal / conflict state machines. Fills in across rewrite step 7;
 // shipped so far: the connection machine, the signal parse boundary, the
-// reactive signal primitive the stores build on, and the scope-partitioned
-// entity store.
+// reactive signal primitive the stores build on, the scope-partitioned
+// stores, and the normalizer ingest boundary.
 
 export {
   createSignal,
@@ -23,6 +23,13 @@ export {
   type EntitySnapshot,
 } from './state/EntityStore.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
+export { DataStore } from './state/DataStore.js'
+export {
+  ingest,
+  type EntityFragment,
+  type NormalizerOptions,
+  type ScopePayload,
+} from './state/normalizer.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
   KEEPALIVE_TEXT_PING,

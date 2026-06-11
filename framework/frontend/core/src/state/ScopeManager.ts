@@ -6,6 +6,7 @@
 // ref-counting, because active-scope data is always re-streamed fresh.
 
 import { computedSignal, createSignal, type ReadonlySignal } from './signal.js'
+import { DataStore } from './DataStore.js'
 import {
   EntityStore,
   type EntityRef,
@@ -15,11 +16,13 @@ import {
 export type ScopeKind = 'page' | 'session' | 'user' | 'group'
 
 /**
- * One scope instance and the stores it owns. The per-scope data store joins
- * the entity store here when the normalizer lands.
+ * One scope instance and the stores it owns: its normalized entities and its
+ * own data.
  */
 export class Scope {
   readonly entities = new EntityStore()
+
+  readonly data = new DataStore()
 
   constructor(
     /** The scope's lifetime class. */
