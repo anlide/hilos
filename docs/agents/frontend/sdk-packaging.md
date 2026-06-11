@@ -35,6 +35,19 @@ dependency in dev, the vendored tarball when shipping). The `development`
 dev-link is what lets a consumer's bundler resolve the SDK to `src` for HMR while
 the two are developed together.
 
+**Dedupe the view framework in every consumer.** The `file:` dev-link resolves
+through the symlink's real path, so the SDK can reach a SECOND copy of the view
+framework in the SDK workspace's own `node_modules` (installed there for the
+adapter unit tests). Two copies break framework-internal context — React's
+dispatcher dies on hook calls, Angular's `inject()` dies with NG0203 — while
+`build` output may stay warning-free (a bloated bundle is the tell). Each
+consumer pins its single copy by its own bundler's mechanism: Vite + React =
+`resolve.dedupe: ['react', 'react-dom']`; Vite + Vue = nothing (plugin-vue
+auto-dedupes); Angular CLI = tsconfig `paths` pin for `ng build` PLUS
+`prebundle.exclude` + development `conditions: ["module"]` for `ng serve` — the
+full recipe is in
+[docs/new-project/frontend-angular.md](../../new-project/frontend-angular.md).
+
 ## Distribution: a Composer-vendored tarball
 
 Distribution is **separate** from the dev monorepo and is **Composer-only for

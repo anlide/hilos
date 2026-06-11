@@ -85,6 +85,12 @@ services:
     working_dir: /hilos/demo/simple-poll/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # Disable the Angular disk cache (cache.environment defaults to "local"):
+      # .angular/cache is an lmdb database shared with the local dev container
+      # through the repo bind-mount, and lmdb opened from two containers at
+      # once corrupts its reader lock table (PID namespaces overlap) and
+      # crashes ng build.
+      CI: "true"
     profiles:
       - cli
 
