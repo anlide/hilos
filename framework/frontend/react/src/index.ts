@@ -5,7 +5,14 @@
 // protocol, store, or table logic of its own
 // (docs/agents/frontend/multiframework-core.md). Fills in across rewrite
 // step 7, tracking each core capability as it lands; shipped so far: the
-// connection-state hook, the core-signal bridge, and the entity resolver.
+// connection-state hook, the core-signal bridge, the entity resolver, the
+// navigation components, and the application shell.
+
+// The SDK ships Bootstrap so every consumer is styled transitively and never
+// imports it itself (styling-rules.md). The library build inlines this
+// stylesheet into the bundle, so the import covers both the dev (source) and the
+// built (dist) resolution paths.
+import 'bootstrap/dist/css/bootstrap.min.css'
 
 export { useConnectionState } from './useConnectionState.js'
 export { useSignal } from './useSignal.js'
@@ -13,3 +20,4 @@ export { useEntity } from './useEntity.js'
 export { HilosRouterContext } from './hilosRouterContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
+export { HilosLayout, type HilosLayoutProps } from './HilosLayout.js'
