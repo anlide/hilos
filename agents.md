@@ -25,6 +25,12 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions |
 
+## Feature Development
+
+| File | Read when... |
+|---|---|
+| [feature-development-flow.md](docs/agents/feature-development-flow.md) | starting a feature with AI assistance — tiers (spike/experimental/production), data-structure-first elicitation, the iterative planner, orchestration shape (working design) |
+
 ## App Topology
 
 | File | Read when... |
