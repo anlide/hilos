@@ -1,20 +1,30 @@
 <!-- Root view. The application shell is the SDK's HilosLayout; the demo fills
-its brand and content slots. The live connection state is the shell's own
-indicator (an extra status surface explicitly allowed by
-docs/agents/frontend/core-and-connection.md); the current user resolved from the
-session scope renders in the content slot. Real views land here from step 7. -->
+its brand slot and routes the content slot through HilosView, which renders the
+component mapped to the navigator's current page. The brand and the shell's gear
+move between the main page and the framework dashboard with no refresh. The live
+connection state is the shell's own indicator (an extra status surface allowed
+by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
-import { HilosLayout, useSignal } from '@hilos/vue'
+import { HilosLayout, HilosView } from '@hilos/vue'
+import { HilosPages } from '@hilos/core'
+import type { Component } from 'vue'
 
 import { connection } from './connection'
-import { currentUserName } from './session'
+import { PAGE_MAIN } from './pageKeys'
+import DashboardView from './views/DashboardView.vue'
+import MainView from './views/MainView.vue'
 
-const selfName = useSignal(currentUserName)
+// The page-key → view map HilosView renders from. Pages without a mapped view
+// (other routes land later) render nothing.
+const pages: Record<string, Component> = {
+  [PAGE_MAIN]: MainView,
+  [HilosPages.DASHBOARD]: DashboardView,
+}
 </script>
 
 <template>
   <HilosLayout :connection="connection">
     <template #brand>Hilos Chat</template>
-    <span data-id="self-user">{{ selfName }}</span>
+    <HilosView :pages="pages" />
   </HilosLayout>
 </template>
