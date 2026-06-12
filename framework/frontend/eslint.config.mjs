@@ -32,6 +32,11 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: { parser: tseslint.parser },
     },
+    // typescript-eslint disables core no-undef for the TS it parses because the
+    // type-checker already reports undefined names; the *.vue script block is
+    // type-checked by vue-tsc the same way, so disable it here too — otherwise
+    // DOM globals used as types (e.g. MouseEvent) are false-flagged.
+    rules: { 'no-undef': 'off' },
   },
   configPrettier,
 )

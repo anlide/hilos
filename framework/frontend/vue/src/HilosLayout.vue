@@ -3,16 +3,17 @@ app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand and nav slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
 the SDK owns (core-and-connection.md), and the routed page content in the
-default slot. The brand is a home link and the gear a dashboard link, so the
-shell alone can move between the project home and the admin section. Styling is
-Bootstrap classes only and the shell carries no CSS of its own
-(styling-rules.md); the status and admin icons are inline Bootstrap-Icons SVGs,
-so the shell needs no icon-font dependency. -->
+default slot. The brand and the gear are HilosLinks — no-refresh navigation that
+leaves the socket alive — so the shell alone can move between the project home
+and the admin section. Styling is Bootstrap classes only and the shell carries
+no CSS of its own (styling-rules.md); the status and admin icons are inline
+Bootstrap-Icons SVGs, so the shell needs no icon-font dependency. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import { computed } from 'vue'
 
+import HilosLink from './HilosLink.vue'
 import { useConnectionState } from './useConnectionState.js'
 
 const props = defineProps<{ connection: HilosConnection }>()
@@ -44,16 +45,16 @@ const adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
       aria-label="Main"
     >
       <div class="container">
-        <a class="navbar-brand mb-0 h1" href="/" data-id="nav-brand">
+        <HilosLink to="/" class="navbar-brand mb-0 h1" data-id="nav-brand">
           <slot name="brand">Hilos</slot>
-        </a>
+        </HilosLink>
         <div class="navbar-nav me-auto">
           <slot name="nav" />
         </div>
         <div class="d-flex align-items-center gap-3">
-          <a
+          <HilosLink
             class="nav-link d-inline-flex align-items-center p-0 fs-5"
-            :href="adminHref"
+            :to="adminHref"
             data-id="nav-admin"
             aria-label="Hilos dashboard"
           >
@@ -69,7 +70,7 @@ const adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
               />
             </svg>
             <span class="visually-hidden">Hilos dashboard</span>
-          </a>
+          </HilosLink>
           <span
             class="navbar-text d-inline-flex align-items-center"
             :class="connVisual.color"
