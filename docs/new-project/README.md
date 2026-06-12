@@ -177,6 +177,13 @@ The frontend is an independent consumer of the Hilos SDK: it pulls
 
 - ALL node tooling runs in project-defined containers — never host npm/node
   (`docs/agents/frontend/build-and-docker.md`).
+- Vite-based apps (Vue, React) must widen `server.fs.allow` to the monorepo
+  root with a relative path (`allow: ['../../..']`, resolved from the config's
+  app root — no `node:url`/`@types/node` needed): the SDK is a `file:`
+  dependency symlinked from `framework/frontend`, and Vite's dev server refuses
+  to serve assets outside the app root — so the Bootstrap-Icons font the view
+  layer ships would 403 in dev (the production build inlines it, so this is
+  dev-only and the e2e build never catches it).
 - One `HilosConnection` per app; URL = same-origin `/ws` (nginx proxies it in
   test/prod); a `buildMismatch` listener calls `location.reload()`.
 - Stable-id selectors: interactive elements carry `data-id`; Playwright uses

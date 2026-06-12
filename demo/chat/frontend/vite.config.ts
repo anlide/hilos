@@ -12,5 +12,14 @@ export default defineConfig({
     host: true,
     port: 5173,
     strictPort: true,
+    fs: {
+      // Serve the SDK's bundled assets in dev. @hilos/vue is a file:
+      // dependency symlinked from framework/frontend, whose node_modules (the
+      // Bootstrap-Icons font lives there) sits outside this app's root — so the
+      // monorepo root must be in Vite's serving allow list. The path is
+      // relative to this config's directory (the app root); the production
+      // build inlines the font, so this is a dev-only concern.
+      allow: ['../../..'],
+    },
   },
 })
