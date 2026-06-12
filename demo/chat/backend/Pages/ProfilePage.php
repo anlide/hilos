@@ -21,6 +21,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
@@ -87,6 +88,7 @@ final class ProfilePage extends AbstractPage
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
+     * @throws LogicException When the rename moderation payload type does not match the signal contract
      * @throws ValidationException When moderation rejects the requested display name
      * @throws AgentException When moderation result does not match an active rename request
      * @throws HilosException On database, runtime, truth-source, or signal failure
@@ -95,6 +97,12 @@ final class ProfilePage extends AbstractPage
     {
         switch ($name) {
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
+                if (!$data->data instanceof RenameModerationResultSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::RENAME_MODERATION_RESULT
+                        . ' payload must be ' . RenameModerationResultSignalData::class,
+                    );
+                }
                 $this->handleRenameModerationResult($data->data);
 
                 return;
