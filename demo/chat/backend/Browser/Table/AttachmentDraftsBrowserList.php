@@ -16,11 +16,11 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 
 /**
- * Browser table config for current-connection attachment drafts.
+ * Browser list source for current-connection attachment drafts.
  */
-final class AttachmentDraftsBrowserTable
+final class AttachmentDraftsBrowserList
 {
-    public const string TABLE = ChatBrowserTable::ATTACHMENT_DRAFTS;
+    public const string LIST = ChatBrowserTable::ATTACHMENT_DRAFTS;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [

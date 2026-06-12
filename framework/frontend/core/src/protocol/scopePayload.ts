@@ -29,3 +29,14 @@ export const scopePayloadSchema = z.looseObject({
 })
 
 export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>
+
+/**
+ * The page_response project-signal data: the page key that lets the client
+ * drop a late signal for a page it has left, plus the page's scope payload.
+ */
+export const pageResponseSchema = z.looseObject({
+  page: z.string().min(1),
+  payload: scopePayloadSchema,
+})
+
+export type PageResponseWire = z.infer<typeof pageResponseSchema>

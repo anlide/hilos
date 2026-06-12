@@ -6,7 +6,8 @@
 // table / modal / conflict state machines. Fills in across rewrite step 7;
 // shipped so far: the connection machine, the signal parse boundary with the
 // project-signal schema seam, the reactive signal primitive the stores build
-// on, the scope-partitioned stores, and the normalizer ingest boundary.
+// on, the scope-partitioned stores, the normalizer ingest boundary, and the
+// page-subscription manager.
 
 export {
   createSignal,
@@ -31,7 +32,16 @@ export {
   type ScopePayload,
 } from './state/normalizer.js'
 export {
+  PageSubscription,
+  type PageSubscriptionConnection,
+} from './subscription/PageSubscription.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_PAGE_SUBSCRIBE,
+  SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
+  FIELD_TYPE,
+  FIELD_PAGE,
+  FIELD_PARAMS,
   KEEPALIVE_TEXT_PING,
 } from './protocol/constants.js'
 export { assertNever } from './protocol/assertNever.js'
@@ -44,7 +54,9 @@ export {
 export {
   entityFragmentSchema,
   scopePayloadSchema,
+  pageResponseSchema,
   type ScopePayloadWire,
+  type PageResponseWire,
 } from './protocol/scopePayload.js'
 export {
   parseSignal,

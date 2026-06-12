@@ -15,11 +15,11 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 
 /**
- * Browser table config for the main chat event stream.
+ * Browser list source for the main chat event stream.
  */
-final class MainEventsBrowserTable
+final class MainEventsBrowserList
 {
-    public const string TABLE = ChatBrowserTable::MAIN_EVENTS;
+    public const string LIST = ChatBrowserTable::MAIN_EVENTS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [

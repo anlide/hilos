@@ -16,11 +16,14 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
-use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
@@ -139,16 +142,17 @@ abstract class BrowserContext
             ];
         }
 
-        if ($tables === []) {
+        $payload = $this->pagePayloadFromBrowserTables($tables);
+        if ($payload->isEmpty()) {
             return;
         }
 
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName($signalName),
+            signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
             signalData: new WebSocketSignalData(
-                data: new BrowserPageSignalData($tables),
+                data: new PageResponseSignalData($page, $payload),
                 targetAcceptKey: $acceptKey,
             ),
         );
@@ -293,23 +297,28 @@ abstract class BrowserContext
                     );
 
                     if ($row === null) {
-                        $this->addBrowserDelete($signalTables, $acceptKey, $signalName, $pageTableBinding->tableKey, $rowKey);
+                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $pageTableBinding->tableKey, $rowKey);
                         continue;
                     }
 
-                    $this->addBrowserRow($signalTables, $acceptKey, $signalName, $pageTableBinding->tableKey, $rowKey, $row);
+                    $this->addBrowserRow($signalTables, $acceptKey, $page, $pageTableBinding->tableKey, $rowKey, $row);
                 }
             }
         }
 
-        foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $signals) {
-            foreach ($signals as $signalName => $tables) {
+        foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
+            foreach ($pages as $page => $tables) {
+                $payload = $this->pagePayloadFromBrowserTables($tables);
+                if ($payload->isEmpty()) {
+                    continue;
+                }
+
                 Hilos::$sr->queueSignal(
                     signalSource: new SignalSource(SignalSource::WORKER),
                     signalType: new SignalType(SignalTypeConstants::WS_USER),
-                    signalName: new SignalName($signalName),
+                    signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
                     signalData: new WebSocketSignalData(
-                        data: new BrowserPageSignalData($tables),
+                        data: new PageResponseSignalData((string) $page, $payload),
                         targetAcceptKey: $acceptKey,
                     ),
                 );
@@ -388,9 +397,9 @@ abstract class BrowserContext
      * registered table metadata without requiring it for browser-only topology.
      *
      * @param string $tableKey Browser table key
-     * @return ?BrowserTableConfig Browser-only table config, or null when absent
+     * @return ?BrowserSourceConfig Browser-only table config, or null when absent
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserSourceConfig
     {
         $hilosClass = $this->hilosClass;
         $tableClass = $hilosClass::BROWSER_TABLES[$tableKey] ?? null;
@@ -401,7 +410,7 @@ abstract class BrowserContext
         /** @var array<string, mixed> $config */
         $config = $tableClass::BROWSER;
 
-        return BrowserTableConfig::fromArray($config);
+        return BrowserSourceConfig::fromArray($config);
     }
 
     /**
@@ -430,9 +439,9 @@ abstract class BrowserContext
      * Returns a browser table config from browser-only or registered table metadata.
      *
      * @param string $tableKey Browser or table context key
-     * @return ?BrowserTableConfig Browser table config
+     * @return ?BrowserSourceConfig Browser source config
      */
-    private function tableConfig(string $tableKey): ?BrowserTableConfig
+    private function tableConfig(string $tableKey): ?BrowserSourceConfig
     {
         $browserConfig = $this->resolveBrowserOnlyTableConfig($tableKey);
         if ($browserConfig !== null) {
@@ -451,7 +460,62 @@ abstract class BrowserContext
         /** @var array<string, mixed> $tableBrowserConfig */
         $tableBrowserConfig = $table::BROWSER;
 
-        return BrowserTableConfig::fromArray($tableBrowserConfig);
+        return BrowserSourceConfig::fromArray($tableBrowserConfig);
+    }
+
+    /**
+     * Resolves the kind of a page-bound source, deciding its payload section.
+     *
+     * A source with no resolvable class — a project hook that returns an inline
+     * config — is a table.
+     *
+     * @param string $tableKey Browser source key
+     * @return string One of the BrowserSourceKind constants
+     */
+    private function tableKind(string $tableKey): string
+    {
+        $class = $this->resolveSourceClass($tableKey);
+
+        return $class !== null ? $this->sourceKind($class) : BrowserSourceKind::TABLE;
+    }
+
+    /**
+     * Resolves the declaring class of a page-bound source, when registered.
+     *
+     * @param string $tableKey Browser source key
+     * @return ?string Source class name, or null when resolved without a class
+     */
+    private function resolveSourceClass(string $tableKey): ?string
+    {
+        $tableClass = $this->hilosClass::BROWSER_TABLES[$tableKey] ?? null;
+        if (is_string($tableClass)) {
+            return $tableClass;
+        }
+
+        $table = Hilos::$table?->get($tableKey);
+
+        return $table !== null ? $table::class : null;
+    }
+
+    /**
+     * Reads the source kind a source class declares through its key constant.
+     *
+     * The constant name carries the kind: a `LIST` source feeds the lists
+     * section, a `DATA` source the data section, and any other source is a
+     * table.
+     *
+     * @param string $class Browser source class name
+     * @return string One of the BrowserSourceKind constants
+     */
+    private function sourceKind(string $class): string
+    {
+        foreach ([BrowserSourceKind::LIST, BrowserSourceKind::DATA] as $kind) {
+            if (defined("{$class}::" . strtoupper($kind))) {
+                return $kind;
+            }
+        }
+
+        return BrowserSourceKind::TABLE;
     }
 
     /**
@@ -478,11 +542,11 @@ abstract class BrowserContext
     /**
      * Checks whether any row source in the table observes the source change.
      *
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
      * @return bool True when this table has a row source for the change
      */
-    private function tableObservesChange(BrowserTableConfig $tableConfig, SourceChange $change): bool
+    private function tableObservesChange(BrowserSourceConfig $tableConfig, SourceChange $change): bool
     {
         foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
             if ($this->rowConfigMatchesChange($rowConfig, $change)) {
@@ -496,10 +560,10 @@ abstract class BrowserContext
     /**
      * Returns row source configs for one browser table.
      *
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @return list<array<string, mixed>> Row source configs
      */
-    private function rowConfigs(BrowserTableConfig $tableConfig): array
+    private function rowConfigs(BrowserSourceConfig $tableConfig): array
     {
         return $tableConfig->rowConfigs();
     }
@@ -555,12 +619,12 @@ abstract class BrowserContext
     /**
      * Resolves the logical browser row key affected by a source change.
      *
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
      * @param array<string, mixed> $tableParams Resolved table params
      * @return int|string|null Browser row key, or null when no matching row source can resolve it
      */
-    private function rowKeyForChange(BrowserTableConfig $tableConfig, SourceChange $change, array $tableParams): int|string|null
+    private function rowKeyForChange(BrowserSourceConfig $tableConfig, SourceChange $change, array $tableParams): int|string|null
     {
         foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
             if (!$this->rowConfigMatchesChange($rowConfig, $change)) {
@@ -614,7 +678,7 @@ abstract class BrowserContext
      * Builds the page-shaped browser row for one logical row key.
      *
      * @param string $tableKey Browser table key
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
@@ -623,7 +687,7 @@ abstract class BrowserContext
      */
     private function buildBrowserRow(
         string $tableKey,
-        BrowserTableConfig $tableConfig,
+        BrowserSourceConfig $tableConfig,
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
@@ -704,7 +768,7 @@ abstract class BrowserContext
      * Builds all current browser rows for one page-bound table.
      *
      * @param string $tableKey Browser table key
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $tableParams Resolved table params for this page subscription
@@ -712,7 +776,7 @@ abstract class BrowserContext
      */
     private function buildBrowserSnapshotRows(
         string $tableKey,
-        BrowserTableConfig $tableConfig,
+        BrowserSourceConfig $tableConfig,
         string $acceptKey,
         array $pageParams,
         array $tableParams,
@@ -738,14 +802,14 @@ abstract class BrowserContext
     /**
      * Collects logical row keys visible in a full browser table snapshot.
      *
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $tableParams Resolved table params for this page subscription
      * @return list<int|string> Logical row keys for current source items
      */
     private function snapshotRowKeys(
-        BrowserTableConfig $tableConfig,
+        BrowserSourceConfig $tableConfig,
         string $acceptKey,
         array $pageParams,
         array $tableParams,
@@ -791,10 +855,10 @@ abstract class BrowserContext
      * Only the first non-many source is the row anchor. Joined sources enrich
      * that row and must not add their own keys to the full browser snapshot.
      *
-     * @param BrowserTableConfig $tableConfig Browser table config
+     * @param BrowserSourceConfig $tableConfig Browser source config
      * @return list<array<string, mixed>> Anchor row config or an empty list
      */
-    private function anchorRowConfigs(BrowserTableConfig $tableConfig): array
+    private function anchorRowConfigs(BrowserSourceConfig $tableConfig): array
     {
         foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
             if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
@@ -1329,7 +1393,7 @@ abstract class BrowserContext
      *
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
      * @param string $acceptKey Target accept key
-     * @param string $signalName Page signal name
+     * @param string $page Subscribed page key
      * @param string $tableKey Browser table key
      * @param int|string $rowKey Logical row key
      * @param array{rowKey: int|string, sources: array<string, mixed>} $row Browser row payload
@@ -1337,13 +1401,13 @@ abstract class BrowserContext
     private function addBrowserRow(
         array &$signalTables,
         string $acceptKey,
-        string $signalName,
+        string $page,
         string $tableKey,
         int|string $rowKey,
         array $row,
     ): void {
-        unset($signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey]);
-        $signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::rows][(string) $rowKey] = $row;
+        unset($signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey]);
+        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows][(string) $rowKey] = $row;
     }
 
     /**
@@ -1351,32 +1415,32 @@ abstract class BrowserContext
      *
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
      * @param string $acceptKey Target accept key
-     * @param string $signalName Page signal name
+     * @param string $page Subscribed page key
      * @param string $tableKey Browser table key
      * @param int|string $rowKey Logical row key
      */
     private function addBrowserDelete(
         array &$signalTables,
         string $acceptKey,
-        string $signalName,
+        string $page,
         string $tableKey,
         int|string $rowKey,
     ): void {
-        unset($signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::rows][(string) $rowKey]);
-        $signalTables[$acceptKey][$signalName][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey] = $rowKey;
+        unset($signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows][(string) $rowKey]);
+        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey] = $rowKey;
     }
 
     /**
-     * Converts the tick-local accumulator to BrowserPageSignalData constructor payloads.
+     * Compacts the tick-local accumulator to per-table row/delete payloads.
      *
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
-     * @return array<string, array<string, array<string, array<string, mixed>>>> Tables grouped by accept key and signal name
+     * @return array<string, array<string, array<string, array<string, mixed>>>> Tables grouped by accept key and page key
      */
     private function buildBrowserPayloads(array $signalTables): array
     {
         $payloads = [];
-        foreach ($signalTables as $acceptKey => $signals) {
-            foreach ($signals as $signalName => $tables) {
+        foreach ($signalTables as $acceptKey => $pages) {
+            foreach ($pages as $page => $tables) {
                 foreach ($tables as $tableKey => $changes) {
                     $rows = $changes[BrowserPageSignalData::rows] ?? [];
                     $deleted = $changes[BrowserPageSignalData::deleted] ?? [];
@@ -1388,12 +1452,91 @@ abstract class BrowserContext
                         $payload[BrowserPageSignalData::deleted] = array_values($deleted);
                     }
                     if ($payload !== []) {
-                        $payloads[$acceptKey][$signalName][$tableKey] = $payload;
+                        $payloads[$acceptKey][$page][$tableKey] = $payload;
                     }
                 }
             }
         }
 
         return $payloads;
+    }
+
+    /**
+     * Routes per-table rows into a kind-classified page payload.
+     *
+     * Each source's kind decides its section: a list source becomes an ordered
+     * item collection, a data source collapses to a single page-data blob, and a
+     * table source keeps the row-collection shape. The row field bag is renamed
+     * from `sources` to `slots` on the wire.
+     *
+     * @param array<string, array<string, mixed>> $tablesByKey Per-table rows and deletes keyed by table key
+     * @return PagePayload Page payload split by section
+     */
+    private function pagePayloadFromBrowserTables(array $tablesByKey): PagePayload
+    {
+        $lists = [];
+        $tables = [];
+        $data = [];
+        foreach ($tablesByKey as $tableKey => $table) {
+            $rows = $table[BrowserPageSignalData::rows] ?? [];
+            $rows = is_array($rows) ? $rows : [];
+            $deleted = $table[BrowserPageSignalData::deleted] ?? [];
+            $deleted = is_array($deleted) ? $deleted : [];
+
+            switch ($this->tableKind($tableKey)) {
+                case BrowserSourceKind::LIST:
+                    $section = [];
+                    if ($rows !== []) {
+                        $section[PagePayload::items] = $this->renameRowSlots($rows, PagePayload::itemKey);
+                    }
+                    if ($deleted !== []) {
+                        $section[PagePayload::deleted] = array_values($deleted);
+                    }
+                    $lists[$tableKey] = $section;
+
+                    break;
+
+                case BrowserSourceKind::DATA:
+                    $fragments = $rows === []
+                        ? []
+                        : array_values(array_filter(
+                            $rows[array_key_first($rows)][BrowserPageSignalData::sources] ?? [],
+                            'is_array',
+                        ));
+                    $data[$tableKey] = $fragments === [] ? [] : array_merge(...$fragments);
+
+                    break;
+
+                default:
+                    $section = [];
+                    if ($rows !== []) {
+                        $section[PagePayload::rows] = $this->renameRowSlots($rows, PagePayload::rowKey);
+                    }
+                    if ($deleted !== []) {
+                        $section[PagePayload::deleted] = array_values($deleted);
+                    }
+                    $tables[$tableKey] = $section;
+            }
+        }
+
+        return new PagePayload(data: $data, lists: $lists, tables: $tables);
+    }
+
+    /**
+     * Renames each browser row's `sources` bag to `slots` under the given key.
+     *
+     * @param list<array{rowKey: int|string, sources: array<string, mixed>}> $rows Browser rows
+     * @param string $keyName Identity key name for the section (rowKey or itemKey)
+     * @return list<array<string, mixed>> Rows reshaped for the page_response section
+     */
+    private function renameRowSlots(array $rows, string $keyName): array
+    {
+        return array_values(array_map(
+            static fn(array $row): array => [
+                $keyName => $row[BrowserPageSignalData::rowKey],
+                PagePayload::slots => $row[BrowserPageSignalData::sources],
+            ],
+            $rows,
+        ));
     }
 }

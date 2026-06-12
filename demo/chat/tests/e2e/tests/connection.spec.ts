@@ -15,3 +15,34 @@ test('session bootstrap resolves the current user', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
 })
+
+// Step-7.3.3 page-subscription infra e2e: on cold load the app subscribes the
+// page named by the URL, so a page_subscribe frame for `main` goes out over
+// the live nginx /ws upgrade once the connection reaches `connected`.
+test('subscribes the URL page on load', async ({ page }) => {
+  const sentFrames: string[] = []
+  page.on('websocket', (ws) => {
+    ws.on('framesent', (frame) => {
+      if (typeof frame.payload === 'string') {
+        sentFrames.push(frame.payload)
+      }
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  await expect
+    .poll(() =>
+      sentFrames.some((payload) => {
+        try {
+          const message = JSON.parse(payload) as { type?: string; page?: string }
+
+          return message.type === 'page_subscribe' && message.page === 'main'
+        } catch {
+          return false
+        }
+      }),
+    )
+    .toBe(true)
+})

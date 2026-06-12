@@ -18,11 +18,11 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 
 /**
- * Browser table config for current WebSocket connection state.
+ * Browser data source for current WebSocket connection state.
  */
-final class SelfConnectionBrowserTable
+final class SelfConnectionBrowserData
 {
-    public const string TABLE = ChatBrowserTable::SELF_CONNECTION;
+    public const string DATA = ChatBrowserTable::SELF_CONNECTION;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [

@@ -194,6 +194,21 @@ A connection has **at most one** page subscription.
 
 The URL is the source of truth for the page subscription on cold load.
 
+The backend answers a subscription with a `page_response` signal carrying the
+page key and the page scope payload:
+
+```json
+{"type": "page_response", "data": {"page": "<pageKey>", "payload": {"entities": {}, "data": {}}}}
+```
+
+`page` lets the client drop a late response for a page it has left (see
+[Page-signal routing by page key](#page-signal-routing-by-page-key)); `payload`
+is a scope payload (`entities` and plain `data`, both optional and omitted when
+empty) the normalizer ingests into the page scope. A page contributes it from
+the framework default `onSubscribe` via the `buildPagePayload` hook, so a page
+never hand-rolls the signal. Tables are not part of this payload yet — they keep
+flowing on the browser snapshot path until they fold into `page_response`.
+
 ### Group subscriptions (0..N)
 
 A connection holds **any number** of group subscriptions concurrently; each is

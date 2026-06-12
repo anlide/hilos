@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -317,19 +318,26 @@ final class TopologyValidator
                 continue;
             }
 
-            if (!defined("{$tableClass}::TABLE")) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass} must declare TABLE";
+            $keyConstName = null;
+            foreach ([BrowserSourceKind::TABLE, BrowserSourceKind::LIST, BrowserSourceKind::DATA] as $kind) {
+                if (defined("{$tableClass}::" . strtoupper($kind))) {
+                    $keyConstName = strtoupper($kind);
+                    break;
+                }
+            }
+            if ($keyConstName === null) {
+                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass} must declare a source key constant (TABLE, LIST, or DATA)";
                 continue;
             }
 
-            $classTable = constant("{$tableClass}::TABLE");
+            $classTable = constant("{$tableClass}::{$keyConstName}");
             if (!is_string($classTable)) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass}::TABLE must be a string";
+                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass}::{$keyConstName} must be a string";
                 continue;
             }
 
             if ($classTable !== $table) {
-                $errors[] = "BROWSER_TABLES[{$table}] key must match {$tableClass}::TABLE ({$classTable})";
+                $errors[] = "BROWSER_TABLES[{$table}] key must match {$tableClass}::{$keyConstName} ({$classTable})";
             }
 
             if (!defined("{$tableClass}::BROWSER")) {

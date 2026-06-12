@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Browser\Config;
 
 /**
- * Browser row projection config declared by one table.
+ * Browser row projection config declared by one source.
+ *
+ * Kind-agnostic: a table, a list, and a data source all project rows from the
+ * same row-config shape. The source kind (which page_response section the rows
+ * feed) is a property of the source class, not of this projection config.
  */
-final class BrowserTableConfig
+final class BrowserSourceConfig
 {
     /**
      * @param list<array<string, mixed>> $rowConfigs Row source configs
@@ -18,10 +22,10 @@ final class BrowserTableConfig
     }
 
     /**
-     * Builds table browser metadata from a table BROWSER constant.
+     * Builds source browser metadata from a source BROWSER constant.
      *
-     * @param array<string, mixed> $config Table BROWSER constant
-     * @return self Table browser config
+     * @param array<string, mixed> $config Source BROWSER constant
+     * @return self Source browser config
      */
     public static function fromArray(array $config): self
     {
@@ -35,7 +39,7 @@ final class BrowserTableConfig
     }
 
     /**
-     * Reports whether this table has browser row configs.
+     * Reports whether this source has browser row configs.
      *
      * @return bool True when no browser rows are declared
      */

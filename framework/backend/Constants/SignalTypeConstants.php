@@ -29,6 +29,9 @@ final class SignalTypeConstants
     /** @var string Page update subscription signal type */
     public const string PAGE_UPDATE_SUBSCRIPTION = 'page_update_subscription';
 
+    /** @var string Page response signal type (server-to-client page scope payload) */
+    public const string PAGE_RESPONSE = 'page_response';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 

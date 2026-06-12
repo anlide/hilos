@@ -23,7 +23,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
-use Hilos\Core\Browser\Config\BrowserTableConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
@@ -323,7 +323,12 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testBrowserTableRegistryKeysMatchTableClassConstants(): void
     {
         foreach (Hilos::BROWSER_TABLES as $table => $tableClass) {
-            $this->assertSame($table, $tableClass::TABLE);
+            $sourceKey = match (true) {
+                defined("{$tableClass}::LIST") => $tableClass::LIST,
+                defined("{$tableClass}::DATA") => $tableClass::DATA,
+                default => $tableClass::TABLE,
+            };
+            $this->assertSame($table, $sourceKey);
         }
     }
 
@@ -412,7 +417,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
         $resolveTableConfig = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserTableConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
+            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserSourceConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
             null,
             ChatBrowserContext::class,
         );

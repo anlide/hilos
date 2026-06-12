@@ -13,11 +13,11 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 
 /**
- * Browser table config for bots visible on the main chat page.
+ * Browser list source for bots visible on the main chat page.
  */
-final class MainBotsBrowserTable
+final class MainBotsBrowserList
 {
-    public const string TABLE = ChatBrowserTable::MAIN_BOTS;
+    public const string LIST = ChatBrowserTable::MAIN_BOTS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [

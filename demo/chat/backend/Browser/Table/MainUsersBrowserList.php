@@ -13,11 +13,11 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 
 /**
- * Browser table config for users visible on the main chat page.
+ * Browser list source for users visible on the main chat page.
  */
-final class MainUsersBrowserTable
+final class MainUsersBrowserList
 {
-    public const string TABLE = ChatBrowserTable::MAIN_USERS;
+    public const string LIST = ChatBrowserTable::MAIN_USERS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [

@@ -24,14 +24,14 @@ use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
+use Demo\Chat\Browser\Table\AttachmentDraftsBrowserList;
 use Demo\Chat\Browser\Table\BotDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
-use Demo\Chat\Browser\Table\MainBotsBrowserTable;
-use Demo\Chat\Browser\Table\MainEventsBrowserTable;
-use Demo\Chat\Browser\Table\MainUsersBrowserTable;
-use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
+use Demo\Chat\Browser\Table\MainBotsBrowserList;
+use Demo\Chat\Browser\Table\MainEventsBrowserList;
+use Demo\Chat\Browser\Table\MainUsersBrowserList;
+use Demo\Chat\Browser\Table\SelfConnectionBrowserData;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\SettingsCatalog;
@@ -283,11 +283,11 @@ final class Hilos extends \Hilos\Hilos
     ];
 
     public const array BROWSER_TABLES = [
-        MainEventsBrowserTable::TABLE => MainEventsBrowserTable::class,
-        MainUsersBrowserTable::TABLE => MainUsersBrowserTable::class,
-        MainBotsBrowserTable::TABLE => MainBotsBrowserTable::class,
-        SelfConnectionBrowserTable::TABLE => SelfConnectionBrowserTable::class,
-        AttachmentDraftsBrowserTable::TABLE => AttachmentDraftsBrowserTable::class,
+        MainEventsBrowserList::LIST => MainEventsBrowserList::class,
+        MainUsersBrowserList::LIST => MainUsersBrowserList::class,
+        MainBotsBrowserList::LIST => MainBotsBrowserList::class,
+        SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
+        AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
         BotDetailBrowserTable::TABLE => BotDetailBrowserTable::class,
         UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
@@ -296,22 +296,22 @@ final class Hilos extends \Hilos\Hilos
 
     public const array PAGE_TABLES = [
         MainPage::PAGE => [
-            MainEventsBrowserTable::TABLE => [],
-            MainUsersBrowserTable::TABLE => [],
-            MainBotsBrowserTable::TABLE => [],
-            SelfConnectionBrowserTable::TABLE => [
+            MainEventsBrowserList::LIST => [],
+            MainUsersBrowserList::LIST => [],
+            MainBotsBrowserList::LIST => [],
+            SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
-            AttachmentDraftsBrowserTable::TABLE => [
+            AttachmentDraftsBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
         ],
         ProfilePage::PAGE => [
-            SelfConnectionBrowserTable::TABLE => [
+            SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],

@@ -8,6 +8,8 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -131,7 +133,33 @@ abstract class AbstractPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        $payload = $this->buildPagePayload($params);
+        if ($payload !== null && !$payload->isEmpty()) {
+            $this->sendToUser(
+                SignalTypeConstants::PAGE_RESPONSE,
+                $acceptKey,
+                new PageResponseSignalData(static::PAGE, $payload),
+            );
+        }
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
+    }
+
+    /**
+     * Builds the page scope payload sent to a subscribing client.
+     *
+     * Default returns null: the page contributes no entities or page-data and
+     * only the browser snapshot path runs. Override in concrete pages to send
+     * an entity/data payload, returning null when there is nothing to send.
+     * An override that reads domain state should raise a
+     * PageSubscriptionException on failure so the framework reports a
+     * subscription error to the client.
+     *
+     * @param PageRouteParams $params Route params from page subscription
+     * @return ?PagePayload Page scope payload, or null when the page carries none
+     */
+    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    {
+        return null;
     }
 
     /**
