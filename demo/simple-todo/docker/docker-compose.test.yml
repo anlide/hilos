@@ -61,6 +61,11 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # Two monopolistic workers: one for the todo agent, one for the Hilos
+      # dashboard's hilos_index agent the shell gear subscribes. The framework
+      # default already gives two, but the demos prescribe it here (like chat)
+      # so the worker pool is explicit and not at the mercy of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-2}
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       todo-mysql-test:
