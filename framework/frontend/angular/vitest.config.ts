@@ -7,5 +7,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     name: 'angular',
+    // Load @angular/compiler so the surface test can import the public barrel,
+    // which now re-exports partially-compiled declarables (vitest.setup.ts).
+    setupFiles: ['./vitest.setup.ts'],
   },
 })
