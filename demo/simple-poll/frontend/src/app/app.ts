@@ -1,23 +1,34 @@
-import { Component } from '@angular/core'
-import { connectionStateSignal, hilosSignal } from '@hilos/angular'
+// Root view. The application shell is the SDK's HilosLayout; the demo fills its
+// brand slot and routes the content through HilosView, which renders the
+// component mapped to the navigator's current page. The brand and the shell's
+// gear move between the main page and the framework dashboard with no refresh.
+// The live connection state is the shell's own indicator.
+import { ChangeDetectionStrategy, Component } from '@angular/core'
+import type { Type } from '@angular/core'
+import { HilosLayout, HilosView } from '@hilos/angular'
+import { HilosPages } from '@hilos/core'
 
 import { connection } from './connection'
-import { currentUserName } from './session'
+import { PAGE_MAIN } from './pageKeys'
+import { DashboardView } from './views/dashboard-view'
+import { MainView } from './views/main-view'
 
-// Root view. Besides the title it shows the live Connection-machine state
-// through the Angular adapter — the transport slice of the conformance demo
-// (docs/agents/frontend/multiframework-core.md) — and the current user
-// resolved from the session scope. Real views land on top of this from
-// step 7, tracking each core capability as it lands.
 @Component({
   selector: 'app-root',
-  template: `<main data-id="app-root">
-    Hilos simple-poll (Angular)
-    <span data-id="conn-state">{{ connectionState() }}</span>
-    <span data-id="self-user">{{ selfName() }}</span>
-  </main>`,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosLayout, HilosView],
+  template: `<hilos-layout [connection]="connection">
+    <span brand>Hilos Poll</span>
+    <hilos-view [pages]="pages" />
+  </hilos-layout>`,
 })
 export class App {
-  protected readonly connectionState = connectionStateSignal(connection)
-  protected readonly selfName = hilosSignal(currentUserName)
+  protected readonly connection = connection
+
+  // The page-key → view map HilosView renders from. Pages without a mapped view
+  // (other routes land later) render nothing.
+  protected readonly pages: Record<string, Type<unknown>> = {
+    [PAGE_MAIN]: MainView,
+    [HilosPages.DASHBOARD]: DashboardView,
+  }
 }

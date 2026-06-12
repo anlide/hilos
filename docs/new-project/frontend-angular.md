@@ -22,12 +22,24 @@ Common ground (containers, connection, e2e, stable ids) is in
 - Flat dist: `outputPath: { "base": "dist", "browser": "" }` so the nginx
   mount stays `../frontend/dist`, uniform with the Vite demos.
 - deps `@angular/{common,compiler,core,platform-browser}` `^22`, `rxjs`,
-  `tslib`, `@hilos/angular` (`file:`); devDeps `@angular/{build,cli,
+  `tslib`, `@vue/reactivity` (see below), `bootstrap` + `bootstrap-icons` (see
+  Styling), and `@hilos/angular` pinned at its **dist**:
+  `file:../../../framework/frontend/angular/dist`. The Angular view layer is
+  built with **ng-packagr** (Angular Package Format: a FESM2022 bundle + a
+  generated manifest), unlike the Vue/React layers' Vite library build, because
+  only an Angular-aware compiler can emit the shell's declarables; the consumer
+  points at the ng-packagr output folder. devDeps `@angular/{build,cli,
   compiler-cli}` `^22`, `typescript ~6.0.x`; `cli.analytics: false` for
-  container runs. Under the CLI the SDK resolves to its built **dist** in
-  BOTH modes (`ng build` natively; `ng serve` via the dev-configuration
-  `conditions` override below) — build the SDK first, and rebuild it to see
-  SDK changes in a running dev server.
+  container runs. The SDK resolves to its built dist in BOTH modes — build the
+  SDK first, and rebuild it to see SDK changes in a running dev server.
+- **`preserveSymlinks: true`** in `angular.json` build options: the SDK is a
+  symlinked `file:` dependency whose FESM imports `@angular/core` (a peer); with
+  symlinks resolved to their real path the import lands on the SDK workspace's
+  own `@angular/core`, a second copy whose injection context the app cannot see
+  — bootstrap then dies with **NG0203** and every shell signal renders blank.
+  Preserving symlinks resolves the SDK's bare imports from the consumer's own
+  `node_modules`, collapsing `@angular/core`, `@angular/common`, `@hilos/core`,
+  and `@vue/reactivity` to one copy each.
 - `angular.json` is NOT JSONC-tolerant in PhpStorm — keep comments out of it;
   put explanations in `tsconfig.json` (JSONC-tolerant) instead.
 - The Angular disk cache (`frontend/.angular/cache`) is an **lmdb** database
@@ -52,6 +64,25 @@ Common ground (containers, connection, e2e, stable ids) is in
   `{ injector }`; mirrors `toSignal` semantics, unsubscribes on the
   injector's `DestroyRef`.
 
+## Styling — Bootstrap and Bootstrap Icons
+
+`@hilos/angular` declares `bootstrap` and `bootstrap-icons` as peer
+dependencies; the Angular app fulfills them and delivers the CSS through
+`angular.json` `styles` (Angular has no transitive global-stylesheet channel —
+see [../agents/frontend/styling-rules.md](../agents/frontend/styling-rules.md)):
+
+```json
+"styles": [
+  "node_modules/bootstrap/dist/css/bootstrap.min.css",
+  "node_modules/bootstrap-icons/font/bootstrap-icons.css"
+]
+```
+
+The Bootstrap-Icons font is a real dependency in the app's own `node_modules`
+(not a cross-root SDK asset), so unlike the Vite demos `ng serve` needs no
+file-system allow-list. Bootstrap raises the bundle past the CLI's default
+budgets — set `initial` `maximumWarning`/`maximumError` to `1.5MB`/`2MB`.
+
 ## Dev-mode WebSocket
 
 No env override exists under `ng serve`, so the dev server proxies the app's
@@ -66,6 +97,12 @@ the compose service name — the dev container and the daemon share the local
 network.
 
 ## Module duplication — two layers, both required
+
+> `preserveSymlinks: true` (Toolchain, above) is the primary collapse of the
+> duplicate copies under ng-packagr's FESM and covers both `ng build` and
+> `ng serve`. The two layers below were the prior, plain-tsc-dist approach and
+> remain in `simple-poll` as defence in depth; a project starting fresh on the
+> ng-packagr SDK can rely on `preserveSymlinks` alone (verify `ng serve` once).
 
 The `file:` SDK reaches a second `@angular/core` copy through its real path
 (the SDK-workspace install used by the adapter unit tests). With two copies

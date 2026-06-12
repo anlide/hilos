@@ -17,6 +17,8 @@
     "@hilos/angular": "file:../../../framework/frontend/angular/dist",
     "@hilos/core": "file:../../../framework/frontend/core",
     "@vue/reactivity": "^3.5.35",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

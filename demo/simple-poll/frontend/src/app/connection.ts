@@ -8,12 +8,13 @@
 import { HilosConnection } from '@hilos/core'
 
 import { pollSignalSchemas } from './session'
+import { pageSignalSchemas } from './pages'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: sameOriginUrl,
-  projectSchemas: pollSignalSchemas,
+  projectSchemas: { ...pollSignalSchemas, ...pageSignalSchemas },
 })
 
 // Forced-refresh check (docs/agents/frontend/wire-protocol.md): a welcome

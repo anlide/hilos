@@ -61,6 +61,17 @@ are the reference. The icon font carries its own woff2/woff assets; the consumer
 build resolving the SDK to source emits and rewrites those font URLs, so no
 per-project font wiring is needed.
 
+**Angular is the exception** to "the consumer never declares Bootstrap": the
+Angular CLI delivers global CSS through `angular.json` `styles`, with no
+transitive-stylesheet mechanism a library can drive (and an ng-packagr FESM
+cannot side-effect-import global CSS the way a Vite-built bundle does). So
+`@hilos/angular` declares `bootstrap` and `bootstrap-icons` as **peer**
+dependencies — the requirement — and the Angular app fulfills them: it lists
+both packages and references their stylesheets in `angular.json` `styles`
+(`node_modules/bootstrap/dist/css/bootstrap.min.css` and
+`bootstrap-icons/font/bootstrap-icons.css`). The components are identical to the
+Vue/React shells; only the CSS-delivery channel differs.
+
 The accepted trade: build-time Sass customization (variable maps, custom
 utilities — the Sass layer above) becomes a **framework** concern, not a
 per-project one. A project still themes at runtime with `data-bs-theme` and

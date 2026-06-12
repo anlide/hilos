@@ -18,7 +18,9 @@
   },
   "peerDependencies": {
     "@angular/common": "^22",
-    "@angular/core": "^22"
+    "@angular/core": "^22",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3"
   },
   "devDependencies": {
     "@angular/compiler": "^22.0.0",
