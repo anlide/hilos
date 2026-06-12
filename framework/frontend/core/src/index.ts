@@ -23,6 +23,11 @@ export {
   type EntityRef,
   type EntitySnapshot,
 } from './state/EntityStore.js'
+export { type Entity, type User } from './state/entity.js'
+export {
+  entityCollection,
+  type EntityCollection,
+} from './state/EntityCollection.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export { ListStore, type ListItem } from './state/ListStore.js'

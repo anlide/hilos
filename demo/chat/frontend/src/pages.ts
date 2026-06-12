@@ -19,6 +19,12 @@ import {
   PAGE_ADMIN_MODERATOR,
   PAGE_ADMIN_BOTS,
 } from './pageKeys'
+import {
+  BOT_TYPE,
+  EVENT_ATTACHMENT_TYPE,
+  EVENT_TYPE,
+  USER_TYPE,
+} from './types'
 
 /** Concrete chat page signal schemas for the core parse boundary. */
 export const pageSignalSchemas = {
@@ -35,10 +41,10 @@ export const pageSignalSchemas = {
  * message author against the bot the `mainBots` list delivered.
  */
 export const pageEntityTypes: Record<string, string> = {
-  users: 'user',
-  bots: 'bot',
-  events: 'event',
-  eventAttachments: 'eventAttachment',
+  users: USER_TYPE,
+  bots: BOT_TYPE,
+  events: EVENT_TYPE,
+  eventAttachments: EVENT_ATTACHMENT_TYPE,
 }
 
 /**
