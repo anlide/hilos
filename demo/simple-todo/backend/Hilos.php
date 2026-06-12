@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\SimpleTodo;
 
+use Demo\SimpleTodo\Agents\Hilos\DemoHilosAgent;
 use Demo\SimpleTodo\Agents\TodoAgent;
+use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Environment\TodoEnvCatalog;
+use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
@@ -29,12 +32,17 @@ final class Hilos extends \Hilos\Hilos
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
+        DashboardPage::PAGE => DashboardPage::class,
     ];
 
     public const array AGENTS = [
         TodoAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TodoAgent::class,
             AgentRegistryKey::DAEMON => TodoAgentDaemon::class,
+        ],
+        DemoHilosAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
         ],
     ];
 

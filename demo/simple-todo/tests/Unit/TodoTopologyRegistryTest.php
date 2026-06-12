@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\SimpleTodo\Tests\Unit;
 
+use Demo\SimpleTodo\Agents\Hilos\DemoHilosAgent;
 use Demo\SimpleTodo\Agents\TodoAgent;
 use Demo\SimpleTodo\Constants\AgentType;
 use Demo\SimpleTodo\Constants\PageConstants;
+use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Hilos;
+use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -58,11 +61,23 @@ final class TodoTopologyRegistryTest extends TestCase
 
     public function testMainPageIsOwnedByTheTodoAgent(): void
     {
-        $this->assertSame([PageConstants::MAIN => MainPage::class], Hilos::PAGES);
+        $this->assertSame(MainPage::class, Hilos::PAGES[PageConstants::MAIN]);
         $this->assertSame(AgentType::TODO, MainPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(TodoAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::TODO]));
         $this->assertSame(TodoAgentDaemon::class, AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::TODO]));
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::TODO]));
+    }
+
+    public function testHilosDashboardIsOwnedByTheIndexAgent(): void
+    {
+        $this->assertSame(DashboardPage::class, Hilos::PAGES[DashboardPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, DashboardPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(DemoHilosAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::HILOS_INDEX]));
+        $this->assertSame(
+            DemoHilosAgentDaemon::class,
+            AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::HILOS_INDEX]),
+        );
+        $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::HILOS_INDEX]));
     }
 
     public function testTransportOnlyContractDeclaresNoActionsSignalsOrGroups(): void
