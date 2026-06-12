@@ -51,6 +51,13 @@ export {
   type PageRouteMatch,
   type PageRouterOptions,
 } from './routing/PageRouter.js'
+export {
+  createHilosRouter,
+  browserNavigationEnvironment,
+  type HilosRouter,
+  type NavigablePages,
+  type NavigationEnvironment,
+} from './routing/HilosRouter.js'
 export { HilosPages, HILOS_PAGE_ROUTES } from './routing/hilosPages.js'
 export { assertNever } from './protocol/assertNever.js'
 export {

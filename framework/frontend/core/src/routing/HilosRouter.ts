@@ -1,0 +1,128 @@
+// The client-side navigator: it turns a path change into a no-refresh page
+// transition. It owns the current-route signal, pushes history entries, and
+// drives the page subscription over the LIVE socket — the connection is never
+// torn down, only the page subscription is atomically replaced
+// (subscription/PageSubscription). The browser binding (history and the
+// popstate event) is injected as a NavigationEnvironment, so the navigator
+// stays testable with no DOM and core keeps its no-browser-environment test
+// rule; browserNavigationEnvironment is the binding a project passes in.
+
+import {
+  createSignal,
+  type ReadonlySignal,
+  type Unsubscribe,
+} from '../state/signal.js'
+import { type PageRouteMatch, type PageRouter } from './PageRouter.js'
+
+/** The page-subscription slice the navigator drives. */
+export interface NavigablePages {
+  /**
+   * Subscribe the page, atomically replacing the previous subscription.
+   *
+   * @param pageKey The page to subscribe.
+   * @param params Route params for the subscription.
+   */
+  subscribe(pageKey: string, params?: Record<string, string>): unknown
+}
+
+/**
+ * The browser binding the navigator needs, injected so the navigator stays
+ * DOM-free in tests. {@link browserNavigationEnvironment} is the `window`-backed
+ * default; a test passes a fake.
+ */
+export interface NavigationEnvironment {
+  /** The current location pathname. */
+  pathname(): string
+  /** Push a history entry for `pathname` without reloading the document. */
+  pushState(pathname: string): void
+  /**
+   * Subscribe to back/forward navigations (the popstate event).
+   *
+   * @param listener Called when the user moves through history.
+   */
+  onPopState(listener: () => void): Unsubscribe
+}
+
+/** A no-refresh client-side navigator. */
+export interface HilosRouter {
+  /** The matched route; updates on every navigation, including back/forward. */
+  readonly currentRoute: ReadonlySignal<PageRouteMatch>
+  /**
+   * Navigate to `pathname` in place: push a history entry, swap the route
+   * signal, and re-subscribe the page over the live socket.
+   *
+   * @param pathname The target location pathname.
+   */
+  navigate(pathname: string): void
+  /** Apply the current location and begin tracking history. */
+  start(): void
+  /** Stop tracking history. */
+  stop(): void
+}
+
+/**
+ * Create a no-refresh navigator over a page router and a page subscription.
+ *
+ * The navigator does not connect anything: it reads the current location to
+ * seed {@link HilosRouter.currentRoute}, and {@link HilosRouter.start} applies
+ * that location (subscribing its page) and attaches the popstate listener.
+ *
+ * @param router Resolves a pathname to its page key and route params.
+ * @param pages The page subscription the navigator drives.
+ * @param env The browser binding; see {@link browserNavigationEnvironment}.
+ */
+export function createHilosRouter(
+  router: PageRouter,
+  pages: NavigablePages,
+  env: NavigationEnvironment,
+): HilosRouter {
+  const currentRoute = createSignal<PageRouteMatch>(
+    router.match(env.pathname()),
+  )
+  let detachPopState: Unsubscribe | null = null
+
+  // Resolve a pathname, publish it as the current route, and re-subscribe its
+  // page — shared by start, navigate, and the popstate listener.
+  const apply = (pathname: string): void => {
+    const match = router.match(pathname)
+    currentRoute.set(match)
+    pages.subscribe(match.page, match.params)
+  }
+
+  return {
+    currentRoute,
+    navigate: (pathname) => {
+      env.pushState(pathname)
+      apply(pathname)
+    },
+    start: () => {
+      apply(env.pathname())
+      detachPopState = env.onPopState(() => apply(env.pathname()))
+    },
+    stop: () => {
+      detachPopState?.()
+      detachPopState = null
+    },
+  }
+}
+
+/**
+ * The default {@link NavigationEnvironment}, bound to the browser `window`:
+ * `history.pushState` for in-place navigation and the `popstate` event for
+ * back/forward. A project passes this when creating the navigator.
+ */
+export function browserNavigationEnvironment(): NavigationEnvironment {
+  return {
+    pathname: () => window.location.pathname,
+    pushState: (pathname) => {
+      window.history.pushState(null, '', pathname)
+    },
+    onPopState: (listener) => {
+      window.addEventListener('popstate', listener)
+
+      return () => {
+        window.removeEventListener('popstate', listener)
+      }
+    },
+  }
+}
