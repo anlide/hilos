@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll;
 
+use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
 use Demo\SimplePoll\Agents\PollAgent;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Environment\PollEnvCatalog;
+use Demo\SimplePoll\Pages\Hilos\DashboardPage;
 use Demo\SimplePoll\Pages\MainPage;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
@@ -29,12 +32,17 @@ final class Hilos extends \Hilos\Hilos
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
+        DashboardPage::PAGE => DashboardPage::class,
     ];
 
     public const array AGENTS = [
         PollAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => PollAgent::class,
             AgentRegistryKey::DAEMON => PollAgentDaemon::class,
+        ],
+        DemoHilosAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
         ],
     ];
 

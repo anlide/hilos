@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll\Tests\Unit;
 
+use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
 use Demo\SimplePoll\Agents\PollAgent;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\PageConstants;
+use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Hilos;
+use Demo\SimplePoll\Pages\Hilos\DashboardPage;
 use Demo\SimplePoll\Pages\MainPage;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -58,11 +61,23 @@ final class PollTopologyRegistryTest extends TestCase
 
     public function testMainPageIsOwnedByThePollAgent(): void
     {
-        $this->assertSame([PageConstants::MAIN => MainPage::class], Hilos::PAGES);
+        $this->assertSame(MainPage::class, Hilos::PAGES[PageConstants::MAIN]);
         $this->assertSame(AgentType::POLL, MainPage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(PollAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::POLL]));
         $this->assertSame(PollAgentDaemon::class, AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::POLL]));
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::POLL]));
+    }
+
+    public function testHilosDashboardIsOwnedByTheIndexAgent(): void
+    {
+        $this->assertSame(DashboardPage::class, Hilos::PAGES[DashboardPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, DashboardPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(DemoHilosAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::HILOS_INDEX]));
+        $this->assertSame(
+            DemoHilosAgentDaemon::class,
+            AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::HILOS_INDEX]),
+        );
+        $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::HILOS_INDEX]));
     }
 
     public function testTransportOnlyContractDeclaresNoActionsSignalsOrGroups(): void
