@@ -62,3 +62,31 @@ test('renders the connected user in the participant roster', async ({
     page.getByTestId('participant').filter({ hasText: selfName }),
   ).toBeVisible()
 })
+
+// Main page event stream e2e: registering on connect appends a `user_registered`
+// event to the `mainEvents` list; the stream resolves the target user's name
+// against the entity store and renders the service notice for the self user.
+test('renders the own registration notice in the event stream', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+
+  await expect(
+    page
+      .getByTestId('event')
+      .filter({ hasText: selfName })
+      .filter({ hasText: 'registered in chat' }),
+  ).toBeVisible()
+})
+
+// Main page bot list e2e: the main page answers with a `mainBots` list; with no
+// bots seeded the section still renders with its empty state, proving the list
+// is wired end-to-end.
+test('renders the bot list section', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  await expect(page.getByTestId('bots-header')).toBeVisible()
+})
