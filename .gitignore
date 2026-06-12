@@ -42,3 +42,5 @@ Thumbs.db
 /.claude/settings.local.json
 # Skills copied from skills/ by `composer ai:install` (tracked at their real path)
 /.claude/skills
+# Git worktrees created by Claude Code sessions
+/.claude/worktrees
