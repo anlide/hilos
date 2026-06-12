@@ -4,29 +4,24 @@
   "private": true,
   "type": "module",
   "description": "Angular view layer over @hilos/core — adapts the core stores to Angular via signals.",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "development": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    }
-  },
   "files": [
     "dist"
   ],
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "ng-packagr -p ng-package.json"
   },
   "dependencies": {
-    "@hilos/core": "*"
+    "@hilos/core": "*",
+    "tslib": "^2.3.0"
   },
   "peerDependencies": {
     "@angular/core": "^22"
+  },
+  "devDependencies": {
+    "@angular/compiler": "^22.0.0",
+    "@angular/compiler-cli": "^22.0.0",
+    "ng-packagr": "^22.0.0"
   }
 }

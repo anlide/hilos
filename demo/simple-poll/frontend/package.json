@@ -14,7 +14,7 @@
     "@angular/compiler": "^22.0.0",
     "@angular/core": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
-    "@hilos/angular": "file:../../../framework/frontend/angular",
+    "@hilos/angular": "file:../../../framework/frontend/angular/dist",
     "@hilos/core": "file:../../../framework/frontend/core",
     "@vue/reactivity": "^3.5.35",
     "rxjs": "~7.8.0",
