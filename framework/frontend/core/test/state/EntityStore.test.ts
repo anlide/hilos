@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { EntityStore } from './EntityStore.js'
-import { subscribeSignal } from './signal.js'
+import { EntityStore } from '../../src/state/EntityStore.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 
 describe('EntityStore', () => {
   it('returns undefined before the first upsert, the snapshot after it', () => {

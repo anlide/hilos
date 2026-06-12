@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ScopeManager } from './ScopeManager.js'
-import { subscribeSignal } from './signal.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 
 const ref = { type: 'user', id: 1 }
 

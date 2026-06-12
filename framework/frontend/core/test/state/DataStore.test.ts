@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DataStore } from './DataStore.js'
-import { subscribeSignal } from './signal.js'
+import { DataStore } from '../../src/state/DataStore.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 
 describe('DataStore', () => {
   it('returns undefined before the first set, the value after it', () => {

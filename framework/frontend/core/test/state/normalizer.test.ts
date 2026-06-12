@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { type EntityFragment, ingest } from './normalizer.js'
-import { ScopeManager } from './ScopeManager.js'
+import { type EntityFragment, ingest } from '../../src/state/normalizer.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
 
 describe('ingest', () => {
   it('upserts a single entity slot and leaves a reference in the data store', () => {

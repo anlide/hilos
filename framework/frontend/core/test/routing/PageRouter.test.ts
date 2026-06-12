@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createPageRouter } from './PageRouter.js'
+import { createPageRouter } from '../../src/routing/PageRouter.js'
 
 describe('createPageRouter', () => {
   it('matches a static path whole with no params', () => {

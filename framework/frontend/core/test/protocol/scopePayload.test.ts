@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { scopePayloadSchema, type ScopePayloadWire } from './scopePayload.js'
-import { type ScopePayload } from '../state/normalizer.js'
+import {
+  scopePayloadSchema,
+  type ScopePayloadWire,
+} from '../../src/protocol/scopePayload.js'
+import { type ScopePayload } from '../../src/state/normalizer.js'
 
 describe('scopePayloadSchema', () => {
   it('accepts a single-fragment slot plus plain data', () => {

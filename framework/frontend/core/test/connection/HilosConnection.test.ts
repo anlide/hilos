@@ -4,8 +4,8 @@ import {
   HilosConnection,
   type ConnectionState,
   type WebSocketLike,
-} from './HilosConnection.js'
-import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
+} from '../../src/connection/HilosConnection.js'
+import { type ProjectSignalSchemas } from '../../src/protocol/parseSignal.js'
 
 /**
  * Scripted stand-in for the browser WebSocket. Nothing fires on its own —

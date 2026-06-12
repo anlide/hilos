@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { HilosConnection } from '@hilos/core'
 import type { WebSocketLike } from '@hilos/core'
-import { useConnectionState } from './useConnectionState.js'
+import { useConnectionState } from '../src/useConnectionState.js'
 
 // Scripted stand-in for the browser WebSocket — the adapter tests only drive
 // the open/close transitions. Kept inside the test file deliberately: the

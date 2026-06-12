@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { computed, effectScope } from 'vue'
 import { createSignal } from '@hilos/core'
-import { useSignal } from './useSignal.js'
+import { useSignal } from '../src/useSignal.js'
 
 describe('useSignal', () => {
   it('mirrors the core signal value and its changes', () => {

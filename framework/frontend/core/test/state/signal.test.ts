@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { computedSignal, createSignal, subscribeSignal } from './signal.js'
+import {
+  computedSignal,
+  createSignal,
+  subscribeSignal,
+} from '../../src/state/signal.js'
 
 describe('createSignal', () => {
   it('holds the initial value and replaces it on set', () => {

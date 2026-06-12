@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { PageSubscription } from './PageSubscription.js'
-import { ScopeManager } from '../state/ScopeManager.js'
-import { type EntityRef } from '../state/EntityStore.js'
-import { type ConnectionState } from '../connection/HilosConnection.js'
+import { PageSubscription } from '../../src/subscription/PageSubscription.js'
+import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { type EntityRef } from '../../src/state/EntityStore.js'
+import { type ConnectionState } from '../../src/connection/HilosConnection.js'
 
 /** A connection double recording sent frames and replaying state changes. */
 function fakeConnection(initialState: ConnectionState = 'connected') {

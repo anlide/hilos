@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { effectScope } from 'vue'
 import { ScopeManager } from '@hilos/core'
-import { useEntity } from './useEntity.js'
+import { useEntity } from '../src/useEntity.js'
 
 const ref = { type: 'user', id: 1 }
 

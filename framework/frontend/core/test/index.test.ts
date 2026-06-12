@@ -9,7 +9,7 @@ import {
   createPageRouter,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
-} from './index.js'
+} from '../src/index.js'
 
 it('exports the @hilos/core public surface', () => {
   expect(HilosConnection).toBeTypeOf('function')

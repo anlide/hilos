@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createPageRouter } from './PageRouter.js'
-import { HilosPages, HILOS_PAGE_ROUTES } from './hilosPages.js'
+import { createPageRouter } from '../../src/routing/PageRouter.js'
+import { HilosPages, HILOS_PAGE_ROUTES } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_PAGE_ROUTES', () => {
   it('declares a route for every Hilos page key', () => {

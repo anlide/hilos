@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Injector, runInInjectionContext } from '@angular/core'
 import { createSignal } from '@hilos/core'
-import { hilosSignal } from './hilosSignal.js'
+import { hilosSignal } from '../src/hilosSignal.js'
 
 /** Injector.create() returns an R3Injector; destroy() is its runtime API. */
 type DestroyableInjector = Injector & { destroy(): void }

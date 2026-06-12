@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Injector, runInInjectionContext } from '@angular/core'
 import { HilosConnection } from '@hilos/core'
 import type { WebSocketLike } from '@hilos/core'
-import { connectionStateSignal } from './connectionStateSignal.js'
+import { connectionStateSignal } from '../src/connectionStateSignal.js'
 
 // Scripted stand-in for the browser WebSocket — the adapter tests only drive
 // the open/close transitions. Kept inside the test file deliberately: the

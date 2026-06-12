@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { computeBackoffDelay, DEFAULT_RECONNECT_OPTIONS } from './backoff.js'
+import {
+  computeBackoffDelay,
+  DEFAULT_RECONNECT_OPTIONS,
+} from '../../src/connection/backoff.js'
 
 const options = { baseDelayMs: 1000, maxDelayMs: 30000, factor: 2 }
 
