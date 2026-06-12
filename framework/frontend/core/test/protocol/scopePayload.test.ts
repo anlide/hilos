@@ -61,6 +61,22 @@ describe('scopePayloadSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('accepts an empty list section serialized as a JSON array', () => {
+    // PHP serializes an empty map as `[]`; an empty list section arrives that
+    // way beside non-empty ones and must not fail the whole payload.
+    const result = scopePayloadSchema.safeParse({
+      lists: {
+        users: { items: [{ itemKey: 1, slots: {} }] },
+        bots: [],
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.lists?.bots).toEqual({})
+      expect(result.data.lists?.users?.items?.[0]?.itemKey).toBe(1)
+    }
+  })
+
   it('rejects a fragment without a stable id', () => {
     const result = scopePayloadSchema.safeParse({
       entities: { currentUser: { name: 'NoId' } },

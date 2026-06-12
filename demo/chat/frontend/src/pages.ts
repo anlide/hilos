@@ -26,6 +26,18 @@ export const pageSignalSchemas = {
 }
 
 /**
+ * Entity-slot types for the page payload: which payload slots (here, inside
+ * list items) are entities and under what canonical type. Frontend config, not
+ * emitted on the wire — keep it in sync with the backend browser sources
+ * (rules-and-violations.md). The `users` slot is `MainUsersBrowserList`'s DB
+ * user source (wire slot key = its collection name, `ChatDbContext::users`),
+ * so a user dedupes against the same entity wherever it appears.
+ */
+export const pageEntityTypes: Record<string, string> = {
+  users: 'user',
+}
+
+/**
  * The chat's own pages keyed to the URL path template each answers, mirroring
  * the application rows of the legacy `ChatPageCatalog`. A `{name}` segment is a
  * route param captured at match time; the framework admin pages are merged in

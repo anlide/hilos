@@ -10,11 +10,12 @@ import {
 } from '@hilos/core'
 
 import { scopes } from './session'
+import { pageEntityTypes } from './pages'
 
 /**
  * Create the page subscription manager and route every page_response into the
- * current page scope. Returns the manager so the entry point can subscribe the
- * page named by the URL.
+ * current page scope, typing its entity slots from the page config. Returns the
+ * manager so the entry point can subscribe the page named by the URL.
  *
  * @param connection The application's Hilos connection.
  */
@@ -25,7 +26,9 @@ export function bindPageScope(connection: HilosConnection): PageSubscription {
       // Validated against pageResponseSchema at the parse boundary; this cast
       // is the declared typed selector for that schema's output.
       const response = signal.data as PageResponseWire
-      pages.ingestPageResponse(response.page, response.payload)
+      pages.ingestPageResponse(response.page, response.payload, {
+        entityTypes: pageEntityTypes,
+      })
     }
   })
 

@@ -46,3 +46,19 @@ test('subscribes the URL page on load', async ({ page }) => {
     )
     .toBe(true)
 })
+
+// Step-7.3.4 list render e2e: the main page answers with a `page_response`
+// carrying the `mainUsers` list; the normalizer folds it into the page scope
+// and the roster renders the connected self user as a participant — the first
+// list rendered end-to-end.
+test('renders the connected user in the participant roster', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+
+  await expect(
+    page.getByTestId('participant').filter({ hasText: selfName }),
+  ).toBeVisible()
+})

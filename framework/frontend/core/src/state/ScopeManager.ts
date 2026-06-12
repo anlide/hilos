@@ -12,7 +12,7 @@ import {
   type EntityRef,
   type EntitySnapshot,
 } from './EntityStore.js'
-import { ListStore } from './ListStore.js'
+import { ListStore, type ListItem } from './ListStore.js'
 
 export type ScopeKind = 'page' | 'session' | 'user' | 'group'
 
@@ -145,5 +145,19 @@ export class ScopeManager {
 
       return undefined
     })
+  }
+
+  /**
+   * The current page scope's list, reactively: it re-resolves both when the
+   * list's items change and when navigation swaps the page scope (the new
+   * page's list, or empty between subscriptions). A list is page-scoped — it
+   * does not resolve across scopes the way an entity reference does.
+   *
+   * @param listKey The list to watch in the current page scope.
+   */
+  pageListSignal(listKey: string): ReadonlySignal<readonly ListItem[]> {
+    return computedSignal(
+      () => this.pageSignal.get()?.lists.signal(listKey).get() ?? [],
+    )
   }
 }

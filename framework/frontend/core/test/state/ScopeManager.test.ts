@@ -120,3 +120,35 @@ describe('ScopeManager entity resolution', () => {
     expect(seen).toEqual(['Bea'])
   })
 })
+
+describe('ScopeManager page list resolution', () => {
+  it('is empty when no page is open', () => {
+    const manager = new ScopeManager()
+    expect(manager.pageListSignal('events').get()).toEqual([])
+  })
+
+  it('reads the current page scope list reactively', () => {
+    const manager = new ScopeManager()
+    const page = manager.openPage('a')
+
+    const lengths: number[] = []
+    subscribeSignal(manager.pageListSignal('events'), (items) =>
+      lengths.push(items.length),
+    )
+
+    page.lists.upsert('events', 1, { text: 'a' })
+    page.lists.upsert('events', 2, { text: 'b' })
+    expect(lengths).toEqual([1, 2])
+  })
+
+  it('re-resolves to the new page list when navigation swaps the scope', () => {
+    const manager = new ScopeManager()
+    manager.openPage('a').lists.upsert('events', 1, { text: 'from-a' })
+    expect(manager.pageListSignal('events').get()).toEqual([
+      { itemKey: '1', slots: { text: 'from-a' } },
+    ])
+
+    manager.openPage('b')
+    expect(manager.pageListSignal('events').get()).toEqual([])
+  })
+})

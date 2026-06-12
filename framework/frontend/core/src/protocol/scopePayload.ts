@@ -29,12 +29,17 @@ export const listItemSchema = z.looseObject({
 /**
  * One list collection on the wire: the items delivered this round and the keys
  * removed since the last. Both are optional — a snapshot omits `deleted`, a
- * delete-only delta omits `items`.
+ * delete-only delta omits `items`. An empty section arrives as `[]`, not `{}`,
+ * because PHP serializes an empty map as a JSON array; it is normalized to an
+ * empty section so the rest of the schema sees one shape.
  */
-export const listSectionSchema = z.looseObject({
-  items: z.array(listItemSchema).optional(),
-  deleted: z.array(itemKeySchema).optional(),
-})
+export const listSectionSchema = z.preprocess(
+  (value) => (Array.isArray(value) && value.length === 0 ? {} : value),
+  z.looseObject({
+    items: z.array(listItemSchema).optional(),
+    deleted: z.array(itemKeySchema).optional(),
+  }),
+)
 
 /**
  * A scope-shaped payload as the backend serializes it. Every section is
