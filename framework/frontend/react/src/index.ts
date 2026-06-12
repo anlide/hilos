@@ -13,6 +13,7 @@
 // stylesheet into the bundle, so the import covers both the dev (source) and the
 // built (dist) resolution paths.
 import 'bootstrap/dist/css/bootstrap.min.css'
+import 'bootstrap-icons/font/bootstrap-icons.css'
 
 export { useConnectionState } from './useConnectionState.js'
 export { useSignal } from './useSignal.js'

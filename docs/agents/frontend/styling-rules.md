@@ -52,6 +52,15 @@ build inlines the stylesheet into the shipped bundle, so importing `@hilos/vue`
 is styled with no extra step in both dev (the consumer resolves the SDK to
 source) and the built artifact (the consumer resolves it to `dist`).
 
+**Bootstrap Icons** ship the same way: a view layer depends on `bootstrap-icons`
+and its entry side-effect-imports `bootstrap-icons/font/bootstrap-icons.css`, so
+the `bi bi-*` icon classes are available transitively and a consumer never
+declares the icon package. SDK components use the icon font (`<i class="bi
+bi-…">`), not inline SVG — the application shell's gear and connection indicator
+are the reference. The icon font carries its own woff2/woff assets; the consumer
+build resolving the SDK to source emits and rewrites those font URLs, so no
+per-project font wiring is needed.
+
 The accepted trade: build-time Sass customization (variable maps, custom
 utilities — the Sass layer above) becomes a **framework** concern, not a
 per-project one. A project still themes at runtime with `data-bs-theme` and

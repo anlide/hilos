@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@hilos/core": "*",
-    "bootstrap": "^5.3.3"
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3"
   },
   "peerDependencies": {
     "react": "^19"
