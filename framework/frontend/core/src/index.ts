@@ -39,11 +39,19 @@ export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
+  SIGNAL_TYPE_PAGE_RESPONSE,
   FIELD_TYPE,
   FIELD_PAGE,
   FIELD_PARAMS,
   KEEPALIVE_TEXT_PING,
 } from './protocol/constants.js'
+export {
+  createPageRouter,
+  type PageRouter,
+  type PageRouteMatch,
+  type PageRouterOptions,
+} from './routing/PageRouter.js'
+export { HilosPages, HILOS_PAGE_ROUTES } from './routing/hilosPages.js'
 export { assertNever } from './protocol/assertNever.js'
 export {
   signalEnvelopeSchema,

@@ -10,6 +10,9 @@ export const SIGNAL_TYPE_PAGE_SUBSCRIBE = 'page_subscribe'
 /** Client frame `type` leaving the page (PHP `SignalTypeConstants::PAGE_UNSUBSCRIBE`). */
 export const SIGNAL_TYPE_PAGE_UNSUBSCRIBE = 'page_unsubscribe'
 
+/** Server frame `type` answering a page subscription (PHP `SignalTypeConstants::PAGE_RESPONSE`). */
+export const SIGNAL_TYPE_PAGE_RESPONSE = 'page_response'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

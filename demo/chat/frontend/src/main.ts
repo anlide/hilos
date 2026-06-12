@@ -10,7 +10,7 @@ import App from './App.vue'
 import { connection } from './connection'
 import { bindSessionScope, ensureSessionTokenCookie } from './session'
 import { bindPageScope } from './pageScope'
-import { matchPage } from './pages'
+import { router } from './pages'
 
 // The token must be in place before the socket opens — it rides the
 // handshake cookies.
@@ -21,6 +21,6 @@ connection.connect()
 // The URL is the source of truth for the page subscription on cold load; the
 // manager sends page_subscribe once the connection reaches `connected`, with
 // any route params the matched page template captured.
-const route = matchPage(location.pathname)
+const route = router.match(location.pathname)
 pages.subscribe(route.page, route.params)
 createApp(App).mount('#app')
