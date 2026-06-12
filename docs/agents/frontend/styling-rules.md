@@ -36,6 +36,30 @@ stating **why** Bootstrap utilities cannot achieve it and **what** it is for. Ev
 a rare bespoke rule (e.g. a keyframe) goes here, documented — never as an ad-hoc
 escape hatch elsewhere.
 
+## Where Bootstrap lives — the SDK ships it
+
+Bootstrap is **not** a per-project dependency. The framework **view layers**
+(`@hilos/vue`, and later `@hilos/react` / `@hilos/angular`) depend on Bootstrap
+and pull in its stylesheet, so every consumer is styled **transitively** and
+**never declares or imports Bootstrap itself**. "Bootstrap everywhere" means
+every *view* layer — not the agnostic core: `@hilos/core` stays pure TypeScript
+with no styling, both because it never renders and because keeping it CSS-free
+preserves the option to publish it as a standalone pure-JS package
+([sdk-packaging.md](sdk-packaging.md)).
+
+A view layer's entry imports Bootstrap for its side effect, and the library
+build inlines the stylesheet into the shipped bundle, so importing `@hilos/vue`
+is styled with no extra step in both dev (the consumer resolves the SDK to
+source) and the built artifact (the consumer resolves it to `dist`).
+
+The accepted trade: build-time Sass customization (variable maps, custom
+utilities — the Sass layer above) becomes a **framework** concern, not a
+per-project one. A project still themes at runtime with `data-bs-theme` and
+CSS-variable overrides. Until the first framework customization lands, the view
+layer imports Bootstrap's **compiled** stylesheet directly and the Sass compile
+pipeline is deferred — there is nothing to compile yet. Components depend only
+on stock Bootstrap classes, never on declarations a consumer would supply.
+
 ## Theming
 
 Theming uses Bootstrap 5.3 `data-bs-theme` plus CSS variables. A theme that needs
