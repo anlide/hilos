@@ -454,6 +454,17 @@ abstract class Hilos
     }
 
     /**
+     * Clears the worker-local browser context.
+     *
+     * Tests restore the clean unset state between cases without assigning the
+     * facade global directly, which project facades narrow to a read-only type.
+     */
+    public static function resetBrowser(): void
+    {
+        static::$browser = null;
+    }
+
+    /**
      * Gives the active browser context access to this project facade topology.
      */
     private static function bindBrowserContext(): void

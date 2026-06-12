@@ -41,7 +41,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$table = null;
-        Hilos::$browser = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }

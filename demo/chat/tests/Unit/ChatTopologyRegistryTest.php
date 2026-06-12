@@ -39,7 +39,7 @@ final class ChatTopologyRegistryTest extends TestCase
 {
     protected function tearDown(): void
     {
-        Hilos::$browser = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }
