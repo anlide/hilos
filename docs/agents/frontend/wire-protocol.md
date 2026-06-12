@@ -198,16 +198,26 @@ The backend answers a subscription with a `page_response` signal carrying the
 page key and the page scope payload:
 
 ```json
-{"type": "page_response", "data": {"page": "<pageKey>", "payload": {"entities": {}, "data": {}}}}
+{"type": "page_response", "data": {"page": "<pageKey>", "payload": {"entities": {}, "data": {}, "lists": {}}}}
 ```
 
 `page` lets the client drop a late response for a page it has left (see
 [Page-signal routing by page key](#page-signal-routing-by-page-key)); `payload`
-is a scope payload (`entities` and plain `data`, both optional and omitted when
-empty) the normalizer ingests into the page scope. A page contributes it from
-the framework default `onSubscribe` via the `buildPagePayload` hook, so a page
-never hand-rolls the signal. Tables are not part of this payload yet — they keep
-flowing on the browser snapshot path until they fold into `page_response`.
+is a scope payload the normalizer ingests into the page scope. Its sections are
+each optional and omitted when empty:
+
+- `entities` — entity fragments by slot;
+- `data` — the scope's plain scalars and blobs;
+- `lists` — ordered list collections by list key. Each is
+  `{"items": [{"itemKey": <key>, "slots": {…}}], "deleted": [<key>, …]}`, both
+  arrays optional: a snapshot omits `deleted`, a delete-only delta omits
+  `items`. A slot is an entity fragment (told apart by its `id`) or a plain
+  value; the normalizer references the former and keeps the latter inline.
+
+A page contributes the payload from the framework default `onSubscribe` via the
+`buildPagePayload` hook, so a page never hand-rolls the signal. The `tables`
+section rides the same envelope but the frontend consumes it last (the heavy
+windowed primitive); see [data-model.md](data-model.md).
 
 ### Group subscriptions (0..N)
 

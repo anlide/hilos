@@ -35,6 +35,32 @@ describe('scopePayloadSchema', () => {
     expect(scopePayloadSchema.safeParse({ tables: {} }).success).toBe(true)
   })
 
+  it('accepts a list section with items and deletes', () => {
+    const result = scopePayloadSchema.safeParse({
+      lists: {
+        events: {
+          items: [
+            { itemKey: 1, slots: { db_event: { id: 1 }, message: 'hi' } },
+          ],
+          deleted: [2, '3'],
+        },
+        users: { items: [{ itemKey: '7', slots: {} }] },
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.lists?.events?.items?.[0]?.itemKey).toBe(1)
+      expect(result.data.lists?.events?.deleted).toEqual([2, '3'])
+    }
+  })
+
+  it('rejects a list item without an itemKey', () => {
+    const result = scopePayloadSchema.safeParse({
+      lists: { events: { items: [{ slots: {} }] } },
+    })
+    expect(result.success).toBe(false)
+  })
+
   it('rejects a fragment without a stable id', () => {
     const result = scopePayloadSchema.safeParse({
       entities: { currentUser: { name: 'NoId' } },
@@ -46,6 +72,7 @@ describe('scopePayloadSchema', () => {
     const wire: ScopePayloadWire = {
       entities: { currentUser: { id: 7 } },
       data: { route: '/' },
+      lists: { events: { items: [{ itemKey: 1, slots: {} }], deleted: [2] } },
     }
     // Compile-time alignment: the wire schema's output feeds ingest() as-is.
     const payload: ScopePayload = wire

@@ -118,7 +118,18 @@ Topic documents are referenced by filename; several are still being authored.
   light ordered collection (entity refs or simple items) with no pending/Apply —
   for catalogs, option sets, menus. An append-stream (chat log: last-N, live
   tail, load-older-upward) is its live variant. Tables stay the heavy primitive.
-  See [data-model.md](data-model.md) and [table-subscription.md](table-subscription.md).
+  A list is delivered incrementally — create appends, update replaces in place,
+  delete drops — and its entity-bearing slots are references, so an entity
+  update is never re-streamed per list. See [data-model.md](data-model.md) and
+  [table-subscription.md](table-subscription.md).
+- **Keep the frontend slot→type map in sync with the backend source.** The
+  `sourceKey → entityType` override that types entity slots (in entity sections
+  and in list items alike) is frontend config, not emitted on the wire. When you
+  add or change it, **read the matching backend browser source** and confirm the
+  same slot keys and entity types — a stale map silently mis-types a slot and the
+  normalizer cannot catch it (the wire slot is opaque). A backend source-shape
+  change is a trigger to re-verify every frontend map that reads it. See
+  [data-model.md](data-model.md).
 - **Ephemeral signals are their own class.** Presence and "typing…" live only in
   a TTL-based, read-only ephemeral slice — never the entity store, never
   pending/Apply. They auto-expire on heartbeat and are dropped and re-derived on

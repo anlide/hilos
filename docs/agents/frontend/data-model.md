@@ -46,6 +46,20 @@ Keyed by table. Each row carries its `rowKey`, its own and computed cells, and
 **references** for entity-derived columns. It renders by resolving those
 references against the entity store.
 
+### List store
+
+Keyed by list. Each list is an **ordered sequence of items** keyed by `itemKey`,
+fed **incrementally**: a create appends at the end, an update replaces an item in
+place (its position is preserved), a delete drops it. An item holds **normalized
+slots** — an entity-bearing slot is upserted into the entity store and replaced
+by a **reference** there, exactly like an entity slot, while a plain slot (a
+scalar, a blob, a foreign-key value) stays inline. Because entity slots are
+references, **an entity update fans out through the entity store and is never
+re-streamed per list**: a chat author rename arrives once on the user list, and
+every event that references that author re-renders for free. The list is the
+**light** ordered primitive — no viewport, no pending/Apply; the heavy windowed
+primitive is the table-rows store.
+
 ### Per-scope data stores
 
 One data store per scope holds that scope's non-table, non-entity data plus
@@ -123,6 +137,22 @@ or a computed cell. Source slots are DB, RT, or computed today, and the **kind
 set is open-ended** — never hardcode "DB" into the slot or entity model. As the
 backend is reworked, `entityType` may later be emitted per slot server-side,
 retiring the frontend override; start with the frontend convention.
+
+The **same `id`-by-convention detection and the same `sourceKey → entityType`
+override map govern list-item slots**: a slot bearing an `id` is upserted and
+referenced; a slot without one stays inline. A list's references therefore
+dedupe against entities delivered elsewhere (the chat user list and the chat
+event stream share the one `user` entity).
+
+> **Rule — keep the frontend slot→type map in sync with the backend source.**
+> The override map is **frontend config** (declared per page/list in the
+> frontend, not emitted on the wire today). Whenever you add or change it, **read
+> the matching backend browser source** (its slot keys and the entity types its
+> projections carry) and confirm the map names the same slots and types. A stale
+> map silently mis-types a slot — an entity merged under the wrong type, or a
+> reference that never resolves — and the normalizer cannot catch it, because the
+> wire slot is opaque by design. Treat a backend source-shape change as a trigger
+> to re-verify every frontend map that reads it.
 
 ## The one-entity-per-scope invariant
 

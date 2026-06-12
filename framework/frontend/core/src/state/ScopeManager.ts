@@ -12,6 +12,7 @@ import {
   type EntityRef,
   type EntitySnapshot,
 } from './EntityStore.js'
+import { ListStore } from './ListStore.js'
 
 export type ScopeKind = 'page' | 'session' | 'user' | 'group'
 
@@ -23,6 +24,8 @@ export class Scope {
   readonly entities = new EntityStore()
 
   readonly data = new DataStore()
+
+  readonly lists = new ListStore()
 
   constructor(
     /** The scope's lifetime class. */

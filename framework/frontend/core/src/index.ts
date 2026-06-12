@@ -25,9 +25,12 @@ export {
 } from './state/EntityStore.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
+export { ListStore, type ListItem } from './state/ListStore.js'
 export {
   ingest,
   type EntityFragment,
+  type ListItemFragment,
+  type ListSection,
   type NormalizerOptions,
   type ScopePayload,
 } from './state/normalizer.js'
@@ -68,6 +71,8 @@ export {
 } from './protocol/envelope.js'
 export {
   entityFragmentSchema,
+  listItemSchema,
+  listSectionSchema,
   scopePayloadSchema,
   pageResponseSchema,
   type ScopePayloadWire,
