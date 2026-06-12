@@ -134,6 +134,27 @@ A new project takes the next free block. Each local network also needs its own
 subnet (`172.26/16` chat, `172.27/16` todo, `172.28/16` poll, …) because the
 cli reaches the daemon by a static IP (`HILOS_DAEMON_HOST`).
 
+**Worker pool.** The daemon pre-starts `WORKER_MIN_REGULAR` regular and
+`WORKER_MIN_MONOPOLISTIC` monopolistic workers (regular ones scale up to
+`WORKER_MAX_REGULAR`). Set these in the daemon's compose `environment`, NOT in
+`.env`/`.env.example`: `EnvAccessor` resolves a key as `.env` → container env
+(compose) → `.env.example` → catalog default, so a value pinned in an env file
+out-ranks — and silently overrides — the compose setting. The framework catalog
+defaults are 3 / 2 / 10.
+
+Monopolistic sizing is load-bearing: each monopolistic agent claims its own
+monopolistic worker (one holding zero agents), and there is no on-demand spawn —
+a subscription that finds no free monopolistic worker crashes the daemon. So
+`WORKER_MIN_MONOPOLISTIC` must cover every monopolistic agent that can be live at
+once. A project that mounts the SDK application shell (`HilosLayout`) gains a
+second monopolistic agent for free: the shell's gear subscribes the Hilos
+dashboard, owned by the monopolistic `hilos_index` agent (a concrete
+`AbstractHilosIndexAgent` + an `AbstractHilosDashboardPage`; see
+demo/simple-todo). The app agent plus the dashboard therefore needs
+`WORKER_MIN_MONOPOLISTIC` ≥ 2 — which is also the catalog default. The demos pin
+it in compose regardless, so the pool is explicit: simple-todo and simple-poll
+use 2, chat 10 for its larger agent roster.
+
 ## Composer script lifecycle
 
 Mirror simple-todo's `composer.json` scripts: `setup-env` (copies BOTH
