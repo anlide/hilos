@@ -10,8 +10,12 @@ import { HilosPages } from '@hilos/core'
 
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
+import { About } from './views/about/about'
 import { Dashboard } from './views/dashboard/dashboard'
+import { Licence } from './views/licence/licence'
 import { Main } from './views/main/main'
+import { Privacy } from './views/privacy/privacy'
+import { Terms } from './views/terms/terms'
 
 @Component({
   selector: 'app-root',
@@ -30,5 +34,9 @@ export class App {
   protected readonly pages: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: Main,
     [HilosPages.DASHBOARD]: Dashboard,
+    [HilosPages.ABOUT]: About,
+    [HilosPages.TERMS]: Terms,
+    [HilosPages.PRIVACY]: Privacy,
+    [HilosPages.LICENCE]: Licence,
   }
 }

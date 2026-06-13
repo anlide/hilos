@@ -44,6 +44,7 @@ use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Pages\Hilos\AboutPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
@@ -85,6 +86,7 @@ use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
 use Demo\Chat\Pages\Hilos\I18nPage;
+use Demo\Chat\Pages\Hilos\LicencePage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
@@ -95,6 +97,7 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
+use Demo\Chat\Pages\Hilos\PrivacyPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -104,6 +107,7 @@ use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
+use Demo\Chat\Pages\Hilos\TermsPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
@@ -228,6 +232,10 @@ final class Hilos extends \Hilos\Hilos
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        AboutPage::PAGE => AboutPage::class,
+        TermsPage::PAGE => TermsPage::class,
+        PrivacyPage::PAGE => PrivacyPage::class,
+        LicencePage::PAGE => LicencePage::class,
     ];
 
     public const array GROUPS = [

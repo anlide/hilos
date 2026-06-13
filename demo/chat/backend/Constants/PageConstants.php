@@ -169,4 +169,16 @@ final class PageConstants
     public const string HILOS_CHANGE_LOG_TABLES = HilosPageConstants::HILOS_CHANGE_LOG_TABLES;
 
     public const string HILOS_CHANGE_LOG_TABLE = HilosPageConstants::HILOS_CHANGE_LOG_TABLE;
+
+    /** @var string Hilos public About page */
+    public const string HILOS_ABOUT = HilosPageConstants::HILOS_ABOUT;
+
+    /** @var string Hilos public Terms page */
+    public const string HILOS_TERMS = HilosPageConstants::HILOS_TERMS;
+
+    /** @var string Hilos public Privacy page */
+    public const string HILOS_PRIVACY = HilosPageConstants::HILOS_PRIVACY;
+
+    /** @var string Hilos public Licence page */
+    public const string HILOS_LICENCE = HilosPageConstants::HILOS_LICENCE;
 }

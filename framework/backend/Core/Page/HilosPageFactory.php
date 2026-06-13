@@ -92,6 +92,10 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_CHANGE_LOG => true,
         HilosPageConstants::HILOS_CHANGE_LOG_TABLES => true,
         HilosPageConstants::HILOS_CHANGE_LOG_TABLE => true,
+        HilosPageConstants::HILOS_ABOUT => true,
+        HilosPageConstants::HILOS_TERMS => true,
+        HilosPageConstants::HILOS_PRIVACY => true,
+        HilosPageConstants::HILOS_LICENCE => true,
     ];
 
     /**

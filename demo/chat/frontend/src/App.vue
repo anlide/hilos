@@ -11,14 +11,22 @@ import type { Component } from 'vue'
 
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
+import About from './views/About/About.vue'
 import Dashboard from './views/Dashboard/Dashboard.vue'
+import Licence from './views/Licence/Licence.vue'
 import Main from './views/Main/Main.vue'
+import Privacy from './views/Privacy/Privacy.vue'
+import Terms from './views/Terms/Terms.vue'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   [HilosPages.DASHBOARD]: Dashboard,
+  [HilosPages.ABOUT]: About,
+  [HilosPages.TERMS]: Terms,
+  [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.LICENCE]: Licence,
 }
 </script>
 

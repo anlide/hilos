@@ -197,4 +197,16 @@ final class HilosPageConstants
 
     /** @var string Hilos — change log single tracked table detail */
     public const string HILOS_CHANGE_LOG_TABLE = 'hilos_change_log_table';
+
+    /** @var string Hilos — public About page (static, content-only) */
+    public const string HILOS_ABOUT = 'hilos_about';
+
+    /** @var string Hilos — public Terms page (static, content-only) */
+    public const string HILOS_TERMS = 'hilos_terms';
+
+    /** @var string Hilos — public Privacy page (static, content-only) */
+    public const string HILOS_PRIVACY = 'hilos_privacy';
+
+    /** @var string Hilos — public Licence page (static, content-only) */
+    public const string HILOS_LICENCE = 'hilos_licence';
 }

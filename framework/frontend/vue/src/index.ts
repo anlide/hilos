@@ -12,6 +12,10 @@
 // built (dist) resolution paths.
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
+// The Hilos custom style layer: the one home for declarations stock Bootstrap
+// utilities cannot express (styling-rules.md). Loaded after Bootstrap so its
+// utilities win on equal specificity.
+import './hilos-styles.scss'
 
 export { useConnectionState } from './useConnectionState.js'
 export { useSignal } from './useSignal.js'
@@ -19,4 +23,5 @@ export { useEntity } from './useEntity.js'
 export { hilosRouterKey } from './hilosRouterKey.js'
 export { default as HilosLayout } from './HilosLayout.vue'
 export { default as HilosLink } from './HilosLink.vue'
+export { default as HilosStaticPage } from './HilosStaticPage.vue'
 export { default as HilosView } from './HilosView.vue'

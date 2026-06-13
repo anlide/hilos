@@ -94,7 +94,12 @@ export {
   type NavigablePages,
   type NavigationEnvironment,
 } from './routing/HilosRouter.js'
-export { HilosPages, HILOS_PAGE_ROUTES } from './routing/hilosPages.js'
+export {
+  HilosPages,
+  HILOS_PAGE_ROUTES,
+  HILOS_FOOTER_LINKS,
+  type HilosFooterLink,
+} from './routing/hilosPages.js'
 export { assertNever } from './protocol/assertNever.js'
 export {
   signalEnvelopeSchema,

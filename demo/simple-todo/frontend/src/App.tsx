@@ -10,14 +10,22 @@ import type { ComponentType } from 'react'
 
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
+import About from './views/About/About'
 import Dashboard from './views/Dashboard/Dashboard'
+import Licence from './views/Licence/Licence'
 import Main from './views/Main/Main'
+import Privacy from './views/Privacy/Privacy'
+import Terms from './views/Terms/Terms'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
 const pages: Record<string, ComponentType> = {
   [PAGE_MAIN]: Main,
   [HilosPages.DASHBOARD]: Dashboard,
+  [HilosPages.ABOUT]: About,
+  [HilosPages.TERMS]: Terms,
+  [HilosPages.PRIVACY]: Privacy,
+  [HilosPages.LICENCE]: Licence,
 }
 
 export default function App() {

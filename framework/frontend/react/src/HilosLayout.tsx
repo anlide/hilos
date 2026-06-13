@@ -3,14 +3,20 @@
 // slots, so the brand and nav regions are node props and the routed page
 // content is children. It renders the top navigation bar carrying the brand and
 // nav, the framework admin entry (the gear linking to the Hilos dashboard), the
-// live connection indicator the SDK owns (core-and-connection.md), and the
-// content. The brand and the gear are HilosLinks — no-refresh navigation that
-// leaves the socket alive — so the shell alone can move between the project home
-// and the admin section. Styling is Bootstrap classes only and the shell carries
+// live connection indicator the SDK owns (core-and-connection.md), the content,
+// and a footer of the public framework pages (HILOS_FOOTER_LINKS). The shell is
+// a fixed-height viewport column (vh-100): the nav and footer never scroll
+// (flex-shrink-0) and the main region grows and scrolls its own overflow
+// (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
+// chat page — fills it and scrolls an inner region rather than the whole
+// document. The brand, the gear, and the footer links are HilosLinks —
+// no-refresh navigation that leaves the socket alive — so the shell alone moves
+// between the project home, the admin section, and the public pages. Styling is
+// Bootstrap classes only and the shell carries
 // no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
 // Icons (`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap.
 import type { ConnectionState, HilosConnection } from '@hilos/core'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from './HilosLink.js'
@@ -60,9 +66,12 @@ export function HilosLayout({
   const visual = CONN_VISUAL[connectionState]
 
   return (
-    <div className="d-flex flex-column min-vh-100" data-id="app-root">
+    <div
+      className="d-flex flex-column vh-100 overflow-hidden"
+      data-id="app-root"
+    >
       <nav
-        className="navbar navbar-expand bg-body-tertiary border-bottom"
+        className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
         aria-label="Main"
       >
         <div className="container">
@@ -97,7 +106,26 @@ export function HilosLayout({
           </div>
         </div>
       </nav>
-      <main className="container flex-grow-1 py-4">{children}</main>
+      <main className="container flex-grow-1 min-h-0 overflow-auto py-4">
+        {children}
+      </main>
+      <footer
+        className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+        data-id="app-footer"
+      >
+        <div className="container d-flex flex-wrap justify-content-center gap-3 small">
+          {HILOS_FOOTER_LINKS.map((link) => (
+            <HilosLink
+              key={link.page}
+              className="link-secondary text-decoration-none"
+              to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
+              data-id={`footer-link-${link.page}`}
+            >
+              {link.label}
+            </HilosLink>
+          ))}
+        </div>
+      </footer>
     </div>
   )
 }

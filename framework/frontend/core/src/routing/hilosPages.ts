@@ -1,9 +1,11 @@
 // The framework's own page catalog: the keys and cold-load URL templates of the
 // Hilos admin section (dashboard, i18n, daemon, logs, users, MCP/skills, SIL,
-// communications, security, billing, change log). These pages are framework
-// functionality, so the framework owns their identity and URL layout — a
-// project mounts them by merging HILOS_PAGE_ROUTES into its own route map
-// rather than restating them. Keys mirror PHP `HilosPageConstants` and the
+// communications, security, billing, change log) plus the public content pages
+// (about, terms, privacy, licence) the application shell links in its footer
+// (HILOS_FOOTER_LINKS). These pages are framework functionality, so the
+// framework owns their identity and URL layout — a project mounts them by
+// merging HILOS_PAGE_ROUTES into its own route map rather than restating them,
+// and supplies the content component mapped to each key. Keys mirror PHP `HilosPageConstants` and the
 // templates mirror the framework rows of the page catalog; both must stay
 // byte-identical to their backend counterparts (the page key is the
 // subscription wire identity, the path is the canonical admin URL).
@@ -72,6 +74,10 @@ export const HilosPages = {
   BILLING_PROVIDER: 'hilos_billing_provider',
   BILLING_PAYMENTS: 'hilos_billing_payments',
   BILLING_REFUNDS: 'hilos_billing_refunds',
+  ABOUT: 'hilos_about',
+  TERMS: 'hilos_terms',
+  PRIVACY: 'hilos_privacy',
+  LICENCE: 'hilos_licence',
 } as const
 
 /**
@@ -147,4 +153,30 @@ export const HILOS_PAGE_ROUTES: Record<string, string> = {
   [HilosPages.BILLING_PROVIDER]: '/hilos/billing/{providerId}',
   [HilosPages.BILLING_PAYMENTS]: '/hilos/billing/{providerId}/payments',
   [HilosPages.BILLING_REFUNDS]: '/hilos/billing/{providerId}/refunds',
+  [HilosPages.ABOUT]: '/about',
+  [HilosPages.TERMS]: '/terms',
+  [HilosPages.PRIVACY]: '/privacy',
+  [HilosPages.LICENCE]: '/licence',
 }
+
+/** A public framework page surfaced in the application footer. */
+export interface HilosFooterLink {
+  /** The page key, a `HilosPages` value resolved through `HILOS_PAGE_ROUTES`. */
+  page: string
+  /** The visible link text. */
+  label: string
+}
+
+/**
+ * The public framework pages shown in the application footer, in order. The
+ * framework owns this set so every project's footer offers the same legal and
+ * informational links; a project supplies only each page's content component
+ * (mapped under the matching `HilosPages` key). Each page is static and routes
+ * to its `HILOS_PAGE_ROUTES` template with no params.
+ */
+export const HILOS_FOOTER_LINKS: readonly HilosFooterLink[] = [
+  { page: HilosPages.ABOUT, label: 'About' },
+  { page: HilosPages.TERMS, label: 'Terms' },
+  { page: HilosPages.PRIVACY, label: 'Privacy' },
+  { page: HilosPages.LICENCE, label: 'Licence' },
+]

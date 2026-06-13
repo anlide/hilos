@@ -2,15 +2,21 @@
 app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand and nav slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
-the SDK owns (core-and-connection.md), and the routed page content in the
-default slot. The brand and the gear are HilosLinks — no-refresh navigation that
-leaves the socket alive — so the shell alone can move between the project home
-and the admin section. Styling is Bootstrap classes only and the shell carries
-no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
-Icons (`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap. -->
+the SDK owns (core-and-connection.md), the routed page content in the default
+slot, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The shell
+is a fixed-height viewport column (vh-100): the nav and footer never scroll
+(flex-shrink-0) and the main region grows and scrolls its own overflow
+(min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
+chat page — fills it and scrolls an inner region rather than the whole document.
+The brand, the gear, and the footer links are HilosLinks — no-refresh navigation
+that leaves the socket alive — so the shell alone moves between the project home,
+the admin section, and the public pages. Styling is Bootstrap classes only and
+the shell carries no CSS of its own (styling-rules.md); the status and admin
+icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
+like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import { computed } from 'vue'
 
 import HilosLink from './HilosLink.vue'
@@ -36,12 +42,18 @@ const connVisual = computed(() => CONN_VISUAL[connectionState.value])
 // The gear targets the framework's own dashboard page; its URL is owned by the
 // framework page catalog, not restated here as a literal (routing/hilosPages).
 const adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
+
+// The footer's public framework pages and their hrefs are owned by the
+// framework (routing/hilosPages), so every project's footer offers the same
+// links and a project supplies only each page's content component.
+const footerLinks = HILOS_FOOTER_LINKS
+const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
 </script>
 
 <template>
-  <div class="d-flex flex-column min-vh-100" data-id="app-root">
+  <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
     <nav
-      class="navbar navbar-expand bg-body-tertiary border-bottom"
+      class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
       aria-label="Main"
     >
       <div class="container">
@@ -75,8 +87,26 @@ const adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
         </div>
       </div>
     </nav>
-    <main class="container flex-grow-1 py-4">
+    <main class="container flex-grow-1 min-h-0 overflow-auto py-4">
       <slot />
     </main>
+    <footer
+      class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+      data-id="app-footer"
+    >
+      <div
+        class="container d-flex flex-wrap justify-content-center gap-3 small"
+      >
+        <HilosLink
+          v-for="link in footerLinks"
+          :key="link.page"
+          class="link-secondary text-decoration-none"
+          :to="footerHref(link.page)"
+          :data-id="`footer-link-${link.page}`"
+        >
+          {{ link.label }}
+        </HilosLink>
+      </div>
+    </footer>
   </div>
 </template>

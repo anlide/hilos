@@ -10,7 +10,11 @@ use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Environment\TodoEnvCatalog;
+use Demo\SimpleTodo\Pages\Hilos\AboutPage;
 use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
+use Demo\SimpleTodo\Pages\Hilos\LicencePage;
+use Demo\SimpleTodo\Pages\Hilos\PrivacyPage;
+use Demo\SimpleTodo\Pages\Hilos\TermsPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
@@ -33,6 +37,10 @@ final class Hilos extends \Hilos\Hilos
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        AboutPage::PAGE => AboutPage::class,
+        TermsPage::PAGE => TermsPage::class,
+        PrivacyPage::PAGE => PrivacyPage::class,
+        LicencePage::PAGE => LicencePage::class,
     ];
 
     public const array AGENTS = [

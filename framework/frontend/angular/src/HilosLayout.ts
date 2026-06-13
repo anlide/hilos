@@ -3,11 +3,17 @@
 // are projected content and the routed page content is the default slot. It
 // renders the top navigation bar carrying the brand and nav, the framework admin
 // entry (the gear linking to the Hilos dashboard), the live connection indicator
-// the SDK owns (core-and-connection.md), and the content. The brand and the gear
-// are HilosLinks — no-refresh navigation that leaves the socket alive — so the
-// shell alone can move between the project home and the admin section. Styling is
-// Bootstrap classes only and the shell carries no CSS of its own
-// (styling-rules.md); the status and admin icons are Bootstrap Icons (`bi-*`).
+// the SDK owns (core-and-connection.md), the content, and a footer of the public
+// framework pages (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport
+// column (vh-100): the nav and footer never scroll (flex-shrink-0) and the main
+// region grows and scrolls its own overflow (min-h-0 + overflow-auto), so a page
+// either scrolls inside main or — like the chat page — fills it and scrolls an
+// inner region rather than the whole document. The brand, the gear, and the
+// footer links are HilosLinks — no-refresh navigation that leaves the socket
+// alive — so the shell alone moves between the project home, the admin section,
+// and the public pages. Styling is Bootstrap classes only and the shell carries
+// no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
+// Icons (`bi-*`).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -17,7 +23,7 @@ import {
   signal,
 } from '@angular/core'
 import type { ConnectionState, HilosConnection } from '@hilos/core'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
 
@@ -42,9 +48,9 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosLink],
   template: `
-    <div class="d-flex flex-column min-vh-100" data-id="app-root">
+    <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
       <nav
-        class="navbar navbar-expand bg-body-tertiary border-bottom"
+        class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
         aria-label="Main"
       >
         <div class="container">
@@ -77,9 +83,26 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           </div>
         </div>
       </nav>
-      <main class="container flex-grow-1 py-4">
+      <main class="container flex-grow-1 min-h-0 overflow-auto py-4">
         <ng-content />
       </main>
+      <footer
+        class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+        data-id="app-footer"
+      >
+        <div
+          class="container d-flex flex-wrap justify-content-center gap-3 small"
+        >
+          @for (link of footerLinks; track link.page) {
+            <a
+              [hilosLink]="link.href"
+              class="link-secondary text-decoration-none"
+              [attr.data-id]="'footer-link-' + link.page"
+              >{{ link.label }}</a
+            >
+          }
+        </div>
+      </footer>
     </div>
   `,
 })
@@ -90,6 +113,14 @@ export class HilosLayout {
   // The gear targets the framework's own dashboard page; its URL is owned by
   // the framework page catalog, not restated here as a literal.
   protected readonly adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
+  // The footer's public framework pages, their labels, and their hrefs are owned
+  // by the framework (routing/hilosPages), so every project's footer offers the
+  // same links and a project supplies only each page's content component.
+  protected readonly footerLinks = HILOS_FOOTER_LINKS.map((link) => ({
+    page: link.page,
+    label: link.label,
+    href: HILOS_PAGE_ROUTES[link.page] ?? '/',
+  }))
   protected readonly connState = signal<ConnectionState>('connecting')
   protected readonly connSpanClass = computed(
     () =>

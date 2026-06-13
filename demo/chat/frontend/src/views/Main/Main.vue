@@ -8,7 +8,7 @@ paste), shows each upload's progress and the pending attachment chips, and runs
 a re-send lockout timer before the next submit. Rendered by HilosView when the
 navigator's route is the main page. -->
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
 import { connection } from '../../bootstrap/connection'
@@ -39,6 +39,22 @@ const error = useSignal(messageError)
 
 const connectionState = useConnectionState(connection)
 const isConnected = computed(() => connectionState.value === 'connected')
+
+// The event stream owns its own scroll (overflow-auto in the template), so a new
+// event would otherwise append below the fold. Keep it pinned to the newest
+// event by scrolling to the bottom after the DOM updates.
+const eventsScroll = ref<HTMLElement | null>(null)
+watch(
+  () => events.value.length,
+  () => {
+    void nextTick(() => {
+      const el = eventsScroll.value
+      if (el !== null) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+  },
+)
 
 // The outbound moderation state of this connection's last submit. While
 // `checking` the input is frozen and mirrors the in-flight text; a resolved
@@ -373,13 +389,15 @@ onUnmounted(() => {
 
 <template>
   <div class="d-flex flex-column h-100">
-    <p>Signed in as <span data-id="self-user">{{ selfName }}</span></p>
+    <p class="flex-shrink-0">
+      Signed in as <span data-id="self-user">{{ selfName }}</span>
+    </p>
 
-    <div class="row g-3 flex-grow-1">
-      <div class="col-lg-8">
-        <div class="card">
+    <div class="row g-3 flex-grow-1 min-h-0">
+      <div class="col-lg-8 d-flex flex-column min-h-0">
+        <div class="card flex-grow-1 min-h-0 d-flex flex-column">
           <div
-            class="card-header d-flex justify-content-between align-items-center"
+            class="card-header d-flex justify-content-between align-items-center flex-shrink-0"
             data-id="events-header"
           >
             <strong>Event stream</strong>
@@ -387,7 +405,11 @@ onUnmounted(() => {
               events.length
             }}</span>
           </div>
-          <div class="list-group list-group-flush">
+          <div
+            ref="eventsScroll"
+            class="list-group list-group-flush flex-grow-1 overflow-auto min-h-0"
+            data-id="events-scroll"
+          >
             <div
               v-if="events.length === 0"
               class="list-group-item text-muted"
@@ -439,7 +461,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="col-lg-4 d-flex flex-column gap-3">
+      <div class="col-lg-4 d-flex flex-column gap-3 min-h-0 overflow-auto">
         <div class="card">
           <div
             class="card-header d-flex justify-content-between align-items-center"
@@ -521,7 +543,7 @@ onUnmounted(() => {
     </div>
 
     <div
-      class="mt-3 position-relative"
+      class="mt-3 flex-shrink-0 position-relative"
       data-id="composer"
       @dragenter.prevent="onDragEnter"
       @dragover.prevent

@@ -10,7 +10,11 @@ use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Environment\PollEnvCatalog;
+use Demo\SimplePoll\Pages\Hilos\AboutPage;
 use Demo\SimplePoll\Pages\Hilos\DashboardPage;
+use Demo\SimplePoll\Pages\Hilos\LicencePage;
+use Demo\SimplePoll\Pages\Hilos\PrivacyPage;
+use Demo\SimplePoll\Pages\Hilos\TermsPage;
 use Demo\SimplePoll\Pages\MainPage;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
@@ -33,6 +37,10 @@ final class Hilos extends \Hilos\Hilos
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        AboutPage::PAGE => AboutPage::class,
+        TermsPage::PAGE => TermsPage::class,
+        PrivacyPage::PAGE => PrivacyPage::class,
+        LicencePage::PAGE => LicencePage::class,
     ];
 
     public const array AGENTS = [

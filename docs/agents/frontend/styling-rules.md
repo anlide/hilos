@@ -75,10 +75,22 @@ Vue/React shells; only the CSS-delivery channel differs.
 The accepted trade: build-time Sass customization (variable maps, custom
 utilities — the Sass layer above) becomes a **framework** concern, not a
 per-project one. A project still themes at runtime with `data-bs-theme` and
-CSS-variable overrides. Until the first framework customization lands, the view
-layer imports Bootstrap's **compiled** stylesheet directly and the Sass compile
-pipeline is deferred — there is nothing to compile yet. Components depend only
-on stock Bootstrap classes, never on declarations a consumer would supply.
+CSS-variable overrides. The view layer imports Bootstrap's **compiled**
+stylesheet directly and loads a thin Sass layer (`hilos-styles.scss`) **after**
+it for the few documented declarations stock utilities cannot express — today
+only `.min-h-0` (`min-height: 0`), the lever a flex child needs to own its own
+scroll (the app shell's main region and the chat message list), which Bootstrap
+ships no utility for. A full Sass re-compile of Bootstrap (overriding its
+variable and map defaults) stays deferred until a theme actually needs it; the
+thin layer covers the exceptions without it. Components otherwise depend only on
+stock Bootstrap classes, never on declarations a consumer would supply.
+
+**Angular delivers the layer consumer-side.** Because `@hilos/angular` cannot
+ship transitive CSS (ng-packagr emits no side-effect stylesheet), the Vue and
+React view layers side-effect-import `hilos-styles.scss` from their entry, while
+an Angular app lists the same one-rule file in its `angular.json` `styles`
+alongside Bootstrap — the documented Angular exception to "the consumer never
+wires styling", mirroring how Angular already delivers Bootstrap itself.
 
 ## Theming
 
