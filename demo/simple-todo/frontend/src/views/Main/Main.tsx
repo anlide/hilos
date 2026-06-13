@@ -3,9 +3,9 @@
 // Rendered by HilosView when the navigator's route is the main page.
 import { useSignal } from '@hilos/react'
 
-import { currentUserName } from '../session'
+import { currentUserName } from '../../session'
 
-export default function MainView() {
+export default function Main() {
   const selfName = useSignal(currentUserName)
   return (
     <p>

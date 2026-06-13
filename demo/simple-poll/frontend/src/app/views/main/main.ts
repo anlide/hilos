@@ -4,15 +4,15 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import { hilosSignal } from '@hilos/angular'
 
-import { currentUserName } from '../session'
+import { currentUserName } from '../../session'
 
 @Component({
-  selector: 'app-main-view',
+  selector: 'app-main',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<p>
     Signed in as <span data-id="self-user">{{ selfName() }}</span>
   </p>`,
 })
-export class MainView {
+export class Main {
   protected readonly selfName = hilosSignal(currentUserName)
 }

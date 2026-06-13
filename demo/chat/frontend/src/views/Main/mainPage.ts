@@ -1,16 +1,16 @@
 // The main chat page selectors: the page payload's lists resolved into the
-// list-item view-models the page renders. Those view-models live in
-// `types/lists` (an `…Item` per list row); this file only builds the signals
-// that resolve them, reading the domain entities (`src/types`) by reference so a
-// rename or a presence flip updates reactively without the list re-streaming.
-// The view reads these signals and never touches a raw store.
+// list-item view-models the page renders. Those view-models live alongside this
+// module in `./types/lists` (an `…Item` per list row); this file only builds the
+// signals that resolve them, reading the domain entities (`src/types`) by
+// reference so a rename or a presence flip updates reactively without the list
+// re-streaming. The view reads these signals and never touches a raw store.
 import {
   computedSignal,
   type EntityRef,
   type ReadonlySignal,
 } from '@hilos/core'
 
-import { scopes } from './session'
+import { scopes } from '../../session'
 import {
   Bots,
   EventAttachments,
@@ -20,18 +20,14 @@ import {
   eventRegistrationFrom,
   eventRenameFrom,
   toPresence,
-  toSelfConnection,
   type EventMessage,
   type EventUserRegistration,
   type EventUserRename,
-  type SelfConnection,
-} from './types'
-import {
-  type BotItem,
-  type EventAttachmentItem,
-  type EventItem,
-  type ParticipantItem,
-} from './types/lists'
+} from '../../types'
+import { toSelfConnection, type SelfConnection } from './types/SelfConnection'
+import { type BotItem } from './types/lists/BotItem'
+import { type EventAttachmentItem, type EventItem } from './types/lists/EventItem'
+import { type ParticipantItem } from './types/lists/ParticipantItem'
 
 // Wire keys of the main page lists and their slots — backend source collection
 // names (see pages.ts pageEntityTypes for the slot→type sync rule).

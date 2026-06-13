@@ -10,8 +10,8 @@ import { HilosPages } from '@hilos/core'
 
 import { connection } from './connection'
 import { PAGE_MAIN } from './pageKeys'
-import { DashboardView } from './views/dashboard-view'
-import { MainView } from './views/main-view'
+import { Dashboard } from './views/dashboard/dashboard'
+import { Main } from './views/main/main'
 
 @Component({
   selector: 'app-root',
@@ -28,7 +28,7 @@ export class App {
   // The page-key → view map HilosView renders from. Pages without a mapped view
   // (other routes land later) render nothing.
   protected readonly pages: Record<string, Type<unknown>> = {
-    [PAGE_MAIN]: MainView,
-    [HilosPages.DASHBOARD]: DashboardView,
+    [PAGE_MAIN]: Main,
+    [HilosPages.DASHBOARD]: Dashboard,
   }
 }

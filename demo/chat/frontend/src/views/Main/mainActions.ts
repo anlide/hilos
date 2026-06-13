@@ -8,7 +8,7 @@
 // (connection.ts); this module just exposes the `message` action's slice of it.
 import { type ReadonlySignal } from '@hilos/core'
 
-import { actionErrors, connection } from './connection'
+import { actionErrors, connection } from '../../connection'
 
 /** Backend action name routed by MainPage (PHP `ChatSignalConstants::MESSAGE`). */
 const MESSAGE_ACTION = 'message'

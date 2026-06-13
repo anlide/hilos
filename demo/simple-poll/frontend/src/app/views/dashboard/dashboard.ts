@@ -5,11 +5,11 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 
 @Component({
-  selector: 'app-dashboard-view',
+  selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<section data-id="dashboard-view">
     <h1 class="h4">Hilos dashboard</h1>
     <p class="text-body-secondary">Framework admin section.</p>
   </section>`,
 })
-export class DashboardView {}
+export class Dashboard {}

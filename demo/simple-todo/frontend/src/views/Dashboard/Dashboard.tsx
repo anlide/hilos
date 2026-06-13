@@ -2,7 +2,7 @@
 // the point it proves is the no-refresh transition that reaches it (the gear in
 // HilosLayout) over the live socket. The real dashboard content lands with the
 // admin section.
-export default function DashboardView() {
+export default function Dashboard() {
   return (
     <section data-id="dashboard-view">
       <h1 className="h4">Hilos dashboard</h1>

@@ -9,14 +9,14 @@ allowed. Rendered by HilosView when the navigator's route is the main page. -->
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
-import { connection } from '../connection'
-import { currentUserName } from '../session'
-import { mainParticipants, mainBots, mainEvents, selfConnection } from '../mainPage'
+import { connection } from '../../connection'
+import { currentUserName } from '../../session'
+import { mainParticipants, mainBots, mainEvents, selfConnection } from './mainPage'
 import {
   MESSAGE_RATE_LIMIT_SECONDS,
   messageError,
   sendChatMessage,
-} from '../mainActions'
+} from './mainActions'
 
 const selfName = useSignal(currentUserName)
 const participants = useSignal(mainParticipants)

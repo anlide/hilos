@@ -11,14 +11,14 @@ import type { Component } from 'vue'
 
 import { connection } from './connection'
 import { PAGE_MAIN } from './pageKeys'
-import DashboardView from './views/DashboardView.vue'
-import MainView from './views/MainView.vue'
+import Dashboard from './views/Dashboard/Dashboard.vue'
+import Main from './views/Main/Main.vue'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
 const pages: Record<string, Component> = {
-  [PAGE_MAIN]: MainView,
-  [HilosPages.DASHBOARD]: DashboardView,
+  [PAGE_MAIN]: Main,
+  [HilosPages.DASHBOARD]: Dashboard,
 }
 </script>
 

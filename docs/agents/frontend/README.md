@@ -32,6 +32,7 @@ document.
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
+| creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | [styling-rules.md](styling-rules.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | [testing-strategy.md](testing-strategy.md) |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | [build-and-docker.md](build-and-docker.md) |
@@ -62,6 +63,9 @@ before editing.
   extension model, and Composer-vendored distribution.
 - [multiframework-core.md](multiframework-core.md) — the agnostic core, the neutral signal primitive,
   and the per-framework view adapters proven by conformance demos.
+- [page-module-structure.md](page-module-structure.md) — one folder per page under `views/`, the
+  view / selectors / actions / optional error files and their per-engine names,
+  and the domain-versus-page-local split for TypeScript types.
 - [styling-rules.md](styling-rules.md) — Bootstrap-only styling, the Sass layer as the sole home
   for custom declarations, theming, and accessibility.
 - [testing-strategy.md](testing-strategy.md) — the unit and end-to-end strategy and the three e2e
