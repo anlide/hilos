@@ -170,6 +170,17 @@ Topic documents are referenced by filename; several are still being authored.
 
 - **All non-visual logic lives in the agnostic core; views are thin and
   per-framework.** See [multiframework-core.md](multiframework-core.md).
+- **Data view-models are declared in `types/`, never in a selector or action
+  file.** A file that builds selectors, signals, or actions *imports* its
+  view-model types; it does not declare them. Data shapes are `interface` /
+  `type` (so are the framework's own `Entity` and `User`) — `class` is reserved
+  for behavior-bearing objects (the stores, the connection, the routers), never
+  a data shape. `types/` is organized by the kind of data each shape projects:
+  entities at the root, `lists/` for list-item view-models, `tables/` for
+  table-row view-models, `views/<page>/` for page-specific data that is none of
+  those. A list-item view-model is an `…Item`, never a `…Row` — `Row` names a
+  *table* row, so it implies a table where a list has none. See
+  [data-model.md](data-model.md).
 - **The agnostic core never imports Vue (the framework).** It uses only a
   neutral signal primitive and plain TypeScript. Agnosticism is proven by minimal
   React and Angular conformance demos kept green in CI — not by full parity. See

@@ -1,9 +1,9 @@
-// The main chat page selectors: the page payload's lists resolved into the row
-// view models the page renders. These are page-specific presentations (a roster
-// row, a bot row, an event line) — not entities; they reference the domain
-// entities (src/types) through their collections, so a rename or a presence flip
-// updates reactively without the list re-streaming. The view reads these signals
-// and never touches a raw store.
+// The main chat page selectors: the page payload's lists resolved into the
+// list-item view-models the page renders. Those view-models live in
+// `types/lists` (an `…Item` per list row); this file only builds the signals
+// that resolve them, reading the domain entities (`src/types`) by reference so a
+// rename or a presence flip updates reactively without the list re-streaming.
+// The view reads these signals and never touches a raw store.
 import {
   computedSignal,
   type EntityRef,
@@ -24,9 +24,14 @@ import {
   type EventMessage,
   type EventUserRegistration,
   type EventUserRename,
-  type Presence,
   type SelfConnection,
 } from './types'
+import {
+  type BotItem,
+  type EventAttachmentItem,
+  type EventItem,
+  type ParticipantItem,
+} from './types/lists'
 
 // Wire keys of the main page lists and their slots — backend source collection
 // names (see pages.ts pageEntityTypes for the slot→type sync rule).
@@ -65,20 +70,10 @@ function recordSlot(
     : undefined
 }
 
-/** A participant row of the main page roster. */
-export interface Participant {
-  /** The list item key (the user id), stable for keyed rendering. */
-  readonly key: string
-  /** The user's display name, resolved from the referenced entity. */
-  readonly name: string
-  /** The user's connection presence. */
-  readonly presence: Presence
-}
-
 const mainUserItems = scopes.pageListSignal(MAIN_USERS_LIST)
 
 /** The main page roster: one participant per user list item, resolved reactively. */
-export const mainParticipants: ReadonlySignal<readonly Participant[]> =
+export const mainParticipants: ReadonlySignal<readonly ParticipantItem[]> =
   computedSignal(() =>
     mainUserItems.get().map((item) => {
       const ref = item.slots[USER_SLOT] as EntityRef | undefined
@@ -93,22 +88,10 @@ export const mainParticipants: ReadonlySignal<readonly Participant[]> =
     }),
   )
 
-/** A bot row of the main page bot list. */
-export interface BotRow {
-  /** The list item key (the bot id), stable for keyed rendering. */
-  readonly key: string
-  /** The bot's display name, resolved from the referenced entity. */
-  readonly name: string
-  /** The bot's description, resolved from the referenced entity. */
-  readonly description: string
-  /** The bot agent's runtime status, or empty when the agent has not reported. */
-  readonly status: string
-}
-
 const mainBotItems = scopes.pageListSignal(MAIN_BOTS_LIST)
 
 /** The main page bot list: one bot row per item, entity by reference, status inline. */
-export const mainBots: ReadonlySignal<readonly BotRow[]> = computedSignal(() =>
+export const mainBots: ReadonlySignal<readonly BotItem[]> = computedSignal(() =>
   mainBotItems.get().map((item) => {
     const ref = item.slots[BOT_SLOT] as EntityRef | undefined
     const bot = ref ? Bots.signal(ref).get() : undefined
@@ -122,34 +105,6 @@ export const mainBots: ReadonlySignal<readonly BotRow[]> = computedSignal(() =>
     }
   }),
 )
-
-/** One published attachment shown under a message event line. */
-export interface EventAttachmentLine {
-  /** The attachment id, stable for keyed rendering. */
-  readonly key: string
-  /** The original file name, resolved from the referenced entity. */
-  readonly filename: string
-}
-
-/** One event line of the main page stream — a message or a service notice. */
-export interface EventLine {
-  /** The list item key (the event id), stable for keyed rendering. */
-  readonly key: string
-  /** The event type value (see ChatEventType). */
-  readonly type: string
-  /** The event timestamp string, as the backend stored it. */
-  readonly timestamp: string
-  /** The acting user or bot's name, or empty for a chat-lifecycle notice. */
-  readonly authorName: string
-  /** True when the author is a bot, so the view can mark it. */
-  readonly authorIsBot: boolean
-  /** The message body for a `message_sent` event, otherwise empty. */
-  readonly text: string
-  /** A service notice line for a non-message event, otherwise empty. */
-  readonly description: string
-  /** The published attachments of a message event, resolved reactively. */
-  readonly attachments: readonly EventAttachmentLine[]
-}
 
 const mainEventItems = scopes.pageListSignal(MAIN_EVENTS_LIST)
 
@@ -215,7 +170,7 @@ function eventAuthor(
 }
 
 /** The main page event stream: each list item resolved into a renderable line. */
-export const mainEvents: ReadonlySignal<readonly EventLine[]> = computedSignal(
+export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
   () =>
     mainEventItems.get().map((item) => {
       const eventRef = item.slots[EVENT_SLOT] as EntityRef | undefined
@@ -228,7 +183,7 @@ export const mainEvents: ReadonlySignal<readonly EventLine[]> = computedSignal(
       const rename = eventRenameFrom(recordSlot(item.slots[RENAME_SLOT]))
       const author = eventAuthor(message, registration, rename)
       const attachmentRefs = item.slots[ATTACHMENT_SLOT]
-      const attachments: EventAttachmentLine[] = Array.isArray(attachmentRefs)
+      const attachments: EventAttachmentItem[] = Array.isArray(attachmentRefs)
         ? attachmentRefs.map((ref) => {
             const attachmentRef = ref as EntityRef
             const attachment = EventAttachments.signal(attachmentRef).get()

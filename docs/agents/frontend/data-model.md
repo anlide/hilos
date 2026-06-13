@@ -190,6 +190,25 @@ the merge is a safety net, not a license for divergent projections.
   because `tables` is a convenient channel is a gross violation: table data goes
   to tables, page data to the page-data store, an ordered collection to a list.
 
+## View-models live in `types/`, by primitive
+
+A selector resolves a store into the shape a view renders — a roster item, a bot
+item, an event line. These **view-models** are `interface` / `type` declarations
+(never `class`; a class is for behavior — the stores, the connection, the router
+— not for a data shape, and the framework's own `Entity` and `User` are
+interfaces). They live in `types/`, **not** in the selector file that builds
+them: a selector *imports* its view-model, it does not declare it. The `types/`
+tree is partitioned by the kind of data each shape projects, mirroring the
+primitives above:
+
+- **root** — entities, one object keyed `(entityType, id)` (`User`, `Event`).
+- **`lists/`** — list-item view-models, one per list row (`ParticipantItem`,
+  `BotItem`). Named `…Item`, because a list is a sequence of items — **not**
+  `…Row`, which names a *table* row and would imply a table where there is none.
+- **`tables/`** — table-row view-models (the heavy windowed primitive).
+- **`views/<page>/`** — page-specific data that is none of the above: the unique
+  shapes a single page needs (not an entity, not a list item, not a table row).
+
 ## Ephemeral signals — a separate class
 
 Presence and "typing…" are not entity data and not pending changes. They live
