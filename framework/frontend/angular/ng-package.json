@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/ng-packagr/ng-package.schema.json",
   "dest": "./dist",
+  "deleteDestPath": false,
   "allowedNonPeerDependencies": ["@hilos/core"],
   "lib": {
     "entryFile": "src/index.ts"
