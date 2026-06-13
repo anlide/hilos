@@ -5,12 +5,14 @@
 // projections instead of touching raw slots.
 import {
   entityCollection,
+  readNumber,
+  readNumberOrNull,
+  readString,
   type Entity,
   type EntityCollection,
 } from '@hilos/core'
 
 import { scopes } from '../session'
-import { num, numOrNull, str } from './fields'
 
 /** Canonical entity types — keep in sync with the backend event sources. */
 export const EVENT_TYPE = 'event'
@@ -56,9 +58,9 @@ export interface EventUserRename {
  */
 export function eventFromFields(fields: Readonly<Record<string, unknown>>): Event {
   return {
-    id: num(fields, 'id'),
-    type: str(fields, 'type'),
-    timestamp: str(fields, 'timestamp'),
+    id: readNumber(fields, 'id'),
+    type: readString(fields, 'type'),
+    timestamp: readString(fields, 'timestamp'),
   }
 }
 
@@ -71,10 +73,10 @@ export function eventAttachmentFromFields(
   fields: Readonly<Record<string, unknown>>,
 ): EventAttachment {
   return {
-    id: num(fields, 'id'),
-    eventId: num(fields, 'eventId'),
-    filename: str(fields, 'filename'),
-    mimeType: str(fields, 'mimeType'),
+    id: readNumber(fields, 'id'),
+    eventId: readNumber(fields, 'eventId'),
+    filename: readString(fields, 'filename'),
+    mimeType: readString(fields, 'mimeType'),
   }
 }
 
@@ -91,9 +93,9 @@ export function eventMessageFrom(
   }
 
   return {
-    authorUserId: numOrNull(slot, 'authorUserId'),
-    authorBotId: numOrNull(slot, 'authorBotId'),
-    message: str(slot, 'message'),
+    authorUserId: readNumberOrNull(slot, 'authorUserId'),
+    authorBotId: readNumberOrNull(slot, 'authorBotId'),
+    message: readString(slot, 'message'),
   }
 }
 
@@ -109,7 +111,7 @@ export function eventRegistrationFrom(
     return null
   }
 
-  return { targetUserId: num(slot, 'targetUserId') }
+  return { targetUserId: readNumber(slot, 'targetUserId') }
 }
 
 /**
@@ -125,10 +127,10 @@ export function eventRenameFrom(
   }
 
   return {
-    targetUserId: num(slot, 'targetUserId'),
-    actorUserId: numOrNull(slot, 'actorUserId'),
-    oldName: str(slot, 'oldName'),
-    newName: str(slot, 'newName'),
+    targetUserId: readNumber(slot, 'targetUserId'),
+    actorUserId: readNumberOrNull(slot, 'actorUserId'),
+    oldName: readString(slot, 'oldName'),
+    newName: readString(slot, 'newName'),
   }
 }
 

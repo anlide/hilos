@@ -5,12 +5,15 @@
 // one `user` entity (data-model.md: one entity per (type,id) per scope).
 import {
   entityCollection,
+  readBoolean,
+  readNumber,
+  readString,
+  readStringOrNull,
   type EntityCollection,
   type User as FrameworkUser,
 } from '@hilos/core'
 
 import { scopes } from '../session'
-import { bool, num, str, strOrNull } from './fields'
 
 /** The canonical entity type — keep in sync with the backend `users` source. */
 export const USER_TYPE = 'user'
@@ -32,11 +35,11 @@ export interface User extends FrameworkUser {
  */
 export function userFromFields(fields: Readonly<Record<string, unknown>>): User {
   return {
-    id: num(fields, 'id'),
-    superadmin: bool(fields, 'superadmin'),
-    blocked: bool(fields, 'blocked'),
-    name: str(fields, 'name'),
-    lastActivity: strOrNull(fields, 'lastActivity'),
+    id: readNumber(fields, 'id'),
+    superadmin: readBoolean(fields, 'superadmin'),
+    blocked: readBoolean(fields, 'blocked'),
+    name: readString(fields, 'name'),
+    lastActivity: readStringOrNull(fields, 'lastActivity'),
   }
 }
 

@@ -4,7 +4,7 @@
 // countdown and the outbound moderation state the composer reflects. Files are
 // out of scope here, so the upload fields of the wire payload are not projected.
 // Wire keys mirror the backend SelfConnectionSignalData / OutboundModerationBrowserPayload.
-import { num, str, strOrNull } from './fields'
+import { readNumber, readString, readStringOrNull } from '@hilos/core'
 
 /** Outbound moderation lifecycle phase (PHP `ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_*`). */
 export type ModerationPhase = 'checking' | 'rejected' | 'unavailable'
@@ -50,8 +50,8 @@ function toModeration(raw: unknown): OutboundModeration | null {
 
   return {
     phase: phase as ModerationPhase,
-    text: str(fields, 'text'),
-    reason: strOrNull(fields, 'reason'),
+    text: readString(fields, 'text'),
+    reason: readStringOrNull(fields, 'reason'),
   }
 }
 
@@ -68,7 +68,7 @@ export function toSelfConnection(raw: unknown): SelfConnection | undefined {
   const fields = raw as Record<string, unknown>
 
   return {
-    messageRateLimitSecondsRemaining: num(
+    messageRateLimitSecondsRemaining: readNumber(
       fields,
       'messageRateLimitSecondsRemaining',
     ),

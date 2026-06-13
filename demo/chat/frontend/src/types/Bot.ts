@@ -3,12 +3,15 @@
 // author in the event stream all resolve the same `bot` entity by reference.
 import {
   entityCollection,
+  readBoolean,
+  readNumber,
+  readString,
+  readStringOrNull,
   type Entity,
   type EntityCollection,
 } from '@hilos/core'
 
 import { scopes } from '../session'
-import { bool, num, str, strOrNull } from './fields'
 
 /** The canonical entity type — keep in sync with the backend `bots` source. */
 export const BOT_TYPE = 'bot'
@@ -30,13 +33,13 @@ export interface Bot extends Entity {
  */
 export function botFromFields(fields: Readonly<Record<string, unknown>>): Bot {
   return {
-    id: num(fields, 'id'),
-    name: str(fields, 'name'),
-    description: strOrNull(fields, 'description'),
-    style: strOrNull(fields, 'style'),
-    topics: strOrNull(fields, 'topics'),
-    personality: strOrNull(fields, 'personality'),
-    active: bool(fields, 'active'),
+    id: readNumber(fields, 'id'),
+    name: readString(fields, 'name'),
+    description: readStringOrNull(fields, 'description'),
+    style: readStringOrNull(fields, 'style'),
+    topics: readStringOrNull(fields, 'topics'),
+    personality: readStringOrNull(fields, 'personality'),
+    active: readBoolean(fields, 'active'),
   }
 }
 

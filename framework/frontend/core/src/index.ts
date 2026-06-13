@@ -28,6 +28,13 @@ export {
   entityCollection,
   type EntityCollection,
 } from './state/EntityCollection.js'
+export {
+  readBoolean,
+  readNumber,
+  readNumberOrNull,
+  readString,
+  readStringOrNull,
+} from './state/fieldReaders.js'
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export { ListStore, type ListItem } from './state/ListStore.js'
