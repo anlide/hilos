@@ -20,10 +20,12 @@ import {
   eventRegistrationFrom,
   eventRenameFrom,
   toPresence,
+  toSelfConnection,
   type EventMessage,
   type EventUserRegistration,
   type EventUserRename,
   type Presence,
+  type SelfConnection,
 } from './types'
 
 // Wire keys of the main page lists and their slots — backend source collection
@@ -31,6 +33,9 @@ import {
 const MAIN_USERS_LIST = 'mainUsers'
 const MAIN_BOTS_LIST = 'mainBots'
 const MAIN_EVENTS_LIST = 'mainEvents'
+// The single-row data slot carrying this connection's own composer state
+// (backend ChatBrowserTable::SELF_CONNECTION).
+const SELF_CONNECTION_DATA = 'selfConnection'
 const USER_SLOT = 'users'
 const CONNECTION_SLOT = 'connections'
 const BOT_SLOT = 'bots'
@@ -247,3 +252,13 @@ export const mainEvents: ReadonlySignal<readonly EventLine[]> = computedSignal(
       }
     }),
 )
+
+const selfConnectionData = scopes.pageDataSignal(SELF_CONNECTION_DATA)
+
+/**
+ * This connection's own composer state — the rate-limit countdown and the
+ * outbound moderation phase — projected from the page's `selfConnection` data
+ * slot; undefined until the first selfConnection payload lands.
+ */
+export const selfConnection: ReadonlySignal<SelfConnection | undefined> =
+  computedSignal(() => toSelfConnection(selfConnectionData.get()))

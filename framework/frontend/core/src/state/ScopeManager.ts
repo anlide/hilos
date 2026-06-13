@@ -160,4 +160,17 @@ export class ScopeManager {
       () => this.pageSignal.get()?.lists.signal(listKey).get() ?? [],
     )
   }
+
+  /**
+   * The current page scope's data slot, reactively: it re-resolves both when
+   * the datum changes and when navigation swaps the page scope (the new page's
+   * value, or `undefined` between subscriptions). Like a list, page data is
+   * page-scoped — it does not resolve across scopes the way an entity reference
+   * does.
+   *
+   * @param key The data slot to watch in the current page scope.
+   */
+  pageDataSignal(key: string): ReadonlySignal<unknown> {
+    return computedSignal(() => this.pageSignal.get()?.data.signal(key).get())
+  }
 }

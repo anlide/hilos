@@ -49,6 +49,7 @@ export {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_ACTION,
+  SIGNAL_TYPE_ACTION_ERROR,
   FIELD_TYPE,
   FIELD_PAGE,
   FIELD_PARAMS,
@@ -90,12 +91,17 @@ export {
   parseSignal,
   type ParsedSignal,
   type HandshakeSignal,
+  type ActionErrorSignal,
   type ProjectSignal,
   type ProjectSignalSchemas,
   type UnknownSignal,
   type ParseFailure,
   type ParseResult,
 } from './protocol/parseSignal.js'
+export {
+  ActionErrorStore,
+  type ActionErrorSource,
+} from './connection/ActionErrorStore.js'
 export {
   computeBackoffDelay,
   DEFAULT_RECONNECT_OPTIONS,

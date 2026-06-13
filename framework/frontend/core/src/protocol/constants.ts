@@ -16,6 +16,9 @@ export const SIGNAL_TYPE_PAGE_RESPONSE = 'page_response'
 /** Client frame `type` invoking a page action (PHP `SignalTypeConstants::ACTION`). */
 export const SIGNAL_TYPE_ACTION = 'action'
 
+/** Server frame `type` reporting a failed page action (PHP `SignalConstants::ACTION_ERROR`). */
+export const SIGNAL_TYPE_ACTION_ERROR = 'action_error'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

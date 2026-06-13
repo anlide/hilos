@@ -12,6 +12,7 @@ import {
 import { assertNever } from '../protocol/assertNever.js'
 import {
   parseSignal,
+  type ActionErrorSignal,
   type HandshakeSignal,
   type ParsedSignal,
   type ParseFailure,
@@ -59,6 +60,8 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   signal: ParsedSignal
   /** The framework welcome frame. */
   handshake: HandshakeSignal
+  /** A framework action-failure frame (`action_error`): the failed action and its reason. */
+  actionError: ActionErrorSignal
   /** Welcome carried a different build than expected — the consumer forces the refresh. */
   buildMismatch: BuildMismatch
   /** A signal validated against a project-declared schema. */
@@ -253,6 +256,9 @@ export class HilosConnection {
     switch (signal.kind) {
       case 'handshake':
         this.handleHandshake(signal)
+        break
+      case 'actionError':
+        this.emitter.emit('actionError', signal)
         break
       case 'project':
         this.emitter.emit('projectSignal', signal)

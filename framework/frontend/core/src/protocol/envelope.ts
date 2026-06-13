@@ -28,3 +28,18 @@ export const handshakeSignalDataSchema = z.looseObject({
 })
 
 export type HandshakeSignalData = z.infer<typeof handshakeSignalDataSchema>
+
+/**
+ * Payload of the framework action-failure signal (`type: 'action_error'`, PHP
+ * `PageActionErrorSignalData`): the failed action's name and a human-readable
+ * reason. The `outcome: 'fail'` marker rides the envelope, not this payload.
+ * Parsed natively by the core parse boundary (action_error is a framework
+ * signal, not a project schema); the request-correlated acknowledgement
+ * lifecycle lands at step 7.4.
+ */
+export const actionErrorSignalDataSchema = z.looseObject({
+  action: z.string(),
+  reason: z.string(),
+})
+
+export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>

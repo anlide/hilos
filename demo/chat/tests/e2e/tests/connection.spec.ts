@@ -140,3 +140,21 @@ test('sends a message action and starts the re-send lockout', async ({
   await expect(page.getByTestId('message-cooldown')).toBeVisible()
   await expect(page.getByTestId('message-send')).toBeDisabled()
 })
+
+// Composer round-trip e2e: a submitted message rides the `message` action; the
+// backend moderates and publishes it, the moderation state flows back through
+// the `selfConnection` data slot, and the published message renders in the
+// event stream — the composer driven by self-connection state end to end.
+test('renders a sent message in the event stream after moderation', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+
+  await page.getByTestId('message-input').fill('hello from e2e')
+  await page.getByTestId('message-send').click()
+
+  await expect(
+    page.getByTestId('event-text').filter({ hasText: 'hello from e2e' }),
+  ).toBeVisible()
+})

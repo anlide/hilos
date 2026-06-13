@@ -152,3 +152,34 @@ describe('ScopeManager page list resolution', () => {
     expect(manager.pageListSignal('events').get()).toEqual([])
   })
 })
+
+describe('ScopeManager page data resolution', () => {
+  it('is undefined when no page is open', () => {
+    const manager = new ScopeManager()
+    expect(manager.pageDataSignal('selfConnection').get()).toBeUndefined()
+  })
+
+  it('reads the current page scope datum reactively', () => {
+    const manager = new ScopeManager()
+    const page = manager.openPage('a')
+
+    const seen: unknown[] = []
+    subscribeSignal(manager.pageDataSignal('selfConnection'), (value) =>
+      seen.push(value),
+    )
+
+    page.data.set('selfConnection', { rateLimit: 7 })
+    expect(seen).toEqual([{ rateLimit: 7 }])
+  })
+
+  it('re-resolves to the new page datum when navigation swaps the scope', () => {
+    const manager = new ScopeManager()
+    manager.openPage('a').data.set('selfConnection', { rateLimit: 7 })
+    expect(manager.pageDataSignal('selfConnection').get()).toEqual({
+      rateLimit: 7,
+    })
+
+    manager.openPage('b')
+    expect(manager.pageDataSignal('selfConnection').get()).toBeUndefined()
+  })
+})

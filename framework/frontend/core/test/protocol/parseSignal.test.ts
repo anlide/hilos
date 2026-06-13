@@ -136,4 +136,32 @@ describe('parseSignal', () => {
       expect(result.signal.kind).toBe('handshake')
     }
   })
+
+  it('parses an action_error frame as a framework signal without registration', () => {
+    const result = parseSignal(
+      '{"type":"action_error","data":{"action":"message","reason":"Message rate limit is active"},"outcome":"fail"}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'actionError',
+        action: 'message',
+        reason: 'Message rate limit is active',
+      })
+      expect(result.signal.envelope.outcome).toBe('fail')
+    }
+  })
+
+  it('rejects an action_error frame missing its reason', () => {
+    const result = parseSignal(
+      '{"type":"action_error","data":{"action":"message"}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'action_error',
+      })
+    }
+  })
 })

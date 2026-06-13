@@ -331,6 +331,25 @@ describe('signal routing', () => {
     expect(received).toEqual([{ type: 'greet', data: { who: 'hilos' } }])
   })
 
+  it('emits actionError for a framework action_error frame', () => {
+    const { connection } = createConnection()
+    const errors: { action: string; reason: string }[] = []
+    connection.on('actionError', (signal) =>
+      errors.push({ action: signal.action, reason: signal.reason }),
+    )
+
+    connection.connect()
+    MockWebSocket.last.open()
+    MockWebSocket.last.message(
+      '{"type":"action_error","data":{"action":"message","reason":"Message rate limit is active"},"outcome":"fail"}',
+    )
+
+    expect(errors).toEqual([
+      { action: 'message', reason: 'Message rate limit is active' },
+    ])
+    expect(connection.state).toBe('connected')
+  })
+
   it('emits unknownSignal for unknown types and stays connected', () => {
     const { connection } = createConnection()
     const unknown: string[] = []

@@ -3,6 +3,12 @@
 // through their collection; presence and the inline event details are plain
 // value types projected from a slot.
 export { type Presence, toPresence } from './Presence'
+export {
+  type ModerationPhase,
+  type OutboundModeration,
+  type SelfConnection,
+  toSelfConnection,
+} from './SelfConnection'
 export { type User, USER_TYPE, userFromFields, Users } from './User'
 export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
 export {
