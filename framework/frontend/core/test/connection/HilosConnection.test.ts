@@ -276,6 +276,29 @@ describe('keepalive', () => {
   })
 })
 
+describe('action send', () => {
+  it('frames an action as {type:action, action, data} while connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    expect(connection.sendAction('message', { content: 'hi' })).toBe(true)
+    expect(socket.sent).toEqual([
+      '{"type":"action","action":"message","data":{"content":"hi"}}',
+    ])
+  })
+
+  it('sends nothing unless connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+
+    expect(connection.sendAction('message', { content: 'hi' })).toBe(false)
+    expect(socket.sent).toEqual([])
+  })
+})
+
 describe('signal routing', () => {
   it('emits handshake and signal for the welcome', () => {
     const { connection } = createConnection()

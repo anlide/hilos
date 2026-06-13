@@ -2,7 +2,13 @@
 // only (`connecting → connected → reconnecting → disconnected`), with
 // exponential-backoff-plus-jitter reconnect and the text-ping keepalive.
 // Authentication and authorization are separate machines and do not live here.
-import { KEEPALIVE_TEXT_PING } from '../protocol/constants.js'
+import {
+  FIELD_ACTION,
+  FIELD_DATA,
+  FIELD_TYPE,
+  KEEPALIVE_TEXT_PING,
+  SIGNAL_TYPE_ACTION,
+} from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
 import {
   parseSignal,
@@ -173,6 +179,26 @@ export class HilosConnection {
     this.socket.send(text)
 
     return true
+  }
+
+  /**
+   * Send a client action frame — `{type:'action', action, data}` — that the
+   * subscribed page's ACTIONS map routes by name. Returns false, sending
+   * nothing, unless the connection is `connected`, like {@link send}. Fire and
+   * forget: reply correlation (requestId) and the loading / echo lifecycle
+   * layer on top at step 7.4.
+   *
+   * @param action The action name the subscribed page routes on.
+   * @param data The action payload, carried under the `data` field.
+   */
+  sendAction(action: string, data: unknown): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_ACTION,
+        [FIELD_ACTION]: action,
+        [FIELD_DATA]: data,
+      }),
+    )
   }
 
   private openSocket(): void {

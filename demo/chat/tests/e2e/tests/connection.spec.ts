@@ -90,3 +90,53 @@ test('renders the bot list section', async ({ page }) => {
 
   await expect(page.getByTestId('bots-header')).toBeVisible()
 })
+
+// Message composer e2e: submitting the bottom-pinned form sends the `message`
+// action frame over the live socket and starts the re-send lockout — the first
+// client-to-server action wired end-to-end. The publish itself rides backend
+// moderation, so the deterministic assertion is the sent frame plus the gated
+// button, not the message appearing in the stream.
+test('sends a message action and starts the re-send lockout', async ({
+  page,
+}) => {
+  const sentFrames: string[] = []
+  page.on('websocket', (ws) => {
+    ws.on('framesent', (frame) => {
+      if (typeof frame.payload === 'string') {
+        sentFrames.push(frame.payload)
+      }
+    })
+  })
+
+  await page.goto('/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  await page.getByTestId('message-input').fill('hello hilos')
+  await page.getByTestId('message-send').click()
+
+  await expect
+    .poll(() =>
+      sentFrames.some((payload) => {
+        try {
+          const message = JSON.parse(payload) as {
+            type?: string
+            action?: string
+            data?: { content?: string }
+          }
+
+          return (
+            message.type === 'action' &&
+            message.action === 'message' &&
+            message.data?.content === 'hello hilos'
+          )
+        } catch {
+          return false
+        }
+      }),
+    )
+    .toBe(true)
+
+  await expect(page.getByTestId('message-input')).toHaveValue('')
+  await expect(page.getByTestId('message-cooldown')).toBeVisible()
+  await expect(page.getByTestId('message-send')).toBeDisabled()
+})

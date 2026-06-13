@@ -1,25 +1,77 @@
 <!-- The chat main page (PAGE_MAIN). Shows the session's current user, the live
 event stream (messages plus registration/rename/lifecycle notices), the
 participant roster, and the active bots — each fed by a main page list, so a new
-message, registration, or presence flip appears without a refresh. Rendered by
-HilosView when the navigator's route is the main page. -->
+message, registration, or presence flip appears without a refresh. The message
+composer is pinned to the bottom of the page; submitting fires the `message`
+action and a re-send lockout timer counts down before the next submit is
+allowed. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
-import { useSignal } from '@hilos/vue'
+import { computed, onUnmounted, ref } from 'vue'
+import { useConnectionState, useSignal } from '@hilos/vue'
 
+import { connection } from '../connection'
 import { currentUserName } from '../session'
 import { mainParticipants, mainBots, mainEvents } from '../mainPage'
+import { MESSAGE_RATE_LIMIT_SECONDS, sendChatMessage } from '../mainActions'
 
 const selfName = useSignal(currentUserName)
 const participants = useSignal(mainParticipants)
 const bots = useSignal(mainBots)
 const events = useSignal(mainEvents)
+
+const connectionState = useConnectionState(connection)
+const isConnected = computed(() => connectionState.value === 'connected')
+
+const draft = ref('')
+const cooldownSeconds = ref(0)
+let cooldownTimer: ReturnType<typeof setInterval> | null = null
+
+// Send is gated three ways: a live connection, non-blank text, and no active
+// re-send lockout (the backend rate-limits message submits).
+const canSend = computed(
+  () =>
+    isConnected.value &&
+    draft.value.trim() !== '' &&
+    cooldownSeconds.value === 0,
+)
+
+const startCooldown = (): void => {
+  cooldownSeconds.value = MESSAGE_RATE_LIMIT_SECONDS
+  if (cooldownTimer !== null) {
+    clearInterval(cooldownTimer)
+  }
+  cooldownTimer = setInterval(() => {
+    cooldownSeconds.value = Math.max(0, cooldownSeconds.value - 1)
+    if (cooldownSeconds.value === 0 && cooldownTimer !== null) {
+      clearInterval(cooldownTimer)
+      cooldownTimer = null
+    }
+  }, 1000)
+}
+
+const submitMessage = (): void => {
+  if (!canSend.value) {
+    return
+  }
+  if (!sendChatMessage(draft.value.trim())) {
+    return
+  }
+  draft.value = ''
+  startCooldown()
+}
+
+onUnmounted(() => {
+  if (cooldownTimer !== null) {
+    clearInterval(cooldownTimer)
+  }
+})
 </script>
 
 <template>
-  <div class="container py-3">
+  <div class="d-flex flex-column h-100">
     <p>Signed in as <span data-id="self-user">{{ selfName }}</span></p>
 
-    <div class="row g-3">
+    <div class="row g-3 flex-grow-1">
       <div class="col-lg-8">
         <div class="card">
           <div
@@ -163,5 +215,35 @@ const events = useSignal(mainEvents)
         </div>
       </div>
     </div>
+
+    <form
+      class="d-flex gap-2 mt-3"
+      data-id="message-form"
+      @submit.prevent="submitMessage"
+    >
+      <input
+        v-model="draft"
+        type="text"
+        class="form-control"
+        placeholder="Type your message..."
+        maxlength="500"
+        :disabled="!isConnected"
+        data-id="message-input"
+      />
+      <span
+        v-if="cooldownSeconds > 0"
+        class="align-self-center text-muted small flex-shrink-0"
+        data-id="message-cooldown"
+        >{{ cooldownSeconds }}s</span
+      >
+      <button
+        type="submit"
+        class="btn btn-primary flex-shrink-0"
+        :disabled="!canSend"
+        data-id="message-send"
+      >
+        Send
+      </button>
+    </form>
   </div>
 </template>

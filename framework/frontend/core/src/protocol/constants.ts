@@ -13,6 +13,9 @@ export const SIGNAL_TYPE_PAGE_UNSUBSCRIBE = 'page_unsubscribe'
 /** Server frame `type` answering a page subscription (PHP `SignalTypeConstants::PAGE_RESPONSE`). */
 export const SIGNAL_TYPE_PAGE_RESPONSE = 'page_response'
 
+/** Client frame `type` invoking a page action (PHP `SignalTypeConstants::ACTION`). */
+export const SIGNAL_TYPE_ACTION = 'action'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 
@@ -21,6 +24,12 @@ export const FIELD_PAGE = 'page'
 
 /** Subscribe frame key carrying the route params (PHP `SignalPayloadConstants::FIELD_PARAMS`). */
 export const FIELD_PARAMS = 'params'
+
+/** Action frame key carrying the action name (PHP `SignalPayloadConstants::FIELD_ACTION`). */
+export const FIELD_ACTION = 'action'
+
+/** Action frame key carrying the action payload (PHP `SignalPayloadConstants::FIELD_DATA`). */
+export const FIELD_DATA = 'data'
 
 /** Keepalive text frame the client sends (PHP `WebSocketConstants::KEEPALIVE_TEXT_PING`). */
 export const KEEPALIVE_TEXT_PING = 'ping'
