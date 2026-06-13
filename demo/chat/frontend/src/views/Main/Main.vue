@@ -2,20 +2,31 @@
 event stream (messages plus registration/rename/lifecycle notices), the
 participant roster, and the active bots — each fed by a main page list, so a new
 message, registration, or presence flip appears without a refresh. The message
-composer is pinned to the bottom of the page; submitting fires the `message`
-action and a re-send lockout timer counts down before the next submit is
-allowed. Rendered by HilosView when the navigator's route is the main page. -->
+composer is pinned to the bottom: it submits the `message` action, attaches
+files over the WebSocket `frame_binary` channel (paperclip, drag & drop, or
+paste), shows each upload's progress and the pending attachment chips, and runs
+a re-send lockout timer before the next submit. Rendered by HilosView when the
+navigator's route is the main page. -->
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
 import { connection } from '../../bootstrap/connection'
 import { currentUserName } from '../../bootstrap/session'
-import { mainParticipants, mainBots, mainEvents, selfConnection } from './mainPage'
+import {
+  attachmentDrafts,
+  mainParticipants,
+  mainBots,
+  mainEvents,
+  selfConnection,
+} from './mainPage'
 import {
   MESSAGE_RATE_LIMIT_SECONDS,
+  deleteAttachmentDraft,
+  initFileUpload,
   messageError,
   sendChatMessage,
+  sendUploadChunk,
 } from './mainActions'
 
 const selfName = useSignal(currentUserName)
@@ -23,6 +34,7 @@ const participants = useSignal(mainParticipants)
 const bots = useSignal(mainBots)
 const events = useSignal(mainEvents)
 const selfConn = useSignal(selfConnection)
+const drafts = useSignal(attachmentDrafts)
 const error = useSignal(messageError)
 
 const connectionState = useConnectionState(connection)
@@ -75,14 +87,224 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
   }
 })
 
-// Send is gated four ways: a live connection, non-blank text, no active re-send
-// lockout (the backend rate-limits submits), and no in-flight moderation.
+// The picker accepts images, PDFs and text; drag/drop and paste bypass the
+// filter and the backend is the authority on size and type, so this is advisory
+// UX only. Files stream in 64 KiB binary frames once the backend says `ready`.
+const FILE_ACCEPT = 'image/*,.pdf,.txt,text/plain,application/pdf'
+const UPLOAD_CHUNK_SIZE = 65536
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const dragDepth = ref(0)
+const uploadQueue = ref<File[]>([])
+const isUploading = ref(false)
+const uploadClientError = ref<string | null>(null)
+
+const isDragging = computed(() => dragDepth.value > 0 && isConnected.value)
+const uploadProgress = computed(() => selfConn.value?.fileProgress ?? null)
+
+const uploadProgressPercent = computed(() => {
+  const progress = uploadProgress.value
+  if (progress === null || progress.totalBytes <= 0) {
+    return 0
+  }
+
+  return Math.min(
+    100,
+    Math.round((progress.uploadedBytes / progress.totalBytes) * 100),
+  )
+})
+
+// A failed upload state pushed by the backend, else any local (not-connected)
+// error from this composer.
+const uploadError = computed(() => {
+  const upload = selfConn.value?.fileUpload
+  if (upload?.phase === 'failed') {
+    return upload.errorMessage ?? 'Upload failed'
+  }
+
+  return uploadClientError.value
+})
+
+// The composer accepts a message with attachments and no text, so content is
+// present when the draft is non-blank OR at least one attachment is pending.
+const hasContent = computed(
+  () => draft.value.trim() !== '' || drafts.value.length > 0,
+)
+
+// Bridge the backend's per-upload `ready` / `failed` state (pushed on
+// selfConnection.fileUpload, correlated by clientUploadId) to the awaiting
+// upload routine. The backend reserves a single upload slot, so one pending
+// entry at a time is enough and files upload sequentially.
+interface UploadOutcome {
+  ok: boolean
+  message: string | null
+}
+
+let pendingUpload: {
+  clientUploadId: string
+  resolve: (outcome: UploadOutcome) => void
+} | null = null
+
+watch(
+  () => selfConn.value?.fileUpload ?? null,
+  (upload) => {
+    if (pendingUpload === null || upload === null) {
+      return
+    }
+    if (upload.clientUploadId !== pendingUpload.clientUploadId) {
+      return
+    }
+    if (upload.phase === 'ready') {
+      const pending = pendingUpload
+      pendingUpload = null
+      pending.resolve({ ok: true, message: null })
+    } else if (upload.phase === 'failed') {
+      const pending = pendingUpload
+      pendingUpload = null
+      pending.resolve({ ok: false, message: upload.errorMessage })
+    }
+  },
+)
+
+const awaitUploadReady = (clientUploadId: string): Promise<UploadOutcome> =>
+  new Promise((resolve) => {
+    pendingUpload = { clientUploadId, resolve }
+  })
+
+const streamFile = async (file: File): Promise<boolean> => {
+  let offset = 0
+  while (offset < file.size) {
+    const buffer = await file
+      .slice(offset, offset + UPLOAD_CHUNK_SIZE)
+      .arrayBuffer()
+    if (!sendUploadChunk(buffer)) {
+      return false
+    }
+    offset += buffer.byteLength
+  }
+
+  return true
+}
+
+// Announce one file, wait for `ready` (or a failure), then stream its bytes.
+const uploadOne = async (file: File): Promise<void> => {
+  const clientUploadId = crypto.randomUUID()
+  const ready = awaitUploadReady(clientUploadId)
+  const announced = initFileUpload({
+    filename: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    size: file.size,
+    clientUploadId,
+  })
+  if (!announced) {
+    pendingUpload = null
+    uploadClientError.value = 'Not connected'
+
+    return
+  }
+  const outcome = await ready
+  if (!outcome.ok) {
+    uploadClientError.value = outcome.message ?? 'Upload failed'
+
+    return
+  }
+  if (!(await streamFile(file))) {
+    uploadClientError.value = 'Upload interrupted'
+  }
+}
+
+// Drain the queue one file at a time; a single pass holds the lock so files
+// added mid-upload join the same drain.
+const processQueue = async (): Promise<void> => {
+  if (isUploading.value) {
+    return
+  }
+  isUploading.value = true
+  try {
+    while (uploadQueue.value.length > 0) {
+      const [next, ...rest] = uploadQueue.value
+      uploadQueue.value = rest
+      if (next !== undefined) {
+        await uploadOne(next)
+      }
+    }
+  } finally {
+    isUploading.value = false
+  }
+}
+
+const enqueueFiles = (files: FileList | null): void => {
+  if (files === null) {
+    return
+  }
+  uploadClientError.value = null
+  const accepted = Array.from(files).filter((file) => file.size > 0)
+  if (accepted.length === 0) {
+    return
+  }
+  uploadQueue.value = [...uploadQueue.value, ...accepted]
+  void processQueue()
+}
+
+const openFilePicker = (): void => {
+  fileInputRef.value?.click()
+}
+
+const onFileInputChange = (event: Event): void => {
+  const input = event.target as HTMLInputElement
+  enqueueFiles(input.files)
+  // Reset so re-picking the same file fires `change` again.
+  input.value = ''
+}
+
+const onDragEnter = (): void => {
+  dragDepth.value += 1
+}
+
+const onDragLeave = (): void => {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+const onDrop = (event: DragEvent): void => {
+  dragDepth.value = 0
+  enqueueFiles(event.dataTransfer?.files ?? null)
+}
+
+const onPaste = (event: ClipboardEvent): void => {
+  const files = event.clipboardData?.files
+  if (files && files.length > 0) {
+    event.preventDefault()
+    enqueueFiles(files)
+  }
+}
+
+const removeDraft = (draftId: string): void => {
+  deleteAttachmentDraft(draftId)
+}
+
+// A dropped connection abandons the active upload and clears the queue so the
+// composer never wedges on `uploading` waiting for a reply that cannot arrive.
+watch(isConnected, (connected) => {
+  if (connected) {
+    return
+  }
+  if (pendingUpload !== null) {
+    const pending = pendingUpload
+    pendingUpload = null
+    pending.resolve({ ok: false, message: 'Connection lost' })
+  }
+  uploadQueue.value = []
+})
+
+// Send is gated: a live connection, some content (text or an attachment), no
+// active re-send lockout, no in-flight moderation, and no in-flight upload.
 const canSend = computed(
   () =>
     isConnected.value &&
-    draft.value.trim() !== '' &&
+    hasContent.value &&
     cooldownSeconds.value === 0 &&
-    !isModerating.value,
+    !isModerating.value &&
+    !isUploading.value,
 )
 
 const startCooldown = (seconds = MESSAGE_RATE_LIMIT_SECONDS): void => {
@@ -298,7 +520,26 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="mt-3">
+    <div
+      class="mt-3 position-relative"
+      data-id="composer"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDrop"
+    >
+      <div
+        v-if="isDragging"
+        class="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-primary-subtle border border-2 border-primary rounded"
+        style="z-index: 5"
+        data-id="composer-dropzone"
+      >
+        <span class="text-primary fw-semibold">
+          <i class="bi bi-paperclip me-1" aria-hidden="true" />Drop files to
+          upload
+        </span>
+      </div>
+
       <div
         v-if="moderationBanner"
         class="small mb-1 d-flex align-items-center gap-2"
@@ -322,11 +563,87 @@ onUnmounted(() => {
       >
         {{ error }}
       </div>
+
+      <div
+        v-if="uploadError"
+        class="small text-danger mb-1"
+        data-id="upload-error"
+      >
+        {{ uploadError }}
+      </div>
+
+      <div v-if="uploadProgress" class="mb-2" data-id="upload-progress">
+        <div
+          class="small text-muted d-flex justify-content-between gap-2 mb-1"
+        >
+          <span class="text-truncate"
+            >Uploading {{ uploadProgress.filename }}…</span
+          >
+          <span data-id="upload-progress-percent">{{ uploadProgressPercent }}%</span>
+        </div>
+        <div class="progress" style="height: 4px">
+          <div
+            class="progress-bar"
+            :style="{ width: uploadProgressPercent + '%' }"
+          />
+        </div>
+      </div>
+
+      <div
+        v-if="drafts.length > 0"
+        class="d-flex flex-wrap gap-2 mb-2"
+        data-id="attachment-drafts"
+      >
+        <span
+          v-for="d in drafts"
+          :key="d.draftId"
+          class="badge rounded-pill text-bg-secondary d-inline-flex align-items-center gap-1"
+          data-id="attachment-draft"
+        >
+          <i class="bi bi-paperclip" aria-hidden="true" />
+          <span
+            class="text-truncate"
+            style="max-width: 12rem"
+            :title="d.filename"
+            data-id="attachment-draft-name"
+            >{{ d.filename }}</span
+          >
+          <button
+            type="button"
+            class="btn-close btn-close-white"
+            style="font-size: 0.5rem"
+            aria-label="Remove attachment"
+            :disabled="isModerating"
+            data-id="attachment-draft-remove"
+            @click="removeDraft(d.draftId)"
+          />
+        </span>
+      </div>
+
       <form
         class="d-flex gap-2"
         data-id="message-form"
         @submit.prevent="submitMessage"
       >
+        <input
+          ref="fileInputRef"
+          type="file"
+          multiple
+          class="d-none"
+          :accept="FILE_ACCEPT"
+          data-id="file-input"
+          @change="onFileInputChange"
+        />
+        <button
+          type="button"
+          class="btn btn-outline-secondary flex-shrink-0"
+          :disabled="!isConnected || isModerating"
+          aria-label="Attach files"
+          data-id="attach-button"
+          @click="openFilePicker"
+        >
+          <i class="bi bi-paperclip" aria-hidden="true" />
+        </button>
         <input
           :value="displayMessage"
           type="text"
@@ -336,6 +653,7 @@ onUnmounted(() => {
           :disabled="!isConnected || isModerating"
           data-id="message-input"
           @input="handleInput"
+          @paste="onPaste"
         />
         <span
           v-if="cooldownSeconds > 0"

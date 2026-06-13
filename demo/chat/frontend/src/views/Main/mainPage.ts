@@ -6,6 +6,8 @@
 // re-streaming. The view reads these signals and never touches a raw store.
 import {
   computedSignal,
+  readNumber,
+  readString,
   type EntityRef,
   type ReadonlySignal,
 } from '@hilos/core'
@@ -25,6 +27,7 @@ import {
   type EventUserRename,
 } from '../../types'
 import { toSelfConnection, type SelfConnection } from './types/SelfConnection'
+import { type AttachmentDraftItem } from './types/lists/AttachmentDraftItem'
 import { type BotItem } from './types/lists/BotItem'
 import { type EventAttachmentItem, type EventItem } from './types/lists/EventItem'
 import { type ParticipantItem } from './types/lists/ParticipantItem'
@@ -34,6 +37,8 @@ import { type ParticipantItem } from './types/lists/ParticipantItem'
 const MAIN_USERS_LIST = 'mainUsers'
 const MAIN_BOTS_LIST = 'mainBots'
 const MAIN_EVENTS_LIST = 'mainEvents'
+// The composer's pending uploads list (backend ChatBrowserTable::ATTACHMENT_DRAFTS).
+const ATTACHMENT_DRAFTS_LIST = 'attachmentDrafts'
 // The single-row data slot carrying this connection's own composer state
 // (backend ChatBrowserTable::SELF_CONNECTION).
 const SELF_CONNECTION_DATA = 'selfConnection'
@@ -46,6 +51,10 @@ const MESSAGE_SLOT = 'eventMessages'
 const REGISTRATION_SLOT = 'eventUserRegistrations'
 const RENAME_SLOT = 'eventUserRenames'
 const ATTACHMENT_SLOT = 'eventAttachments'
+// The per-row field slot of a draft (backend source ChatRtContext::attachmentDrafts);
+// its value coincides with the list key, but a list item nests its fields under
+// the source-collection slot, never at the item root.
+const ATTACHMENT_DRAFT_SLOT = 'attachmentDrafts'
 
 // Event type values mirror the backend ChatEventType enum; the stream renders a
 // line per kind. Keep in sync with Demo\Chat\Constants\ChatEventType.
@@ -213,3 +222,20 @@ const selfConnectionData = scopes.pageDataSignal(SELF_CONNECTION_DATA)
  */
 export const selfConnection: ReadonlySignal<SelfConnection | undefined> =
   computedSignal(() => toSelfConnection(selfConnectionData.get()))
+
+const attachmentDraftItems = scopes.pageListSignal(ATTACHMENT_DRAFTS_LIST)
+
+/** The composer's pending attachment drafts — one removable chip per uploaded-but-unsent file. */
+export const attachmentDrafts: ReadonlySignal<readonly AttachmentDraftItem[]> =
+  computedSignal(() =>
+    attachmentDraftItems.get().map((item) => {
+      const draft = recordSlot(item.slots[ATTACHMENT_DRAFT_SLOT])
+
+      return {
+        draftId: item.itemKey,
+        filename: draft ? readString(draft, 'filename') : '',
+        mimeType: draft ? readString(draft, 'mimeType') : '',
+        size: draft ? readNumber(draft, 'size') : 0,
+      }
+    }),
+  )

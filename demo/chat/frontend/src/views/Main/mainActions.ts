@@ -13,6 +13,12 @@ import { actionErrors, connection } from '../../bootstrap/connection'
 /** Backend action name routed by MainPage (PHP `ChatSignalConstants::MESSAGE`). */
 const MESSAGE_ACTION = 'message'
 
+/** Backend action: announce a binary file upload (PHP `ChatSignalConstants::FILE_UPLOAD_INIT`). */
+const FILE_UPLOAD_INIT_ACTION = 'file_upload_init'
+
+/** Backend action: delete one completed attachment draft (PHP `ChatSignalConstants::ATTACHMENT_DRAFT_DELETE`). */
+const ATTACHMENT_DRAFT_DELETE_ACTION = 'attachment_draft_delete'
+
 /**
  * Re-send lockout in seconds shown after a submit, mirroring the backend
  * `ChatUserState::MESSAGE_RATE_LIMIT_SECONDS`. The backend tolerates a re-send
@@ -36,4 +42,44 @@ export function sendChatMessage(content: string): boolean {
   actionErrors.clear(MESSAGE_ACTION)
 
   return connection.sendAction(MESSAGE_ACTION, { content })
+}
+
+/** Metadata announced ahead of a file upload's binary frames (mirrors PHP `FileUploadInitActionDTO`). */
+export interface FileUploadInit {
+  filename: string
+  mimeType: string
+  size: number
+  /** Client-minted id correlating the upload to its `selfConnection.fileUpload` state. */
+  clientUploadId: string
+}
+
+/**
+ * Announce a file upload so the backend reserves a slot and replies — over the
+ * `selfConnection.fileUpload` state — with `ready` to stream, or `failed`.
+ * Returns false, sending nothing, when the connection is not `connected`.
+ *
+ * @param meta The upload metadata, including the correlating clientUploadId.
+ */
+export function initFileUpload(meta: FileUploadInit): boolean {
+  return connection.sendAction(FILE_UPLOAD_INIT_ACTION, meta)
+}
+
+/**
+ * Stream one binary chunk of the active upload over the frame_binary channel.
+ * Returns false, sending nothing, when the connection is not `connected`.
+ *
+ * @param chunk The file slice to send.
+ */
+export function sendUploadChunk(chunk: ArrayBuffer): boolean {
+  return connection.sendBinary(chunk)
+}
+
+/**
+ * Delete one completed attachment draft before the message is sent. Returns
+ * false, sending nothing, when the connection is not `connected`.
+ *
+ * @param draftId The draft to remove.
+ */
+export function deleteAttachmentDraft(draftId: string): boolean {
+  return connection.sendAction(ATTACHMENT_DRAFT_DELETE_ACTION, { draftId })
 }

@@ -36,10 +36,11 @@ export type ConnectionState =
 /**
  * The slice of the WebSocket API the core touches. Method-style members keep
  * the browser `WebSocket` structurally assignable, and a test mock only has to
- * implement these three.
+ * implement these three. `send` carries both the text protocol and the binary
+ * `frame_binary` upload frames, mirroring the browser `send` overload.
  */
 export interface WebSocketLike {
-  send(data: string): void
+  send(data: string | ArrayBuffer | Blob): void
   close(code?: number, reason?: string): void
   addEventListener(
     type: 'open' | 'message' | 'close' | 'error',
@@ -180,6 +181,24 @@ export class HilosConnection {
       return false
     }
     this.socket.send(text)
+
+    return true
+  }
+
+  /**
+   * Send one raw binary frame — the `frame_binary` upload channel of
+   * wire-protocol.md. Returns false, sending nothing, unless the connection is
+   * currently `connected`, exactly like {@link send}; a dropped upload restarts
+   * rather than queueing. Callers stream a file as a sequence of these once the
+   * backend has acknowledged the upload init sent over {@link sendAction}.
+   *
+   * @param data The binary chunk to send.
+   */
+  sendBinary(data: ArrayBuffer | Blob): boolean {
+    if (this.currentState !== 'connected' || this.socket === null) {
+      return false
+    }
+    this.socket.send(data)
 
     return true
   }

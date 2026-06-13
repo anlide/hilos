@@ -308,6 +308,8 @@ final class ModeratorAgent extends AbstractAgent
             'Moderation. JSON only. Output: {"%s":true|false,"%s":"ok|insult|threat|hate_speech|sexual|spam"}',
             'Rules:',
             '%s',
+            'Be lenient: allow unless the text is unmistakably abusive. '
+                . 'Attachments — their names, types and sizes — are never a reason to block.',
         ]),
             ModerationDecision::KEY_ALLOW,
             ModerationDecision::KEY_REASON,

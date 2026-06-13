@@ -16,7 +16,7 @@ class MockWebSocket implements WebSocketLike {
   static instances: MockWebSocket[] = []
 
   readonly url: string
-  readonly sent: string[] = []
+  readonly sent: (string | ArrayBuffer | Blob)[] = []
   closeCalls = 0
 
   private readonly listeners = new Map<
@@ -37,7 +37,7 @@ class MockWebSocket implements WebSocketLike {
     return instance
   }
 
-  send(data: string): void {
+  send(data: string | ArrayBuffer | Blob): void {
     this.sent.push(data)
   }
 
@@ -295,6 +295,28 @@ describe('action send', () => {
     const socket = MockWebSocket.last
 
     expect(connection.sendAction('message', { content: 'hi' })).toBe(false)
+    expect(socket.sent).toEqual([])
+  })
+})
+
+describe('binary send', () => {
+  it('sends a raw binary frame while connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    const chunk = new Uint8Array([1, 2, 3]).buffer
+    expect(connection.sendBinary(chunk)).toBe(true)
+    expect(socket.sent).toEqual([chunk])
+  })
+
+  it('sends nothing unless connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+
+    expect(connection.sendBinary(new ArrayBuffer(8))).toBe(false)
     expect(socket.sent).toEqual([])
   })
 })
