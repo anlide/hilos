@@ -13,8 +13,9 @@ per-framework view adapters).
 
 Every page is a folder under the project's `views/` directory (Angular keeps
 its `views/` under `src/app/`). The folder name **is the page key** — the same
-identifier the page subscribes under (`pageKeys.ts`, mirroring the backend
-`PageConstants`) — cased by the engine idiom:
+identifier the page subscribes under (`pages/keys.ts`, mirroring the backend
+`PageConstants` — see [page-registry.md](page-registry.md)) — cased by the
+engine idiom:
 
 - **Vue / React** — `PascalCase` folder: `views/Main/`, `views/Dashboard/`.
 - **Angular** — `kebab-case` folder: `src/app/views/main/`, `.../dashboard/`.
@@ -56,8 +57,9 @@ indirection to maintain.
 - **`…Actions.ts` — outbound actions and their errors.** The client→server
   actions the view fires (through the core `sendAction` primitive) plus the
   reactive read of each action's framework `action_error`. Inbound server
-  signals are **not** handled here — they are ingested centrally by the page
-  scope (`pageScope.ts`), not per page.
+  signals are **not** handled here — they are ingested centrally by the SDK
+  page-scope binder (`bindPageScope`, see [page-registry.md](page-registry.md)),
+  not per page.
 - **`…Error.ts` — optional.** Add it only when a page grows error-handling
   logic that is **not** tied to a single action (aggregation, classification, a
   page-level banner). A single action's `action_error` stays in `…Actions.ts`,

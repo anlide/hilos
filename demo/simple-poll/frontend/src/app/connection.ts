@@ -5,16 +5,15 @@
 // proxies it to the daemon in test and production, and the Angular CLI dev
 // server proxies it via proxy.conf.json (Angular has no import.meta.env
 // mechanism for a URL override, unlike the Vite demos).
-import { HilosConnection } from '@hilos/core'
+import { HilosConnection, PAGE_SIGNAL_SCHEMAS } from '@hilos/core'
 
 import { pollSignalSchemas } from './session'
-import { pageSignalSchemas } from './pages'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: sameOriginUrl,
-  projectSchemas: { ...pollSignalSchemas, ...pageSignalSchemas },
+  projectSchemas: { ...pollSignalSchemas, ...PAGE_SIGNAL_SCHEMAS },
 })
 
 // Forced-refresh check (docs/agents/frontend/wire-protocol.md): a welcome

@@ -26,8 +26,9 @@ frontend page, or when you place a frontend TypeScript type. Start with
    `main.ts`), plus `…Page.ts` (selectors), `…Actions.ts` (outbound actions),
    and `…Error.ts` only when error logic is not tied to one action.
 3. Keep `…Page.ts` read-only (payload → view-models) and `…Actions.ts` to
-   client→server actions plus their `action_error`; inbound signals stay in
-   `pageScope.ts`.
+   client→server actions plus their `action_error`; inbound signals are
+   ingested centrally by the SDK page-scope binder (`bindPageScope`), not per
+   page.
 4. Place page-local types in `views/<Page>/types/`: group list-row `…Item`
    view-models under `types/lists/`, keep page-local value types directly in
    `types/`; keep domain entities and shared value types in `src/types/`.

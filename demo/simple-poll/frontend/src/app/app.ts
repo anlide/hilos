@@ -9,7 +9,7 @@ import { HilosLayout, HilosView } from '@hilos/angular'
 import { HilosPages } from '@hilos/core'
 
 import { connection } from './connection'
-import { PAGE_MAIN } from './pageKeys'
+import { PAGE_MAIN } from './pages/keys'
 import { Dashboard } from './views/dashboard/dashboard'
 import { Main } from './views/main/main'
 

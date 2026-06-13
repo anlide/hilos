@@ -5,16 +5,15 @@
 // the daemon in the test and production environments. The local dev stack
 // overrides it with VITE_WS_URL, because there the page is served by the Vite
 // dev server while the daemon publishes its own WebSocket port.
-import { HilosConnection } from '@hilos/core'
+import { HilosConnection, PAGE_SIGNAL_SCHEMAS } from '@hilos/core'
 
 import { todoSignalSchemas } from './session'
-import { pageSignalSchemas } from './pages'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: import.meta.env.VITE_WS_URL ?? sameOriginUrl,
-  projectSchemas: { ...todoSignalSchemas, ...pageSignalSchemas },
+  projectSchemas: { ...todoSignalSchemas, ...PAGE_SIGNAL_SCHEMAS },
 })
 
 // Forced-refresh check (docs/agents/frontend/wire-protocol.md): a welcome

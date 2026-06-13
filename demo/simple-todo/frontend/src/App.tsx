@@ -9,7 +9,7 @@ import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
 import { connection } from './connection'
-import { PAGE_MAIN } from './pageKeys'
+import { PAGE_MAIN } from './pages/keys'
 import Dashboard from './views/Dashboard/Dashboard'
 import Main from './views/Main/Main'
 

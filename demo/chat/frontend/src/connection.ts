@@ -5,16 +5,19 @@
 // the daemon in the test and production environments. The local dev stack
 // overrides it with VITE_WS_URL, because there the page is served by the Vite
 // dev server while the daemon publishes its own WebSocket port.
-import { ActionErrorStore, HilosConnection } from '@hilos/core'
+import {
+  ActionErrorStore,
+  HilosConnection,
+  PAGE_SIGNAL_SCHEMAS,
+} from '@hilos/core'
 
 import { chatSignalSchemas } from './session'
-import { pageSignalSchemas } from './pages'
 
 const sameOriginUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
 export const connection = new HilosConnection({
   url: import.meta.env.VITE_WS_URL ?? sameOriginUrl,
-  projectSchemas: { ...chatSignalSchemas, ...pageSignalSchemas },
+  projectSchemas: { ...chatSignalSchemas, ...PAGE_SIGNAL_SCHEMAS },
 })
 
 // `action_error` is a framework signal, so the core ActionErrorStore (not the

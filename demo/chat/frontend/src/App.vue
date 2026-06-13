@@ -10,7 +10,7 @@ import { HilosPages } from '@hilos/core'
 import type { Component } from 'vue'
 
 import { connection } from './connection'
-import { PAGE_MAIN } from './pageKeys'
+import { PAGE_MAIN } from './pages/keys'
 import Dashboard from './views/Dashboard/Dashboard.vue'
 import Main from './views/Main/Main.vue'
 

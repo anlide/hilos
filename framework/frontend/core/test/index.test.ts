@@ -7,8 +7,11 @@ import {
   assertNever,
   computeBackoffDelay,
   createPageRouter,
+  createAppPageRouter,
   createHilosRouter,
   browserNavigationEnvironment,
+  bindPageScope,
+  PAGE_SIGNAL_SCHEMAS,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '../src/index.js'
@@ -19,8 +22,11 @@ it('exports the @hilos/core public surface', () => {
   expect(assertNever).toBeTypeOf('function')
   expect(computeBackoffDelay).toBeTypeOf('function')
   expect(createPageRouter).toBeTypeOf('function')
+  expect(createAppPageRouter).toBeTypeOf('function')
   expect(createHilosRouter).toBeTypeOf('function')
   expect(browserNavigationEnvironment).toBeTypeOf('function')
+  expect(bindPageScope).toBeTypeOf('function')
+  expect(PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_RESPONSE]).toBeDefined()
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
 })

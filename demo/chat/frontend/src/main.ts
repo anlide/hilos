@@ -4,21 +4,27 @@
 // the way any real Hilos project does. The chat application entry point lands
 // here.
 
-import { browserNavigationEnvironment, createHilosRouter } from '@hilos/core'
+import {
+  bindPageScope,
+  browserNavigationEnvironment,
+  createHilosRouter,
+} from '@hilos/core'
 import { hilosRouterKey } from '@hilos/vue'
 import { createApp } from 'vue'
 
 import App from './App.vue'
 import { connection } from './connection'
-import { bindSessionScope, ensureSessionTokenCookie } from './session'
-import { bindPageScope } from './pageScope'
-import { router } from './pages'
+import { bindSessionScope, ensureSessionTokenCookie, scopes } from './session'
+import { router } from './pages/routes'
+import { pageEntityTypes } from './pages/entityTypes'
 
 // The token must be in place before the socket opens — it rides the
 // handshake cookies.
 ensureSessionTokenCookie()
 bindSessionScope(connection)
-const pages = bindPageScope(connection)
+const pages = bindPageScope(connection, scopes, {
+  entityTypes: pageEntityTypes,
+})
 // The navigator drives the page subscription from the URL: it subscribes the
 // page named by the location on start, and re-subscribes over the live socket
 // on every in-place navigation (HilosLink / back-forward), so moving between

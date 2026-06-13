@@ -51,6 +51,10 @@ export {
   type PageSubscriptionConnection,
 } from './subscription/PageSubscription.js'
 export {
+  bindPageScope,
+  PAGE_SIGNAL_SCHEMAS,
+} from './subscription/bindPageScope.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
@@ -70,6 +74,7 @@ export {
   type PageRouteMatch,
   type PageRouterOptions,
 } from './routing/PageRouter.js'
+export { createAppPageRouter } from './routing/appPageRouter.js'
 export {
   createHilosRouter,
   browserNavigationEnvironment,
