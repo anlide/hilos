@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Frontend Bootstrap and Src Root"
+  short_description: "Thin src-root entry, the bootstrap module, and the bootHilos boot sequence"
+  default_prompt: "Use $hilos-frontend-bootstrap when organizing the frontend src root, the bootstrap module, or the app boot wiring."

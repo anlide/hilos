@@ -5,10 +5,10 @@
 // MessageActionDTO {content}); the publish only happens once the backend
 // moderates and emits the event, never optimistically here. A rejected submit
 // comes back as a framework `action_error`, handled by the core ActionErrorStore
-// (connection.ts); this module just exposes the `message` action's slice of it.
+// (bootstrap/connection.ts); this module just exposes the `message` action's slice.
 import { type ReadonlySignal } from '@hilos/core'
 
-import { actionErrors, connection } from '../../connection'
+import { actionErrors, connection } from '../../bootstrap/connection'
 
 /** Backend action name routed by MainPage (PHP `ChatSignalConstants::MESSAGE`). */
 const MESSAGE_ACTION = 'message'

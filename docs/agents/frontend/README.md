@@ -34,6 +34,7 @@ document.
 | the framework-agnostic core, the signal primitive, Vue / React / Angular adapters, the conformance demos | [multiframework-core.md](multiframework-core.md) |
 | creating, moving, or naming the files of a page — the per-page folder, the view / `…Page` selectors / `…Actions` files, and whether a type is domain or page-local | [page-module-structure.md](page-module-structure.md) |
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
+| the application boot — the thin `src/index.ts` entry, the `bootstrap/` module (connection / session / main), and the `createHilosConnection` / `ensureSessionTokenCookie` / `sessionUserName` / `bootHilos` core boot helpers | [bootstrap-structure.md](bootstrap-structure.md) |
 | styling — the Bootstrap-only rule, the Sass customization layer, theming, accessibility | [styling-rules.md](styling-rules.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors | [testing-strategy.md](testing-strategy.md) |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | [build-and-docker.md](build-and-docker.md) |
@@ -71,6 +72,10 @@ before editing.
   `pages/` folder (keys, routes, optional entity-slot types) and the three
   `@hilos/core` exports that bind it (the page-scope binder, the page schema,
   and the app router).
+- [bootstrap-structure.md](bootstrap-structure.md) — the composition root: a
+  one-import `src/index.ts` entry, the `bootstrap/` module that owns the
+  connection and session singletons and mounts the app, and the boot sequence
+  lifted into `bootHilos`.
 - [styling-rules.md](styling-rules.md) — Bootstrap-only styling, the Sass layer as the sole home
   for custom declarations, theming, and accessibility.
 - [testing-strategy.md](testing-strategy.md) — the unit and end-to-end strategy and the three e2e

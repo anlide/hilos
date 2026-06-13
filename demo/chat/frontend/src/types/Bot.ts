@@ -11,7 +11,7 @@ import {
   type EntityCollection,
 } from '@hilos/core'
 
-import { scopes } from '../session'
+import { scopes } from '../bootstrap/session'
 
 /** The canonical entity type — keep in sync with the backend `bots` source. */
 export const BOT_TYPE = 'bot'

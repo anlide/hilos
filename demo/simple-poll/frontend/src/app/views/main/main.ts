@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import { hilosSignal } from '@hilos/angular'
 
-import { currentUserName } from '../../session'
+import { currentUserName } from '../../bootstrap/session'
 
 @Component({
   selector: 'app-main',

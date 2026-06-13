@@ -8,7 +8,7 @@ import { HilosLayout, HilosView } from '@hilos/react'
 import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
-import { connection } from './connection'
+import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import Dashboard from './views/Dashboard/Dashboard'
 import Main from './views/Main/Main'

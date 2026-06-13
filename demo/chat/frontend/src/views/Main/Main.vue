@@ -9,8 +9,8 @@ allowed. Rendered by HilosView when the navigator's route is the main page. -->
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
-import { connection } from '../../connection'
-import { currentUserName } from '../../session'
+import { connection } from '../../bootstrap/connection'
+import { currentUserName } from '../../bootstrap/session'
 import { mainParticipants, mainBots, mainEvents, selfConnection } from './mainPage'
 import {
   MESSAGE_RATE_LIMIT_SECONDS,

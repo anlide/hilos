@@ -55,6 +55,18 @@ export {
   PAGE_SIGNAL_SCHEMAS,
 } from './subscription/bindPageScope.js'
 export {
+  ensureSessionTokenCookie,
+  SESSION_TOKEN_COOKIE,
+  type SessionTokenOptions,
+} from './session/sessionToken.js'
+export {
+  bindSessionScope,
+  sessionUserName,
+  SESSION_SIGNAL_SCHEMAS,
+  type SessionScopeOptions,
+} from './session/sessionScope.js'
+export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
@@ -127,3 +139,8 @@ export {
   type HilosConnectionEventMap,
   type HilosConnectionOptions,
 } from './connection/HilosConnection.js'
+export {
+  createHilosConnection,
+  type CreateHilosConnectionOptions,
+  type HilosConnectionBundle,
+} from './connection/createHilosConnection.js'

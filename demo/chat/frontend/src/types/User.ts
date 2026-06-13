@@ -13,7 +13,7 @@ import {
   type User as FrameworkUser,
 } from '@hilos/core'
 
-import { scopes } from '../session'
+import { scopes } from '../bootstrap/session'
 
 /** The canonical entity type — keep in sync with the backend `users` source. */
 export const USER_TYPE = 'user'

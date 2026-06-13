@@ -10,7 +10,7 @@ import {
   type ReadonlySignal,
 } from '@hilos/core'
 
-import { scopes } from '../../session'
+import { scopes } from '../../bootstrap/session'
 import {
   Bots,
   EventAttachments,

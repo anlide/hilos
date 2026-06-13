@@ -12,7 +12,7 @@ import {
   type EntityCollection,
 } from '@hilos/core'
 
-import { scopes } from '../session'
+import { scopes } from '../bootstrap/session'
 
 /** Canonical entity types — keep in sync with the backend event sources. */
 export const EVENT_TYPE = 'event'

@@ -9,7 +9,7 @@ import { HilosLayout, HilosView } from '@hilos/vue'
 import { HilosPages } from '@hilos/core'
 import type { Component } from 'vue'
 
-import { connection } from './connection'
+import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import Dashboard from './views/Dashboard/Dashboard.vue'
 import Main from './views/Main/Main.vue'
