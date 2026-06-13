@@ -138,6 +138,9 @@ final class HttpConstants
     /** @var string HTTP header Vary */
     public const string HEADER_VARY = 'Vary';
 
+    /** @var string HTTP header Cache-Control */
+    public const string HEADER_CACHE_CONTROL = 'Cache-Control';
+
     /** @var string HTTP header Sec-WebSocket-Key */
     public const string HEADER_SEC_WEBSOCKET_KEY = 'Sec-WebSocket-Key';
 

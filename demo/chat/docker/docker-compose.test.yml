@@ -65,6 +65,7 @@ services:
       - FRONTEND_HTML_HOST=0.0.0.0
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=/app/frontend/dist
+      - CHAT_FILES_XACCEL_LOCATION=/__chat_published
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       mysql-test:
@@ -103,6 +104,8 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - nginx-ssl-test:/etc/nginx/ssl
+      # Published attachments, streamed by nginx via the daemon's X-Accel-Redirect.
+      - ../data/chat_attachments/published:/published:ro
     ports:
       - "${NGINX_TEST_HTTP_PORT:-8086}:80"
       - "${NGINX_TEST_HTTPS_PORT:-8446}:443"

@@ -443,19 +443,49 @@ onUnmounted(() => {
               <div v-if="event.text" class="mt-1" data-id="event-text">
                 {{ event.text }}
               </div>
-              <ul
+              <div
                 v-if="event.attachments.length > 0"
-                class="list-inline mt-1 mb-0 small"
+                class="d-flex flex-wrap gap-2 mt-2"
+                data-id="event-attachments"
               >
-                <li
+                <template
                   v-for="attachment in event.attachments"
                   :key="attachment.key"
-                  class="list-inline-item"
-                  data-id="event-attachment"
                 >
-                  📎 {{ attachment.filename }}
-                </li>
-              </ul>
+                  <!-- Images render inline (the backend serves them with
+                  Content-Disposition: inline); a click opens the original. -->
+                  <a
+                    v-if="attachment.mimeType.startsWith('image/')"
+                    :href="attachment.url"
+                    target="_blank"
+                    rel="noopener"
+                    data-id="event-attachment"
+                  >
+                    <img
+                      :src="attachment.url"
+                      :alt="attachment.filename"
+                      class="rounded border"
+                      style="max-height: 12rem; max-width: 100%; object-fit: contain"
+                      loading="lazy"
+                    />
+                  </a>
+                  <!-- Everything else is a download link (Content-Disposition: attachment). -->
+                  <a
+                    v-else
+                    :href="attachment.url"
+                    :download="attachment.filename"
+                    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+                    data-id="event-attachment"
+                  >
+                    <i class="bi bi-paperclip" aria-hidden="true" />
+                    <span
+                      class="text-truncate"
+                      style="max-width: 16rem"
+                      >{{ attachment.filename }}</span
+                    >
+                  </a>
+                </template>
+              </div>
             </div>
           </div>
         </div>

@@ -9,6 +9,10 @@ export interface EventAttachmentItem {
   readonly key: string
   /** The original file name, resolved from the referenced entity. */
   readonly filename: string
+  /** The declared MIME type — image/* renders inline, anything else as a download. */
+  readonly mimeType: string
+  /** Same-origin download URL (/chat/attachment?id=…); the session cookie authorizes it. */
+  readonly url: string
 }
 
 /** One event line of the main page stream — a message or a service notice. */

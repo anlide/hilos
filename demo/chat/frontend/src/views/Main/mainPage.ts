@@ -75,6 +75,20 @@ function recordSlot(
     : undefined
 }
 
+// The same-origin attachment endpoint: the session cookie authorizes each GET,
+// so the URL carries only the attachment id. nginx (test/prod) and the Vite dev
+// proxy both forward it to the daemon's HTTP router.
+const ATTACHMENT_DOWNLOAD_PATH = '/chat/attachment'
+
+/**
+ * Build the same-origin download URL for a published attachment.
+ *
+ * @param id The attachment id.
+ */
+function attachmentUrl(id: number | string): string {
+  return `${ATTACHMENT_DOWNLOAD_PATH}?id=${encodeURIComponent(String(id))}`
+}
+
 const mainUserItems = scopes.pageListSignal(MAIN_USERS_LIST)
 
 /** The main page roster: one participant per user list item, resolved reactively. */
@@ -192,10 +206,13 @@ export const mainEvents: ReadonlySignal<readonly EventItem[]> = computedSignal(
         ? attachmentRefs.map((ref) => {
             const attachmentRef = ref as EntityRef
             const attachment = EventAttachments.signal(attachmentRef).get()
+            const id = attachment?.id ?? attachmentRef.id
 
             return {
-              key: String(attachment?.id ?? attachmentRef.id),
+              key: String(id),
               filename: attachment?.filename ?? '',
+              mimeType: attachment?.mimeType ?? '',
+              url: attachmentUrl(id),
             }
           })
         : []

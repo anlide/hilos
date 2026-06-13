@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use Hilos\Constants\HttpConstants;
+
 /**
  * HttpHeaderHelper - case-insensitive HTTP request header reads.
  *
@@ -41,5 +43,35 @@ class HttpHeaderHelper
         }
 
         return null;
+    }
+
+    /**
+     * Parse the Cookie request header into a name => value map.
+     *
+     * @param array<string, mixed> $headers Header name to value map
+     * @return array<string, string> Cookie name to value pairs, empty when the Cookie header is absent
+     */
+    public static function parseCookies(array $headers): array
+    {
+        $cookies = [];
+
+        // Cookie header format: "name1=value1; name2=value2".
+        $cookieHeader = self::get($headers, HttpConstants::HEADER_COOKIE) ?? '';
+        if ($cookieHeader === '') {
+            return $cookies;
+        }
+
+        foreach (explode(';', $cookieHeader) as $pair) {
+            $pair = trim($pair);
+            if ($pair === '') {
+                continue;
+            }
+            $parts = explode('=', $pair, 2);
+            if (count($parts) === 2) {
+                $cookies[trim($parts[0])] = trim($parts[1]);
+            }
+        }
+
+        return $cookies;
     }
 }

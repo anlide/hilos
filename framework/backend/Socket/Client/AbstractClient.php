@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
@@ -244,32 +243,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     protected function parseCookies(array $headers): array
     {
-        $cookies = [];
-
-        // Cookie header format: "name1=value1; name2=value2; name3=value3"
-        $cookieHeader = HttpHeaderHelper::get($headers, HttpConstants::HEADER_COOKIE) ?? '';
-        if (empty($cookieHeader)) {
-            return $cookies;
-        }
-
-        // Split by semicolon and parse each cookie
-        $cookiePairs = explode(';', $cookieHeader);
-        foreach ($cookiePairs as $pair) {
-            $pair = trim($pair);
-            if (empty($pair)) {
-                continue;
-            }
-
-            // Split name=value
-            $parts = explode('=', $pair, 2);
-            if (count($parts) === 2) {
-                $name = trim($parts[0]);
-                $value = trim($parts[1]);
-                $cookies[$name] = $value;
-            }
-        }
-
-        return $cookies;
+        return HttpHeaderHelper::parseCookies($headers);
     }
 
     /**

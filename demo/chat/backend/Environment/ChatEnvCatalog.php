@@ -53,6 +53,7 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             EnvConstants::CHAT_BOT_LANGUAGE->name => self::stringEntry('ru', emptyIsMissing: true),
             ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR => self::stringEntry(''),
+            ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION => self::stringEntry(''),
         ]);
     }
 

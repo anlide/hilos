@@ -65,6 +65,23 @@ http {
             proxy_read_timeout 3600s;
         }
 
+        # Authenticated attachment download: the daemon validates the session
+        # cookie and replies with X-Accel-Redirect; nginx then streams the file
+        # from the internal location below. The cookie rides the proxied request
+        # (same-origin), so no session token ever appears in the URL.
+        location = /chat/attachment {
+            proxy_pass http://${FRONTEND_HTML_UPSTREAM}:8090;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # Internal target for the daemon's X-Accel-Redirect; never reached
+        # directly. The published attachments directory is mounted here read-only.
+        location /__chat_published/ {
+            internal;
+            alias /published/;
+        }
+
         location = / {
             try_files /index.html =404;
         }
