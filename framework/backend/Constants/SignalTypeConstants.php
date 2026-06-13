@@ -74,6 +74,9 @@ final class SignalTypeConstants
     /** @var string DB sync deleted signal type */
     public const string DB_SYNC_DELETED = 'db_sync_deleted';
 
+    /** @var string DB sync cleared signal type (whole collection truncated) */
+    public const string DB_SYNC_CLEARED = 'db_sync_cleared';
+
     /** @var string RT sync created signal type */
     public const string RT_SYNC_CREATED = 'rt_sync_created';
 

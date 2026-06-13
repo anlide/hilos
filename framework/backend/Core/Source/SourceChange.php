@@ -85,6 +85,20 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates a DB clear source fact for a whole-collection truncate.
+     *
+     * Collection-scoped: there is no single row id, so sourceId is empty and the
+     * row is empty. A subscribed table observing this collection wipes its rows.
+     *
+     * @param string $collectionKey DB collection key whose rows were all removed
+     * @return self Source change for the cleared DB collection
+     */
+    public static function dbCleared(string $collectionKey): self
+    {
+        return new self(self::KIND_DB, $collectionKey, '', TableMutationType::Clear, []);
+    }
+
+    /**
      * Creates an RT create source fact.
      *
      * @param string $collectionKey RT collection key

@@ -244,6 +244,42 @@ describe('ingest', () => {
     ])
   })
 
+  it('truncates a list on a cleared section, then applies items in the same payload', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      lists: {
+        events: {
+          items: [
+            { itemKey: 1, slots: { message: 'old-a' } },
+            { itemKey: 2, slots: { message: 'old-b' } },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      lists: {
+        events: {
+          cleared: true,
+          items: [{ itemKey: 9, slots: { message: 'fresh' } }],
+        },
+      },
+    })
+
+    expect(scope.lists.signal('events').get()).toEqual([
+      { itemKey: '9', slots: { message: 'fresh' } },
+    ])
+  })
+
+  it('empties a list on a cleared section with no items', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      lists: { events: { items: [{ itemKey: 1, slots: { message: 'x' } }] } },
+    })
+    ingest(scope, { lists: { events: { cleared: true } } })
+
+    expect(scope.lists.signal('events').get()).toEqual([])
+  })
+
   it('rejects a key that is both a list and a data key', () => {
     const scope = new ScopeManager().openPage('a')
     expect(() =>

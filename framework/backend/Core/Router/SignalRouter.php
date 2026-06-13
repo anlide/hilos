@@ -15,6 +15,7 @@ use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
@@ -54,6 +55,14 @@ class SignalRouter
         SignalTypeConstants::CRON => SignalSource::DAEMON,
         SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
     ];
+
+    /**
+     * @var string Self-broadcast id used for collection-scoped clear syncs.
+     *
+     * A clear fact has no row id, so the (collectionKey, id) self-broadcast guard
+     * keys on this sentinel instead. It never collides with real row ids.
+     */
+    private const string CLEAR_BROADCAST_ID = '*';
 
     /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
     private SplQueue $queuedSignals;
@@ -281,6 +290,39 @@ class SignalRouter
     public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
     {
         return $this->dbSelfBroadcast->consume($collectionKey, $idString);
+    }
+
+    /**
+     * Queue a DB sync cleared signal (collection-scoped truncate).
+     * Skips if broadcast disabled. Registers the collection for self-apply skip.
+     *
+     * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
+     */
+    public function queueDbSyncClearedSignal(DbSyncClearedSignalData $signalData): void
+    {
+        if (!$this->dbSyncBroadcastEnabled || $signalData->collectionKey === '') {
+            return;
+        }
+
+        $this->dbSelfBroadcast->register($signalData->collectionKey, self::CLEAR_BROADCAST_ID);
+
+        $this->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Check if a clear apply should be skipped (self-broadcast) and remove from registry.
+     *
+     * @param string $collectionKey Collection key for the clear sync
+     * @return bool True if this was our broadcast, skip apply
+     */
+    public function shouldSkipDbSyncClearApply(string $collectionKey): bool
+    {
+        return $this->dbSelfBroadcast->consume($collectionKey, self::CLEAR_BROADCAST_ID);
     }
 
     /**

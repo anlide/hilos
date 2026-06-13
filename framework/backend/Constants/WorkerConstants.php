@@ -65,6 +65,9 @@ final class WorkerConstants
     /** @var string DB sync deleted (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_SYNC_DELETED = SignalTypeConstants::DB_SYNC_DELETED;
 
+    /** @var string DB sync cleared (daemon/worker broadcast); canonical value in SignalTypeConstants */
+    public const string MESSAGE_DB_SYNC_CLEARED = SignalTypeConstants::DB_SYNC_CLEARED;
+
     /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
 

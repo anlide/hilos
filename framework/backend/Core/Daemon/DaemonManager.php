@@ -25,6 +25,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -48,6 +49,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -508,6 +510,7 @@ abstract class DaemonManager extends BaseManager
             SignalTypeConstants::DB_SYNC_CREATED,
             SignalTypeConstants::DB_SYNC_UPDATED,
             SignalTypeConstants::DB_SYNC_DELETED,
+            SignalTypeConstants::DB_SYNC_CLEARED,
             SignalTypeConstants::RT_SYNC_CREATED,
             SignalTypeConstants::RT_SYNC_UPDATED,
             SignalTypeConstants::RT_SYNC_DELETED,
@@ -633,6 +636,9 @@ abstract class DaemonManager extends BaseManager
             SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
             ),
+            SignalConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO(
+                self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
+            ),
             SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),
@@ -675,6 +681,9 @@ abstract class DaemonManager extends BaseManager
             ),
             SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+            ),
+            SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
+                self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),

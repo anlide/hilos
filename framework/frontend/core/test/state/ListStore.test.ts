@@ -63,6 +63,34 @@ describe('ListStore', () => {
     expect(store.signal('events').get()).toBe(before)
   })
 
+  it('clears every item from a list (truncate)', () => {
+    const store = new ListStore()
+    store.upsert('events', 1, { text: 'a' })
+    store.upsert('events', 2, { text: 'b' })
+    store.clear('events')
+
+    expect(store.signal('events').get()).toEqual([])
+  })
+
+  it('upserts after a clear start from an empty list', () => {
+    const store = new ListStore()
+    store.upsert('events', 1, { text: 'a' })
+    store.clear('events')
+    store.upsert('events', 9, { text: 'fresh' })
+
+    expect(store.signal('events').get()).toEqual([
+      { itemKey: '9', slots: { text: 'fresh' } },
+    ])
+  })
+
+  it('treats a clear of an already-empty list as a no-op', () => {
+    const store = new ListStore()
+    const before = store.signal('events').get()
+    store.clear('events')
+
+    expect(store.signal('events').get()).toBe(before)
+  })
+
   it('keeps lists independent under different keys', () => {
     const store = new ListStore()
     store.upsert('events', 1, { text: 'e' })

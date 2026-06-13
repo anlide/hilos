@@ -16,6 +16,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -314,6 +315,21 @@ abstract class AgentManagerDaemon
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_DELETED),
             signalName: new SignalName(SignalConstants::DB_SYNC_DELETED),
+            signalData: $dto->signalData,
+        );
+    }
+
+    /**
+     * Handle DB sync cleared message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncClearedMessageDTO $dto DTO with cleared collection data
+     */
+    public function handleWorkerDbSyncCleared(WorkerDbSyncClearedMessageDTO $dto): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalName: new SignalName(SignalConstants::DB_SYNC_CLEARED),
             signalData: $dto->signalData,
         );
     }

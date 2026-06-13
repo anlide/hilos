@@ -35,9 +35,13 @@ export interface ListItemFragment {
 /**
  * One list collection on the wire: an incremental delivery of items and the
  * keys removed since the last one. A snapshot upserts every item with no
- * deletes; a delta carries only the changed items and the removed keys.
+ * deletes; a delta carries only the changed items and the removed keys. When
+ * `cleared` is set the whole list is truncated first — the source collection was
+ * cleared backend-side (a deleteAll/DB_SYNC_CLEARED) — and any `items` in the
+ * same section then apply on top of the empty list.
  */
 export interface ListSection {
+  cleared?: boolean
   items?: ListItemFragment[]
   deleted?: EntityId[]
 }
@@ -127,6 +131,9 @@ function ingestList(
   section: ListSection,
   options: NormalizerOptions,
 ): void {
+  if (section.cleared) {
+    scope.lists.clear(listKey)
+  }
   for (const item of section.items ?? []) {
     const slots: Record<string, unknown> = {}
     for (const [sourceKey, value] of Object.entries(item.slots)) {

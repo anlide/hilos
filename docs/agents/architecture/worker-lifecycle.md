@@ -17,7 +17,7 @@ Workers are forked by `WorkerServer` on demand. Two types exist: **regular** and
 | `DaemonAgentMessageDTO` | Route signal to target agent |
 | `AgentStartDTO` | Create & start agent |
 | `AgentStopDTO` | Stop & remove agent |
-| `WorkerDbSyncCreated/Updated/DeletedMessageDTO` | Apply DB sync to local context |
+| `WorkerDbSyncCreated/Updated/Deleted/ClearedMessageDTO` | Apply DB sync to local context |
 | `WorkerRtSyncCreated/Updated/DeletedMessageDTO` | Apply RT sync to local context |
 | `SystemSignalDTO` | System signals |
 | `CronSignalDTO` | Route cron to agent |

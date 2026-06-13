@@ -15,13 +15,15 @@ final class BrowserPageSignalData extends BaseDTO implements SignalDataInterface
     public const string tables = 'tables';
     public const string rows = 'rows';
     public const string deleted = 'deleted';
+    public const string cleared = 'cleared';
     public const string rowKey = 'rowKey';
     public const string sources = 'sources';
 
     /**
      * @param array<string, array{
      *     rows?: list<array{rowKey: int|string, sources: array<string, mixed>}>,
-     *     deleted?: list<int|string>
+     *     deleted?: list<int|string>,
+     *     cleared?: bool
      * }> $tables Browser table changes keyed by table name
      */
     public function __construct(

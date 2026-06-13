@@ -41,6 +41,9 @@ final class PagePayload
     /** Removed row/item keys in an incremental update. */
     public const string deleted = 'deleted';
 
+    /** Truncate marker: when true, the list/table is cleared before items in the same payload apply. */
+    public const string cleared = 'cleared';
+
     /**
      * @param array<string, array<string, mixed>|list<array<string, mixed>>> $entities Entity fragments per source key, each carrying its id
      * @param array<string, mixed> $data Plain page-data values per key

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -98,6 +99,28 @@ final class DbSyncApplicator
         if (isset($collection[$data->idString])) {
             unset($collection[$data->idString]);
         }
+    }
+
+    /**
+     * Applies a whole-collection clear (truncate) from another process.
+     *
+     * Drops the local in-memory rows for the collection without re-running the
+     * physical DELETE, which already ran in the originating process.
+     *
+     * @param DbSyncClearedSignalData $data Cleared collection identity from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own clear
+     */
+    public static function applyCleared(DbSyncClearedSignalData $data, bool $skipSelfBroadcastCheck = true): void
+    {
+        if ($data->collectionKey === '') {
+            return;
+        }
+
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncClearApply($data->collectionKey)) {
+            return;
+        }
+
+        Hilos::$db->clearCollectionInMemory($data->collectionKey);
     }
 
     /**

@@ -18,6 +18,7 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\DbContext;
@@ -121,6 +122,101 @@ final class BrowserContextEmitSignalsTest extends TestCase
                     PagePayload::tables => [
                         BrowserContextEmitSignalsTestContext::TABLE => [
                             PagePayload::deleted => ['1'],
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    public function testFlushQueuesPageShapedBrowserClearWhenSourceCleared(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$sr->subscribeToPage(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', BrowserContextEmitSignalsTestContext::PAGE),
+        );
+
+        $context = new BrowserContextEmitSignalsTestContext();
+        $context->record(new SourceChange(
+            SourceChange::KIND_RT,
+            BrowserContextEmitSignalsTestRtContext::ROWS,
+            '',
+            TableMutationType::Clear,
+        ));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::cleared => true,
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    public function testFlushTruncatesThenReAddsRowWhenClearAndUpdateInSameTick(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$sr->subscribeToPage(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', BrowserContextEmitSignalsTestContext::PAGE),
+        );
+
+        // Clear is recorded before the row that survives the truncate, mirroring a
+        // deleteAll() followed by a fresh marker row in the same tick.
+        $context = new BrowserContextEmitSignalsTestContext();
+        $context->record(new SourceChange(
+            SourceChange::KIND_RT,
+            BrowserContextEmitSignalsTestRtContext::ROWS,
+            '',
+            TableMutationType::Clear,
+        ));
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::cleared => true,
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                            'computedLabel' => 'row-1',
+                                        ],
+                                    ],
+                                ],
+                            ],
                         ],
                     ],
                 ],

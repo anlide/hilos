@@ -81,6 +81,20 @@ export class ListStore {
   }
 
   /**
+   * Drop every item from a list (truncate); a no-op when the list is already
+   * empty. The backend source was cleared, so the list resets to empty and any
+   * items delivered alongside the clear are upserted afterwards.
+   *
+   * @param listKey The list to clear.
+   */
+  clear(listKey: string): void {
+    const cell = this.cell(listKey)
+    if (cell.get().length !== 0) {
+      cell.set([])
+    }
+  }
+
+  /**
    * The list's reactive ordered items; an empty array until the first upsert.
    *
    * @param listKey The list to watch.

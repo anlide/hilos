@@ -239,6 +239,10 @@ abstract class BrowserContext
      */
     private function mergeMutationType(TableMutationType $current, TableMutationType $next): TableMutationType
     {
+        if ($next === TableMutationType::Clear || $current === TableMutationType::Clear) {
+            return TableMutationType::Clear;
+        }
+
         if ($next === TableMutationType::Delete) {
             return TableMutationType::Delete;
         }
@@ -278,6 +282,11 @@ abstract class BrowserContext
                 foreach ($this->pageTables($page) as $pageTableBinding) {
                     $tableConfig = $this->tableConfig($pageTableBinding->tableKey);
                     if ($tableConfig === null || !$this->tableObservesChange($tableConfig, $change)) {
+                        continue;
+                    }
+
+                    if ($change->mutationType === TableMutationType::Clear) {
+                        $this->addBrowserClear($signalTables, $acceptKey, $page, $pageTableBinding->tableKey);
                         continue;
                     }
 
@@ -1431,6 +1440,32 @@ abstract class BrowserContext
     }
 
     /**
+     * Marks one page-bound table as fully cleared in the tick-local accumulator.
+     *
+     * Drops any rows/deletes already accumulated for the table this tick: a
+     * truncate supersedes them. Rows created later in the same tick (for example
+     * a follow-up marker event) are added after the clear and ride alongside it,
+     * so the frontend truncates first and then applies them.
+     *
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     */
+    private function addBrowserClear(
+        array &$signalTables,
+        string $acceptKey,
+        string $page,
+        string $tableKey,
+    ): void {
+        unset(
+            $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows],
+            $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted],
+        );
+        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::cleared] = true;
+    }
+
+    /**
      * Compacts the tick-local accumulator to per-table row/delete payloads.
      *
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
@@ -1444,7 +1479,11 @@ abstract class BrowserContext
                 foreach ($tables as $tableKey => $changes) {
                     $rows = $changes[BrowserPageSignalData::rows] ?? [];
                     $deleted = $changes[BrowserPageSignalData::deleted] ?? [];
+                    $cleared = ($changes[BrowserPageSignalData::cleared] ?? false) === true;
                     $payload = [];
+                    if ($cleared) {
+                        $payload[BrowserPageSignalData::cleared] = true;
+                    }
                     if ($rows !== []) {
                         $payload[BrowserPageSignalData::rows] = array_values($rows);
                     }
@@ -1482,10 +1521,14 @@ abstract class BrowserContext
             $rows = is_array($rows) ? $rows : [];
             $deleted = $table[BrowserPageSignalData::deleted] ?? [];
             $deleted = is_array($deleted) ? $deleted : [];
+            $cleared = ($table[BrowserPageSignalData::cleared] ?? false) === true;
 
             switch ($this->tableKind($tableKey)) {
                 case BrowserSourceKind::LIST:
                     $section = [];
+                    if ($cleared) {
+                        $section[PagePayload::cleared] = true;
+                    }
                     if ($rows !== []) {
                         $section[PagePayload::items] = $this->renameRowSlots($rows, PagePayload::itemKey);
                     }
@@ -1509,6 +1552,9 @@ abstract class BrowserContext
 
                 default:
                     $section = [];
+                    if ($cleared) {
+                        $section[PagePayload::cleared] = true;
+                    }
                     if ($rows !== []) {
                         $section[PagePayload::rows] = $this->renameRowSlots($rows, PagePayload::rowKey);
                     }

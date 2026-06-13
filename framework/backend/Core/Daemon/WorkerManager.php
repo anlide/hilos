@@ -44,6 +44,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -53,6 +54,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -357,6 +359,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleDbSyncDeletedMessage($data);
                 break;
 
+            case WorkerConstants::MESSAGE_DB_SYNC_CLEARED:
+                if (!$data instanceof WorkerDbSyncClearedMessageDTO) {
+                    Logger::error("handleDbSyncClearedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleDbSyncClearedMessage($data);
+                break;
+
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
                 if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
                     Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
@@ -521,6 +531,24 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Applies and fans out a DB clear (collection truncate) received from the daemon.
+     *
+     * A clear is browser-only fan-out: it drops the local in-memory rows and
+     * records a browser source change. It is not dispatched to agents — agents
+     * that care about a truncate observe the per-collection delete/create events.
+     *
+     * @param WorkerDbSyncClearedMessageDTO $data Worker-level DB clear sync message
+     */
+    private function handleDbSyncClearedMessage(WorkerDbSyncClearedMessageDTO $data): void
+    {
+        if ($this->consumeIncomingDbSyncClearSelfBroadcast($data->signalData)) {
+            return;
+        }
+        DbSyncApplicator::applyCleared($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordBrowserSourceChange($data->signalData);
+    }
+
+    /**
      * Dispatches a DB sync signal to every agent on this worker.
      *
      * Each agent can filter by collectionKey/idString in its onSignal* handler.
@@ -664,6 +692,26 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Consume a DB clear self-broadcast marker before applying a daemon echo.
+     *
+     * The originating worker already cleared its in-memory rows and recorded the
+     * browser fact when it queued the clear. Re-recording it on the echo would
+     * wipe rows created in the same truncate (for example a follow-up marker
+     * event), so the originating worker must ignore its own clear echo.
+     *
+     * @param DbSyncClearedSignalData $signalData DB clear sync payload
+     * @return bool True when this worker should ignore the daemon echo
+     */
+    private function consumeIncomingDbSyncClearSelfBroadcast(DbSyncClearedSignalData $signalData): bool
+    {
+        if ($signalData->collectionKey === '') {
+            return false;
+        }
+
+        return Hilos::$sr?->shouldSkipDbSyncClearApply($signalData->collectionKey) ?? false;
+    }
+
+    /**
      * Consume an RT sync self-broadcast marker before applying a daemon echo.
      *
      * @param RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData RT sync payload
@@ -687,10 +735,10 @@ abstract class WorkerManager extends BaseManager
      * accepted. Incoming self-broadcast echoes are consumed before this method,
      * so one backend fact becomes one browser invalidation per worker.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
      */
     private function recordBrowserSourceChange(
-        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
+        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
     ): void {
         if (Hilos::$browser === null) {
             return;
@@ -711,6 +759,9 @@ abstract class WorkerManager extends BaseManager
                 $signalData->collectionKey,
                 $signalData->idString,
                 $signalData->row,
+            ),
+            $signalData instanceof DbSyncClearedSignalData => SourceChange::dbCleared(
+                $signalData->collectionKey,
             ),
             $signalData instanceof RtSyncCreatedSignalData => SourceChange::rtCreated(
                 $signalData->collectionKey,
@@ -741,10 +792,10 @@ abstract class WorkerManager extends BaseManager
      * The daemon echo is intentionally consumed as a self-broadcast, so local
      * agents must see the sync when the worker first drains the queued signal.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
+     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
      */
     private function dispatchSyncToLocalAgents(
-        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
+        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
     ): void {
         match (true) {
             $signalData instanceof DbSyncCreatedSignalData,
@@ -1392,6 +1443,7 @@ abstract class WorkerManager extends BaseManager
                 SignalTypeConstants::DB_SYNC_CREATED => self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
                 SignalTypeConstants::DB_SYNC_UPDATED => self::syncSignalData($signal->data, DbSyncUpdatedSignalData::class),
                 SignalTypeConstants::DB_SYNC_DELETED => self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+                SignalTypeConstants::DB_SYNC_CLEARED => self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
                 SignalTypeConstants::RT_SYNC_CREATED => self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
                 SignalTypeConstants::RT_SYNC_UPDATED => self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
                 SignalTypeConstants::RT_SYNC_DELETED => self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
@@ -1403,6 +1455,7 @@ abstract class WorkerManager extends BaseManager
                     SignalTypeConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($syncSignalData),
                     SignalTypeConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($syncSignalData),
                     SignalTypeConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($syncSignalData),
+                    SignalTypeConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO($syncSignalData),
                     SignalTypeConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($syncSignalData),
                     SignalTypeConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($syncSignalData),
                     SignalTypeConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($syncSignalData),
