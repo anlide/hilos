@@ -16,10 +16,15 @@ describe('HILOS_PAGE_ROUTES', () => {
     )
   })
 
-  it('mounts admin paths under /hilos and public pages at the root', () => {
-    const publicPages = new Set<string>(HILOS_FOOTER_LINKS.map((l) => l.page))
+  it('mounts admin paths under /hilos and personal/public pages at the root', () => {
+    // Root-routed framework pages: the public footer pages plus the personal
+    // profile page. Every other Hilos page is admin and lives under /hilos.
+    const rootPages = new Set<string>([
+      HilosPages.PROFILE,
+      ...HILOS_FOOTER_LINKS.map((l) => l.page),
+    ])
     for (const [page, template] of Object.entries(HILOS_PAGE_ROUTES)) {
-      expect(template.startsWith('/hilos')).toBe(!publicPages.has(page))
+      expect(template.startsWith('/hilos')).toBe(!rootPages.has(page))
     }
   })
 
@@ -42,6 +47,7 @@ describe('HILOS_PAGE_ROUTES', () => {
       fallback: HilosPages.DASHBOARD,
     })
     expect(router.match('/hilos').page).toBe(HilosPages.DASHBOARD)
+    expect(router.match('/profile').page).toBe(HilosPages.PROFILE)
     expect(router.match('/about').page).toBe(HilosPages.ABOUT)
     expect(router.match('/hilos/users/5')).toEqual({
       page: HilosPages.USER,

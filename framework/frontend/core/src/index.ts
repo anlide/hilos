@@ -160,3 +160,8 @@ export {
   type CreateHilosConnectionOptions,
   type HilosConnectionBundle,
 } from './connection/createHilosConnection.js'
+export {
+  threeWayMerge,
+  type ThreeWayMergeResult,
+  type ThreeWayMergeStatus,
+} from './conflict/threeWayMerge.js'
