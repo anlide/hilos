@@ -23,6 +23,15 @@ engine idiom:
 The page key is the single source of the folder name: a page keyed `main` lives
 in `Main/` (Vue/React) or `main/` (Angular), never `Home/` or `chat-main/`.
 
+A family of framework pages sharing a key prefix — the Hilos admin section, whose
+keys are all `hilos_*` — groups under one container folder named for the prefix
+(`views/Hilos/`), each page's folder named for the key's remainder
+(`hilos_billing` → `views/Hilos/Billing/`, `hilos_billing_provider` →
+`views/Hilos/BillingProvider/`). The container stands in for the shared prefix,
+so the key is recovered as prefix + folder; this mirrors the backend's
+`Pages/Hilos/Billing/` grouping. The container is a grouping device only — it is
+not itself a page and holds no view file of its own.
+
 ## Files in a page module
 
 Each file's name carries the page-key prefix and a role suffix, cased by the
@@ -67,6 +76,38 @@ indirection to maintain.
   `…Error.ts` ahead of a real need.
 - **`types/` — page-local types.** See the next section.
 
+## Never a shared page map
+
+A page's identity (its label and place in the navigation tree), its content, and
+its render logic live in that page's own module — never collected into a file
+that enumerates many pages. A single file holding the titles, leads,
+parents/children, or render logic of more than one page — a "page map", an "admin
+map", a `Record<pageKey, …>` of page metadata wired into one shared component
+that renders them all — is a **gross Hilos violation**
+([rules-and-violations.md](rules-and-violations.md) §F). It re-centralizes
+exactly what one-folder-per-page exists to split, and it mirrors nothing on the
+backend, where every page is its own class file.
+
+The line is **catalog of identity** versus **page module**:
+
+- A **catalog of page identity** — a flat key→identity map such as the route
+  table (`HILOS_PAGE_ROUTES`), the footer set (`HILOS_FOOTER_LINKS`), or the
+  framework admin tree (`HILOS_ADMIN_PAGES`: key → label / lead / parent) — is a
+  registry, the companion of the route table. One such catalog is allowed and
+  expected; it carries identity only — no page's render logic, no per-page view
+  content.
+- A **page module** — how one page looks and behaves (its view, selectors,
+  actions, page-local types, and on-page content) — is one-per-file under
+  `views/`, never many pages merged into one file.
+
+Reusing *presentation* is not a violation. A page may render through a shared,
+**page-agnostic** component — a breadcrumb, an admin-page shell — as long as that
+component knows nothing about any specific page (it is parametrized by a page key
+and reads the identity catalog) and each page is still its own module mapped
+explicitly in the app shell. The violation is the inverse: a God-component that
+reads the navigator itself, backed by a God-map of every page's content. A
+parametrized shell each page invokes with its own key is the sanctioned form.
+
 ## Type placement: domain vs page-local
 
 - **`src/types/`** holds **domain entities** (the normalized wire entities that
@@ -98,6 +139,10 @@ second page graduates to `src/types/`.
   its `types/lists/` subfolder.
 - A barrel `index.ts` inside a page folder.
 - A page folder named anything other than the page key.
+- A "page map" / "admin map": one file enumerating many pages' titles, leads,
+  parents, or render logic and wiring every key to a single shared component,
+  instead of one module per page (see "Never a shared page map"). Mixing more
+  than one page's content or render into a single file is a gross violation.
 
 ## Example — the chat main page (Vue)
 

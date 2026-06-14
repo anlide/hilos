@@ -168,6 +168,14 @@ Topic documents are referenced by filename; several are still being authored.
 
 ## F. View layer, SDK, and components
 
+- **One page, one module — never a shared page map.** A page's identity,
+  content, and render logic live in its own `views/<Page>/` module; collecting
+  many pages' titles, leads, parents, or render logic into one file (a "page
+  map", an "admin map") wired to a single shared component is a **gross
+  violation**. A flat catalog of page *identity* (the route table, the footer
+  set, the admin tree) is a registry, not a violation; and a *page-agnostic*
+  shared component (a breadcrumb, an admin-page shell) parametrized by a page key
+  is the sanctioned reuse. See [page-module-structure.md](page-module-structure.md).
 - **All non-visual logic lives in the agnostic core; views are thin and
   per-framework.** See [multiframework-core.md](multiframework-core.md).
 - **Data view-models are declared in `types/`, never in a selector or action

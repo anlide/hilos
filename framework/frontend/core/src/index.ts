@@ -98,8 +98,19 @@ export {
   HilosPages,
   HILOS_PAGE_ROUTES,
   HILOS_FOOTER_LINKS,
+  HILOS_ADMIN_PAGES,
+  HILOS_ADMIN_DASHBOARD_SECTIONS,
   type HilosFooterLink,
+  type HilosAdminPageMeta,
+  type HilosAdminDashboardSection,
 } from './routing/hilosPages.js'
+export {
+  resolveHilosPath,
+  hilosAdminBreadcrumb,
+  hilosAdminChildren,
+  type HilosCrumb,
+  type HilosAdminChild,
+} from './routing/hilosAdmin.js'
 export { assertNever } from './protocol/assertNever.js'
 export {
   signalEnvelopeSchema,

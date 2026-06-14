@@ -1,28 +1,27 @@
 <!-- The framework admin dashboard (HilosPages.DASHBOARD): the entry to the Hilos
 admin section reached by the shell's gear over the live socket. It renders the
-stubbed admin sections grouped from the admin map (adminMap) as no-refresh
-HilosLink cards. The sections that already have real backend implementations
-(settings, users, guardian) get their own frontend pages and are intentionally
-not listed here. Styling is Bootstrap classes only, no CSS of its own
-(styling-rules.md). -->
+admin sections grouped from the framework admin catalog (@hilos/core
+HILOS_ADMIN_DASHBOARD_SECTIONS) as no-refresh HilosLink cards. The sections that
+already have real backend implementations (settings, users, guardian) get their
+own frontend pages and are intentionally not listed in the catalog. Styling is
+Bootstrap classes only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
+import {
+  HILOS_ADMIN_DASHBOARD_SECTIONS,
+  HILOS_ADMIN_PAGES,
+  resolveHilosPath,
+} from '@hilos/core'
 import { HilosLink } from '@hilos/vue'
 
-import {
-  ADMIN_DASHBOARD_SECTIONS,
-  ADMIN_PAGES,
-  resolveAdminPath,
-} from '../Hilos/adminMap'
-
-const sections = ADMIN_DASHBOARD_SECTIONS.map((section) => ({
+const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
   title: section.title,
   description: section.description,
   items: section.items.map((page) => ({
     page,
-    title: ADMIN_PAGES[page]?.title ?? page,
-    lead: ADMIN_PAGES[page]?.lead ?? '',
-    icon: ADMIN_PAGES[page]?.icon ?? 'bi-square',
-    to: resolveAdminPath(page),
+    title: HILOS_ADMIN_PAGES[page]?.label ?? page,
+    lead: HILOS_ADMIN_PAGES[page]?.lead ?? '',
+    icon: HILOS_ADMIN_PAGES[page]?.icon ?? 'bi-square',
+    to: resolveHilosPath(page),
   })),
 }))
 </script>
