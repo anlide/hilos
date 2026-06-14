@@ -44,6 +44,7 @@ Angular). Using the `main` page as the example:
 | Selectors (display data) | `mainPage.ts` | `mainPage.ts` | `main-page.ts` |
 | Actions (outbound + their errors) | `mainActions.ts` | `mainActions.ts` | `main-actions.ts` |
 | Error handling (optional) | `mainError.ts` | `mainError.ts` | `main-error.ts` |
+| View-layer helper (optional) | a composable (`useComposerUpload.ts`) | a hook (`useComposerUpload.ts`) | a service / signal helper |
 | Page-local types | `types/` | `types/` | `types/` |
 
 The **view file is the page name with no suffix** — `Main.vue`, not
@@ -74,6 +75,15 @@ indirection to maintain.
   page-level banner). A single action's `action_error` stays in `…Actions.ts`,
   next to the action whose contract it belongs to. Do not create an empty
   `…Error.ts` ahead of a real need.
+- **A view-layer helper (composable / hook) — optional.** Imperative, stateful
+  view logic that outgrows the view file — a file-upload engine, a drag/drop
+  queue, a wizard's step machine — moves into a page-local composable (Vue/React
+  `use…`; an Angular service or signal helper) the view consumes, keeping the
+  view file markup-first. It stays view-layer: it may own reactive UI state and
+  call `…Actions.ts`, but it is **not** a selector (it projects no payload) and
+  **not** an action module (it adds no outbound actions). It is named for what
+  it does in the `use…` idiom (`useComposerUpload.ts`), not the page-key prefix
+  the other files carry. Add it only when a view file genuinely grows one.
 - **`types/` — page-local types.** See the next section.
 
 ## Never a shared page map

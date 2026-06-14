@@ -65,6 +65,13 @@ export function initFileUpload(meta: FileUploadInit): boolean {
 }
 
 /**
+ * The byte size each upload chunk is sliced to before streaming (64 KiB) — a
+ * sane WebSocket binary-frame size. The backend reassembles the frames in
+ * order, so the value carries no protocol meaning beyond the slice length.
+ */
+export const UPLOAD_CHUNK_SIZE = 65536
+
+/**
  * Stream one binary chunk of the active upload over the frame_binary channel.
  * Returns false, sending nothing, when the connection is not `connected`.
  *
