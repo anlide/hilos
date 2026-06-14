@@ -7,7 +7,6 @@ import { createAppPageRouter } from '@hilos/core'
 
 import {
   PAGE_MAIN,
-  PAGE_PROFILE,
   PAGE_USER,
   PAGE_BOT,
   PAGE_ADMIN_USERS,
@@ -22,7 +21,6 @@ import {
  */
 const APP_ROUTES: Record<string, string> = {
   [PAGE_MAIN]: '/',
-  [PAGE_PROFILE]: '/profile',
   [PAGE_USER]: '/user/{id}',
   [PAGE_BOT]: '/bot/{id}',
   [PAGE_ADMIN_USERS]: '/hilos/admin_users',

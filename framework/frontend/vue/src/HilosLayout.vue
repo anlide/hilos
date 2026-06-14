@@ -1,6 +1,6 @@
 <!-- HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
 app frame a project fills rather than re-implements. It renders the top
-navigation bar carrying the project's brand and nav slots, the framework admin
+navigation bar carrying the project's brand, nav, and user slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
 the SDK owns (core-and-connection.md), the routed page content in the default
 slot, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The shell
@@ -64,6 +64,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           <slot name="nav" />
         </div>
         <div class="d-flex align-items-center gap-3">
+          <slot name="user" />
           <HilosLink
             class="nav-link d-inline-flex align-items-center p-0 fs-5"
             :to="adminHref"

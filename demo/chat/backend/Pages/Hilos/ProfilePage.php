@@ -2,43 +2,45 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Pages;
+namespace Demo\Chat\Pages\Hilos;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
+use Hilos\Pages\AbstractHilosProfilePage;
 use Throwable;
 
 /**
- * Handles profile browser subscription and user-initiated rename actions.
+ * Chat demo implementation of the framework current-user profile page.
+ *
+ * The framework owns the page identity (key, route, subscription signal); this
+ * concrete binds the chat agent, the self-connection browser data, and the
+ * user-initiated rename action. The page is served by the chat agent because the
+ * rename runs through the connection runtime (moderation phase) the chat agent
+ * is the truth source for.
  *
  * @property ChatAgent $agent
  */
-final class ProfilePage extends AbstractPage
+final class ProfilePage extends AbstractHilosProfilePage
 {
-    public const string PAGE = PageConstants::PROFILE;
-
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [
@@ -49,10 +51,6 @@ final class ProfilePage extends AbstractPage
         SignalTypeConstants::AGENT_SIGNAL => [
             ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
         ],
-    ];
-
-    public const array BROWSER = [
-        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
     ];
 
     /**

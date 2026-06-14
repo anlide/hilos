@@ -6,7 +6,6 @@
 // keys — they are the subscription wire identity.
 
 export const PAGE_MAIN = 'main'
-export const PAGE_PROFILE = 'profile'
 export const PAGE_USER = 'user'
 export const PAGE_BOT = 'bot'
 export const PAGE_ADMIN_USERS = 'admin_users'

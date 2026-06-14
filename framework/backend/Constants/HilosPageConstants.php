@@ -15,6 +15,9 @@ final class HilosPageConstants
     /** @var string Hilos dashboard (main page of hilos section) */
     public const string HILOS_DASHBOARD = 'hilos';
 
+    /** @var string Hilos current-user profile page */
+    public const string HILOS_PROFILE = 'hilos_profile';
+
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = 'hilos_settings';
 

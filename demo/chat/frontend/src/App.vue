@@ -5,11 +5,12 @@ move between the main page and the framework dashboard with no refresh. The live
 connection state is the shell's own indicator (an extra status surface allowed
 by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
-import { HilosLayout, HilosView } from '@hilos/vue'
-import { HilosPages } from '@hilos/core'
+import { HilosLayout, HilosLink, HilosView, useSignal } from '@hilos/vue'
+import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import type { Component } from 'vue'
 
 import { connection } from './bootstrap/connection'
+import { currentUserName } from './bootstrap/session'
 import { PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
 import About from './views/About/About.vue'
 import Bot from './views/Bot/Bot.vue'
@@ -17,6 +18,7 @@ import Dashboard from './views/Dashboard/Dashboard.vue'
 import Licence from './views/Licence/Licence.vue'
 import Main from './views/Main/Main.vue'
 import Privacy from './views/Privacy/Privacy.vue'
+import Profile from './views/Profile/Profile.vue'
 import Terms from './views/Terms/Terms.vue'
 import User from './views/User/User.vue'
 // The Hilos admin section — one module per page (mirroring the backend's
@@ -89,6 +91,7 @@ const pages: Record<string, Component> = {
   [PAGE_USER]: User,
   [PAGE_BOT]: Bot,
   [HilosPages.DASHBOARD]: Dashboard,
+  [HilosPages.PROFILE]: Profile,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
@@ -150,11 +153,27 @@ const pages: Record<string, Component> = {
   [HilosPages.SIL_REQUESTS]: SilRequests,
   [HilosPages.SIL_USER_HISTORY]: SilUserHistory,
 }
+
+// The navbar profile entry: the current user's name links to the framework
+// profile page (its route owned by the page catalog), shown once the handshake
+// names the user.
+const userName = useSignal(currentUserName)
+const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 </script>
 
 <template>
   <HilosLayout :connection="connection">
     <template #brand>Hilos Chat</template>
+    <template #user>
+      <HilosLink
+        v-if="userName"
+        :to="profileHref"
+        class="nav-link d-inline-flex align-items-center p-0"
+        data-id="nav-profile"
+      >
+        <i class="bi bi-person-circle me-1" aria-hidden="true"></i>{{ userName }}
+      </HilosLink>
+    </template>
     <HilosView :pages="pages" />
   </HilosLayout>
 </template>

@@ -41,9 +41,6 @@ final class ChatSignalConstants
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
 
-    /** @var string Subscription page profile signal name */
-    public const string SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile';
-
     /** @var string Subscription page user signal name */
     public const string SUBSCRIPTION_PAGE_USER = 'subscription_page_user';
 

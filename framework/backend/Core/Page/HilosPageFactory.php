@@ -31,6 +31,7 @@ class HilosPageFactory extends AbstractPageFactory
      */
     private const array HILOS_PAGE_IDS = [
         HilosPageConstants::HILOS_DASHBOARD => true,
+        HilosPageConstants::HILOS_PROFILE => true,
         HilosPageConstants::HILOS_SETTINGS => true,
         HilosPageConstants::HILOS_I18N => true,
         HilosPageConstants::HILOS_I18N_LANGUAGES => true,

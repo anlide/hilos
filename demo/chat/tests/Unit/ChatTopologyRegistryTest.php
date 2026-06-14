@@ -136,7 +136,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
-            ChatSignalConstants::RENAME => PageConstants::PROFILE,
+            ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
@@ -182,7 +182,7 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
+                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::HILOS_PROFILE,
             ],
         ], Hilos::getPageSignalRoutes());
     }

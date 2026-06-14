@@ -12,6 +12,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos dashboard page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DASHBOARD = 'subscription_page_hilos';
 
+    /** Subscription signal for Hilos current-user profile page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE = 'subscription_page_hilos_profile';
+
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 

@@ -13,6 +13,7 @@
 /** Hilos admin page keys, mirroring PHP `HilosPageConstants`. */
 export const HilosPages = {
   DASHBOARD: 'hilos',
+  PROFILE: 'hilos_profile',
   SETTINGS: 'hilos_settings',
   ANALYTICS: 'hilos_analytics',
   ROLES: 'hilos_roles',
@@ -87,6 +88,7 @@ export const HilosPages = {
  */
 export const HILOS_PAGE_ROUTES: Record<string, string> = {
   [HilosPages.DASHBOARD]: '/hilos',
+  [HilosPages.PROFILE]: '/profile',
   [HilosPages.SETTINGS]: '/hilos/settings',
   [HilosPages.ANALYTICS]: '/hilos/analytics',
   [HilosPages.ROLES]: '/hilos/roles',
