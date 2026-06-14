@@ -49,7 +49,11 @@ describe('HILOS_PAGE_ROUTES', () => {
     expect(router.match('/hilos').page).toBe(HilosPages.DASHBOARD)
     expect(router.match('/profile').page).toBe(HilosPages.PROFILE)
     expect(router.match('/about').page).toBe(HilosPages.ABOUT)
-    expect(router.match('/hilos/users/5')).toEqual({
+    expect(router.match('/hilos/users')).toEqual({
+      page: HilosPages.USERS,
+      params: {},
+    })
+    expect(router.match('/hilos/user/5')).toEqual({
       page: HilosPages.USER,
       params: { userId: '5' },
     })

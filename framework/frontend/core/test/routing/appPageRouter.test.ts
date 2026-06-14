@@ -16,7 +16,7 @@ describe('createAppPageRouter', () => {
     const router = createAppPageRouter({ main: '/' }, { fallback: 'main' })
 
     expect(router.match('/hilos')).toEqual({ page: 'hilos', params: {} })
-    expect(router.match('/hilos/users/42')).toEqual({
+    expect(router.match('/hilos/user/42')).toEqual({
       page: 'hilos_user',
       params: { userId: '42' },
     })

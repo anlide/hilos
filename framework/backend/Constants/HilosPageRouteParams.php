@@ -13,7 +13,7 @@ namespace Hilos\Constants;
 final class HilosPageRouteParams
 {
     /**
-     * Route param for {@see HilosPageConstants::HILOS_USER} (`/hilos/users/{userId}`).
+     * Route param for {@see HilosPageConstants::HILOS_USER} (`/hilos/user/{userId}`).
      */
     public const string HILOS_USER_USER_ID = 'userId';
 

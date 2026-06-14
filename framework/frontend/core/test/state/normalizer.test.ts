@@ -286,4 +286,158 @@ describe('ingest', () => {
       ingest(scope, { data: { events: 1 }, lists: { events: {} } }),
     ).toThrow("'events' is both a list and a data key")
   })
+
+  it('folds table rows into the table store in arrival order', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          rows: [
+            { rowKey: 1, slots: { name: 'first' } },
+            { rowKey: 2, slots: { name: 'second' } },
+          ],
+        },
+      },
+    })
+
+    expect(scope.tables.signal('hilosUsers').get()).toEqual([
+      { rowKey: '1', slots: { name: 'first' } },
+      { rowKey: '2', slots: { name: 'second' } },
+    ])
+  })
+
+  it('upserts an entity-bearing table slot and leaves a reference in its place', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(
+      scope,
+      {
+        tables: {
+          hilosUsers: {
+            rows: [
+              {
+                rowKey: 7,
+                slots: { db_user: { id: 7, name: 'Ann' }, presence: 'online' },
+              },
+            ],
+          },
+        },
+      },
+      { entityTypes: { db_user: 'user' } },
+    )
+
+    expect(scope.tables.signal('hilosUsers').get()).toEqual([
+      {
+        rowKey: '7',
+        slots: { db_user: { type: 'user', id: 7 }, presence: 'online' },
+      },
+    ])
+    expect(
+      scope.entities.signal({ type: 'user', id: 7 }).get()?.fields,
+    ).toEqual({ id: 7, name: 'Ann' })
+  })
+
+  it('keeps a non-entity table slot inline', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          rows: [{ rowKey: 1, slots: { onlineSessionCount: 2, name: 'Ann' } }],
+        },
+      },
+    })
+
+    expect(scope.tables.signal('hilosUsers').get()[0]?.slots).toEqual({
+      onlineSessionCount: 2,
+      name: 'Ann',
+    })
+  })
+
+  it('dedupes a table reference against an entity delivered elsewhere', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(
+      scope,
+      {
+        tables: {
+          hilosUsers: {
+            rows: [{ rowKey: 7, slots: { db_user: { id: 7, name: 'Ann' } } }],
+          },
+        },
+      },
+      { entityTypes: { db_user: 'user' } },
+    )
+    ingest(scope, { entities: { user: { id: 7, name: 'Bea' } } })
+
+    expect(
+      scope.tables.signal('hilosUsers').get()[0]?.slots['db_user'],
+    ).toEqual({ type: 'user', id: 7 })
+    expect(
+      scope.entities.signal({ type: 'user', id: 7 }).get()?.fields['name'],
+    ).toBe('Bea')
+  })
+
+  it('applies a table delta: updates a row, removes a deleted key', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          rows: [
+            { rowKey: 1, slots: { name: 'a' } },
+            { rowKey: 2, slots: { name: 'b' } },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          rows: [{ rowKey: 1, slots: { name: 'edited' } }],
+          deleted: [2],
+        },
+      },
+    })
+
+    expect(scope.tables.signal('hilosUsers').get()).toEqual([
+      { rowKey: '1', slots: { name: 'edited' } },
+    ])
+  })
+
+  it('truncates a table on a cleared section, then applies rows in the same payload', () => {
+    const scope = new ScopeManager().openPage('a')
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          rows: [
+            { rowKey: 1, slots: { name: 'old-a' } },
+            { rowKey: 2, slots: { name: 'old-b' } },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      tables: {
+        hilosUsers: {
+          cleared: true,
+          rows: [{ rowKey: 9, slots: { name: 'fresh' } }],
+        },
+      },
+    })
+
+    expect(scope.tables.signal('hilosUsers').get()).toEqual([
+      { rowKey: '9', slots: { name: 'fresh' } },
+    ])
+  })
+
+  it('rejects a key that is both a table and a list', () => {
+    const scope = new ScopeManager().openPage('a')
+    expect(() =>
+      ingest(scope, { lists: { users: {} }, tables: { users: {} } }),
+    ).toThrow("'users' is both a table and a list")
+  })
+
+  it('rejects a key that is both a table and an entity slot', () => {
+    const scope = new ScopeManager().openPage('a')
+    expect(() =>
+      ingest(scope, { entities: { users: { id: 1 } }, tables: { users: {} } }),
+    ).toThrow("'users' is both a table and an entity slot")
+  })
 })

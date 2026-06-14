@@ -1,28 +1,28 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import Modal from './Modal.vue'
+import HilosModal from './HilosModal.vue'
 
-// Modal teleports to <body>, so assertions query the document, not the wrapper.
+// HilosModal teleports to <body>, so assertions query the document, not the wrapper.
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
 
-describe('Modal', () => {
+describe('HilosModal', () => {
   it('renders nothing when closed', () => {
-    mount(Modal, { props: { modelValue: false } })
+    mount(HilosModal, { props: { modelValue: false } })
     expect(document.querySelector('[data-id="modal"]')).toBeNull()
   })
 
   it('renders the dialog and backdrop when open', () => {
-    mount(Modal, { props: { modelValue: true, title: 'Edit' } })
+    mount(HilosModal, { props: { modelValue: true, title: 'Edit' } })
     expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
     expect(document.querySelector('.modal-backdrop')).not.toBeNull()
   })
 
   it('emits ok from the default OK button', async () => {
-    const wrapper = mount(Modal, { props: { modelValue: true } })
+    const wrapper = mount(HilosModal, { props: { modelValue: true } })
     document
       .querySelector<HTMLButtonElement>('.modal-footer .btn-primary')
       ?.click()
@@ -31,18 +31,22 @@ describe('Modal', () => {
   })
 
   it('closes via the close button when not guarding', async () => {
-    const wrapper = mount(Modal, { props: { modelValue: true } })
-    document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+    const wrapper = mount(HilosModal, { props: { modelValue: true } })
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
   it('raises a confirm step before closing a dirty modal, then discards', async () => {
-    const wrapper = mount(Modal, {
+    const wrapper = mount(HilosModal, {
       props: { modelValue: true, confirmOnClose: true },
     })
-    document.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
     await wrapper.vm.$nextTick()
     expect(document.querySelector('[data-id="modal-confirm"]')).not.toBeNull()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()

@@ -46,6 +46,31 @@ export interface ListSection {
   deleted?: EntityId[]
 }
 
+/**
+ * One table row on the wire: its identity key plus its slots, the twin of
+ * {@link ListItemFragment} with a `rowKey` in place of an `itemKey`. A slot is
+ * an entity fragment (or list of them) or a plain value, told apart the same
+ * way an entity slot is — see {@link normalizeSlot}.
+ */
+export interface TableRowFragment {
+  rowKey: EntityId
+  slots: Record<string, unknown>
+}
+
+/**
+ * One table collection on the wire, the twin of {@link ListSection}: an
+ * incremental delivery of rows and the keys removed since the last one. A
+ * snapshot upserts every row with no deletes; a delta carries only the changed
+ * rows and the removed keys. When `cleared` is set the whole table is truncated
+ * first — the source collection was cleared backend-side — and any `rows` in
+ * the same section then apply on top of the empty table.
+ */
+export interface TableSection {
+  cleared?: boolean
+  rows?: TableRowFragment[]
+  deleted?: EntityId[]
+}
+
 /** A scope-shaped payload: entity slots, the scope's own data, and its lists. */
 export interface ScopePayload {
   /**
@@ -59,6 +84,9 @@ export interface ScopePayload {
 
   /** Ordered list collections by list key. */
   lists?: Record<string, ListSection>
+
+  /** Table row collections by table key (the heavy windowed primitive). */
+  tables?: Record<string, TableSection>
 }
 
 export interface NormalizerOptions {
@@ -90,6 +118,7 @@ export function ingest(
   const slots = payload.entities ?? {}
   const data = payload.data ?? {}
   const lists = payload.lists ?? {}
+  const tables = payload.tables ?? {}
   for (const key of Object.keys(data)) {
     if (key in slots) {
       throw new Error(
@@ -103,6 +132,17 @@ export function ingest(
     }
     if (key in data) {
       throw new Error(`Payload key '${key}' is both a list and a data key`)
+    }
+  }
+  for (const key of Object.keys(tables)) {
+    if (key in slots) {
+      throw new Error(`Payload key '${key}' is both a table and an entity slot`)
+    }
+    if (key in data) {
+      throw new Error(`Payload key '${key}' is both a table and a data key`)
+    }
+    if (key in lists) {
+      throw new Error(`Payload key '${key}' is both a table and a list`)
     }
   }
 
@@ -122,6 +162,9 @@ export function ingest(
   }
   for (const [listKey, section] of Object.entries(lists)) {
     ingestList(scope, listKey, section, options)
+  }
+  for (const [tableKey, section] of Object.entries(tables)) {
+    ingestTable(scope, tableKey, section, options)
   }
 }
 
@@ -143,6 +186,32 @@ function ingestList(
   }
   for (const itemKey of section.deleted ?? []) {
     scope.lists.delete(listKey, itemKey)
+  }
+}
+
+/**
+ * Ingest one table section — the twin of {@link ingestList}: truncate first
+ * when cleared, upsert each row with its slots normalized (entity slots reduced
+ * to references exactly like list-item slots), then drop the deleted row keys.
+ */
+function ingestTable(
+  scope: Scope,
+  tableKey: string,
+  section: TableSection,
+  options: NormalizerOptions,
+): void {
+  if (section.cleared) {
+    scope.tables.clear(tableKey)
+  }
+  for (const row of section.rows ?? []) {
+    const slots: Record<string, unknown> = {}
+    for (const [sourceKey, value] of Object.entries(row.slots)) {
+      slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
+    }
+    scope.tables.upsert(tableKey, row.rowKey, slots)
+  }
+  for (const rowKey of section.deleted ?? []) {
+    scope.tables.delete(tableKey, rowKey)
   }
 }
 

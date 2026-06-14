@@ -104,3 +104,18 @@ each connection's `{ tableKey, filter, sort, offset, limit }` and emits the
 row-scoped `row-updated` / `row-removed` / `set-changed` deltas (full A), or the
 viewport-changed nudge (A-lite). This folds in the table-system rework tracked in
 the broader refactor.
+
+## Current implementation status
+
+The first table-subscription step ships the **snapshot + live-push** layer, not
+the viewport model above. The backend already streams a table's full row set on
+subscribe and pushes per-row `rows` / `deleted` / `cleared` deltas as its DB/RT
+sources change (the same path a list takes); the frontend ingests them into the
+table-rows store (`TableRowsStore`, the twin of `ListStore`), and a headless
+`TableController` (agnostic core) holds the **client-side** viewport — search,
+sort, and pagination over the delivered rows — with **no pending/Apply**. The
+per-framework view (`HilosTable` in `@hilos/vue`) renders rows and emits intents
+only. The server-computed viewport, the per-connection descriptor, and the
+pending model above are the next step (7.7); they slot in behind the same
+`TableController` API and the same `tables` payload section, so pages built now
+(e.g. `/hilos/users`) do not change.

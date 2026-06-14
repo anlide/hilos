@@ -38,14 +38,24 @@ export {
 export { Scope, ScopeManager, type ScopeKind } from './state/ScopeManager.js'
 export { DataStore } from './state/DataStore.js'
 export { ListStore, type ListItem } from './state/ListStore.js'
+export { TableRowsStore, type TableRow } from './state/TableRowsStore.js'
 export {
   ingest,
   type EntityFragment,
   type ListItemFragment,
   type ListSection,
+  type TableRowFragment,
+  type TableSection,
   type NormalizerOptions,
   type ScopePayload,
 } from './state/normalizer.js'
+export {
+  TableController,
+  type SortDirection,
+  type TableSort,
+  type TableViewRow,
+  type TableControllerOptions,
+} from './table/TableController.js'
 export {
   PageSubscription,
   type PageSubscriptionConnection,
@@ -122,6 +132,8 @@ export {
   entityFragmentSchema,
   listItemSchema,
   listSectionSchema,
+  tableRowSchema,
+  tableSectionSchema,
   scopePayloadSchema,
   pageResponseSchema,
   type ScopePayloadWire,

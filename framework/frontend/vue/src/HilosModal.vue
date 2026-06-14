@@ -1,4 +1,4 @@
-<!-- Modal — the one home for editing (edit-in-modal is a hard Hilos rule;
+<!-- HilosModal — the one home for editing (edit-in-modal is a hard Hilos rule;
 docs/agents/frontend/conflict-resolution.md). A slot-first dialog: the parent
 fills #header (defaults to the title), the body (default slot), and #actions
 (defaults to Cancel/OK, and receives `requestClose` so a custom footer can close

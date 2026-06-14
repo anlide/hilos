@@ -41,6 +41,36 @@ export const listSectionSchema = z.preprocess(
   }),
 )
 
+/** A table row's identity key on the wire. */
+const rowKeySchema = z.union([z.string(), z.number()])
+
+/**
+ * One table row on the wire: its `rowKey` plus its slots, the twin of
+ * {@link listItemSchema}. Slots are opaque here — the normalizer tells an
+ * entity slot from a plain one by the `id` convention — so the schema only
+ * fixes the envelope.
+ */
+export const tableRowSchema = z.looseObject({
+  rowKey: rowKeySchema,
+  slots: z.record(z.string(), z.unknown()),
+})
+
+/**
+ * One table collection on the wire, the twin of {@link listSectionSchema}: the
+ * rows delivered this round and the keys removed since the last. Both are
+ * optional — a snapshot omits `deleted`, a delete-only delta omits `rows`. An
+ * empty section arrives as `[]`, not `{}`, because PHP serializes an empty map
+ * as a JSON array; it is normalized to an empty section so the rest of the
+ * schema sees one shape.
+ */
+export const tableSectionSchema = z.preprocess(
+  (value) => (Array.isArray(value) && value.length === 0 ? {} : value),
+  z.looseObject({
+    rows: z.array(tableRowSchema).optional(),
+    deleted: z.array(rowKeySchema).optional(),
+  }),
+)
+
 /**
  * A scope-shaped payload as the backend serializes it. Every section is
  * optional because empty sections are omitted on the wire (PHP would
@@ -55,6 +85,7 @@ export const scopePayloadSchema = z.looseObject({
     .optional(),
   data: z.record(z.string(), z.unknown()).optional(),
   lists: z.record(z.string(), listSectionSchema).optional(),
+  tables: z.record(z.string(), tableSectionSchema).optional(),
 })
 
 export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>

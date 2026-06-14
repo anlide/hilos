@@ -13,8 +13,8 @@ import { threeWayMerge } from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
+  HilosModal,
   LoadingButton,
-  Modal,
   useSignal,
 } from '@hilos/vue'
 
@@ -57,10 +57,8 @@ function submit(): void {
   if (!valid.value || !dirty.value || conflict.value || loading.value) {
     return
   }
-  loading.value = true
-  if (!sendRename(draft.value.trim())) {
-    loading.value = false
-  }
+
+  loading.value = sendRename(draft.value.trim());
 }
 
 // Success is state-driven: while a submit is in flight, the rename has landed
@@ -139,7 +137,7 @@ function mergeBoth(): void {
       Loading profile…
     </p>
 
-    <Modal v-model="editing" :confirm-on-close="dirty">
+    <HilosModal v-model="editing" :confirm-on-close="dirty">
       <template #header>
         <ConflictHeader title="Change name" :conflict="conflict" />
       </template>
@@ -195,6 +193,6 @@ function mergeBoth(): void {
           </template>
         </ConflictActions>
       </template>
-    </Modal>
+    </HilosModal>
   </section>
 </template>

@@ -44,7 +44,9 @@ in fifty rows is stored once and referenced fifty times.
 
 Keyed by table. Each row carries its `rowKey`, its own and computed cells, and
 **references** for entity-derived columns. It renders by resolving those
-references against the entity store.
+references against the entity store. Implemented as `TableRowsStore`, the twin
+of the list store; it ingests the `tables` payload section the same way lists
+ingest theirs — a snapshot plus live per-row deltas (see [table-subscription.md](table-subscription.md)).
 
 ### List store
 

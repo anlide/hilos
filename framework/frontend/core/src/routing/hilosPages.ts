@@ -135,7 +135,7 @@ export const HILOS_PAGE_ROUTES: Record<string, string> = {
   [HilosPages.LOGS_ROTATIONS]: '/hilos/logs/rotations',
   [HilosPages.LOGS_VIEW]: '/hilos/logs/view',
   [HilosPages.USERS]: '/hilos/users',
-  [HilosPages.USER]: '/hilos/users/{userId}',
+  [HilosPages.USER]: '/hilos/user/{userId}',
   [HilosPages.MCP_SKILLS]: '/hilos/mcp-skills',
   [HilosPages.MCP_SKILLS_MCP]: '/hilos/mcp-skills/{mcpId}',
   [HilosPages.MCP_SKILLS_MCP_LOGS]: '/hilos/mcp-skills/{mcpId}/logs',
@@ -213,6 +213,19 @@ export const HILOS_ADMIN_PAGES: Record<string, HilosAdminPageMeta> = {
   [HilosPages.DASHBOARD]: {
     label: 'Hilos',
     lead: 'Administrative sections for the project.',
+  },
+
+  // — Access & identity —
+  [HilosPages.USERS]: {
+    label: 'Users',
+    lead: 'Application users and panel operators: presence, roles, and access.',
+    parent: HilosPages.DASHBOARD,
+    icon: 'bi-people',
+  },
+  [HilosPages.USER]: {
+    label: 'User',
+    lead: 'A single user: profile, presence, and account actions.',
+    parent: HilosPages.USERS,
   },
 
   // — Configuration & localization —
@@ -536,9 +549,14 @@ export interface HilosAdminDashboardSection {
 export const HILOS_ADMIN_DASHBOARD_SECTIONS: readonly HilosAdminDashboardSection[] =
   [
     {
-      title: 'Configuration & localization',
-      description: 'Roles and internationalization for the project.',
-      items: [HilosPages.ROLES, HilosPages.I18N],
+      title: 'Access & identity',
+      description: 'Users and the roles that grant them panel access.',
+      items: [HilosPages.USERS, HilosPages.ROLES],
+    },
+    {
+      title: 'Localization',
+      description: 'Languages, countries, and translation screens.',
+      items: [HilosPages.I18N],
     },
     {
       title: 'Product & integrations',

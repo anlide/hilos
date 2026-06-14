@@ -282,7 +282,7 @@ final class ChatPageCatalog
         PageConstants::HILOS_USER => [
             PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_USERS,
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User',
-            PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/users/{' . HilosPageRouteParams::HILOS_USER_USER_ID . '}',
+            PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/user/{' . HilosPageRouteParams::HILOS_USER_USER_ID . '}',
         ],
         PageConstants::HILOS_ROLES => [
             PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,

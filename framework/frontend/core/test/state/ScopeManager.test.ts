@@ -183,3 +183,35 @@ describe('ScopeManager page data resolution', () => {
     expect(manager.pageDataSignal('selfConnection').get()).toBeUndefined()
   })
 })
+
+describe('ScopeManager page table resolution', () => {
+  it('is empty when no page is open', () => {
+    const manager = new ScopeManager()
+    expect(manager.pageTableSignal('hilosUsers').get()).toEqual([])
+  })
+
+  it('reads the current page scope table reactively', () => {
+    const manager = new ScopeManager()
+    const page = manager.openPage('a')
+
+    const lengths: number[] = []
+    subscribeSignal(manager.pageTableSignal('hilosUsers'), (rows) =>
+      lengths.push(rows.length),
+    )
+
+    page.tables.upsert('hilosUsers', 1, { name: 'a' })
+    page.tables.upsert('hilosUsers', 2, { name: 'b' })
+    expect(lengths).toEqual([1, 2])
+  })
+
+  it('re-resolves to the new page table when navigation swaps the scope', () => {
+    const manager = new ScopeManager()
+    manager.openPage('a').tables.upsert('hilosUsers', 1, { name: 'from-a' })
+    expect(manager.pageTableSignal('hilosUsers').get()).toEqual([
+      { rowKey: '1', slots: { name: 'from-a' } },
+    ])
+
+    manager.openPage('b')
+    expect(manager.pageTableSignal('hilosUsers').get()).toEqual([])
+  })
+})

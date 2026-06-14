@@ -13,6 +13,7 @@ import {
   type EntitySnapshot,
 } from './EntityStore.js'
 import { ListStore, type ListItem } from './ListStore.js'
+import { TableRowsStore, type TableRow } from './TableRowsStore.js'
 
 export type ScopeKind = 'page' | 'session' | 'user' | 'group'
 
@@ -26,6 +27,8 @@ export class Scope {
   readonly data = new DataStore()
 
   readonly lists = new ListStore()
+
+  readonly tables = new TableRowsStore()
 
   constructor(
     /** The scope's lifetime class. */
@@ -158,6 +161,21 @@ export class ScopeManager {
   pageListSignal(listKey: string): ReadonlySignal<readonly ListItem[]> {
     return computedSignal(
       () => this.pageSignal.get()?.lists.signal(listKey).get() ?? [],
+    )
+  }
+
+  /**
+   * The current page scope's table rows, reactively: it re-resolves both when
+   * the table's rows change and when navigation swaps the page scope (the new
+   * page's table, or empty between subscriptions). Like a list, a table is
+   * page-scoped — it does not resolve across scopes the way an entity reference
+   * does.
+   *
+   * @param tableKey The table to watch in the current page scope.
+   */
+  pageTableSignal(tableKey: string): ReadonlySignal<readonly TableRow[]> {
+    return computedSignal(
+      () => this.pageSignal.get()?.tables.signal(tableKey).get() ?? [],
     )
   }
 

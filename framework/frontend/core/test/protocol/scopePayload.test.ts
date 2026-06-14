@@ -84,11 +84,55 @@ describe('scopePayloadSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  it('accepts a table section with rows and deletes', () => {
+    const result = scopePayloadSchema.safeParse({
+      tables: {
+        hilosUsers: {
+          rows: [
+            { rowKey: 7, slots: { db_user: { id: 7 }, presence: 'online' } },
+          ],
+          deleted: [2, '3'],
+        },
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.tables?.hilosUsers?.rows?.[0]?.rowKey).toBe(7)
+      expect(result.data.tables?.hilosUsers?.deleted).toEqual([2, '3'])
+    }
+  })
+
+  it('rejects a table row without a rowKey', () => {
+    const result = scopePayloadSchema.safeParse({
+      tables: { hilosUsers: { rows: [{ slots: {} }] } },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts an empty table section serialized as a JSON array', () => {
+    // PHP serializes an empty map as `[]`; an empty table section arrives that
+    // way beside non-empty ones and must not fail the whole payload.
+    const result = scopePayloadSchema.safeParse({
+      tables: {
+        hilosUsers: { rows: [{ rowKey: 1, slots: {} }] },
+        adminUsers: [],
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.tables?.adminUsers).toEqual({})
+      expect(result.data.tables?.hilosUsers?.rows?.[0]?.rowKey).toBe(1)
+    }
+  })
+
   it('stays assignable to the normalizer ScopePayload type', () => {
     const wire: ScopePayloadWire = {
       entities: { currentUser: { id: 7 } },
       data: { route: '/' },
       lists: { events: { items: [{ itemKey: 1, slots: {} }], deleted: [2] } },
+      tables: {
+        hilosUsers: { rows: [{ rowKey: 1, slots: {} }], deleted: [2] },
+      },
     }
     // Compile-time alignment: the wire schema's output feeds ingest() as-is.
     const payload: ScopePayload = wire

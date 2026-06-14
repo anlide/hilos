@@ -25,6 +25,8 @@ import User from './views/User/User.vue'
 // one-file-per-page classes under Pages/Hilos/), grouped by section. Each view
 // is a thin binding of its key to the framework HilosAdminPage shell.
 import Roles from './views/Hilos/Roles/Roles.vue'
+import HilosUsers from './views/Hilos/Users/Users.vue'
+import HilosUser from './views/Hilos/User/User.vue'
 import I18n from './views/Hilos/I18n/I18n.vue'
 import I18nLanguages from './views/Hilos/I18nLanguages/I18nLanguages.vue'
 import I18nLanguage from './views/Hilos/I18nLanguage/I18nLanguage.vue'
@@ -84,7 +86,7 @@ import SilUserHistory from './views/Hilos/SilUserHistory/SilUserHistory.vue'
 // The page-key → view map HilosView renders from. The main page, the dashboard,
 // and the static footer pages have their own components; the Hilos admin section
 // is one module per page, each rendered through the framework HilosAdminPage
-// shell. Pages without a mapped view (settings/users/guardian, which get their
+// shell. Pages without a mapped view (settings/guardian, which get their
 // own real pages) render nothing.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
@@ -97,6 +99,8 @@ const pages: Record<string, Component> = {
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENCE]: Licence,
   [HilosPages.ROLES]: Roles,
+  [HilosPages.USERS]: HilosUsers,
+  [HilosPages.USER]: HilosUser,
   [HilosPages.I18N]: I18n,
   [HilosPages.I18N_LANGUAGES]: I18nLanguages,
   [HilosPages.I18N_LANGUAGE]: I18nLanguage,
