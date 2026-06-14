@@ -210,6 +210,6 @@ final class HilosPageConstants
     /** @var string Hilos — public Privacy page (static, content-only) */
     public const string HILOS_PRIVACY = 'hilos_privacy';
 
-    /** @var string Hilos — public Licence page (static, content-only) */
-    public const string HILOS_LICENCE = 'hilos_licence';
+    /** @var string Hilos — public License page (static, content-only) */
+    public const string HILOS_LICENSE = 'hilos_license';
 }

@@ -88,7 +88,7 @@ use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
 use Demo\Chat\Pages\Hilos\I18nPage;
-use Demo\Chat\Pages\Hilos\LicencePage;
+use Demo\Chat\Pages\Hilos\LicensePage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
@@ -237,7 +237,7 @@ final class Hilos extends \Hilos\Hilos
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
-        LicencePage::PAGE => LicencePage::class,
+        LicensePage::PAGE => LicensePage::class,
     ];
 
     public const array GROUPS = [

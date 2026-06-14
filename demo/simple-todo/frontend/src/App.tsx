@@ -12,7 +12,7 @@ import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import Dashboard from './views/Dashboard/Dashboard'
-import Licence from './views/Licence/Licence'
+import License from './views/License/License'
 import Main from './views/Main/Main'
 import Privacy from './views/Privacy/Privacy'
 import Terms from './views/Terms/Terms'
@@ -25,7 +25,7 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
-  [HilosPages.LICENCE]: Licence,
+  [HilosPages.LICENSE]: License,
 }
 
 export default function App() {

@@ -19,7 +19,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
   await expect(page.getByTestId('footer-link-hilos_about')).toBeVisible()
   await expect(page.getByTestId('footer-link-hilos_terms')).toBeVisible()
   await expect(page.getByTestId('footer-link-hilos_privacy')).toBeVisible()
-  await expect(page.getByTestId('footer-link-hilos_licence')).toBeVisible()
+  await expect(page.getByTestId('footer-link-hilos_license')).toBeVisible()
 
   // About -> a framework static page rendered with the project's content,
   // reached over the live socket with no reload.

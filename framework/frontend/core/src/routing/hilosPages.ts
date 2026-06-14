@@ -1,7 +1,7 @@
 // The framework's own page catalog: the keys and cold-load URL templates of the
 // Hilos admin section (dashboard, i18n, daemon, logs, users, MCP/skills, SIL,
 // communications, security, billing, change log) plus the public content pages
-// (about, terms, privacy, licence) the application shell links in its footer
+// (about, terms, privacy, license) the application shell links in its footer
 // (HILOS_FOOTER_LINKS). These pages are framework functionality, so the
 // framework owns their identity and URL layout — a project mounts them by
 // merging HILOS_PAGE_ROUTES into its own route map rather than restating them,
@@ -78,7 +78,7 @@ export const HilosPages = {
   ABOUT: 'hilos_about',
   TERMS: 'hilos_terms',
   PRIVACY: 'hilos_privacy',
-  LICENCE: 'hilos_licence',
+  LICENSE: 'hilos_license',
 } as const
 
 /**
@@ -158,7 +158,7 @@ export const HILOS_PAGE_ROUTES: Record<string, string> = {
   [HilosPages.ABOUT]: '/about',
   [HilosPages.TERMS]: '/terms',
   [HilosPages.PRIVACY]: '/privacy',
-  [HilosPages.LICENCE]: '/licence',
+  [HilosPages.LICENSE]: '/license',
 }
 
 /** A public framework page surfaced in the application footer. */
@@ -180,7 +180,7 @@ export const HILOS_FOOTER_LINKS: readonly HilosFooterLink[] = [
   { page: HilosPages.ABOUT, label: 'About' },
   { page: HilosPages.TERMS, label: 'Terms' },
   { page: HilosPages.PRIVACY, label: 'Privacy' },
-  { page: HilosPages.LICENCE, label: 'Licence' },
+  { page: HilosPages.LICENSE, label: 'License' },
 ]
 
 /** A Hilos admin page's label and its place in the admin navigation tree. */

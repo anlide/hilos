@@ -12,7 +12,7 @@ use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Environment\PollEnvCatalog;
 use Demo\SimplePoll\Pages\Hilos\AboutPage;
 use Demo\SimplePoll\Pages\Hilos\DashboardPage;
-use Demo\SimplePoll\Pages\Hilos\LicencePage;
+use Demo\SimplePoll\Pages\Hilos\LicensePage;
 use Demo\SimplePoll\Pages\Hilos\PrivacyPage;
 use Demo\SimplePoll\Pages\Hilos\TermsPage;
 use Demo\SimplePoll\Pages\MainPage;
@@ -40,7 +40,7 @@ final class Hilos extends \Hilos\Hilos
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
-        LicencePage::PAGE => LicencePage::class,
+        LicensePage::PAGE => LicensePage::class,
     ];
 
     public const array AGENTS = [

@@ -12,7 +12,7 @@ use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Environment\TodoEnvCatalog;
 use Demo\SimpleTodo\Pages\Hilos\AboutPage;
 use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
-use Demo\SimpleTodo\Pages\Hilos\LicencePage;
+use Demo\SimpleTodo\Pages\Hilos\LicensePage;
 use Demo\SimpleTodo\Pages\Hilos\PrivacyPage;
 use Demo\SimpleTodo\Pages\Hilos\TermsPage;
 use Demo\SimpleTodo\Pages\MainPage;
@@ -40,7 +40,7 @@ final class Hilos extends \Hilos\Hilos
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
-        LicencePage::PAGE => LicencePage::class,
+        LicensePage::PAGE => LicensePage::class,
     ];
 
     public const array AGENTS = [

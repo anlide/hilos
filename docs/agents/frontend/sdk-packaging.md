@@ -123,10 +123,10 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   fixed-height viewport column whose main region owns the scroll, so a page
   either scrolls inside it or fills it and scrolls an inner region; the footer
   links come from the framework (`HILOS_FOOTER_LINKS`), so every project shows
-  the same About / Terms / Privacy / Licence set and supplies only each page's
+  the same About / Terms / Privacy / License set and supplies only each page's
   content;
 - **`HilosStaticPage`** — the frame for a static, content-only page (the public
-  About / Terms / Privacy / Licence pages and the like): a centered reading
+  About / Terms / Privacy / License pages and the like): a centered reading
   column with a heading, the project filling the body. These framework pages are
   declared in `@hilos/core` (`HilosPages` / `HILOS_PAGE_ROUTES`) and subscribe
   like any page, but the backend page carries no payload — the visible content is

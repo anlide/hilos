@@ -1,5 +1,5 @@
 // HilosStaticPage — the tier-1 wrapper for a static, content-only framework page
-// (About / Terms / Privacy / Licence and the like). The framework owns the page
+// (About / Terms / Privacy / License and the like). The framework owns the page
 // frame — a centered single reading column with a heading — and a project
 // supplies the content as projected content, so the look stays uniform while the
 // content stays a project concern. Long content scrolls within the shell's main

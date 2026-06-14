@@ -33,7 +33,7 @@ describe('HILOS_PAGE_ROUTES', () => {
       HilosPages.ABOUT,
       HilosPages.TERMS,
       HilosPages.PRIVACY,
-      HilosPages.LICENCE,
+      HilosPages.LICENSE,
     ])
     for (const link of HILOS_FOOTER_LINKS) {
       expect(link.label).toBeTypeOf('string')

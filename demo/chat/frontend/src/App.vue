@@ -15,7 +15,7 @@ import { PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
 import About from './views/About/About.vue'
 import Bot from './views/Bot/Bot.vue'
 import Dashboard from './views/Dashboard/Dashboard.vue'
-import Licence from './views/Licence/Licence.vue'
+import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Profile from './views/Profile/Profile.vue'
@@ -97,7 +97,7 @@ const pages: Record<string, Component> = {
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
-  [HilosPages.LICENCE]: Licence,
+  [HilosPages.LICENSE]: License,
   [HilosPages.ROLES]: Roles,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
