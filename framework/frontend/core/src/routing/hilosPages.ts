@@ -398,6 +398,12 @@ export const HILOS_ADMIN_PAGES: Record<string, HilosAdminPageMeta> = {
   },
 
   // — Platform operations —
+  [HilosPages.SETTINGS]: {
+    label: 'Settings',
+    lead: 'Application setting catalog: catalog defaults, overrides, and references.',
+    parent: HilosPages.DASHBOARD,
+    icon: 'bi-sliders',
+  },
   [HilosPages.OPERATIONS]: {
     label: 'Operations',
     lead: 'Sitemap generation, static HTML builds, and maintenance tasks.',
@@ -571,6 +577,7 @@ export const HILOS_ADMIN_DASHBOARD_SECTIONS: readonly HilosAdminDashboardSection
       title: 'Platform operations',
       description: 'Runtime, maintenance, backups, and observability.',
       items: [
+        HilosPages.SETTINGS,
         HilosPages.OPERATIONS,
         HilosPages.DAEMON,
         HilosPages.LOGS,

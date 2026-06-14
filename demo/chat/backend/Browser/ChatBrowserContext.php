@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Browser;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
@@ -15,7 +14,8 @@ use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
@@ -218,16 +218,23 @@ final class ChatBrowserContext extends BrowserContext
         }
 
         $rows = $this->settingsSnapshotRows();
+        if ($rows === []) {
+            return;
+        }
+
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS),
+            signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
             signalData: new WebSocketSignalData(
-                data: new BrowserPageSignalData([
-                    ChatTableContext::settings => [
-                        BrowserPageSignalData::rows => $rows,
-                    ],
-                ]),
+                data: new PageResponseSignalData(
+                    SettingsPage::PAGE,
+                    new PagePayload(tables: [
+                        ChatTableContext::settings => [
+                            PagePayload::rows => $rows,
+                        ],
+                    ]),
+                ),
                 targetAcceptKey: $acceptKey,
             ),
         );
@@ -236,7 +243,7 @@ final class ChatBrowserContext extends BrowserContext
     /**
      * Builds full settings browser rows from the settings table snapshot.
      *
-     * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Settings browser rows
+     * @return list<array{rowKey: int|string, slots: array<string, mixed>}> Settings page-response rows
      */
     private function settingsSnapshotRows(): array
     {
@@ -260,7 +267,11 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
-     * Emits browser updates for settings source changes.
+     * Emits page-response updates for settings source changes.
+     *
+     * Accumulates per subscriber the changed rows and removed keys, then sends one
+     * settings page_response per subscriber — the same envelope the generic
+     * browser path emits for every other page.
      *
      * @param SourceChangeSet $changes Settings source changes
      */
@@ -270,8 +281,11 @@ final class ChatBrowserContext extends BrowserContext
             return;
         }
 
-        /** @var array<string, array<string, array<string, array<string, mixed>>>> $signalTables */
-        $signalTables = [];
+        /** @var array<string, array<string, array{rowKey: int|string, slots: array<string, mixed>}>> $rowsByAccept */
+        $rowsByAccept = [];
+        /** @var array<string, array<string, int|string>> $deletedByAccept */
+        $deletedByAccept = [];
+
         foreach ($changes->all() as $change) {
             $key = $this->settingKeyFromSourceChange($change);
             if ($key === '') {
@@ -288,23 +302,43 @@ final class ChatBrowserContext extends BrowserContext
 
                 $row = $this->settingsBrowserRowForKey($key);
                 if ($row === null) {
-                    unset($signalTables[$acceptKey][ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS][ChatTableContext::settings]['rows'][$key]);
-                    $signalTables[$acceptKey][ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS][ChatTableContext::settings]['deleted'][$key] = $key;
+                    unset($rowsByAccept[$acceptKey][$key]);
+                    $deletedByAccept[$acceptKey][$key] = $key;
                     continue;
                 }
 
-                unset($signalTables[$acceptKey][ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS][ChatTableContext::settings]['deleted'][$key]);
-                $signalTables[$acceptKey][ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS][ChatTableContext::settings]['rows'][$key] = $row;
+                unset($deletedByAccept[$acceptKey][$key]);
+                $rowsByAccept[$acceptKey][$key] = $row;
             }
         }
 
-        foreach ($this->settingsBrowserPayloads($signalTables) as $acceptKey => $tables) {
+        $acceptKeys = array_unique(array_merge(
+            array_keys($rowsByAccept),
+            array_keys($deletedByAccept),
+        ));
+        foreach ($acceptKeys as $acceptKey) {
+            $section = [];
+            $rows = array_values($rowsByAccept[$acceptKey] ?? []);
+            $deleted = array_values($deletedByAccept[$acceptKey] ?? []);
+            if ($rows !== []) {
+                $section[PagePayload::rows] = $rows;
+            }
+            if ($deleted !== []) {
+                $section[PagePayload::deleted] = $deleted;
+            }
+            if ($section === []) {
+                continue;
+            }
+
             Hilos::$sr->queueSignal(
                 signalSource: new SignalSource(SignalSource::WORKER),
                 signalType: new SignalType(SignalTypeConstants::WS_USER),
-                signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS),
+                signalName: new SignalName(SignalTypeConstants::PAGE_RESPONSE),
                 signalData: new WebSocketSignalData(
-                    data: new BrowserPageSignalData($tables),
+                    data: new PageResponseSignalData(
+                        SettingsPage::PAGE,
+                        new PagePayload(tables: [ChatTableContext::settings => $section]),
+                    ),
                     targetAcceptKey: $acceptKey,
                 ),
             );
@@ -312,40 +346,10 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
-     * Converts settings table accumulators to BrowserPageSignalData payloads.
-     *
-     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Table accumulator
-     * @return array<string, array<string, array<string, mixed>>> Browser tables keyed by accept key
-     */
-    private function settingsBrowserPayloads(array $signalTables): array
-    {
-        $payloads = [];
-        foreach ($signalTables as $acceptKey => $signals) {
-            $tables = $signals[ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS] ?? [];
-            foreach ($tables as $tableKey => $changes) {
-                $rows = $changes['rows'] ?? [];
-                $deleted = $changes['deleted'] ?? [];
-                $payload = [];
-                if ($rows !== []) {
-                    $payload[BrowserPageSignalData::rows] = array_values($rows);
-                }
-                if ($deleted !== []) {
-                    $payload[BrowserPageSignalData::deleted] = array_values($deleted);
-                }
-                if ($payload !== []) {
-                    $payloads[$acceptKey][$tableKey] = $payload;
-                }
-            }
-        }
-
-        return $payloads;
-    }
-
-    /**
-     * Builds the current browser row for one settings key.
+     * Builds the current page-response row for one settings key.
      *
      * @param string $key Setting key
-     * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row, or null when absent
+     * @return ?array{rowKey: int|string, slots: array<string, mixed>} Page-response row, or null when absent
      */
     private function settingsBrowserRowForKey(string $key): ?array
     {
@@ -364,17 +368,26 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
-     * Wraps a settings table row in the browser table row envelope.
+     * Wraps a settings table row in the page-response row envelope.
+     *
+     * The DB id is dropped from the slot: the frontend normalizer treats any slot
+     * carrying a non-null id as a referenced entity, but settings rows are
+     * page-scoped, keyed by the setting key, and carry a nullable id (catalog
+     * placeholders have none). Dropping it keeps the slot a uniform inline record;
+     * persisted-ness is read from value_source instead.
      *
      * @param SettingTableRow $row Settings table row
-     * @return array{rowKey: int|string, sources: array<string, mixed>} Browser row payload
+     * @return array{rowKey: int|string, slots: array<string, mixed>} Page-response row payload
      */
     private function settingsBrowserRow(SettingTableRow $row): array
     {
+        $slot = $row->toArray();
+        unset($slot[SettingTableRow::id]);
+
         return [
-            BrowserPageSignalData::rowKey => $row->getRowKey(),
-            BrowserPageSignalData::sources => [
-                HilosDbContext::settings => $row->toArray(),
+            PagePayload::rowKey => $row->getRowKey(),
+            PagePayload::slots => [
+                HilosDbContext::settings => $slot,
             ],
         ];
     }

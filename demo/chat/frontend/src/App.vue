@@ -24,6 +24,7 @@ import User from './views/User/User.vue'
 // The Hilos admin section — one module per page (mirroring the backend's
 // one-file-per-page classes under Pages/Hilos/), grouped by section. Each view
 // is a thin binding of its key to the framework HilosAdminPage shell.
+import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import Roles from './views/Hilos/Roles/Roles.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/User/User.vue'
@@ -86,13 +87,14 @@ import SilUserHistory from './views/Hilos/SilUserHistory/SilUserHistory.vue'
 // The page-key → view map HilosView renders from. The main page, the dashboard,
 // and the static footer pages have their own components; the Hilos admin section
 // is one module per page, each rendered through the framework HilosAdminPage
-// shell. Pages without a mapped view (settings/guardian, which get their
-// own real pages) render nothing.
+// shell. Pages without a mapped view (guardian, which gets its own real page)
+// render nothing.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,
   [PAGE_BOT]: Bot,
   [HilosPages.DASHBOARD]: Dashboard,
+  [HilosPages.SETTINGS]: HilosSettings,
   [HilosPages.PROFILE]: Profile,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
