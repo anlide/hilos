@@ -7,21 +7,21 @@ namespace Demo\Chat\Browser\Table;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
-use Demo\Chat\Database\Object\Item\Bot;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
-use Demo\Chat\Tables\Bot\BotTableRow;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 
 /**
- * Browser table config for the chat bot detail page.
+ * Browser data source for the chat bot detail page: the bot's reactive runtime
+ * lifecycle status. The bot profile is delivered separately as a page entity by
+ * {@see \Demo\Chat\Pages\BotPage::buildPagePayload()}.
  */
-final class BotDetailBrowserTable
+final class BotStatusBrowserData
 {
-    public const string TABLE = ChatBrowserTable::BOT_DETAIL;
+    public const string DATA = ChatBrowserTable::BOT_STATUS;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [
@@ -31,7 +31,6 @@ final class BotDetailBrowserTable
             ],
         ],
         BrowserConfigKey::SOURCES => [
-            ChatBrowserSource::DB_BOTS,
             ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
         BrowserConfigKey::ROWS => [
@@ -45,22 +44,6 @@ final class BotDetailBrowserTable
                     BotAgentStatus::botId,
                     BotAgentStatus::status,
                     BotAgentStatus::updatedAt,
-                ],
-            ],
-            [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
-                BrowserFieldKey::ROW_KEY => Bot::id,
-                BrowserFieldKey::WHERE => [
-                    Bot::id => ChatBrowserRef::TABLE_BOT_ID,
-                ],
-                BrowserFieldKey::FIELDS => [
-                    Bot::id => BotTableRow::id,
-                    Bot::name => BotTableRow::name,
-                    Bot::description => BotTableRow::description,
-                    Bot::style => BotTableRow::style,
-                    Bot::topics => BotTableRow::topics,
-                    Bot::personality => BotTableRow::personality,
-                    Bot::active => BotTableRow::active,
                 ],
             ],
         ],

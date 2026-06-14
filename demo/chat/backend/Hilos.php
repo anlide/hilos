@@ -25,7 +25,7 @@ use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Table\AttachmentDraftsBrowserList;
-use Demo\Chat\Browser\Table\BotDetailBrowserTable;
+use Demo\Chat\Browser\Table\BotStatusBrowserData;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\MainBotsBrowserList;
@@ -33,6 +33,7 @@ use Demo\Chat\Browser\Table\MainEventsBrowserList;
 use Demo\Chat\Browser\Table\MainUsersBrowserList;
 use Demo\Chat\Browser\Table\SelfConnectionBrowserData;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
+use Demo\Chat\Browser\Table\UserPresenceBrowserData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
@@ -44,6 +45,7 @@ use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Pages\Hilos\AboutPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
@@ -296,8 +298,9 @@ final class Hilos extends \Hilos\Hilos
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
         SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
         AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
-        BotDetailBrowserTable::TABLE => BotDetailBrowserTable::class,
+        BotStatusBrowserData::DATA => BotStatusBrowserData::class,
         UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
         GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
     ];
@@ -326,14 +329,14 @@ final class Hilos extends \Hilos\Hilos
             ],
         ],
         ChatUserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
+            UserPresenceBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::USER_ID,
+                    UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
                 ],
             ],
         ],
         BotPage::PAGE => [
-            BotDetailBrowserTable::TABLE => [
+            BotStatusBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
                 ],

@@ -10,23 +10,33 @@ import { HilosPages } from '@hilos/core'
 import type { Component } from 'vue'
 
 import { connection } from './bootstrap/connection'
-import { PAGE_MAIN } from './pages/keys'
+import { PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
+import { ADMIN_STUB_KEYS } from './views/Hilos/adminMap'
+import HilosAdminStub from './views/Hilos/HilosAdminStub.vue'
 import About from './views/About/About.vue'
+import Bot from './views/Bot/Bot.vue'
 import Dashboard from './views/Dashboard/Dashboard.vue'
 import Licence from './views/Licence/Licence.vue'
 import Main from './views/Main/Main.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import Terms from './views/Terms/Terms.vue'
+import User from './views/User/User.vue'
 
-// The page-key → view map HilosView renders from. Pages without a mapped view
-// (other routes land later) render nothing.
+// The page-key → view map HilosView renders from. The main page, the dashboard,
+// and the static footer pages have their own components; the rest of the Hilos
+// admin section is stubbed, so every admin stub key renders through the single
+// HilosAdminStub. Pages without a mapped view (settings/users/guardian, which
+// get their own real pages) render nothing.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
+  [PAGE_USER]: User,
+  [PAGE_BOT]: Bot,
   [HilosPages.DASHBOARD]: Dashboard,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENCE]: Licence,
+  ...Object.fromEntries(ADMIN_STUB_KEYS.map((key) => [key, HilosAdminStub])),
 }
 </script>
 
