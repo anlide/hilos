@@ -8,8 +8,6 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
-use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
@@ -26,7 +24,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosProfilePage;
-use Throwable;
 
 /**
  * Chat demo implementation of the framework current-user profile page.
@@ -35,7 +32,11 @@ use Throwable;
  * concrete binds the chat agent, the self-connection browser data, and the
  * user-initiated rename action. The page is served by the chat agent because the
  * rename runs through the connection runtime (moderation phase) the chat agent
- * is the truth source for.
+ * is the truth source for. A rename failure surfaces through the framework
+ * action_error contract (the default onActionException, reached for both the
+ * synchronous validation and the async moderation reject that PageSignalRouter
+ * routes back); success is state-driven — the renamed user fans out over the
+ * self-connection data, so no explicit success ack is sent.
  *
  * @property ChatAgent $agent
  */
@@ -108,29 +109,6 @@ final class ProfilePage extends AbstractHilosProfilePage
             default:
                 throw new AgentUnknownSignalException($name);
         }
-    }
-
-    /**
-     * Sends rename failures through the profile modal ack contract.
-     *
-     * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name that failed
-     * @param ActionPayloadDTO $dto Action payload
-     * @param Throwable $e Action failure
-     */
-    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
-    {
-        if ($action === ChatSignalConstants::RENAME) {
-            $this->sendToUser(
-                ChatSignalConstants::RENAME_FAIL,
-                $acceptKey,
-                new ActionFailSignalData($e->getMessage()),
-            );
-
-            return;
-        }
-
-        parent::onActionException($acceptKey, $action, $dto, $e);
     }
 
     /**
@@ -221,13 +199,6 @@ final class ProfilePage extends AbstractHilosProfilePage
             userId: $result->userId,
             oldName: $oldName,
             newName: $result->newName,
-        );
-
-        // Dedicated ack to the initiator: closes the modal / clears UI loading state.
-        $this->sendToUser(
-            ChatSignalConstants::RENAME_SUCCESS,
-            $result->acceptKey,
-            new ActionSuccessSignalData(),
         );
     }
 }

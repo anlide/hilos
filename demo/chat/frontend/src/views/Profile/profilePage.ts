@@ -1,39 +1,48 @@
-// The profile page selector: the current user resolved by reference into the
-// read-only profile the view renders. The current user arrives in the session
-// scope under the `currentUser` slot (framework sessionScope.ts) on the
-// handshake response, so the profile reads it there rather than from a page
-// payload — the page subscription itself authorizes the view and (later) carries
-// the rename action. The view reads this signal and never touches a raw store.
+// The profile page selectors: the current user's committed display name read
+// from the live self-connection data the page subscription delivers (backend
+// ProfilePage binds SelfConnectionBrowserData, which carries the DB user name).
+// Reading the committed name reactively — rather than the one-shot session
+// current user — is what lets the edit modal detect a rename landing (success)
+// and a concurrent rename from another tab (conflict). The view reads these
+// signals and never touches a raw store.
 import {
   computedSignal,
-  type EntityRef,
+  readString,
   type ReadonlySignal,
 } from '@hilos/core'
 
 import { scopes } from '../../bootstrap/session'
-import { Users } from '../../types'
 import { type ProfileDetail } from './types/ProfileDetail'
 
-// The session-scope slot the handshake response leaves the current user under
-// (framework sessionScope.ts DEFAULT_CURRENT_USER_SLOT).
-const CURRENT_USER_SLOT = 'currentUser'
+// The single-row data slot carrying this connection's own state
+// (backend ChatBrowserTable::SELF_CONNECTION), including the DB user name.
+const SELF_CONNECTION_DATA = 'selfConnection'
+const NAME_FIELD = 'name'
 
-const currentUserRef = scopes.session.data.signal(CURRENT_USER_SLOT)
+/** Read a page data slot as an inline record, or undefined. */
+function recordSlot(slot: unknown): Record<string, unknown> | undefined {
+  return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
+    ? (slot as Record<string, unknown>)
+    : undefined
+}
+
+const selfConnectionData = scopes.pageDataSignal(SELF_CONNECTION_DATA)
 
 /**
- * The current user's profile, or undefined until the handshake response lands:
- * the session-scope current user resolved reactively, so a rename fans out here
- * without a refresh.
+ * The current user's committed display name from the live self-connection data,
+ * or '' until the first payload lands. The edit modal diffs its draft against
+ * this for the 3-way merge and watches it to detect a rename landing.
  */
+export const committedName: ReadonlySignal<string> = computedSignal(() => {
+  const fields = recordSlot(selfConnectionData.get())
+
+  return fields ? readString(fields, NAME_FIELD) : ''
+})
+
+/** The read-only profile the view renders, or undefined until the name lands. */
 export const profileDetail: ReadonlySignal<ProfileDetail | undefined> =
   computedSignal(() => {
-    const ref = currentUserRef.get() as EntityRef | undefined
-    const user = ref ? Users.signal(ref).get() : undefined
-    if (!user) {
-      return undefined
-    }
+    const name = committedName.get()
 
-    return {
-      name: user.name,
-    }
+    return name === '' ? undefined : { name }
   })

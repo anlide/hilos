@@ -29,12 +29,6 @@ final class ChatSignalConstants
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
-    /** @var string Rename success ack (sent only to initiator; envelope outcome='success') */
-    public const string RENAME_SUCCESS = 'rename_success';
-
-    /** @var string Rename failure ack (sent only to initiator; envelope outcome='fail') */
-    public const string RENAME_FAIL = 'rename_fail';
-
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 
