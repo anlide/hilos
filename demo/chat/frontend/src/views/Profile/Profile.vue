@@ -21,6 +21,8 @@ import {
 import { clearRenameError, renameError, sendRename } from './profileActions'
 import { committedName, profileDetail } from './profilePage'
 
+defineOptions({ name: 'ProfilePage' })
+
 const NAME_MIN = 2
 const NAME_MAX = 64
 
@@ -58,7 +60,7 @@ function submit(): void {
     return
   }
 
-  loading.value = sendRename(draft.value.trim());
+  loading.value = sendRename(draft.value.trim())
 }
 
 // Success is state-driven: while a submit is in flight, the rename has landed
@@ -118,10 +120,14 @@ function mergeBoth(): void {
     </div>
 
     <div v-if="detail" class="card" data-id="profile-detail">
-      <div class="card-body d-flex align-items-center justify-content-between gap-3">
+      <div
+        class="card-body d-flex align-items-center justify-content-between gap-3"
+      >
         <dl class="row flex-grow-1 mb-0">
           <dt class="col-sm-3">Name</dt>
-          <dd class="col-sm-9 mb-0" data-id="profile-name">{{ detail.name }}</dd>
+          <dd class="col-sm-9 mb-0" data-id="profile-name">
+            {{ detail.name }}
+          </dd>
         </dl>
         <button
           type="button"
@@ -154,13 +160,16 @@ function mergeBoth(): void {
           :minlength="NAME_MIN"
           :maxlength="NAME_MAX"
         />
-        <div class="form-text">Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.</div>
+        <div class="form-text">
+          Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
+        </div>
         <div
           v-if="conflict"
           class="alert alert-warning mt-2 mb-0"
           data-id="profile-conflict-note"
         >
-          The name changed elsewhere to “{{ committed }}”. Choose how to resolve.
+          The name changed elsewhere to “{{ committed }}”. Choose how to
+          resolve.
         </div>
         <div
           v-if="error"

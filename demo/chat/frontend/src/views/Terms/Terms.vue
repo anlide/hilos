@@ -2,6 +2,8 @@
 this project supplies the content. See views/About/About.vue. -->
 <script setup lang="ts">
 import { HilosStaticPage } from '@hilos/vue'
+
+defineOptions({ name: 'TermsPage' })
 </script>
 
 <template>

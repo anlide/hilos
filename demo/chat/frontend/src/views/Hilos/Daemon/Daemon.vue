@@ -5,6 +5,8 @@ only (styling-rules.md). -->
 <script setup lang="ts">
 import { HilosPages } from '@hilos/core'
 import { HilosAdminPage } from '@hilos/vue'
+
+defineOptions({ name: 'DaemonPage' })
 </script>
 
 <template>

@@ -10,6 +10,8 @@ import { useSignal } from '@hilos/vue'
 
 import { userDetail } from './userPage'
 
+defineOptions({ name: 'UserPage' })
+
 const detail = useSignal(userDetail)
 </script>
 

@@ -13,6 +13,8 @@ import {
 } from '@hilos/core'
 import { HilosLink } from '@hilos/vue'
 
+defineOptions({ name: 'DashboardPage' })
+
 const sections = HILOS_ADMIN_DASHBOARD_SECTIONS.map((section) => ({
   title: section.title,
   description: section.description,

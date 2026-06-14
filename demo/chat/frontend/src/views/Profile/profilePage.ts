@@ -5,11 +5,7 @@
 // current user — is what lets the edit modal detect a rename landing (success)
 // and a concurrent rename from another tab (conflict). The view reads these
 // signals and never touches a raw store.
-import {
-  computedSignal,
-  readString,
-  type ReadonlySignal,
-} from '@hilos/core'
+import { computedSignal, readString, type ReadonlySignal } from '@hilos/core'
 
 import { scopes } from '../../bootstrap/session'
 import { type ProfileDetail } from './types/ProfileDetail'

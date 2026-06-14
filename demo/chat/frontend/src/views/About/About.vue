@@ -4,6 +4,8 @@ content. The page subscribes like any other but the framework page sends no
 payload, so nothing here depends on the socket. -->
 <script setup lang="ts">
 import { HilosStaticPage } from '@hilos/vue'
+
+defineOptions({ name: 'AboutPage' })
 </script>
 
 <template>

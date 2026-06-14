@@ -29,7 +29,10 @@ import {
 import { toSelfConnection, type SelfConnection } from './types/SelfConnection'
 import { type AttachmentDraftItem } from './types/lists/AttachmentDraftItem'
 import { type BotItem } from './types/lists/BotItem'
-import { type EventAttachmentItem, type EventItem } from './types/lists/EventItem'
+import {
+  type EventAttachmentItem,
+  type EventItem,
+} from './types/lists/EventItem'
 import { type ParticipantItem } from './types/lists/ParticipantItem'
 
 // Wire keys of the main page lists and their slots — backend source collection
@@ -67,9 +70,7 @@ const EVENT_CHAT_STOPPED = 'chat_stopped'
 const EVENT_CHAT_CLEARED = 'chat_cleared'
 
 /** Read a list item's slot as an inline record, or undefined. */
-function recordSlot(
-  slot: unknown,
-): Record<string, unknown> | undefined {
+function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
     ? (slot as Record<string, unknown>)
     : undefined
@@ -175,10 +176,16 @@ function eventAuthor(
   rename: EventUserRename | null,
 ): { name: string; isBot: boolean } {
   if (message?.authorBotId != null) {
-    return { name: Bots.signal(message.authorBotId).get()?.name ?? '', isBot: true }
+    return {
+      name: Bots.signal(message.authorBotId).get()?.name ?? '',
+      isBot: true,
+    }
   }
   if (message?.authorUserId != null) {
-    return { name: Users.signal(message.authorUserId).get()?.name ?? '', isBot: false }
+    return {
+      name: Users.signal(message.authorUserId).get()?.name ?? '',
+      isBot: false,
+    }
   }
   const targetUserId = registration?.targetUserId ?? rename?.targetUserId
   if (targetUserId != null) {

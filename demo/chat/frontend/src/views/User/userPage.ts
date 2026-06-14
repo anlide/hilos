@@ -38,8 +38,8 @@ const userPresenceData = scopes.pageDataSignal(USER_PRESENCE_DATA)
  * referenced user resolved reactively, with the runtime presence folded in so a
  * connect/disconnect flips `presence` without re-streaming the profile.
  */
-export const userDetail: ReadonlySignal<UserDetail | undefined> = computedSignal(
-  () => {
+export const userDetail: ReadonlySignal<UserDetail | undefined> =
+  computedSignal(() => {
     const ref = userRef.get() as EntityRef | undefined
     const user = ref ? Users.signal(ref).get() : undefined
     if (!user) {
@@ -55,5 +55,4 @@ export const userDetail: ReadonlySignal<UserDetail | undefined> = computedSignal
         ? readNumber(presence, ONLINE_SESSION_COUNT_FIELD)
         : 0,
     }
-  },
-)
+  })

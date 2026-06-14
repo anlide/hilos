@@ -56,7 +56,9 @@ export interface EventUserRename {
  *
  * @param fields The event entity's committed fields.
  */
-export function eventFromFields(fields: Readonly<Record<string, unknown>>): Event {
+export function eventFromFields(
+  fields: Readonly<Record<string, unknown>>,
+): Event {
   return {
     id: readNumber(fields, 'id'),
     type: readString(fields, 'type'),

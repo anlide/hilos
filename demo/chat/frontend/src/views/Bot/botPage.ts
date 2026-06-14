@@ -55,7 +55,9 @@ export const botDetail: ReadonlySignal<BotDetail | undefined> = computedSignal(
       topics: bot.topics ?? '',
       personality: bot.personality ?? '',
       active: bot.active,
-      online: status ? readString(status, STATUS_FIELD) === STATUS_JOINED : false,
+      online: status
+        ? readString(status, STATUS_FIELD) === STATUS_JOINED
+        : false,
     }
   },
 )

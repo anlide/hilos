@@ -1,0 +1,6 @@
+# Build artifacts and the npm-managed lockfile are not formatted by Prettier.
+dist/
+package-lock.json
+
+# Markdown docs are hand-authored to the repo's documentation style, not Prettier's.
+**/*.md

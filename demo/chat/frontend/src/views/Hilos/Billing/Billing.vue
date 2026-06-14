@@ -7,6 +7,8 @@ it shows the stub body. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { HilosPages } from '@hilos/core'
 import { HilosAdminPage } from '@hilos/vue'
+
+defineOptions({ name: 'BillingPage' })
 </script>
 
 <template>

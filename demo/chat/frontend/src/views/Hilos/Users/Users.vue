@@ -14,6 +14,8 @@ import {
 
 import { usersTable } from './usersPage'
 
+defineOptions({ name: 'UsersPage' })
+
 const columns: HilosTableColumn[] = [
   { key: 'id', label: 'ID', sortable: true },
   { key: 'name', label: 'Name', sortable: true },

@@ -10,6 +10,8 @@ import { useSignal } from '@hilos/vue'
 
 import { botDetail } from './botPage'
 
+defineOptions({ name: 'BotPage' })
+
 const detail = useSignal(botDetail)
 </script>
 

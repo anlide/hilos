@@ -175,7 +175,8 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
         class="nav-link d-inline-flex align-items-center p-0"
         data-id="nav-profile"
       >
-        <i class="bi bi-person-circle me-1" aria-hidden="true"></i>{{ userName }}
+        <i class="bi bi-person-circle me-1" aria-hidden="true"></i
+        >{{ userName }}
       </HilosLink>
     </template>
     <HilosView :pages="pages" />

@@ -29,6 +29,8 @@ import {
   sendUploadChunk,
 } from './mainActions'
 
+defineOptions({ name: 'MainPage' })
+
 const selfName = useSignal(currentUserName)
 const participants = useSignal(mainParticipants)
 const bots = useSignal(mainBots)
@@ -84,11 +86,17 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
     return null
   }
   if (state.phase === 'checking') {
-    return { text: 'Moderating message…', className: 'text-primary', spinner: true }
+    return {
+      text: 'Moderating message…',
+      className: 'text-primary',
+      spinner: true,
+    }
   }
   if (state.phase === 'rejected') {
     return {
-      text: state.reason ? `Message rejected: ${state.reason}` : 'Message rejected',
+      text: state.reason
+        ? `Message rejected: ${state.reason}`
+        : 'Message rejected',
       className: 'text-danger',
       spinner: false,
     }
@@ -465,7 +473,11 @@ onUnmounted(() => {
                       :src="attachment.url"
                       :alt="attachment.filename"
                       class="rounded border"
-                      style="max-height: 12rem; max-width: 100%; object-fit: contain"
+                      style="
+                        max-height: 12rem;
+                        max-width: 100%;
+                        object-fit: contain;
+                      "
                       loading="lazy"
                     />
                   </a>
@@ -478,11 +490,9 @@ onUnmounted(() => {
                     data-id="event-attachment"
                   >
                     <i class="bi bi-paperclip" aria-hidden="true" />
-                    <span
-                      class="text-truncate"
-                      style="max-width: 16rem"
-                      >{{ attachment.filename }}</span
-                    >
+                    <span class="text-truncate" style="max-width: 16rem">{{
+                      attachment.filename
+                    }}</span>
                   </a>
                 </template>
               </div>
@@ -498,9 +508,11 @@ onUnmounted(() => {
             data-id="participants-header"
           >
             <strong>Participants</strong>
-            <span class="badge text-bg-secondary" data-id="participants-count">{{
-              participants.length
-            }}</span>
+            <span
+              class="badge text-bg-secondary"
+              data-id="participants-count"
+              >{{ participants.length }}</span
+            >
           </div>
           <div class="list-group list-group-flush">
             <div
@@ -554,8 +566,12 @@ onUnmounted(() => {
               class="list-group-item"
               data-id="bot"
             >
-              <div class="d-flex justify-content-between align-items-center gap-2">
-                <span class="fw-semibold" data-id="bot-name">{{ bot.name }}</span>
+              <div
+                class="d-flex justify-content-between align-items-center gap-2"
+              >
+                <span class="fw-semibold" data-id="bot-name">{{
+                  bot.name
+                }}</span>
                 <span
                   v-if="bot.status"
                   class="badge text-bg-light"
@@ -625,13 +641,13 @@ onUnmounted(() => {
       </div>
 
       <div v-if="uploadProgress" class="mb-2" data-id="upload-progress">
-        <div
-          class="small text-muted d-flex justify-content-between gap-2 mb-1"
-        >
+        <div class="small text-muted d-flex justify-content-between gap-2 mb-1">
           <span class="text-truncate"
             >Uploading {{ uploadProgress.filename }}…</span
           >
-          <span data-id="upload-progress-percent">{{ uploadProgressPercent }}%</span>
+          <span data-id="upload-progress-percent"
+            >{{ uploadProgressPercent }}%</span
+          >
         </div>
         <div class="progress" style="height: 4px">
           <div

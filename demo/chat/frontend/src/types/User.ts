@@ -33,7 +33,9 @@ export interface User extends FrameworkUser {
  *
  * @param fields The user entity's committed fields.
  */
-export function userFromFields(fields: Readonly<Record<string, unknown>>): User {
+export function userFromFields(
+  fields: Readonly<Record<string, unknown>>,
+): User {
   return {
     id: readNumber(fields, 'id'),
     superadmin: readBoolean(fields, 'superadmin'),

@@ -13,6 +13,8 @@ import { HilosAdminPage, LoadingButton, useSignal } from '@hilos/vue'
 import { clearRenameError, renameError, sendUserRename } from './userActions'
 import { userDetail } from './userPage'
 
+defineOptions({ name: 'HilosUserPage' })
+
 const NAME_MIN = 2
 const NAME_MAX = 64
 
@@ -55,7 +57,7 @@ function submit(): void {
     return
   }
 
-  loading.value = sendUserRename(current.id, draft.value.trim());
+  loading.value = sendUserRename(current.id, draft.value.trim())
 }
 
 // Success is state-driven: the rename has landed once the committed name (over
