@@ -113,6 +113,15 @@ Feature pages (logs, backups, users). These are more opinionated, with **fewer**
 extension points; a project customizes them by composing tier-1 primitives and a
 few slots, and replaces one wholesale only when it truly diverges.
 
+The Hilos admin pages are the bulk of tier 2. They live under
+`@hilos/vue/src/admin/<section>/` (view) with any headless under
+`@hilos/core/src/admin/<section>/`, grouped by section to mirror the backend
+`Pages/Hilos/<Section>/` layout — one file per page, named `Hilos<Remainder>Page`.
+The framework ships a real default page for every admin key, collected by
+`hilosAdminViews()`, so a project mounts the whole section for free and overrides
+only the pages it customizes (see
+[page-module-structure.md](page-module-structure.md)).
+
 The mechanism across both tiers is the same — slots + scoped slots + shared
 composables, no mixins — and "empty inheritance" (a one-line re-export) is the
 default when nothing is customized.

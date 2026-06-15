@@ -183,12 +183,14 @@ Topic documents are referenced by filename; several are still being authored.
   violation**. A flat catalog of page *identity* (the route table, the footer
   set, the admin tree) is a registry, not a violation; and a *page-agnostic*
   shared component (a breadcrumb, an admin-page shell) parametrized by a page key
-  is the sanctioned reuse. A framework **default-view factory** for its own
-  un-implemented admin pages — one mapping each catalog key to the page-agnostic
-  shell (`hilosAdminViews`) — is likewise sanctioned: a project spreads it and
-  overrides a key only when it implements that page as its own module. The bright
-  line holds — no page content/metadata map in the project, and only `HilosView`
-  reads the navigator. See [page-module-structure.md](page-module-structure.md).
+  is the sanctioned reuse. A framework set of **default admin views** for its own
+  un-implemented pages — one real, per-file page per catalog key (under
+  `@hilos/vue/src/admin/`, each rendering the page-agnostic shell), collected into
+  a key → component map (`hilosAdminViews`) — is likewise sanctioned: a project
+  spreads it and overrides a key only when it implements that page itself. The
+  bright line holds — every page is its own file, no page content/metadata map in
+  the project, and only `HilosView` reads the navigator. See
+  [page-module-structure.md](page-module-structure.md).
 - **All non-visual logic lives in the agnostic core; views are thin and
   per-framework.** See [multiframework-core.md](multiframework-core.md).
 - **Data view-models are declared in `types/`, never in a selector or action

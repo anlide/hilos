@@ -24,13 +24,30 @@ The page key is the single source of the folder name: a page keyed `main` lives
 in `Main/` (Vue/React) or `main/` (Angular), never `Home/` or `chat-main/`.
 
 A family of framework pages sharing a key prefix — the Hilos admin section, whose
-keys are all `hilos_*` — groups under one container folder named for the prefix
-(`views/Hilos/`), each page's folder named for the key's remainder
-(`hilos_billing` → `views/Hilos/Billing/`, `hilos_billing_provider` →
-`views/Hilos/BillingProvider/`). The container stands in for the shared prefix,
-so the key is recovered as prefix + folder; this mirrors the backend's
-`Pages/Hilos/Billing/` grouping. The container is a grouping device only — it is
-not itself a page and holds no view file of its own.
+keys are all `hilos_*` — groups **by section**, mirroring the backend's
+`Pages/Hilos/<Section>/` layout. The section is the folder; every page of that
+section lives directly inside it, and a deep sub-group nests a further folder (the
+I18n screens split into `i18n/lists/`, `i18n/details/`, `i18n/translate/`, like the
+backend `I18n/Lists|Details|Translate/`). The section prefix lives in the folder
+path; there is **not** a separate top-level folder per page.
+
+This canon applies at two levels, identically:
+
+- **In the SDK** the Hilos admin pages are framework-owned, so they live under
+  `@hilos/vue/src/admin/<section>/` (the view) with any headless logic under
+  `@hilos/core/src/admin/<section>/` — e.g. `admin/billing/HilosBillingProviderPage.vue`,
+  `admin/daemon/HilosDaemonWorkersPage.vue`, `admin/i18n/lists/HilosI18nLanguagesPage.vue`.
+  An SDK admin page file is named `Hilos<Remainder>Page` — the `Hilos` SDK-export
+  prefix, the key's remainder after `hilos_` in `PascalCase`, and the `Page`
+  suffix (`hilos_billing_provider` → `HilosBillingProviderPage`). Vue ships these
+  today; React/Angular gain them when those view primitives are ported. See
+  [sdk-packaging.md](sdk-packaging.md).
+- **In a consumer** the project keeps a `views/Hilos/<Section>/` folder, grouped
+  the same way, only for the admin pages it actually implements or customizes —
+  its thin wrappers and full pages (e.g. `views/Hilos/Users/{Users.vue, User.vue,
+  hilosUsersContext.ts}`, `views/Hilos/Settings/`). An un-implemented page has no
+  consumer folder at all; it is served by the SDK default map (see "Default
+  framework views" below).
 
 ## Files in a page module
 
@@ -142,17 +159,22 @@ explicitly in the app shell. The violation is the inverse: a God-component that
 reads the navigator itself, backed by a God-map of every page's content. A
 parametrized shell each page invokes with its own key is the sanctioned form.
 
-**Default framework views for un-implemented pages.** The framework may ship a
-factory that maps each admin catalog key to the page-agnostic shell —
-`hilosAdminViews()` in `@hilos/vue`, one `HilosAdminPage` stub per
-`HILOS_ADMIN_PAGES` key. A project spreads it into its app page map and overrides
-a key only when it implements that page as its own module (e.g. `Hilos/Users/`).
-This keeps the 50-odd not-yet-built admin pages in the framework instead of
-recopying an identical stub into every project. It is **not** the revoked
-God-map: there is no page content or metadata map in the project (the catalog
-stays in `@hilos/core`), each entry renders the page-agnostic shell, and the
-navigator is still read only by `HilosView`. An un-implemented page has no
-project module by design; implementing it creates one.
+**Default framework views for un-implemented pages.** The framework ships a real,
+one-per-file default page for every admin key under `@hilos/vue/src/admin/`
+(grouped by section as above) — each a thin component that renders the
+page-agnostic `HilosAdminPage` shell for its key until it grows real content.
+`hilosAdminViews()` in `@hilos/vue` collects these files into a key → component
+map; a project spreads it into its app page map and overrides a key only when it
+implements that page itself. This keeps the 50-odd not-yet-built admin pages in
+the framework — as real files an author opens and fills in — instead of recopying
+them into every project. The `users` / `user` pages are deliberately **not** in
+the map: they are real framework pages that need a project-supplied
+`HilosUsersContext`, so a consumer mounts them directly. It is **not** the revoked
+God-map: every page is its own module file (no page content or metadata map in any
+project), the catalog of identity stays in `@hilos/core` (`HILOS_ADMIN_PAGES`),
+each file renders the page-agnostic shell, and the navigator is read only by
+`HilosView`. To implement a page, replace its file's shell body with real content
+(or, in a consumer, override the key with a project module).
 
 ## Type placement: domain vs page-local
 
@@ -184,7 +206,9 @@ second page graduates to `src/types/`.
 - A list-row `…Item` view-model left directly in the page `types/` instead of
   its `types/lists/` subfolder.
 - A barrel `index.ts` inside a page folder.
-- A page folder named anything other than the page key.
+- A page folder named anything other than the page key (outside the Hilos admin
+  section, which groups by section rather than one folder per page — see "One
+  folder per page" above).
 - A "page map" / "admin map": one file enumerating many pages' titles, leads,
   parents, or render logic and wiring every key to a single shared component,
   instead of one module per page (see "Never a shared page map"). Mixing more

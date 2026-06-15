@@ -27,18 +27,20 @@ import Privacy from './views/Privacy/Privacy.vue'
 import Profile from './views/Profile/Profile.vue'
 import Terms from './views/Terms/Terms.vue'
 import User from './views/User/User.vue'
-// The Hilos admin section. The framework ships a default stub for every admin
-// page (hilosAdminViews), so the demo maps only the pages it has actually
-// implemented — the rest render the framework stub, never recopied per project
-// (page-module-structure.md). Each real page is still its own module.
+// The Hilos admin section. The framework ships a real default page for every
+// admin key (hilosAdminViews), so the demo maps only the pages it implements
+// itself — the rest render the framework default, never recopied per project
+// (page-module-structure.md). Each page is still its own module file.
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 
 // The page-key → view map HilosView renders from. The app's own pages, then the
 // framework admin defaults (hilosAdminViews), then the demo's real admin pages
-// overriding the default stub for their key. Pages without a mapped view
-// (guardian, which gets its own real page) render nothing.
+// overriding the default for their key (and users/user, which the framework's
+// default map omits — they need a project context, so the demo mounts them
+// directly). Pages without a mapped view (guardian, its own real page) render
+// nothing.
 const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,
