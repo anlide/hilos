@@ -107,19 +107,33 @@ indirection to maintain.
 
 A framework admin page that has graduated to a real implementation is a **tier-2
 page-chunk component** the SDK ships (`@hilos/vue` `HilosUsersPage` /
-`HilosUserPage`; [sdk-packaging.md](sdk-packaging.md)). Its view, selectors, and
-actions are the framework's — the headless lives in `@hilos/core`
-(`createHilosUsersTable` / `createHilosUserDetail` / `createHilosUserRename`,
-the `HilosUserRow` view-model), the markup in the view package — and are **not**
-restated per project. The project's page module then shrinks to:
+`HilosUserPage` / `HilosSettingsPage`; [sdk-packaging.md](sdk-packaging.md)). Its
+view, selectors, and actions are the framework's — the headless lives in
+`@hilos/core` (`createHilosUsersTable` / `createHilosUserDetail` /
+`createHilosUserRename` with the `HilosUserRow` view-model; `createHilosSettingsTable`
+/ `createHilosSettingsActions` with the `HilosSettingRow` view-model), the markup in
+the view package — and are **not** restated per project. The project's page module
+then shrinks to:
 
 - the **view file** — a thin wrapper that mounts the framework page and fills its
   slots (`Users.vue` mounts `HilosUsersPage` and supplies the `#row-actions` cell
-  with a link to the detail page; `User.vue` mounts `HilosUserPage`);
+  with a link to the detail page; `User.vue` mounts `HilosUserPage`; `Settings.vue`
+  mounts `HilosSettingsPage` with no slots);
 - an optional **context module** (`…Context.ts`) — the one place the project binds
-  the framework page to its own `scopes`, `connection`, and entity collections
-  (`hilosUsersContext.ts`), shared by the list and detail wrappers. It is a
-  binding, not a selector: the selectors are the framework's.
+  the framework page to its own `scopes`, `connection`, and (when the page resolves
+  an entity) its entity collections: `hilosUsersContext.ts` passes `scopes` +
+  `connection` + the `Users` collection (shared by the list and detail wrappers),
+  while `hilosSettingsContext.ts` passes just `scopes` + `connection` (settings are
+  page-scoped, no entity). It is a binding, not a selector: the selectors are the
+  framework's.
+
+A framework page need not take a project context at all. The dashboard
+(`HilosDashboardPage`) reads only the framework catalog, so it stays in the
+`hilosAdminViews` default map (a project gets it for free) and a project extends it
+purely through a **slot**: the chat demo's `Dashboard.vue` wraps it and fills the
+`#top` slot with its own admin cards (bots, moderation) above the framework
+sections, adding nothing to the framework page. Slot extension and a context are
+independent — a page may use either, both, or neither.
 
 Folder-per-page still holds — each page is its own folder with its own wrapper,
 mapped explicitly in the app shell — and there is still no shared page map. What

@@ -109,7 +109,7 @@ composables so a project can customize them heavily.
 
 ### Tier 2 — page-chunk components
 
-Feature pages (logs, backups, users). These are more opinionated, with **fewer**
+Feature pages (logs, backups, users, settings). These are more opinionated, with **fewer**
 extension points; a project customizes them by composing tier-1 primitives and a
 few slots, and replaces one wholesale only when it truly diverges.
 

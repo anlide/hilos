@@ -17,8 +17,16 @@ import type { Component } from 'vue'
 
 import { connection } from './bootstrap/connection'
 import { currentUserName } from './bootstrap/session'
-import { PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
+import {
+  PAGE_ADMIN_BOTS,
+  PAGE_ADMIN_MODERATOR,
+  PAGE_BOT,
+  PAGE_MAIN,
+  PAGE_USER,
+} from './pages/keys'
 import About from './views/About/About.vue'
+import AdminBots from './views/AdminBots/AdminBots.vue'
+import AdminModerator from './views/AdminModerator/AdminModerator.vue'
 import Bot from './views/Bot/Bot.vue'
 import Dashboard from './views/Dashboard/Dashboard.vue'
 import License from './views/License/License.vue'
@@ -45,6 +53,8 @@ const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   [PAGE_USER]: User,
   [PAGE_BOT]: Bot,
+  [PAGE_ADMIN_BOTS]: AdminBots,
+  [PAGE_ADMIN_MODERATOR]: AdminModerator,
   ...hilosAdminViews(),
   [HilosPages.DASHBOARD]: Dashboard,
   [HilosPages.PROFILE]: Profile,

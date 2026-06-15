@@ -1,14 +1,11 @@
-<!-- SettingValueCell — renders one setting's effective value for the settings
+<!-- HilosSettingValueCell — renders one setting's effective value for the settings
 table and the edit dialog: a disabled checkbox for booleans, an italic figure for
 numbers, the text (or an "empty string" chip) otherwise, plus a source badge —
 the referenced key, "default", or "custom" — so the catalog origin is visible at
 a glance. Presentation only; Bootstrap classes (styling-rules.md). -->
 <script setup lang="ts">
+import { type SettingValueSource } from '@hilos/core'
 import { computed } from 'vue'
-
-import { type SettingValueSource } from '../../../types/tables/HilosSettingRow'
-
-defineOptions({ name: 'SettingValueCell' })
 
 const props = defineProps<{
   value: string | null

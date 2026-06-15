@@ -189,3 +189,14 @@ export {
   type HilosUsersContext,
   type HilosUserRename,
 } from './admin/users/hilosUsers.js'
+export {
+  resolveHilosSettingRow,
+  isOrphanSetting,
+  isPersistedSetting,
+  createHilosSettingsTable,
+  createHilosSettingsActions,
+  type SettingValueSource,
+  type HilosSettingRow,
+  type HilosSettingsContext,
+  type HilosSettingsActions,
+} from './admin/settings/hilosSettings.js'

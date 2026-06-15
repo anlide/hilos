@@ -5,10 +5,10 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user pages are intentionally absent: they are real framework pages
-// (HilosUsersPage / HilosUserPage) that require a project-supplied
-// HilosUsersContext, so a project mounts them directly rather than through this
-// default map.
+// The users / user / settings pages are intentionally absent: they are real
+// framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage) that
+// require a project-supplied context, so a project mounts them directly rather
+// than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -51,7 +51,6 @@ import HilosBillingPage from './billing/HilosBillingPage.vue'
 import HilosBillingProviderPage from './billing/HilosBillingProviderPage.vue'
 import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
-import HilosSettingsPage from './settings/HilosSettingsPage.vue'
 import HilosOperationsPage from './operations/HilosOperationsPage.vue'
 import HilosDaemonPage from './daemon/HilosDaemonPage.vue'
 import HilosDaemonWorkersPage from './daemon/HilosDaemonWorkersPage.vue'
@@ -119,7 +118,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.BILLING_PROVIDER]: HilosBillingProviderPage,
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
-    [HilosPages.SETTINGS]: HilosSettingsPage,
     [HilosPages.OPERATIONS]: HilosOperationsPage,
     [HilosPages.DAEMON]: HilosDaemonPage,
     [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkersPage,
