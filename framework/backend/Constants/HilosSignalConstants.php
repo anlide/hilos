@@ -200,4 +200,14 @@ final class HilosSignalConstants
 
     /** Wire signal name for incremental table row mutations. */
     public const string TABLE_MUTATION = 'table_mutation';
+
+    // ── Hilos users admin: single-user rename action + acks (client ↔ server) ──
+    /** Client → server: rename the displayed user (handled on the HILOS_USER page). */
+    public const string HILOS_USER_UPDATE = 'hilos_user_update';
+
+    /** Server → initiator: hilos_user_update succeeded. */
+    public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
+
+    /** Server → initiator: hilos_user_update failed (carries a reason text). */
+    public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
 }

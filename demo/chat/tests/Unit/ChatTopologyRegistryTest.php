@@ -14,6 +14,7 @@ use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -149,7 +150,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
-            ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -172,7 +173,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
-            ChatSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
