@@ -6,7 +6,7 @@ Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { HilosUserPage } from '@hilos/vue'
 
-import { hilosUsersContext } from '../Users/hilosUsersContext'
+import { hilosUsersContext } from './hilosUsersContext'
 
 defineOptions({ name: 'HilosUserPage' })
 </script>

@@ -142,6 +142,18 @@ explicitly in the app shell. The violation is the inverse: a God-component that
 reads the navigator itself, backed by a God-map of every page's content. A
 parametrized shell each page invokes with its own key is the sanctioned form.
 
+**Default framework views for un-implemented pages.** The framework may ship a
+factory that maps each admin catalog key to the page-agnostic shell —
+`hilosAdminViews()` in `@hilos/vue`, one `HilosAdminPage` stub per
+`HILOS_ADMIN_PAGES` key. A project spreads it into its app page map and overrides
+a key only when it implements that page as its own module (e.g. `Hilos/Users/`).
+This keeps the 50-odd not-yet-built admin pages in the framework instead of
+recopying an identical stub into every project. It is **not** the revoked
+God-map: there is no page content or metadata map in the project (the catalog
+stays in `@hilos/core`), each entry renders the page-agnostic shell, and the
+navigator is still read only by `HilosView`. An un-implemented page has no
+project module by design; implementing it creates one.
+
 ## Type placement: domain vs page-local
 
 - **`src/types/`** holds **domain entities** (the normalized wire entities that
