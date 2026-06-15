@@ -7,14 +7,14 @@
     "ng": "ng",
     "dev": "ng serve --host 0.0.0.0 --port 5173",
     "build": "ng build",
-    "check": "tsc --noEmit -p tsconfig.app.json"
+    "check": "tsc --noEmit -p tsconfig.dev.json"
   },
   "dependencies": {
     "@angular/common": "^22.0.0",
     "@angular/compiler": "^22.0.0",
     "@angular/core": "^22.0.0",
     "@angular/platform-browser": "^22.0.0",
-    "@hilos/angular": "file:../../../framework/frontend/angular/dist",
+    "@hilos/angular": "file:../../../framework/frontend/angular",
     "@hilos/core": "file:../../../framework/frontend/core",
     "@vue/reactivity": "^3.5.35",
     "bootstrap": "^5.3.3",

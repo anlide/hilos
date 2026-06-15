@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Angular view layer over @hilos/core — adapts the core stores to Angular via signals.",
+  "main": "./dist/fesm2022/hilos-angular.mjs",
+  "module": "./dist/fesm2022/hilos-angular.mjs",
+  "types": "./dist/types/hilos-angular.d.ts",
   "files": [
     "dist"
   ],

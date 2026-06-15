@@ -23,15 +23,17 @@ Common ground (containers, connection, e2e, stable ids) is in
   mount stays `../frontend/dist`, uniform with the Vite demos.
 - deps `@angular/{common,compiler,core,platform-browser}` `^22`, `rxjs`,
   `tslib`, `@vue/reactivity` (see below), `bootstrap` + `bootstrap-icons` (see
-  Styling), and `@hilos/angular` pinned at its **dist**:
-  `file:../../../framework/frontend/angular/dist`. The Angular view layer is
+  Styling), and `@hilos/angular` pinned at the **package root**:
+  `file:../../../framework/frontend/angular`. The Angular view layer is
   built with **ng-packagr** (Angular Package Format: a FESM2022 bundle + a
   generated manifest), unlike the Vue/React layers' Vite library build, because
-  only an Angular-aware compiler can emit the shell's declarables; the consumer
-  points at the ng-packagr output folder. devDeps `@angular/{build,cli,
-  compiler-cli}` `^22`, `typescript ~6.0.x`; `cli.analytics: false` for
-  container runs. The SDK resolves to its built dist in BOTH modes — build the
-  SDK first, and rebuild it to see SDK changes in a running dev server.
+  only an Angular-aware compiler can emit the shell's declarables. devDeps
+  `@angular/{build,cli,compiler-cli}` `^22`, `typescript ~6.0.x`;
+  `cli.analytics: false` for container runs. Like the Vite demos, the SDK
+  resolves to **`src` in dev** and to its built **`dist` in production** (the
+  package `main`/`types`), so a dev edit shows up with no ng-packagr rebuild and
+  only e2e/prod — which run the production build — need the dist rebuilt first.
+  How that split is wired is *Dev-source consumption* below.
 - **`preserveSymlinks: true`** in `angular.json` build options: the SDK is a
   symlinked `file:` dependency whose FESM imports `@angular/core` (a peer); with
   symlinks resolved to their real path the import lands on the SDK workspace's
@@ -96,72 +98,83 @@ wired via `serve.options.proxyConfig` in `angular.json`. The proxy target is
 the compose service name — the dev container and the daemon share the local
 network.
 
-## Module duplication — two layers, both required
+## Dev-source consumption
 
-> `preserveSymlinks: true` (Toolchain, above) is the primary collapse of the
-> duplicate copies under ng-packagr's FESM and covers both `ng build` and
-> `ng serve`. The two layers below were the prior, plain-tsc-dist approach and
-> remain in `simple-poll` as defence in depth; a project starting fresh on the
-> ng-packagr SDK can rely on `preserveSymlinks` alone (verify `ng serve` once).
+The demo consumes the SDK from **`src` in dev** and from **`dist` in
+production** — the same split the Vite demos get, so an SDK edit shows up in
+`ng serve` with no ng-packagr rebuild, while e2e and prod test the shipped FESM.
+Angular reaches the split differently because ng-packagr owns its dist package's
+`exports` and the AOT compiler will not emit declarables for a library it treats
+as pre-compiled:
 
-The `file:` SDK reaches a second `@angular/core` copy through its real path
-(the SDK-workspace install used by the adapter unit tests). With two copies
-the SDK's `inject()` cannot see the app's injection context and bootstrap
-dies with **NG0203**. The fix has TWO independent layers — `ng build` and
-`ng serve` resolve modules through different pipelines, and each layer
-covers one of them:
+- **Production** uses `tsconfig.app.json` unchanged — `@hilos/angular` resolves
+  through the package `main`/`types` to its ng-packagr **dist** (FESM). Rebuild
+  the SDK before e2e/prod.
+- **Dev** (`ng serve` and the `development` build it drives) uses
+  `tsconfig.dev.json`, which `paths`-redirects the SDK to `src`:
 
-1. **Build path**: `tsconfig.json` pins the bare import onto the app's
-   single copy:
+  ```jsonc
+  "paths": {
+    "@hilos/angular": ["./node_modules/@hilos/angular/src/index.ts"],
+    "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"]
+  }
+  ```
+
+  and lists the SDK component sources in `include` (by their node_modules path —
+  the one `preserveSymlinks` resolves to) so the AOT compiler owns them as
+  program inputs (a `*.test.ts` `exclude` keeps `vitest`-importing SDK tests
+  out). `angular.json` points the `development` build configuration at this
+  tsconfig (`"tsConfig": "tsconfig.dev.json"`), and `serve.options.prebundle`
+  excludes `@hilos/angular`/`@hilos/core` so Vite hands them to the compiler
+  rather than pre-bundling a stale copy. `npm run check` runs against this same
+  tsconfig, so type-checking sees the SDK `src` too.
+
+**Why `paths`, not the package `development` export condition (the Vite demos'
+mechanism):** ng-packagr generates the dist `exports` and warns if the source
+package.json declares conflicting `types`/`default` conditions. So
+`@hilos/angular`'s source package stays plain (`main`/`module`/`types`) and the
+dev-source redirect lives in the consumer's `tsconfig.dev.json`.
+
+### The duplicate-copy collapse — NG0203 / NG3004
+
+Compiling the SDK from `src` pulls its bare `@angular/core` and `@angular/common`
+imports into the app build, and the `file:` SDK reaches a SECOND copy of each
+through its real path (the SDK-workspace install the adapter unit tests use). Two
+copies and the SDK's `inject()` cannot see the app's injection context —
+bootstrap dies with **NG0203** (`@angular/core`); or the compiler cannot import a
+symbol such as `NgComponentOutlet` and fails with **NG3004** (`@angular/common`).
+Two layers collapse them to one copy each:
+
+1. **`preserveSymlinks: true`** (`angular.json` build options) resolves the SDK's
+   bare imports from the consumer's own `node_modules` rather than the symlink's
+   real path — the primary collapse, covering `ng build` and `ng serve`.
+2. **tsconfig `paths` pins** for `@angular/core` and `@angular/common` onto the
+   app's single copy, since the `@angular/build` esbuild pipeline resolves bare
+   imports through tsconfig paths:
 
    ```jsonc
-   "paths": { "@angular/core": ["./node_modules/@angular/core"] }
+   "paths": {
+     "@angular/core": ["./node_modules/@angular/core"],
+     "@angular/common": ["./node_modules/@angular/common"]
+   }
    ```
 
-   The `@angular/build` esbuild pipeline resolves bare imports through
-   tsconfig paths, so `ng build` (and therefore e2e/prod) emit one core.
-
-2. **Dev path**: the dev server's Vite dependency PREBUNDLER ignores
-   tsconfig paths and inlines the second core into the prebundled
-   `@hilos/angular` chunk (verifiable in
-   `frontend/.angular/cache/<ver>/<project>/vite/deps/@hilos_angular.js` —
-   look for `framework/frontend/node_modules/@angular/core` in its header
-   comments). The dev page then dies with NG0203 at bootstrap while the
-   WebSocket itself (opened from `main.ts` before bootstrap) connects and
-   pings happily — a confusing symptom. The fix is TWO edits in
-   `angular.json`, applied TOGETHER:
-
-   ```json
-   "serve": { "options": { "prebundle": { "exclude": ["@hilos/angular", "@hilos/core"] } } }
-   ```
-
-   ```json
-   "build": { "configurations": { "development": { "conditions": ["module"] } } }
-   ```
-
-   Both are needed. Prebundle-exclude alone pulls the SDK **TypeScript
-   source** (development-condition export) into the app build and fails
-   with "file not found in TypeScript compilation"; `"conditions":
-   ["module"]` drops the `development` condition so the SDK resolves to its
-   **dist** in dev (matching `ng build`), and the exclude must stay or the
-   optimizer re-inlines the second core anyway. The trade-off: the dev
-   server serves the BUILT SDK — rebuild the SDK workspace to see SDK
-   changes (app-code HMR is unaffected). Keep the explanation in
-   `tsconfig.json`'s JSONC comment, since `angular.json` cannot hold
-   comments.
+Keep these explanations in `tsconfig.json` / `tsconfig.dev.json` JSONC comments,
+since `angular.json` cannot hold comments.
 
 ## The core's signal engine — `@vue/reactivity` as a direct dependency
 
 `@hilos/core` ships a private signal engine, `@vue/reactivity` (app code
 never imports it). A real tarball install hoists it automatically; the
 monorepo `file:` link instead satisfies it from the SDK workspace's own copy
-and never places it in the consumer's `node_modules`. The Vite-Vue/React
-demos do not notice — they resolve the core to `src` in dev and prebundle the
-whole graph through the symlink's real path. The Angular dev server does: it
-resolves the core to **dist** and lists it in `prebundle.exclude` (the
-module-duplication fix above), so Vite serves the dist untouched and resolves
-its bare `@vue/reactivity` import from the consumer root, where the
-link-satisfied dep is absent — `Failed to resolve import "@vue/reactivity"`.
+and never places it in the consumer's `node_modules`. The Vite-Vue/React demos
+do not notice — they prebundle the whole graph through the symlink's real path,
+where the SDK-workspace copy sits. The Angular consumer does: the core's
+`@vue/reactivity` import is external to the SDK artifact in both modes — dev
+compiles the core `src` (resolved to its node_modules path under
+`preserveSymlinks`) and production consumes the core FESM — so the bare import
+resolves from the consumer root, where the link-satisfied dep is absent:
+`Failed to resolve import "@vue/reactivity"`.
 
 The fix is one line: declare `@vue/reactivity` as a direct dependency of the
 Angular consumer so npm installs it locally:
@@ -169,7 +182,3 @@ Angular consumer so npm installs it locally:
 ```json
 "dependencies": { "@vue/reactivity": "^3.5.35" }
 ```
-
-Production `ng build` is unaffected — esbuild resolves the import through the
-symlink's real path either way; only the dev server reads it from the
-consumer root.

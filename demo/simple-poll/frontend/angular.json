@@ -81,7 +81,7 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true,
-              "conditions": ["module"]
+              "tsConfig": "tsconfig.dev.json"
             }
           },
           "defaultConfiguration": "production"

@@ -28,7 +28,8 @@
        conditions: ["module"] so the SDK's conditional exports resolve to dist
        (build parity) instead of pulling SDK src into the app compilation. */
     "paths": {
-      "@angular/core": ["./node_modules/@angular/core"]
+      "@angular/core": ["./node_modules/@angular/core"],
+      "@angular/common": ["./node_modules/@angular/common"]
     }
   },
   "angularCompilerOptions": {
