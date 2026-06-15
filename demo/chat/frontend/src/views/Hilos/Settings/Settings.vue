@@ -1,23 +1,21 @@
-<!-- The Hilos settings page (HilosPages.SETTINGS): the application setting catalog
-as a framework table inside the admin shell, with add / edit / delete dialogs.
-Each row is a catalog key merged with its persisted override; the Add dialog
-picks an on-default key through the framework HilosDropdown and gives it a custom
-value. Authoritative-backend: a submit blocks the button and the dialog closes
-only when the changed row echoes back over the live table (no optimism); a
-failure surfaces in the banner (settingsActions.ts). Bootstrap classes only
-(styling-rules.md). -->
+<!-- The Hilos settings page (HilosPages.SETTINGS): the cataloged settings table
+inside the admin shell. Every row is a catalog key merged with its persisted
+override, so the key set is fixed — there is no free "add a setting" (data-model.md,
+"Cataloged tables"). A row's own actions are the only mutations: set a custom value
+on an on-default key (add-by-key), edit or reset an override, or delete an orphan.
+Authoritative-backend: a submit blocks the button and the dialog closes only when
+the changed row echoes back over the live table (no optimism); a failure surfaces
+in the banner (settingsActions.ts). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
 import { HilosPages } from '@hilos/core'
 import {
   HilosAdminPage,
-  HilosDropdown,
   HilosModal,
   HilosTable,
   LoadingButton,
   useSignal,
-  type HilosDropdownOption,
   type HilosTableColumn,
 } from '@hilos/vue'
 
@@ -30,7 +28,6 @@ import {
   settingError,
 } from './settingsActions'
 import {
-  catalogDefaultKeys,
   isOrphanSetting,
   isPersistedSetting,
   settingsTable,
@@ -49,9 +46,6 @@ const viewRows = useSignal(settingsTable.rows)
 const error = useSignal(settingError)
 
 const allRows = computed(() => viewRows.value.map((view) => view.row))
-const addOptions = computed<HilosDropdownOption<string>[]>(() =>
-  catalogDefaultKeys(allRows.value).map((key) => ({ value: key, label: key })),
-)
 
 /** Map a setting type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
@@ -69,23 +63,6 @@ function inputStep(type: string | undefined): 'any' | undefined {
   return type === 'float' ? 'any' : undefined
 }
 
-// Add dialog: a catalog key on its default, given a custom value.
-const addOpen = ref(false)
-const addKey = ref<string | null>(null)
-const addValue = ref('')
-const addLoading = ref(false)
-const addRow = computed(
-  () => allRows.value.find((row) => row.key === addKey.value) ?? null,
-)
-const addInputType = computed(() => inputType(addRow.value?.type))
-const addStep = computed(() => inputStep(addRow.value?.type))
-const addValueBool = computed({
-  get: () => addValue.value === '1',
-  set: (on: boolean) => {
-    addValue.value = on ? '1' : '0'
-  },
-})
-
 // Edit dialog: one row's custom value (or a reset back to the catalog default).
 const editOpen = ref(false)
 const editRow = ref<HilosSettingRow | null>(null)
@@ -100,14 +77,15 @@ const editValueBool = computed({
     editValue.value = on ? '1' : '0'
   },
 })
-const editDirty = computed(() => {
-  if (!editRow.value) {
-    return false
-  }
-  const next = editUseCustom.value ? editValue.value : null
-
-  return next !== editRow.value.overrideValue
-})
+// The custom value the dialog would persist, normalized to a string: a number
+// input yields a number, while the row override and the wire are strings, so an
+// un-normalized value would never match the echoed row. Null leaves the default.
+const editOverride = computed<string | null>(() =>
+  editUseCustom.value ? String(editValue.value) : null,
+)
+const editDirty = computed(
+  () => !!editRow.value && editOverride.value !== editRow.value.overrideValue,
+)
 
 // Delete dialog: orphan keys only (not in the catalog).
 const deleteOpen = ref(false)
@@ -118,31 +96,6 @@ const deleteLoading = ref(false)
 const pendingSaveKey = ref<string | null>(null)
 const pendingSaveOverride = ref<string | null>(null)
 const pendingDeleteKey = ref<string | null>(null)
-
-function openAdd(): void {
-  clearSettingError()
-  addKey.value = addOptions.value[0]?.value ?? null
-  addValue.value = addRow.value?.value ?? ''
-  addLoading.value = false
-  addOpen.value = true
-}
-
-function closeAdd(): void {
-  addOpen.value = false
-  addLoading.value = false
-}
-
-function submitAdd(): void {
-  if (addKey.value === null || addLoading.value) {
-    return
-  }
-  pendingSaveKey.value = addKey.value
-  pendingSaveOverride.value = addValue.value
-  addLoading.value = sendSettingAdd(addKey.value, addValue.value)
-  if (!addLoading.value) {
-    pendingSaveKey.value = null
-  }
-}
 
 function openEdit(row: HilosSettingRow): void {
   clearSettingError()
@@ -163,7 +116,7 @@ function submitEdit(): void {
   if (!row || editLoading.value) {
     return
   }
-  const next = editUseCustom.value ? editValue.value : null
+  const next = editOverride.value
   if (next === row.overrideValue) {
     closeEdit()
 
@@ -212,7 +165,6 @@ watch(allRows, (rows) => {
     const row = rows.find((candidate) => candidate.key === pendingSaveKey.value)
     if (row && row.overrideValue === pendingSaveOverride.value) {
       pendingSaveKey.value = null
-      closeAdd()
       closeEdit()
     }
   }
@@ -225,15 +177,9 @@ watch(allRows, (rows) => {
   }
 })
 
-// Picking another key in the Add dialog pre-fills its current value.
-watch(addKey, () => {
-  addValue.value = addRow.value?.value ?? ''
-})
-
 // A rejected action releases every button and keeps the dialog open to retry.
 watch(error, (reason) => {
   if (reason !== null) {
-    addLoading.value = false
     editLoading.value = false
     deleteLoading.value = false
     pendingSaveKey.value = null
@@ -244,17 +190,6 @@ watch(error, (reason) => {
 
 <template>
   <HilosAdminPage :page="HilosPages.SETTINGS">
-    <div class="d-flex justify-content-end mb-3">
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        data-id="hilos-settings-add"
-        @click="openAdd"
-      >
-        <i class="bi bi-plus-lg" aria-hidden="true"></i> Add setting
-      </button>
-    </div>
-
     <div
       v-if="error"
       class="alert alert-danger"
@@ -317,76 +252,6 @@ watch(error, (reason) => {
         </td>
       </template>
     </HilosTable>
-
-    <HilosModal
-      v-model="addOpen"
-      title="Add setting"
-      :confirm-on-close="addKey !== null"
-      @cancel="closeAdd"
-    >
-      <form @submit.prevent="submitAdd">
-        <div class="mb-3">
-          <label class="form-label">Setting key</label>
-          <HilosDropdown
-            v-model="addKey"
-            :options="addOptions"
-            placeholder="Select a setting…"
-            menu-aria-label="Catalog settings"
-            empty-text="Every catalog setting already has a custom value."
-          />
-        </div>
-        <div v-if="addRow" class="mb-3">
-          <span class="form-label d-block">Catalog default</span>
-          <SettingValueCell
-            :value="addRow.defaultValue"
-            :type="addRow.type"
-            :value-source="addRow.valueSource"
-            :default-reference-key="addRow.defaultReferenceKey"
-          />
-        </div>
-        <div v-if="addRow" class="mb-0">
-          <div v-if="addInputType === 'checkbox'" class="form-check">
-            <input
-              id="hilos-settings-add-value"
-              v-model="addValueBool"
-              type="checkbox"
-              class="form-check-input"
-              data-id="hilos-settings-add-value"
-            />
-            <label class="form-check-label" for="hilos-settings-add-value">
-              Enabled
-            </label>
-          </div>
-          <template v-else>
-            <label class="form-label" for="hilos-settings-add-value">
-              Custom value
-            </label>
-            <input
-              id="hilos-settings-add-value"
-              v-model="addValue"
-              :type="addInputType"
-              :step="addStep"
-              class="form-control"
-              data-id="hilos-settings-add-value"
-            />
-          </template>
-        </div>
-      </form>
-      <template #actions="{ requestClose }">
-        <button type="button" class="btn btn-secondary" @click="requestClose">
-          Cancel
-        </button>
-        <LoadingButton
-          class="btn-primary"
-          :loading="addLoading"
-          :disabled="addKey === null"
-          data-id="hilos-settings-add-save"
-          @click="submitAdd"
-        >
-          Create
-        </LoadingButton>
-      </template>
-    </HilosModal>
 
     <HilosModal
       v-model="editOpen"

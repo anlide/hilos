@@ -7,6 +7,10 @@ customizes the look by filling slots, never by re-implementing the behavior —
 "template inheritance" via slots (sdk-packaging.md). v-model is the selected
 value. Outside-click and Escape close it, arrow keys rove the options, and the
 listbox/option ARIA roles ship by default (a11y is v1, styling-rules.md).
+Exported as part of the public SDK surface (index.ts) and kept intentionally: no
+in-repo consumer mounts one today (the settings page dropped its free "add a
+setting" dialog — data-model.md, "Cataloged tables"), but it stays a tier-1
+building block for any catalog/option select — live API, not dead code.
 Bootstrap classes only — no CSS of its own. -->
 <script setup lang="ts" generic="V extends string | number">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'

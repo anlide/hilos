@@ -24,6 +24,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -156,6 +157,19 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             $this->deleteSettingIfExists($orphanKey);
             TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             $this->resetFrontendRouter();
+        }
+    }
+
+    public function testSettingsAddRejectsKeyNotInCatalog(): void
+    {
+        $nonCatalogKey = 'browser_non_catalog_' . RandomHelper::hex(8);
+        TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
+
+        try {
+            $this->expectException(SettingNotInCatalogException::class);
+            Hilos::$table->settings->actions->add($nonCatalogKey, 'free-typed value');
+        } finally {
+            TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
         }
     }
 

@@ -192,6 +192,34 @@ the merge is a safety net, not a license for divergent projections.
   because `tables` is a convenient channel is a gross violation: table data goes
   to tables, page data to the page-data store, an ordered collection to a list.
 
+## Cataloged tables — mutations are catalog-bound
+
+A **cataloged table** has a fixed key set defined by a PHP catalog — an array of
+constants on the backend (settings is the first: `SettingsCatalog::getCatalog()`,
+keyed by setting-key constants). The backend merges that catalog with the
+persisted override rows into **one row per cataloged key**, so every key is always
+present even with no DB row behind it; each row carries a `value_source`:
+`default` / `reference` (on the catalog default), `override` (a persisted custom
+value), or `orphan` (a persisted key no longer in the catalog).
+
+Because the key set is fixed, the table has **no "create a new record"
+operation**, and a cataloged-table page offers exactly three mutations:
+
+- **add by key** — give a key on its default a custom value
+  (`default` / `reference` → `override`); the row already exists, so this sets an
+  override, it does not mint a key. It lives **on the row**, not behind a separate
+  "Add" button.
+- **edit by key** — change an override, or reset it back to the catalog default.
+- **edit / delete an orphan** — the orphan is the only deletable kind; a cataloged
+  key cannot be deleted (it would re-appear on its default).
+
+**Do not** add a free "create / add row" control that mints an arbitrary key: it
+models a create the domain does not have, and a free-typed key could only become
+an orphan. **Exception:** a project that *explicitly* asks for free creation. The
+constraint is a backend invariant, not UI hiding — the add action **must** reject
+a non-cataloged key server-side ([rules-and-violations.md](rules-and-violations.md), "Hiding ≠ securing"); the
+settings add path does so in `SettingsActions::add` (`SettingNotInCatalogException`).
+
 ## View-models live in `types/`, by primitive
 
 A selector resolves a store into the shape a view renders — a roster item, a bot

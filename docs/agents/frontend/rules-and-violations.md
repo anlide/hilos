@@ -109,6 +109,14 @@ Topic documents are referenced by filename; several are still being authored.
   convenient channel is a **gross violation**. Table data goes to tables, page
   data to the page-data block, an ordered collection to the list primitive. See
   [data-model.md](data-model.md).
+- **Cataloged tables are catalog-bound — no free add.** A table whose key set is
+  fixed by a PHP catalog (an array of constants, e.g. the settings catalog) offers
+  only add-by-key (set an override on an existing cataloged key, from its row),
+  edit-by-key, and edit/delete of an orphan — not a free "create a new record"
+  control that mints an arbitrary key (which could only become an orphan). The add
+  action rejects a non-cataloged key server-side; it does not merely hide the
+  control. Exception: a project that explicitly asks for free creation. See
+  [data-model.md](data-model.md).
 - **Entity-store upsert is a field-merge; absence ≠ null.** A field present in a
   payload overwrites; a field absent is left untouched; an explicit clear is an
   explicit `null`. Safe because each data chunk has one authoritative source.

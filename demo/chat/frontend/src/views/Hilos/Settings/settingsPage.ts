@@ -74,20 +74,6 @@ export function isPersistedSetting(row: HilosSettingRow): boolean {
   return row.valueSource === 'override' || row.valueSource === 'orphan'
 }
 
-/**
- * Catalog keys currently on their default (no override) — the candidates the Add
- * dialog offers for creating a custom value.
- *
- * @param rows The resolved settings rows.
- */
-export function catalogDefaultKeys(rows: readonly HilosSettingRow[]): string[] {
-  return rows
-    .filter(
-      (row) => row.valueSource === 'default' || row.valueSource === 'reference',
-    )
-    .map((row) => row.key)
-}
-
 /** The headless controller for the Hilos settings table (client viewport). */
 export const settingsTable = new TableController<HilosSettingRow>({
   source: scopes.pageTableSignal(SETTINGS_TABLE),

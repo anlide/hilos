@@ -2,9 +2,11 @@ import { test, expect } from '@playwright/test'
 
 // Hilos settings admin e2e: /hilos/settings renders the framework settings table
 // over the live socket (catalog placeholder rows included), search filters the
-// client viewport, and a custom value added through the framework HilosDropdown
-// then reset round-trips through the backend and re-renders with no document
-// reload. example_integer is left back on its catalog default at the end so the
+// client viewport, and a custom value is set on a catalog key from its own row
+// (add-by-key) then reset — both round-trip through the backend and re-render with
+// no document reload. The settings table is cataloged, so there is no free "add a
+// setting" control (data-model.md, "Cataloged tables"); the only mutations live on
+// the row. example_integer is left back on its catalog default at the end so the
 // test is idempotent across runs on the shared database.
 
 test('lists settings in the framework table and filters from the search box', async ({
@@ -14,6 +16,9 @@ test('lists settings in the framework table and filters from the search box', as
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
   await expect(page.getByTestId('hilos-table')).toBeVisible()
+
+  // A cataloged table has no free "add a setting" entry point.
+  await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
 
   // Catalog placeholder rows are present without any DB override.
   await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
@@ -31,7 +36,7 @@ test('lists settings in the framework table and filters from the search box', as
   await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
 })
 
-test('adds a custom value through the dropdown and resets it, live', async ({
+test('sets a custom value on a catalog key from its row and resets it, live', async ({
   page,
 }) => {
   let fullLoads = 0
@@ -47,17 +52,16 @@ test('adds a custom value through the dropdown and resets it, live', async ({
   const integerRow = page.getByTestId('hilos-table-row-example_integer')
   await expect(integerRow).toContainText('default')
 
-  // Pick the key through the framework dropdown, then give it a custom value.
-  await page.getByTestId('hilos-settings-add').click()
-  await page.getByTestId('hilos-dropdown-toggle').click()
-  await page.getByTestId('hilos-dropdown-option-example_integer').click()
-  await page.getByTestId('hilos-settings-add-value').fill('42')
-  await page.getByTestId('hilos-settings-add-save').click()
+  // Add-by-key: open the on-default row, switch on a custom value, and save it.
+  await page.getByTestId('hilos-settings-edit-example_integer').click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  await page.getByTestId('hilos-settings-edit-value').fill('42')
+  await page.getByTestId('hilos-settings-edit-save').click()
 
-  // The custom value returns over the live table and the Add dialog closes.
+  // The custom value returns over the live table and the edit dialog closes.
   await expect(integerRow).toContainText('42')
   await expect(integerRow).toContainText('custom')
-  await expect(page.getByTestId('hilos-settings-add-value')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
 
   // Reset back to the catalog default via the edit dialog's custom toggle.
   await page.getByTestId('hilos-settings-edit-example_integer').click()
