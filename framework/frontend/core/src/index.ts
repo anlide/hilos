@@ -177,3 +177,15 @@ export {
   type ThreeWayMergeResult,
   type ThreeWayMergeStatus,
 } from './conflict/threeWayMerge.js'
+export {
+  toHilosPresence,
+  resolveHilosUserRow,
+  createHilosUsersTable,
+  createHilosUserDetail,
+  createHilosUserRename,
+  type HilosPresence,
+  type HilosUserProfile,
+  type HilosUserRow,
+  type HilosUsersContext,
+  type HilosUserRename,
+} from './admin/users/hilosUsers.js'
