@@ -24,6 +24,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for action name */
     public const string FIELD_ACTION = 'action';
 
+    /** @var string Payload field key for the client-minted action request id (reply correlation) */
+    public const string FIELD_REQUEST_ID = 'requestId';
+
     /** @var string Payload field key for data payload */
     public const string FIELD_DATA = 'data';
 

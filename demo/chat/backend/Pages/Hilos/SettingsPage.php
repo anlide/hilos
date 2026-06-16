@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages\Hilos;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
@@ -15,13 +14,11 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
-use Throwable;
 
 /**
  * Handles Hilos settings table actions for the chat demo.
@@ -80,23 +77,6 @@ final class SettingsPage extends AbstractHilosSettingsPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
-    }
-
-    /**
-     * Sends settings table action failures to the initiating client.
-     *
-     * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name that failed
-     * @param ActionPayloadDTO $dto Action payload
-     * @param Throwable $e Action failure
-     */
-    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::TABLE_ACTION_ERROR,
-            $acceptKey,
-            new TableActionErrorSignalData(ChatTableContext::settings, $action, $e->getMessage()),
-        );
     }
 
     /**

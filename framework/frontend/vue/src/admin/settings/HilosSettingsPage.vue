@@ -7,9 +7,9 @@ reset an override, or delete an orphan. The table, the row view-model, and the
 add/update/delete round-trips are the core headless's (createHilosSettingsTable /
 createHilosSettingsActions); this view owns only the markup, so a project mounts
 it by passing its HilosSettingsContext and declares the catalog on its backend.
-Authoritative-backend: a submit blocks the button and the dialog closes only when
-the changed row echoes back over the live table (no optimism); a failure surfaces
-in the banner. Bootstrap classes only (styling-rules.md). -->
+Authoritative-backend: a submit dispatches a tracked action and the dialog closes
+on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces in the
+dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSettingsActions,
@@ -20,40 +20,30 @@ import {
   type HilosSettingRow,
   type HilosSettingsContext,
 } from '@hilos/core'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosTable from '../../HilosTable.vue'
 import { type HilosTableColumn } from '../../hilosTable.js'
 import LoadingButton from '../../LoadingButton.vue'
-import { useSignal } from '../../useSignal.js'
+import { useTrackedAction } from '../../useTrackedAction.js'
 import HilosSettingValueCell from './HilosSettingValueCell.vue'
 
 const props = defineProps<{
-  /** The project context: scope stores and the live connection. */
+  /** The project context: scope stores and the action lifecycle. */
   context: HilosSettingsContext
 }>()
 
 const settingsTable = createHilosSettingsTable(props.context)
-const {
-  settingError,
-  clearSettingError,
-  sendSettingAdd,
-  sendSettingUpdate,
-  sendSettingDelete,
-} = createHilosSettingsActions(props.context)
+const { sendSettingAdd, sendSettingUpdate, sendSettingDelete } =
+  createHilosSettingsActions(props.context)
 
 const columns: HilosTableColumn[] = [
   { key: 'key', label: 'Key', sortable: true },
   { key: 'value', label: 'Value', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
-
-const viewRows = useSignal(settingsTable.rows)
-const error = useSignal(settingError)
-
-const allRows = computed(() => viewRows.value.map((view) => view.row))
 
 /** Map a setting type to the value input it edits with. */
 function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
@@ -76,7 +66,13 @@ const editOpen = ref(false)
 const editRow = ref<HilosSettingRow | null>(null)
 const editValue = ref('')
 const editUseCustom = ref(false)
-const editLoading = ref(false)
+const {
+  loading: editLoading,
+  busy: editBusy,
+  error: editError,
+  run: runEditAction,
+  clearError: clearEditError,
+} = useTrackedAction()
 const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() => inputStep(editRow.value?.type))
 const editValueBool = computed({
@@ -98,30 +94,31 @@ const editDirty = computed(
 // Delete dialog: orphan keys only (not in the catalog).
 const deleteOpen = ref(false)
 const deleteRow = ref<HilosSettingRow | null>(null)
-const deleteLoading = ref(false)
-
-// Authoritative-backend success: close once the changed row echoes back.
-const pendingSaveKey = ref<string | null>(null)
-const pendingSaveOverride = ref<string | null>(null)
-const pendingDeleteKey = ref<string | null>(null)
+const {
+  loading: deleteLoading,
+  busy: deleteBusy,
+  error: deleteError,
+  run: runDeleteAction,
+  clearError: clearDeleteError,
+} = useTrackedAction()
 
 function openEdit(row: HilosSettingRow): void {
-  clearSettingError()
+  clearEditError()
   editRow.value = row
   editUseCustom.value = isPersistedSetting(row)
   editValue.value = row.overrideValue ?? row.value ?? ''
-  editLoading.value = false
   editOpen.value = true
 }
 
 function closeEdit(): void {
   editOpen.value = false
-  editLoading.value = false
 }
 
-function submitEdit(): void {
+// Authoritative-backend: dispatch the tracked action, close on its `::success`
+// reply; a failure stays open with the reason shown.
+async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editLoading.value) {
+  if (!row || editBusy.value) {
     return
   }
   const next = editOverride.value
@@ -130,83 +127,38 @@ function submitEdit(): void {
 
     return
   }
-  pendingSaveKey.value = row.key
-  pendingSaveOverride.value = next
   // A persisted row updates in place; an on-default catalog key adds a custom value.
-  const sent = isPersistedSetting(row)
+  const handle = isPersistedSetting(row)
     ? sendSettingUpdate(row.key, next)
     : sendSettingAdd(row.key, next ?? '')
-  editLoading.value = sent
-  if (!sent) {
-    pendingSaveKey.value = null
+  if (await runEditAction(handle)) {
+    closeEdit()
   }
 }
 
 function openDelete(row: HilosSettingRow): void {
-  clearSettingError()
+  clearDeleteError()
   deleteRow.value = row
-  deleteLoading.value = false
   deleteOpen.value = true
 }
 
 function closeDelete(): void {
   deleteOpen.value = false
-  deleteLoading.value = false
 }
 
-function submitDelete(): void {
+async function submitDelete(): Promise<void> {
   const row = deleteRow.value
-  if (!row || deleteLoading.value) {
+  if (!row || deleteBusy.value) {
     return
   }
-  pendingDeleteKey.value = row.key
-  deleteLoading.value = sendSettingDelete(row.key)
-  if (!deleteLoading.value) {
-    pendingDeleteKey.value = null
-  }
-}
-
-// Success is state-driven: a save lands once its row's override matches what we
-// sent; a delete lands once the orphan row leaves the table.
-watch(allRows, (rows) => {
-  if (pendingSaveKey.value !== null) {
-    const row = rows.find((candidate) => candidate.key === pendingSaveKey.value)
-    if (row && row.overrideValue === pendingSaveOverride.value) {
-      pendingSaveKey.value = null
-      closeEdit()
-    }
-  }
-  if (
-    pendingDeleteKey.value !== null &&
-    !rows.find((candidate) => candidate.key === pendingDeleteKey.value)
-  ) {
-    pendingDeleteKey.value = null
+  if (await runDeleteAction(sendSettingDelete(row.key))) {
     closeDelete()
   }
-})
-
-// A rejected action releases every button and keeps the dialog open to retry.
-watch(error, (reason) => {
-  if (reason !== null) {
-    editLoading.value = false
-    deleteLoading.value = false
-    pendingSaveKey.value = null
-    pendingDeleteKey.value = null
-  }
-})
+}
 </script>
 
 <template>
   <HilosAdminPage :page="HilosPages.SETTINGS">
-    <div
-      v-if="error"
-      class="alert alert-danger"
-      role="alert"
-      data-id="hilos-settings-error"
-    >
-      {{ error }}
-    </div>
-
     <HilosTable
       :controller="settingsTable"
       :columns="columns"
@@ -267,6 +219,14 @@ watch(error, (reason) => {
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
+      <div
+        v-if="editError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="hilos-settings-error"
+      >
+        {{ editError }}
+      </div>
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="!isOrphanSetting(editRow)" class="mb-3">
           <span class="form-label d-block">Catalog default</span>
@@ -321,13 +281,18 @@ watch(error, (reason) => {
         </div>
       </form>
       <template #actions="{ requestClose }">
-        <button type="button" class="btn btn-secondary" @click="requestClose">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="editBusy"
+          @click="requestClose"
+        >
           Cancel
         </button>
         <LoadingButton
           class="btn-primary"
           :loading="editLoading"
-          :disabled="!editDirty"
+          :disabled="!editDirty || editBusy"
           data-id="hilos-settings-edit-save"
           @click="submitEdit"
         >
@@ -339,10 +304,18 @@ watch(error, (reason) => {
     <HilosModal
       v-model="deleteOpen"
       :title="deleteRow ? `Delete · ${deleteRow.key}` : 'Delete setting'"
-      :close-on-backdrop="!deleteLoading"
-      :close-on-esc="!deleteLoading"
+      :close-on-backdrop="!deleteBusy"
+      :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <div
+        v-if="deleteError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="hilos-settings-delete-error"
+      >
+        {{ deleteError }}
+      </div>
       <p class="mb-0 text-body-secondary">
         This removes the orphan row from the database. Orphan keys are not in
         the catalog.
@@ -354,7 +327,7 @@ watch(error, (reason) => {
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="deleteLoading"
+          :disabled="deleteBusy"
           @click="requestClose"
         >
           Cancel

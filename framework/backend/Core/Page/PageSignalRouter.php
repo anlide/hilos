@@ -149,6 +149,12 @@ class PageSignalRouter
      * Resolves page from payload or action route configuration.
      * Creates ActionPayloadDTO via PageFactory.
      *
+     * When the action carried a client-minted requestId (a tracked action) the
+     * framework replies with the action-success ack on success or the
+     * action-error ack on failure, both correlated by that requestId. An
+     * untracked action keeps the legacy path: silent on success,
+     * onActionException() on failure.
+     *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      */
@@ -171,8 +177,15 @@ class PageSignalRouter
 
         try {
             $pageInstance->onAction($data->acceptKey, $data->action, $dto);
+            if ($data->requestId !== null) {
+                $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId);
+            }
         } catch (Throwable $e) {
-            $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+            if ($data->requestId !== null) {
+                $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage());
+            } else {
+                $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+            }
         }
     }
 

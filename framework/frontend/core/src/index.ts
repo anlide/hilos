@@ -143,6 +143,7 @@ export {
   parseSignal,
   type ParsedSignal,
   type HandshakeSignal,
+  type ActionSuccessSignal,
   type ActionErrorSignal,
   type ProjectSignal,
   type ProjectSignalSchemas,
@@ -154,6 +155,14 @@ export {
   ActionErrorStore,
   type ActionErrorSource,
 } from './connection/ActionErrorStore.js'
+export {
+  ActionLifecycle,
+  ActionError,
+  type ActionHandle,
+  type ActionFailureOutcome,
+  type ActionLifecycleSource,
+  type ActionLifecycleOptions,
+} from './connection/actionLifecycle.js'
 export {
   computeBackoffDelay,
   DEFAULT_RECONNECT_OPTIONS,

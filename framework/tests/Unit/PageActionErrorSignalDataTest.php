@@ -29,6 +29,30 @@ final class PageActionErrorSignalDataTest extends TestCase
 
         $this->assertInstanceOf(WebSocketEnvelopeAware::class, $restored);
         $this->assertSame('fail', $restored->getEnvelopeOutcome());
+        $this->assertNull($restored->getEnvelopeRequestId());
         $this->assertNull($restored->getEnvelopeTime());
+    }
+
+    public function testUntrackedErrorOmitsRequestId(): void
+    {
+        $data = new PageActionErrorSignalData('message', 'boom');
+
+        $this->assertNull($data->getEnvelopeRequestId());
+        $this->assertArrayNotHasKey('requestId', $data->toArray());
+    }
+
+    public function testTrackedErrorCarriesRequestIdThroughRoundtrip(): void
+    {
+        $original = new PageActionErrorSignalData('message', 'boom', 'req-7');
+
+        $this->assertSame([
+            'action' => 'message',
+            'reason' => 'boom',
+            'requestId' => 'req-7',
+        ], $original->toArray());
+
+        $restored = PageActionErrorSignalData::fromArray($original->toArray());
+        $this->assertSame('req-7', $restored->getEnvelopeRequestId());
+        $this->assertSame('fail', $restored->getEnvelopeOutcome());
     }
 }

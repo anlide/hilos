@@ -4,18 +4,22 @@ administration" section. A free CRUD table (not cataloged) — add, edit, or del
 a prompt piece; each piece belongs to a moderation rule section (name / message).
 The table controller and the row view-model live with the page
 (adminModeratorPage.ts), the create/update/delete submits in
-adminModeratorActions.ts. Authoritative-backend: a submit blocks the button and
-the dialog closes only when the change echoes back over the live table (no
-optimism); a failure surfaces in the banner. Bootstrap classes only
-(styling-rules.md). -->
+adminModeratorActions.ts. Authoritative-backend: a submit dispatches a tracked
+action and the dialog closes on its `::success` reply (useTrackedAction, step
+7.4) — robust even when the edit changed nothing; a failure surfaces in the
+dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosModal, HilosTable, LoadingButton, useSignal } from '@hilos/vue'
+import {
+  HilosModal,
+  HilosTable,
+  LoadingButton,
+  useSignal,
+  useTrackedAction,
+} from '@hilos/vue'
 import { type HilosTableColumn } from '@hilos/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import {
-  clearModeratorError,
-  moderatorError,
   sendModeratorPieceCreate,
   sendModeratorPieceDelete,
   sendModeratorPieceUpdate,
@@ -36,7 +40,6 @@ const columns: HilosTableColumn[] = [
 ]
 
 const viewRows = useSignal(moderatorPiecesTable.rows)
-const error = useSignal(moderatorError)
 
 const allRows = computed(() => viewRows.value.map((view) => view.row))
 
@@ -46,17 +49,24 @@ const formMode = ref<'create' | 'edit'>('create')
 const formId = ref<number | null>(null)
 const fSection = ref<ModeratorSection>('message_rule')
 const fPromptPiece = ref('')
-const formLoading = ref(false)
+const {
+  loading: formLoading,
+  busy: formBusy,
+  error: formError,
+  run: runFormAction,
+  clearError: clearFormError,
+} = useTrackedAction()
 
 // Delete dialog.
 const deleteOpen = ref(false)
 const deleteRow = ref<ModeratorPieceRow | null>(null)
-const deleteLoading = ref(false)
-
-// Authoritative-backend success: close once the change echoes over the table.
-const pendingCreateCount = ref<number | null>(null)
-const pendingEdit = ref<{ id: number; input: ModeratorPieceInput } | null>(null)
-const pendingDeleteId = ref<number | null>(null)
+const {
+  loading: deleteLoading,
+  busy: deleteBusy,
+  error: deleteError,
+  run: runDeleteAction,
+  clearError: clearDeleteError,
+} = useTrackedAction()
 
 /** The form's current fields as a piece input, prompt trimmed. */
 function currentInput(): ModeratorPieceInput {
@@ -72,9 +82,7 @@ function matchesInput(
 }
 
 // A create is dirty once the prompt is filled; an edit once it differs from the
-// piece's current live row (which updates on a successful save, so the dialog goes
-// clean again once the backend echoes the change — letting the success watcher's
-// close go through; confirm-on-close only guards a dirty form).
+// piece's current live row. confirm-on-close only guards a dirty form.
 const formDirty = computed(() => {
   const input = currentInput()
   if (formMode.value === 'create') {
@@ -86,113 +94,67 @@ const formDirty = computed(() => {
 })
 
 function openCreate(): void {
-  clearModeratorError()
+  clearFormError()
   formMode.value = 'create'
   formId.value = null
   fSection.value = 'message_rule'
   fPromptPiece.value = ''
-  formLoading.value = false
   formOpen.value = true
 }
 
 function openEdit(row: ModeratorPieceRow): void {
-  clearModeratorError()
+  clearFormError()
   formMode.value = 'edit'
   formId.value = row.id
   fSection.value = row.section
   fPromptPiece.value = row.promptPiece
-  formLoading.value = false
   formOpen.value = true
 }
 
 function closeForm(): void {
   formOpen.value = false
-  formLoading.value = false
 }
 
-function submitForm(): void {
+// Authoritative-backend: dispatch the tracked action, close only when its
+// `::success` reply resolves; a failure stays open with the reason shown.
+async function submitForm(): Promise<void> {
   const input = currentInput()
-  if (!input.promptPiece || formLoading.value) {
+  if (!input.promptPiece || formBusy.value) {
     return
   }
-  if (formMode.value === 'create') {
-    pendingCreateCount.value = allRows.value.length
-    const sent = sendModeratorPieceCreate(input)
-    formLoading.value = sent
-    if (!sent) {
-      pendingCreateCount.value = null
-    }
-  } else if (formId.value !== null) {
-    pendingEdit.value = { id: formId.value, input }
-    const sent = sendModeratorPieceUpdate(formId.value, input)
-    formLoading.value = sent
-    if (!sent) {
-      pendingEdit.value = null
-    }
+  const handle =
+    formMode.value === 'create'
+      ? sendModeratorPieceCreate(input)
+      : formId.value !== null
+        ? sendModeratorPieceUpdate(formId.value, input)
+        : null
+  if (handle === null) {
+    return
+  }
+  if (await runFormAction(handle)) {
+    closeForm()
   }
 }
 
 function openDelete(row: ModeratorPieceRow): void {
-  clearModeratorError()
+  clearDeleteError()
   deleteRow.value = row
-  deleteLoading.value = false
   deleteOpen.value = true
 }
 
 function closeDelete(): void {
   deleteOpen.value = false
-  deleteLoading.value = false
 }
 
-function submitDelete(): void {
+async function submitDelete(): Promise<void> {
   const row = deleteRow.value
-  if (!row || deleteLoading.value) {
+  if (!row || deleteBusy.value) {
     return
   }
-  pendingDeleteId.value = row.id
-  deleteLoading.value = sendModeratorPieceDelete(row.id)
-  if (!deleteLoading.value) {
-    pendingDeleteId.value = null
-  }
-}
-
-// Success is state-driven: a create lands once the table grows; an edit once the
-// row carries the submitted fields; a delete once the row leaves the table.
-watch(allRows, (rows) => {
-  if (
-    pendingCreateCount.value !== null &&
-    rows.length > pendingCreateCount.value
-  ) {
-    pendingCreateCount.value = null
-    closeForm()
-  }
-  if (pendingEdit.value !== null) {
-    const pending = pendingEdit.value
-    const row = rows.find((candidate) => candidate.id === pending.id)
-    if (row && matchesInput(row, pending.input)) {
-      pendingEdit.value = null
-      closeForm()
-    }
-  }
-  if (
-    pendingDeleteId.value !== null &&
-    !rows.find((candidate) => candidate.id === pendingDeleteId.value)
-  ) {
-    pendingDeleteId.value = null
+  if (await runDeleteAction(sendModeratorPieceDelete(row.id))) {
     closeDelete()
   }
-})
-
-// A rejected action releases every button and keeps the dialog open to retry.
-watch(error, (reason) => {
-  if (reason !== null) {
-    formLoading.value = false
-    deleteLoading.value = false
-    pendingCreateCount.value = null
-    pendingEdit.value = null
-    pendingDeleteId.value = null
-  }
-})
+}
 </script>
 
 <template>
@@ -213,15 +175,6 @@ watch(error, (reason) => {
       >
         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add piece
       </button>
-    </div>
-
-    <div
-      v-if="error"
-      class="alert alert-danger"
-      role="alert"
-      data-id="admin-moderator-error"
-    >
-      {{ error }}
     </div>
 
     <HilosTable
@@ -282,6 +235,14 @@ watch(error, (reason) => {
       :confirm-on-close="formDirty"
       @cancel="closeForm"
     >
+      <div
+        v-if="formError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="admin-moderator-error"
+      >
+        {{ formError }}
+      </div>
       <form @submit.prevent="submitForm">
         <div class="mb-3">
           <label class="form-label" for="admin-moderator-section"
@@ -312,13 +273,18 @@ watch(error, (reason) => {
         </div>
       </form>
       <template #actions="{ requestClose }">
-        <button type="button" class="btn btn-secondary" @click="requestClose">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="formBusy"
+          @click="requestClose"
+        >
           Cancel
         </button>
         <LoadingButton
           class="btn-primary"
           :loading="formLoading"
-          :disabled="!fPromptPiece.trim()"
+          :disabled="!fPromptPiece.trim() || formBusy"
           data-id="admin-moderator-save"
           @click="submitForm"
         >
@@ -330,10 +296,18 @@ watch(error, (reason) => {
     <HilosModal
       v-model="deleteOpen"
       title="Delete prompt piece"
-      :close-on-backdrop="!deleteLoading"
-      :close-on-esc="!deleteLoading"
+      :close-on-backdrop="!deleteBusy"
+      :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <div
+        v-if="deleteError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="admin-moderator-delete-error"
+      >
+        {{ deleteError }}
+      </div>
       <p class="mb-0 text-body-secondary">
         This permanently removes the prompt piece from the moderation rules.
       </p>
@@ -344,7 +318,7 @@ watch(error, (reason) => {
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="deleteLoading"
+          :disabled="deleteBusy"
           @click="requestClose"
         >
           Cancel

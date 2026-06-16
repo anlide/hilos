@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -222,6 +223,48 @@ abstract class AbstractPage
             SignalConstants::ACTION_ERROR,
             $acceptKey,
             new PageActionErrorSignalData($action, $e->getMessage()),
+        );
+    }
+
+    /**
+     * Sends the framework action-success reply for a tracked action.
+     *
+     * Called by PageSignalRouter after onAction() returns without throwing, only
+     * when the action carried a client-minted requestId. The reply carries no
+     * domain body — it releases the action's loading state and resolves its
+     * request on the client, correlated by the echoed requestId.
+     *
+     * @param string $acceptKey WebSocket accept key of the initiating client
+     * @param string $action Action name that committed
+     * @param string $requestId Client-minted request id to echo back for correlation
+     */
+    public function sendActionSuccess(string $acceptKey, string $action, string $requestId): void
+    {
+        $this->sendToUser(
+            SignalConstants::ACTION_SUCCESS,
+            $acceptKey,
+            new PageActionSuccessSignalData($action, $requestId),
+        );
+    }
+
+    /**
+     * Sends the framework action-failure reply for a tracked action.
+     *
+     * Called by PageSignalRouter when onAction() throws, only when the action
+     * carried a client-minted requestId; it supersedes onActionException() on
+     * the tracked path so the failure correlates by the echoed requestId.
+     *
+     * @param string $acceptKey WebSocket accept key of the initiating client
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id to echo back for correlation
+     * @param string $reason Human-readable error message exposed to the client
+     */
+    public function sendActionFail(string $acceptKey, string $action, string $requestId, string $reason): void
+    {
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $acceptKey,
+            new PageActionErrorSignalData($action, $reason, $requestId),
         );
     }
 

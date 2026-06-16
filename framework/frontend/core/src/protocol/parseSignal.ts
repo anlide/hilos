@@ -4,11 +4,16 @@
 // and category layers; the project supplies schemas for its concrete leaf
 // signals. Shape-sniffing a message anywhere else is a gross violation.
 import type { ZodType } from 'zod'
-import { SIGNAL_TYPE_ACTION_ERROR, SIGNAL_TYPE_HANDSHAKE } from './constants.js'
+import {
+  SIGNAL_TYPE_ACTION_ERROR,
+  SIGNAL_TYPE_ACTION_SUCCESS,
+  SIGNAL_TYPE_HANDSHAKE,
+} from './constants.js'
 import {
   signalEnvelopeSchema,
   handshakeSignalDataSchema,
   actionErrorSignalDataSchema,
+  actionSuccessSignalDataSchema,
   type SignalEnvelope,
 } from './envelope.js'
 
@@ -24,15 +29,26 @@ export type ProjectSignalSchemas = Record<string, ZodType>
 export type ParsedSignal =
   | { kind: 'handshake'; build: string; envelope: SignalEnvelope }
   | {
+      kind: 'actionSuccess'
+      action: string
+      requestId: string | undefined
+      envelope: SignalEnvelope
+    }
+  | {
       kind: 'actionError'
       action: string
       reason: string
+      requestId: string | undefined
       envelope: SignalEnvelope
     }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
 export type HandshakeSignal = Extract<ParsedSignal, { kind: 'handshake' }>
+export type ActionSuccessSignal = Extract<
+  ParsedSignal,
+  { kind: 'actionSuccess' }
+>
 export type ActionErrorSignal = Extract<ParsedSignal, { kind: 'actionError' }>
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -55,8 +71,10 @@ export type ParseResult =
 /**
  * Parse one raw WebSocket frame into a typed signal.
  *
- * Framework signal types (`handshake`, `action_error`) are owned by the core
- * and parse to their own kind ahead of any project schema. A `type` with a
+ * Framework signal types (`handshake`, `action_success`, `action_error`) are
+ * owned by the core and parse to their own kind ahead of any project schema —
+ * the two action replies surfacing the envelope's `requestId` for correlation.
+ * A `type` with a
  * project schema validates against it and parses as `kind: 'project'`. Unknown
  * signal `type` values parse successfully as `kind: 'unknown'` — tolerated and
  * observable; only frames violating the envelope contract or a declared schema
@@ -112,6 +130,30 @@ export function parseSignal(
       }
     }
 
+    case SIGNAL_TYPE_ACTION_SUCCESS: {
+      const data = actionSuccessSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_ACTION_SUCCESS,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'actionSuccess',
+          action: data.data.action,
+          requestId: envelope.data.requestId,
+          envelope: envelope.data,
+        },
+      }
+    }
+
     case SIGNAL_TYPE_ACTION_ERROR: {
       const data = actionErrorSignalDataSchema.safeParse(envelope.data.data)
       if (!data.success) {
@@ -131,6 +173,7 @@ export function parseSignal(
           kind: 'actionError',
           action: data.data.action,
           reason: data.data.reason,
+          requestId: envelope.data.requestId,
           envelope: envelope.data,
         },
       }

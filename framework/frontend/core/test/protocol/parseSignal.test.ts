@@ -164,4 +164,29 @@ describe('parseSignal', () => {
       })
     }
   })
+
+  it('parses an action_success frame and surfaces the correlating requestId', () => {
+    const result = parseSignal(
+      '{"type":"action_success","data":{"action":"moderator_piece_update"},"outcome":"success","requestId":"req-9"}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'actionSuccess',
+        action: 'moderator_piece_update',
+        requestId: 'req-9',
+      })
+      expect(result.signal.envelope.outcome).toBe('success')
+    }
+  })
+
+  it('echoes the requestId on an action_error reply', () => {
+    const result = parseSignal(
+      '{"type":"action_error","data":{"action":"message","reason":"boom"},"outcome":"fail","requestId":"req-4"}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'actionError') {
+      expect(result.signal.requestId).toBe('req-4')
+    }
+  })
 })

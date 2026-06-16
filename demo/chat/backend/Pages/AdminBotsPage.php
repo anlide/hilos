@@ -13,16 +13,13 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
-use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
-use Throwable;
 
 /**
  * Handles admin bot table actions for the chat demo.
@@ -85,23 +82,6 @@ final class AdminBotsPage extends AbstractPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
-    }
-
-    /**
-     * Sends bot table action failures to the initiating client.
-     *
-     * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name that failed
-     * @param ActionPayloadDTO $dto Action payload
-     * @param Throwable $e Action failure
-     */
-    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::TABLE_ACTION_ERROR,
-            $acceptKey,
-            new TableActionErrorSignalData(ChatTableContext::bots, $action, $e->getMessage()),
-        );
     }
 
     /**

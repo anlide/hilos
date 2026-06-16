@@ -19,6 +19,9 @@ export const SIGNAL_TYPE_ACTION = 'action'
 /** Server frame `type` reporting a failed page action (PHP `SignalConstants::ACTION_ERROR`). */
 export const SIGNAL_TYPE_ACTION_ERROR = 'action_error'
 
+/** Server frame `type` confirming a tracked page action committed (PHP `SignalConstants::ACTION_SUCCESS`). */
+export const SIGNAL_TYPE_ACTION_SUCCESS = 'action_success'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 
@@ -33,6 +36,9 @@ export const FIELD_ACTION = 'action'
 
 /** Action frame key carrying the action payload (PHP `SignalPayloadConstants::FIELD_DATA`). */
 export const FIELD_DATA = 'data'
+
+/** Action/reply frame key carrying the client-minted request id (PHP `SignalPayloadConstants::FIELD_REQUEST_ID`). */
+export const FIELD_REQUEST_ID = 'requestId'
 
 /** Keepalive text frame the client sends (PHP `WebSocketConstants::KEEPALIVE_TEXT_PING`). */
 export const KEEPALIVE_TEXT_PING = 'ping'

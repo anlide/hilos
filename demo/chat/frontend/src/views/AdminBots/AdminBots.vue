@@ -4,17 +4,21 @@ table is a free CRUD table (not cataloged) — add, edit, or delete a bot; the r
 shows live agent presence (online/offline) from the runtime status slot. The table
 controller and the row view-model live with the page (adminBotsPage.ts), the
 create/update/delete submits in adminBotsActions.ts. Authoritative-backend: a
-submit blocks the button and the dialog closes only when the change echoes back
-over the live table (no optimism); a failure surfaces in the banner. Bootstrap
-classes only (styling-rules.md). -->
+submit dispatches a tracked action and the dialog closes on its `::success` reply
+(useTrackedAction, step 7.4) — robust even when the edit changed nothing; a
+failure surfaces in the dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
-import { HilosModal, HilosTable, LoadingButton, useSignal } from '@hilos/vue'
+import {
+  HilosModal,
+  HilosTable,
+  LoadingButton,
+  useSignal,
+  useTrackedAction,
+} from '@hilos/vue'
 import { type HilosTableColumn } from '@hilos/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import {
-  botError,
-  clearBotError,
   sendBotCreate,
   sendBotDelete,
   sendBotUpdate,
@@ -34,7 +38,6 @@ const columns: HilosTableColumn[] = [
 ]
 
 const viewRows = useSignal(botsTable.rows)
-const error = useSignal(botError)
 
 const allRows = computed(() => viewRows.value.map((view) => view.row))
 
@@ -48,17 +51,24 @@ const fStyle = ref('')
 const fTopics = ref('')
 const fPersonality = ref('')
 const fActive = ref(true)
-const formLoading = ref(false)
+const {
+  loading: formLoading,
+  busy: formBusy,
+  error: formError,
+  run: runFormAction,
+  clearError: clearFormError,
+} = useTrackedAction()
 
 // Delete dialog.
 const deleteOpen = ref(false)
 const deleteRow = ref<BotRow | null>(null)
-const deleteLoading = ref(false)
-
-// Authoritative-backend success: close once the change echoes over the table.
-const pendingCreateCount = ref<number | null>(null)
-const pendingEdit = ref<{ id: number; input: BotInput } | null>(null)
-const pendingDeleteId = ref<number | null>(null)
+const {
+  loading: deleteLoading,
+  busy: deleteBusy,
+  error: deleteError,
+  run: runDeleteAction,
+  clearError: clearDeleteError,
+} = useTrackedAction()
 
 /** The form's current fields as a bot input, trimmed and null-normalized. */
 function currentInput(): BotInput {
@@ -85,9 +95,7 @@ function matchesInput(row: BotRow, input: BotInput): boolean {
 }
 
 // A create is dirty once any field is filled; an edit once it differs from the
-// bot's current live row. The live row updates on a successful save, so the
-// dialog goes clean again once the backend echoes the change — which lets the
-// success watcher's close go through (confirm-on-close only guards a dirty form).
+// bot's current live row. confirm-on-close only guards a dirty form.
 const formDirty = computed(() => {
   const input = currentInput()
   if (formMode.value === 'create') {
@@ -105,7 +113,7 @@ const formDirty = computed(() => {
 })
 
 function openCreate(): void {
-  clearBotError()
+  clearFormError()
   formMode.value = 'create'
   formId.value = null
   fName.value = ''
@@ -114,12 +122,11 @@ function openCreate(): void {
   fTopics.value = ''
   fPersonality.value = ''
   fActive.value = true
-  formLoading.value = false
   formOpen.value = true
 }
 
 function openEdit(row: BotRow): void {
-  clearBotError()
+  clearFormError()
   formMode.value = 'edit'
   formId.value = row.id
   fName.value = row.name
@@ -128,101 +135,53 @@ function openEdit(row: BotRow): void {
   fTopics.value = row.topics ?? ''
   fPersonality.value = row.personality ?? ''
   fActive.value = row.active
-  formLoading.value = false
   formOpen.value = true
 }
 
 function closeForm(): void {
   formOpen.value = false
-  formLoading.value = false
 }
 
-function submitForm(): void {
+// Authoritative-backend: dispatch the tracked action, close only when its
+// `::success` reply resolves; a failure stays open with the reason shown.
+async function submitForm(): Promise<void> {
   const input = currentInput()
-  if (!input.name || formLoading.value) {
+  if (!input.name || formBusy.value) {
     return
   }
-  if (formMode.value === 'create') {
-    pendingCreateCount.value = allRows.value.length
-    const sent = sendBotCreate(input)
-    formLoading.value = sent
-    if (!sent) {
-      pendingCreateCount.value = null
-    }
-  } else if (formId.value !== null) {
-    pendingEdit.value = { id: formId.value, input }
-    const sent = sendBotUpdate(formId.value, input)
-    formLoading.value = sent
-    if (!sent) {
-      pendingEdit.value = null
-    }
+  const handle =
+    formMode.value === 'create'
+      ? sendBotCreate(input)
+      : formId.value !== null
+        ? sendBotUpdate(formId.value, input)
+        : null
+  if (handle === null) {
+    return
+  }
+  if (await runFormAction(handle)) {
+    closeForm()
   }
 }
 
 function openDelete(row: BotRow): void {
-  clearBotError()
+  clearDeleteError()
   deleteRow.value = row
-  deleteLoading.value = false
   deleteOpen.value = true
 }
 
 function closeDelete(): void {
   deleteOpen.value = false
-  deleteLoading.value = false
 }
 
-function submitDelete(): void {
+async function submitDelete(): Promise<void> {
   const row = deleteRow.value
-  if (!row || deleteLoading.value) {
+  if (!row || deleteBusy.value) {
     return
   }
-  pendingDeleteId.value = row.id
-  deleteLoading.value = sendBotDelete(row.id)
-  if (!deleteLoading.value) {
-    pendingDeleteId.value = null
-  }
-}
-
-// Success is state-driven: a create lands once the table grows; an edit once the
-// row carries the submitted fields; a delete once the row leaves the table.
-watch(allRows, (rows) => {
-  if (
-    pendingCreateCount.value !== null &&
-    rows.length > pendingCreateCount.value
-  ) {
-    pendingCreateCount.value = null
-    closeForm()
-  }
-  if (pendingEdit.value !== null) {
-    const pending = pendingEdit.value
-    const row = rows.find((candidate) => candidate.id === pending.id)
-    // The submitted name reaching the live row is the success signal (the
-    // committed value echoed back), the same state-driven close the user rename
-    // uses — robust to a field the backend serializes back slightly differently.
-    if (row && row.name === pending.input.name) {
-      pendingEdit.value = null
-      closeForm()
-    }
-  }
-  if (
-    pendingDeleteId.value !== null &&
-    !rows.find((candidate) => candidate.id === pendingDeleteId.value)
-  ) {
-    pendingDeleteId.value = null
+  if (await runDeleteAction(sendBotDelete(row.id))) {
     closeDelete()
   }
-})
-
-// A rejected action releases every button and keeps the dialog open to retry.
-watch(error, (reason) => {
-  if (reason !== null) {
-    formLoading.value = false
-    deleteLoading.value = false
-    pendingCreateCount.value = null
-    pendingEdit.value = null
-    pendingDeleteId.value = null
-  }
-})
+}
 </script>
 
 <template>
@@ -243,15 +202,6 @@ watch(error, (reason) => {
       >
         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add bot
       </button>
-    </div>
-
-    <div
-      v-if="error"
-      class="alert alert-danger"
-      role="alert"
-      data-id="admin-bots-error"
-    >
-      {{ error }}
     </div>
 
     <HilosTable
@@ -329,6 +279,14 @@ watch(error, (reason) => {
       :confirm-on-close="formDirty"
       @cancel="closeForm"
     >
+      <div
+        v-if="formError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="admin-bots-error"
+      >
+        {{ formError }}
+      </div>
       <form @submit.prevent="submitForm">
         <div class="mb-3">
           <label class="form-label" for="admin-bots-name">Name</label>
@@ -397,13 +355,18 @@ watch(error, (reason) => {
         </div>
       </form>
       <template #actions="{ requestClose }">
-        <button type="button" class="btn btn-secondary" @click="requestClose">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="formBusy"
+          @click="requestClose"
+        >
           Cancel
         </button>
         <LoadingButton
           class="btn-primary"
           :loading="formLoading"
-          :disabled="!fName.trim()"
+          :disabled="!fName.trim() || formBusy"
           data-id="admin-bots-save"
           @click="submitForm"
         >
@@ -415,10 +378,18 @@ watch(error, (reason) => {
     <HilosModal
       v-model="deleteOpen"
       :title="deleteRow ? `Delete · ${deleteRow.name}` : 'Delete bot'"
-      :close-on-backdrop="!deleteLoading"
-      :close-on-esc="!deleteLoading"
+      :close-on-backdrop="!deleteBusy"
+      :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
+      <div
+        v-if="deleteError"
+        class="alert alert-danger"
+        role="alert"
+        data-id="admin-bots-delete-error"
+      >
+        {{ deleteError }}
+      </div>
       <p class="mb-0 text-body-secondary">
         This permanently removes the bot and stops its agent.
       </p>
@@ -427,7 +398,7 @@ watch(error, (reason) => {
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="deleteLoading"
+          :disabled="deleteBusy"
           @click="requestClose"
         >
           Cancel

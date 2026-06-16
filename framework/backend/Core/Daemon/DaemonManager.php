@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -732,6 +733,10 @@ abstract class DaemonManager extends BaseManager
         $outcome = $inner->getEnvelopeOutcome();
         if ($outcome !== null) {
             $message['outcome'] = $outcome;
+        }
+        $requestId = $inner->getEnvelopeRequestId();
+        if ($requestId !== null) {
+            $message[SignalPayloadConstants::FIELD_REQUEST_ID] = $requestId;
         }
         $time = $inner->getEnvelopeTime();
         if ($time !== null) {

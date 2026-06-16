@@ -589,10 +589,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     ? $decoded[SignalPayloadConstants::FIELD_DATA]
                     : [];
 
+                $requestId = isset($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
+                    && is_string($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
+                    && $decoded[SignalPayloadConstants::FIELD_REQUEST_ID] !== ''
+                    ? $decoded[SignalPayloadConstants::FIELD_REQUEST_ID]
+                    : null;
+
                 $dto = new WebSocketActionSignalDTO(
                     acceptKey: $acceptKey,
                     action: $actionName,
                     data: $actionData,
+                    requestId: $requestId,
                 );
 
                 $userActionId = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);

@@ -5,6 +5,7 @@
 import {
   FIELD_ACTION,
   FIELD_DATA,
+  FIELD_REQUEST_ID,
   FIELD_TYPE,
   KEEPALIVE_TEXT_PING,
   SIGNAL_TYPE_ACTION,
@@ -13,6 +14,7 @@ import { assertNever } from '../protocol/assertNever.js'
 import {
   parseSignal,
   type ActionErrorSignal,
+  type ActionSuccessSignal,
   type HandshakeSignal,
   type ParsedSignal,
   type ParseFailure,
@@ -61,7 +63,9 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   signal: ParsedSignal
   /** The framework welcome frame. */
   handshake: HandshakeSignal
-  /** A framework action-failure frame (`action_error`): the failed action and its reason. */
+  /** A framework action-success frame (`action_success`): the committed action and its correlating requestId. */
+  actionSuccess: ActionSuccessSignal
+  /** A framework action-failure frame (`action_error`): the failed action, its reason, and its correlating requestId. */
   actionError: ActionErrorSignal
   /** Welcome carried a different build than expected — the consumer forces the refresh. */
   buildMismatch: BuildMismatch
@@ -204,23 +208,31 @@ export class HilosConnection {
   }
 
   /**
-   * Send a client action frame — `{type:'action', action, data}` — that the
-   * subscribed page's ACTIONS map routes by name. Returns false, sending
-   * nothing, unless the connection is `connected`, like {@link send}. Fire and
-   * forget: reply correlation (requestId) and the loading / echo lifecycle
-   * layer on top at step 7.4.
+   * Send a client action frame — `{type:'action', action, data, requestId?}` —
+   * that the subscribed page's ACTIONS map routes by name. Returns false,
+   * sending nothing, unless the connection is `connected`, like {@link send}.
+   *
+   * Passing a `requestId` opts the action into the framework reply lifecycle:
+   * the backend echoes that id on the action's `::success` / `::fail`. Omitting
+   * it is fire-and-forget (no reply). Callers that want the loading / await /
+   * timeout lifecycle use `ActionLifecycle.dispatch` rather than calling this
+   * directly.
    *
    * @param action The action name the subscribed page routes on.
    * @param data The action payload, carried under the `data` field.
+   * @param requestId Optional client-minted id for reply correlation.
    */
-  sendAction(action: string, data: unknown): boolean {
-    return this.send(
-      JSON.stringify({
-        [FIELD_TYPE]: SIGNAL_TYPE_ACTION,
-        [FIELD_ACTION]: action,
-        [FIELD_DATA]: data,
-      }),
-    )
+  sendAction(action: string, data: unknown, requestId?: string): boolean {
+    const frame: Record<string, unknown> = {
+      [FIELD_TYPE]: SIGNAL_TYPE_ACTION,
+      [FIELD_ACTION]: action,
+      [FIELD_DATA]: data,
+    }
+    if (requestId !== undefined) {
+      frame[FIELD_REQUEST_ID] = requestId
+    }
+
+    return this.send(JSON.stringify(frame))
   }
 
   private openSocket(): void {
@@ -275,6 +287,9 @@ export class HilosConnection {
     switch (signal.kind) {
       case 'handshake':
         this.handleHandshake(signal)
+        break
+      case 'actionSuccess':
+        this.emitter.emit('actionSuccess', signal)
         break
       case 'actionError':
         this.emitter.emit('actionError', signal)

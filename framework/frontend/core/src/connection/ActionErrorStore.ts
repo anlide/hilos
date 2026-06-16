@@ -4,8 +4,9 @@
 // project, owns turning it into reactive state: it subscribes to a connection's
 // `actionError` events and keeps the latest reason per action name. A view reads
 // `signal(action)` and the action's caller clears it on a fresh submit. The
-// request-correlated acknowledgement lifecycle (requestId, success acks, toasts)
-// layers on top at step 7.4; this is the error half consumers need now.
+// request-correlated acknowledgement lifecycle (requestId, success acks) is the
+// ActionLifecycle store; this action-name-keyed store remains the simpler half
+// for consumers that only need the latest failure per action.
 
 import {
   createSignal,

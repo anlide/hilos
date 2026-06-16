@@ -41,6 +41,8 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   await page.getByTestId('admin-moderator-save').click()
   await expect(page.locator('tbody tr', { hasText: edited })).toHaveCount(1)
   await expect(page.locator('tbody tr', { hasText: text })).toHaveCount(0)
+  // The authoritative-backend dialog closes on the action's ::success reply.
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
 
   // Delete: the row leaves the live table.
   await page
@@ -52,6 +54,25 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
 
   // The whole CRUD tour stayed in one live document.
   expect(fullLoads).toBe(loadsAfterColdLoad)
+})
+
+test('saving an edit with no changes still closes the dialog', async ({
+  page,
+}) => {
+  await page.goto('/hilos/admin_moderator')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-table')).toBeVisible()
+
+  // Open a seed row and save without changing anything. The row never re-emits
+  // (a no-op write produces no DB sync), so the old state-driven close hung
+  // here forever; the action's ::success reply still arrives and closes it.
+  await page
+    .locator('tbody tr')
+    .first()
+    .getByRole('button', { name: 'Edit' })
+    .click()
+  await page.getByTestId('admin-moderator-save').click()
+  await expect(page.getByTestId('admin-moderator-save')).toHaveCount(0)
 })
 
 test('reaches the moderation admin from the dashboard', async ({ page }) => {

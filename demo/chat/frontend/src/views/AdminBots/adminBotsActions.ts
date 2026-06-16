@@ -1,19 +1,17 @@
-// The bots admin actions: the create / update / delete submits and their shared
-// failure feedback. The backend AdminBotsPage reports a rejected action through
-// the table_action_error signal; it has no registered schema, so it arrives as an
-// `unknownSignal` and we react to its type only, never its raw payload (the parse
-// boundary stays the one place that interprets a frame — wire-protocol.md).
-// Success is observed state-driven in the view (the changed row returns over the
-// live bots table).
-import { createSignal, type ReadonlySignal } from '@hilos/core'
+// The bots admin actions: the create / update / delete submits as tracked
+// actions over the connection's reply lifecycle (action-lifecycle, step 7.4).
+// Each returns an ActionHandle whose `done` resolves on the backend's
+// `::success` ack and rejects (with the reason) on `::fail` — the view closes
+// the modal on success and surfaces the failure (authoritative-backend, no
+// optimism). The committed row returns separately over the live bots table.
+import { type ActionHandle } from '@hilos/core'
 
-import { connection } from '../../bootstrap/connection'
+import { actions } from '../../bootstrap/connection'
 
-// Backend action and failure signal names (PHP ChatSignalConstants).
+// Backend action names (PHP ChatSignalConstants).
 const BOT_CREATE = 'bot_create'
 const BOT_UPDATE = 'bot_update'
 const BOT_DELETE = 'bot_delete'
-const TABLE_ACTION_ERROR = 'table_action_error'
 
 /** The editable fields a bot create or update carries. */
 export interface BotInput {
@@ -31,57 +29,30 @@ export interface BotInput {
   active: boolean
 }
 
-const error = createSignal<string | null>(null)
-
-/** The latest bots action failure reason, or null when clear. */
-export const botError: ReadonlySignal<string | null> = error
-
-// A rejected bot action arrives as the backend's table_action_error ack; surface
-// a generic message (the reason text stays behind the unregistered schema).
-connection.on('unknownSignal', (signal) => {
-  if (signal.type === TABLE_ACTION_ERROR) {
-    error.set('The bot action could not be completed. Please try again.')
-  }
-})
-
-/** Clear the bots error (on opening or cancelling a form). */
-export function clearBotError(): void {
-  error.set(null)
-}
-
 /**
- * Create a bot. Returns false, sending nothing, when the connection is not
- * connected.
+ * Create a bot as a tracked action.
  *
  * @param input The new bot's fields.
  */
-export function sendBotCreate(input: BotInput): boolean {
-  error.set(null)
-
-  return connection.sendAction(BOT_CREATE, { ...input })
+export function sendBotCreate(input: BotInput): ActionHandle {
+  return actions.dispatch(BOT_CREATE, { ...input })
 }
 
 /**
- * Update a bot's fields. Returns false, sending nothing, when the connection is
- * not connected.
+ * Update a bot's fields as a tracked action.
  *
  * @param id The bot id to update.
  * @param input The bot's new fields.
  */
-export function sendBotUpdate(id: number, input: BotInput): boolean {
-  error.set(null)
-
-  return connection.sendAction(BOT_UPDATE, { id, ...input })
+export function sendBotUpdate(id: number, input: BotInput): ActionHandle {
+  return actions.dispatch(BOT_UPDATE, { id, ...input })
 }
 
 /**
- * Delete a bot. Returns false, sending nothing, when the connection is not
- * connected.
+ * Delete a bot as a tracked action.
  *
  * @param id The bot id to delete.
  */
-export function sendBotDelete(id: number): boolean {
-  error.set(null)
-
-  return connection.sendAction(BOT_DELETE, { id })
+export function sendBotDelete(id: number): ActionHandle {
+  return actions.dispatch(BOT_DELETE, { id })
 }

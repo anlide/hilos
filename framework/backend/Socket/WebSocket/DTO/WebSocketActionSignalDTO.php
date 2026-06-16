@@ -19,6 +19,7 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     public const string ACCEPT_KEY = 'acceptKey';
     public const string ACTION = 'action';
     public const string DATA = 'data';
+    public const string REQUEST_ID = 'requestId';
 
     /**
      * Creates WebSocket action signal DTO.
@@ -26,11 +27,13 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param array<string, mixed> $data Action payload data
+     * @param ?string $requestId Client-minted request id for reply correlation, or null for a fire-and-forget action
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $action,
         public readonly array $data = [],
+        public readonly ?string $requestId = null,
     ) {
     }
 
@@ -55,6 +58,10 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
             $result[self::DATA] = $this->data;
         }
 
+        if ($this->requestId !== null) {
+            $result[self::REQUEST_ID] = $this->requestId;
+        }
+
         return $result;
     }
 
@@ -70,6 +77,7 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             action: $data[self::ACTION] ?? '',
             data: $data[self::DATA] ?? [],
+            requestId: isset($data[self::REQUEST_ID]) && is_string($data[self::REQUEST_ID]) ? $data[self::REQUEST_ID] : null,
         );
     }
 }

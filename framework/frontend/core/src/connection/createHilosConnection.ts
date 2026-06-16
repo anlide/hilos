@@ -6,6 +6,7 @@ import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
 import { PAGE_SIGNAL_SCHEMAS } from '../subscription/bindPageScope.js'
 import { ActionErrorStore } from './ActionErrorStore.js'
+import { ActionLifecycle } from './actionLifecycle.js'
 import { HilosConnection, type WebSocketLike } from './HilosConnection.js'
 
 /** Options for {@link createHilosConnection}. */
@@ -31,10 +32,12 @@ export interface CreateHilosConnectionOptions {
   webSocketFactory?: (url: string) => WebSocketLike
 }
 
-/** The connection and the reactive action-error store bound to it. */
+/** The connection plus the action-error store and the action lifecycle bound to it. */
 export interface HilosConnectionBundle {
   connection: HilosConnection
   actionErrors: ActionErrorStore
+  /** The requestId-correlated reply lifecycle: `actions.dispatch(...)` for tracked actions. */
+  actions: ActionLifecycle
 }
 
 /** The same-origin `/ws` endpoint: `wss` under https, `ws` otherwise. */
@@ -65,6 +68,7 @@ export function createHilosConnection(
     webSocketFactory: options.webSocketFactory,
   })
   const actionErrors = new ActionErrorStore(connection)
+  const actions = new ActionLifecycle(connection)
   connection.on(
     'buildMismatch',
     options.onBuildMismatch ??
@@ -73,5 +77,5 @@ export function createHilosConnection(
       }),
   )
 
-  return { connection, actionErrors }
+  return { connection, actionErrors, actions }
 }
