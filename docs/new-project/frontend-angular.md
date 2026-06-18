@@ -66,6 +66,29 @@ Common ground (containers, connection, e2e, stable ids) is in
   `{ injector }`; mirrors `toSignal` semantics, unsubscribes on the
   injector's `DestroyRef`.
 
+## SDK primitives
+
+The SDK components mirror the core controllers
+([../agents/frontend/multiframework-core.md](../agents/frontend/multiframework-core.md))
+the Angular way. Some attach to a **host element** rather than wrapping one, so
+the Bootstrap class, the native event, and ARIA fall through with no extra
+element. `LoadingButton` is an attribute on a native button:
+
+```html
+<button
+  hilosLoadingButton
+  [loading]="saving()"
+  class="btn-primary"
+  (click)="save()"
+>
+  Save
+</button>
+```
+
+The host IS the button: `[disabled]` is bound for you (a disabled button
+suppresses the native click), and the spinner timer is the core controller — the
+component only mirrors it through `hilosSignal`.
+
 ## Styling — Bootstrap and Bootstrap Icons
 
 `@hilos/angular` declares `bootstrap` and `bootstrap-icons` as peer

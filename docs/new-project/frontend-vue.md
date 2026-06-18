@@ -26,6 +26,21 @@ Common ground (containers, connection, e2e, stable ids) is in
 - State in components via `useConnectionState(connection)` from `@hilos/vue`
   (a `Readonly<Ref<ConnectionState>>`; unsubscribes on scope dispose).
 
+## SDK primitives
+
+The SDK ships slot-first components over the headless core controllers
+([../agents/frontend/multiframework-core.md](../agents/frontend/multiframework-core.md)).
+Bind them the Vue way — props in, a slot for content, events out:
+
+```vue
+<LoadingButton :loading="saving" class="btn-primary" @click="save">
+  Save
+</LoadingButton>
+```
+
+`@vitejs/plugin-vue` makes the `useSignal`-mirrored state reactive with no extra
+step; the component owns the spinner timing, the disabled state, and its a11y.
+
 ## Dev-mode WebSocket
 
 The dev page is served by Vite, so the same-origin `/ws` default cannot reach

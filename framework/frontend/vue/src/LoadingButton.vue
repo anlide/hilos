@@ -1,12 +1,17 @@
 <!-- LoadingButton — a button that disables itself and shows a spinner while an
-async action is in flight (the authoritative-backend pattern: act → block →
-backend reply clears it). The spinner appears only after a short delay so a fast
+async action is in flight (the authoritative-backend pattern: act -> block ->
+backend reply clears it). The delayed-spinner timer is the headless core state
+machine (createLoadingButtonState); this view only drives `loading` into it and
+renders `showSpinner`. The spinner appears only after a short delay so a fast
 reply never flashes it, and the label stays in the layout under the spinner so
 the button keeps its width. Pass the Bootstrap variant as a class
 (`class="btn-primary"`); class, aria, and data attributes fall through to the
 button. -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
+import { DEFAULT_SPINNER_DELAY_MS, createLoadingButtonState } from '@hilos/core'
+
+import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
   defineProps<{
@@ -19,36 +24,26 @@ const props = withDefaults(
     /** Native button type; `submit` inside a form, `button` otherwise. */
     type?: 'button' | 'submit' | 'reset'
   }>(),
-  { loading: false, disabled: false, loadingDelay: 300, type: 'button' },
+  {
+    loading: false,
+    disabled: false,
+    loadingDelay: DEFAULT_SPINNER_DELAY_MS,
+    type: 'button',
+  },
 )
 
 const emit = defineEmits<{ click: [event: MouseEvent] }>()
 
-const showSpinner = ref(false)
-let spinnerTimer: ReturnType<typeof setTimeout> | undefined
-
-function clearSpinnerTimer(): void {
-  if (spinnerTimer !== undefined) {
-    clearTimeout(spinnerTimer)
-    spinnerTimer = undefined
-  }
-}
-
+const spinner = createLoadingButtonState(() => props.loadingDelay)
+const showSpinner = useSignal(spinner.showSpinner)
 watch(
   () => props.loading,
-  (loading) => {
-    clearSpinnerTimer()
-    if (loading) {
-      spinnerTimer = setTimeout(() => {
-        showSpinner.value = true
-      }, props.loadingDelay)
-    } else {
-      showSpinner.value = false
-    }
+  (loading) => spinner.setLoading(loading),
+  {
+    immediate: true,
   },
 )
-
-onBeforeUnmount(clearSpinnerTimer)
+onBeforeUnmount(spinner.dispose)
 
 const isDisabled = computed(() => props.disabled || props.loading)
 

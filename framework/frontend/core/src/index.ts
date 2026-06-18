@@ -57,6 +57,12 @@ export {
   type TableControllerOptions,
 } from './table/TableController.js'
 export {
+  createLoadingButtonState,
+  DEFAULT_SPINNER_DELAY_MS,
+  type LoadingButtonState,
+  type SpinnerDelay,
+} from './primitives/loadingButton.js'
+export {
   PageSubscription,
   type PageSubscriptionConnection,
 } from './subscription/PageSubscription.js'

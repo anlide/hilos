@@ -24,6 +24,22 @@ Common ground (containers, connection, e2e, stable ids) is in
 - State in components via `useConnectionState(connection)` from
   `@hilos/react` (implemented over `useSyncExternalStore`).
 
+## SDK primitives
+
+The SDK components mirror the core controllers
+([../agents/frontend/multiframework-core.md](../agents/frontend/multiframework-core.md))
+the React way — props in, `children` for content, `onClick` out — and unknown
+attributes fall through to the underlying element:
+
+```tsx
+<LoadingButton loading={saving} className="btn-primary" onClick={save}>
+  Save
+</LoadingButton>
+```
+
+The `dedupe` config below is what lets the component's hooks
+(`useSyncExternalStore`) run on the app's single React copy.
+
 ## Dev-mode WebSocket
 
 Same as Vue: the compose dev service sets `VITE_WS_URL` to the published WS
