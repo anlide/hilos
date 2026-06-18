@@ -4,14 +4,13 @@
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator (an extra status
 // surface allowed by docs/agents/frontend/core-and-connection.md).
-import { HilosLayout, HilosView } from '@hilos/react'
+import { HilosDashboardPage, HilosLayout, HilosView } from '@hilos/react'
 import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
-import Dashboard from './views/Dashboard/Dashboard'
 import License from './views/License/License'
 import Main from './views/Main/Main'
 import Privacy from './views/Privacy/Privacy'
@@ -21,7 +20,10 @@ import Terms from './views/Terms/Terms'
 // (other routes land later) render nothing.
 const pages: Record<string, ComponentType> = {
   [PAGE_MAIN]: Main,
-  [HilosPages.DASHBOARD]: Dashboard,
+  // The framework dashboard is rendered straight from the SDK — this demo has no
+  // admin areas of its own, so it gets the framework sections as-is (a project
+  // that does would wrap HilosDashboardPage and pass its cards as children).
+  [HilosPages.DASHBOARD]: HilosDashboardPage,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

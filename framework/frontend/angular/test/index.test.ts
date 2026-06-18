@@ -7,6 +7,7 @@ import {
   HILOS_ROUTER,
   HilosAdminPage,
   HilosBreadcrumb,
+  HilosDashboardPage,
   HilosLayout,
   HilosLink,
   HilosModal,
@@ -27,6 +28,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(ConflictHeader).toBeTypeOf('function')
   expect(ConflictActions).toBeTypeOf('function')
   expect(HilosAdminPage).toBeTypeOf('function')
+  expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
   expect(HilosTable).toBeTypeOf('function')
 })

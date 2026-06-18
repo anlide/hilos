@@ -5,13 +5,12 @@
 // The live connection state is the shell's own indicator.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import type { Type } from '@angular/core'
-import { HilosLayout, HilosView } from '@hilos/angular'
+import { HilosDashboardPage, HilosLayout, HilosView } from '@hilos/angular'
 import { HilosPages } from '@hilos/core'
 
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
-import { Dashboard } from './views/dashboard/dashboard'
 import { License } from './views/license/license'
 import { Main } from './views/main/main'
 import { Privacy } from './views/privacy/privacy'
@@ -33,7 +32,10 @@ export class App {
   // (other routes land later) render nothing.
   protected readonly pages: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: Main,
-    [HilosPages.DASHBOARD]: Dashboard,
+    // The framework dashboard is rendered straight from the SDK — this demo has
+    // no admin areas of its own, so it gets the framework sections as-is (a
+    // project that does would wrap HilosDashboardPage and project its cards).
+    [HilosPages.DASHBOARD]: HilosDashboardPage,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,

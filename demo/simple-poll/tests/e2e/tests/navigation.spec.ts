@@ -22,6 +22,11 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
   // Gear -> dashboard.
   await page.getByTestId('nav-admin').click()
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
+  // The framework dashboard renders the real admin section cards from the
+  // catalog (HilosDashboardPage), not a placeholder.
+  await expect(
+    page.locator('[data-id^="dashboard-card-"]').first(),
+  ).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)
