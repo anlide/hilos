@@ -3,6 +3,7 @@
 import { expect, it } from 'vitest'
 import {
   HILOS_ROUTER,
+  HilosBreadcrumb,
   HilosLayout,
   HilosLink,
   HilosView,
@@ -17,4 +18,5 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosView).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
+  expect(HilosBreadcrumb).toBeTypeOf('function')
 })

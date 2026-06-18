@@ -1,0 +1,30 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import type { HilosCrumb } from '@hilos/core'
+
+import { HilosBreadcrumb } from '../src/HilosBreadcrumb.js'
+
+const TRAIL: HilosCrumb[] = [
+  { label: 'Dashboard', to: '/hilos' },
+  { label: 'Billing', to: '/hilos/billing' },
+]
+
+describe('HilosBreadcrumb', () => {
+  afterEach(cleanup)
+
+  it('renders nothing for an empty trail', () => {
+    const { container } = render(<HilosBreadcrumb crumbs={[]} />)
+    expect(container.querySelector('[data-id="hilos-breadcrumb"]')).toBeNull()
+  })
+
+  it('links every crumb but the last, which is the active page', () => {
+    render(<HilosBreadcrumb crumbs={TRAIL} />)
+
+    const link = screen.getByRole('link', { name: 'Dashboard' })
+    expect(link.getAttribute('href')).toBe('/hilos')
+
+    const active = screen.getByText('Billing')
+    expect(active.getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByRole('link', { name: 'Billing' })).toBeNull()
+  })
+})

@@ -31,3 +31,7 @@ export {
   type HilosStaticPageProps,
 } from './HilosStaticPage.js'
 export { LoadingButton, type LoadingButtonProps } from './LoadingButton.js'
+export {
+  HilosBreadcrumb,
+  type HilosBreadcrumbProps,
+} from './HilosBreadcrumb.js'
