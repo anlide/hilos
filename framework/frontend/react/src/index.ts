@@ -41,3 +41,4 @@ export {
   type ConflictActionsProps,
 } from './ConflictActions.js'
 export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'
+export { HilosModal, type HilosModalProps } from './HilosModal.js'

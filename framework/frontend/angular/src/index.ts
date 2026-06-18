@@ -26,3 +26,4 @@ export {
   type ConflictSaveButtonContext,
 } from './ConflictActions.js'
 export { HilosAdminPage } from './HilosAdminPage.js'
+export { HilosModal, type ModalActionsContext } from './HilosModal.js'

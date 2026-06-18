@@ -6,10 +6,20 @@ through the confirm guard). Open state is v-model (`v-model="open"`); the dialog
 teleports to <body>, traps Tab focus and returns focus to the opener on close,
 and is keyboard- and ARIA-labelled (a11y ships in v1, styling-rules.md). With
 confirmOnClose, an Esc/backdrop/close attempt raises an inline confirm step
-instead of discarding a dirty draft. Bootstrap classes only — no CSS of its
-own; stacking is the teleport DOM order, not a hand-set z-index. -->
+instead of discarding a dirty draft. The confirm-step state machine is the core
+modal controller and the focus trap / scroll lock are core/dom; this view only
+renders and wires events. Bootstrap classes only — no CSS of its own; stacking is
+the teleport DOM order, not a hand-set z-index. -->
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
+import {
+  FocusTrap,
+  createModalController,
+  lockBodyScroll,
+  unlockBodyScroll,
+} from '@hilos/core'
+
+import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
   defineProps<{
@@ -52,45 +62,38 @@ const emit = defineEmits<{
 
 const dialog = ref<HTMLElement>()
 const confirmDialog = ref<HTMLElement>()
-const confirmVisible = ref(false)
-// The element focus returns to when the dialog closes (focus-return, a11y).
-let opener: HTMLElement | null = null
+const trap = new FocusTrap()
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-function focusables(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
-}
+const modal = createModalController({
+  confirmOnClose: () => props.confirmOnClose,
+  closeOnEsc: () => props.closeOnEsc,
+  closeOnBackdrop: () => props.closeOnBackdrop,
+  onClose: () => {
+    emit('update:modelValue', false)
+    emit('cancel')
+  },
+})
+const confirmVisible = useSignal(modal.confirmVisible)
 
 function activeRoot(): HTMLElement | undefined {
   return confirmVisible.value ? confirmDialog.value : dialog.value
 }
 
-function focusInitial(): void {
-  const root = activeRoot()
-  if (!root) {
-    return
-  }
-  const autofocus = root.querySelector<HTMLElement>('[data-autofocus]')
-  ;(autofocus ?? focusables(root)[0] ?? root).focus()
-}
-
 watch(
   () => props.modelValue,
   (open) => {
-    confirmVisible.value = false
+    modal.reset()
     if (open) {
-      opener =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
-      document.body.classList.add('modal-open')
-      void nextTick(focusInitial)
+      lockBodyScroll(document)
+      void nextTick(() => {
+        const root = activeRoot()
+        if (root) {
+          trap.activate(root)
+        }
+      })
     } else {
-      document.body.classList.remove('modal-open')
-      opener?.focus()
-      opener = null
+      unlockBodyScroll(document)
+      trap.release()
     }
   },
   { immediate: true },
@@ -98,68 +101,23 @@ watch(
 
 // Moving in and out of the confirm step keeps focus inside the visible dialog.
 watch(confirmVisible, () => {
-  void nextTick(focusInitial)
+  void nextTick(() => {
+    const root = activeRoot()
+    if (root) {
+      trap.refocus(root)
+    }
+  })
 })
 
-function close(): void {
-  emit('update:modelValue', false)
-  emit('cancel')
+function onTab(event: KeyboardEvent): void {
+  const root = activeRoot()
+  if (root) {
+    trap.handleTab(root, event)
+  }
 }
 
 function onOk(): void {
   emit('ok')
-}
-
-function requestClose(): void {
-  if (props.confirmOnClose) {
-    confirmVisible.value = true
-    return
-  }
-  close()
-}
-
-function onEsc(): void {
-  if (confirmVisible.value) {
-    confirmVisible.value = false
-    return
-  }
-  if (props.closeOnEsc) {
-    requestClose()
-  }
-}
-
-function onBackdrop(): void {
-  if (confirmVisible.value || !props.closeOnBackdrop) {
-    return
-  }
-  requestClose()
-}
-
-function onTab(event: KeyboardEvent): void {
-  const root = activeRoot()
-  if (!root) {
-    return
-  }
-  const items = focusables(root)
-  if (items.length === 0) {
-    event.preventDefault()
-
-    return
-  }
-  const first = items[0]
-  const last = items[items.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
-function discard(): void {
-  confirmVisible.value = false
-  close()
 }
 </script>
 
@@ -175,9 +133,9 @@ function discard(): void {
         aria-modal="true"
         :aria-label="title || undefined"
         data-id="modal"
-        @keydown.esc.prevent="onEsc"
+        @keydown.esc.prevent="modal.onEsc()"
         @keydown.tab="onTab"
-        @click.self="onBackdrop"
+        @click.self="modal.onBackdrop()"
       >
         <div class="modal-dialog modal-dialog-centered">
           <div class="modal-content">
@@ -190,18 +148,18 @@ function discard(): void {
                 class="btn-close"
                 aria-label="Close"
                 data-id="modal-close"
-                @click="requestClose"
+                @click="modal.requestClose()"
               ></button>
             </div>
             <div class="modal-body">
               <slot />
             </div>
             <div class="modal-footer">
-              <slot name="actions" :request-close="requestClose">
+              <slot name="actions" :request-close="modal.requestClose">
                 <button
                   type="button"
                   class="btn btn-secondary"
-                  @click="requestClose"
+                  @click="modal.requestClose()"
                 >
                   Cancel
                 </button>
@@ -222,7 +180,7 @@ function discard(): void {
         aria-modal="true"
         :aria-label="confirmTitle"
         data-id="modal-confirm"
-        @keydown.esc.prevent="onEsc"
+        @keydown.esc.prevent="modal.onEsc()"
         @keydown.tab="onTab"
       >
         <div class="modal-dialog modal-dialog-centered">
@@ -238,7 +196,7 @@ function discard(): void {
                 type="button"
                 class="btn btn-secondary"
                 data-id="modal-confirm-cancel"
-                @click="confirmVisible = false"
+                @click="modal.keepEditing()"
               >
                 {{ confirmCancelText }}
               </button>
@@ -246,7 +204,7 @@ function discard(): void {
                 type="button"
                 class="btn btn-danger"
                 data-id="modal-confirm-discard"
-                @click="discard"
+                @click="modal.discard()"
               >
                 {{ confirmOkText }}
               </button>

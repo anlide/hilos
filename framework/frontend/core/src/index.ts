@@ -63,6 +63,13 @@ export {
   type SpinnerDelay,
 } from './primitives/loadingButton.js'
 export {
+  createModalController,
+  type ModalController,
+  type ModalControllerOptions,
+} from './primitives/modal.js'
+export { FocusTrap, focusableElements, focusInitial } from './dom/focusTrap.js'
+export { lockBodyScroll, unlockBodyScroll } from './dom/scrollLock.js'
+export {
   PageSubscription,
   type PageSubscriptionConnection,
 } from './subscription/PageSubscription.js'
