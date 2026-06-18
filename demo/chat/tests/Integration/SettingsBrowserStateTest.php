@@ -10,7 +10,6 @@ use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
-use Demo\Chat\Tables\Settings\SettingTableRow;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
@@ -27,6 +26,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -58,21 +58,21 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             );
             $this->assertIsArray($placeholderRow);
             $placeholder = $this->settingsSource($placeholderRow);
-            $this->assertArrayNotHasKey(SettingTableRow::id, $placeholder);
-            $this->assertSame('0', $placeholder[SettingTableRow::value]);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_DEFAULT, $placeholder[SettingTableRow::valueSource]);
+            $this->assertArrayNotHasKey(HilosSettingTableRow::id, $placeholder);
+            $this->assertSame('0', $placeholder[HilosSettingTableRow::value]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $placeholder[HilosSettingTableRow::valueSource]);
 
             $referenceRow = $this->findSettingsBrowserRow($rows, ChatSettingsConstants::CHAT_BOT_MODEL);
             $this->assertIsArray($referenceRow);
             $reference = $this->settingsSource($referenceRow);
-            $this->assertSame(ChatSettingsConstants::DEFAULT_BOT_MODEL, $reference[SettingTableRow::defaultReferenceKey]);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_REFERENCE, $reference[SettingTableRow::valueSource]);
+            $this->assertSame(ChatSettingsConstants::DEFAULT_BOT_MODEL, $reference[HilosSettingTableRow::defaultReferenceKey]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_REFERENCE, $reference[HilosSettingTableRow::valueSource]);
 
             $orphanRow = $this->findSettingsBrowserRow($rows, $orphanKey);
             $this->assertIsArray($orphanRow);
             $orphan = $this->settingsSource($orphanRow);
-            $this->assertSame($orphanKey, $orphan[SettingTableRow::key]);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_ORPHAN, $orphan[SettingTableRow::valueSource]);
+            $this->assertSame($orphanKey, $orphan[HilosSettingTableRow::key]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $orphan[HilosSettingTableRow::valueSource]);
         } finally {
             $this->deleteSettingIfExists($orphanKey);
             TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
@@ -110,8 +110,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
                 $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
                 $catalogKey,
             ));
-            $this->assertSame('browser custom', $created[SettingTableRow::overrideValue]);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_OVERRIDE, $created[SettingTableRow::valueSource]);
+            $this->assertSame('browser custom', $created[HilosSettingTableRow::overrideValue]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $created[HilosSettingTableRow::valueSource]);
 
             Hilos::$table->settings[$catalogKey]->actions->updateValue(null);
             $payload = $this->drainSinglePayload(
@@ -123,8 +123,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
                 $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
                 $catalogKey,
             ));
-            $this->assertNull($updated[SettingTableRow::overrideValue]);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_DEFAULT, $updated[SettingTableRow::valueSource]);
+            $this->assertNull($updated[HilosSettingTableRow::overrideValue]);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $updated[HilosSettingTableRow::valueSource]);
 
             Hilos::$db->settings[$catalogKey]?->actions->delete();
             $payload = $this->drainSinglePayload(
@@ -136,8 +136,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
                 $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
                 $catalogKey,
             ));
-            $this->assertArrayNotHasKey(SettingTableRow::id, $afterDelete);
-            $this->assertSame(SettingTableRow::VALUE_SOURCE_DEFAULT, $afterDelete[SettingTableRow::valueSource]);
+            $this->assertArrayNotHasKey(HilosSettingTableRow::id, $afterDelete);
+            $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $afterDelete[HilosSettingTableRow::valueSource]);
             $deleted = $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::deleted] ?? [];
             $this->assertNotContains($catalogKey, $deleted);
 
@@ -265,7 +265,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     {
         foreach ($rows as $row) {
             $setting = $row[PagePayload::slots][HilosDbContext::settings] ?? null;
-            if (is_array($setting) && ($setting[SettingTableRow::key] ?? null) === $key) {
+            if (is_array($setting) && ($setting[HilosSettingTableRow::key] ?? null) === $key) {
                 return $row;
             }
         }

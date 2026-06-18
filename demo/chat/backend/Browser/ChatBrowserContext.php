@@ -9,8 +9,6 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Tables\ChatTableContext;
-use Demo\Chat\Tables\Settings\SettingTableRow;
-use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -25,6 +23,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Tables\Settings\HilosSettingTableRow;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use Throwable;
 
 /**
@@ -194,7 +194,7 @@ final class ChatBrowserContext extends BrowserContext
     {
         try {
             $table = Hilos::$table?->get(ChatTableContext::settings);
-            if (!$table instanceof SettingsTable) {
+            if (!$table instanceof HilosSettingsTable) {
                 return null;
             }
 
@@ -248,14 +248,14 @@ final class ChatBrowserContext extends BrowserContext
     private function settingsSnapshotRows(): array
     {
         $table = Hilos::$table?->get(ChatTableContext::settings);
-        if (!$table instanceof SettingsTable) {
+        if (!$table instanceof HilosSettingsTable) {
             return [];
         }
 
         try {
             $rows = [];
             foreach ($table->getFullSnapshot()->rows as $row) {
-                if ($row instanceof SettingTableRow) {
+                if ($row instanceof HilosSettingTableRow) {
                     $rows[] = $this->settingsBrowserRow($row);
                 }
             }
@@ -354,7 +354,7 @@ final class ChatBrowserContext extends BrowserContext
     private function settingsBrowserRowForKey(string $key): ?array
     {
         $table = Hilos::$table?->get(ChatTableContext::settings);
-        if (!$table instanceof SettingsTable) {
+        if (!$table instanceof HilosSettingsTable) {
             return null;
         }
 
@@ -364,7 +364,7 @@ final class ChatBrowserContext extends BrowserContext
             return null;
         }
 
-        return $row instanceof SettingTableRow ? $this->settingsBrowserRow($row) : null;
+        return $row instanceof HilosSettingTableRow ? $this->settingsBrowserRow($row) : null;
     }
 
     /**
@@ -376,13 +376,13 @@ final class ChatBrowserContext extends BrowserContext
      * placeholders have none). Dropping it keeps the slot a uniform inline record;
      * persisted-ness is read from value_source instead.
      *
-     * @param SettingTableRow $row Settings table row
+     * @param HilosSettingTableRow $row Settings table row
      * @return array{rowKey: int|string, slots: array<string, mixed>} Page-response row payload
      */
-    private function settingsBrowserRow(SettingTableRow $row): array
+    private function settingsBrowserRow(HilosSettingTableRow $row): array
     {
         $slot = $row->toArray();
-        unset($slot[SettingTableRow::id]);
+        unset($slot[HilosSettingTableRow::id]);
 
         return [
             PagePayload::rowKey => $row->getRowKey(),
@@ -412,7 +412,7 @@ final class ChatBrowserContext extends BrowserContext
      */
     private function settingKeyFromSourceChange(SourceChange $change): string
     {
-        $key = $change->row[SettingTableRow::key] ?? null;
+        $key = $change->row[HilosSettingTableRow::key] ?? null;
         if (is_string($key) || is_int($key)) {
             return (string) $key;
         }

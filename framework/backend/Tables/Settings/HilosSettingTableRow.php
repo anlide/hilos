@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tables\Settings;
+namespace Hilos\Tables\Settings;
 
-use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
 
 /**
- * Backend row payload for the settings table.
+ * Backend row payload for the framework settings table.
  */
-final class SettingTableRow extends AbstractTableRow
+final class HilosSettingTableRow extends AbstractTableRow
 {
     public const string VALUE_SOURCE_DEFAULT = 'default';
     public const string VALUE_SOURCE_REFERENCE = 'reference';

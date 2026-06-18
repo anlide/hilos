@@ -6,13 +6,13 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\Settings\SettingTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Tables\Settings\HilosSettingTableRow;
 
 /**
  * Integration coverage for catalog-backed Hilos::$setting access.
@@ -89,18 +89,18 @@ final class SettingsAccessorTest extends IntegrationTestCase
         $rows = $snapshot[TableConstants::RESULT_KEY_ROWS];
         $row = null;
         foreach ($rows as $candidate) {
-            if (($candidate[SettingTableRow::key] ?? null) === ChatSettingsConstants::CHAT_BOT_MODEL) {
+            if (($candidate[HilosSettingTableRow::key] ?? null) === ChatSettingsConstants::CHAT_BOT_MODEL) {
                 $row = $candidate;
                 break;
             }
         }
 
         $this->assertIsArray($row);
-        $this->assertSame('qwen2.5:3b', $row[SettingTableRow::value]);
-        $this->assertNull($row[SettingTableRow::overrideValue]);
-        $this->assertSame('qwen2.5:3b', $row[SettingTableRow::defaultValue]);
-        $this->assertSame(ChatSettingsConstants::DEFAULT_BOT_MODEL, $row[SettingTableRow::defaultReferenceKey]);
-        $this->assertSame(SettingTableRow::VALUE_SOURCE_REFERENCE, $row[SettingTableRow::valueSource]);
+        $this->assertSame('qwen2.5:3b', $row[HilosSettingTableRow::value]);
+        $this->assertNull($row[HilosSettingTableRow::overrideValue]);
+        $this->assertSame('qwen2.5:3b', $row[HilosSettingTableRow::defaultValue]);
+        $this->assertSame(ChatSettingsConstants::DEFAULT_BOT_MODEL, $row[HilosSettingTableRow::defaultReferenceKey]);
+        $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_REFERENCE, $row[HilosSettingTableRow::valueSource]);
     }
 
     /**

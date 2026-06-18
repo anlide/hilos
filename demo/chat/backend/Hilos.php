@@ -122,7 +122,6 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
-use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
@@ -134,6 +133,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -289,7 +289,7 @@ final class Hilos extends \Hilos\Hilos
         ChatTableContext::hilosUsers => HilosUsersTable::class,
         ChatTableContext::bots => BotsTable::class,
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
-        ChatTableContext::settings => SettingsTable::class,
+        ChatTableContext::settings => HilosSettingsTable::class,
     ];
 
     public const array BROWSER_TABLES = [
