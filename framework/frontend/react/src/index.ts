@@ -40,3 +40,4 @@ export {
   ConflictActions,
   type ConflictActionsProps,
 } from './ConflictActions.js'
+export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'

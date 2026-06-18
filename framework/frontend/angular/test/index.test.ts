@@ -5,6 +5,7 @@ import {
   ConflictActions,
   ConflictHeader,
   HILOS_ROUTER,
+  HilosAdminPage,
   HilosBreadcrumb,
   HilosLayout,
   HilosLink,
@@ -23,4 +24,5 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosBreadcrumb).toBeTypeOf('function')
   expect(ConflictHeader).toBeTypeOf('function')
   expect(ConflictActions).toBeTypeOf('function')
+  expect(HilosAdminPage).toBeTypeOf('function')
 })

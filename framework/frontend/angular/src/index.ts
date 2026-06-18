@@ -25,3 +25,4 @@ export {
   ConflictActions,
   type ConflictSaveButtonContext,
 } from './ConflictActions.js'
+export { HilosAdminPage } from './HilosAdminPage.js'
