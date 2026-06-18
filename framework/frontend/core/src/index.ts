@@ -56,6 +56,7 @@ export {
   type TableViewRow,
   type TableControllerOptions,
 } from './table/TableController.js'
+export { type HilosTableColumn } from './table/hilosTableColumn.js'
 export {
   createLoadingButtonState,
   DEFAULT_SPINNER_DELAY_MS,

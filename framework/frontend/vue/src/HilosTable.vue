@@ -7,10 +7,9 @@ header, sorting, and paging stay framework-owned. An empty result renders the
 `#empty` slot or a default message. -->
 <script setup lang="ts" generic="R">
 import { computed } from 'vue'
-import type { TableController } from '@hilos/core'
+import type { HilosTableColumn, TableController } from '@hilos/core'
 
 import { useSignal } from './useSignal.js'
-import type { HilosTableColumn } from './hilosTable.js'
 
 const props = withDefaults(
   defineProps<{

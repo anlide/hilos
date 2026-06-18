@@ -19,13 +19,13 @@ import {
   isPersistedSetting,
   type HilosSettingRow,
   type HilosSettingsContext,
+  type HilosTableColumn,
 } from '@hilos/core'
 import { computed, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosTable from '../../HilosTable.vue'
-import { type HilosTableColumn } from '../../hilosTable.js'
 import LoadingButton from '../../LoadingButton.vue'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import HilosSettingValueCell from './HilosSettingValueCell.vue'

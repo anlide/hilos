@@ -9,13 +9,13 @@ detail page). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosUsersTable,
   HilosPages,
+  type HilosTableColumn,
   type HilosUserRow,
   type HilosUsersContext,
 } from '@hilos/core'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosTable from '../../HilosTable.vue'
-import { type HilosTableColumn } from '../../hilosTable.js'
 
 const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */

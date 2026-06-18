@@ -27,3 +27,5 @@ export {
 } from './ConflictActions.js'
 export { HilosAdminPage } from './HilosAdminPage.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
+export { HilosTable, type TableRowContext } from './HilosTable.js'
+export type { HilosTableColumn } from '@hilos/core'

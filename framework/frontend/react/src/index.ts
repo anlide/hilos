@@ -42,3 +42,5 @@ export {
 } from './ConflictActions.js'
 export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
+export { HilosTable, type HilosTableProps } from './HilosTable.js'
+export type { HilosTableColumn } from '@hilos/core'

@@ -10,6 +10,7 @@ import {
   HilosLayout,
   HilosLink,
   HilosModal,
+  HilosTable,
   HilosView,
   LoadingButton,
   connectionStateSignal,
@@ -27,4 +28,5 @@ it('exports the @hilos/angular public surface', () => {
   expect(ConflictActions).toBeTypeOf('function')
   expect(HilosAdminPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
+  expect(HilosTable).toBeTypeOf('function')
 })
