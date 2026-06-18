@@ -18,6 +18,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [architecture/agent-lifecycle.md](docs/agents/architecture/agent-lifecycle.md) | creating agents, onStart/onTick/onStop, sending signals |
 | [architecture/event-loop.md](docs/agents/architecture/event-loop.md) | anything involving sockets, I/O, blocking operations |
 | [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors |
+| [architecture/admin-features.md](docs/agents/architecture/admin-features.md) | graduating or building an admin feature (page + browser table + actions): framework-owned vs project-owned-by-pattern, the framework/project boundary, extension points |
 
 ## Framework Development
 
