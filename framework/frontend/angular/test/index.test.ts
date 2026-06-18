@@ -2,6 +2,8 @@
 // '@hilos/angular' is exported here. Behavior is covered by the module tests.
 import { expect, it } from 'vitest'
 import {
+  ConflictActions,
+  ConflictHeader,
   HILOS_ROUTER,
   HilosBreadcrumb,
   HilosLayout,
@@ -19,4 +21,6 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosLayout).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
   expect(HilosBreadcrumb).toBeTypeOf('function')
+  expect(ConflictHeader).toBeTypeOf('function')
+  expect(ConflictActions).toBeTypeOf('function')
 })

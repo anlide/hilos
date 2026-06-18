@@ -35,3 +35,8 @@ export {
   HilosBreadcrumb,
   type HilosBreadcrumbProps,
 } from './HilosBreadcrumb.js'
+export { ConflictHeader, type ConflictHeaderProps } from './ConflictHeader.js'
+export {
+  ConflictActions,
+  type ConflictActionsProps,
+} from './ConflictActions.js'

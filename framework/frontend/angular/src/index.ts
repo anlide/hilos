@@ -20,3 +20,8 @@ export { HilosLayout } from './HilosLayout.js'
 export { HilosStaticPage } from './HilosStaticPage.js'
 export { LoadingButton } from './LoadingButton.js'
 export { HilosBreadcrumb } from './HilosBreadcrumb.js'
+export { ConflictHeader } from './ConflictHeader.js'
+export {
+  ConflictActions,
+  type ConflictSaveButtonContext,
+} from './ConflictActions.js'
