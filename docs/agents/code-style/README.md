@@ -16,6 +16,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [method-contracts.md](method-contracts.md) | changing method return types, success/failure contracts, command methods, predicates, or result consumption APIs |
 | [static-factories.md](static-factories.md) | adding or changing a static factory (`fromArray`, `fromRow`, `create`, named constructors) or its `self`/`static` return contract |
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
+| [frontend-import-paths.md](frontend-import-paths.md) | adding or changing a relative import in frontend TypeScript — explicit `.js` extension, the barrel `index.js`, the "Import can be shortened" warning |
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
