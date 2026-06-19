@@ -8,9 +8,9 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
  * Browser list source for users visible on the main chat page.
@@ -41,8 +41,8 @@ final class MainUsersBrowserList
                     Connection::userId,
                 ],
                 BrowserFieldKey::COMPUTED => [
-                    UserConnectionSummary::presence,
-                    UserConnectionSummary::onlineSessionCount,
+                    HilosUserPresenceSummary::presence,
+                    HilosUserPresenceSummary::onlineSessionCount,
                 ],
                 BrowserFieldKey::TRIGGERS => [
                     Connection::userId,

@@ -9,13 +9,13 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
  * Browser table config for a single Hilos user detail page.
@@ -58,8 +58,8 @@ final class UserDetailBrowserTable
                     Connection::userId,
                 ],
                 BrowserFieldKey::COMPUTED => [
-                    UserConnectionSummary::presence,
-                    UserConnectionSummary::onlineSessionCount,
+                    HilosUserPresenceSummary::presence,
+                    HilosUserPresenceSummary::onlineSessionCount,
                 ],
             ],
         ],

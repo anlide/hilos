@@ -1,5 +1,5 @@
 // The chat user entity and its collection. The framework owns the user's
-// authorization contract (superadmin/blocked), so the domain user extends the
+// authorization contract (admin/block), so the domain user extends the
 // SDK `User` and adds only the chat's own profile fields. The `users` slot of
 // the main page lists and the session `currentUser` slot both resolve to this
 // one `user` entity (data-model.md: one entity per (type,id) per scope).
@@ -38,8 +38,8 @@ export function userFromFields(
 ): User {
   return {
     id: readNumber(fields, 'id'),
-    superadmin: readBoolean(fields, 'superadmin'),
-    blocked: readBoolean(fields, 'blocked'),
+    admin: readBoolean(fields, 'admin'),
+    block: readBoolean(fields, 'block'),
     name: readString(fields, 'name'),
     lastActivity: readStringOrNull(fields, 'lastActivity'),
   }

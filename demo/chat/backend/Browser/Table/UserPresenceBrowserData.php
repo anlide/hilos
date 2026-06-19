@@ -9,11 +9,11 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
  * Browser data source for the chat user detail page: the user's reactive
@@ -45,8 +45,8 @@ final class UserPresenceBrowserData
                     Connection::userId,
                 ],
                 BrowserFieldKey::COMPUTED => [
-                    UserConnectionSummary::presence,
-                    UserConnectionSummary::onlineSessionCount,
+                    HilosUserPresenceSummary::presence,
+                    HilosUserPresenceSummary::onlineSessionCount,
                 ],
             ],
         ],

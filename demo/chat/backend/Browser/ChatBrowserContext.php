@@ -7,7 +7,6 @@ namespace Demo\Chat\Browser;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\SettingsPage;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -23,6 +22,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Throwable;
@@ -102,10 +102,10 @@ final class ChatBrowserContext extends BrowserContext
         array $sources,
     ): mixed {
         if (
-            $field === UserConnectionSummary::presence
-            || $field === UserConnectionSummary::onlineSessionCount
+            $field === HilosUserPresenceSummary::presence
+            || $field === HilosUserPresenceSummary::onlineSessionCount
         ) {
-            return $this->computeUserConnectionSummaryField($field, $rowKey);
+            return $this->computeUserPresenceSummaryField($field, $rowKey);
         }
 
         if (
@@ -139,7 +139,7 @@ final class ChatBrowserContext extends BrowserContext
      * @param int|string $rowKey User id row key
      * @return mixed Summary field value, or null when runtime state is unavailable
      */
-    private function computeUserConnectionSummaryField(string $field, int|string $rowKey): mixed
+    private function computeUserPresenceSummaryField(string $field, int|string $rowKey): mixed
     {
         $userId = (int) $rowKey;
         if ($userId <= 0 || (string) $userId !== (string) $rowKey) {
@@ -153,8 +153,8 @@ final class ChatBrowserContext extends BrowserContext
         }
 
         return match ($field) {
-            UserConnectionSummary::presence => $summary?->presence,
-            UserConnectionSummary::onlineSessionCount => $summary?->onlineSessionCount,
+            HilosUserPresenceSummary::presence => $summary?->presence,
+            HilosUserPresenceSummary::onlineSessionCount => $summary?->onlineSessionCount,
             default => null,
         };
     }

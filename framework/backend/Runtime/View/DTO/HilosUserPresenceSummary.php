@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Runtime\View\DTO;
+namespace Hilos\Runtime\View\DTO;
 
 /**
- * Runtime connection summary for one user.
+ * Runtime presence summary for one user.
+ *
+ * The framework presence contract the Hilos users table merges over a DB user:
+ * a project's runtime connection source ({@see HilosPresenceSource}) returns this
+ * for a user id, and the table projects it into the row's presence fields.
  */
-final class UserConnectionSummary
+final class HilosUserPresenceSummary
 {
     public const string presence = 'presence';
     public const string onlineSessionCount = 'onlineSessionCount';

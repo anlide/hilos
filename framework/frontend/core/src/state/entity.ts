@@ -24,8 +24,8 @@ export interface Entity {
  * with its own profile fields (display name, activity, …).
  */
 export interface User extends Entity {
-  /** Holds the superadmin grant, bypassing role checks (RBAC). */
-  readonly superadmin: boolean
-  /** True while the account is blocked from acting (RBAC). */
-  readonly blocked: boolean
+  /** Whether the user is a panel admin operator (RBAC). */
+  readonly admin: boolean
+  /** Whether the user is blocked from acting (RBAC). */
+  readonly block: boolean
 }

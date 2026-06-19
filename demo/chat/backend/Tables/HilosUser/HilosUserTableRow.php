@@ -5,49 +5,41 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\HilosUser;
 
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
-use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Tables\Users\AbstractHilosUserTableRow;
 
 /**
  * Backend row payload for the Hilos users table.
+ *
+ * Extends the framework base row (id, admin, block, presence, onlineSessionCount)
+ * with the chat profile fields.
  */
-final class HilosUserTableRow extends AbstractTableRow
+final class HilosUserTableRow extends AbstractHilosUserTableRow
 {
-    public const string id = ObjectUser::id;
     public const string name = ObjectUser::name;
     public const string lastActivity = ObjectUser::lastActivity;
-    public const string onlineSessionCount = 'onlineSessionCount';
-    public const string presence = 'presence';
 
     public function __construct(
-        public int $id,
+        int $id,
+        bool $admin,
+        bool $block,
         public string $name,
         public ?string $lastActivity,
-        public int $onlineSessionCount = 0,
-        public ?string $presence = null,
+        int $onlineSessionCount = 0,
+        ?string $presence = null,
     ) {
-    }
-
-    /**
-     * Returns the stable row key used by the Hilos users table.
-     */
-    public function getRowKey(): int
-    {
-        return $this->id;
+        parent::__construct($id, $admin, $block, $onlineSessionCount, $presence);
     }
 
     /**
      * Serializes the row to the frontend table payload shape.
      *
-     * @return array{id: int, name: string, lastActivity: ?string, onlineSessionCount: int, presence: ?string}
+     * @return array{id: int, admin: bool, block: bool, onlineSessionCount: int, presence: ?string, name: string, lastActivity: ?string}
      */
     public function toArray(): array
     {
-        return [
-            self::id => $this->id,
+        return $this->baseFields() + [
             self::name => $this->name,
             self::lastActivity => $this->lastActivity,
-            self::onlineSessionCount => $this->onlineSessionCount,
-            self::presence => $this->presence,
         ];
     }
 
@@ -60,6 +52,8 @@ final class HilosUserTableRow extends AbstractTableRow
     {
         return new static(
             id: (int) ($data[self::id] ?? 0),
+            admin: (bool) ($data[self::admin] ?? false),
+            block: (bool) ($data[self::block] ?? false),
             name: (string) ($data[self::name] ?? ''),
             lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
             onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),

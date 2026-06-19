@@ -19,7 +19,7 @@ import { type UserDetail } from './types/UserDetail'
 const USER_ENTITY_SLOT = 'user'
 const USER_PRESENCE_DATA = 'userPresence'
 // The presence summary fields, mirroring the backend
-// Demo\Chat\Runtime\View\DTO\UserConnectionSummary.
+// Hilos\Runtime\View\DTO\HilosUserPresenceSummary.
 const PRESENCE_FIELD = 'presence'
 const ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 
