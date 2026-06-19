@@ -11,10 +11,14 @@ import {
   HilosLayout,
   HilosLink,
   HilosModal,
+  HilosSettingsPage,
   HilosTable,
+  HilosUserPage,
+  HilosUsersPage,
   HilosView,
   LoadingButton,
   connectionStateSignal,
+  createHilosTrackedAction,
 } from '../src/index.js'
 
 it('exports the @hilos/angular public surface', () => {
@@ -31,4 +35,8 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
   expect(HilosTable).toBeTypeOf('function')
+  expect(HilosSettingsPage).toBeTypeOf('function')
+  expect(HilosUsersPage).toBeTypeOf('function')
+  expect(HilosUserPage).toBeTypeOf('function')
+  expect(createHilosTrackedAction).toBeTypeOf('function')
 })

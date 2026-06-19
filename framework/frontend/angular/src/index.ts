@@ -13,6 +13,10 @@ export {
 } from './connectionStateSignal.js'
 export { hilosSignal, type HilosSignalOptions } from './hilosSignal.js'
 export { entitySignal } from './entitySignal.js'
+export {
+  createHilosTrackedAction,
+  type HilosTrackedAction,
+} from './hilosTrackedAction.js'
 export { HILOS_ROUTER } from './hilosRouterToken.js'
 export { HilosLink } from './HilosLink.js'
 export { HilosView } from './HilosView.js'
@@ -27,6 +31,12 @@ export {
 } from './ConflictActions.js'
 export { HilosAdminPage } from './HilosAdminPage.js'
 export { HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.js'
+export { HilosSettingsPage } from './admin/settings/HilosSettingsPage.js'
+export {
+  HilosUsersPage,
+  type UsersRowActionsContext,
+} from './admin/users/HilosUsersPage.js'
+export { HilosUserPage } from './admin/users/HilosUserPage.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
 export { HilosTable, type TableRowContext } from './HilosTable.js'
 export type { HilosTableColumn } from '@hilos/core'
