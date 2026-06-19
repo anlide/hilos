@@ -22,6 +22,7 @@ import './hilos-styles.scss'
 export { useConnectionState } from './useConnectionState.js'
 export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
+export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
 export { HilosRouterContext } from './hilosRouterContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
@@ -45,6 +46,18 @@ export {
   HilosDashboardPage,
   type HilosDashboardPageProps,
 } from './admin/dashboard/HilosDashboardPage.js'
+export {
+  HilosSettingsPage,
+  type HilosSettingsPageProps,
+} from './admin/settings/HilosSettingsPage.js'
+export {
+  HilosUsersPage,
+  type HilosUsersPageProps,
+} from './admin/users/HilosUsersPage.js'
+export {
+  HilosUserPage,
+  type HilosUserPageProps,
+} from './admin/users/HilosUserPage.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
 export { HilosTable, type HilosTableProps } from './HilosTable.js'
 export type { HilosTableColumn } from '@hilos/core'
