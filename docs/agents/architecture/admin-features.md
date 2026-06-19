@@ -97,10 +97,19 @@ operators, the project table is the project's own.
 ## Preferred Shape
 
 ```php
-// Mode 1: the project page is thin — agent type + registration only.
+// Mode 1: the project page is thin — subscription owner only.
+// The subscribe signal, the action DTOs, and the add/update/delete lifecycle
+// are framework-owned on AbstractHilosSettingsPage; the table key is registered
+// in the project TableContext (ChatTableContext::settings => HilosSettingsTable::class).
 final class SettingsPage extends AbstractHilosSettingsPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+}
+
+// The catalog binds once on the Hilos facade, not on the page; the framework
+// reads it back through the settings accessor (Hilos::$setting->catalog()).
+final class Hilos extends \Hilos\Hilos
+{
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
 }
 ```

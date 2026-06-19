@@ -2,27 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tables\Settings\DTO;
+namespace Hilos\Tables\Settings\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
-use Hilos\Database\Entity\Item\Setting;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Database\Entity\Item\Setting;
 
 /**
- * DTO for setting_add action payload.
+ * DTO for the setting_update action payload.
  */
-final class SettingAddActionDTO extends ChatActionPayloadDTO
+final class HilosSettingUpdateActionDTO extends ActionPayloadDTO
 {
     /**
-     * Creates setting add action DTO.
+     * Creates setting update action DTO.
      *
-     * @param string $key Setting key (must be in catalog)
-     * @param mixed $value Value (null = use catalog default when reading)
+     * @param string $key Setting key to update
+     * @param mixed $value New value (null = use catalog default when reading)
      */
     public function __construct(
         public readonly string $key,
-        public readonly mixed $value = null,
+        public readonly mixed $value,
     ) {
     }
 
@@ -33,7 +33,7 @@ final class SettingAddActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::SETTING_ADD;
+        return HilosSignalConstants::SETTING_UPDATE;
     }
 
     /**
@@ -58,14 +58,13 @@ final class SettingAddActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed> Data with key and optional value
+     * @return array<string, mixed> Data with key and value
      */
     public function toArray(): array
     {
-        $result = [Setting::key => $this->key];
-        if ($this->value !== null) {
-            $result[Setting::value] = $this->value;
-        }
-        return $result;
+        return [
+            Setting::key => $this->key,
+            Setting::value => $this->value,
+        ];
     }
 }

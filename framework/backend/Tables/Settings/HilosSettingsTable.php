@@ -38,6 +38,9 @@ use Throwable;
  */
 final class HilosSettingsTable extends TableDefinition
 {
+    /** Canonical table key under which a project registers this table in its TableContext. */
+    public const string TABLE = 'settings';
+
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [
             self::DB_SETTINGS_SOURCE,

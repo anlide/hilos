@@ -30,7 +30,7 @@ final class ChatTableContext extends TableContext
     public const string hilosUsers = 'hilosUsers';
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
-    public const string settings = 'settings';
+    public const string settings = HilosSettingsTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

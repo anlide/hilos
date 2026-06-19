@@ -210,4 +210,14 @@ final class HilosSignalConstants
 
     /** Server → initiator: hilos_user_update failed (carries a reason text). */
     public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
+
+    // ── Hilos settings admin: table mutation actions (client → server) ──
+    /** Client → server: add a setting override on the HILOS_SETTINGS page. */
+    public const string SETTING_ADD = 'setting_add';
+
+    /** Client → server: update a setting value on the HILOS_SETTINGS page. */
+    public const string SETTING_UPDATE = 'setting_update';
+
+    /** Client → server: delete an orphan setting on the HILOS_SETTINGS page. */
+    public const string SETTING_DELETE = 'setting_delete';
 }

@@ -2,27 +2,25 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tables\Settings\DTO;
+namespace Hilos\Tables\Settings\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
-use Hilos\Database\Entity\Item\Setting;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Database\Entity\Item\Setting;
 
 /**
- * DTO for setting_update action payload.
+ * DTO for the setting_delete action payload.
  */
-final class SettingUpdateActionDTO extends ChatActionPayloadDTO
+final class HilosSettingDeleteActionDTO extends ActionPayloadDTO
 {
     /**
-     * Creates setting update action DTO.
+     * Creates setting delete action DTO.
      *
-     * @param string $key Setting key to update
-     * @param mixed $value New value (null = use catalog default when reading)
+     * @param string $key Setting key to delete (orphan only)
      */
     public function __construct(
         public readonly string $key,
-        public readonly mixed $value,
     ) {
     }
 
@@ -33,7 +31,7 @@ final class SettingUpdateActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::SETTING_UPDATE;
+        return HilosSignalConstants::SETTING_DELETE;
     }
 
     /**
@@ -51,20 +49,16 @@ final class SettingUpdateActionDTO extends ChatActionPayloadDTO
 
         return new static(
             key: is_string($inner[Setting::key] ?? null) ? trim($inner[Setting::key]) : '',
-            value: array_key_exists(Setting::value, $inner ?? []) ? $inner[Setting::value] : null,
         );
     }
 
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed> Data with key and value
+     * @return array<string, mixed> Data with key
      */
     public function toArray(): array
     {
-        return [
-            Setting::key => $this->key,
-            Setting::value => $this->value,
-        ];
+        return [Setting::key => $this->key];
     }
 }

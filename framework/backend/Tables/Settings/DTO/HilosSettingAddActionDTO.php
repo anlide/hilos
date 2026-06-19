@@ -2,25 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tables\Settings\DTO;
+namespace Hilos\Tables\Settings\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
-use Hilos\Database\Entity\Item\Setting;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Database\Entity\Item\Setting;
 
 /**
- * DTO for setting_delete action payload.
+ * DTO for the setting_add action payload.
  */
-final class SettingDeleteActionDTO extends ChatActionPayloadDTO
+final class HilosSettingAddActionDTO extends ActionPayloadDTO
 {
     /**
-     * Creates setting delete action DTO.
+     * Creates setting add action DTO.
      *
-     * @param string $key Setting key to delete (orphan only)
+     * @param string $key Setting key (must be in catalog)
+     * @param mixed $value Value (null = use catalog default when reading)
      */
     public function __construct(
         public readonly string $key,
+        public readonly mixed $value = null,
     ) {
     }
 
@@ -31,7 +33,7 @@ final class SettingDeleteActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::SETTING_DELETE;
+        return HilosSignalConstants::SETTING_ADD;
     }
 
     /**
@@ -49,16 +51,21 @@ final class SettingDeleteActionDTO extends ChatActionPayloadDTO
 
         return new static(
             key: is_string($inner[Setting::key] ?? null) ? trim($inner[Setting::key]) : '',
+            value: array_key_exists(Setting::value, $inner ?? []) ? $inner[Setting::value] : null,
         );
     }
 
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed> Data with key
+     * @return array<string, mixed> Data with key and optional value
      */
     public function toArray(): array
     {
-        return [Setting::key => $this->key];
+        $result = [Setting::key => $this->key];
+        if ($this->value !== null) {
+            $result[Setting::value] = $this->value;
+        }
+        return $result;
     }
 }
