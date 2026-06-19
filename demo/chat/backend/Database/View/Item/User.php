@@ -26,6 +26,8 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name
+ * @property-read bool $admin Whether the user is a panel admin operator
+ * @property-read bool $block Whether the user is blocked from acting
  * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
@@ -41,16 +43,18 @@ final class User extends DbItem
      * Property getter (read-only access). Supports lazy loading of related collections.
      *
      * @param string $name Property name
-     * @return int|string|Connections|RuntimeChatUserState|UserActions|null Property value, actions, or linked runtime items
+     * @return bool|int|string|Connections|RuntimeChatUserState|UserActions|null Property value, actions, or linked runtime items
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
      * @throws RtActionsStateCollectionNullException If runtime connection state collection is not initialized
      */
-    public function __get(string $name): int|string|Connections|RuntimeChatUserState|UserActions|null
+    public function __get(string $name): bool|int|string|Connections|RuntimeChatUserState|UserActions|null
     {
         return match ($name) {
             ObjectUser::id => $this->_object->id,
             ObjectUser::name => $this->_object->name,
+            ObjectUser::admin => $this->_object->admin,
+            ObjectUser::block => $this->_object->block,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
             ChatRtContext::connections => Hilos::$rt->connections->forUser($this->id),
