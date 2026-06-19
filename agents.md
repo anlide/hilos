@@ -19,6 +19,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [architecture/event-loop.md](docs/agents/architecture/event-loop.md) | anything involving sockets, I/O, blocking operations |
 | [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors |
 | [architecture/admin-features.md](docs/agents/architecture/admin-features.md) | graduating or building an admin feature (page + browser table + actions): framework-owned vs project-owned-by-pattern, the framework/project boundary, extension points |
+| [architecture/admin-feature-scaffold.md](docs/agents/architecture/admin-feature-scaffold.md) | activating or building an admin feature in a project: the layer-by-layer scaffold order and the three activation paths (configure-only / bound-sources / project-owned) |
 
 ## Framework Development
 

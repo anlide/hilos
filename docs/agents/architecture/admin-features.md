@@ -6,6 +6,10 @@ project's own admin table. This spec is graduated ahead of the code: it is the
 target structure the settings/hilos-users graduation moves toward, not a claim
 that every base class below already exists.
 
+For the step-by-step order to activate one in a project — which files to create
+per layer against the chat reference — see
+[admin-feature-scaffold.md](admin-feature-scaffold.md).
+
 ## Core Rule
 
 An admin feature's generic machinery — the browser table projection, the page

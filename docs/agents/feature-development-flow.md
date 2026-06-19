@@ -121,6 +121,10 @@ loop:
   `docs/new-project/README.md`, step-by-step and visible in the main context
   (includes the worker-pool lesson: counts live in compose env, `MIN_MONOPOLISTIC >= 2`).
   (Not built yet.)
+- **Admin scaffold skill** (`hilos-admin-scaffold`) — built; activates or builds
+  one admin feature (settings / hilos-users / roles / a project table) layer by
+  layer, over `docs/agents/architecture/admin-feature-scaffold.md`. Narrower than
+  the project scaffold above: one feature into an existing project, not a new project.
 
 ## Open forks (undecided)
 
