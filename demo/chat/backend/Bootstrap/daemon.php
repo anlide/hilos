@@ -120,6 +120,19 @@ try {
     if ($frontendDistPath === '') {
         $frontendDistPath = __DIR__ . '/../../frontend/dist';
     }
+
+    // Pick up the timestamp the frontend build wrote into dist and expose it as
+    // HILOS_BUILD_TIMESTAMP for the handshake welcome frame. A one-time bootstrap
+    // read (never on the event loop), so the light master is unaffected; without
+    // a build the value stays at its 'dev' default.
+    $buildTimestampFile = $frontendDistPath . '/build-timestamp.txt';
+    if (is_file($buildTimestampFile)) {
+        $buildTimestamp = trim((string)file_get_contents($buildTimestampFile));
+        if ($buildTimestamp !== '') {
+            putenv(EnvConstants::HILOS_BUILD_TIMESTAMP->name . '=' . $buildTimestamp);
+        }
+    }
+
     if (is_dir($frontendDistPath)) {
         $htmlResolver = new HtmlResolver();
         $htmlCache = new HtmlCache($frontendDistPath);

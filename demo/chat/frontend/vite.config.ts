@@ -1,5 +1,25 @@
 import vue from '@vitejs/plugin-vue'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
+
+// Stamp the frontend build timestamp into the dist output. The daemon reads
+// dist/build-timestamp.txt at startup and ships it in the handshake welcome
+// frame, and the frontend forces a refresh when a reconnect reports a newer
+// build (docs/agents/frontend/build-and-docker.md). Build-only: the dev server
+// leaves HILOS_BUILD_TIMESTAMP at its 'dev' default. The file is emitted through
+// Rollup so this config needs no node: imports (and thus no @types/node).
+function buildTimestampPlugin(): Plugin {
+  return {
+    name: 'hilos-build-timestamp',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'build-timestamp.txt',
+        source: new Date().toISOString(),
+      })
+    },
+  }
+}
 
 // Dev/build config for the chat demo — the end project that consumes @hilos/vue.
 // The dev server listens on every interface so the host browser reaches it
@@ -14,7 +34,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'VITE_')
 
   return {
-    plugins: [vue()],
+    plugins: [vue(), buildTimestampPlugin()],
     server: {
       host: true,
       port: 5173,
