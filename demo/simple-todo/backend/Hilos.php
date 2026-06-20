@@ -6,7 +6,9 @@ namespace Demo\SimpleTodo;
 
 use Demo\SimpleTodo\Agents\Hilos\DemoHilosAgent;
 use Demo\SimpleTodo\Agents\TodoAgent;
+use Demo\SimpleTodo\Browser\Table\UserDetailBrowserTable;
 use Demo\SimpleTodo\Browser\TodoBrowserContext;
+use Demo\SimpleTodo\Browser\TodoBrowserRef;
 use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Database\Settings\TodoSettingsCatalog;
@@ -18,11 +20,15 @@ use Demo\SimpleTodo\Pages\Hilos\LicensePage;
 use Demo\SimpleTodo\Pages\Hilos\PrivacyPage;
 use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\Hilos\TermsPage;
+use Demo\SimpleTodo\Pages\Hilos\Users\UserPage;
+use Demo\SimpleTodo\Pages\Hilos\Users\UsersPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Demo\SimpleTodo\Tables\HilosUser\HilosUsersTable;
 use Demo\SimpleTodo\Tables\TodoTableContext;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -58,6 +64,8 @@ final class Hilos extends \Hilos\Hilos
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        UsersPage::PAGE => UsersPage::class,
+        UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -80,9 +88,23 @@ final class Hilos extends \Hilos\Hilos
         TodoTableContext::hilosUsers => HilosUsersTable::class,
     ];
 
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+    ];
+
     public const array PAGE_TABLES = [
         SettingsPage::PAGE => [
             TodoTableContext::settings => [],
+        ],
+        UsersPage::PAGE => [
+            TodoTableContext::hilosUsers => [],
+        ],
+        UserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => TodoBrowserRef::HILOS_USER_ID,
+                ],
+            ],
         ],
     ];
 

@@ -6,6 +6,7 @@ namespace Demo\SimpleTodo\Tests\Unit;
 
 use Demo\SimpleTodo\Agents\Hilos\DemoHilosAgent;
 use Demo\SimpleTodo\Agents\TodoAgent;
+use Demo\SimpleTodo\Browser\Table\UserDetailBrowserTable;
 use Demo\SimpleTodo\Constants\AgentType;
 use Demo\SimpleTodo\Constants\PageConstants;
 use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -13,9 +14,12 @@ use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
 use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
+use Demo\SimpleTodo\Pages\Hilos\Users\UserPage;
+use Demo\SimpleTodo\Pages\Hilos\Users\UsersPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Demo\SimpleTodo\Tables\HilosUser\HilosUsersTable;
 use Demo\SimpleTodo\Tables\TodoTableContext;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -84,37 +88,43 @@ final class TodoTopologyRegistryTest extends TestCase
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::HILOS_INDEX]));
     }
 
-    public function testTodoAppSurfaceDeclaresNoActionsSignalsOrGroupsYet(): void
+    public function testTodoAppOwnSurfaceStaysTransportOnly(): void
     {
-        // The todo application itself is still transport-only: its own pages and
-        // agent push no server-driven data. The activated framework admin
-        // features (settings, and the users table) are asserted separately
-        // below. These stay empty until the project opts into a feature needing
-        // them; transport-only is a starting state, not a permanent contract.
+        // The todo application's OWN surface stays transport-only: its main page
+        // and worker push no server-driven data. The activated Hilos admin
+        // features (settings, users) own their actions/signals/browser tables —
+        // asserted separately below.
         $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::getPageSignalRoutes());
-        $this->assertSame([], Hilos::getAgentSignalRoutes());
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame([], TodoAgent::AGENT_SIGNALS);
+        $this->assertSame([], Hilos::getAgentSignalRoutes());
     }
 
-    public function testSettingsAndUsersTablesAreRegistered(): void
+    public function testSettingsAndUsersAdminFeaturesAreActivated(): void
     {
-        // Settings is page-bound and configure-only. The Hilos users table is
-        // now registered too (the framework presence-merge engine bound to the
-        // demo's DB users + RT connections), but its page and action routing
-        // arrive with the next activation slice — so PAGE_TABLES and the page
-        // action routes still cover only settings.
+        // Both framework admin features are activated: settings (configure-only)
+        // and hilos-users (the users list page + the user-detail page with its
+        // rename action and a filtered detail browser table).
         $this->assertSame([
             TodoTableContext::settings => HilosSettingsTable::class,
             TodoTableContext::hilosUsers => HilosUsersTable::class,
         ], Hilos::TABLES);
-        $this->assertSame([SettingsPage::PAGE => [TodoTableContext::settings => []]], Hilos::PAGE_TABLES);
+
         $this->assertSame(
-            array_fill_keys(array_keys(SettingsPage::ACTIONS), SettingsPage::PAGE),
-            Hilos::getPageActionRoutes(),
+            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            Hilos::BROWSER_TABLES,
+        );
+
+        $this->assertSame(
+            [SettingsPage::PAGE, UsersPage::PAGE, UserPage::PAGE],
+            array_keys(Hilos::PAGE_TABLES),
+        );
+        $this->assertSame([TodoTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
+
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
         );
     }
 }
