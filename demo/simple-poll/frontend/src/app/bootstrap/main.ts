@@ -10,11 +10,12 @@ import { bootHilos } from '@hilos/core'
 
 import { App } from '../app'
 import { appConfig } from '../app.config'
+import { pageEntityTypes } from '../pages/entityTypes'
 import { router } from '../pages/routes'
 import { connection } from './connection'
 import { scopes } from './session'
 
-const hilosRouter = bootHilos({ connection, scopes, router })
+const hilosRouter = bootHilos({ connection, scopes, router, pageEntityTypes })
 
 bootstrapApplication(
   App,

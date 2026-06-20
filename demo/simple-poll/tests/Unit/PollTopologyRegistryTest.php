@@ -6,6 +6,7 @@ namespace Demo\SimplePoll\Tests\Unit;
 
 use Demo\SimplePoll\Agents\Hilos\DemoHilosAgent;
 use Demo\SimplePoll\Agents\PollAgent;
+use Demo\SimplePoll\Browser\Table\UserDetailBrowserTable;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\PageConstants;
 use Demo\SimplePoll\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -13,8 +14,12 @@ use Demo\SimplePoll\Core\Agent\Daemon\PollAgentDaemon;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Pages\Hilos\DashboardPage;
 use Demo\SimplePoll\Pages\Hilos\SettingsPage;
+use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
+use Demo\SimplePoll\Pages\Hilos\Users\UsersPage;
 use Demo\SimplePoll\Pages\MainPage;
+use Demo\SimplePoll\Tables\HilosUser\HilosUsersTable;
 use Demo\SimplePoll\Tables\PollTableContext;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -83,34 +88,43 @@ final class PollTopologyRegistryTest extends TestCase
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::HILOS_INDEX]));
     }
 
-    public function testPollAppSurfaceDeclaresNoActionsSignalsOrGroupsYet(): void
+    public function testPollAppOwnSurfaceStaysTransportOnly(): void
     {
-        // The poll application itself is still transport-only: its own pages and
-        // agent push no server-driven data. The one server-driven surface — the
-        // activated framework settings admin feature — is asserted separately
-        // below. These stay empty until the project opts into a feature needing
-        // them; transport-only is a starting state, not a permanent contract.
+        // The poll application's OWN surface stays transport-only: its main page
+        // and worker push no server-driven data. The activated Hilos admin
+        // features (settings, users) own their actions/signals/browser tables —
+        // asserted separately below.
         $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::getPageSignalRoutes());
-        $this->assertSame([], Hilos::getAgentSignalRoutes());
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame([], PollAgent::AGENT_SIGNALS);
+        $this->assertSame([], Hilos::getAgentSignalRoutes());
     }
 
-    public function testSettingsIsTheOnlyActivatedAdminFeature(): void
+    public function testSettingsAndUsersAdminFeaturesAreActivated(): void
     {
-        // The framework settings feature is activated configure-only: the project
-        // registers the framework table, binds it to its settings page, and
-        // inherits the add/update/delete action routes from the framework page
-        // base. Nothing else is wired — settings is the demo's single
-        // server-driven feature.
-        $this->assertSame([PollTableContext::settings => HilosSettingsTable::class], Hilos::TABLES);
-        $this->assertSame([SettingsPage::PAGE => [PollTableContext::settings => []]], Hilos::PAGE_TABLES);
+        // Both framework admin features are activated: settings (configure-only)
+        // and hilos-users (the users list page + the user-detail page with its
+        // rename action and a filtered detail browser table).
+        $this->assertSame([
+            PollTableContext::settings => HilosSettingsTable::class,
+            PollTableContext::hilosUsers => HilosUsersTable::class,
+        ], Hilos::TABLES);
+
         $this->assertSame(
-            array_fill_keys(array_keys(SettingsPage::ACTIONS), SettingsPage::PAGE),
-            Hilos::getPageActionRoutes(),
+            [UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class],
+            Hilos::BROWSER_TABLES,
+        );
+
+        $this->assertSame(
+            [SettingsPage::PAGE, UsersPage::PAGE, UserPage::PAGE],
+            array_keys(Hilos::PAGE_TABLES),
+        );
+        $this->assertSame([PollTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);
+
+        $this->assertSame(
+            UserPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
         );
     }
 }

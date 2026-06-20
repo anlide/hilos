@@ -7,21 +7,25 @@ namespace Demo\SimplePoll\Agents;
 use Demo\SimplePoll\Constants\AgentType;
 use Demo\SimplePoll\Constants\CookieNames;
 use Demo\SimplePoll\Constants\PollSignalConstants;
+use Demo\SimplePoll\Database\PollDbContext;
+use Demo\SimplePoll\Hilos;
+use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Demo\SimplePoll\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Monopolistic poll worker that owns the main page subscription and the
  * WebSocket lifecycle signals.
  *
- * Declares no truth sources yet: the polls table and its DB ownership arrive
- * with the first data-on-screen rewrite step. Session identity is agent-local
- * and lives only for the daemon lifetime; the demo has no durable user table.
+ * Session identity is durable: the handshake maps each session token cookie to
+ * a user row, registering it on first connect and reusing it on reconnect, and
+ * tracks the live socket as a runtime connection for presence.
  */
 final class PollAgent extends AbstractAgent
 {
@@ -30,19 +34,20 @@ final class PollAgent extends AbstractAgent
     /** @var string Session token cookie format: 32 lowercase hex characters */
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
-    /** @var array<string, HandshakeResponseSignalData> Agent-local session token to current-user reply */
-    private array $sessionUsers = [];
-
-    /** @var int Last assigned agent-local user id (monotonic for the daemon lifetime) */
-    private int $nextUserId = 0;
+    /**
+     * Registers the user table and the connections runtime collection as this
+     * worker's truth sources so their changes fan out to the browser.
+     */
+    public function onStart(): void
+    {
+        $this->registerDbTruthSource(PollDbContext::users);
+        $this->registerRtTruthSource(PollRtContext::connections);
+    }
 
     /**
-     * Authenticates the session token cookie and replies with the current-user
-     * entity fragment in the session-scope payload form.
-     *
-     * Identity is agent-local: the monopolistic poll worker maps each session
-     * token to a generated user for its lifetime, so a reconnecting tab keeps
-     * the same id and name. No durable user table backs the demo.
+     * Authenticates the session token cookie, finds or registers the durable
+     * user, tracks the socket as a runtime connection, and replies with the
+     * current-user entity fragment in the session-scope payload form.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
      * @param string $source Framework signal source identifier (unused)
@@ -50,6 +55,7 @@ final class PollAgent extends AbstractAgent
      * @throws ValidationException When the session token cookie is missing
      * @throws EmptyValueException When the session token cookie is empty
      * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
+     * @throws HilosException On database or runtime failure while resolving the user or registering the connection
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -71,18 +77,44 @@ final class PollAgent extends AbstractAgent
             );
         }
 
-        $response = $this->sessionUsers[$sessionToken] ??= new HandshakeResponseSignalData(
-            selfId: ++$this->nextUserId,
-            selfName: 'User' . RandomHelper::integer(1000, 9999),
-        );
+        $user = Hilos::$db->users->findBySession($sessionToken);
+        if ($user === null) {
+            $user = Hilos::$db->users->actions->register($sessionToken);
+        }
+        $userId = (int)$user->id;
 
-        $this->sendToUser(PollSignalConstants::HANDSHAKE_RESPONSE, $data->acceptKey, $response);
+        Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
+
+        $this->sendToUser(
+            PollSignalConstants::HANDSHAKE_RESPONSE,
+            $data->acceptKey,
+            new HandshakeResponseSignalData(
+                selfId: $userId,
+                selfName: $user->name,
+            ),
+        );
     }
 
     /**
-     * No durable state to clean up; WorkerManager unregisters the agent itself.
+     * Unregisters the closed WebSocket connection from runtime presence.
+     *
+     * @param WebSocketCloseSignalDTO $data Closed WebSocket connection
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On runtime cleanup failure
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
+    {
+        Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
+    }
+
+    /**
+     * Clears runtime connection state on shutdown; the user table persists.
+     *
+     * @throws HilosException On runtime cleanup failure
      */
     public function onStop(): void
     {
+        Hilos::$rt->connections->actions->clear();
     }
 }

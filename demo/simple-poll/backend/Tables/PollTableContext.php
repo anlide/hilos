@@ -5,20 +5,22 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tables;
 
 use Demo\SimplePoll\Hilos;
+use Demo\SimplePoll\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * PollTableContext - App-specific table context ($table layer) for simple-poll.
  *
- * Registers the framework settings table; accessed via Hilos::$table->settings.
- * The table is framework-owned and registered as-is — the demo never subclasses
- * or re-implements it.
+ * Registers the framework settings table (as-is) and the project's Hilos users
+ * table activation; accessed via Hilos::$table->settings / Hilos::$table->hilosUsers.
  *
+ * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosSettingsTable $settings
  */
 final class PollTableContext extends TableContext
 {
+    public const string hilosUsers = 'hilosUsers';
     public const string settings = HilosSettingsTable::TABLE;
 
     /**
