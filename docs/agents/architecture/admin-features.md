@@ -7,7 +7,7 @@ target structure the settings/hilos-users graduation moves toward, not a claim
 that every base class below already exists.
 
 For the step-by-step order to activate one in a project — which files to create
-per layer against the chat reference — see
+per layer from the framework base classes — see
 [admin-feature-scaffold.md](admin-feature-scaffold.md).
 
 ## Core Rule
@@ -38,6 +38,8 @@ The project:
 - declares the content — a catalog (settings), or extra fields on the base
   entity (hilos-users), or the collection it binds;
 - sets one `SUBSCRIPTION_AGENT_TYPE`;
+- ships a `BrowserContext` so the table's snapshot reaches the browser — an empty
+  subclass suffices (the framework default is `null`); see *Browser delivery* below;
 - registers the page/table in `Hilos` topology (see
   [app-topology.md](../app-topology.md)).
 
@@ -64,7 +66,33 @@ by following Mode 2, not by copying a framework page wholesale.
 | Page | subscribe + the action lifecycle (ack/error) | `SUBSCRIPTION_AGENT_TYPE`, registration |
 | Actions | the add/update/delete dispatch over `Hilos::$table` | nothing for a framework feature; the entity's actions for a Mode-2 one |
 | Data | settings collection (`HilosDbContext`); the hilos-user base entity | a project entity (Mode 2), extra hilos-user fields, the settings catalog |
+| Browser delivery | snapshot + reactive push, incl. the self-snapshot path for catalog tables | a `BrowserContext` (an empty subclass suffices for a framework feature) |
 | Frontend | the view + the headless controller (`@hilos/core/admin/*`) | a thin typed context + a wrapper |
+
+## Browser delivery: self-snapshot tables
+
+A framework table still needs a `BrowserContext` to reach the browser, and a new
+project must ship one: the framework `createBrowser()` default is `null`, and a
+page with no browser context answers a subscription with nothing.
+
+Most browser tables are delivered by source fan-out — the `BrowserContext` builds
+rows from DB/RT source items as they change. That holds only when every row maps
+to a real source item. A catalog-backed table breaks the assumption: `settings`
+rows for on-default keys have no DB row, so source fan-out yields an empty table.
+
+The framework resolves this with the self-snapshot contract
+(`Hilos\Core\Table\Definition\SelfSnapshotTable`). Such a table produces its own
+browser rows from `getFullSnapshot()` (the catalog+DB merge) and
+`buildMutationForSourceEvent()` (a reactive change), serialized by a table-owned
+`browserRow()`. The base `BrowserContext` branches on `instanceof SelfSnapshotTable`
+in both `subscribeSnapshot` and `emitBrowserSignals`, using the table's own
+snapshot instead of source fan-out. `HilosSettingsTable` implements it, so an
+empty project `BrowserContext` inherits the whole path — settings needs no project
+browser code beyond shipping the (empty) context.
+
+This is why settings is configure-only on the data side yet still requires a
+project `BrowserContext`: the delivery is framework-owned, the context is the one
+object the project must provide.
 
 ## Extension model
 
@@ -112,9 +140,20 @@ final class SettingsPage extends AbstractHilosSettingsPage
 
 // The catalog binds once on the Hilos facade, not on the page; the framework
 // reads it back through the settings accessor (Hilos::$setting->catalog()).
+// The project also ships a BrowserContext — an empty subclass is enough; the base
+// context delivers the settings snapshot through the self-snapshot path.
 final class Hilos extends \Hilos\Hilos
 {
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
+
+    protected static function createBrowser(): ?BrowserContext
+    {
+        return new AppBrowserContext();
+    }
+}
+
+final class AppBrowserContext extends BrowserContext
+{
 }
 ```
 

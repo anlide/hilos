@@ -87,8 +87,10 @@ the canonical minimal set (~24 files); mirror it file by file:
    (+`_down`). The settings table is mandatory because `HilosDbContext`
    registers the collection unconditionally.
 8. **Topology registry unit test** (`tests/Unit/`): pins registry/class-constant
-   consistency and — while the project is transport-only — asserts that all
-   action/signal routes are still empty (guards the approved contract surface).
+   consistency and asserts that the action/signal/table routes the project has not
+   opted into yet stay empty. Transport-only is a starting state, not a permanent
+   contract — relax these assertions as the project activates a feature (e.g.
+   activating the framework settings page registers a table and its action routes).
 
 Load-bearing boot order in `docker.php`: `Database::initialize(initHilos:
 false, retryConnection: true)` → `Migration::migrateUp()` → `Hilos::init()`.

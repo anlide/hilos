@@ -14,16 +14,21 @@ import About from './views/About/About'
 import License from './views/License/License'
 import Main from './views/Main/Main'
 import Privacy from './views/Privacy/Privacy'
+import Settings from './views/Settings/Settings'
 import Terms from './views/Terms/Terms'
 
 // The page-key → view map HilosView renders from. Pages without a mapped view
 // (other routes land later) render nothing.
 const pages: Record<string, ComponentType> = {
   [PAGE_MAIN]: Main,
-  // The framework dashboard is rendered straight from the SDK — this demo has no
-  // admin areas of its own, so it gets the framework sections as-is (a project
-  // that does would wrap HilosDashboardPage and pass its cards as children).
+  // The framework dashboard is rendered straight from the SDK — this demo adds no
+  // dashboard sections of its own, so it gets the framework sections as-is (a
+  // project that does would wrap HilosDashboardPage and pass its cards as children).
   [HilosPages.DASHBOARD]: HilosDashboardPage,
+  // The framework settings admin page, activated configure-only: the framework
+  // owns the table and the add/update/delete lifecycle; the project binds only its
+  // scope stores + action lifecycle (views/Settings) and its catalog on the backend.
+  [HilosPages.SETTINGS]: Settings,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,

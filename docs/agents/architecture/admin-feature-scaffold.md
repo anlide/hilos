@@ -30,8 +30,11 @@ for a project to clone. Two contract shapes recur:
   and the DB source; the project supplies only content. Settings is this shape:
   `Hilos\Tables\Settings\HilosSettingsTable` is `final`, the `setting` source is
   on `Hilos\Database\Context\HilosDbContext`, and `Hilos\Pages\AbstractHilosSettingsPage`
-  owns the whole add/update/delete lifecycle. The only extension points are a
-  catalog provider and one `SUBSCRIPTION_AGENT_TYPE`.
+  owns the whole add/update/delete lifecycle. The extension points are a catalog
+  provider, one `SUBSCRIPTION_AGENT_TYPE`, a project `BrowserContext` (an empty
+  subclass — the base context delivers the table snapshot through the
+  self-snapshot path), and a thin frontend context wrapper. "Configure-only"
+  means no engine code, not zero project files.
 - **Project-owned data behind a framework contract (bound).** The framework owns
   the merge engine and the row/presence contract; the project owns the data and
   binds it. Hilos-users is this shape: `Hilos\Tables\Users\AbstractHilosUsersTable`
@@ -55,12 +58,23 @@ The framework owns everything mechanical. Generate, in any order:
    `PAGES`.
 3. Register the framework table in topology: `TableContext::settings =>
    Hilos\Tables\Settings\HilosSettingsTable::class`, returned from the project
-   `createTable()`. Register it; never subclass or re-implement it.
-4. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
-   `@hilos/{vue,react,angular}` `admin/settings/HilosSettingsPage`. No project
-   view code.
+   `createTable()`, and bind it to the page in `PAGE_TABLES`. Register it; never
+   subclass or re-implement it.
+4. A `BrowserContext` returned from the project `createBrowser()` — an empty
+   subclass is enough. The framework default is `null`, and without a browser
+   context the settings page answers a subscription with nothing; the base
+   context delivers the table's snapshot through the self-snapshot path
+   ([admin-features.md](admin-features.md), *Browser delivery*).
+5. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
+   `@hilos/{vue,react,angular}` `admin/settings/HilosSettingsPage`, through a thin
+   project wrapper that binds the `HilosSettingsContext` (`{ scopes, actions }`
+   from the project session + connection). The view, the row model, and the
+   add/update/delete round-trips are framework-owned — the wrapper is context
+   binding, not page logic.
 
-No entity, no RT collection, no subclass — that is the configure-only floor.
+No entity, no RT collection, no table subclass — that is the configure-only
+floor. It still includes one empty `BrowserContext` and one thin frontend context
+wrapper; those bind the project, they do not re-implement the engine.
 
 ### hilos-users — bound
 
@@ -117,6 +131,12 @@ final class SettingsPage extends Hilos\Pages\AbstractHilosSettingsPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }
 
+// configure-only still ships a browser context — an empty subclass; the base
+// context delivers the settings snapshot through the self-snapshot path.
+final class AppBrowserContext extends Hilos\Core\Browser\Context\BrowserContext
+{
+}
+
 // bound: the generated subclass implements the hooks; the merge stays in the base.
 final class UsersTable extends Hilos\Tables\Users\AbstractHilosUsersTable
 {
@@ -139,6 +159,8 @@ final class UsersTable extends Hilos\Tables\Users\AbstractHilosUsersTable
 - Do not scaffold a project's own divergent table here; that is Mode-2 authoring
   ([admin-features.md](admin-features.md)), not activation of a framework feature.
 - Do not generate the table before its DB/RT sources are registered.
+- Do not skip the project `BrowserContext` for a configure-only feature; without
+  it the page answers a subscription with nothing. An empty subclass is the fix.
 
 ## Contract Gate
 

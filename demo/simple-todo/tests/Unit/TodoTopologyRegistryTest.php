@@ -12,9 +12,12 @@ use Demo\SimpleTodo\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\SimpleTodo\Core\Agent\Daemon\TodoAgentDaemon;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
+use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\MainPage;
+use Demo\SimpleTodo\Tables\TodoTableContext;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -80,17 +83,34 @@ final class TodoTopologyRegistryTest extends TestCase
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::HILOS_INDEX]));
     }
 
-    public function testTransportOnlyContractDeclaresNoActionsSignalsOrGroups(): void
+    public function testTodoAppSurfaceDeclaresNoActionsSignalsOrGroupsYet(): void
     {
+        // The todo application itself is still transport-only: its own pages and
+        // agent push no server-driven data. The one server-driven surface — the
+        // activated framework settings admin feature — is asserted separately
+        // below. These stay empty until the project opts into a feature needing
+        // them; transport-only is a starting state, not a permanent contract.
         $this->assertSame([], Hilos::GROUPS);
-        $this->assertSame([], Hilos::TABLES);
         $this->assertSame([], Hilos::BROWSER_TABLES);
-        $this->assertSame([], Hilos::PAGE_TABLES);
-        $this->assertSame([], Hilos::getPageActionRoutes());
         $this->assertSame([], Hilos::getPageSignalRoutes());
         $this->assertSame([], Hilos::getAgentSignalRoutes());
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
         $this->assertSame([], TodoAgent::AGENT_SIGNALS);
+    }
+
+    public function testSettingsIsTheOnlyActivatedAdminFeature(): void
+    {
+        // The framework settings feature is activated configure-only: the project
+        // registers the framework table, binds it to its settings page, and
+        // inherits the add/update/delete action routes from the framework page
+        // base. Nothing else is wired — settings is the demo's single
+        // server-driven feature.
+        $this->assertSame([TodoTableContext::settings => HilosSettingsTable::class], Hilos::TABLES);
+        $this->assertSame([SettingsPage::PAGE => [TodoTableContext::settings => []]], Hilos::PAGE_TABLES);
+        $this->assertSame(
+            array_fill_keys(array_keys(SettingsPage::ACTIONS), SettingsPage::PAGE),
+            Hilos::getPageActionRoutes(),
+        );
     }
 }
