@@ -96,6 +96,7 @@ Minimum ORM rules before editing:
 |---|---|
 | [antipatterns/no-repository-service.md](docs/agents/antipatterns/no-repository-service.md) | any time you think about adding a Service or Repository class |
 | [antipatterns/blocking-in-ontick.md](docs/agents/antipatterns/blocking-in-ontick.md) | any time you write code inside onTick() or signal handlers |
+| [antipatterns/heavy-work-in-master.md](docs/agents/antipatterns/heavy-work-in-master.md) | any time you add DB, file, network, or blocking work to the master daemon / connection / handshake path, or weigh such an option |
 
 ## CLI
 

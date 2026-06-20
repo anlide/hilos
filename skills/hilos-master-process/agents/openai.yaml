@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Master Process"
+  short_description: "Keep the master daemon light: no DB/file/blocking work"
+  default_prompt: "Use $hilos-master-process before adding DB, file, network, or blocking work to the master daemon / connection / handshake path."
