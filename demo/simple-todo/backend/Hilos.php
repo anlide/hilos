@@ -19,6 +19,7 @@ use Demo\SimpleTodo\Pages\Hilos\PrivacyPage;
 use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\Hilos\TermsPage;
 use Demo\SimpleTodo\Pages\MainPage;
+use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Demo\SimpleTodo\Tables\TodoTableContext;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -26,6 +27,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -35,11 +37,13 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]
  * - Hilos::$db->settings
  * - Hilos::$setting->catalog()
+ * - Hilos::$rt->connections
  * - Hilos::$table->settings
  *
  * @property-read TodoDbContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
  * @property-read SettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
+ * @property-read TodoRtContext $rt Runtime context (narrows parent's RtContext for IDE)
  * @property-read TodoTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read TodoBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  */
@@ -88,6 +92,16 @@ final class Hilos extends \Hilos\Hilos
     protected static function createDb(): DbContext
     {
         return new TodoDbContext();
+    }
+
+    /**
+     * Creates the simple-todo runtime context.
+     *
+     * @return ?TodoRtContext Simple-todo runtime context
+     */
+    protected static function createRuntime(): ?RtContext
+    {
+        return new TodoRtContext();
     }
 
     /**

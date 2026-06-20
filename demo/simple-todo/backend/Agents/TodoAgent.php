@@ -8,12 +8,14 @@ use Demo\SimpleTodo\Constants\AgentType;
 use Demo\SimpleTodo\Constants\CookieNames;
 use Demo\SimpleTodo\Constants\TodoSignalConstants;
 use Demo\SimpleTodo\Hilos;
+use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
@@ -21,7 +23,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
  * WebSocket lifecycle signals.
  *
  * Session identity is durable: the handshake maps each session token cookie to
- * a user row, registering it on first connect and reusing it on reconnect.
+ * a user row, registering it on first connect and reusing it on reconnect, and
+ * tracks the live socket as a runtime connection for presence.
  */
 final class TodoAgent extends AbstractAgent
 {
@@ -31,9 +34,17 @@ final class TodoAgent extends AbstractAgent
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
+     * Registers the connections runtime collection as this worker's truth source.
+     */
+    public function onStart(): void
+    {
+        $this->registerRtTruthSource(TodoRtContext::connections);
+    }
+
+    /**
      * Authenticates the session token cookie, finds or registers the durable
-     * user, and replies with the current-user entity fragment in the
-     * session-scope payload form.
+     * user, tracks the socket as a runtime connection, and replies with the
+     * current-user entity fragment in the session-scope payload form.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
      * @param string $source Framework signal source identifier (unused)
@@ -41,7 +52,7 @@ final class TodoAgent extends AbstractAgent
      * @throws ValidationException When the session token cookie is missing
      * @throws EmptyValueException When the session token cookie is empty
      * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
-     * @throws HilosException On database failure while finding or registering the user
+     * @throws HilosException On database or runtime failure while resolving the user or registering the connection
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -67,22 +78,40 @@ final class TodoAgent extends AbstractAgent
         if ($user === null) {
             $user = Hilos::$db->users->actions->register($sessionToken);
         }
+        $userId = (int)$user->id;
+
+        Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
 
         $this->sendToUser(
             TodoSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
             new HandshakeResponseSignalData(
-                selfId: (int)$user->id,
+                selfId: $userId,
                 selfName: $user->name,
             ),
         );
     }
 
     /**
-     * No durable runtime state to clean up; WorkerManager unregisters the agent
-     * itself and the user table persists across the daemon lifetime.
+     * Unregisters the closed WebSocket connection from runtime presence.
+     *
+     * @param WebSocketCloseSignalDTO $data Closed WebSocket connection
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On runtime cleanup failure
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
+    {
+        Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
+    }
+
+    /**
+     * Clears runtime connection state on shutdown; the user table persists.
+     *
+     * @throws HilosException On runtime cleanup failure
      */
     public function onStop(): void
     {
+        Hilos::$rt->connections->actions->clear();
     }
 }
