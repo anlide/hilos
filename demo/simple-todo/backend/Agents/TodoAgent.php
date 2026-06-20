@@ -7,21 +7,21 @@ namespace Demo\SimpleTodo\Agents;
 use Demo\SimpleTodo\Constants\AgentType;
 use Demo\SimpleTodo\Constants\CookieNames;
 use Demo\SimpleTodo\Constants\TodoSignalConstants;
+use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Monopolistic todo worker that owns the main page subscription and the
  * WebSocket lifecycle signals.
  *
- * Declares no truth sources yet: the todos table and its DB ownership arrive
- * with the first data-on-screen rewrite step. Session identity is agent-local
- * and lives only for the daemon lifetime; the demo has no durable user table.
+ * Session identity is durable: the handshake maps each session token cookie to
+ * a user row, registering it on first connect and reusing it on reconnect.
  */
 final class TodoAgent extends AbstractAgent
 {
@@ -30,19 +30,10 @@ final class TodoAgent extends AbstractAgent
     /** @var string Session token cookie format: 32 lowercase hex characters */
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
-    /** @var array<string, HandshakeResponseSignalData> Agent-local session token to current-user reply */
-    private array $sessionUsers = [];
-
-    /** @var int Last assigned agent-local user id (monotonic for the daemon lifetime) */
-    private int $nextUserId = 0;
-
     /**
-     * Authenticates the session token cookie and replies with the current-user
-     * entity fragment in the session-scope payload form.
-     *
-     * Identity is agent-local: the monopolistic todo worker maps each session
-     * token to a generated user for its lifetime, so a reconnecting tab keeps
-     * the same id and name. No durable user table backs the demo.
+     * Authenticates the session token cookie, finds or registers the durable
+     * user, and replies with the current-user entity fragment in the
+     * session-scope payload form.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
      * @param string $source Framework signal source identifier (unused)
@@ -50,6 +41,7 @@ final class TodoAgent extends AbstractAgent
      * @throws ValidationException When the session token cookie is missing
      * @throws EmptyValueException When the session token cookie is empty
      * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
+     * @throws HilosException On database failure while finding or registering the user
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -71,16 +63,24 @@ final class TodoAgent extends AbstractAgent
             );
         }
 
-        $response = $this->sessionUsers[$sessionToken] ??= new HandshakeResponseSignalData(
-            selfId: ++$this->nextUserId,
-            selfName: 'User' . RandomHelper::integer(1000, 9999),
-        );
+        $user = Hilos::$db->users->findBySession($sessionToken);
+        if ($user === null) {
+            $user = Hilos::$db->users->actions->register($sessionToken);
+        }
 
-        $this->sendToUser(TodoSignalConstants::HANDSHAKE_RESPONSE, $data->acceptKey, $response);
+        $this->sendToUser(
+            TodoSignalConstants::HANDSHAKE_RESPONSE,
+            $data->acceptKey,
+            new HandshakeResponseSignalData(
+                selfId: (int)$user->id,
+                selfName: $user->name,
+            ),
+        );
     }
 
     /**
-     * No durable state to clean up; WorkerManager unregisters the agent itself.
+     * No durable runtime state to clean up; WorkerManager unregisters the agent
+     * itself and the user table persists across the daemon lifetime.
      */
     public function onStop(): void
     {

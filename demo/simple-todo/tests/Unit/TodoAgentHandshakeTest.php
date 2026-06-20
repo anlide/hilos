@@ -6,26 +6,22 @@ namespace Demo\SimpleTodo\Tests\Unit;
 
 use Demo\SimpleTodo\Agents\TodoAgent;
 use Demo\SimpleTodo\Constants\CookieNames;
-use Demo\SimpleTodo\Constants\TodoSignalConstants;
-use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
-use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for TodoAgent handshake cookie validation and agent-local identity.
+ * Unit tests for TodoAgent handshake cookie validation.
  *
- * Identity is agent-local (no durable user table): the same session token keeps
- * its generated id and name for the worker lifetime, distinct tokens get fresh
- * ids. The handshake reply is captured from the signal router queue.
+ * The cookie-format guards reject a missing, empty, or malformed session token
+ * before any database access. The durable find-or-register happy path is
+ * covered by the integration suite (UsersActionsTest) and e2e.
  */
 final class TodoAgentHandshakeTest extends TestCase
 {
@@ -34,7 +30,8 @@ final class TodoAgentHandshakeTest extends TestCase
 
     protected function setUp(): void
     {
-        // sendToUser enqueues into Hilos::$sr; the collector is read nullsafe.
+        // Isolate the global signal router and analytics collector the handshake
+        // would reach after validation; the cookie guards throw before that.
         $this->previousRouter = Hilos::$sr;
         $this->previousCollector = Hilos::$ac;
         Hilos::$sr = new SignalRouter();
@@ -101,93 +98,5 @@ final class TodoAgentHandshakeTest extends TestCase
             '',
             '',
         );
-    }
-
-    public function testHandshakeRepliesWithGeneratedCurrentUser(): void
-    {
-        (new TodoAgent())->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: 'todo-ak',
-                cookies: [CookieNames::SESSION_TOKEN => str_repeat('a', 32)],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-            ),
-            '',
-            '',
-        );
-
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertInstanceOf(SignalDTO::class, $signal);
-        $this->assertSame(TodoSignalConstants::HANDSHAKE_RESPONSE, $signal->signalName->getName());
-
-        $webSocketData = $signal->data;
-        $this->assertInstanceOf(WebSocketSignalData::class, $webSocketData);
-        $this->assertSame('todo-ak', $webSocketData->targetAcceptKey);
-
-        $payload = $webSocketData->data;
-        $this->assertInstanceOf(HandshakeResponseSignalData::class, $payload);
-        $this->assertSame(1, $payload->selfId);
-        $this->assertMatchesRegularExpression('/\AUser\d{4}\z/', $payload->selfName);
-    }
-
-    public function testHandshakeReturnsStableIdentityForSameToken(): void
-    {
-        $agent = new TodoAgent();
-        $token = str_repeat('b', 32);
-
-        $first = $this->drainHandshakeReply($agent, $token, 'ak-1');
-        $second = $this->drainHandshakeReply($agent, $token, 'ak-2');
-
-        $this->assertSame($first->selfId, $second->selfId);
-        $this->assertSame($first->selfName, $second->selfName);
-    }
-
-    public function testHandshakeAssignsDistinctIdsAcrossTokens(): void
-    {
-        $agent = new TodoAgent();
-
-        $first = $this->drainHandshakeReply($agent, str_repeat('c', 32), 'ak-1');
-        $second = $this->drainHandshakeReply($agent, str_repeat('d', 32), 'ak-2');
-
-        $this->assertSame(1, $first->selfId);
-        $this->assertSame(2, $second->selfId);
-    }
-
-    /**
-     * Drive one handshake and return the captured current-user reply payload.
-     *
-     * @param TodoAgent $agent Agent under test (shared so the identity map persists across calls)
-     * @param string $sessionToken Session token cookie value
-     * @param string $acceptKey Connection accept key
-     * @return HandshakeResponseSignalData Captured handshake reply payload
-     */
-    private function drainHandshakeReply(
-        TodoAgent $agent,
-        string $sessionToken,
-        string $acceptKey,
-    ): HandshakeResponseSignalData {
-        $agent->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: $acceptKey,
-                cookies: [CookieNames::SESSION_TOKEN => $sessionToken],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-            ),
-            '',
-            '',
-        );
-
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertInstanceOf(SignalDTO::class, $signal);
-
-        $webSocketData = $signal->data;
-        $this->assertInstanceOf(WebSocketSignalData::class, $webSocketData);
-
-        $payload = $webSocketData->data;
-        $this->assertInstanceOf(HandshakeResponseSignalData::class, $payload);
-
-        return $payload;
     }
 }

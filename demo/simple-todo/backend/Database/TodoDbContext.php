@@ -4,15 +4,37 @@ declare(strict_types=1);
 
 namespace Demo\SimpleTodo\Database;
 
+use Demo\SimpleTodo\Database\Actions\Collection\UsersActions;
+use Demo\SimpleTodo\Database\Actions\Item\UserActions;
+use Demo\SimpleTodo\Database\Object\Collection\Users as ObjectUsers;
+use Demo\SimpleTodo\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
+use Hilos\Database\Object\Objects;
 
 /**
  * TodoDbContext - Database context for the simple-todo demo.
  *
- * Inherits the Hilos-level settings collection from HilosDbContext; the demo
- * declares no own collections yet — the todos table arrives with the first
- * data-on-screen rewrite step.
+ * Inherits the Hilos-level settings collection from HilosDbContext and adds the
+ * durable user collection that backs session identity.
+ *
+ * @property-read Users $users
  */
 final class TodoDbContext extends HilosDbContext
 {
+    public const string users = 'users';
+
+    /**
+     * Configures the database context with the user object collection and view representation.
+     *
+     * @throws ObjectCollectionNotFoundException When a represented object collection is missing
+     */
+    public function configure(): void
+    {
+        parent::configure();
+
+        $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
+
+        $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
+    }
 }
