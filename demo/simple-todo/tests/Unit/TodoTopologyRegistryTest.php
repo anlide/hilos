@@ -14,6 +14,7 @@ use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Pages\Hilos\DashboardPage;
 use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\MainPage;
+use Demo\SimpleTodo\Tables\HilosUser\HilosUsersTable;
 use Demo\SimpleTodo\Tables\TodoTableContext;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -86,8 +87,8 @@ final class TodoTopologyRegistryTest extends TestCase
     public function testTodoAppSurfaceDeclaresNoActionsSignalsOrGroupsYet(): void
     {
         // The todo application itself is still transport-only: its own pages and
-        // agent push no server-driven data. The one server-driven surface — the
-        // activated framework settings admin feature — is asserted separately
+        // agent push no server-driven data. The activated framework admin
+        // features (settings, and the users table) are asserted separately
         // below. These stay empty until the project opts into a feature needing
         // them; transport-only is a starting state, not a permanent contract.
         $this->assertSame([], Hilos::GROUPS);
@@ -99,14 +100,17 @@ final class TodoTopologyRegistryTest extends TestCase
         $this->assertSame([], TodoAgent::AGENT_SIGNALS);
     }
 
-    public function testSettingsIsTheOnlyActivatedAdminFeature(): void
+    public function testSettingsAndUsersTablesAreRegistered(): void
     {
-        // The framework settings feature is activated configure-only: the project
-        // registers the framework table, binds it to its settings page, and
-        // inherits the add/update/delete action routes from the framework page
-        // base. Nothing else is wired — settings is the demo's single
-        // server-driven feature.
-        $this->assertSame([TodoTableContext::settings => HilosSettingsTable::class], Hilos::TABLES);
+        // Settings is page-bound and configure-only. The Hilos users table is
+        // now registered too (the framework presence-merge engine bound to the
+        // demo's DB users + RT connections), but its page and action routing
+        // arrive with the next activation slice — so PAGE_TABLES and the page
+        // action routes still cover only settings.
+        $this->assertSame([
+            TodoTableContext::settings => HilosSettingsTable::class,
+            TodoTableContext::hilosUsers => HilosUsersTable::class,
+        ], Hilos::TABLES);
         $this->assertSame([SettingsPage::PAGE => [TodoTableContext::settings => []]], Hilos::PAGE_TABLES);
         $this->assertSame(
             array_fill_keys(array_keys(SettingsPage::ACTIONS), SettingsPage::PAGE),

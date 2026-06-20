@@ -7,6 +7,7 @@ namespace Demo\SimpleTodo\Agents;
 use Demo\SimpleTodo\Constants\AgentType;
 use Demo\SimpleTodo\Constants\CookieNames;
 use Demo\SimpleTodo\Constants\TodoSignalConstants;
+use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -34,10 +35,12 @@ final class TodoAgent extends AbstractAgent
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
-     * Registers the connections runtime collection as this worker's truth source.
+     * Registers the user table and the connections runtime collection as this
+     * worker's truth sources so their changes fan out to the browser.
      */
     public function onStart(): void
     {
+        $this->registerDbTruthSource(TodoDbContext::users);
         $this->registerRtTruthSource(TodoRtContext::connections);
     }
 

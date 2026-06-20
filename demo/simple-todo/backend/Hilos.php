@@ -20,6 +20,7 @@ use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\Hilos\TermsPage;
 use Demo\SimpleTodo\Pages\MainPage;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
+use Demo\SimpleTodo\Tables\HilosUser\HilosUsersTable;
 use Demo\SimpleTodo\Tables\TodoTableContext;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -76,6 +77,7 @@ final class Hilos extends \Hilos\Hilos
 
     public const array TABLES = [
         TodoTableContext::settings => HilosSettingsTable::class,
+        TodoTableContext::hilosUsers => HilosUsersTable::class,
     ];
 
     public const array PAGE_TABLES = [
