@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Demo\SimpleTodo\Database\View\Item;
 
-use Demo\SimpleTodo\Database\Object\Item\EventUserRename as ObjectEventUserRename;
+use Demo\SimpleTodo\Database\Object\Item\UserRename as ObjectUserRename;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * EventUserRename - Db item for one user-rename audit row.
+ * UserRename - Db item for one user-rename audit row.
  *
  * Read-only scalar projection of the durable audit row. Append-only: no item
  * actions, no runtime overlay.
  *
- * @extends DbItem<ObjectEventUserRename>
- * @method __construct(ObjectEventUserRename &$objectEventUserRename)
+ * @extends DbItem<ObjectUserRename>
+ * @method __construct(ObjectUserRename &$objectUserRename)
  *
  * @property-read ?int $id Audit row id (primary key)
  * @property-read int $targetUserId Renamed user id
@@ -23,7 +23,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read string $newName New display name
  * @property-read string $timestamp When the rename was recorded
  */
-final class EventUserRename extends DbItem
+final class UserRename extends DbItem
 {
     /**
      * Property getter (read-only access).
@@ -35,11 +35,11 @@ final class EventUserRename extends DbItem
     public function __get(string $name): int|string|null
     {
         return match ($name) {
-            ObjectEventUserRename::id => $this->_object->id,
-            ObjectEventUserRename::targetUserId => $this->_object->targetUserId,
-            ObjectEventUserRename::oldName => $this->_object->oldName,
-            ObjectEventUserRename::newName => $this->_object->newName,
-            ObjectEventUserRename::timestamp => $this->_object->timestamp,
+            ObjectUserRename::id => $this->_object->id,
+            ObjectUserRename::targetUserId => $this->_object->targetUserId,
+            ObjectUserRename::oldName => $this->_object->oldName,
+            ObjectUserRename::newName => $this->_object->newName,
+            ObjectUserRename::timestamp => $this->_object->timestamp,
             default => parent::__get($name),
         };
     }

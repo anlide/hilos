@@ -2,17 +2,17 @@
 
 namespace Demo\SimpleTodo\Database\Object\Item;
 
-use Demo\SimpleTodo\Database\Entity\Item\EventUserRename as EntityEventUserRename;
+use Demo\SimpleTodo\Database\Entity\Item\UserRename as EntityUserRename;
 use Demo\SimpleTodo\Database\TodoDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * EventUserRename - Object wrapper for the event_user_rename entity.
+ * UserRename - Object wrapper for the user_rename entity.
  *
  * Business logic layer with change tracking.
  *
- * @extends Object_<EntityEventUserRename>
+ * @extends Object_<EntityUserRename>
  *
  * @property-read ?int $id
  * @property int $targetUserId
@@ -20,9 +20,9 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $newName
  * @property string $timestamp
  */
-final class EventUserRename extends Object_
+final class UserRename extends Object_
 {
-    public const string ENTITY_CLASS = EntityEventUserRename::class;
+    public const string ENTITY_CLASS = EntityUserRename::class;
 
     public const string id = 'id';
     public const string targetUserId = 'targetUserId';
@@ -33,11 +33,11 @@ final class EventUserRename extends Object_
     /**
      * Returns the database collection key for this object type.
      *
-     * @return string Collection key (TodoDbContext::eventUserRenames)
+     * @return string Collection key (TodoDbContext::userRenames)
      */
     protected static function getCollectionKey(): string
     {
-        return TodoDbContext::eventUserRenames;
+        return TodoDbContext::userRenames;
     }
 
     /**

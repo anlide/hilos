@@ -23,6 +23,6 @@ final class DemoHilosAgent extends AbstractHilosIndexAgent
     {
         parent::onStart();
 
-        $this->registerDbTruthSource(TodoDbContext::eventUserRenames);
+        $this->registerDbTruthSource(TodoDbContext::userRenames);
     }
 }

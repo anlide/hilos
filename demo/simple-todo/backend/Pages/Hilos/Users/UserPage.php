@@ -124,7 +124,7 @@ final class UserPage extends AbstractHilosUserPage
         Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
         $newName = $dbUser?->name ?? $oldName;
 
-        Hilos::$db->eventUserRenames->actions->add($dto->id, $oldName, $newName);
+        Hilos::$db->userRenames->actions->add($dto->id, $oldName, $newName);
 
         $this->sendToUser(
             HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
