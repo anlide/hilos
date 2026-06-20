@@ -98,6 +98,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var int Byte length of the minted connection identifier (128-bit) */
     private const int ACCEPT_KEY_RANDOM_BYTES = 16;
 
+    /** @var int Byte length of a minted session token (becomes 32 lowercase hex chars) */
+    private const int SESSION_TOKEN_RANDOM_BYTES = 16;
+
+    /** @var int Session-token cookie lifetime in seconds (two years) */
+    private const int SESSION_COOKIE_MAX_AGE_SECONDS = 63072000;
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
 
@@ -311,13 +317,21 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // choose or predict another connection's identity.
         $acceptKey = self::mintAcceptKey();
 
+        // Resolve the session token: reuse the client's cookie, or mint one and
+        // queue a Set-Cookie on the 101. Minting is in-memory (no I/O), so the
+        // master stays light; the worker handshake reads the token from the DTO.
+        $cookies = $this->parseCookies($headers);
+        $setSessionCookie = null;
+        $sessionToken = $this->resolveSessionToken($cookies, $setSessionCookie);
+
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
             $headers,
             $acceptKey,
-            $this->parseCookies($headers),
+            $cookies,
             $this->getClientIp(),
             $queryParams,
+            $sessionToken,
         );
 
         // Send handshake response
@@ -328,6 +342,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $response .= HttpConstants::HEADER_UPGRADE . ": " . HttpConstants::WEBSOCKET_PROTOCOL . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $secWebSocketAccept . HttpConstants::HTTP_LINE_SEPARATOR;
+        if ($setSessionCookie !== null) {
+            $response .= $setSessionCookie;
+        }
         $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
         $this->writeBuffer .= $response;
@@ -348,6 +365,53 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $random = RandomHelper::bytes(self::ACCEPT_KEY_RANDOM_BYTES);
 
         return rtrim(strtr(base64_encode($random), '+/', '-_'), '=');
+    }
+
+    /**
+     * Resolve the session token cookie, minting one and queuing a Set-Cookie
+     * when the client sent none. In-memory only (random bytes, like the accept
+     * key), so the master stays light; the worker reads the token from the DTO.
+     *
+     * @param array<string, string> $cookies Parsed request cookies
+     * @param ?string $setCookie Out: Set-Cookie header line for the 101, or null when nothing is issued
+     * @return string Session token (existing cookie value, or freshly minted)
+     */
+    private function resolveSessionToken(array $cookies, ?string &$setCookie): string
+    {
+        $setCookie = null;
+        $name = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
+        $existing = $cookies[$name] ?? '';
+        if (!Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_ENABLED)) {
+            // Project opted out: pass the client's cookie through, never issue one.
+            return $existing;
+        }
+        if ($existing !== '') {
+            return $existing;
+        }
+        $token = bin2hex(RandomHelper::bytes(self::SESSION_TOKEN_RANDOM_BYTES));
+        $setCookie = $this->buildSessionCookieHeader($name, $token);
+
+        return $token;
+    }
+
+    /**
+     * Build the Set-Cookie header line for a freshly issued session token.
+     * HttpOnly and SameSite=Strict always; Secure only when configured (TLS).
+     *
+     * @param string $name Cookie name
+     * @param string $token Session token value
+     * @return string Set-Cookie header line including the trailing separator
+     */
+    private function buildSessionCookieHeader(string $name, string $token): string
+    {
+        $cookie = $name . '=' . $token
+            . '; Path=/; HttpOnly; SameSite=Strict'
+            . '; Max-Age=' . self::SESSION_COOKIE_MAX_AGE_SECONDS;
+        if (Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_SECURE)) {
+            $cookie .= '; Secure';
+        }
+
+        return HttpConstants::HEADER_SET_COOKIE . ': ' . $cookie . HttpConstants::HTTP_LINE_SEPARATOR;
     }
 
     /**
@@ -876,6 +940,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
      * @param RequestQueryParams $queryParams Query parameters from request URL
+     * @param string $sessionToken Session token resolved on the 101 (cookie value or freshly minted)
      */
     final protected function handleHandshakeInternal(
         array $headers,
@@ -883,16 +948,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         array $cookies,
         string $clientIp,
         RequestQueryParams $queryParams,
+        string $sessionToken = '',
     ): void {
         $this->acceptKey = $acceptKey;
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
-        $sessionToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
+        $analyticsToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
             ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
         $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
         $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
-        Hilos::$ac?->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
-        Hilos::$ac?->openWsConnection($acceptKey, $sessionToken, $clientIp);
+        Hilos::$ac?->ensureBrowserSession($analyticsToken, $userAgent, $acceptLanguage);
+        Hilos::$ac?->openWsConnection($acceptKey, $analyticsToken, $clientIp);
 
         $dto = new WebSocketHandshakeSignalDTO(
             headers: $headers,
@@ -900,6 +966,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             cookies: $cookies,
             clientIp: $clientIp,
             queryParams: $queryParams,
+            sessionToken: $sessionToken,
         );
 
         Hilos::$sr->queueSignal(

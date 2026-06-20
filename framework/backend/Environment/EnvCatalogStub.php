@@ -195,6 +195,21 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 'dev',
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_SESSION_COOKIE_NAME->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'hilos_session_token',
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_SESSION_COOKIE_ENABLED->name => self::entry(
+                EnvCatalogConstants::TYPE_BOOLEAN,
+                true,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_SESSION_COOKIE_SECURE->name => self::entry(
+                EnvCatalogConstants::TYPE_BOOLEAN,
+                false,
+                emptyIsMissing: true,
+            ),
         ];
     }
 

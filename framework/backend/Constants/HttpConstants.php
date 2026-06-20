@@ -129,6 +129,9 @@ final class HttpConstants
     /** @var string HTTP header Cookie */
     public const string HEADER_COOKIE = 'Cookie';
 
+    /** @var string HTTP header Set-Cookie */
+    public const string HEADER_SET_COOKIE = 'Set-Cookie';
+
     /** @var string HTTP header User-Agent */
     public const string HEADER_USER_AGENT = 'User-Agent';
 

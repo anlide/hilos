@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tests\Unit;
 
 use Demo\SimplePoll\Agents\PollAgent;
-use Demo\SimplePoll\Constants\CookieNames;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -17,11 +15,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for PollAgent handshake cookie validation.
+ * Unit tests for PollAgent handshake session token validation.
  *
- * The cookie-format guards reject a missing, empty, or malformed session token
- * before any database access. The durable find-or-register happy path is
- * covered by the integration suite (UsersActionsTest) and e2e.
+ * The daemon resolves the token on the 101 and carries it on the DTO; the
+ * worker rejects an empty or malformed token before any database access. The
+ * durable find-or-register happy path is covered by the integration suite and e2e.
  */
 final class PollAgentHandshakeTest extends TestCase
 {
@@ -31,7 +29,7 @@ final class PollAgentHandshakeTest extends TestCase
     protected function setUp(): void
     {
         // Isolate the global signal router and analytics collector the handshake
-        // would reach after validation; the cookie guards throw before that.
+        // would reach after validation; the token guards throw before that.
         $this->previousRouter = Hilos::$sr;
         $this->previousCollector = Hilos::$ac;
         Hilos::$sr = new SignalRouter();
@@ -44,12 +42,10 @@ final class PollAgentHandshakeTest extends TestCase
         Hilos::$ac = $this->previousCollector;
     }
 
-    public function testHandshakeWithoutSessionTokenCookieThrows(): void
+    public function testHandshakeWithoutSessionTokenThrows(): void
     {
-        // The contained family: the worker handshake dispatcher rejects
-        // ValidationException without crashing (see WorkerManager).
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage(CookieNames::SESSION_TOKEN . ' cookie is required');
+        $this->expectException(EmptyValueException::class);
+        $this->expectExceptionMessage('session token is required');
 
         (new PollAgent())->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
@@ -64,36 +60,19 @@ final class PollAgentHandshakeTest extends TestCase
         );
     }
 
-    public function testHandshakeWithEmptySessionTokenCookieThrows(): void
-    {
-        $this->expectException(EmptyValueException::class);
-        $this->expectExceptionMessage(CookieNames::SESSION_TOKEN . ' cookie cannot be empty');
-
-        (new PollAgent())->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: 'poll-ak',
-                cookies: [CookieNames::SESSION_TOKEN => ''],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-            ),
-            '',
-            '',
-        );
-    }
-
-    public function testHandshakeWithInvalidSessionTokenCookieFormatThrows(): void
+    public function testHandshakeWithInvalidSessionTokenFormatThrows(): void
     {
         $this->expectException(InvalidFormatException::class);
-        $this->expectExceptionMessage(CookieNames::SESSION_TOKEN . ' cookie must be a 32-character lowercase hex token');
+        $this->expectExceptionMessage('session token must be a 32-character lowercase hex token');
 
         (new PollAgent())->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
                 acceptKey: 'poll-ak',
-                cookies: [CookieNames::SESSION_TOKEN => 'short'],
+                cookies: [],
                 clientIp: '127.0.0.1',
                 queryParams: RequestQueryParams::empty(),
+                sessionToken: 'short',
             ),
             '',
             '',

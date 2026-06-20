@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Agents;
 
 use Demo\SimpleTodo\Constants\AgentType;
-use Demo\SimpleTodo\Constants\CookieNames;
 use Demo\SimpleTodo\Constants\TodoSignalConstants;
 use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Hilos;
@@ -14,7 +13,6 @@ use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -49,31 +47,27 @@ final class TodoAgent extends AbstractAgent
      * user, tracks the socket as a runtime connection, and replies with the
      * current-user entity fragment in the session-scope payload form.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
+     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws ValidationException When the session token cookie is missing
-     * @throws EmptyValueException When the session token cookie is empty
-     * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
+     * @throws EmptyValueException When the session token is empty
+     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure while resolving the user or registering the connection
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
-        // The whole cookie validation throws inside the ValidationException
-        // family: the worker handshake dispatcher contains that family, so a
-        // client without a valid cookie is rejected, never a worker crash.
-        if (!array_key_exists(CookieNames::SESSION_TOKEN, $data->cookies)) {
-            throw new ValidationException(CookieNames::SESSION_TOKEN . ' cookie is required');
-        }
-
-        $sessionToken = $data->cookies[CookieNames::SESSION_TOKEN];
+        // The daemon resolved the session token on the 101 (the client's cookie
+        // or a freshly issued one) and carried it on the handshake DTO. Validate
+        // inside the ValidationException family so the worker dispatcher contains
+        // a bad token instead of crashing.
+        $sessionToken = $data->sessionToken;
         if ($sessionToken === '') {
-            throw new EmptyValueException(CookieNames::SESSION_TOKEN . ' cookie cannot be empty');
+            throw new EmptyValueException('session token is required');
         }
 
         if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
             throw new InvalidFormatException(
-                CookieNames::SESSION_TOKEN . ' cookie must be a 32-character lowercase hex token',
+                'session token must be a 32-character lowercase hex token',
             );
         }
 

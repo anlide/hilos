@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Tests\Integration;
 
 use Demo\SimpleTodo\Agents\TodoAgent;
-use Demo\SimpleTodo\Constants\CookieNames;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -117,9 +116,10 @@ final class TodoConnectionPresenceTest extends IntegrationTestCase
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'todo-ak-handshake',
-                    cookies: [CookieNames::SESSION_TOKEN => $token],
+                    cookies: [],
                     clientIp: '127.0.0.1',
                     queryParams: RequestQueryParams::empty(),
+                    sessionToken: $token,
                 ),
                 '',
                 '',

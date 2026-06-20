@@ -215,4 +215,22 @@ enum EnvConstants
      * (re)connect and forces a page refresh on mismatch. 'dev' when unset.
      */
     case HILOS_BUILD_TIMESTAMP;
+
+    /**
+     * Name of the session-token cookie the daemon sets on the WebSocket
+     * handshake (101) when the client has none. Override to rename it.
+     */
+    case HILOS_SESSION_COOKIE_NAME;
+
+    /**
+     * Whether the daemon issues the session-token cookie on the handshake.
+     * Default true; set false to opt a project out of framework-issued cookies.
+     */
+    case HILOS_SESSION_COOKIE_ENABLED;
+
+    /**
+     * Whether the session-token cookie carries the Secure attribute. Default
+     * false so it works over the plain-http dev stack; set true under TLS.
+     */
+    case HILOS_SESSION_COOKIE_SECURE;
 }

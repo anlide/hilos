@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tests\Integration;
 
 use Demo\SimplePoll\Agents\PollAgent;
-use Demo\SimplePoll\Constants\CookieNames;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -117,9 +116,10 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'poll-ak-handshake',
-                    cookies: [CookieNames::SESSION_TOKEN => $token],
+                    cookies: [],
                     clientIp: '127.0.0.1',
                     queryParams: RequestQueryParams::empty(),
+                    sessionToken: $token,
                 ),
                 '',
                 '',

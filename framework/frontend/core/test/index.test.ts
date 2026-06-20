@@ -13,11 +13,9 @@ import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
   createHilosConnection,
-  ensureSessionTokenCookie,
   bindSessionScope,
   sessionUserName,
   SESSION_SIGNAL_SCHEMAS,
-  SESSION_TOKEN_COOKIE,
   bootHilos,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
@@ -35,11 +33,9 @@ it('exports the @hilos/core public surface', () => {
   expect(bindPageScope).toBeTypeOf('function')
   expect(PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_RESPONSE]).toBeDefined()
   expect(createHilosConnection).toBeTypeOf('function')
-  expect(ensureSessionTokenCookie).toBeTypeOf('function')
   expect(bindSessionScope).toBeTypeOf('function')
   expect(sessionUserName).toBeTypeOf('function')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
-  expect(SESSION_TOKEN_COOKIE).toBe('hilos_session_token')
   expect(bootHilos).toBeTypeOf('function')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')

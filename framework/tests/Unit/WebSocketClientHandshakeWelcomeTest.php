@@ -79,6 +79,40 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         $this->assertNotSame($first->acceptKey, $second->acceptKey);
     }
 
+    public function testHandshakeIssuesAnHttpOnlySessionCookieWhenAbsent(): void
+    {
+        $probe = $this->handshakenProbe();
+
+        $this->assertMatchesRegularExpression(
+            '#Set-Cookie: hilos_session_token=[0-9a-f]{32}; Path=/; HttpOnly; SameSite=Strict; Max-Age=\d+#',
+            $probe->outboundBytes(),
+        );
+        $this->assertStringNotContainsString('; Secure', $probe->outboundBytes());
+    }
+
+    public function testHandshakeReusesAnExistingSessionCookieWithoutIssuingOne(): void
+    {
+        $probe = WebSocketClientTestProbe::createSocketless();
+        $key = base64_encode('0123456789abcdef');
+        $probe->feed(
+            "GET /ws HTTP/1.1\r\n"
+            . "Host: localhost:8092\r\n"
+            . "Upgrade: websocket\r\n"
+            . "Connection: Upgrade\r\n"
+            . "Sec-WebSocket-Key: {$key}\r\n"
+            . "Sec-WebSocket-Version: 13\r\n"
+            . "Cookie: hilos_session_token=deadbeefdeadbeefdeadbeefdeadbeef\r\n"
+            . "\r\n",
+        );
+
+        $this->assertTrue($probe->handshakeDone());
+        $this->assertStringNotContainsString('Set-Cookie', $probe->outboundBytes());
+        $this->assertSame(
+            'deadbeefdeadbeefdeadbeefdeadbeef',
+            $probe->capturedCookies['hilos_session_token'] ?? null,
+        );
+    }
+
     /**
      * Drive a probe through a complete handshake.
      *

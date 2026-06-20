@@ -7,7 +7,6 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\CookieNames;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
@@ -18,7 +17,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
@@ -61,7 +59,7 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the session token cookie, registers the connection, emits registration updates, and
+     * Authenticates the daemon-resolved session token, registers the connection, emits registration updates, and
      * sends the handshake response with the current-user entity fragment.
      *
      * Runtime presence is emitted after every successful connection register so
@@ -69,31 +67,27 @@ final class ChatAgent extends AbstractAgent
      * first online transitions. Outbound moderation, draft, and file-upload session
      * state are sent on main page subscribe only.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and cookies with a required session token cookie
+     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws ValidationException When the session token cookie is missing
-     * @throws EmptyValueException When the session token cookie is empty
-     * @throws InvalidFormatException When the session token cookie is not a 32-character lowercase hex string
+     * @throws EmptyValueException When the session token is empty
+     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
-        // The whole cookie validation throws inside the ValidationException
-        // family: the worker handshake dispatcher contains that family, so a
-        // client without a valid cookie is rejected, never a worker crash.
-        if (!array_key_exists(CookieNames::SESSION_TOKEN, $data->cookies)) {
-            throw new ValidationException(CookieNames::SESSION_TOKEN . ' cookie is required');
-        }
-
-        $sessionToken = $data->cookies[CookieNames::SESSION_TOKEN];
+        // The daemon resolved the session token on the 101 (the client's cookie
+        // or a freshly issued one) and carried it on the handshake DTO. Validate
+        // inside the ValidationException family so the worker dispatcher contains
+        // a bad token instead of crashing.
+        $sessionToken = $data->sessionToken;
         if ($sessionToken === '') {
-            throw new EmptyValueException(CookieNames::SESSION_TOKEN . ' cookie cannot be empty');
+            throw new EmptyValueException('session token is required');
         }
 
         if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
             throw new InvalidFormatException(
-                CookieNames::SESSION_TOKEN . ' cookie must be a 32-character lowercase hex token',
+                'session token must be a 32-character lowercase hex token',
             );
         }
 

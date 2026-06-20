@@ -79,11 +79,6 @@ export {
   PAGE_SIGNAL_SCHEMAS,
 } from './subscription/bindPageScope.js'
 export {
-  ensureSessionTokenCookie,
-  SESSION_TOKEN_COOKIE,
-  type SessionTokenOptions,
-} from './session/sessionToken.js'
-export {
   bindSessionScope,
   sessionUserName,
   SESSION_SIGNAL_SCHEMAS,
