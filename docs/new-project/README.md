@@ -58,7 +58,14 @@ the canonical minimal set (~24 files); mirror it file by file:
 2. **Facade** `backend/Hilos.php` extends `\Hilos\Hilos`: `PAGES`, `AGENTS`
    registries, `createDb()` (the only abstract member), optional
    `ENV_CATALOG`. `GROUPS`/`TABLES`/`BROWSER_TABLES`/`PAGE_TABLES` default to
-   empty — omit until needed.
+   empty — omit until needed. `createBrowser()` defaults to `null`, valid only
+   for the pure transport-only start; a real project activates settings (the
+   first admin feature) early, which needs a browser, so it ships a project
+   `BrowserContext` then — an empty subclass is the floor, delivering the table
+   snapshot through the self-snapshot path — and returns it from
+   `createBrowser()`. Treat that `BrowserContext` as part of the base set, not
+   an optional extra deferred indefinitely (see
+   [admin-feature-scaffold.md](../agents/architecture/admin-feature-scaffold.md)).
 3. **One agent**: class with `AGENT_TYPE` and an (empty) `onStop()` — the only
    abstract method. Its daemon proxy extends `AbstractAgentDaemon` and MUST
    implement `requiresMonopolisticProcess()` — it is declared on
