@@ -1,5 +1,25 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
+
+// Stamp the frontend build timestamp into the dist output. The daemon reads
+// dist/build-timestamp.txt at startup and ships it in the handshake welcome
+// frame, and the frontend forces a refresh when a reconnect reports a newer
+// build (docs/agents/frontend/build-and-docker.md). Build-only: the dev server
+// leaves HILOS_BUILD_TIMESTAMP at its 'dev' default. The file is emitted through
+// Rollup so this config needs no node: imports (and thus no @types/node).
+function buildTimestampPlugin(): Plugin {
+  return {
+    name: 'hilos-build-timestamp',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'build-timestamp.txt',
+        source: new Date().toISOString(),
+      })
+    },
+  }
+}
 
 // Dev/build config for the simple-todo demo — the end project that consumes
 // @hilos/react and doubles as the React conformance demo
@@ -9,7 +29,7 @@ import { defineConfig } from 'vite'
 // filesystem, so inotify works and no polling is needed (see
 // docs/agents/frontend/build-and-docker.md).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), buildTimestampPlugin()],
   resolve: {
     // The @hilos/react file: dependency carries its own react copy (a
     // devDependency for the adapter unit tests), reachable through the

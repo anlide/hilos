@@ -108,6 +108,22 @@ try {
 
     $daemon->registerHttpRouter($router);
 
+    // Pick up the timestamp the frontend build wrote into dist and expose it as
+    // HILOS_BUILD_TIMESTAMP for the handshake welcome frame. A one-time bootstrap
+    // read (never on the event loop), so the light master is unaffected; without
+    // a build the value stays at its 'dev' default.
+    $frontendDistPath = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH];
+    if ($frontendDistPath === '') {
+        $frontendDistPath = __DIR__ . '/../../frontend/dist';
+    }
+    $buildTimestampFile = $frontendDistPath . '/build-timestamp.txt';
+    if (is_file($buildTimestampFile)) {
+        $buildTimestamp = trim((string)file_get_contents($buildTimestampFile));
+        if ($buildTimestamp !== '') {
+            putenv(EnvConstants::HILOS_BUILD_TIMESTAMP->name . '=' . $buildTimestamp);
+        }
+    }
+
     // Start daemon main loop
     $daemon->run();
 
