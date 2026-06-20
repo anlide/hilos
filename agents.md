@@ -121,6 +121,7 @@ Minimum ORM rules before editing:
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [code-style/frontend-import-paths.md](docs/agents/code-style/frontend-import-paths.md) | adding or changing a relative import in frontend TS — explicit `.js`, the barrel `index.js`, the "Import can be shortened" warning |
 | [code-style/cross-layer-field-names.md](docs/agents/code-style/cross-layer-field-names.md) | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TS field |
+| [code-style/table-names.md](docs/agents/code-style/table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 

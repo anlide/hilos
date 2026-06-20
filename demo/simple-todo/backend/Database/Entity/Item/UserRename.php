@@ -2,21 +2,21 @@
 
 namespace Demo\SimpleTodo\Database\Entity\Item;
 
-use Demo\SimpleTodo\Database\Entity\Collection\EventUserRenames as EntityEventUserRenames;
+use Demo\SimpleTodo\Database\Entity\Collection\UserRenames as EntityUserRenames;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * EventUserRename - Entity representing event_user_rename table row.
+ * UserRename - Entity representing user_rename table row.
  *
  * Stores one admin user-rename audit row: the renamed user, the before/after
  * display names, and when. Standalone (its own id + timestamp), no event
  * aggregator parent.
  *
- * @method static EntityEventUserRenames get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
- * @method static EntityEventUserRenames getAll()
+ * @method static EntityUserRenames get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityUserRenames getAll()
  */
-final class EventUserRename extends Entity
+final class UserRename extends Entity
 {
     // Column name constants
     public const string id = 'id';
@@ -26,7 +26,7 @@ final class EventUserRename extends Entity
     public const string timestamp = 'timestamp';
 
     // Table meta information
-    public const string _table = 'event_user_rename';
+    public const string _table = 'user_rename';
     public const string _primary = self::id;
     public const array _columns = [
         self::id,
