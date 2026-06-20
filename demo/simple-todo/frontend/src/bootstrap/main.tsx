@@ -9,11 +9,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from '../App'
+import { pageEntityTypes } from '../pages/entityTypes'
 import { router } from '../pages/routes'
 import { connection } from './connection'
 import { scopes } from './session'
 
-const hilosRouter = bootHilos({ connection, scopes, router })
+const hilosRouter = bootHilos({ connection, scopes, router, pageEntityTypes })
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>

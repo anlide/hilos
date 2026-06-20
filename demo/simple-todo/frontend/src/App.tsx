@@ -11,6 +11,8 @@ import type { ComponentType } from 'react'
 import { connection } from './bootstrap/connection'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
+import HilosUser from './views/Hilos/Users/User'
+import HilosUsers from './views/Hilos/Users/Users'
 import License from './views/License/License'
 import Main from './views/Main/Main'
 import Privacy from './views/Privacy/Privacy'
@@ -29,6 +31,12 @@ const pages: Record<string, ComponentType> = {
   // owns the table and the add/update/delete lifecycle; the project binds only its
   // scope stores + action lifecycle (views/Settings) and its catalog on the backend.
   [HilosPages.SETTINGS]: Settings,
+  // The framework users/user admin pages: the framework owns the table, the
+  // detail, and the rename round-trip; the project binds its scope stores,
+  // connection, and typed user collection (views/Hilos/Users) and supplies its
+  // user entity + presence sources on the backend.
+  [HilosPages.USERS]: HilosUsers,
+  [HilosPages.USER]: HilosUser,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
