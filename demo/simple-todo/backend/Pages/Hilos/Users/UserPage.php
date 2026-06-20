@@ -30,7 +30,8 @@ use Throwable;
  * Simple-todo implementation of the Hilos user-detail page.
  *
  * Subscription snapshots are browser-config driven. The update action renames the
- * selected user through the users table action and sends modal success/fail acks.
+ * selected user through the users table action, records a standalone rename audit
+ * row, and sends modal success/fail acks.
  */
 final class UserPage extends AbstractHilosUserPage
 {
@@ -108,17 +109,22 @@ final class UserPage extends AbstractHilosUserPage
     }
 
     /**
-     * Renames the selected user through the Hilos users table action and acks success.
+     * Renames the selected user, records a rename audit row, and acks success.
      *
      * Thrown failures become a dedicated fail ack through onActionException().
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserUpdateActionDTO $dto Update action payload
-     * @throws HilosException When the rename or success ack fails
+     * @throws HilosException When the rename, audit write, or success ack fails
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
+        $dbUser = Hilos::$db->users[$dto->id];
+        $oldName = $dbUser?->name ?? '';
         Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
+        $newName = $dbUser?->name ?? $oldName;
+
+        Hilos::$db->eventUserRenames->actions->add($dto->id, $oldName, $newName);
 
         $this->sendToUser(
             HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,

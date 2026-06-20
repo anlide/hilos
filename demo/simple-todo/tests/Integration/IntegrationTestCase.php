@@ -33,6 +33,7 @@ abstract class IntegrationTestCase extends TestCase
             self::$dbInitialized = true;
         }
         TruthSourceRegistry::register(TodoDbContext::users, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(TodoDbContext::eventUserRenames, true, self::TEST_AGENT_ID);
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Tests\Integration;
 
 use Demo\SimpleTodo\Agents\Hilos\DemoHilosAgent;
+use Demo\SimpleTodo\Database\Entity\Item\EventUserRename as EntityEventUserRename;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Pages\Hilos\Users\UserPage;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
@@ -51,6 +52,7 @@ final class UserPageActionTest extends IntegrationTestCase
     {
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
         $userId = (int) $user->id;
+        $originalName = (string) $user->name;
 
         (new UserPage(new DemoHilosAgent()))->onAction(
             'todo-ak',
@@ -59,6 +61,11 @@ final class UserPageActionTest extends IntegrationTestCase
         );
 
         $this->assertSame('Renamed', Hilos::$db->users[$userId]?->name);
+
+        $audit = EntityEventUserRename::get([EntityEventUserRename::target_user_id => $userId])->first();
+        $this->assertNotNull($audit);
+        $this->assertSame($originalName, $audit->old_name);
+        $this->assertSame('Renamed', $audit->new_name);
     }
 
     /**
