@@ -88,15 +88,19 @@ describe('HilosUserPage', () => {
     ).toBe('2')
   })
 
-  it('reveals the rename form prefilled with the current name on Edit', () => {
+  it('opens the rename modal prefilled with the current name on Edit', () => {
     const { container } = renderPage(userContext(true))
+    // Editing is modal, not inline: nothing is mounted until Edit, and the modal
+    // portals to <body>, so the input is queried on the document, not container.
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
     expect(
-      container.querySelector('[data-id="hilos-user-name-input"]'),
+      document.querySelector('[data-id="hilos-user-name-input"]'),
     ).toBeNull()
     fireEvent.click(
       container.querySelector('[data-id="hilos-user-edit"]') as Element,
     )
-    const input = container.querySelector(
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    const input = document.querySelector(
       '[data-id="hilos-user-name-input"]',
     ) as HTMLInputElement
     expect(input).not.toBeNull()

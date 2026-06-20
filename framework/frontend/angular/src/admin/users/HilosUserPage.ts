@@ -1,12 +1,15 @@
 // HilosUserPage — the framework Hilos user-detail page (HilosPages.USER): one
-// user's profile, presence, and inline rename, inside the admin shell. The detail
-// selector and the rename action are the core headless's
-// (createHilosUserDetail / createHilosUserRename); this view owns only the markup,
-// so a project mounts it by passing its HilosUsersContext. Success is state-driven
-// (the committed name reaches the draft over the live table); a failure surfaces
-// from the backend fail ack. The context arrives via input and carries core
-// signals, so — like HilosTable — an effect builds the selectors once it binds and
-// mirrors them into Angular signals. Bootstrap classes only (styling-rules.md).
+// user's profile, presence, and rename, inside the admin shell. Editing happens
+// in a modal — inline forms are forbidden (rules-and-violations.md section E,
+// conflict-resolution.md); the modal hosts the rename form. The detail selector
+// and the rename action are the core headless's (createHilosUserDetail /
+// createHilosUserRename); this view owns only the markup, so a project mounts it
+// by passing its HilosUsersContext. Success is state-driven (the committed name
+// reaches the draft over the live table, closing the modal); a failure surfaces
+// from the backend fail ack inside the modal. The context arrives via input and
+// carries core signals, so — like HilosTable — an effect builds the selectors
+// once it binds and mirrors them into Angular signals. Bootstrap classes only
+// (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -29,13 +32,14 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosModal } from '../../HilosModal.js'
 import { LoadingButton } from '../../LoadingButton.js'
 
-/** The framework user-detail admin page: profile, presence, and inline rename. */
+/** The framework user-detail admin page: profile, presence, and a modal rename. */
 @Component({
   selector: 'hilos-user-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, LoadingButton],
+  imports: [HilosAdminPage, HilosModal, LoadingButton],
   template: `
     <hilos-admin-page [page]="page">
       @if (detail(); as detail) {
@@ -76,55 +80,6 @@ import { LoadingButton } from '../../LoadingButton.js'
                 </dd>
               }
             </dl>
-
-            @if (editing()) {
-              <form class="mt-3" (submit)="submit($event)">
-                <label class="form-label" for="hilos-user-name-field">
-                  Display name
-                </label>
-                <input
-                  id="hilos-user-name-field"
-                  type="text"
-                  class="form-control"
-                  [attr.minlength]="nameMin"
-                  [attr.maxlength]="nameMax"
-                  data-id="hilos-user-name-input"
-                  [value]="draft()"
-                  (input)="onDraftInput($event)"
-                />
-                <div class="form-text">
-                  Between {{ nameMin }} and {{ nameMax }} characters.
-                </div>
-                @if (renameError(); as error) {
-                  <div
-                    class="alert alert-danger mt-2 mb-0"
-                    data-id="hilos-user-rename-error"
-                  >
-                    {{ error }}
-                  </div>
-                }
-                <div class="d-flex gap-2 mt-3">
-                  <button
-                    hilosLoadingButton
-                    class="btn-primary"
-                    type="submit"
-                    [loading]="loading()"
-                    [disabled]="!valid()"
-                    data-id="hilos-user-save"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary"
-                    data-id="hilos-user-cancel"
-                    (click)="cancelEdit()"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            }
           </div>
         </div>
       } @else {
@@ -132,6 +87,62 @@ import { LoadingButton } from '../../LoadingButton.js'
           Loading user…
         </p>
       }
+
+      <hilos-modal
+        [open]="editing()"
+        (openChange)="onEditOpenChange($event)"
+        [title]="editTitle()"
+        [confirmOnClose]="dirty()"
+      >
+        @if (renameError(); as error) {
+          <div
+            class="alert alert-danger"
+            role="alert"
+            data-id="hilos-user-rename-error"
+          >
+            {{ error }}
+          </div>
+        }
+        <form (submit)="submit($event)">
+          <label class="form-label" for="hilos-user-name-field">
+            Display name
+          </label>
+          <input
+            id="hilos-user-name-field"
+            type="text"
+            class="form-control"
+            [attr.minlength]="nameMin"
+            [attr.maxlength]="nameMax"
+            data-id="hilos-user-name-input"
+            [value]="draft()"
+            (input)="onDraftInput($event)"
+          />
+          <div class="form-text">
+            Between {{ nameMin }} and {{ nameMax }} characters.
+          </div>
+        </form>
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="loading()"
+            data-id="hilos-user-cancel"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-primary"
+            [loading]="loading()"
+            [disabled]="!valid() || !dirty()"
+            data-id="hilos-user-save"
+            (click)="submit()"
+          >
+            Save
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -155,6 +166,16 @@ export class HilosUserPage {
     const trimmed = this.draft().trim()
 
     return trimmed.length >= this.nameMin && trimmed.length <= this.nameMax
+  })
+  protected readonly dirty = computed(() => {
+    const current = this.detail()
+
+    return !!current && this.draft().trim() !== current.name
+  })
+  protected readonly editTitle = computed(() => {
+    const current = this.detail()
+
+    return current ? `Rename · ${current.name}` : 'Rename user'
   })
 
   constructor() {
@@ -182,8 +203,9 @@ export class HilosUserPage {
     })
 
     // Success is state-driven: the rename has landed once the committed name (over
-    // the live table) reaches the submitted draft. Track only the name; read the
-    // form state untracked so the effect mirrors the Vue watch-on-name.
+    // the live table) reaches the submitted draft, which closes the modal. Track
+    // only the name; read the form state untracked so the effect mirrors the Vue
+    // watch-on-name.
     effect(() => {
       const name = this.detail()?.name
       untracked(() => {
@@ -194,7 +216,7 @@ export class HilosUserPage {
       })
     })
 
-    // A rejected rename releases the button and keeps the form open to retry.
+    // A rejected rename releases the button and keeps the modal open to retry.
     effect(() => {
       if (this.renameError() !== null) {
         this.loading.set(false)
@@ -209,7 +231,11 @@ export class HilosUserPage {
     this.editing.set(true)
   }
 
-  protected cancelEdit(): void {
+  // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
+  protected onEditOpenChange(open: boolean): void {
+    if (open) {
+      return
+    }
     this.editing.set(false)
     this.loading.set(false)
     this.rename?.clearRenameError()
@@ -224,7 +250,7 @@ export class HilosUserPage {
     // No change: close without a round-trip (also keeps the state-driven success
     // watch from waiting on a name that will never change).
     if (this.draft().trim() === current.name) {
-      this.editing.set(false)
+      this.onEditOpenChange(false)
 
       return
     }

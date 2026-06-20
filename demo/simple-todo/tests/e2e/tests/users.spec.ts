@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own self-registered row is present, search filters
-// the client viewport, a row links to the user detail page, and an inline rename
+// the client viewport, a row links to the user detail page, and a modal rename
 // round-trips through the backend and re-renders with no document reload.
 
 test('lists users in the framework table and opens a detail page', async ({
