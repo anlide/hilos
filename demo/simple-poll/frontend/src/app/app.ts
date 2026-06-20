@@ -14,6 +14,7 @@ import { About } from './views/about/about'
 import { License } from './views/license/license'
 import { Main } from './views/main/main'
 import { Privacy } from './views/privacy/privacy'
+import { Settings } from './views/settings/settings'
 import { Terms } from './views/terms/terms'
 
 @Component({
@@ -32,10 +33,14 @@ export class App {
   // (other routes land later) render nothing.
   protected readonly pages: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: Main,
-    // The framework dashboard is rendered straight from the SDK — this demo has
-    // no admin areas of its own, so it gets the framework sections as-is (a
+    // The framework dashboard is rendered straight from the SDK — this demo adds
+    // no dashboard sections of its own, so it gets the framework sections as-is (a
     // project that does would wrap HilosDashboardPage and project its cards).
     [HilosPages.DASHBOARD]: HilosDashboardPage,
+    // The framework settings admin page, activated configure-only: the framework
+    // owns the table and the add/update/delete lifecycle; the project binds only its
+    // scope stores + action lifecycle (views/settings) and its catalog on the backend.
+    [HilosPages.SETTINGS]: Settings,
     [HilosPages.ABOUT]: About,
     [HilosPages.TERMS]: Terms,
     [HilosPages.PRIVACY]: Privacy,
