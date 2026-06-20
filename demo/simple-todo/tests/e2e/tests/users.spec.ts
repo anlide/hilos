@@ -65,3 +65,27 @@ test('renames a user from the detail page and re-renders live', async ({
   await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
   await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
 })
+
+test('shows the connected user as online with a live session', async ({
+  page,
+}) => {
+  await page.goto('/hilos/users')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-table')).toBeVisible()
+
+  // The connected client self-registers as the newest user (highest id), so its
+  // own row sorts last under the id-ascending default; open that detail.
+  const selfOpen = page.locator('[data-id^="hilos-users-open-"]').last()
+  await expect(selfOpen).toBeVisible()
+  await selfOpen.click()
+  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+
+  // Regression: a connected user must render online with at least one live
+  // session. The detail table's computed presence fields were never populated
+  // (the project browser context returned null), so the live user rendered as
+  // offline with 0 sessions.
+  await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
+  await expect(
+    page.locator('[data-id="hilos-user-detail"] .badge'),
+  ).toHaveText('online')
+})
