@@ -1,10 +1,12 @@
 <!-- HilosUserPage — the framework Hilos user-detail page (HilosPages.USER): one
-user's profile, presence, and inline rename, inside the admin shell. The detail
-selector and the rename action are the core headless's
-(createHilosUserDetail / createHilosUserRename); this view owns only the markup,
-so a project mounts it by passing its HilosUsersContext. Success is state-driven
-(the committed name reaches the draft over the live table); a failure surfaces
-from the backend fail ack. Bootstrap classes only (styling-rules.md). -->
+user's profile, presence, and rename, inside the admin shell. Editing happens in
+a modal — inline forms are forbidden (rules-and-violations.md section E,
+conflict-resolution.md); the modal hosts the rename form. The detail selector and
+the rename action are the core headless's (createHilosUserDetail /
+createHilosUserRename); this view owns only the markup, so a project mounts it by
+passing its HilosUsersContext. Success is state-driven (the committed name reaches
+the draft over the live table, closing the modal); a failure surfaces from the
+backend fail ack inside the modal. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
@@ -16,6 +18,7 @@ import {
 } from '@hilos/core'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosModal from '../../HilosModal.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useSignal } from '../../useSignal.js'
 
@@ -42,6 +45,11 @@ const valid = computed(() => {
 
   return trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
 })
+const dirty = computed(() => {
+  const current = detail.value
+
+  return !!current && draft.value.trim() !== current.name
+})
 
 function openEdit(): void {
   rename.clearRenameError()
@@ -50,7 +58,8 @@ function openEdit(): void {
   editing.value = true
 }
 
-function cancelEdit(): void {
+// The modal's close path (Cancel / Esc / backdrop, through the discard guard).
+function closeEdit(): void {
   editing.value = false
   loading.value = false
   rename.clearRenameError()
@@ -64,7 +73,7 @@ function submit(): void {
   // No change: close without a round-trip (also keeps the state-driven success
   // watch from waiting on a name that will never change).
   if (draft.value.trim() === current.name) {
-    editing.value = false
+    closeEdit()
 
     return
   }
@@ -73,7 +82,7 @@ function submit(): void {
 }
 
 // Success is state-driven: the rename has landed once the committed name (over
-// the live table) reaches the submitted draft.
+// the live table) reaches the submitted draft, which closes the modal.
 watch(
   () => detail.value?.name,
   (name) => {
@@ -84,7 +93,7 @@ watch(
   },
 )
 
-// A rejected rename releases the button and keeps the form open to retry.
+// A rejected rename releases the button and keeps the modal open to retry.
 watch(error, (reason) => {
   if (reason !== null) {
     loading.value = false
@@ -127,54 +136,63 @@ watch(error, (reason) => {
             </dd>
           </template>
         </dl>
-
-        <form v-if="editing" class="mt-3" @submit.prevent="submit">
-          <label class="form-label" for="hilos-user-name-field">
-            Display name
-          </label>
-          <input
-            id="hilos-user-name-field"
-            v-model="draft"
-            type="text"
-            class="form-control"
-            :minlength="NAME_MIN"
-            :maxlength="NAME_MAX"
-            data-id="hilos-user-name-input"
-          />
-          <div class="form-text">
-            Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
-          </div>
-          <div
-            v-if="error"
-            class="alert alert-danger mt-2 mb-0"
-            data-id="hilos-user-rename-error"
-          >
-            {{ error }}
-          </div>
-          <div class="d-flex gap-2 mt-3">
-            <LoadingButton
-              class="btn-primary"
-              type="submit"
-              :loading="loading"
-              :disabled="!valid"
-              data-id="hilos-user-save"
-            >
-              Save
-            </LoadingButton>
-            <button
-              type="button"
-              class="btn btn-outline-secondary"
-              data-id="hilos-user-cancel"
-              @click="cancelEdit"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
       </div>
     </div>
     <p v-else class="text-body-secondary" data-id="hilos-user-empty">
       Loading user…
     </p>
+
+    <HilosModal
+      v-model="editing"
+      :title="detail ? `Rename · ${detail.name}` : 'Rename user'"
+      :confirm-on-close="dirty"
+      @cancel="closeEdit"
+    >
+      <div
+        v-if="error"
+        class="alert alert-danger"
+        role="alert"
+        data-id="hilos-user-rename-error"
+      >
+        {{ error }}
+      </div>
+      <form @submit.prevent="submit">
+        <label class="form-label" for="hilos-user-name-field">
+          Display name
+        </label>
+        <input
+          id="hilos-user-name-field"
+          v-model="draft"
+          type="text"
+          class="form-control"
+          :minlength="NAME_MIN"
+          :maxlength="NAME_MAX"
+          data-id="hilos-user-name-input"
+        />
+        <div class="form-text">
+          Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
+        </div>
+      </form>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="loading"
+          data-id="hilos-user-cancel"
+          @click="requestClose"
+        >
+          Cancel
+        </button>
+        <LoadingButton
+          class="btn-primary"
+          :loading="loading"
+          :disabled="!valid || !dirty"
+          data-id="hilos-user-save"
+          @click="submit"
+        >
+          Save
+        </LoadingButton>
+      </template>
+    </HilosModal>
   </HilosAdminPage>
 </template>
