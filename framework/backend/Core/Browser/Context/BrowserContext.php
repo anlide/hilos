@@ -35,9 +35,11 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Throwable;
@@ -125,15 +127,26 @@ abstract class BrowserContext
 
         $tables = [];
         foreach ($this->pageTables($page) as $pageTableBinding) {
-            $tableConfig = $this->tableConfig($pageTableBinding->tableKey);
+            $tableKey = $pageTableBinding->tableKey;
+
+            $selfSnapshotTable = $this->selfSnapshotTable($tableKey);
+            if ($selfSnapshotTable !== null) {
+                $rows = $this->selfSnapshotRows($selfSnapshotTable);
+                if ($rows !== []) {
+                    $tables[$tableKey] = [BrowserPageSignalData::rows => $rows];
+                }
+                continue;
+            }
+
+            $tableConfig = $this->tableConfig($tableKey);
             if ($tableConfig === null || $tableConfig->isEmpty()) {
                 continue;
             }
 
             $tableParams = $this->tableParams($pageTableBinding, $acceptKey, $pageParams);
-            $tables[$pageTableBinding->tableKey] = [
+            $tables[$tableKey] = [
                 BrowserPageSignalData::rows => $this->buildBrowserSnapshotRows(
-                    tableKey: $pageTableBinding->tableKey,
+                    tableKey: $tableKey,
                     tableConfig: $tableConfig,
                     acceptKey: $acceptKey,
                     pageParams: $pageParams,
@@ -280,13 +293,21 @@ abstract class BrowserContext
 
                 $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
                 foreach ($this->pageTables($page) as $pageTableBinding) {
-                    $tableConfig = $this->tableConfig($pageTableBinding->tableKey);
+                    $tableKey = $pageTableBinding->tableKey;
+
+                    $selfSnapshotTable = $this->selfSnapshotTable($tableKey);
+                    if ($selfSnapshotTable !== null) {
+                        $this->accumulateSelfSnapshotChange($signalTables, $selfSnapshotTable, $change, $acceptKey, $page, $tableKey);
+                        continue;
+                    }
+
+                    $tableConfig = $this->tableConfig($tableKey);
                     if ($tableConfig === null || !$this->tableObservesChange($tableConfig, $change)) {
                         continue;
                     }
 
                     if ($change->mutationType === TableMutationType::Clear) {
-                        $this->addBrowserClear($signalTables, $acceptKey, $page, $pageTableBinding->tableKey);
+                        $this->addBrowserClear($signalTables, $acceptKey, $page, $tableKey);
                         continue;
                     }
 
@@ -297,7 +318,7 @@ abstract class BrowserContext
                     }
 
                     $row = $this->buildBrowserRow(
-                        tableKey: $pageTableBinding->tableKey,
+                        tableKey: $tableKey,
                         tableConfig: $tableConfig,
                         rowKey: $rowKey,
                         acceptKey: $acceptKey,
@@ -306,11 +327,11 @@ abstract class BrowserContext
                     );
 
                     if ($row === null) {
-                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $pageTableBinding->tableKey, $rowKey);
+                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $tableKey, $rowKey);
                         continue;
                     }
 
-                    $this->addBrowserRow($signalTables, $acceptKey, $page, $pageTableBinding->tableKey, $rowKey, $row);
+                    $this->addBrowserRow($signalTables, $acceptKey, $page, $tableKey, $rowKey, $row);
                 }
             }
         }
@@ -806,6 +827,95 @@ abstract class BrowserContext
         }
 
         return $rows;
+    }
+
+    /**
+     * Resolves a page-bound table as a self-snapshot table, when it is one.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?SelfSnapshotTable Self-snapshot table, or null when absent or source-fanned
+     */
+    private function selfSnapshotTable(string $tableKey): ?SelfSnapshotTable
+    {
+        $table = Hilos::$table?->get($tableKey);
+
+        return $table instanceof SelfSnapshotTable ? $table : null;
+    }
+
+    /**
+     * Builds full browser rows for a self-snapshot table from its own snapshot.
+     *
+     * @param SelfSnapshotTable $table Self-snapshot table
+     * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Internal browser rows
+     */
+    private function selfSnapshotRows(SelfSnapshotTable $table): array
+    {
+        try {
+            $snapshot = $table->getFullSnapshot();
+        } catch (Throwable) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($snapshot->rows as $row) {
+            if ($row instanceof AbstractTableRow) {
+                $rows[] = $table->browserRow($row);
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Accumulates one self-snapshot table change into the tick-local signal accumulator.
+     *
+     * The table owns whether the change affects it and which row it maps to
+     * through buildMutationForSourceEvent(); the base context only serializes the
+     * resulting row or routes a delete.
+     *
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
+     * @param SelfSnapshotTable $table Self-snapshot table
+     * @param SourceChange $change Grouped DB/RT source change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     */
+    private function accumulateSelfSnapshotChange(
+        array &$signalTables,
+        SelfSnapshotTable $table,
+        SourceChange $change,
+        string $acceptKey,
+        string $page,
+        string $tableKey,
+    ): void {
+        try {
+            $mutation = $table->buildMutationForSourceEvent($change);
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($mutation === null) {
+            return;
+        }
+
+        if ($mutation->type === TableMutationType::Delete) {
+            $this->addBrowserDelete($signalTables, $acceptKey, $page, $tableKey, $mutation->rowKey);
+
+            return;
+        }
+
+        if ($mutation->row === null) {
+            return;
+        }
+
+        $this->addBrowserRow(
+            $signalTables,
+            $acceptKey,
+            $page,
+            $tableKey,
+            $mutation->rowKey,
+            $table->browserRow($mutation->row),
+        );
     }
 
     /**

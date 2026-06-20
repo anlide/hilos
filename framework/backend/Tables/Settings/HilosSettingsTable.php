@@ -8,13 +8,16 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -36,7 +39,7 @@ use Throwable;
  * The catalog is bound once to the settings facade (Hilos::$setting); this table
  * reads it back through the accessor instead of importing a project catalog.
  */
-final class HilosSettingsTable extends TableDefinition
+final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTable
 {
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'settings';
@@ -175,6 +178,30 @@ final class HilosSettingsTable extends TableDefinition
                     ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
                     : HilosSettingTableRow::VALUE_SOURCE_DEFAULT),
         );
+    }
+
+    /**
+     * Serializes one settings row into its internal browser-row envelope.
+     *
+     * The DB id is dropped from the slot: the frontend normalizer treats any slot
+     * carrying a non-null id as a referenced entity, but settings rows are
+     * page-scoped, keyed by the setting key, and carry a nullable id (catalog
+     * placeholders have none). Persisted-ness is read from value_source instead.
+     *
+     * @param AbstractTableRow $row Settings table row from this table's snapshot or mutation
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        $slot = $row->toArray();
+        unset($slot[HilosSettingTableRow::id]);
+
+        return [
+            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::sources => [
+                HilosDbContext::settings => $slot,
+            ],
+        ];
     }
 
     /**
