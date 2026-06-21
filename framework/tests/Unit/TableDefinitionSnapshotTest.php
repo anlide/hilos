@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
-use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\DTO\TablePageQueryDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Row\GenericTableRow;
@@ -30,11 +28,16 @@ final class TableDefinitionSnapshotTest extends TestCase
         $this->assertSame(['id' => 1, 'name' => 'Ada'], $snapshot->rows[0]->toArray());
     }
 
-    public function testGetPageIsReservedForFuturePartialLoading(): void
+    public function testGetPageRunsTheQueryAndReturnsTypedWindowRows(): void
     {
-        $this->expectException(NotImplementedException::class);
+        $snapshot = $this->makeTable()->getPage(new TableQueryDTO(offset: 10, limit: 5));
 
-        $this->makeTable()->getPage(new TablePageQueryDTO(offset: 10, limit: 5));
+        $this->assertSame(10, $snapshot->offset);
+        $this->assertSame(5, $snapshot->limit);
+        $this->assertSame(1, $snapshot->totalCount);
+        $this->assertCount(1, $snapshot->rows);
+        $this->assertInstanceOf(GenericTableRow::class, $snapshot->rows[0]);
+        $this->assertSame(['id' => 1, 'name' => 'Ada'], $snapshot->rows[0]->toArray());
     }
 
     private function makeTable(): TableDefinition
