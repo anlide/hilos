@@ -10,13 +10,13 @@ failure surfaces in the dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   HilosModal,
-  HilosTable,
+  HilosViewportTable,
   LoadingButton,
   useSignal,
   useTrackedAction,
 } from '@hilos/vue'
 import { type HilosTableColumn } from '@hilos/vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   sendBotCreate,
@@ -24,7 +24,7 @@ import {
   sendBotUpdate,
   type BotInput,
 } from './adminBotsActions'
-import { botsTable } from './adminBotsPage'
+import { botsTable, disposeBotsTable, startBotsTable } from './adminBotsPage'
 import { type BotRow } from './types/tables/BotRow'
 
 defineOptions({ name: 'AdminBotsPage' })
@@ -32,14 +32,26 @@ defineOptions({ name: 'AdminBotsPage' })
 const columns: HilosTableColumn[] = [
   { key: 'name', label: 'Name', sortable: true },
   { key: 'description', label: 'Description' },
-  { key: 'presence', label: 'Status', sortable: true },
+  // Sort key is the backend row field (`status`: joined/left), which groups the
+  // same as the rendered online/offline presence.
+  { key: 'status', label: 'Status', sortable: true },
   { key: 'active', label: 'Active', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
 const viewRows = useSignal(botsTable.rows)
 
-const allRows = computed(() => viewRows.value.map((view) => view.row))
+// Live (non-placeholder) rows, used to dirty-check an edit against the latest row.
+const allRows = computed(() =>
+  viewRows.value
+    .map((view) => view.row)
+    .filter((row): row is BotRow => row !== null),
+)
+
+// Bind the server-windowed table to the connection on mount, request the first
+// window, and unbind on unmount.
+onMounted(startBotsTable)
+onUnmounted(disposeBotsTable)
 
 // Create/edit dialog: one shared form, distinguished by mode.
 const formOpen = ref(false)
@@ -126,15 +138,21 @@ function openCreate(): void {
 }
 
 function openEdit(row: BotRow): void {
+  // Flush pending so the form edits the latest committed row; a row removed by
+  // someone else (now a placeholder) declines to open.
+  const fresh = botsTable.applyAndResolve(String(row.id))
+  if (!fresh) {
+    return
+  }
   clearFormError()
   formMode.value = 'edit'
-  formId.value = row.id
-  fName.value = row.name
-  fDescription.value = row.description ?? ''
-  fStyle.value = row.style ?? ''
-  fTopics.value = row.topics ?? ''
-  fPersonality.value = row.personality ?? ''
-  fActive.value = row.active
+  formId.value = fresh.id
+  fName.value = fresh.name
+  fDescription.value = fresh.description ?? ''
+  fStyle.value = fresh.style ?? ''
+  fTopics.value = fresh.topics ?? ''
+  fPersonality.value = fresh.personality ?? ''
+  fActive.value = fresh.active
   formOpen.value = true
 }
 
@@ -164,8 +182,13 @@ async function submitForm(): Promise<void> {
 }
 
 function openDelete(row: BotRow): void {
+  // Flush pending; a row already removed by someone else does not open a delete.
+  const fresh = botsTable.applyAndResolve(String(row.id))
+  if (!fresh) {
+    return
+  }
   clearDeleteError()
-  deleteRow.value = row
+  deleteRow.value = fresh
   deleteOpen.value = true
 }
 
@@ -204,7 +227,7 @@ async function submitDelete(): Promise<void> {
       </button>
     </div>
 
-    <HilosTable
+    <HilosViewportTable
       :controller="botsTable"
       :columns="columns"
       searchable
@@ -271,7 +294,7 @@ async function submitDelete(): Promise<void> {
           </div>
         </td>
       </template>
-    </HilosTable>
+    </HilosViewportTable>
 
     <HilosModal
       v-model="formOpen"

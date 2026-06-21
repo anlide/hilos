@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\Bot;
 
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -25,6 +26,8 @@ final class BotTableRow extends AbstractTableRow
     public const string topicMatchRequired = ObjectBot::topicMatchRequired;
     public const string cooldownAfterMessage = ObjectBot::cooldownAfterMessage;
     public const string priority = ObjectBot::priority;
+    /** Runtime agent lifecycle status (joined/left), merged from RT — not a DB column. */
+    public const string status = StateBotAgentStatus::status;
 
     public function __construct(
         public int $id,
@@ -40,6 +43,7 @@ final class BotTableRow extends AbstractTableRow
         public bool $topicMatchRequired,
         public int $cooldownAfterMessage,
         public int $priority,
+        public ?string $status = null,
     ) {
     }
 
@@ -72,6 +76,7 @@ final class BotTableRow extends AbstractTableRow
             self::topicMatchRequired => $this->topicMatchRequired,
             self::cooldownAfterMessage => $this->cooldownAfterMessage,
             self::priority => $this->priority,
+            self::status => $this->status,
         ];
     }
 
@@ -96,6 +101,7 @@ final class BotTableRow extends AbstractTableRow
             topicMatchRequired: (bool) ($data[self::topicMatchRequired] ?? false),
             cooldownAfterMessage: (int) ($data[self::cooldownAfterMessage] ?? 0),
             priority: (int) ($data[self::priority] ?? 0),
+            status: isset($data[self::status]) ? (string) $data[self::status] : null,
         );
     }
 }

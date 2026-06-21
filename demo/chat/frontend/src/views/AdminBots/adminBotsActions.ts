@@ -7,6 +7,7 @@
 import { type ActionHandle } from '@hilos/core'
 
 import { actions } from '../../bootstrap/connection'
+import { botsTable } from './adminBotsPage'
 
 // Backend action names (PHP ChatSignalConstants).
 const BOT_CREATE = 'bot_create'
@@ -45,7 +46,11 @@ export function sendBotCreate(input: BotInput): ActionHandle {
  * @param input The bot's new fields.
  */
 export function sendBotUpdate(id: number, input: BotInput): ActionHandle {
-  return actions.dispatch(BOT_UPDATE, { id, ...input })
+  const handle = actions.dispatch(BOT_UPDATE, { id, ...input })
+  // Auto-apply this tab's own echo for the edited row; other tabs keep the pending gate.
+  botsTable.expectOwnChange(String(id), handle.done)
+
+  return handle
 }
 
 /**
@@ -54,5 +59,8 @@ export function sendBotUpdate(id: number, input: BotInput): ActionHandle {
  * @param id The bot id to delete.
  */
 export function sendBotDelete(id: number): ActionHandle {
-  return actions.dispatch(BOT_DELETE, { id })
+  const handle = actions.dispatch(BOT_DELETE, { id })
+  botsTable.expectOwnChange(String(id), handle.done)
+
+  return handle
 }
