@@ -24,6 +24,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use SplQueue;
 
@@ -472,6 +473,40 @@ class SignalRouter
     }
 
     /**
+     * Stores or replaces a connection's viewport for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param TableViewportSubscription $viewport Table viewport descriptor
+     */
+    public function setTableViewport(string $acceptKey, TableViewportSubscription $viewport): void
+    {
+        $this->subscriptions->setTableViewport($acceptKey, $viewport);
+    }
+
+    /**
+     * Returns a connection's viewport for one table, or null when not set.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return ?TableViewportSubscription Stored viewport or null
+     */
+    public function getTableViewport(string $acceptKey, string $tableKey): ?TableViewportSubscription
+    {
+        return $this->subscriptions->getTableViewport($acceptKey, $tableKey);
+    }
+
+    /**
+     * Returns all table viewports held by a connection, keyed by table key.
+     *
+     * @param string $acceptKey Client accept key
+     * @return array<string, TableViewportSubscription> Viewports keyed by table key
+     */
+    public function getTableViewports(string $acceptKey): array
+    {
+        return $this->subscriptions->getTableViewports($acceptKey);
+    }
+
+    /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
      * @param string $page Page identifier to match subscriptions against
@@ -667,6 +702,7 @@ class SignalRouter
         $page = match ($signalType) {
             SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : '',
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : '',
+            SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : '',
             SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),
             default => '',
         };

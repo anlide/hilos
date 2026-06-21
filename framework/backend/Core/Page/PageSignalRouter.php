@@ -16,6 +16,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -23,6 +24,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -141,6 +143,33 @@ class PageSignalRouter
         }
 
         $pageInstance->onUnsubscribe($data->acceptKey);
+    }
+
+    /**
+     * Dispatch a table viewport signal to the subscription registry.
+     *
+     * Stores the connection's window descriptor for one table so the server can
+     * scope live deltas to the rows that connection shows. The window snapshot is
+     * built and replied separately.
+     *
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     */
+    public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
+    {
+        if ($data->acceptKey === '' || $data->tableKey === '') {
+            return;
+        }
+
+        Hilos::$sr?->setTableViewport($data->acceptKey, new TableViewportSubscription(
+            tableKey: $data->tableKey,
+            filter: $data->filter,
+            sortField: $data->sortField,
+            sortDirection: $data->sortDirection,
+            offset: $data->offset,
+            limit: $data->limit,
+        ));
     }
 
     /**

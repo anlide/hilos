@@ -28,6 +28,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameSequenceException;
@@ -746,6 +747,29 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 break;
             }
 
+            case SignalTypeConstants::TABLE_VIEWPORT: {
+                $page = isset($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    && is_string($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    ? $decoded[SignalPayloadConstants::FIELD_PAGE]
+                    : throw new InvalidFrameException("Page is required for {$type} signal");
+                if ($page === '') {
+                    throw new InvalidFrameException("Page is empty for {$type} signal");
+                }
+
+                $decoded[SignalPayloadConstants::FIELD_ACCEPT_KEY] = $acceptKey;
+                $dto = WebSocketTableViewportSignalDTO::fromArray($decoded);
+
+                Hilos::$sr->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
+                    new SignalName($page),
+                    $dto,
+                );
+
+                $this->onTableViewportParsed($page, $dto);
+                break;
+            }
+
             case SignalTypeConstants::GROUP_SUBSCRIBE:
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
             case SignalTypeConstants::GROUP_UNSUBSCRIBE: {
@@ -804,6 +828,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param WebSocketPageSubscribeSignalDTO $dto Subscribe signal (acceptKey, params)
      */
     protected function onPageSubscribeParsed(string $page, WebSocketPageSubscribeSignalDTO $dto): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after a table viewport payload is parsed and queued.
+     *
+     * @param string $page Page identifier
+     * @param WebSocketTableViewportSignalDTO $dto Table viewport signal
+     */
+    protected function onTableViewportParsed(string $page, WebSocketTableViewportSignalDTO $dto): void
     {
         // Default: no-op
     }
