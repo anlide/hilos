@@ -299,6 +299,71 @@ describe('action send', () => {
   })
 })
 
+describe('table viewport send', () => {
+  it('frames a table viewport with its filter and sort while connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    const sent = connection.sendTableViewport('hilos_settings', 'settings', {
+      filter: { search: 'theme' },
+      sort: { field: 'key', direction: 'asc' },
+      offset: 10,
+      limit: 10,
+    })
+
+    expect(sent).toBe(true)
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_viewport',
+      page: 'hilos_settings',
+      tableKey: 'settings',
+      offset: 10,
+      limit: 10,
+      filter: { search: 'theme' },
+      sort: { field: 'key', direction: 'asc' },
+    })
+  })
+
+  it('omits an empty filter and a null sort', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+
+    connection.sendTableViewport('p', 't', {
+      filter: {},
+      sort: null,
+      offset: 0,
+      limit: 10,
+    })
+
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'table_viewport',
+      page: 'p',
+      tableKey: 't',
+      offset: 0,
+      limit: 10,
+    })
+  })
+
+  it('sends nothing unless connected', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+
+    expect(
+      connection.sendTableViewport('p', 't', {
+        filter: {},
+        sort: null,
+        offset: 0,
+        limit: 10,
+      }),
+    ).toBe(false)
+    expect(socket.sent).toEqual([])
+  })
+})
+
 describe('binary send', () => {
   it('sends a raw binary frame while connected', () => {
     const { connection } = createConnection()

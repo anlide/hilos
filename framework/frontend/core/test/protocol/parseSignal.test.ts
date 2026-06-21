@@ -189,4 +189,66 @@ describe('parseSignal', () => {
       expect(result.signal.requestId).toBe('req-4')
     }
   })
+
+  it('parses a table_window frame as a framework signal', () => {
+    const result = parseSignal(
+      '{"type":"table_window","data":{"page":"hilos_settings","tableKey":"settings","rows":[{"rowKey":"theme","slots":{"settings":{"key":"theme"}}}],"totalCount":12,"offset":0,"limit":10}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableWindow') {
+      expect(result.signal.data).toMatchObject({
+        page: 'hilos_settings',
+        tableKey: 'settings',
+        totalCount: 12,
+        offset: 0,
+        limit: 10,
+      })
+      expect(result.signal.data.rows[0]).toEqual({
+        rowKey: 'theme',
+        slots: { settings: { key: 'theme' } },
+      })
+    }
+  })
+
+  it('rejects a table_window frame missing its metadata', () => {
+    const result = parseSignal(
+      '{"type":"table_window","data":{"tableKey":"settings","rows":[]}}',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.failure).toMatchObject({
+        kind: 'invalid-signal-data',
+        type: 'table_window',
+      })
+    }
+  })
+
+  it('parses a table_viewport_delta row_updated frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_delta","data":{"page":"hilos_settings","tableKey":"settings","kind":"row_updated","rowKey":"theme","row":{"rowKey":"theme","slots":{"settings":{"key":"theme"}}}}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportDelta') {
+      expect(result.signal.data.kind).toBe('row_updated')
+      expect(result.signal.data.rowKey).toBe('theme')
+      expect(result.signal.data.row).toEqual({
+        rowKey: 'theme',
+        slots: { settings: { key: 'theme' } },
+      })
+    }
+  })
+
+  it('parses a table_viewport_delta set_changed frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_delta","data":{"page":"p","tableKey":"t","kind":"set_changed","totalCount":3,"pageCount":1}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportDelta') {
+      expect(result.signal.data).toMatchObject({
+        kind: 'set_changed',
+        totalCount: 3,
+        pageCount: 1,
+      })
+    }
+  })
 })

@@ -5,10 +5,17 @@
 import {
   FIELD_ACTION,
   FIELD_DATA,
+  FIELD_FILTER,
+  FIELD_LIMIT,
+  FIELD_OFFSET,
+  FIELD_PAGE,
   FIELD_REQUEST_ID,
+  FIELD_SORT,
+  FIELD_TABLE_KEY,
   FIELD_TYPE,
   KEEPALIVE_TEXT_PING,
   SIGNAL_TYPE_ACTION,
+  SIGNAL_TYPE_TABLE_VIEWPORT,
 } from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
 import {
@@ -20,6 +27,8 @@ import {
   type ParseFailure,
   type ProjectSignal,
   type ProjectSignalSchemas,
+  type TableViewportDeltaSignal,
+  type TableWindowSignal,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
 import {
@@ -34,6 +43,21 @@ export type ConnectionState =
   | 'connected'
   | 'reconnecting'
   | 'disconnected'
+
+/**
+ * The window a connection requests for one table: an open filter map the table
+ * resolves, an optional sort, and the offset/limit window. Sent over
+ * {@link HilosConnection.sendTableViewport}.
+ */
+export interface TableViewportDescriptor {
+  readonly filter: Record<string, unknown>
+  readonly sort: {
+    readonly field: string
+    readonly direction: 'asc' | 'desc'
+  } | null
+  readonly offset: number
+  readonly limit: number
+}
 
 /**
  * The slice of the WebSocket API the core touches. Method-style members keep
@@ -71,6 +95,10 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   buildMismatch: BuildMismatch
   /** A signal validated against a project-declared schema. */
   projectSignal: ProjectSignal
+  /** A table window snapshot reply (`table_window`): the rows in the requested window. */
+  tableWindow: TableWindowSignal
+  /** A live table pending change (`table_viewport_delta`): scoped to the connection's window. */
+  tableViewportDelta: TableViewportDeltaSignal
   /** A signal the core has no concrete schema for; tolerated and observable. */
   unknownSignal: UnknownSignal
   /** A frame that violated the envelope contract; reported, never fatal. */
@@ -235,6 +263,39 @@ export class HilosConnection {
     return this.send(JSON.stringify(frame))
   }
 
+  /**
+   * Send a table viewport frame — `{type:'table_viewport', page, tableKey,
+   * filter?, sort?, offset, limit}` — declaring the window this connection wants
+   * for one table. The server replies a table_window snapshot and scopes live
+   * deltas to the delivered rows. Returns false, sending nothing, unless the
+   * connection is `connected`, like {@link send}.
+   *
+   * @param page The page the table belongs to.
+   * @param tableKey The table key the viewport scopes.
+   * @param descriptor The window descriptor (filter, sort, offset, limit).
+   */
+  sendTableViewport(
+    page: string,
+    tableKey: string,
+    descriptor: TableViewportDescriptor,
+  ): boolean {
+    const frame: Record<string, unknown> = {
+      [FIELD_TYPE]: SIGNAL_TYPE_TABLE_VIEWPORT,
+      [FIELD_PAGE]: page,
+      [FIELD_TABLE_KEY]: tableKey,
+      [FIELD_OFFSET]: descriptor.offset,
+      [FIELD_LIMIT]: descriptor.limit,
+    }
+    if (Object.keys(descriptor.filter).length > 0) {
+      frame[FIELD_FILTER] = descriptor.filter
+    }
+    if (descriptor.sort !== null) {
+      frame[FIELD_SORT] = descriptor.sort
+    }
+
+    return this.send(JSON.stringify(frame))
+  }
+
   private openSocket(): void {
     const generation = ++this.generation
     const socket = this.webSocketFactory(this.url)
@@ -296,6 +357,12 @@ export class HilosConnection {
         break
       case 'project':
         this.emitter.emit('projectSignal', signal)
+        break
+      case 'tableWindow':
+        this.emitter.emit('tableWindow', signal)
+        break
+      case 'tableViewportDelta':
+        this.emitter.emit('tableViewportDelta', signal)
         break
       case 'unknown':
         this.emitter.emit('unknownSignal', signal)

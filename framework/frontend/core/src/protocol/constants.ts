@@ -22,6 +22,15 @@ export const SIGNAL_TYPE_ACTION_ERROR = 'action_error'
 /** Server frame `type` confirming a tracked page action committed (PHP `SignalConstants::ACTION_SUCCESS`). */
 export const SIGNAL_TYPE_ACTION_SUCCESS = 'action_success'
 
+/** Client frame `type` setting a table's window (PHP `SignalTypeConstants::TABLE_VIEWPORT`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT = 'table_viewport'
+
+/** Server frame `type` replying a table window snapshot (PHP `SignalTypeConstants::TABLE_WINDOW`). */
+export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
+
+/** Server frame `type` carrying a live table pending change (PHP `SignalTypeConstants::TABLE_VIEWPORT_DELTA`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_DELTA = 'table_viewport_delta'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 
@@ -39,6 +48,21 @@ export const FIELD_DATA = 'data'
 
 /** Action/reply frame key carrying the client-minted request id (PHP `SignalPayloadConstants::FIELD_REQUEST_ID`). */
 export const FIELD_REQUEST_ID = 'requestId'
+
+/** Viewport frame key carrying the table key (PHP `SignalPayloadConstants::FIELD_TABLE_KEY`). */
+export const FIELD_TABLE_KEY = 'tableKey'
+
+/** Viewport frame key carrying the filter map (PHP `SignalPayloadConstants::FIELD_FILTER`). */
+export const FIELD_FILTER = 'filter'
+
+/** Viewport frame key carrying the sort `{field, direction}` (PHP `SignalPayloadConstants::FIELD_SORT`). */
+export const FIELD_SORT = 'sort'
+
+/** Viewport frame key carrying the window offset (PHP `SignalPayloadConstants::FIELD_OFFSET`). */
+export const FIELD_OFFSET = 'offset'
+
+/** Viewport frame key carrying the window limit (PHP `SignalPayloadConstants::FIELD_LIMIT`). */
+export const FIELD_LIMIT = 'limit'
 
 /** Keepalive text frame the client sends (PHP `WebSocketConstants::KEEPALIVE_TEXT_PING`). */
 export const KEEPALIVE_TEXT_PING = 'ping'

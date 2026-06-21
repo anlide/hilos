@@ -8,13 +8,19 @@ import {
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
+  SIGNAL_TYPE_TABLE_WINDOW,
 } from './constants.js'
 import {
   signalEnvelopeSchema,
   handshakeSignalDataSchema,
   actionErrorSignalDataSchema,
   actionSuccessSignalDataSchema,
+  tableWindowSignalDataSchema,
+  tableViewportDeltaSignalDataSchema,
   type SignalEnvelope,
+  type TableWindowSignalData,
+  type TableViewportDeltaSignalData,
 } from './envelope.js'
 
 /**
@@ -41,6 +47,16 @@ export type ParsedSignal =
       requestId: string | undefined
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableWindow'
+      data: TableWindowSignalData
+      envelope: SignalEnvelope
+    }
+  | {
+      kind: 'tableViewportDelta'
+      data: TableViewportDeltaSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -50,6 +66,11 @@ export type ActionSuccessSignal = Extract<
   { kind: 'actionSuccess' }
 >
 export type ActionErrorSignal = Extract<ParsedSignal, { kind: 'actionError' }>
+export type TableWindowSignal = Extract<ParsedSignal, { kind: 'tableWindow' }>
+export type TableViewportDeltaSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportDelta' }
+>
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
 
@@ -174,6 +195,54 @@ export function parseSignal(
           action: data.data.action,
           reason: data.data.reason,
           requestId: envelope.data.requestId,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_WINDOW: {
+      const data = tableWindowSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_WINDOW,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableWindow',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_DELTA: {
+      const data = tableViewportDeltaSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportDelta',
+          data: data.data,
           envelope: envelope.data,
         },
       }

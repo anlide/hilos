@@ -61,3 +61,48 @@ export const actionSuccessSignalDataSchema = z.looseObject({
 export type ActionSuccessSignalData = z.infer<
   typeof actionSuccessSignalDataSchema
 >
+
+/** One table row on the wire: its identity key plus its normalized slots. */
+const tableRowFragmentSchema = z.looseObject({
+  rowKey: z.union([z.string(), z.number()]),
+  slots: z.record(z.string(), z.unknown()),
+})
+
+/**
+ * Payload of the framework table window reply (`type: 'table_window'`, PHP
+ * `TableWindowSignalData`): the rows currently in the window plus the descriptor
+ * metadata. A row rides the `{rowKey, slots}` fragment shape the normalizer
+ * ingests. Sent only in reply to a table_viewport request, never live.
+ */
+export const tableWindowSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  rows: z.array(tableRowFragmentSchema),
+  totalCount: z.number().int(),
+  offset: z.number().int(),
+  limit: z.number().int(),
+})
+
+export type TableWindowSignalData = z.infer<typeof tableWindowSignalDataSchema>
+
+/**
+ * Payload of the framework table viewport delta (`type: 'table_viewport_delta'`,
+ * PHP `TableViewportDeltaDTO`): the addressed live pending change for one table,
+ * discriminated by `kind` (`row_updated` / `row_removed` / `set_changed`). A row
+ * rides the `{rowKey, slots}` shape; `kind` and `reason` stay loose strings so a
+ * newer backend kind survives parsing. Accumulated as pending, never auto-applied.
+ */
+export const tableViewportDeltaSignalDataSchema = z.looseObject({
+  page: z.string(),
+  tableKey: z.string(),
+  kind: z.string(),
+  rowKey: z.union([z.string(), z.number()]).optional(),
+  row: tableRowFragmentSchema.optional(),
+  reason: z.string().optional(),
+  totalCount: z.number().int().optional(),
+  pageCount: z.number().int().optional(),
+})
+
+export type TableViewportDeltaSignalData = z.infer<
+  typeof tableViewportDeltaSignalDataSchema
+>
