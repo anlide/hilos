@@ -16,6 +16,7 @@ import {
   HilosUserPage,
   HilosUsersPage,
   HilosView,
+  HilosViewportTable,
   LoadingButton,
   connectionStateSignal,
   createHilosTrackedAction,
@@ -35,6 +36,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
   expect(HilosTable).toBeTypeOf('function')
+  expect(HilosViewportTable).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
   expect(HilosUsersPage).toBeTypeOf('function')
   expect(HilosUserPage).toBeTypeOf('function')
