@@ -13,6 +13,7 @@
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "prebuild": "npm --prefix ../core run build",
     "build": "ng-packagr -p ng-package.json"
   },
   "dependencies": {
