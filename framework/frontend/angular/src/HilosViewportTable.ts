@@ -85,7 +85,7 @@ export interface ViewportTableRowContext<R> {
       }
 
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-striped table-hover align-middle mb-0">
           <thead>
             <tr>
               @for (column of columns(); track column.key) {
@@ -112,7 +112,10 @@ export interface ViewportTableRowContext<R> {
           </thead>
           <tbody>
             @for (view of rows(); track view.rowKey) {
-              <tr [attr.data-id]="'hilos-table-row-' + view.rowKey">
+              <tr
+                [attr.data-id]="'hilos-table-row-' + view.rowKey"
+                [class]="view.pending ? pendingRowClass[view.pending] : ''"
+              >
                 @if (view.placeholder) {
                   <td
                     [attr.colspan]="columns().length"
@@ -138,7 +141,18 @@ export interface ViewportTableRowContext<R> {
                   [attr.colspan]="columns().length"
                   class="text-center text-muted py-4"
                 >
-                  @if (empty(); as emptyTemplate) {
+                  @if (!loaded()) {
+                    <span
+                      class="d-inline-flex align-items-center gap-2"
+                      data-id="hilos-table-loading"
+                    >
+                      <span
+                        class="spinner-border spinner-border-sm"
+                        aria-hidden="true"
+                      ></span>
+                      {{ loadingText() }}
+                    </span>
+                  } @else if (empty(); as emptyTemplate) {
                     <ng-container [ngTemplateOutlet]="emptyTemplate" />
                   } @else {
                     {{ emptyText() }}
@@ -194,6 +208,8 @@ export class HilosViewportTable<R> {
   readonly searchPlaceholder = input('Search…')
   /** Message shown when there are no rows. */
   readonly emptyText = input('No rows.')
+  /** Message shown while the first window is still loading. */
+  readonly loadingText = input('Loading…')
   /** Label shown in a removed row's placeholder slot. */
   readonly placeholderText = input('Removed')
 
@@ -209,7 +225,17 @@ export class HilosViewportTable<R> {
   protected readonly totalCount = signal(0)
   protected readonly pendingCount = signal(0)
   protected readonly listChanged = signal(false)
+  protected readonly loaded = signal(false)
   protected readonly paginated = computed(() => this.pageCount() > 1)
+
+  // A row with an unapplied pending change gets a subtle, theme-aware tint that
+  // stands out from the zebra striping: amber for a waiting update, red for a
+  // waiting removal. Bootstrap's contextual row classes carry their own
+  // dark-mode variants, so they adapt to the active theme with no custom styles.
+  protected readonly pendingRowClass: Record<'update' | 'remove', string> = {
+    update: 'table-warning',
+    remove: 'table-danger',
+  }
 
   constructor() {
     // The controller arrives via input (not at construction) and carries core
@@ -234,6 +260,7 @@ export class HilosViewportTable<R> {
         bind(controller.totalCount, this.totalCount),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.listChanged, this.listChanged),
+        bind(controller.loaded, this.loaded),
       ]
       onCleanup(() => {
         for (const unsubscribe of subscriptions) {

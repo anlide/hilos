@@ -26,10 +26,21 @@ export interface HilosViewportTableProps<R> {
   searchPlaceholder?: string
   /** Message shown when there are no rows. */
   emptyText?: string
+  /** Message shown while the first window is still loading. */
+  loadingText?: string
   /** Replace the empty-state cell content. */
   empty?: ReactNode
   /** Label shown in a removed row's placeholder slot. */
   placeholderText?: string
+}
+
+// A row with an unapplied pending change gets a subtle, theme-aware tint that
+// stands out from the zebra striping: amber for a waiting update, red for a
+// waiting removal. Bootstrap's contextual row classes carry their own dark-mode
+// variants, so they adapt to the active theme with no custom style layer.
+const PENDING_ROW_CLASS: Record<'update' | 'remove', string> = {
+  update: 'table-warning',
+  remove: 'table-danger',
 }
 
 /**
@@ -44,6 +55,7 @@ export function HilosViewportTable<R>({
   searchable = false,
   searchPlaceholder = 'Search…',
   emptyText = 'No rows.',
+  loadingText = 'Loading…',
   empty,
   placeholderText = 'Removed',
 }: HilosViewportTableProps<R>) {
@@ -55,6 +67,7 @@ export function HilosViewportTable<R>({
   const totalCount = useSignal(controller.totalCount)
   const pendingCount = useSignal(controller.pendingCount)
   const listChanged = useSignal(controller.listChanged)
+  const loaded = useSignal(controller.loaded)
   const paginated = pageCount > 1
 
   function sortIcon(key: string): string {
@@ -109,7 +122,7 @@ export function HilosViewportTable<R>({
       ) : null}
 
       <div className="table-responsive">
-        <table className="table table-hover align-middle mb-0">
+        <table className="table table-striped table-hover align-middle mb-0">
           <thead>
             <tr>
               {columns.map((column) => (
@@ -136,7 +149,13 @@ export function HilosViewportTable<R>({
           </thead>
           <tbody>
             {rows.map((view) => (
-              <tr key={view.rowKey} data-id={`hilos-table-row-${view.rowKey}`}>
+              <tr
+                key={view.rowKey}
+                data-id={`hilos-table-row-${view.rowKey}`}
+                className={
+                  view.pending ? PENDING_ROW_CLASS[view.pending] : undefined
+                }
+              >
                 {/* A placeholder row carries a null row; the null check also
                     narrows the type for the render prop. */}
                 {view.placeholder || view.row === null ? (
@@ -158,7 +177,20 @@ export function HilosViewportTable<R>({
                   colSpan={columns.length}
                   className="text-center text-muted py-4"
                 >
-                  {empty ?? emptyText}
+                  {!loaded ? (
+                    <span
+                      className="d-inline-flex align-items-center gap-2"
+                      data-id="hilos-table-loading"
+                    >
+                      <span
+                        className="spinner-border spinner-border-sm"
+                        aria-hidden="true"
+                      />
+                      {loadingText}
+                    </span>
+                  ) : (
+                    (empty ?? emptyText)
+                  )}
                 </td>
               </tr>
             ) : null}

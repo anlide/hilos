@@ -25,6 +25,8 @@ const props = withDefaults(
     searchPlaceholder?: string
     /** Message shown when there are no rows. */
     emptyText?: string
+    /** Message shown while the first window is still loading. */
+    loadingText?: string
     /** Label shown in a removed row's placeholder slot. */
     placeholderText?: string
   }>(),
@@ -32,6 +34,7 @@ const props = withDefaults(
     searchable: false,
     searchPlaceholder: 'Search…',
     emptyText: 'No rows.',
+    loadingText: 'Loading…',
     placeholderText: 'Removed',
   },
 )
@@ -44,8 +47,18 @@ const pageCount = useSignal(props.controller.pageCount)
 const totalCount = useSignal(props.controller.totalCount)
 const pendingCount = useSignal(props.controller.pendingCount)
 const listChanged = useSignal(props.controller.listChanged)
+const loaded = useSignal(props.controller.loaded)
 
 const paginated = computed(() => pageCount.value > 1)
+
+// A row with an unapplied pending change gets a subtle, theme-aware tint that
+// stands out from the zebra striping: amber for a waiting update, red for a
+// waiting removal. Bootstrap's contextual row classes carry their own dark-mode
+// variants, so they adapt to the active theme with no custom style layer.
+const PENDING_ROW_CLASS: Record<'update' | 'remove', string> = {
+  update: 'table-warning',
+  remove: 'table-danger',
+}
 
 function sortIcon(key: string): string {
   if (sort.value?.field !== key) {
@@ -99,7 +112,7 @@ function onSearchInput(event: Event): void {
     </div>
 
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-striped table-hover align-middle mb-0">
         <thead>
           <tr>
             <th
@@ -127,6 +140,7 @@ function onSearchInput(event: Event): void {
             v-for="view in rows"
             :key="view.rowKey"
             :data-id="`hilos-table-row-${view.rowKey}`"
+            :class="view.pending ? PENDING_ROW_CLASS[view.pending] : null"
           >
             <td
               v-if="view.placeholder || view.row === null"
@@ -140,7 +154,18 @@ function onSearchInput(event: Event): void {
           </tr>
           <tr v-if="rows.length === 0">
             <td :colspan="columns.length" class="text-center text-muted py-4">
-              <slot name="empty">{{ emptyText }}</slot>
+              <span
+                v-if="!loaded"
+                class="d-inline-flex align-items-center gap-2"
+                data-id="hilos-table-loading"
+              >
+                <span
+                  class="spinner-border spinner-border-sm"
+                  aria-hidden="true"
+                ></span>
+                {{ loadingText }}
+              </span>
+              <slot v-else name="empty">{{ emptyText }}</slot>
             </td>
           </tr>
         </tbody>

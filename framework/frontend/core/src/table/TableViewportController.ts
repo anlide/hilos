@@ -53,6 +53,8 @@ export interface TableViewportRow<R> {
   readonly row: R | null
   /** True when an applied removal replaced the row with a placeholder in its slot. */
   readonly placeholder: boolean
+  /** The kind of unapplied pending change waiting on this row, or null when none. */
+  readonly pending: 'update' | 'remove' | null
 }
 
 /**
@@ -98,6 +100,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly totalCountSignal = createSignal(0)
 
+  /** False until the first window arrives — lets the view tell "loading" from "empty". */
+  private readonly loadedSignal = createSignal(false)
+
   private readonly placeholderKeysSignal = createSignal<ReadonlySet<string>>(
     new Set(),
   )
@@ -118,6 +123,11 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Pending new total under the filter, or null when the set has not changed. */
   private pendingTotalCount: number | null = null
+
+  /** Per-row pending kind ('update' | 'remove') driving the row highlight; rebuilt on every pending change. */
+  private readonly pendingKindSignal = createSignal<
+    ReadonlyMap<string, 'update' | 'remove'>
+  >(new Map())
 
   /**
    * Row keys this connection is itself changing — their echoed delta applies at
@@ -140,6 +150,9 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Whether a pending set-change is waiting (the "list changed" banner). */
   readonly listChanged: ReadonlySignal<boolean>
 
+  /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
+  readonly loaded: ReadonlySignal<boolean>
+
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.pageSize = Math.max(1, Math.trunc(options.pageSize))
     this.filterSignal = createSignal<Record<string, unknown>>({
@@ -153,6 +166,7 @@ export class TableViewportController<R> implements TableWindowSink {
     })
     this.rows = computedSignal(() => {
       const placeholders = this.placeholderKeysSignal.get()
+      const pendingKinds = this.pendingKindSignal.get()
 
       return this.windowSignal.get().map((raw) => {
         const placeholder = placeholders.has(raw.rowKey)
@@ -161,6 +175,7 @@ export class TableViewportController<R> implements TableWindowSink {
           rowKey: raw.rowKey,
           row: placeholder ? null : options.resolve(raw),
           placeholder,
+          pending: placeholder ? null : (pendingKinds.get(raw.rowKey) ?? null),
         }
       })
     })
@@ -170,6 +185,7 @@ export class TableViewportController<R> implements TableWindowSink {
     )
     this.pendingCount = this.pendingCountSignal
     this.listChanged = this.listChangedSignal
+    this.loaded = this.loadedSignal
   }
 
   /** The current search query (empty string when unset). */
@@ -261,6 +277,7 @@ export class TableViewportController<R> implements TableWindowSink {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
     this.placeholderKeysSignal.set(new Set())
+    this.loadedSignal.set(true)
     this.clearPending()
   }
 
@@ -390,6 +407,24 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearPending()
   }
 
+  /**
+   * Apply all pending changes, then resolve the row's current view-model — used
+   * when opening an edit / delete dialog so it reflects the latest committed
+   * state. Returns null when the row is now a placeholder (its removal was
+   * applied) or has left the window, so the dialog can decline to open.
+   *
+   * @param rowKey The row whose fresh view-model the dialog needs.
+   */
+  applyAndResolve(rowKey: string): R | null {
+    this.apply()
+    if (this.placeholderKeysSignal.get().has(rowKey)) {
+      return null
+    }
+    const raw = this.windowSignal.get().find((row) => row.rowKey === rowKey)
+
+    return raw ? this.options.resolve(raw) : null
+  }
+
   private isInWindow(rowKey: string): boolean {
     return this.windowSignal.get().some((row) => row.rowKey === rowKey)
   }
@@ -416,6 +451,14 @@ export class TableViewportController<R> implements TableWindowSink {
         (this.pendingTotalCount !== null ? 1 : 0),
     )
     this.listChangedSignal.set(this.pendingTotalCount !== null)
+    const pendingKinds = new Map<string, 'update' | 'remove'>()
+    for (const rowKey of this.pendingUpdates.keys()) {
+      pendingKinds.set(rowKey, 'update')
+    }
+    for (const rowKey of this.pendingRemoved.keys()) {
+      pendingKinds.set(rowKey, 'remove')
+    }
+    this.pendingKindSignal.set(pendingKinds)
   }
 
   /** The viewport descriptor for the current filter, sort, and page. */

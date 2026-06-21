@@ -101,10 +101,16 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const editDirty = !!editRow && editOverride !== editRow.overrideValue
 
   function openEdit(row: HilosSettingRow): void {
+    // Flush pending so the dialog edits the latest committed row; a row removed
+    // by someone else (now a placeholder) declines to open.
+    const fresh = settings.controller.applyAndResolve(row.key)
+    if (!fresh) {
+      return
+    }
     edit.clearError()
-    setEditRow(row)
-    setEditUseCustom(isPersistedSetting(row))
-    setEditValue(row.overrideValue ?? row.value ?? '')
+    setEditRow(fresh)
+    setEditUseCustom(isPersistedSetting(fresh))
+    setEditValue(fresh.overrideValue ?? fresh.value ?? '')
     setEditOpen(true)
   }
 
@@ -134,8 +140,13 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   function openDelete(row: HilosSettingRow): void {
+    // Flush pending; a row already removed by someone else does not open a delete.
+    const fresh = settings.controller.applyAndResolve(row.key)
+    if (!fresh) {
+      return
+    }
     del.clearError()
-    setDeleteRow(row)
+    setDeleteRow(fresh)
     setDeleteOpen(true)
   }
 

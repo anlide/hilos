@@ -75,7 +75,12 @@ describe('TableViewportController', () => {
     controller.ingestWindow([{ rowKey: 'a', slots: {} }], 42)
 
     expect(controller.rows.get()).toEqual([
-      { rowKey: 'a', row: { rowKey: 'a', slots: {} }, placeholder: false },
+      {
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: {} },
+        placeholder: false,
+        pending: null,
+      },
     ])
     expect(controller.totalCount.get()).toBe(42)
     expect(controller.pageCount.get()).toBe(5)
@@ -122,7 +127,12 @@ describe('TableViewportController', () => {
 
     const rows = controller.rows.get()
     expect(rows).toHaveLength(2) // layout not collapsed
-    expect(rows[0]).toEqual({ rowKey: 'a', row: null, placeholder: true })
+    expect(rows[0]).toEqual({
+      rowKey: 'a',
+      row: null,
+      placeholder: true,
+      pending: null,
+    })
     expect(rows[1]?.placeholder).toBe(false)
   })
 
@@ -222,6 +232,7 @@ describe('TableViewportController', () => {
       rowKey: 'a',
       row: null,
       placeholder: true,
+      pending: null,
     })
   })
 
@@ -238,5 +249,67 @@ describe('TableViewportController', () => {
     })
 
     expect(controller.pendingCount.get()).toBe(1)
+  })
+
+  it('is not loaded until the first window arrives', () => {
+    const { controller } = makeController()
+    expect(controller.loaded.get()).toBe(false)
+    controller.ingestWindow([], 0)
+    expect(controller.loaded.get()).toBe(true)
+  })
+
+  it('exposes the pending kind on the affected rows', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'b', slots: {} },
+        { rowKey: 'c', slots: {} },
+      ],
+      3,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: {} },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+
+    const rows = controller.rows.get()
+    expect(rows[0]?.pending).toBe('update')
+    expect(rows[1]?.pending).toBe('remove')
+    expect(rows[2]?.pending).toBeNull()
+  })
+
+  it('applyAndResolve applies pending and returns the fresh row', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    expect(controller.applyAndResolve('a')).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('applyAndResolve returns null for a row whose removal it applies', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+
+    expect(controller.applyAndResolve('a')).toBeNull()
   })
 })

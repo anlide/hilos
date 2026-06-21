@@ -342,10 +342,16 @@ export class HilosSettingsPage {
   }
 
   protected openEdit(row: HilosSettingRow): void {
+    // Flush pending so the dialog edits the latest committed row; a row removed
+    // by someone else (now a placeholder) declines to open.
+    const fresh = this.settings().controller.applyAndResolve(row.key)
+    if (!fresh) {
+      return
+    }
     this.edit.clearError()
-    this.editRow.set(row)
-    this.editUseCustom.set(isPersistedSetting(row))
-    this.editValue.set(row.overrideValue ?? row.value ?? '')
+    this.editRow.set(fresh)
+    this.editUseCustom.set(isPersistedSetting(fresh))
+    this.editValue.set(fresh.overrideValue ?? fresh.value ?? '')
     this.editOpen.set(true)
   }
 
@@ -373,8 +379,13 @@ export class HilosSettingsPage {
   }
 
   protected openDelete(row: HilosSettingRow): void {
+    // Flush pending; a row already removed by someone else does not open a delete.
+    const fresh = this.settings().controller.applyAndResolve(row.key)
+    if (!fresh) {
+      return
+    }
     this.del.clearError()
-    this.deleteRow.set(row)
+    this.deleteRow.set(fresh)
     this.deleteOpen.set(true)
   }
 

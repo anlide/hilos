@@ -109,10 +109,16 @@ const {
 } = useTrackedAction()
 
 function openEdit(row: HilosSettingRow): void {
+  // Flush pending so the dialog edits the latest committed row; a row removed by
+  // someone else (now a placeholder) declines to open.
+  const fresh = settings.controller.applyAndResolve(row.key)
+  if (!fresh) {
+    return
+  }
   clearEditError()
-  editRow.value = row
-  editUseCustom.value = isPersistedSetting(row)
-  editValue.value = row.overrideValue ?? row.value ?? ''
+  editRow.value = fresh
+  editUseCustom.value = isPersistedSetting(fresh)
+  editValue.value = fresh.overrideValue ?? fresh.value ?? ''
   editOpen.value = true
 }
 
@@ -143,8 +149,13 @@ async function submitEdit(): Promise<void> {
 }
 
 function openDelete(row: HilosSettingRow): void {
+  // Flush pending; a row already removed by someone else does not open a delete.
+  const fresh = settings.controller.applyAndResolve(row.key)
+  if (!fresh) {
+    return
+  }
   clearDeleteError()
-  deleteRow.value = row
+  deleteRow.value = fresh
   deleteOpen.value = true
 }
 
