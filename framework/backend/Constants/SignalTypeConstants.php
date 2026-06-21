@@ -38,6 +38,9 @@ final class SignalTypeConstants
     /** @var string Table window signal type (server-to-client window snapshot for one table) */
     public const string TABLE_WINDOW = 'table_window';
 
+    /** @var string Table viewport delta signal type (server-to-client live pending change for one table) */
+    public const string TABLE_VIEWPORT_DELTA = 'table_viewport_delta';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 
