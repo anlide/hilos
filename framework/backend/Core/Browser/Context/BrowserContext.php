@@ -212,7 +212,7 @@ abstract class BrowserContext
                 continue;
             }
             $browserRow = $table->browserRow($row);
-            $rows[] = $browserRow;
+            $rows[] = $this->browserRowToWire($browserRow);
             $rowIds[] = (string) $browserRow[BrowserPageSignalData::rowKey];
         }
 
@@ -257,6 +257,25 @@ abstract class BrowserContext
             offset: $viewport->offset,
             limit: $viewport->limit,
         );
+    }
+
+    /**
+     * Converts an internal browser row to its wire form.
+     *
+     * The internal envelope keys the source fragments under `sources`; the wire
+     * row the frontend normalizer ingests keys them under `slots`, the same shape
+     * page_response table rows use. table_window and table_viewport_delta rows go
+     * through here so every table row reaches the client in one shape.
+     *
+     * @param array{rowKey: int|string, sources: array<string, mixed>} $browserRow Internal browser row
+     * @return array{rowKey: int|string, slots: array<string, mixed>} Wire row
+     */
+    private function browserRowToWire(array $browserRow): array
+    {
+        return [
+            PagePayload::rowKey => $browserRow[BrowserPageSignalData::rowKey],
+            PagePayload::slots => $browserRow[BrowserPageSignalData::sources],
+        ];
     }
 
     /**
@@ -1097,7 +1116,12 @@ abstract class BrowserContext
             return null;
         }
 
-        return TableViewportDeltaDTO::rowUpdated($page, $tableKey, $mutation->rowKey, $table->browserRow($mutation->row));
+        return TableViewportDeltaDTO::rowUpdated(
+            $page,
+            $tableKey,
+            $mutation->rowKey,
+            $this->browserRowToWire($table->browserRow($mutation->row)),
+        );
     }
 
     /**

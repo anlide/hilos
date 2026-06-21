@@ -10,6 +10,7 @@ use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
@@ -57,8 +58,8 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertSame('alpha', $delta->rowKey);
         $this->assertSame(
             [
-                BrowserPageSignalData::rowKey => 'alpha',
-                BrowserPageSignalData::sources => [
+                PagePayload::rowKey => 'alpha',
+                PagePayload::slots => [
                     ViewportDeltaUnitTable::SLOT => ['key' => 'alpha', 'label' => 'Alpha'],
                 ],
             ],

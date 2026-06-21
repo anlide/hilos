@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -67,8 +68,8 @@ final class BrowserContextTableWindowTest extends TestCase
                 TableWindowSignalData::tableKey => TableWindowUnitTable::TABLE,
                 TableWindowSignalData::rows => [
                     [
-                        BrowserPageSignalData::rowKey => 'b',
-                        BrowserPageSignalData::sources => [
+                        PagePayload::rowKey => 'b',
+                        PagePayload::slots => [
                             TableWindowUnitTable::SLOT => ['key' => 'b', 'label' => 'Beta'],
                         ],
                     ],
