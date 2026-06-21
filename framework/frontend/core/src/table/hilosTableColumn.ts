@@ -1,10 +1,10 @@
-// The column declaration a HilosTable header renders from. It is framework-
+// The column declaration a HilosViewportTable header renders from. It is framework-
 // agnostic view config — header text and which fields offer a sort control —
-// never table logic, which lives in the TableController (table-subscription.md,
-// multiframework-core.md). It lives in the core so every view layer's HilosTable
-// shares one column type.
+// never table logic, which lives in the TableViewportController (table-subscription.md,
+// multiframework-core.md). It lives in the core so every view layer's
+// HilosViewportTable shares one column type.
 
-/** One column of a HilosTable: its key, header label, and sortability. */
+/** One column of a HilosViewportTable: its key, header label, and sortability. */
 export interface HilosTableColumn {
   /** Column id — the sort field passed to the controller and the header's data-id. */
   key: string

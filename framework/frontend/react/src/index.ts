@@ -59,7 +59,6 @@ export {
   type HilosUserPageProps,
 } from './admin/users/HilosUserPage.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
-export { HilosTable, type HilosTableProps } from './HilosTable.js'
 export {
   HilosViewportTable,
   type HilosViewportTableProps,

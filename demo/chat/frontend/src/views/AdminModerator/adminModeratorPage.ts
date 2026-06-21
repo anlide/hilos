@@ -1,6 +1,6 @@
 // The moderation admin page selectors: the page-scoped prompt-pieces table rows
-// fed into a headless TableController, each raw row resolved into its
-// ModeratorPieceRow view-model. A piece carries an id, so the wire delivers it as
+// fed into a server-windowed TableViewportController, each raw row resolved into
+// its ModeratorPieceRow view-model. A piece carries an id, so the wire delivers it as
 // an entity reference in the `moderatorPromptPieces` slot (an id-bearing slot is
 // an entity by convention), resolved through the ModeratorPieces collection. The
 // view reads the controller, never a raw store.

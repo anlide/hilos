@@ -20,7 +20,14 @@ import {
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
-import { type SortDirection, type TableSort } from './TableController.js'
+/** Sort direction for the active sort field. */
+export type SortDirection = 'asc' | 'desc'
+
+/** The active sort: which field, which direction. */
+export interface TableSort {
+  readonly field: string
+  readonly direction: SortDirection
+}
 
 /** Generic filter-map key the search box writes; matches the backend `FILTER_KEY_SEARCH`. */
 const SEARCH_FILTER_KEY = 'search'

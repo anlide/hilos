@@ -12,7 +12,6 @@ import {
   HilosLink,
   HilosModal,
   HilosSettingsPage,
-  HilosTable,
   HilosUserPage,
   HilosUsersPage,
   HilosView,
@@ -35,7 +34,6 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosAdminPage).toBeTypeOf('function')
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
-  expect(HilosTable).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')
   expect(HilosUsersPage).toBeTypeOf('function')

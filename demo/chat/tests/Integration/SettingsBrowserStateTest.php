@@ -12,20 +12,16 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
-use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
-use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
-use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
-use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -43,14 +39,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
 
         try {
             $this->createOrphanSetting($orphanKey, 'snapshot orphan');
-            $this->resetFrontendRouter();
-            Hilos::$browser->subscribeSnapshot(PageConstants::HILOS_SETTINGS, 'settings-snapshot-ak', new PageRouteParams([]));
-
-            $payload = $this->drainSinglePayload(
-                SignalTypeConstants::PAGE_RESPONSE,
-                'settings-snapshot-ak',
-            );
-            $rows = $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [];
+            $rows = $this->sendSettingsWindow('settings-snapshot-ak');
 
             $placeholderRow = $this->findSettingsBrowserRow(
                 $rows,
@@ -93,62 +82,39 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
         try {
             $this->deleteSettingIfExists($catalogKey);
             $this->createOrphanSetting($orphanKey, 'delete orphan');
-            $this->resetFrontendRouter();
-            Hilos::$sr->subscribeToPage(PageConstants::HILOS_SETTINGS, new WebSocketPageSubscribeSignalDTO(
-                'settings-mutation-ak',
-                PageConstants::HILOS_SETTINGS,
-                [],
-            ));
 
             Hilos::$table->settings->actions->add($catalogKey, 'browser custom');
-            $payload = $this->drainSinglePayload(
-                SignalTypeConstants::PAGE_RESPONSE,
-                'settings-mutation-ak',
-                flushFrontend: true,
-            );
             $created = $this->settingsSource($this->findSettingsBrowserRow(
-                $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
+                $this->sendSettingsWindow('settings-mutation-ak'),
                 $catalogKey,
             ));
             $this->assertSame('browser custom', $created[HilosSettingTableRow::overrideValue]);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $created[HilosSettingTableRow::valueSource]);
 
             Hilos::$table->settings[$catalogKey]->actions->updateValue(null);
-            $payload = $this->drainSinglePayload(
-                SignalTypeConstants::PAGE_RESPONSE,
-                'settings-mutation-ak',
-                flushFrontend: true,
-            );
             $updated = $this->settingsSource($this->findSettingsBrowserRow(
-                $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
+                $this->sendSettingsWindow('settings-mutation-ak'),
                 $catalogKey,
             ));
             $this->assertNull($updated[HilosSettingTableRow::overrideValue]);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $updated[HilosSettingTableRow::valueSource]);
 
+            // Deleting the override of a catalog key reverts the row to its default
+            // placeholder; it stays in the window rather than being removed.
             Hilos::$db->settings[$catalogKey]?->actions->delete();
-            $payload = $this->drainSinglePayload(
-                SignalTypeConstants::PAGE_RESPONSE,
-                'settings-mutation-ak',
-                flushFrontend: true,
-            );
             $afterDelete = $this->settingsSource($this->findSettingsBrowserRow(
-                $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::rows] ?? [],
+                $this->sendSettingsWindow('settings-mutation-ak'),
                 $catalogKey,
             ));
             $this->assertArrayNotHasKey(HilosSettingTableRow::id, $afterDelete);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $afterDelete[HilosSettingTableRow::valueSource]);
-            $deleted = $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::deleted] ?? [];
-            $this->assertNotContains($catalogKey, $deleted);
 
+            // Deleting an orphan (uncataloged) key removes it from the window entirely.
             Hilos::$table->settings[$orphanKey]->actions->delete();
-            $payload = $this->drainSinglePayload(
-                SignalTypeConstants::PAGE_RESPONSE,
-                'settings-mutation-ak',
-                flushFrontend: true,
-            );
-            $deleted = $payload[PagePayload::tables][ChatTableContext::settings][PagePayload::deleted] ?? [];
-            $this->assertContains($orphanKey, $deleted);
+            $this->assertNull($this->findSettingsBrowserRow(
+                $this->sendSettingsWindow('settings-mutation-ak'),
+                $orphanKey,
+            ));
         } finally {
             $this->deleteSettingIfExists($catalogKey);
             if ($originalExists) {
@@ -183,24 +149,39 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     }
 
     /**
-     * Drains one browser payload from the queue.
+     * Sends the full settings window to a connection and returns its rows.
      *
-     * @param string $signalName Browser page signal name
-     * @param string $targetAcceptKey Expected target accept key
-     * @param bool $flushFrontend Whether queued DB sync signals should be flushed first
-     * @return array<string, mixed> Browser payload array
+     * Settings is a viewport table, so its rows reach the client through the
+     * table_viewport / table_window cycle. The window query reads the current DB
+     * state, so it reflects any preceding mutation without a source-change flush.
+     *
+     * @param string $acceptKey Target accept key
+     * @return list<array<string, mixed>> Window rows
      */
-    private function drainSinglePayload(string $signalName, string $targetAcceptKey, bool $flushFrontend = false): array
+    private function sendSettingsWindow(string $acceptKey): array
     {
-        if ($flushFrontend) {
-            $this->drainSyncSignalsToFrontendBuffers();
-            Hilos::$browser?->flushToSignalRouter();
-        }
+        $this->resetFrontendRouter();
+        Hilos::$browser?->sendTableWindow(
+            PageConstants::HILOS_SETTINGS,
+            $acceptKey,
+            new TableViewportSubscription(tableKey: ChatTableContext::settings, limit: TableConstants::NO_LIMIT),
+        );
 
+        return $this->drainWindowRows($acceptKey);
+    }
+
+    /**
+     * Drains the single table_window addressed to the accept key and returns its rows.
+     *
+     * @param string $targetAcceptKey Expected target accept key
+     * @return list<array<string, mixed>> Window rows
+     */
+    private function drainWindowRows(string $targetAcceptKey): array
+    {
         $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             if (
-                $signal->signalName->getName() === $signalName
+                $signal->signalName->getName() === SignalTypeConstants::TABLE_WINDOW
                 && $signal->data instanceof WebSocketSignalData
                 && $signal->data->targetAcceptKey === $targetAcceptKey
             ) {
@@ -211,47 +192,12 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
         $this->assertCount(1, $signals);
         $webSocketData = $signals[0]->data;
         $this->assertInstanceOf(WebSocketSignalData::class, $webSocketData);
-        $this->assertInstanceOf(PageResponseSignalData::class, $webSocketData->data);
+        $this->assertInstanceOf(TableWindowSignalData::class, $webSocketData->data);
 
-        $payload = $webSocketData->data->toArray()[PageResponseSignalData::payload] ?? [];
-        $this->assertIsArray($payload);
+        $rows = $webSocketData->data->toArray()[TableWindowSignalData::rows] ?? [];
+        $this->assertIsArray($rows);
 
-        return $payload;
-    }
-
-    /**
-     * Records queued DB sync signals as browser source changes.
-     */
-    private function drainSyncSignalsToFrontendBuffers(): void
-    {
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
-            $change = $this->sourceChangeFromSignal($signal);
-            if ($change === null) {
-                continue;
-            }
-            Hilos::$browser?->record($change);
-        }
-    }
-
-    /**
-     * Converts a sync signal to a source change.
-     */
-    private function sourceChangeFromSignal(SignalDTO $signal): ?SourceChange
-    {
-        $signalType = $signal->signalType->getType();
-        $signalData = $signal->data;
-
-        if ($signalType === SignalTypeConstants::DB_SYNC_CREATED && $signalData instanceof DbSyncCreatedSignalData) {
-            return SourceChange::dbCreated($signalData->collectionKey, $signalData->idString, $signalData->row);
-        }
-        if ($signalType === SignalTypeConstants::DB_SYNC_UPDATED && $signalData instanceof DbSyncUpdatedSignalData) {
-            return SourceChange::dbUpdated($signalData->collectionKey, $signalData->idString, $signalData->row);
-        }
-        if ($signalType === SignalTypeConstants::DB_SYNC_DELETED && $signalData instanceof DbSyncDeletedSignalData) {
-            return SourceChange::dbDeleted($signalData->collectionKey, $signalData->idString, $signalData->row);
-        }
-
-        return null;
+        return $rows;
     }
 
     /**

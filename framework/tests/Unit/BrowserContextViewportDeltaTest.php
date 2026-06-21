@@ -11,7 +11,6 @@ use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -100,7 +99,7 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertNull($delta->rowKey);
     }
 
-    public function testNoViewportFallsBackToThePageResponsePath(): void
+    public function testNoViewportDropsTheChange(): void
     {
         Hilos::$sr = new SignalRouter();
         Hilos::$table = new ViewportDeltaUnitTableContext([new ViewportDeltaUnitRow('alpha', 'Alpha')]);
@@ -114,11 +113,9 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
         $context->flushToSignalRouter();
 
-        $signal = Hilos::$sr->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        // A viewport table with no active viewport delivers nothing — the change is
+        // dropped, and the next table_viewport request returns the current window.
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     /**

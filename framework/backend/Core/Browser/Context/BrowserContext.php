@@ -36,7 +36,6 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -134,12 +133,9 @@ abstract class BrowserContext
         foreach ($this->pageTables($page) as $pageTableBinding) {
             $tableKey = $pageTableBinding->tableKey;
 
-            $selfSnapshotTable = $this->selfSnapshotTable($tableKey);
-            if ($selfSnapshotTable !== null) {
-                $rows = $this->selfSnapshotRows($selfSnapshotTable);
-                if ($rows !== []) {
-                    $tables[$tableKey] = [BrowserPageSignalData::rows => $rows];
-                }
+            if ($this->viewportTable($tableKey) !== null) {
+                // Viewport tables deliver their rows through the table_viewport /
+                // table_window cycle, not the subscription snapshot.
                 continue;
             }
 
@@ -408,14 +404,12 @@ abstract class BrowserContext
                         $viewport = Hilos::$sr->getTableViewport($acceptKey, $tableKey);
                         if ($viewport !== null) {
                             $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $tableKey);
-                            continue;
                         }
-                        if ($viewportTable instanceof SelfSnapshotTable) {
-                            $this->accumulateSelfSnapshotChange($signalTables, $viewportTable, $change, $acceptKey, $page, $tableKey);
-                            continue;
-                        }
-                        // A source-fanned viewport table with no active viewport on this
-                        // connection delivers through the declarative page_response path below.
+                        // A viewport table is delivered only through its window and
+                        // deltas; with or without an active viewport it never uses the
+                        // page_response table fan-out. Lists and data are not viewport
+                        // tables and fall through to the declarative path below.
+                        continue;
                     }
 
                     $tableConfig = $this->tableConfig($tableKey);
@@ -957,95 +951,6 @@ abstract class BrowserContext
         $table = Hilos::$table?->get($tableKey);
 
         return $table instanceof ViewportTable ? $table : null;
-    }
-
-    /**
-     * Resolves a page-bound table as a self-snapshot table, when it is one.
-     *
-     * @param string $tableKey Browser table key
-     * @return ?SelfSnapshotTable Self-snapshot table, or null when absent or source-fanned
-     */
-    private function selfSnapshotTable(string $tableKey): ?SelfSnapshotTable
-    {
-        $table = Hilos::$table?->get($tableKey);
-
-        return $table instanceof SelfSnapshotTable ? $table : null;
-    }
-
-    /**
-     * Builds full browser rows for a self-snapshot table from its own snapshot.
-     *
-     * @param SelfSnapshotTable $table Self-snapshot table
-     * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Internal browser rows
-     */
-    private function selfSnapshotRows(SelfSnapshotTable $table): array
-    {
-        try {
-            $snapshot = $table->getFullSnapshot();
-        } catch (Throwable) {
-            return [];
-        }
-
-        $rows = [];
-        foreach ($snapshot->rows as $row) {
-            if ($row instanceof AbstractTableRow) {
-                $rows[] = $table->browserRow($row);
-            }
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Accumulates one self-snapshot table change into the tick-local signal accumulator.
-     *
-     * The table owns whether the change affects it and which row it maps to
-     * through buildMutationForSourceEvent(); the base context only serializes the
-     * resulting row or routes a delete.
-     *
-     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
-     * @param SelfSnapshotTable $table Self-snapshot table
-     * @param SourceChange $change Grouped DB/RT source change
-     * @param string $acceptKey Target accept key
-     * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
-     */
-    private function accumulateSelfSnapshotChange(
-        array &$signalTables,
-        SelfSnapshotTable $table,
-        SourceChange $change,
-        string $acceptKey,
-        string $page,
-        string $tableKey,
-    ): void {
-        try {
-            $mutation = $table->buildMutationForSourceEvent($change);
-        } catch (Throwable) {
-            return;
-        }
-
-        if ($mutation === null) {
-            return;
-        }
-
-        if ($mutation->type === TableMutationType::Delete) {
-            $this->addBrowserDelete($signalTables, $acceptKey, $page, $tableKey, $mutation->rowKey);
-
-            return;
-        }
-
-        if ($mutation->row === null) {
-            return;
-        }
-
-        $this->addBrowserRow(
-            $signalTables,
-            $acceptKey,
-            $page,
-            $tableKey,
-            $mutation->rowKey,
-            $table->browserRow($mutation->row),
-        );
     }
 
     /**

@@ -50,14 +50,9 @@ export {
   type ScopePayload,
 } from './state/normalizer.js'
 export {
-  TableController,
+  TableViewportController,
   type SortDirection,
   type TableSort,
-  type TableViewRow,
-  type TableControllerOptions,
-} from './table/TableController.js'
-export {
-  TableViewportController,
   type TableViewportControllerOptions,
   type TableViewportRow,
   type TableViewportDelta,

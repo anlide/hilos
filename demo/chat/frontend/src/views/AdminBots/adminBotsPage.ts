@@ -1,5 +1,6 @@
 // The bots admin page selectors: the page-scoped bots table rows fed into a
-// headless TableController, each raw row resolved into its BotRow view-model. The
+// server-windowed TableViewportController, each raw row resolved into its BotRow
+// view-model. The
 // backend bots table carries the bot entity in the `bots` slot (resolved through
 // the Bots collection, so an edit fans out for free) and the runtime agent status
 // in the inline `botAgentStatuses` slot. The view reads the controller, never a

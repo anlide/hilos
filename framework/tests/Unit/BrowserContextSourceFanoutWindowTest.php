@@ -34,7 +34,7 @@ use PHPUnit\Framework\TestCase;
  * Proves the server-windowed viewport path is generalized beyond self-snapshot
  * tables: a source-fanned {@see ViewportTable} (the kind the Hilos users table is)
  * is served its window and live deltas exactly like settings, while the same table
- * with no active viewport keeps the declarative page_response delivery.
+ * with no active viewport delivers nothing (it never uses page_response).
  */
 final class BrowserContextSourceFanoutWindowTest extends TestCase
 {
@@ -157,8 +157,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         $context->record(SourceChange::dbUpdated(SourceFanoutWindowUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
         $context->flushToSignalRouter();
 
-        // No viewport and no declarative browser config on this fixture, so the
-        // change reaches neither the delta path nor a page_response.
+        // A viewport table with no active viewport delivers nothing — the change
+        // is dropped (the next table_viewport request returns the current window).
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
