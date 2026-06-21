@@ -56,6 +56,10 @@ export {
   type TableViewRow,
   type TableControllerOptions,
 } from './table/TableController.js'
+export {
+  TableViewportController,
+  type TableViewportControllerOptions,
+} from './table/TableViewportController.js'
 export { type HilosTableColumn } from './table/hilosTableColumn.js'
 export {
   createLoadingButtonState,
