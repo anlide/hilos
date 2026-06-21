@@ -15,10 +15,13 @@ import {
   ActionLifecycle,
   type ActionHandle,
 } from '../../connection/actionLifecycle.js'
+import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { HilosPages } from '../../routing/hilosPages.js'
 import { readString, readStringOrNull } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
-import { TableController } from '../../table/TableController.js'
+import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import { TableViewportController } from '../../table/TableViewportController.js'
 
 /** Where a setting's effective value comes from. */
 export type SettingValueSource = 'default' | 'reference' | 'override' | 'orphan'
@@ -53,6 +56,7 @@ export interface HilosSettingRow {
 // project binds its backend to these keys.
 const SETTINGS_TABLE = 'settings'
 const SETTINGS_SLOT = 'settings'
+const SETTINGS_PAGE_SIZE = 10
 const SETTING_ADD_ACTION = 'setting_add'
 const SETTING_UPDATE_ACTION = 'setting_update'
 const SETTING_DELETE_ACTION = 'setting_delete'
@@ -64,7 +68,9 @@ const SETTING_DELETE_ACTION = 'setting_delete'
  * and behavior) is the framework's; the catalog content is the project's backend.
  */
 export interface HilosSettingsContext {
-  /** The scope manager that owns the page-scoped settings table rows. */
+  /** The connection the table sends its viewport over and receives its window / deltas from. */
+  readonly connection: HilosConnection
+  /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
   /** The action lifecycle the add / update / delete tracked actions dispatch over. */
   readonly actions: ActionLifecycle
@@ -140,23 +146,69 @@ export function isPersistedSetting(row: HilosSettingRow): boolean {
   return row.valueSource === 'override' || row.valueSource === 'orphan'
 }
 
+/** The settings table handle a settings view drives: the controller plus its mount lifecycle. */
+export interface HilosSettingsTable {
+  /** The server-windowed controller the view renders rows, descriptor, and pending from. */
+  readonly controller: TableViewportController<HilosSettingRow>
+  /** Bind the table to the connection and request the first window — call on mount. */
+  start(): void
+  /** Unbind from the connection — call on unmount. */
+  dispose(): void
+}
+
 /**
- * The headless controller for the Hilos settings table (client viewport): search
- * by key or value, sort by key or value. Rows resolve through
- * {@link resolveHilosSettingRow}.
+ * The server-windowed controller for the Hilos settings table: search, sort, and
+ * paging change the viewport descriptor sent over the connection, and the backend
+ * replies a window plus live deltas scoped to the table's (page, tableKey)
+ * address. Rows resolve through {@link resolveHilosSettingRow}. The returned
+ * handle's `start` binds the table to its address and requests the first window;
+ * `dispose` unbinds it (the view calls them on mount / unmount).
  *
- * @param context The project context (its scope stores).
+ * @param context The project context (connection and scope stores).
  */
 export function createHilosSettingsTable(
   context: HilosSettingsContext,
-): TableController<HilosSettingRow> {
-  return new TableController<HilosSettingRow>({
-    source: context.scopes.pageTableSignal(SETTINGS_TABLE),
+): HilosSettingsTable {
+  const controller = new TableViewportController<HilosSettingRow>({
     resolve: resolveHilosSettingRow,
-    searchText: (row) => `${row.key} ${row.value ?? ''}`,
-    sortValue: (row, field) => (field === 'value' ? row.value : row.key),
+    sendViewport: (descriptor) =>
+      context.connection.sendTableViewport(
+        HilosPages.SETTINGS,
+        SETTINGS_TABLE,
+        descriptor,
+      ),
+    pageSize: SETTINGS_PAGE_SIZE,
     initialSort: { field: 'key', direction: 'asc' },
   })
+  const teardown: Array<() => void> = []
+
+  return {
+    controller,
+    start() {
+      teardown.push(
+        bindTableViewport(
+          context.connection,
+          context.scopes,
+          { page: HilosPages.SETTINGS, tableKey: SETTINGS_TABLE },
+          controller,
+        ),
+        // Re-request the window whenever the socket (re)connects: the initial
+        // request below can run before the connection is open, and a reconnect
+        // is a fresh exchange that no longer remembers this connection's window.
+        context.connection.on('state', (state) => {
+          if (state === 'connected') {
+            controller.start()
+          }
+        }),
+      )
+      controller.start()
+    },
+    dispose() {
+      for (const off of teardown.splice(0)) {
+        off()
+      }
+    },
+  }
 }
 
 /**

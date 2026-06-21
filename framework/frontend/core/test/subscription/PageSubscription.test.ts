@@ -3,8 +3,6 @@ import { PageSubscription } from '../../src/subscription/PageSubscription.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
 import { type ConnectionState } from '../../src/connection/HilosConnection.js'
-import { type TableRow } from '../../src/state/TableRowsStore.js'
-import { type TableViewportDelta } from '../../src/table/TableViewportController.js'
 
 /** A connection double recording sent frames and replaying state changes. */
 function fakeConnection(initialState: ConnectionState = 'connected') {
@@ -32,23 +30,6 @@ function fakeConnection(initialState: ConnectionState = 'connected') {
       listeners.push(listener)
 
       return () => {}
-    },
-  }
-}
-
-/** A table controller double recording the windows and deltas routed to it. */
-function fakeSink() {
-  const windows: Array<{ rows: readonly TableRow[]; totalCount: number }> = []
-  const deltas: TableViewportDelta[] = []
-
-  return {
-    windows,
-    deltas,
-    ingestWindow(rows: readonly TableRow[], totalCount: number): void {
-      windows.push({ rows, totalCount })
-    },
-    ingestDelta(delta: TableViewportDelta): void {
-      deltas.push(delta)
     },
   }
 }
@@ -161,81 +142,5 @@ describe('PageSubscription', () => {
 
     expect(applied).toBe(false)
     expect(scopes.page()?.data.signal('title').get()).toBeUndefined()
-  })
-
-  it('routes a table window to a registered controller, normalizing rows', () => {
-    const connection = fakeConnection()
-    const scopes = new ScopeManager()
-    const pages = new PageSubscription(connection, scopes)
-    pages.subscribe('main')
-    const sink = fakeSink()
-    pages.registerTable('settings', sink)
-
-    const routed = pages.ingestTableWindow(
-      'main',
-      'settings',
-      [{ rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } }],
-      12,
-    )
-
-    expect(routed).toBe(true)
-    expect(sink.windows).toHaveLength(1)
-    expect(sink.windows[0]?.totalCount).toBe(12)
-    expect(sink.windows[0]?.rows[0]).toEqual({
-      rowKey: 'a',
-      slots: { user: { type: 'user', id: 7 } },
-    })
-    const ref = sink.windows[0]?.rows[0]?.slots['user'] as EntityRef
-    expect(scopes.entitySignal(ref).get()?.fields['name']).toBe('Ada')
-  })
-
-  it('routes a row_updated delta to the registered controller', () => {
-    const connection = fakeConnection()
-    const pages = new PageSubscription(connection, new ScopeManager())
-    pages.subscribe('main')
-    const sink = fakeSink()
-    pages.registerTable('settings', sink)
-
-    const routed = pages.ingestTableDelta({
-      page: 'main',
-      tableKey: 'settings',
-      kind: 'row_updated',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { value: 'x' } },
-    })
-
-    expect(routed).toBe(true)
-    expect(sink.deltas[0]).toEqual({
-      kind: 'row_updated',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { value: 'x' } },
-    })
-  })
-
-  it('drops a table window for a page that is not current', () => {
-    const connection = fakeConnection()
-    const pages = new PageSubscription(connection, new ScopeManager())
-    pages.subscribe('main')
-    pages.registerTable('settings', fakeSink())
-
-    expect(pages.ingestTableWindow('other', 'settings', [], 0)).toBe(false)
-  })
-
-  it('drops a table window when no controller is registered', () => {
-    const connection = fakeConnection()
-    const pages = new PageSubscription(connection, new ScopeManager())
-    pages.subscribe('main')
-
-    expect(pages.ingestTableWindow('main', 'settings', [], 0)).toBe(false)
-  })
-
-  it('clears registered tables when the page changes', () => {
-    const connection = fakeConnection()
-    const pages = new PageSubscription(connection, new ScopeManager())
-    pages.subscribe('main')
-    pages.registerTable('settings', fakeSink())
-    pages.subscribe('profile')
-
-    expect(pages.ingestTableWindow('profile', 'settings', [], 0)).toBe(false)
   })
 })

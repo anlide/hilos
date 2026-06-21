@@ -21,11 +21,11 @@ import {
   type HilosSettingsContext,
   type HilosTableColumn,
 } from '@hilos/core'
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
-import HilosTable from '../../HilosTable.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import HilosSettingValueCell from './HilosSettingValueCell.vue'
@@ -35,9 +35,15 @@ const props = defineProps<{
   context: HilosSettingsContext
 }>()
 
-const settingsTable = createHilosSettingsTable(props.context)
+const settings = createHilosSettingsTable(props.context)
+const settingsTable = settings.controller
 const { sendSettingAdd, sendSettingUpdate, sendSettingDelete } =
   createHilosSettingsActions(props.context)
+
+// Bind the server-windowed table to the connection on mount, request the first
+// window, and unbind on unmount.
+onMounted(() => settings.start())
+onUnmounted(() => settings.dispose())
 
 const columns: HilosTableColumn[] = [
   { key: 'key', label: 'Key', sortable: true },
@@ -159,7 +165,7 @@ async function submitDelete(): Promise<void> {
 
 <template>
   <HilosAdminPage :page="HilosPages.SETTINGS">
-    <HilosTable
+    <HilosViewportTable
       :controller="settingsTable"
       :columns="columns"
       searchable
@@ -211,7 +217,7 @@ async function submitDelete(): Promise<void> {
           </div>
         </td>
       </template>
-    </HilosTable>
+    </HilosViewportTable>
 
     <HilosModal
       v-model="editOpen"

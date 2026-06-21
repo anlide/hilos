@@ -129,7 +129,7 @@ function onSearchInput(event: Event): void {
             :data-id="`hilos-table-row-${view.rowKey}`"
           >
             <td
-              v-if="view.placeholder"
+              v-if="view.placeholder || view.row === null"
               :colspan="columns.length"
               class="text-center text-muted fst-italic"
               data-id="hilos-table-placeholder"

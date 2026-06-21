@@ -46,9 +46,39 @@ function slot(
 
 function seededContext(rows: SettingSlot[]): HilosSettingsContext {
   const scopes = new ScopeManager()
-  const page = scopes.openPage('hilos_settings')
-  for (const settings of rows) {
-    page.tables.upsert('settings', settings.key, { settings })
+  scopes.openPage('hilos_settings')
+  // A connection double that answers each viewport request with a window built
+  // from the seeded rows — the server-windowed table's data path in one hop.
+  const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  const connection = {
+    sendTableViewport(page: string, tableKey: string): boolean {
+      const data = {
+        page,
+        tableKey,
+        rows: rows.map((settings) => ({
+          rowKey: settings.key,
+          slots: { settings },
+        })),
+        totalCount: rows.length,
+        offset: 0,
+        limit: 10,
+      }
+      for (const listener of windowListeners) {
+        listener({ data })
+      }
+
+      return true
+    },
+    on(
+      event: string,
+      listener: (signal: { data: unknown }) => void,
+    ): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.add(listener)
+      }
+
+      return () => windowListeners.delete(listener)
+    },
   }
   // The page only dispatches on submit; a fake source keeps the lifecycle inert
   // for a render test (the build ships only src modules, never doubles).
@@ -56,7 +86,12 @@ function seededContext(rows: SettingSlot[]): HilosSettingsContext {
     sendAction: () => false,
     on: () => () => {},
   })
-  return { scopes, actions }
+
+  return {
+    connection: connection as unknown as HilosSettingsContext['connection'],
+    scopes,
+    actions,
+  }
 }
 
 function renderPage(context: HilosSettingsContext) {

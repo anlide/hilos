@@ -85,6 +85,10 @@ export {
   PAGE_SIGNAL_SCHEMAS,
 } from './subscription/bindPageScope.js'
 export {
+  bindTableViewport,
+  type TableViewportAddress,
+} from './subscription/bindTableViewport.js'
+export {
   bindSessionScope,
   sessionUserName,
   SESSION_SIGNAL_SCHEMAS,
@@ -223,5 +227,6 @@ export {
   type SettingValueSource,
   type HilosSettingRow,
   type HilosSettingsContext,
+  type HilosSettingsTable,
   type HilosSettingsActions,
 } from './admin/settings/hilosSettings.js'

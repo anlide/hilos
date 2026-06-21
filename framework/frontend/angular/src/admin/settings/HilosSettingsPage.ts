@@ -14,6 +14,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   input,
   signal,
 } from '@angular/core'
@@ -32,7 +33,7 @@ import type {
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
-import { HilosTable } from '../../HilosTable.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 import { HilosSettingValueCell } from './HilosSettingValueCell.js'
@@ -65,15 +66,15 @@ function inputStep(type: string | undefined): 'any' | undefined {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     HilosAdminPage,
-    HilosTable,
+    HilosViewportTable,
     HilosModal,
     LoadingButton,
     HilosSettingValueCell,
   ],
   template: `
     <hilos-admin-page [page]="page">
-      <hilos-table
-        [controller]="settingsTable()"
+      <hilos-viewport-table
+        [controller]="settings().controller"
         [columns]="columns"
         [searchable]="true"
         searchPlaceholder="Search settings…"
@@ -123,7 +124,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
             </div>
           </td>
         </ng-template>
-      </hilos-table>
+      </hilos-viewport-table>
 
       <hilos-modal
         [open]="editOpen()"
@@ -285,7 +286,7 @@ export class HilosSettingsPage {
   protected readonly isPersisted = isPersistedSetting
   protected readonly isOrphan = isOrphanSetting
 
-  protected readonly settingsTable = computed(() =>
+  protected readonly settings = computed(() =>
     createHilosSettingsTable(this.context()),
   )
   private readonly actions = computed(() =>
@@ -329,6 +330,16 @@ export class HilosSettingsPage {
 
     return row ? `Delete · ${row.key}` : 'Delete setting'
   })
+
+  constructor() {
+    // Bind the server-windowed table to the connection and request the first
+    // window once the context input is bound; unbind on destroy or context swap.
+    effect((onCleanup) => {
+      const settings = this.settings()
+      settings.start()
+      onCleanup(() => settings.dispose())
+    })
+  }
 
   protected openEdit(row: HilosSettingRow): void {
     this.edit.clearError()

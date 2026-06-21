@@ -10,7 +10,7 @@
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
 // closes on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces
 // in the dialog. Bootstrap classes only (styling-rules.md).
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
   createHilosSettingsActions,
@@ -26,7 +26,7 @@ import type {
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
-import { HilosTable } from '../../HilosTable.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 import { HilosSettingValueCell } from './HilosSettingValueCell.js'
@@ -66,11 +66,16 @@ function inputStep(type: string | undefined): 'any' | undefined {
  * @param props The project context (scope stores + action lifecycle).
  */
 export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
-  const settingsTable = useMemo(
-    () => createHilosSettingsTable(context),
-    [context],
-  )
+  const settings = useMemo(() => createHilosSettingsTable(context), [context])
   const actions = useMemo(() => createHilosSettingsActions(context), [context])
+
+  // Bind the server-windowed table to the connection on mount, request the first
+  // window, and unbind on unmount.
+  useEffect(() => {
+    settings.start()
+
+    return () => settings.dispose()
+  }, [settings])
 
   // Edit dialog: one row's custom value (or a reset back to the catalog default).
   const [editOpen, setEditOpen] = useState(false)
@@ -146,8 +151,8 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
 
   return (
     <HilosAdminPage page={HilosPages.SETTINGS}>
-      <HilosTable
-        controller={settingsTable}
+      <HilosViewportTable
+        controller={settings.controller}
         columns={COLUMNS}
         searchable
         searchPlaceholder="Search settings…"
