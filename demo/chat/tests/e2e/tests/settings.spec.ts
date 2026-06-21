@@ -1,42 +1,78 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
-// Hilos settings admin e2e: /hilos/settings renders the framework settings table
-// over the live socket (catalog placeholder rows included), search filters the
-// client viewport, and a custom value is set on a catalog key from its own row
-// (add-by-key) then reset — both round-trip through the backend and re-render with
-// no document reload. The settings table is cataloged, so there is no free "add a
-// setting" control (data-model.md, "Cataloged tables"); the only mutations live on
-// the row. example_integer is left back on its catalog default at the end so the
-// test is idempotent across runs on the shared database.
+// Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
+// framework HilosViewportTable over the live socket. The window comes from the
+// backend — search, sort, and paging change the viewport descriptor and the
+// server replies a window — so a key is isolated with the search box before it
+// is asserted on (the chat catalog spans two pages of ten). Live edits from
+// another connection hang as pending (a tinted row + an Apply control), while the
+// tab that made the edit applies its own change at once. Each editing test uses a
+// distinct catalog key and resets it to the catalog default, so the suite stays
+// idempotent and parallel-safe on the shared database.
 
-test('lists settings in the framework table and filters from the search box', async ({
-  page,
-}) => {
+/** Open the settings page and wait for the live table. */
+async function openSettings(page: Page): Promise<void> {
   await page.goto('/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+}
+
+/** Narrow the server window to a single key so assertions ignore pagination. */
+async function isolate(page: Page, key: string): Promise<void> {
+  await page.getByTestId('hilos-table-search').fill(key)
+  await expect(page.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
+}
+
+test('lists settings in the server window and filters from the search box', async ({
+  page,
+}) => {
+  await openSettings(page)
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
 
   // A cataloged table has no free "add a setting" entry point.
   await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
 
-  // Catalog placeholder rows are present without any DB override.
-  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
-
-  // A query no key matches empties the viewport; a key query narrows it; clearing
-  // restores every row.
+  // A key query narrows the window to its row; a query nothing matches empties
+  // it (the loaded "no rows" state, distinct from the initial loading spinner);
+  // clearing restores the window.
   const search = page.getByTestId('hilos-table-search')
+  await search.fill('chat_bot_language')
+  await expect(page.getByTestId('hilos-table-row-chat_bot_language')).toBeVisible()
+  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(1)
+
   await search.fill('zzz-no-such-setting-zzz')
-  await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
-  await search.fill('example_boolean')
-  await expect(page.getByTestId('hilos-table-row-example_boolean')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
+  await expect(page.locator('[data-id^="hilos-table-row-"]')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+
   await search.fill('')
-  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
+  await expect(
+    page.locator('[data-id^="hilos-table-row-"]').first(),
+  ).toBeVisible()
 })
 
-test('sets a custom value on a catalog key from its row and resets it, live', async ({
+test('paginates the server window', async ({ page }) => {
+  await openSettings(page)
+
+  // The catalog spans two pages of ten; the first page holds the chat_* keys and
+  // the example_* keys sort onto the second.
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 2')
+  await expect(
+    page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
+  ).toBeVisible()
+  await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
+
+  await page.getByTestId('hilos-table-next').click()
+  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 2')
+  await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
+  ).toHaveCount(0)
+
+  await page.getByTestId('hilos-table-prev').click()
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 2')
+})
+
+test('a tab applies its own edit at once, with no pending gate', async ({
   page,
 }) => {
   let fullLoads = 0
@@ -44,13 +80,11 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
     fullLoads += 1
   })
 
-  await page.goto('/hilos/settings')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await openSettings(page)
   const loadsAfterColdLoad = fullLoads
-
-  const integerRow = page.getByTestId('hilos-table-row-example_integer')
-  await expect(integerRow).toContainText('default')
+  await isolate(page, 'example_integer')
+  const row = page.getByTestId('hilos-table-row-example_integer')
+  await expect(row).toContainText('default')
 
   // Add-by-key: open the on-default row, switch on a custom value, and save it.
   await page.getByTestId('hilos-settings-edit-example_integer').click()
@@ -58,18 +92,91 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
   await page.getByTestId('hilos-settings-edit-value').fill('42')
   await page.getByTestId('hilos-settings-edit-save').click()
 
-  // The custom value returns over the live table and the edit dialog closes.
-  await expect(integerRow).toContainText('42')
-  await expect(integerRow).toContainText('custom')
+  // The editing tab picks up its own change at once: the row updates and no
+  // pending Apply control ever appears.
+  await expect(row).toContainText('42')
+  await expect(row).toContainText('custom')
   await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  // Reset back to the catalog default via the edit dialog's custom toggle.
+  // Reset back to the catalog default.
   await page.getByTestId('hilos-settings-edit-example_integer').click()
   await page.getByTestId('hilos-settings-edit-custom').uncheck()
   await page.getByTestId('hilos-settings-edit-save').click()
-  await expect(integerRow).toContainText('default')
-  await expect(integerRow).not.toContainText('custom')
+  await expect(row).toContainText('default')
+  await expect(row).not.toContainText('custom')
 
   // All of it happened over the live socket — no document reload.
   expect(fullLoads).toBe(loadsAfterColdLoad)
+})
+
+test('an edit in one tab hangs as pending in another until applied', async ({
+  page,
+}) => {
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, 'chat_bot_language')
+  await isolate(tabB, 'chat_bot_language')
+
+  const rowA = page.getByTestId('hilos-table-row-chat_bot_language')
+  const rowB = tabB.getByTestId('hilos-table-row-chat_bot_language')
+
+  // Tab A sets a custom value and applies its own change at once (no Apply).
+  await page.getByTestId('hilos-settings-edit-chat_bot_language').click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  await page.getByTestId('hilos-settings-edit-value').fill('xx-test')
+  await page.getByTestId('hilos-settings-edit-save').click()
+  await expect(rowA).toContainText('xx-test')
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Tab B receives the change as pending: a tinted row and an Apply control,
+  // while the row still shows the old value until applied.
+  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
+  await expect(rowB).toHaveClass(/table-warning/)
+  await expect(rowB).not.toContainText('xx-test')
+
+  // Applying resolves the pending change in place.
+  await tabB.getByTestId('hilos-table-apply').click()
+  await expect(rowB).toContainText('xx-test')
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await expect(rowB).not.toHaveClass(/table-warning/)
+
+  // Reset the key back to its catalog default.
+  await page.getByTestId('hilos-settings-edit-chat_bot_language').click()
+  await page.getByTestId('hilos-settings-edit-custom').uncheck()
+  await page.getByTestId('hilos-settings-edit-save').click()
+  await expect(rowA).not.toContainText('xx-test')
+  await tabB.close()
+})
+
+test('opening the edit dialog applies the pending change first', async ({
+  page,
+}) => {
+  const tabB = await page.context().newPage()
+  await openSettings(page)
+  await openSettings(tabB)
+  await isolate(page, 'example_string')
+  await isolate(tabB, 'example_string')
+
+  // Tab A sets a custom value; tab B sees it as pending.
+  await page.getByTestId('hilos-settings-edit-example_string').click()
+  await page.getByTestId('hilos-settings-edit-custom').check()
+  await page.getByTestId('hilos-settings-edit-value').fill('hello-modal')
+  await page.getByTestId('hilos-settings-edit-save').click()
+  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
+
+  // Opening tab B's edit dialog flushes the pending change first, so the dialog
+  // edits the latest committed value and the pending Apply control is gone.
+  await tabB.getByTestId('hilos-settings-edit-example_string').click()
+  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+    'hello-modal',
+  )
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+  // Reset the key back to its catalog default.
+  await page.getByTestId('hilos-settings-edit-example_string').click()
+  await page.getByTestId('hilos-settings-edit-custom').uncheck()
+  await page.getByTestId('hilos-settings-edit-save').click()
+  await tabB.close()
 })

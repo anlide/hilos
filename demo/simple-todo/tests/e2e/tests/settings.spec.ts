@@ -17,7 +17,7 @@ test('lists settings in the framework table and filters from the search box', as
   await page.goto('/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // A cataloged table has no free "add a setting" entry point.
   await expect(page.getByTestId('hilos-settings-add')).toHaveCount(0)
@@ -48,7 +48,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
 
   await page.goto('/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
   const integerRow = page.getByTestId('hilos-table-row-example_integer')
