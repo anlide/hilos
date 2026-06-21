@@ -24,6 +24,9 @@ final class TableConstants
     /** Payload key for table identifier in refresh/action DTOs. */
     public const string PAYLOAD_KEY_TABLE_KEY = 'tableKey';
 
+    /** Generic viewport filter-map key resolved to the query search term. */
+    public const string FILTER_KEY_SEARCH = 'search';
+
     /** Payload key for action name in error signal. */
     public const string PAYLOAD_KEY_ACTION = 'action';
 

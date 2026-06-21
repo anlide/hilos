@@ -34,9 +34,11 @@ use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -168,6 +170,90 @@ abstract class BrowserContext
                 data: new PageResponseSignalData($page, $payload),
                 targetAcceptKey: $acceptKey,
             ),
+        );
+    }
+
+    /**
+     * Builds and sends one table's window snapshot to a subscribing connection.
+     *
+     * Runs the table's windowed query for the viewport descriptor, serializes the
+     * window rows, replies a table_window signal addressed to the accept key, and
+     * records the delivered row-id keys on the viewport so live deltas can be
+     * scoped to them. Only self-snapshot tables are served here; source-fanned
+     * tables build their window separately.
+     *
+     * @param string $page Page the table belongs to
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param TableViewportSubscription $viewport Window descriptor; its delivered row-id set is updated
+     */
+    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $table = Hilos::$table?->get($viewport->tableKey);
+        if (!$table instanceof SelfSnapshotTable) {
+            return;
+        }
+
+        try {
+            $snapshot = $table->getPage($this->viewportQuery($viewport));
+        } catch (Throwable) {
+            return;
+        }
+
+        $rows = [];
+        $rowIds = [];
+        foreach ($snapshot->rows as $row) {
+            if (!$row instanceof AbstractTableRow) {
+                continue;
+            }
+            $browserRow = $table->browserRow($row);
+            $rows[] = $browserRow;
+            $rowIds[] = (string) $browserRow[BrowserPageSignalData::rowKey];
+        }
+
+        $viewport->recordWindow($rowIds, $snapshot->totalCount);
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalTypeConstants::TABLE_WINDOW),
+            signalData: new WebSocketSignalData(
+                data: new TableWindowSignalData(
+                    page: $page,
+                    tableKey: $viewport->tableKey,
+                    rows: $rows,
+                    totalCount: $snapshot->totalCount,
+                    offset: $snapshot->offset,
+                    limit: $snapshot->limit,
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
+    }
+
+    /**
+     * Builds the table query for a viewport descriptor.
+     *
+     * Generic filter resolution: the `search` filter-map key maps to the query
+     * search term. A table with custom filters resolves them through its own hook
+     * in a later step.
+     *
+     * @param TableViewportSubscription $viewport Window descriptor
+     * @return TableQueryDTO Table query for the window
+     */
+    private function viewportQuery(TableViewportSubscription $viewport): TableQueryDTO
+    {
+        $search = $viewport->filter[TableConstants::FILTER_KEY_SEARCH] ?? '';
+
+        return new TableQueryDTO(
+            search: is_string($search) ? $search : '',
+            orderBy: $viewport->sortField,
+            orderDirection: $viewport->sortDirection,
+            offset: $viewport->offset,
+            limit: $viewport->limit,
         );
     }
 

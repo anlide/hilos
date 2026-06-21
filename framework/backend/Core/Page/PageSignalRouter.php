@@ -146,11 +146,11 @@ class PageSignalRouter
     }
 
     /**
-     * Dispatch a table viewport signal to the subscription registry.
+     * Dispatch a table viewport signal: store the descriptor and reply the window.
      *
-     * Stores the connection's window descriptor for one table so the server can
-     * scope live deltas to the rows that connection shows. The window snapshot is
-     * built and replied separately.
+     * Records the connection's window descriptor for one table (so live deltas can
+     * be scoped to the rows it shows), then has the browser context build and reply
+     * the table_window snapshot for that descriptor.
      *
      * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
      * @param string $source Signal source
@@ -162,14 +162,16 @@ class PageSignalRouter
             return;
         }
 
-        Hilos::$sr?->setTableViewport($data->acceptKey, new TableViewportSubscription(
+        $viewport = new TableViewportSubscription(
             tableKey: $data->tableKey,
             filter: $data->filter,
             sortField: $data->sortField,
             sortDirection: $data->sortDirection,
             offset: $data->offset,
             limit: $data->limit,
-        ));
+        );
+        Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
+        Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport);
     }
 
     /**
