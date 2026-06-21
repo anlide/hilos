@@ -32,6 +32,12 @@ final class SignalTypeConstants
     /** @var string Page response signal type (server-to-client page scope payload) */
     public const string PAGE_RESPONSE = 'page_response';
 
+    /** @var string Table viewport signal type (client-to-server window descriptor for one table) */
+    public const string TABLE_VIEWPORT = 'table_viewport';
+
+    /** @var string Table window signal type (server-to-client window snapshot for one table) */
+    public const string TABLE_WINDOW = 'table_window';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 
