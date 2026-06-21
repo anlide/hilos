@@ -11,13 +11,13 @@ dialog. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   HilosModal,
-  HilosTable,
+  HilosViewportTable,
   LoadingButton,
   useSignal,
   useTrackedAction,
 } from '@hilos/vue'
 import { type HilosTableColumn } from '@hilos/vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   sendModeratorPieceCreate,
@@ -25,7 +25,11 @@ import {
   sendModeratorPieceUpdate,
   type ModeratorPieceInput,
 } from './adminModeratorActions'
-import { moderatorPiecesTable } from './adminModeratorPage'
+import {
+  disposeModeratorPiecesTable,
+  moderatorPiecesTable,
+  startModeratorPiecesTable,
+} from './adminModeratorPage'
 import {
   type ModeratorPieceRow,
   type ModeratorSection,
@@ -41,7 +45,17 @@ const columns: HilosTableColumn[] = [
 
 const viewRows = useSignal(moderatorPiecesTable.rows)
 
-const allRows = computed(() => viewRows.value.map((view) => view.row))
+// Live (non-placeholder) rows, used to dirty-check an edit against the latest row.
+const allRows = computed(() =>
+  viewRows.value
+    .map((view) => view.row)
+    .filter((row): row is ModeratorPieceRow => row !== null),
+)
+
+// Bind the server-windowed table to the connection on mount, request the first
+// window, and unbind on unmount.
+onMounted(startModeratorPiecesTable)
+onUnmounted(disposeModeratorPiecesTable)
 
 // Create/edit dialog: one shared form, distinguished by mode.
 const formOpen = ref(false)
@@ -103,11 +117,17 @@ function openCreate(): void {
 }
 
 function openEdit(row: ModeratorPieceRow): void {
+  // Flush pending so the form edits the latest committed row; a row removed by
+  // someone else (now a placeholder) declines to open.
+  const fresh = moderatorPiecesTable.applyAndResolve(String(row.id))
+  if (!fresh) {
+    return
+  }
   clearFormError()
   formMode.value = 'edit'
-  formId.value = row.id
-  fSection.value = row.section
-  fPromptPiece.value = row.promptPiece
+  formId.value = fresh.id
+  fSection.value = fresh.section
+  fPromptPiece.value = fresh.promptPiece
   formOpen.value = true
 }
 
@@ -137,8 +157,13 @@ async function submitForm(): Promise<void> {
 }
 
 function openDelete(row: ModeratorPieceRow): void {
+  // Flush pending; a row already removed by someone else does not open a delete.
+  const fresh = moderatorPiecesTable.applyAndResolve(String(row.id))
+  if (!fresh) {
+    return
+  }
   clearDeleteError()
-  deleteRow.value = row
+  deleteRow.value = fresh
   deleteOpen.value = true
 }
 
@@ -177,7 +202,7 @@ async function submitDelete(): Promise<void> {
       </button>
     </div>
 
-    <HilosTable
+    <HilosViewportTable
       :controller="moderatorPiecesTable"
       :columns="columns"
       searchable
@@ -227,7 +252,7 @@ async function submitDelete(): Promise<void> {
           </div>
         </td>
       </template>
-    </HilosTable>
+    </HilosViewportTable>
 
     <HilosModal
       v-model="formOpen"

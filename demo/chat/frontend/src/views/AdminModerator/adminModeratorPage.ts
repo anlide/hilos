@@ -4,9 +4,16 @@
 // an entity reference in the `moderatorPromptPieces` slot (an id-bearing slot is
 // an entity by convention), resolved through the ModeratorPieces collection. The
 // view reads the controller, never a raw store.
-import { TableController, type EntityRef, type TableRow } from '@hilos/core'
+import {
+  TableViewportController,
+  bindTableViewport,
+  type EntityRef,
+  type TableRow,
+} from '@hilos/core'
 
+import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'
+import { PAGE_ADMIN_MODERATOR } from '../../pages/keys'
 import { ModeratorPieces } from '../../types'
 import {
   type ModeratorPieceRow,
@@ -17,6 +24,7 @@ import {
 // and its row's entity-ref slot (ChatDbContext::moderatorPromptPieces).
 const PIECES_TABLE = 'moderatorPromptPieces'
 const PIECES_SLOT = 'moderatorPromptPieces'
+const PIECES_PAGE_SIZE = 10
 
 /** The moderation rule sections, mirroring the backend ObjectModeratorPromptPiece. */
 export const MODERATOR_SECTIONS: readonly ModeratorSection[] = [
@@ -51,14 +59,53 @@ export function resolveModeratorPieceRow(row: TableRow): ModeratorPieceRow {
 }
 
 /**
- * The headless controller for the moderation prompt-pieces table (client
- * viewport): search by section or prompt text, sort by section. Rows resolve
- * through {@link resolveModeratorPieceRow}.
+ * The server-windowed controller for the moderation prompt-pieces table: search,
+ * sort, and paging change the viewport descriptor sent over the connection, and
+ * the backend replies a window plus live deltas scoped to the table's
+ * (page, tableKey) address. Rows resolve through {@link resolveModeratorPieceRow}.
  */
-export const moderatorPiecesTable = new TableController<ModeratorPieceRow>({
-  source: scopes.pageTableSignal(PIECES_TABLE),
-  resolve: resolveModeratorPieceRow,
-  searchText: (row) => `${row.section} ${row.promptPiece}`,
-  sortValue: (row, field) => (field === 'section' ? row.section : row.id),
-  initialSort: { field: 'id', direction: 'asc' },
-})
+export const moderatorPiecesTable =
+  new TableViewportController<ModeratorPieceRow>({
+    resolve: resolveModeratorPieceRow,
+    sendViewport: (descriptor) =>
+      connection.sendTableViewport(
+        PAGE_ADMIN_MODERATOR,
+        PIECES_TABLE,
+        descriptor,
+      ),
+    pageSize: PIECES_PAGE_SIZE,
+    initialSort: { field: 'id', direction: 'asc' },
+  })
+
+const teardown: Array<() => void> = []
+
+/** Bind the table to the connection and request the first window — call on mount. */
+export function startModeratorPiecesTable(): void {
+  teardown.push(
+    bindTableViewport(
+      connection,
+      scopes,
+      { page: PAGE_ADMIN_MODERATOR, tableKey: PIECES_TABLE },
+      moderatorPiecesTable,
+      // The piece slot is an entity; normalize it under the collection's type so
+      // the row resolves through ModeratorPieces.
+      { entityTypes: { [PIECES_SLOT]: ModeratorPieces.type } },
+    ),
+    // Re-request the window whenever the socket (re)connects: the initial request
+    // below can run before the connection is open, and a reconnect is a fresh
+    // exchange that no longer remembers this connection's window.
+    connection.on('state', (state) => {
+      if (state === 'connected') {
+        moderatorPiecesTable.start()
+      }
+    }),
+  )
+  moderatorPiecesTable.start()
+}
+
+/** Unbind from the connection — call on unmount. */
+export function disposeModeratorPiecesTable(): void {
+  for (const off of teardown.splice(0)) {
+    off()
+  }
+}
