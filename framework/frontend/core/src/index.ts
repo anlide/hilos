@@ -216,6 +216,7 @@ export {
   type HilosUserProfile,
   type HilosUserRow,
   type HilosUsersContext,
+  type HilosUsersTable,
   type HilosUserRename,
 } from './admin/users/hilosUsers.js'
 export {

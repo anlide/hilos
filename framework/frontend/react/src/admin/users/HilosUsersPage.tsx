@@ -5,7 +5,7 @@
 // HilosUsersContext. The framework owns every cell except the trailing actions
 // cell, which a project fills through the `rowActions` render prop (e.g. a link to
 // the detail page). Bootstrap classes only (styling-rules.md).
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HilosPages, createHilosUsersTable } from '@hilos/core'
 import type {
@@ -15,7 +15,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosTable } from '../../HilosTable.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 
 /** Props for {@link HilosUsersPage}. */
 export interface HilosUsersPageProps {
@@ -45,12 +45,20 @@ const COLUMNS: HilosTableColumn[] = [
  * @param props The project context and the optional trailing-actions renderer.
  */
 export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
-  const usersTable = useMemo(() => createHilosUsersTable(context), [context])
+  const users = useMemo(() => createHilosUsersTable(context), [context])
+
+  // Bind the server-windowed table to the connection on mount, request the first
+  // window, and unbind on unmount.
+  useEffect(() => {
+    users.start()
+
+    return () => users.dispose()
+  }, [users])
 
   return (
     <HilosAdminPage page={HilosPages.USERS}>
-      <HilosTable
-        controller={usersTable}
+      <HilosViewportTable
+        controller={users.controller}
         columns={COLUMNS}
         searchable
         searchPlaceholder="Search users…"

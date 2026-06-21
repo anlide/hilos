@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -93,6 +94,32 @@ final class AbstractHilosUsersTableTest extends TestCase
         );
     }
 
+    public function testBrowserRowSplitsIntoUserAndConnectionsSlots(): void
+    {
+        $table = $this->table();
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbUpdated('users', '5', []));
+        $this->assertNotNull($mutation);
+        $this->assertNotNull($mutation->row);
+
+        $this->assertSame(
+            [
+                BrowserPageSignalData::rowKey => 5,
+                BrowserPageSignalData::sources => [
+                    AbstractHilosUsersTable::SLOT_USER => [
+                        AbstractHilosUserTableRow::id => 5,
+                        AbstractHilosUserTableRow::admin => false,
+                        AbstractHilosUserTableRow::block => false,
+                    ],
+                    AbstractHilosUsersTable::SLOT_CONNECTIONS => [
+                        AbstractHilosUserTableRow::presence => null,
+                        AbstractHilosUserTableRow::onlineSessionCount => 0,
+                    ],
+                ],
+            ],
+            $table->browserRow($mutation->row),
+        );
+    }
+
     /**
      * Builds a test users table bound to in-memory sources.
      *
@@ -139,9 +166,10 @@ final class AbstractHilosUsersTableTest extends TestCase
                         return $this->baseFields();
                     }
 
+                    // TODO: fix me. Wrong return type
                     public static function fromArray(array $data): static
                     {
-                        return new static((int) ($data[self::id] ?? 0));
+                        return new self((int) ($data[self::id] ?? 0));
                     }
                 };
             }

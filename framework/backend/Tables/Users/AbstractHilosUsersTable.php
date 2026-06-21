@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Users;
 
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Throwable;
@@ -22,8 +25,20 @@ use Throwable;
  * presence change resolves to the affected user id. This keeps the framework
  * free of any project user/connection type while reusing the merge logic.
  */
-abstract class AbstractHilosUsersTable extends TableDefinition
+abstract class AbstractHilosUsersTable extends TableDefinition implements ViewportTable
 {
+    /**
+     * Wire slot the user entity rides — the entity-bearing slot the frontend
+     * normalizer reduces to a reference (matches the FE users admin USER_SLOT).
+     */
+    public const string SLOT_USER = 'users';
+
+    /**
+     * Wire slot the inline runtime presence summary rides (matches the FE users
+     * admin CONNECTIONS_SLOT). It carries no entity id, so it stays inline.
+     */
+    public const string SLOT_CONNECTIONS = 'connections';
+
     /**
      * The source key of the project DB user collection this table projects.
      */
@@ -72,6 +87,39 @@ abstract class AbstractHilosUsersTable extends TableDefinition
         }
 
         return null;
+    }
+
+    /**
+     * Serializes one users-table row into its internal browser-row envelope.
+     *
+     * The window/delta path splits the typed row the same way the declarative
+     * source fan-out does: the runtime presence fields ride the inline
+     * {@see self::SLOT_CONNECTIONS} slot, and the rest — the user identity and
+     * profile fields — ride the {@see self::SLOT_USER} entity slot the frontend
+     * resolves through its user collection (so a rename still fans out for free).
+     *
+     * @param AbstractTableRow $row Users-table row from this table's window or mutation
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        $fields = $row->toArray();
+        $connections = [
+            AbstractHilosUserTableRow::presence => $fields[AbstractHilosUserTableRow::presence] ?? null,
+            AbstractHilosUserTableRow::onlineSessionCount => $fields[AbstractHilosUserTableRow::onlineSessionCount] ?? 0,
+        ];
+        unset(
+            $fields[AbstractHilosUserTableRow::presence],
+            $fields[AbstractHilosUserTableRow::onlineSessionCount],
+        );
+
+        return [
+            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::sources => [
+                self::SLOT_USER => $fields,
+                self::SLOT_CONNECTIONS => $connections,
+            ],
+        ];
     }
 
     /**

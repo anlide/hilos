@@ -13,9 +13,10 @@ import {
   type HilosUserRow,
   type HilosUsersContext,
 } from '@hilos/core'
+import { onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
-import HilosTable from '../../HilosTable.vue'
+import HilosViewportTable from '../../HilosViewportTable.vue'
 
 const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */
@@ -27,7 +28,13 @@ defineSlots<{
   'row-actions'(props: { row: HilosUserRow }): unknown
 }>()
 
-const usersTable = createHilosUsersTable(props.context)
+const users = createHilosUsersTable(props.context)
+const usersTable = users.controller
+
+// Bind the server-windowed table to the connection on mount, request the first
+// window, and unbind on unmount.
+onMounted(() => users.start())
+onUnmounted(() => users.dispose())
 
 const columns: HilosTableColumn[] = [
   { key: 'id', label: 'ID', sortable: true },
@@ -46,7 +53,7 @@ const columns: HilosTableColumn[] = [
 
 <template>
   <HilosAdminPage :page="HilosPages.USERS">
-    <HilosTable
+    <HilosViewportTable
       :controller="usersTable"
       :columns="columns"
       searchable
@@ -71,6 +78,6 @@ const columns: HilosTableColumn[] = [
         <td>{{ row.lastActivity ?? '—' }}</td>
         <td class="text-end"><slot name="row-actions" :row="row" /></td>
       </template>
-    </HilosTable>
+    </HilosViewportTable>
   </HilosAdminPage>
 </template>

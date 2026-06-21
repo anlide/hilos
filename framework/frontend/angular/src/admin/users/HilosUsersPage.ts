@@ -11,6 +11,7 @@ import {
   Component,
   computed,
   contentChild,
+  effect,
   input,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
@@ -22,7 +23,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
-import { HilosTable } from '../../HilosTable.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 
 /** The context a HilosUsersPage `#rowActions` template receives. */
 export interface UsersRowActionsContext {
@@ -48,11 +49,11 @@ const COLUMNS: HilosTableColumn[] = [
 @Component({
   selector: 'hilos-users-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosTable, NgTemplateOutlet],
+  imports: [HilosAdminPage, HilosViewportTable, NgTemplateOutlet],
   template: `
     <hilos-admin-page [page]="page">
-      <hilos-table
-        [controller]="usersTable()"
+      <hilos-viewport-table
+        [controller]="users().controller"
         [columns]="columns"
         [searchable]="true"
         searchPlaceholder="Search users…"
@@ -83,7 +84,7 @@ const COLUMNS: HilosTableColumn[] = [
             }
           </td>
         </ng-template>
-      </hilos-table>
+      </hilos-viewport-table>
     </hilos-admin-page>
   `,
 })
@@ -93,9 +94,19 @@ export class HilosUsersPage {
 
   protected readonly page = HilosPages.USERS
   protected readonly columns = COLUMNS
-  protected readonly usersTable = computed(() =>
+  protected readonly users = computed(() =>
     createHilosUsersTable(this.context()),
   )
   protected readonly rowActions =
     contentChild<TemplateRef<UsersRowActionsContext>>('rowActions')
+
+  constructor() {
+    // Bind the server-windowed table to the connection and request the first
+    // window once the context input is bound; unbind on destroy or context swap.
+    effect((onCleanup) => {
+      const users = this.users()
+      users.start()
+      onCleanup(() => users.dispose())
+    })
+  }
 }

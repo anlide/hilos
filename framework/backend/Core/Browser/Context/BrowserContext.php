@@ -37,6 +37,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
@@ -181,8 +182,8 @@ abstract class BrowserContext
      * Runs the table's windowed query for the viewport descriptor, serializes the
      * window rows, replies a table_window signal addressed to the accept key, and
      * records the delivered row-id keys on the viewport so live deltas can be
-     * scoped to them. Only self-snapshot tables are served here; source-fanned
-     * tables build their window separately.
+     * scoped to them. Any viewport table is served here — a self-snapshot table
+     * (settings) or a source-fanned one (the Hilos users table) alike.
      *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
@@ -195,7 +196,7 @@ abstract class BrowserContext
         }
 
         $table = Hilos::$table?->get($viewport->tableKey);
-        if (!$table instanceof SelfSnapshotTable) {
+        if (!$table instanceof ViewportTable) {
             return;
         }
 
@@ -402,15 +403,19 @@ abstract class BrowserContext
                 foreach ($this->pageTables($page) as $pageTableBinding) {
                     $tableKey = $pageTableBinding->tableKey;
 
-                    $selfSnapshotTable = $this->selfSnapshotTable($tableKey);
-                    if ($selfSnapshotTable !== null) {
+                    $viewportTable = $this->viewportTable($tableKey);
+                    if ($viewportTable !== null) {
                         $viewport = Hilos::$sr->getTableViewport($acceptKey, $tableKey);
                         if ($viewport !== null) {
-                            $this->emitViewportDelta($selfSnapshotTable, $viewport, $change, $acceptKey, $page, $tableKey);
+                            $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $tableKey);
                             continue;
                         }
-                        $this->accumulateSelfSnapshotChange($signalTables, $selfSnapshotTable, $change, $acceptKey, $page, $tableKey);
-                        continue;
+                        if ($viewportTable instanceof SelfSnapshotTable) {
+                            $this->accumulateSelfSnapshotChange($signalTables, $viewportTable, $change, $acceptKey, $page, $tableKey);
+                            continue;
+                        }
+                        // A source-fanned viewport table with no active viewport on this
+                        // connection delivers through the declarative page_response path below.
                     }
 
                     $tableConfig = $this->tableConfig($tableKey);
@@ -942,6 +947,19 @@ abstract class BrowserContext
     }
 
     /**
+     * Resolves a page-bound table as a viewport table, when it is one.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?ViewportTable Viewport table, or null when absent or not windowed
+     */
+    private function viewportTable(string $tableKey): ?ViewportTable
+    {
+        $table = Hilos::$table?->get($tableKey);
+
+        return $table instanceof ViewportTable ? $table : null;
+    }
+
+    /**
      * Resolves a page-bound table as a self-snapshot table, when it is one.
      *
      * @param string $tableKey Browser table key
@@ -1031,7 +1049,7 @@ abstract class BrowserContext
     }
 
     /**
-     * Emits a live viewport delta for a self-snapshot change scoped to a connection's window.
+     * Emits a live viewport delta for a source change scoped to a connection's window.
      *
      * Point-wise against the remembered row-id set: an in-window row maps to a
      * row_updated or a row_removed; a change outside the window that shifts the
@@ -1047,7 +1065,7 @@ abstract class BrowserContext
      * and its echo can cross the frontend marks and leave one change pending; the
      * precise fix is to tag the originating connection here.
      *
-     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
      * @param SourceChange $change Grouped DB/RT source change
      * @param string $acceptKey Target accept key
@@ -1055,7 +1073,7 @@ abstract class BrowserContext
      * @param string $tableKey Browser table key
      */
     private function emitViewportDelta(
-        SelfSnapshotTable $table,
+        ViewportTable $table,
         TableViewportSubscription $viewport,
         SourceChange $change,
         string $acceptKey,
@@ -1091,7 +1109,7 @@ abstract class BrowserContext
     /**
      * Maps one table mutation to the viewport delta for a connection's window.
      *
-     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
@@ -1099,7 +1117,7 @@ abstract class BrowserContext
      * @return ?TableViewportDeltaDTO Delta to send, or null when the change does not affect this window
      */
     private function viewportDeltaForMutation(
-        SelfSnapshotTable $table,
+        ViewportTable $table,
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
         string $page,
@@ -1136,17 +1154,16 @@ abstract class BrowserContext
     /**
      * Builds a set_changed delta when an out-of-window change shifts the filtered count.
      *
-     * Recomputes the count via getPage; for the in-memory self-snapshot tables
-     * served here that is cheap. Returns null when the count is unchanged.
+     * Recomputes the count via getPage. Returns null when the count is unchanged.
      *
-     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its total count is updated in place
      * @param string $page Subscribed page key
      * @param string $tableKey Browser table key
      * @return ?TableViewportDeltaDTO Set-changed delta, or null when the count is unchanged
      */
     private function setChangedDelta(
-        SelfSnapshotTable $table,
+        ViewportTable $table,
         TableViewportSubscription $viewport,
         string $page,
         string $tableKey,

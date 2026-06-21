@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
-import {
-  HilosConnection,
-  ScopeManager,
-  createSignal,
-  entityCollection,
-} from '@hilos/core'
+import { ScopeManager, createSignal, entityCollection } from '@hilos/core'
 import type {
   HilosRouter,
   HilosUserProfile,
@@ -25,28 +20,63 @@ function router(): HilosRouter {
   }
 }
 
-// Two users referenced by two rows of the users table, plus the inline presence
-// summary the project's backend fills — the shape resolveHilosUserRow folds.
-function usersContext(): HilosUsersContext {
+interface UserSeed {
+  id: number
+  name: string
+  lastActivity: string | null
+  presence: string
+  onlineSessionCount: number
+}
+
+// A users context whose connection answers each viewport request with a window
+// built from the seeded users — the server-windowed table's data path in one hop.
+// The `users` slot carries the entity fragment the binder upserts under the user
+// collection's type; the `connections` slot stays inline (no id), as on the wire.
+function seededContext(users: UserSeed[]): HilosUsersContext {
   const scopes = new ScopeManager()
-  const page = scopes.openPage('hilos_users')
-  page.entities.upsert(
-    { type: 'user', id: 1 },
-    { id: 1, name: 'Alice', lastActivity: '2026-06-19 10:00' },
-  )
-  page.entities.upsert(
-    { type: 'user', id: 2 },
-    { id: 2, name: 'Bob', lastActivity: null },
-  )
-  page.tables.upsert('hilosUsers', 1, {
-    users: { type: 'user', id: 1 },
-    connections: { presence: 'online', onlineSessionCount: 2 },
-  })
-  page.tables.upsert('hilosUsers', 2, {
-    users: { type: 'user', id: 2 },
-    connections: { presence: 'offline', onlineSessionCount: 0 },
-  })
-  const users = entityCollection<HilosUserProfile>(
+  scopes.openPage('hilos_users')
+  const windowListeners = new Set<(signal: { data: unknown }) => void>()
+  const connection = {
+    sendTableViewport(page: string, tableKey: string): boolean {
+      const data = {
+        page,
+        tableKey,
+        rows: users.map((user) => ({
+          rowKey: user.id,
+          slots: {
+            users: {
+              id: user.id,
+              name: user.name,
+              lastActivity: user.lastActivity,
+            },
+            connections: {
+              presence: user.presence,
+              onlineSessionCount: user.onlineSessionCount,
+            },
+          },
+        })),
+        totalCount: users.length,
+        offset: 0,
+        limit: 10,
+      }
+      for (const listener of windowListeners) {
+        listener({ data })
+      }
+
+      return true
+    },
+    on(
+      event: string,
+      listener: (signal: { data: unknown }) => void,
+    ): () => void {
+      if (event === 'tableWindow') {
+        windowListeners.add(listener)
+      }
+
+      return () => windowListeners.delete(listener)
+    },
+  }
+  const collection = entityCollection<HilosUserProfile>(
     scopes,
     'user',
     (fields) => ({
@@ -55,8 +85,31 @@ function usersContext(): HilosUsersContext {
       lastActivity: (fields.lastActivity as string | null) ?? null,
     }),
   )
-  const connection = new HilosConnection({ url: 'ws://test/ws' })
-  return { scopes, connection, users }
+
+  return {
+    scopes,
+    connection: connection as unknown as HilosUsersContext['connection'],
+    users: collection,
+  }
+}
+
+function twoUsers(): HilosUsersContext {
+  return seededContext([
+    {
+      id: 1,
+      name: 'Alice',
+      lastActivity: '2026-06-19 10:00',
+      presence: 'online',
+      onlineSessionCount: 2,
+    },
+    {
+      id: 2,
+      name: 'Bob',
+      lastActivity: null,
+      presence: 'offline',
+      onlineSessionCount: 0,
+    },
+  ])
 }
 
 describe('HilosUsersPage', () => {
@@ -65,7 +118,7 @@ describe('HilosUsersPage', () => {
   it('renders a row per user with name, presence, and sessions', () => {
     const { container } = render(
       <HilosRouterContext.Provider value={router()}>
-        <HilosUsersPage context={usersContext()} />
+        <HilosUsersPage context={twoUsers()} />
       </HilosRouterContext.Provider>,
     )
     expect(
@@ -82,7 +135,7 @@ describe('HilosUsersPage', () => {
     const { container } = render(
       <HilosRouterContext.Provider value={router()}>
         <HilosUsersPage
-          context={usersContext()}
+          context={twoUsers()}
           rowActions={(row) => <a data-id={`open-${row.id}`}>Open</a>}
         />
       </HilosRouterContext.Provider>,
