@@ -55,6 +55,17 @@ export interface TableViewportRow<R> {
   readonly placeholder: boolean
 }
 
+/**
+ * The sink the subscription wiring feeds a table's window snapshot and live
+ * deltas into — implemented by {@link TableViewportController} and held untyped
+ * by the subscription registry, since neither ingest method depends on the row
+ * type `R`.
+ */
+export interface TableWindowSink {
+  ingestWindow(rows: readonly TableRow[], totalCount: number): void
+  ingestDelta(delta: TableViewportDelta): void
+}
+
 export interface TableViewportControllerOptions<R> {
   /**
    * Resolve one window row into its view-model. Called inside a computed signal,
@@ -76,7 +87,7 @@ export interface TableViewportControllerOptions<R> {
   initialSort?: TableSort
 }
 
-export class TableViewportController<R> {
+export class TableViewportController<R> implements TableWindowSink {
   private readonly filterSignal: WritableSignal<Record<string, unknown>>
 
   private readonly sortSignal: WritableSignal<TableSort | undefined>

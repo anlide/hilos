@@ -14,12 +14,19 @@ import {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
 } from '../protocol/constants.js'
 import { type ConnectionState } from '../connection/HilosConnection.js'
+import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
   ingest,
+  normalizeTableRow,
   type NormalizerOptions,
   type ScopePayload,
+  type TableRowFragment,
 } from '../state/normalizer.js'
+import {
+  type TableViewportDelta,
+  type TableWindowSink,
+} from '../table/TableViewportController.js'
 
 /**
  * The slice of HilosConnection the manager touches; a test double only has to
@@ -36,6 +43,9 @@ export class PageSubscription {
     pageKey: string
     params: Record<string, unknown>
   } | null = null
+
+  /** Server-windowed table controllers registered for the current page, by table key. */
+  private readonly tables = new Map<string, TableWindowSink>()
 
   constructor(
     private readonly connection: PageSubscriptionConnection,
@@ -64,6 +74,7 @@ export class PageSubscription {
    */
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
     this.current = { pageKey, params }
+    this.tables.clear()
     const scope = this.scopes.openPage(pageKey)
     this.sendSubscribe()
 
@@ -77,6 +88,7 @@ export class PageSubscription {
     }
     const left = this.current.pageKey
     this.current = null
+    this.tables.clear()
     this.scopes.dropPage()
     this.connection.send(
       JSON.stringify({
@@ -107,6 +119,122 @@ export class PageSubscription {
     ingest(scope, payload, options)
 
     return true
+  }
+
+  /**
+   * Register a server-windowed table controller for the current page so the
+   * connection's table_window / table_viewport_delta signals reach it. The view
+   * registers on mount and unregisters on unmount.
+   *
+   * @param tableKey The table key the controller drives.
+   * @param sink The controller's window/delta sink.
+   */
+  registerTable(tableKey: string, sink: TableWindowSink): void {
+    this.tables.set(tableKey, sink)
+  }
+
+  /**
+   * Unregister a table controller (view unmount).
+   *
+   * @param tableKey The table key to drop.
+   */
+  unregisterTable(tableKey: string): void {
+    this.tables.delete(tableKey)
+  }
+
+  /**
+   * Route a table window snapshot to its registered controller, normalizing the
+   * rows into the page scope first. Dropped when the page is not current or no
+   * controller is registered for the table.
+   *
+   * @param pageKey The page key the signal carried.
+   * @param tableKey The table key the window is for.
+   * @param rows The window's raw row fragments.
+   * @param totalCount Total rows matching the filter.
+   * @param options Binding-local entity-type overrides for the rows' slots.
+   * @return Whether the window was routed.
+   */
+  ingestTableWindow(
+    pageKey: string,
+    tableKey: string,
+    rows: readonly TableRowFragment[],
+    totalCount: number,
+    options: NormalizerOptions = {},
+  ): boolean {
+    const scope = this.scopes.page()
+    const sink = this.tables.get(tableKey)
+    if (!scope || pageKey !== this.current?.pageKey || !sink) {
+      return false
+    }
+    sink.ingestWindow(
+      rows.map((row) => normalizeTableRow(scope, row, options)),
+      totalCount,
+    )
+
+    return true
+  }
+
+  /**
+   * Route a live viewport delta to its registered controller, normalizing an
+   * updated row into the page scope. Dropped when the page is not current, no
+   * controller is registered, or the delta is malformed.
+   *
+   * @param data The raw table_viewport_delta payload.
+   * @param options Binding-local entity-type overrides for an updated row's slots.
+   * @return Whether the delta was routed.
+   */
+  ingestTableDelta(
+    data: TableViewportDeltaSignalData,
+    options: NormalizerOptions = {},
+  ): boolean {
+    const scope = this.scopes.page()
+    const sink = this.tables.get(data.tableKey)
+    if (!scope || data.page !== this.current?.pageKey || !sink) {
+      return false
+    }
+    const delta = this.toViewportDelta(scope, data, options)
+    if (!delta) {
+      return false
+    }
+    sink.ingestDelta(delta)
+
+    return true
+  }
+
+  private toViewportDelta(
+    scope: Scope,
+    data: TableViewportDeltaSignalData,
+    options: NormalizerOptions,
+  ): TableViewportDelta | null {
+    switch (data.kind) {
+      case 'row_updated':
+        if (data.rowKey === undefined || data.row === undefined) {
+          return null
+        }
+
+        return {
+          kind: 'row_updated',
+          rowKey: String(data.rowKey),
+          row: normalizeTableRow(scope, data.row, options),
+        }
+      case 'row_removed':
+        if (data.rowKey === undefined) {
+          return null
+        }
+
+        return {
+          kind: 'row_removed',
+          rowKey: String(data.rowKey),
+          reason: data.reason ?? '',
+        }
+      case 'set_changed':
+        return {
+          kind: 'set_changed',
+          totalCount: data.totalCount ?? 0,
+        }
+      default:
+        return null
+    }
   }
 
   private sendSubscribe(): void {

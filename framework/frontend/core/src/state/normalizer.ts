@@ -14,6 +14,7 @@
 
 import { type EntityId, type EntityRef } from './EntityStore.js'
 import { type Scope } from './ScopeManager.js'
+import { type TableRow } from './TableRowsStore.js'
 
 /**
  * One entity's curated projection inside a payload slot. The stable `id` is
@@ -213,6 +214,31 @@ function ingestTable(
   for (const rowKey of section.deleted ?? []) {
     scope.tables.delete(tableKey, rowKey)
   }
+}
+
+/**
+ * Normalize one table row fragment to a store row — entity-bearing slots reduced
+ * to references — WITHOUT writing it to a store. The server-windowed table
+ * controller holds its own window, so the subscription wiring normalizes
+ * `table_window` / `table_viewport_delta` rows through this and hands them to the
+ * controller (the normalizer stays the only code touching the raw payload).
+ *
+ * @param scope The scope whose entity store the row's entity slots upsert into.
+ * @param fragment The raw table row fragment (`{rowKey, slots}`).
+ * @param options Binding-local entity-type overrides for the row's slots.
+ * @return The store row with entity slots reduced to references.
+ */
+export function normalizeTableRow(
+  scope: Scope,
+  fragment: TableRowFragment,
+  options: NormalizerOptions = {},
+): TableRow {
+  const slots: Record<string, unknown> = {}
+  for (const [sourceKey, value] of Object.entries(fragment.slots)) {
+    slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
+  }
+
+  return { rowKey: String(fragment.rowKey), slots }
 }
 
 /**

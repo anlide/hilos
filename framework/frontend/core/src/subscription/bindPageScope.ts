@@ -49,6 +49,13 @@ export function bindPageScope(
       pages.ingestPageResponse(response.page, response.payload, options)
     }
   })
+  connection.on('tableWindow', (signal) => {
+    const { page, tableKey, rows, totalCount } = signal.data
+    pages.ingestTableWindow(page, tableKey, rows, totalCount, options)
+  })
+  connection.on('tableViewportDelta', (signal) => {
+    pages.ingestTableDelta(signal.data, options)
+  })
 
   return pages
 }
