@@ -59,6 +59,13 @@ const PENDING_ROW_CLASS: Record<'update' | 'remove', string> = {
   remove: 'table-danger',
 }
 
+// A row's pending tint, resolved in script: the template `:class` binding does
+// not narrow `view.pending` out of its `| null` union, so the record is indexed
+// here — where the narrowing holds — rather than inline in the template.
+function pendingClass(pending: 'update' | 'remove' | null): string | undefined {
+  return pending ? PENDING_ROW_CLASS[pending] : undefined
+}
+
 function sortIcon(key: string): string {
   if (sort.value?.field !== key) {
     return 'bi-arrow-down-up text-muted'
@@ -130,7 +137,7 @@ function onSearchInput(event: Event): void {
             v-for="view in rows"
             :key="view.rowKey"
             :data-id="`hilos-table-row-${view.rowKey}`"
-            :class="view.pending ? PENDING_ROW_CLASS[view.pending] : null"
+            :class="pendingClass(view.pending)"
           >
             <td
               v-if="view.placeholder || view.row === null"
