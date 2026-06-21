@@ -75,9 +75,93 @@ describe('TableViewportController', () => {
     controller.ingestWindow([{ rowKey: 'a', slots: {} }], 42)
 
     expect(controller.rows.get()).toEqual([
-      { rowKey: 'a', row: { rowKey: 'a', slots: {} } },
+      { rowKey: 'a', row: { rowKey: 'a', slots: {} }, placeholder: false },
     ])
     expect(controller.totalCount.get()).toBe(42)
     expect(controller.pageCount.get()).toBe(5)
+  })
+
+  it('accumulates a row update as pending without changing the rows', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'old' },
+    })
+
+    controller.apply()
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+  })
+
+  it('applies a removal as a placeholder in its slot', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    controller.apply()
+
+    const rows = controller.rows.get()
+    expect(rows).toHaveLength(2) // layout not collapsed
+    expect(rows[0]).toEqual({ rowKey: 'a', row: null, placeholder: true })
+    expect(rows[1]?.placeholder).toBe(false)
+  })
+
+  it('records a set change as a pending list-change banner', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestDelta({ kind: 'set_changed', totalCount: 5 })
+
+    expect(controller.listChanged.get()).toBe(true)
+    expect(controller.pendingCount.get()).toBe(1)
+
+    controller.apply()
+    expect(controller.totalCount.get()).toBe(5)
+    expect(controller.listChanged.get()).toBe(false)
+  })
+
+  it('ignores a delta for a row outside the window', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'z',
+      row: { rowKey: 'z', slots: {} },
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('discards pending when the window changes', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    expect(controller.pendingCount.get()).toBe(1)
+
+    controller.setSearch('x')
+    expect(controller.pendingCount.get()).toBe(0)
   })
 })

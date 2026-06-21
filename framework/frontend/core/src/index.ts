@@ -59,6 +59,8 @@ export {
 export {
   TableViewportController,
   type TableViewportControllerOptions,
+  type TableViewportRow,
+  type TableViewportDelta,
 } from './table/TableViewportController.js'
 export { type HilosTableColumn } from './table/hilosTableColumn.js'
 export {

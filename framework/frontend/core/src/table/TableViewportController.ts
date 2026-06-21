@@ -2,10 +2,15 @@
 // the client-side TableController — which filters/sorts/paginates all delivered
 // rows locally — here the window comes from the backend: the view's intents
 // (search / sort / paginate) change the viewport descriptor and are sent to the
-// server, which replies a table_window snapshot the controller displays. The
-// pending/Apply model (table_viewport_delta accumulation) layers on top of this
-// in the next step; this step is the descriptor + windowed-load half. It owns no
-// rendering and no DOM.
+// server, which replies a table_window snapshot the controller displays.
+//
+// Live changes to the shown rows arrive as table_viewport_delta and DO NOT
+// auto-apply: they accumulate as PENDING so the table never rearranges under the
+// user's hands. The user resolves them with apply() — updates land in place, a
+// removed row becomes a placeholder in its slot (the layout never collapses and
+// no row is pulled from the next page), and a list-change refreshes the count.
+// An explicit window change discards pending instead, since the new window the
+// server returns is authoritative. The controller owns no rendering and no DOM.
 
 import { type TableViewportDescriptor } from '../connection/HilosConnection.js'
 import { type TableRow } from '../state/TableRowsStore.js'
@@ -15,14 +20,40 @@ import {
   type ReadonlySignal,
   type WritableSignal,
 } from '../state/signal.js'
-import {
-  type SortDirection,
-  type TableSort,
-  type TableViewRow,
-} from './TableController.js'
+import { type SortDirection, type TableSort } from './TableController.js'
 
 /** Generic filter-map key the search box writes; matches the backend `FILTER_KEY_SEARCH`. */
 const SEARCH_FILTER_KEY = 'search'
+
+/**
+ * One live pending change scoped to the connection's window, normalized from a
+ * `table_viewport_delta` signal (the row already reduced to references):
+ *
+ * - `row_updated` — a shown row's content changed; carries the new row;
+ * - `row_removed` — a shown row was deleted or left the set; carries the reason;
+ * - `set_changed` — membership/total changed under the filter; carries the total.
+ */
+export type TableViewportDelta =
+  | {
+      readonly kind: 'row_updated'
+      readonly rowKey: string
+      readonly row: TableRow
+    }
+  | {
+      readonly kind: 'row_removed'
+      readonly rowKey: string
+      readonly reason: string
+    }
+  | { readonly kind: 'set_changed'; readonly totalCount: number }
+
+/** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
+export interface TableViewportRow<R> {
+  readonly rowKey: string
+  /** The resolved view-model, or `null` when the row is a removed placeholder. */
+  readonly row: R | null
+  /** True when an applied removal replaced the row with a placeholder in its slot. */
+  readonly placeholder: boolean
+}
 
 export interface TableViewportControllerOptions<R> {
   /**
@@ -56,18 +87,41 @@ export class TableViewportController<R> {
 
   private readonly totalCountSignal = createSignal(0)
 
+  private readonly placeholderKeysSignal = createSignal<ReadonlySet<string>>(
+    new Set(),
+  )
+
+  private readonly pendingCountSignal = createSignal(0)
+
+  private readonly listChangedSignal = createSignal(false)
+
   private readonly searchSignal: ReadonlySignal<string>
 
   private readonly pageSize: number
 
-  /** The window rows resolved to view-models — what the view renders. */
-  readonly rows: ReadonlySignal<readonly TableViewRow<R>[]>
+  /** Pending content updates by row key — applied in place on apply(). */
+  private readonly pendingUpdates = new Map<string, TableRow>()
 
-  /** Total rows matching the filter, as the last window reported. */
+  /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
+  private readonly pendingRemoved = new Map<string, string>()
+
+  /** Pending new total under the filter, or null when the set has not changed. */
+  private pendingTotalCount: number | null = null
+
+  /** The displayed rows resolved to view-models — what the view renders. */
+  readonly rows: ReadonlySignal<readonly TableViewportRow<R>[]>
+
+  /** Total rows matching the filter, as the last applied window/change reported. */
   readonly totalCount: ReadonlySignal<number>
 
   /** Number of pages under the window size; at least 1. */
   readonly pageCount: ReadonlySignal<number>
+
+  /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
+  readonly pendingCount: ReadonlySignal<number>
+
+  /** Whether a pending set-change is waiting (the "list changed" banner). */
+  readonly listChanged: ReadonlySignal<boolean>
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
     this.pageSize = Math.max(1, Math.trunc(options.pageSize))
@@ -80,16 +134,25 @@ export class TableViewportController<R> {
 
       return typeof value === 'string' ? value : ''
     })
-    this.rows = computedSignal(() =>
-      this.windowSignal.get().map((raw) => ({
-        rowKey: raw.rowKey,
-        row: options.resolve(raw),
-      })),
-    )
+    this.rows = computedSignal(() => {
+      const placeholders = this.placeholderKeysSignal.get()
+
+      return this.windowSignal.get().map((raw) => {
+        const placeholder = placeholders.has(raw.rowKey)
+
+        return {
+          rowKey: raw.rowKey,
+          row: placeholder ? null : options.resolve(raw),
+          placeholder,
+        }
+      })
+    })
     this.totalCount = this.totalCountSignal
     this.pageCount = computedSignal(() =>
       Math.max(1, Math.ceil(this.totalCountSignal.get() / this.pageSize)),
     )
+    this.pendingCount = this.pendingCountSignal
+    this.listChanged = this.listChangedSignal
   }
 
   /** The current search query (empty string when unset). */
@@ -116,8 +179,9 @@ export class TableViewportController<R> {
   }
 
   /**
-   * Set the search filter and return to the first page, then request the new
-   * window. An empty query drops the search filter entirely.
+   * Set the search filter and return to the first page, discard pending (the new
+   * window is authoritative), then request the new window. An empty query drops
+   * the search filter entirely.
    *
    * @param query The raw search text.
    */
@@ -130,7 +194,7 @@ export class TableViewportController<R> {
     }
     this.filterSignal.set(filter)
     this.pageSignal.set(0)
-    this.send()
+    this.changeWindow()
   }
 
   /**
@@ -145,14 +209,14 @@ export class TableViewportController<R> {
       current?.field === field && current.direction === 'asc' ? 'desc' : 'asc'
     this.sortSignal.set({ field, direction })
     this.pageSignal.set(0)
-    this.send()
+    this.changeWindow()
   }
 
   /** Clear the active sort, return to the first page, then request the new window. */
   clearSort(): void {
     this.sortSignal.set(undefined)
     this.pageSignal.set(0)
-    this.send()
+    this.changeWindow()
   }
 
   /**
@@ -164,13 +228,14 @@ export class TableViewportController<R> {
   setPage(page: number): void {
     const last = this.pageCount.get() - 1
     this.pageSignal.set(Math.min(Math.max(0, page), Math.max(0, last)))
-    this.send()
+    this.changeWindow()
   }
 
   /**
    * Ingest a window snapshot from the backend (`table_window`): replace the
-   * displayed rows and the total count. Called by the subscription wiring; the
-   * rows are already normalized to references.
+   * displayed rows and the total count, and drop any leftover pending and
+   * placeholders — the fresh window is authoritative. Called by the subscription
+   * wiring; the rows are already normalized to references.
    *
    * @param rows The window's rows, in display order.
    * @param totalCount Total rows matching the filter.
@@ -178,6 +243,97 @@ export class TableViewportController<R> {
   ingestWindow(rows: readonly TableRow[], totalCount: number): void {
     this.windowSignal.set(rows.slice())
     this.totalCountSignal.set(Math.max(0, totalCount))
+    this.placeholderKeysSignal.set(new Set())
+    this.clearPending()
+  }
+
+  /**
+   * Accumulate one live delta as pending — never applied automatically. A row
+   * delta is kept only when its row is in the current window (anchored by
+   * row-id); a set-change is always recorded.
+   *
+   * @param delta The normalized viewport delta.
+   */
+  ingestDelta(delta: TableViewportDelta): void {
+    switch (delta.kind) {
+      case 'row_updated':
+        if (this.isInWindow(delta.rowKey)) {
+          this.pendingRemoved.delete(delta.rowKey)
+          this.pendingUpdates.set(delta.rowKey, delta.row)
+        }
+        break
+      case 'row_removed':
+        if (this.isInWindow(delta.rowKey)) {
+          this.pendingUpdates.delete(delta.rowKey)
+          this.pendingRemoved.set(delta.rowKey, delta.reason)
+        }
+        break
+      case 'set_changed':
+        this.pendingTotalCount = delta.totalCount
+        break
+    }
+    this.refreshPendingSignals()
+  }
+
+  /**
+   * Apply accumulated pending changes to the displayed rows in place: updates
+   * replace their row, removals become placeholders in their slot (the layout is
+   * not collapsed and no row is pulled from another page), and a set-change
+   * refreshes the count. The window itself does not move.
+   */
+  apply(): void {
+    if (this.pendingCountSignal.get() === 0) {
+      return
+    }
+
+    if (this.pendingUpdates.size > 0) {
+      this.windowSignal.set(
+        this.windowSignal
+          .get()
+          .map((row) => this.pendingUpdates.get(row.rowKey) ?? row),
+      )
+    }
+
+    if (this.pendingRemoved.size > 0) {
+      const placeholders = new Set(this.placeholderKeysSignal.get())
+      for (const rowKey of this.pendingRemoved.keys()) {
+        placeholders.add(rowKey)
+      }
+      this.placeholderKeysSignal.set(placeholders)
+    }
+
+    if (this.pendingTotalCount !== null) {
+      this.totalCountSignal.set(Math.max(0, this.pendingTotalCount))
+    }
+
+    this.clearPending()
+  }
+
+  private isInWindow(rowKey: string): boolean {
+    return this.windowSignal.get().some((row) => row.rowKey === rowKey)
+  }
+
+  /** Discard pending and placeholders, then request the new window. */
+  private changeWindow(): void {
+    this.placeholderKeysSignal.set(new Set())
+    this.clearPending()
+    this.send()
+  }
+
+  private clearPending(): void {
+    this.pendingUpdates.clear()
+    this.pendingRemoved.clear()
+    this.pendingTotalCount = null
+    this.refreshPendingSignals()
+  }
+
+  private refreshPendingSignals(): void {
+    this.pendingCountSignal.set(
+      this.pendingUpdates.size +
+        this.pendingRemoved.size +
+        (this.pendingTotalCount !== null ? 1 : 0),
+    )
+    this.listChangedSignal.set(this.pendingTotalCount !== null)
   }
 
   /** The viewport descriptor for the current filter, sort, and page. */
