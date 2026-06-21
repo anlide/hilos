@@ -38,6 +38,8 @@ use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\SelfSnapshotTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -383,6 +385,11 @@ abstract class BrowserContext
 
                     $selfSnapshotTable = $this->selfSnapshotTable($tableKey);
                     if ($selfSnapshotTable !== null) {
+                        $viewport = Hilos::$sr->getTableViewport($acceptKey, $tableKey);
+                        if ($viewport !== null) {
+                            $this->emitViewportDelta($selfSnapshotTable, $viewport, $change, $acceptKey, $page, $tableKey);
+                            continue;
+                        }
                         $this->accumulateSelfSnapshotChange($signalTables, $selfSnapshotTable, $change, $acceptKey, $page, $tableKey);
                         continue;
                     }
@@ -1002,6 +1009,149 @@ abstract class BrowserContext
             $mutation->rowKey,
             $table->browserRow($mutation->row),
         );
+    }
+
+    /**
+     * Emits a live viewport delta for a self-snapshot change scoped to a connection's window.
+     *
+     * Point-wise against the remembered row-id set: an in-window row maps to a
+     * row_updated or a row_removed; a change outside the window that shifts the
+     * filtered count maps to a set_changed. The full window is never re-queried for
+     * an in-window row.
+     *
+     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
+     * @param SourceChange $change Grouped DB/RT source change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     */
+    private function emitViewportDelta(
+        SelfSnapshotTable $table,
+        TableViewportSubscription $viewport,
+        SourceChange $change,
+        string $acceptKey,
+        string $page,
+        string $tableKey,
+    ): void {
+        try {
+            $mutation = $table->buildMutationForSourceEvent($change);
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($mutation === null) {
+            return;
+        }
+
+        $delta = $this->viewportDeltaForMutation($table, $viewport, $mutation, $page, $tableKey);
+        if ($delta === null) {
+            return;
+        }
+
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalTypeConstants::TABLE_VIEWPORT_DELTA),
+            signalData: new WebSocketSignalData(
+                data: $delta,
+                targetAcceptKey: $acceptKey,
+            ),
+        );
+    }
+
+    /**
+     * Maps one table mutation to the viewport delta for a connection's window.
+     *
+     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     * @return ?TableViewportDeltaDTO Delta to send, or null when the change does not affect this window
+     */
+    private function viewportDeltaForMutation(
+        SelfSnapshotTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $page,
+        string $tableKey,
+    ): ?TableViewportDeltaDTO {
+        $rowKey = (string) $mutation->rowKey;
+        $inWindow = $viewport->hasRow($rowKey);
+
+        if ($mutation->type === TableMutationType::Delete) {
+            if (!$inWindow) {
+                return $this->setChangedDelta($table, $viewport, $page, $tableKey);
+            }
+            $viewport->forgetRow($rowKey);
+
+            return TableViewportDeltaDTO::rowRemoved($page, $tableKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED);
+        }
+
+        if (!$inWindow) {
+            return $this->setChangedDelta($table, $viewport, $page, $tableKey);
+        }
+
+        if ($mutation->row === null) {
+            return null;
+        }
+
+        return TableViewportDeltaDTO::rowUpdated($page, $tableKey, $mutation->rowKey, $table->browserRow($mutation->row));
+    }
+
+    /**
+     * Builds a set_changed delta when an out-of-window change shifts the filtered count.
+     *
+     * Recomputes the count via getPage; for the in-memory self-snapshot tables
+     * served here that is cheap. Returns null when the count is unchanged.
+     *
+     * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
+     * @param TableViewportSubscription $viewport Connection's window; its total count is updated in place
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     * @return ?TableViewportDeltaDTO Set-changed delta, or null when the count is unchanged
+     */
+    private function setChangedDelta(
+        SelfSnapshotTable $table,
+        TableViewportSubscription $viewport,
+        string $page,
+        string $tableKey,
+    ): ?TableViewportDeltaDTO {
+        try {
+            $snapshot = $table->getPage($this->viewportQuery($viewport));
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($snapshot->totalCount === $viewport->totalCount()) {
+            return null;
+        }
+
+        $viewport->recordWindow($viewport->rowIds(), $snapshot->totalCount);
+
+        return TableViewportDeltaDTO::setChanged(
+            $page,
+            $tableKey,
+            $snapshot->totalCount,
+            $this->pageCount($snapshot->totalCount, $viewport->limit),
+        );
+    }
+
+    /**
+     * Page count under a window size; at least one, and one when unpaginated.
+     *
+     * @param int $totalCount Total rows matching the filter
+     * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
+     * @return int Page count
+     */
+    private function pageCount(int $totalCount, int $limit): int
+    {
+        if ($limit <= TableConstants::NO_LIMIT) {
+            return 1;
+        }
+
+        return max(1, (int) ceil($totalCount / $limit));
     }
 
     /**
