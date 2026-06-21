@@ -67,7 +67,10 @@ function inputStep(type: string | undefined): 'any' | undefined {
  */
 export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const settings = useMemo(() => createHilosSettingsTable(context), [context])
-  const actions = useMemo(() => createHilosSettingsActions(context), [context])
+  const actions = useMemo(
+    () => createHilosSettingsActions(context, settings.controller),
+    [context, settings],
+  )
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.

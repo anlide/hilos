@@ -164,4 +164,79 @@ describe('TableViewportController', () => {
     controller.setSearch('x')
     expect(controller.pendingCount.get()).toBe(0)
   })
+
+  it('applies an own-change echo at once instead of queuing it', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.expectOwnChange('a', Promise.resolve())
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+  })
+
+  it('an own-change echo resolves a pending change already queued for the same row', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    // A concurrent change for the same row lands first as pending...
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'other' } },
+    })
+    expect(controller.pendingCount.get()).toBe(1)
+    // ...then this tab's own echo arrives and applies, clearing the pending.
+    controller.expectOwnChange('a', Promise.resolve())
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'mine' } },
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'mine' },
+    })
+  })
+
+  it('applies an own removal at once as a placeholder', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.expectOwnChange('a', Promise.resolve())
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]).toEqual({
+      rowKey: 'a',
+      row: null,
+      placeholder: true,
+    })
+  })
+
+  it('drops the own-change mark when the action fails, so the echo queues as pending', async () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    const settled = Promise.reject(new Error('fail'))
+    controller.expectOwnChange('a', settled)
+    await settled.catch(() => {}) // let the rejection clear the mark
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+    })
+
+    expect(controller.pendingCount.get()).toBe(1)
+  })
 })

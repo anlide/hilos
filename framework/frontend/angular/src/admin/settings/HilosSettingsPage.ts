@@ -290,7 +290,7 @@ export class HilosSettingsPage {
     createHilosSettingsTable(this.context()),
   )
   private readonly actions = computed(() =>
-    createHilosSettingsActions(this.context()),
+    createHilosSettingsActions(this.context(), this.settings().controller),
   )
 
   // Edit dialog: one row's custom value (or a reset back to the catalog default).

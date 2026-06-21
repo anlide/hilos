@@ -1038,6 +1038,15 @@ abstract class BrowserContext
      * filtered count maps to a set_changed. The full window is never re-queried for
      * an in-window row.
      *
+     * This delta is also queued to the connection whose own action caused the
+     * change: the fanout runs off grouped source changes and does not carry the
+     * originating action's id, so the originator is not distinguished here. The
+     * frontend instead auto-applies its own change by row-key correlation
+     * (TableViewportController::expectOwnChange) while other connections keep the
+     * pending gate. KNOWN RACE: a concurrent change to the SAME row between an edit
+     * and its echo can cross the frontend marks and leave one change pending; the
+     * precise fix is to tag the originating connection here.
+     *
      * @param SelfSnapshotTable $table Self-snapshot table the viewport is on
      * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
      * @param SourceChange $change Grouped DB/RT source change
