@@ -46,7 +46,6 @@ const page = useSignal(props.controller.page)
 const pageCount = useSignal(props.controller.pageCount)
 const totalCount = useSignal(props.controller.totalCount)
 const pendingCount = useSignal(props.controller.pendingCount)
-const listChanged = useSignal(props.controller.listChanged)
 const loaded = useSignal(props.controller.loaded)
 
 const paginated = computed(() => pageCount.value > 1)
@@ -100,15 +99,6 @@ function onSearchInput(event: Event): void {
           {{ pendingCount }}
         </span>
       </button>
-    </div>
-
-    <div
-      v-if="listChanged"
-      class="alert alert-warning py-2"
-      role="status"
-      data-id="hilos-table-list-changed"
-    >
-      The list changed — apply to refresh.
     </div>
 
     <div class="table-responsive">

@@ -14,13 +14,16 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -28,7 +31,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 /**
  * Table definition for the admin users grid.
  */
-final class AdminUsersTable extends TableDefinition
+final class AdminUsersTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [
@@ -78,6 +81,38 @@ final class AdminUsersTable extends TableDefinition
             ChatRtContext::connections => $this->mutationForConnection($change),
             default => null,
         };
+    }
+
+    /**
+     * Serializes one admin users row into its internal browser-row envelope.
+     *
+     * The runtime presence fields ride the inline `connections` slot and the user
+     * identity/profile fields the entity-bearing `users` slot — the same shape the
+     * declarative fan-out delivers, so a windowed or delta row resolves through the
+     * frontend identically (and a rename fans out through the user entity).
+     *
+     * @param AbstractTableRow $row Admin users row from this table's window or mutation
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        $fields = $row->toArray();
+        $connections = [
+            AdminUserTableRow::presence => $fields[AdminUserTableRow::presence] ?? null,
+            AdminUserTableRow::onlineSessionCount => $fields[AdminUserTableRow::onlineSessionCount] ?? 0,
+        ];
+        unset(
+            $fields[AdminUserTableRow::presence],
+            $fields[AdminUserTableRow::onlineSessionCount],
+        );
+
+        return [
+            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::sources => [
+                ChatDbContext::users => $fields,
+                ChatRtContext::connections => $connections,
+            ],
+        ];
     }
 
     /**

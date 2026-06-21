@@ -104,14 +104,14 @@ describe('HilosViewportTable', () => {
     expect(wrapper.text()).not.toContain('Alice')
   })
 
-  it('shows the list-changed banner on a pending set change', () => {
+  it('does not render a list-changed banner on a set change (no layout shift)', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
     controller.ingestDelta({ kind: 'set_changed', totalCount: 5 })
     const wrapper = mountTable(controller)
 
     expect(wrapper.find('[data-id="hilos-table-list-changed"]').exists()).toBe(
-      true,
+      false,
     )
   })
 })

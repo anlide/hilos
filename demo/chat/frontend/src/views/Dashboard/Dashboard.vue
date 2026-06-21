@@ -12,6 +12,13 @@ defineOptions({ name: 'DashboardPage' })
 /** This app's own admin areas, shown above the framework sections. */
 const chatItems = [
   {
+    key: 'admin_users',
+    title: 'Users',
+    lead: 'Application users: presence, activity, and rename.',
+    icon: 'bi-people',
+    to: '/hilos/admin_users',
+  },
+  {
     key: 'admin_bots',
     title: 'Bots',
     lead: 'Library bots: profiles, status, and behavior.',

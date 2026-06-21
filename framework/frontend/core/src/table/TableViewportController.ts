@@ -147,7 +147,12 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
 
-  /** Whether a pending set-change is waiting (the "list changed" banner). */
+  /**
+   * Whether a pending set-change is waiting under the filter. The default
+   * HilosViewportTable no longer renders a banner for this — the banner shifted
+   * the table layout as it came and went — so this is kept as headless state a
+   * consumer can surface without that jump.
+   */
   readonly listChanged: ReadonlySignal<boolean>
 
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */

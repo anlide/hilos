@@ -66,7 +66,6 @@ export function HilosViewportTable<R>({
   const pageCount = useSignal(controller.pageCount)
   const totalCount = useSignal(controller.totalCount)
   const pendingCount = useSignal(controller.pendingCount)
-  const listChanged = useSignal(controller.listChanged)
   const loaded = useSignal(controller.loaded)
   const paginated = pageCount > 1
 
@@ -108,16 +107,6 @@ export function HilosViewportTable<R>({
               </span>
             </button>
           ) : null}
-        </div>
-      ) : null}
-
-      {listChanged ? (
-        <div
-          className="alert alert-warning py-2"
-          role="status"
-          data-id="hilos-table-list-changed"
-        >
-          The list changed — apply to refresh.
         </div>
       ) : null}
 

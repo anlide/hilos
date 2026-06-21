@@ -74,16 +74,6 @@ export interface ViewportTableRowContext<R> {
         </div>
       }
 
-      @if (listChanged()) {
-        <div
-          class="alert alert-warning py-2"
-          role="status"
-          data-id="hilos-table-list-changed"
-        >
-          The list changed — apply to refresh.
-        </div>
-      }
-
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle mb-0">
           <thead>
@@ -224,7 +214,6 @@ export class HilosViewportTable<R> {
   protected readonly pageCount = signal(1)
   protected readonly totalCount = signal(0)
   protected readonly pendingCount = signal(0)
-  protected readonly listChanged = signal(false)
   protected readonly loaded = signal(false)
   protected readonly paginated = computed(() => this.pageCount() > 1)
 
@@ -259,7 +248,6 @@ export class HilosViewportTable<R> {
         bind(controller.pageCount, this.pageCount),
         bind(controller.totalCount, this.totalCount),
         bind(controller.pendingCount, this.pendingCount),
-        bind(controller.listChanged, this.listChanged),
         bind(controller.loaded, this.loaded),
       ]
       onCleanup(() => {
