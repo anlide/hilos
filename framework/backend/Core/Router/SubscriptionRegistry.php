@@ -24,6 +24,9 @@ final class SubscriptionRegistry
     /** @var array<string, array<string, array<string, mixed>>> Group params keyed by accept key, then group */
     private array $groups = [];
 
+    /** @var array<string, array<string, TableViewportSubscription>> Table viewports keyed by accept key, then table key */
+    private array $tableViewports = [];
+
     /**
      * @param string $acceptKey Client accept key
      * @param string $page Page identifier
@@ -36,6 +39,8 @@ final class SubscriptionRegistry
         }
 
         $this->pages[$acceptKey] = new PageSubscription($page, $params);
+        // A (re)subscribe reloads the page, so its table viewports no longer apply.
+        unset($this->tableViewports[$acceptKey]);
     }
 
     /**
@@ -83,6 +88,7 @@ final class SubscriptionRegistry
         }
 
         unset($this->pages[$acceptKey]);
+        unset($this->tableViewports[$acceptKey]);
     }
 
     /**
@@ -152,6 +158,59 @@ final class SubscriptionRegistry
     {
         unset($this->pages[$acceptKey]);
         unset($this->groups[$acceptKey]);
+        unset($this->tableViewports[$acceptKey]);
+    }
+
+    /**
+     * Stores or replaces a connection's viewport for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param TableViewportSubscription $viewport Table viewport descriptor
+     */
+    public function setTableViewport(string $acceptKey, TableViewportSubscription $viewport): void
+    {
+        if ($acceptKey === '') {
+            return;
+        }
+
+        $this->tableViewports[$acceptKey][$viewport->tableKey] = $viewport;
+    }
+
+    /**
+     * Returns a connection's viewport for one table, or null when not set.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return ?TableViewportSubscription Stored viewport or null
+     */
+    public function getTableViewport(string $acceptKey, string $tableKey): ?TableViewportSubscription
+    {
+        return $this->tableViewports[$acceptKey][$tableKey] ?? null;
+    }
+
+    /**
+     * Returns all table viewports held by a connection, keyed by table key.
+     *
+     * @param string $acceptKey Client accept key
+     * @return array<string, TableViewportSubscription> Viewports keyed by table key
+     */
+    public function getTableViewports(string $acceptKey): array
+    {
+        return $this->tableViewports[$acceptKey] ?? [];
+    }
+
+    /**
+     * Removes a connection's viewport for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     */
+    public function forgetTableViewport(string $acceptKey, string $tableKey): void
+    {
+        unset($this->tableViewports[$acceptKey][$tableKey]);
+        if (($this->tableViewports[$acceptKey] ?? null) === []) {
+            unset($this->tableViewports[$acceptKey]);
+        }
     }
 
     /**
