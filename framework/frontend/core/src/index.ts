@@ -190,6 +190,7 @@ export {
   type BuildMismatch,
   type HilosConnectionEventMap,
   type HilosConnectionOptions,
+  type TableViewportDescriptor,
 } from './connection/HilosConnection.js'
 export {
   createHilosConnection,
