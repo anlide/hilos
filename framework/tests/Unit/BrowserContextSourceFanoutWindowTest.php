@@ -21,6 +21,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\InMemoryTableFilter;
@@ -120,6 +121,8 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         $context->record(SourceChange::dbDeleted(SourceFanoutWindowUnitTable::SOURCE_KEY, 'alpha', ['key' => 'alpha']));
         $context->flushToSignalRouter();
 
+        $this->assertSame(0, $this->nextCount()->totalCount);
+
         $delta = $this->nextDelta();
         $this->assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
         $this->assertSame('alpha', $delta->rowKey);
@@ -127,20 +130,20 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         $this->assertFalse($viewport->hasRow('alpha'));
     }
 
-    public function testOutOfWindowChangeEmitsSetChanged(): void
+    public function testOutOfWindowCreateEmitsCountSignal(): void
     {
         $context = $this->boot(
             [new SourceFanoutWindowUnitRow('alpha', 'Alpha'), new SourceFanoutWindowUnitRow('beta', 'Beta')],
             ['alpha'],
             1,
         );
-        $context->record(SourceChange::dbUpdated(SourceFanoutWindowUnitTable::SOURCE_KEY, 'beta', ['label' => 'Beta']));
+        $context->record(SourceChange::dbCreated(SourceFanoutWindowUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
         $context->flushToSignalRouter();
 
-        $delta = $this->nextDelta();
-        $this->assertSame(TableViewportDeltaDTO::KIND_SET_CHANGED, $delta->kind);
-        $this->assertSame(2, $delta->totalCount);
-        $this->assertSame(1, $delta->pageCount);
+        $count = $this->nextCount();
+        $this->assertSame(2, $count->totalCount);
+        $this->assertSame(1, $count->pageCount);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testNoViewportEmitsNoDelta(): void
@@ -213,6 +216,24 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportDeltaDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport count and returns it.
+     *
+     * @return TableViewportCountDTO The count payload
+     */
+    private function nextCount(): TableViewportCountDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_COUNT, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportCountDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }
@@ -293,7 +314,8 @@ final class SourceFanoutWindowUnitTable extends TableDefinition implements Viewp
     }
 
     /**
-     * Maps a source change to a row update when the row exists, or a delete otherwise.
+     * Maps a source change to a row mutation preserving its type when the row
+     * exists, or a delete otherwise.
      *
      * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Row mutation, or null for another source
@@ -306,7 +328,7 @@ final class SourceFanoutWindowUnitTable extends TableDefinition implements Viewp
 
         foreach ($this->rows as $row) {
             if ($row->getRowKey() === $change->sourceId) {
-                return $this->mutation(TableMutationType::Update, $row->getRowKey(), $row);
+                return $this->mutation($change->mutationType, $row->getRowKey(), $row);
             }
         }
 

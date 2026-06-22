@@ -31,6 +31,7 @@ use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -39,6 +40,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
@@ -954,24 +956,25 @@ abstract class BrowserContext
     }
 
     /**
-     * Emits a live viewport delta for a source change scoped to a connection's window.
+     * Emits live viewport signals for a source change scoped to a connection's window.
      *
-     * Point-wise against the remembered row-id set: an in-window row maps to a
-     * row_updated or a row_removed; a change outside the window that shifts the
-     * filtered count maps to a set_changed. The full window is never re-queried for
-     * an in-window row.
+     * A change yields up to two addressed signals: a live table_viewport_count when
+     * the filtered total shifts (navigation metadata the frontend applies at once),
+     * and a pending table_viewport_delta for an in-window row edit or removal. An
+     * out-of-window create or delete only moves the count here; an inbound row that
+     * belongs on the last page is appended by a later step.
      *
-     * This delta is also queued to the connection whose own action caused the
+     * The signals are also queued to the connection whose own action caused the
      * change: the fanout runs off grouped source changes and does not carry the
      * originating action's id, so the originator is not distinguished here. The
-     * frontend instead auto-applies its own change by row-key correlation
+     * frontend instead auto-applies its own row change by row-key correlation
      * (TableViewportController::expectOwnChange) while other connections keep the
      * pending gate. KNOWN RACE: a concurrent change to the SAME row between an edit
      * and its echo can cross the frontend marks and leave one change pending; the
      * precise fix is to tag the originating connection here.
      *
      * @param ViewportTable $table Viewport table the window is on
-     * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
+     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
@@ -995,53 +998,124 @@ abstract class BrowserContext
             return;
         }
 
-        $delta = $this->viewportDeltaForMutation($table, $viewport, $mutation, $page, $tableKey);
-        if ($delta === null) {
+        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $tableKey);
+
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $tableKey);
+        if ($delta !== null) {
+            $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
+        }
+    }
+
+    /**
+     * Emits the live count signal when a mutation shifts the filtered total.
+     *
+     * The count is navigation metadata, not row content, so it is delivered live
+     * and never gated as pending. Unfiltered, the total moves by the mutation's
+     * row-level type (create +1, delete -1, update none) with no re-query — the
+     * type is row-level faithful because each table builds it that way (a presence
+     * or other secondary-source change is always an update). With a filter active,
+     * the total is recomputed via getPage, the costlier but transient path.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its total is updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     */
+    private function emitViewportCount(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $tableKey,
+    ): void {
+        $newTotal = $this->viewportTotalAfterMutation($table, $viewport, $mutation);
+        if ($newTotal === null || $newTotal === $viewport->totalCount()) {
             return;
         }
 
-        Hilos::$sr?->queueSignal(
-            signalSource: new SignalSource(SignalSource::WORKER),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(SignalTypeConstants::TABLE_VIEWPORT_DELTA),
-            signalData: new WebSocketSignalData(
-                data: $delta,
-                targetAcceptKey: $acceptKey,
-            ),
+        $viewport->recordWindow($viewport->rowIds(), $newTotal);
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_COUNT,
+            new TableViewportCountDTO($page, $tableKey, $newTotal, $this->pageCount($newTotal, $viewport->limit)),
+            $acceptKey,
         );
     }
 
     /**
-     * Maps one table mutation to the viewport delta for a connection's window.
+     * Resolves the filtered total after a mutation, or null to leave it unchanged.
      *
      * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @return ?int New filtered total, or null when the count does not change
+     */
+    private function viewportTotalAfterMutation(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+    ): ?int {
+        if ($this->viewportQuery($viewport)->search !== '') {
+            return $this->viewportFilteredTotal($table, $viewport);
+        }
+
+        return match ($mutation->type) {
+            TableMutationType::Create => $viewport->totalCount() + 1,
+            TableMutationType::Delete => max(0, $viewport->totalCount() - 1),
+            TableMutationType::Update => null,
+            default => $this->viewportFilteredTotal($table, $viewport),
+        };
+    }
+
+    /**
+     * Recomputes the filtered total via a windowed query, or null on failure.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @return ?int Filtered total, or null when the query fails
+     */
+    private function viewportFilteredTotal(ViewportTable $table, TableViewportSubscription $viewport): ?int
+    {
+        try {
+            return $table->getPage($this->viewportQuery($viewport))->totalCount;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Maps an in-window mutation to its pending row delta, or null otherwise.
+     *
+     * Out-of-window changes carry no row here — their effect is the live count (and,
+     * for an inbound last-page row, a later append). An in-window delete drops the
+     * row from the delivered set and removes it; an in-window update re-sends it.
+     *
      * @param TableViewportSubscription $viewport Connection's window; its row-id set is updated in place
+     * @param ViewportTable $table Viewport table the window is on
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
      * @param string $tableKey Browser table key
-     * @return ?TableViewportDeltaDTO Delta to send, or null when the change does not affect this window
+     * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
      */
-    private function viewportDeltaForMutation(
-        ViewportTable $table,
+    private function rowDeltaForMutation(
         TableViewportSubscription $viewport,
+        ViewportTable $table,
         TableRowMutationDTO $mutation,
         string $page,
         string $tableKey,
     ): ?TableViewportDeltaDTO {
         $rowKey = (string) $mutation->rowKey;
-        $inWindow = $viewport->hasRow($rowKey);
+        if (!$viewport->hasRow($rowKey)) {
+            return null;
+        }
 
         if ($mutation->type === TableMutationType::Delete) {
-            if (!$inWindow) {
-                return $this->setChangedDelta($table, $viewport, $page, $tableKey);
-            }
             $viewport->forgetRow($rowKey);
 
             return TableViewportDeltaDTO::rowRemoved($page, $tableKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED);
-        }
-
-        if (!$inWindow) {
-            return $this->setChangedDelta($table, $viewport, $page, $tableKey);
         }
 
         if ($mutation->row === null) {
@@ -1057,39 +1131,19 @@ abstract class BrowserContext
     }
 
     /**
-     * Builds a set_changed delta when an out-of-window change shifts the filtered count.
+     * Queues an addressed worker-to-client table signal for one accept key.
      *
-     * Recomputes the count via getPage. Returns null when the count is unchanged.
-     *
-     * @param ViewportTable $table Viewport table the window is on
-     * @param TableViewportSubscription $viewport Connection's window; its total count is updated in place
-     * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
-     * @return ?TableViewportDeltaDTO Set-changed delta, or null when the count is unchanged
+     * @param string $signalName Signal type name
+     * @param SignalDataInterface $data Signal payload
+     * @param string $acceptKey Target accept key
      */
-    private function setChangedDelta(
-        ViewportTable $table,
-        TableViewportSubscription $viewport,
-        string $page,
-        string $tableKey,
-    ): ?TableViewportDeltaDTO {
-        try {
-            $snapshot = $table->getPage($this->viewportQuery($viewport));
-        } catch (Throwable) {
-            return null;
-        }
-
-        if ($snapshot->totalCount === $viewport->totalCount()) {
-            return null;
-        }
-
-        $viewport->recordWindow($viewport->rowIds(), $snapshot->totalCount);
-
-        return TableViewportDeltaDTO::setChanged(
-            $page,
-            $tableKey,
-            $snapshot->totalCount,
-            $this->pageCount($snapshot->totalCount, $viewport->limit),
+    private function queueAddressedTableSignal(string $signalName, SignalDataInterface $data, string $acceptKey): void
+    {
+        Hilos::$sr?->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $acceptKey),
         );
     }
 

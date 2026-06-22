@@ -23,7 +23,6 @@ final class TableViewportDeltaDTOTest extends TestCase
         $this->assertSame('a', $restored->rowKey);
         $this->assertSame($row, $restored->row);
         $this->assertNull($restored->reason);
-        $this->assertNull($restored->totalCount);
     }
 
     public function testRowRemovedRoundTrip(): void
@@ -38,24 +37,12 @@ final class TableViewportDeltaDTOTest extends TestCase
         $this->assertNull($restored->row);
     }
 
-    public function testSetChangedRoundTrip(): void
-    {
-        $restored = TableViewportDeltaDTO::fromArray(
-            TableViewportDeltaDTO::setChanged('p', 't', 42, 5)->toArray(),
-        );
-
-        $this->assertSame(TableViewportDeltaDTO::KIND_SET_CHANGED, $restored->kind);
-        $this->assertSame(42, $restored->totalCount);
-        $this->assertSame(5, $restored->pageCount);
-        $this->assertNull($restored->rowKey);
-    }
-
     public function testToArrayOmitsKeysIrrelevantToTheKind(): void
     {
-        $array = TableViewportDeltaDTO::setChanged('p', 't', 1, 1)->toArray();
+        $removed = TableViewportDeltaDTO::rowRemoved('p', 't', 5, TableViewportDeltaDTO::REASON_DELETED)->toArray();
+        $this->assertArrayNotHasKey(TableViewportDeltaDTO::row, $removed);
 
-        $this->assertArrayNotHasKey(TableViewportDeltaDTO::rowKey, $array);
-        $this->assertArrayNotHasKey(TableViewportDeltaDTO::row, $array);
-        $this->assertArrayNotHasKey(TableViewportDeltaDTO::reason, $array);
+        $updated = TableViewportDeltaDTO::rowUpdated('p', 't', 5, ['rowKey' => 5])->toArray();
+        $this->assertArrayNotHasKey(TableViewportDeltaDTO::reason, $updated);
     }
 }
