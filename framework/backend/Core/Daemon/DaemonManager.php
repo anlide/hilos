@@ -80,6 +80,9 @@ abstract class DaemonManager extends BaseManager
         'proc_terminate',
     ];
 
+    /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
+    private const float READINESS_LOG_INTERVAL = 60.0;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -106,6 +109,18 @@ abstract class DaemonManager extends BaseManager
 
     /** @var bool Flag indicating if initial workers are ready */
     private bool $workersReady = false;
+
+    /** @var bool True once the WebSocket server has been started */
+    private bool $webSocketStarted = false;
+
+    /** @var ?float microtime when the readiness wait began; null until workers are ready */
+    private ?float $readinessWaitSince = null;
+
+    /** @var ?float microtime of the last stuck-readiness log line; null until the first one */
+    private ?float $lastReadinessLogAt = null;
+
+    /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
+    protected ?float $readinessTimeout = null;
 
     /**
      * Initializes daemon manager.
@@ -195,6 +210,9 @@ abstract class DaemonManager extends BaseManager
 
             // Call tick method
             $this->onTick();
+
+            // Open the WebSocket server once the required startup agents are ready
+            $this->tickReadiness();
 
             // Check cron jobs (not more than once per minute)
             $this->checkCronJobs();
@@ -326,6 +344,93 @@ abstract class DaemonManager extends BaseManager
                 }
             }
         }
+    }
+
+    /**
+     * Agent ids whose onStart must finish before the WebSocket server opens.
+     *
+     * Default is empty: the WebSocket server opens as soon as the workers are ready. A project
+     * overrides this to gate the socket on its critical startup agents, so no connection is
+     * accepted before those agents have built their state.
+     *
+     * @return list<string> Agent ids to wait for; empty opens the socket as soon as workers are ready
+     */
+    protected function getRequiredReadinessAgents(): array
+    {
+        return [];
+    }
+
+    /**
+     * Opens the WebSocket server once the required startup agents are ready.
+     *
+     * Runs every main-loop iteration after the workers are ready. Opens the socket when every
+     * required agent has reported agent_started; while they are pending it logs at most once per
+     * READINESS_LOG_INTERVAL, and opens the socket degraded once readinessTimeout elapses.
+     */
+    private function tickReadiness(): void
+    {
+        if (!$this->workersReady || $this->webSocketStarted) {
+            return;
+        }
+
+        $pending = $this->pendingReadinessAgents();
+
+        if ($pending === []) {
+            $this->startWebSocketServer();
+            $this->webSocketStarted = true;
+            return;
+        }
+
+        $waited = microtime(true) - ($this->readinessWaitSince ?? microtime(true));
+
+        if ($this->readinessTimeout !== null && $waited >= $this->readinessTimeout) {
+            Logger::error(sprintf(
+                'WebSocket readiness timed out after %.0fs; opening degraded, agents still not started: %s',
+                $waited,
+                implode(', ', $pending),
+            ));
+            $this->startWebSocketServer();
+            $this->webSocketStarted = true;
+            return;
+        }
+
+        $this->logReadinessStuck($pending, $waited);
+    }
+
+    /**
+     * @return list<string> Required startup agent ids that have not reported agent_started yet
+     */
+    private function pendingReadinessAgents(): array
+    {
+        $pending = [];
+        foreach ($this->getRequiredReadinessAgents() as $agentId) {
+            if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
+                $pending[] = $agentId;
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Logs a stuck startup at most once per READINESS_LOG_INTERVAL.
+     *
+     * @param list<string> $pending Required agent ids still not started
+     * @param float $waited Seconds elapsed since the readiness wait began
+     */
+    private function logReadinessStuck(array $pending, float $waited): void
+    {
+        $lastLog = $this->lastReadinessLogAt ?? $this->readinessWaitSince ?? microtime(true);
+        if (microtime(true) - $lastLog < self::READINESS_LOG_INTERVAL) {
+            return;
+        }
+
+        $this->lastReadinessLogAt = microtime(true);
+        Logger::error(sprintf(
+            'WebSocket not opened: waited %.0fs for startup agents to report ready: %s',
+            $waited,
+            implode(', ', $pending),
+        ));
     }
 
     /**
@@ -535,12 +640,11 @@ abstract class DaemonManager extends BaseManager
             // Handle workers ready signal internally (before routing to agents)
             if ($signalType === SignalTypeConstants::SYSTEM && $signalName === SignalConstants::WORKERS_READY) {
                 $this->workersReady = true;
+                $this->readinessWaitSince = microtime(true);
                 Logger::info("Workers ready - cron jobs are now enabled");
 
-                // Start WebSocket server when workers are ready
-                $this->startWebSocketServer();
-
-                // Continue to allow signal to be routed if needed, but flag is already set
+                // The WebSocket server no longer opens here: tickReadiness() opens it once the
+                // required startup agents have finished onStart (or the readiness timeout fires).
             }
 
             if (empty($destinations)) {

@@ -7,7 +7,16 @@
 1. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
 2. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`)
 3. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-4. WebSocket server starts **only after** `WORKERS_READY` signal (workers must be up first)
+4. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+
+## WebSocket readiness gate
+
+The WebSocket server opens only after the agents a project declares in
+`DaemonManager::getRequiredReadinessAgents()` have finished `onStart` (reported
+`agent_started`). Default is empty — the socket opens as soon as `WORKERS_READY`.
+A `$readinessTimeout` (seconds, `null` = wait forever) opens the socket degraded if
+the agents never report; while pending, the daemon warns once per minute with the
+missing agent ids.
 
 ## Main loop (each iteration)
 
@@ -15,6 +24,7 @@
 processEventLoop()     ← epoll: accept connections, read data
 servers->onTick()      ← process buffered client data
 onTick()               ← app logic (override in subclass)
+tickReadiness()        ← open the WS once required startup agents are ready
 checkCronJobs()        ← once per minute, after workers ready
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
 Hilos::$ac->tick()     ← analytics flush
