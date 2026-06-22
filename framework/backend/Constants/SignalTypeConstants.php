@@ -41,6 +41,12 @@ final class SignalTypeConstants
     /** @var string Table viewport delta signal type (server-to-client live pending change for one table) */
     public const string TABLE_VIEWPORT_DELTA = 'table_viewport_delta';
 
+    /** @var string Table viewport count signal type (server-to-client live page/total count update for one table) */
+    public const string TABLE_VIEWPORT_COUNT = 'table_viewport_count';
+
+    /** @var string Table viewport append signal type (server-to-client live tail append for one table) */
+    public const string TABLE_VIEWPORT_APPEND = 'table_viewport_append';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 
