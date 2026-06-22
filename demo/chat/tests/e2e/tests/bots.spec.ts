@@ -21,7 +21,7 @@ test('creates, edits, and deletes a bot through the live table', async ({
   await page.goto('/hilos/admin_bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
   // Create: exactly one row appears once the backend echoes it — the DB bot and

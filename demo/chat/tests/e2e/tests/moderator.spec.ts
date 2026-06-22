@@ -21,7 +21,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
   await page.goto('/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
   // Create: exactly one row appears once the backend echoes it, dialog closes.
@@ -61,7 +61,7 @@ test('saving an edit with no changes still closes the dialog', async ({
 }) => {
   await page.goto('/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // Open a seed row and save without changing anything. The row never re-emits
   // (a no-op write produces no DB sync), so the old state-driven close hung

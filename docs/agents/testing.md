@@ -42,8 +42,23 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 **Typical local loops:**
 
 - Pure unit test iteration: `composer run test:unit` (fast, no DB).
-- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration` (first run only; subsequent iterations can skip `db-reset` if the test doesn't mutate schema).
+- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration` (first run only; subsequent iterations can skip `db-reset` only if the test mutates neither schema nor data — a data-mutating test needs a reset before each rerun).
 - Full pass before a PR: `composer run test:all` (PHPUnit suites).
+
+---
+
+## Re-running tests and state between runs
+
+- A test that **mutates data** is not idempotent across runs on the same database.
+  Reset before re-running it (`composer run test:db-reset`, or `test:e2e-up` for
+  e2e); the full pass (`test:all` / `test:e2e-full`) resets for you. **Do not treat a
+  failure on a repeated run *without* a reset as a bug** — reset is the contract;
+  re-running against a dirty database is not a supported scenario.
+- To test an **irreversible or time-delayed** operation repeatedly (deleting an
+  orphan row, an account deleted N days after the request), do **not** engineer
+  idempotency into the test. The designed path is a **test-only CLI command** —
+  gated to refuse on production — that sets up or tears down the state, not an
+  ad-hoc reset hack inside the test.
 
 ---
 
