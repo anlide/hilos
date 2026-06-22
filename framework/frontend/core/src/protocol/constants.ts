@@ -31,6 +31,12 @@ export const SIGNAL_TYPE_TABLE_WINDOW = 'table_window'
 /** Server frame `type` carrying a live table pending change (PHP `SignalTypeConstants::TABLE_VIEWPORT_DELTA`). */
 export const SIGNAL_TYPE_TABLE_VIEWPORT_DELTA = 'table_viewport_delta'
 
+/** Server frame `type` carrying a live table count update (PHP `SignalTypeConstants::TABLE_VIEWPORT_COUNT`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_COUNT = 'table_viewport_count'
+
+/** Server frame `type` carrying a live table tail append (PHP `SignalTypeConstants::TABLE_VIEWPORT_APPEND`). */
+export const SIGNAL_TYPE_TABLE_VIEWPORT_APPEND = 'table_viewport_append'
+
 /** Frame envelope key carrying the message type (PHP `SignalPayloadConstants::FIELD_TYPE`). */
 export const FIELD_TYPE = 'type'
 

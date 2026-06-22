@@ -238,15 +238,28 @@ describe('parseSignal', () => {
     }
   })
 
-  it('parses a table_viewport_delta set_changed frame', () => {
+  it('parses a table_viewport_count frame', () => {
     const result = parseSignal(
-      '{"type":"table_viewport_delta","data":{"page":"p","tableKey":"t","kind":"set_changed","totalCount":3,"pageCount":1}}',
+      '{"type":"table_viewport_count","data":{"page":"p","tableKey":"t","totalCount":3,"pageCount":1}}',
     )
     expect(result.ok).toBe(true)
-    if (result.ok && result.signal.kind === 'tableViewportDelta') {
+    if (result.ok && result.signal.kind === 'tableViewportCount') {
       expect(result.signal.data).toMatchObject({
-        kind: 'set_changed',
         totalCount: 3,
+        pageCount: 1,
+      })
+    }
+  })
+
+  it('parses a table_viewport_append frame', () => {
+    const result = parseSignal(
+      '{"type":"table_viewport_append","data":{"page":"p","tableKey":"t","row":{"rowKey":"x","slots":{}},"totalCount":4,"pageCount":1}}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'tableViewportAppend') {
+      expect(result.signal.data).toMatchObject({
+        row: { rowKey: 'x', slots: {} },
+        totalCount: 4,
         pageCount: 1,
       })
     }

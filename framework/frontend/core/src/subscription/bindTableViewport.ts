@@ -1,11 +1,12 @@
 // The per-table viewport binder: wires ONE server-windowed table to the
 // connection by its (page, tableKey) address. A table's controller only ever
-// sees the windows and deltas addressed to it — there is no central switchboard
-// holding every table and handing each its data (table-subscription.md). The
-// binder subscribes the connection's table_window / table_viewport_delta
-// signals, drops everything not addressed to this table or whose page is no
-// longer current, normalizes the rows into the page scope, and feeds the sink.
-// The returned unbind drops both subscriptions on the view's unmount.
+// sees the windows, deltas, counts, and appends addressed to it — there is no
+// central switchboard holding every table and handing each its data
+// (table-subscription.md). The binder subscribes the connection's table_window /
+// table_viewport_delta / table_viewport_count / table_viewport_append signals,
+// drops everything not addressed to this table or whose page is no longer current,
+// normalizes the rows into the page scope, and feeds the sink. The returned unbind
+// drops every subscription on the view's unmount.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
@@ -84,9 +85,34 @@ export function bindTableViewport(
     }
   })
 
+  const unsubscribeCount = connection.on('tableViewportCount', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    sink.ingestCount(data.totalCount)
+  })
+
+  const unsubscribeAppend = connection.on('tableViewportAppend', (signal) => {
+    const data = signal.data
+    if (data.tableKey !== address.tableKey || data.page !== address.page) {
+      return
+    }
+    const scope = currentScope()
+    if (!scope) {
+      return
+    }
+    sink.ingestAppend(
+      normalizeTableRow(scope, data.row, options),
+      data.totalCount,
+    )
+  })
+
   return () => {
     unsubscribeWindow()
     unsubscribeDelta()
+    unsubscribeCount()
+    unsubscribeAppend()
   }
 }
 
@@ -116,11 +142,6 @@ function toViewportDelta(
         kind: 'row_removed',
         rowKey: String(data.rowKey),
         reason: data.reason ?? '',
-      }
-    case 'set_changed':
-      return {
-        kind: 'set_changed',
-        totalCount: data.totalCount ?? 0,
       }
     default:
       return null

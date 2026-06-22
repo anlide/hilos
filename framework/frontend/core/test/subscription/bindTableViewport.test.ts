@@ -9,29 +9,55 @@ import {
   type TableWindowSink,
 } from '../../src/table/TableViewportController.js'
 import {
+  type TableViewportAppendSignal,
+  type TableViewportCountSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
 } from '../../src/protocol/parseSignal.js'
 
-/** A connection double emitting table_window / table_viewport_delta, with real unsubscribe. */
+/** A connection double emitting the four table signals, with real unsubscribe. */
 function fakeConnection() {
   const windowListeners = new Set<(signal: TableWindowSignal) => void>()
   const deltaListeners = new Set<(signal: TableViewportDeltaSignal) => void>()
+  const countListeners = new Set<(signal: TableViewportCountSignal) => void>()
+  const appendListeners = new Set<(signal: TableViewportAppendSignal) => void>()
 
   return {
     on(event: string, listener: (signal: never) => void): () => void {
-      if (event === 'tableWindow') {
-        const typed = listener as unknown as (signal: TableWindowSignal) => void
-        windowListeners.add(typed)
+      switch (event) {
+        case 'tableWindow': {
+          const typed = listener as unknown as (
+            signal: TableWindowSignal,
+          ) => void
+          windowListeners.add(typed)
 
-        return () => windowListeners.delete(typed)
+          return () => windowListeners.delete(typed)
+        }
+        case 'tableViewportCount': {
+          const typed = listener as unknown as (
+            signal: TableViewportCountSignal,
+          ) => void
+          countListeners.add(typed)
+
+          return () => countListeners.delete(typed)
+        }
+        case 'tableViewportAppend': {
+          const typed = listener as unknown as (
+            signal: TableViewportAppendSignal,
+          ) => void
+          appendListeners.add(typed)
+
+          return () => appendListeners.delete(typed)
+        }
+        default: {
+          const typed = listener as unknown as (
+            signal: TableViewportDeltaSignal,
+          ) => void
+          deltaListeners.add(typed)
+
+          return () => deltaListeners.delete(typed)
+        }
       }
-      const typed = listener as unknown as (
-        signal: TableViewportDeltaSignal,
-      ) => void
-      deltaListeners.add(typed)
-
-      return () => deltaListeners.delete(typed)
     },
     emitWindow(data: TableWindowSignal['data']): void {
       for (const listener of windowListeners) {
@@ -43,25 +69,47 @@ function fakeConnection() {
         listener({ data } as unknown as TableViewportDeltaSignal)
       }
     },
+    emitCount(data: TableViewportCountSignal['data']): void {
+      for (const listener of countListeners) {
+        listener({ data } as unknown as TableViewportCountSignal)
+      }
+    },
+    emitAppend(data: TableViewportAppendSignal['data']): void {
+      for (const listener of appendListeners) {
+        listener({ data } as unknown as TableViewportAppendSignal)
+      }
+    },
   }
 }
 
-/** A controller double recording the windows and deltas fed to it. */
+/** A controller double recording the windows, deltas, counts and appends fed to it. */
 function fakeSink(): TableWindowSink & {
   windows: Array<{ rows: readonly TableRow[]; totalCount: number }>
   deltas: TableViewportDelta[]
+  counts: number[]
+  appends: Array<{ row: TableRow; totalCount: number }>
 } {
   const windows: Array<{ rows: readonly TableRow[]; totalCount: number }> = []
   const deltas: TableViewportDelta[] = []
+  const counts: number[] = []
+  const appends: Array<{ row: TableRow; totalCount: number }> = []
 
   return {
     windows,
     deltas,
+    counts,
+    appends,
     ingestWindow(rows, totalCount): void {
       windows.push({ rows, totalCount })
     },
     ingestDelta(delta): void {
       deltas.push(delta)
+    },
+    ingestCount(totalCount): void {
+      counts.push(totalCount)
+    },
+    ingestAppend(row, totalCount): void {
+      appends.push({ row, totalCount })
     },
   }
 }
@@ -205,14 +253,63 @@ describe('bindTableViewport', () => {
       offset: 0,
       limit: 10,
     })
-    connection.emitDelta({
+    connection.emitCount({
       page: 'main',
       tableKey: 'settings',
-      kind: 'set_changed',
       totalCount: 5,
+      pageCount: 1,
+    })
+    connection.emitAppend({
+      page: 'main',
+      tableKey: 'settings',
+      row: { rowKey: 'a', slots: {} },
+      totalCount: 1,
+      pageCount: 1,
     })
 
     expect(sink.windows).toHaveLength(0)
     expect(sink.deltas).toHaveLength(0)
+    expect(sink.counts).toHaveLength(0)
+    expect(sink.appends).toHaveLength(0)
+  })
+
+  it('routes a count addressed to the table', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitCount({
+      page: 'main',
+      tableKey: 'settings',
+      totalCount: 9,
+      pageCount: 1,
+    })
+
+    expect(sink.counts).toEqual([9])
+  })
+
+  it('routes an append addressed to the table, normalizing the row', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitAppend({
+      page: 'main',
+      tableKey: 'settings',
+      row: { rowKey: 'a', slots: { user: { id: 7, name: 'Ada' } } },
+      totalCount: 13,
+      pageCount: 2,
+    })
+
+    expect(sink.appends).toHaveLength(1)
+    expect(sink.appends[0]?.totalCount).toBe(13)
+    expect(sink.appends[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { user: { type: 'user', id: 7 } },
+    })
   })
 })

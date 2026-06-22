@@ -4,13 +4,16 @@
 // (search / sort / paginate) change the viewport descriptor and are sent to the
 // server, which replies a table_window snapshot the controller displays.
 //
-// Live changes to the shown rows arrive as table_viewport_delta and DO NOT
+// Edits and removals of the SHOWN rows arrive as table_viewport_delta and DO NOT
 // auto-apply: they accumulate as PENDING so the table never rearranges under the
-// user's hands. The user resolves them with apply() — updates land in place, a
-// removed row becomes a placeholder in its slot (the layout never collapses and
-// no row is pulled from the next page), and a list-change refreshes the count.
-// An explicit window change discards pending instead, since the new window the
-// server returns is authoritative. The controller owns no rendering and no DOM.
+// user's hands. The user resolves them with apply() — updates land in place and a
+// removed row becomes a placeholder in its slot (the layout never collapses, no
+// row is pulled from the next page). Two live signals bypass the pending gate
+// because they disrupt nothing: table_viewport_count updates the total/page count
+// (navigation metadata), and table_viewport_append adds a row at the tail when the
+// window is the last page with room. An explicit window change discards pending
+// instead, since the new window the server returns is authoritative. The
+// controller owns no rendering and no DOM.
 
 import { type TableViewportDescriptor } from '../connection/HilosConnection.js'
 import { type TableRow } from '../state/TableRowsStore.js'
@@ -33,12 +36,14 @@ export interface TableSort {
 const SEARCH_FILTER_KEY = 'search'
 
 /**
- * One live pending change scoped to the connection's window, normalized from a
- * `table_viewport_delta` signal (the row already reduced to references):
+ * One live pending row change scoped to the connection's window, normalized from
+ * a `table_viewport_delta` signal (the row already reduced to references):
  *
  * - `row_updated` — a shown row's content changed; carries the new row;
- * - `row_removed` — a shown row was deleted or left the set; carries the reason;
- * - `set_changed` — membership/total changed under the filter; carries the total.
+ * - `row_removed` — a shown row was deleted or left the set; carries the reason.
+ *
+ * Count and append changes are live, not pending, and arrive through their own
+ * sink methods ({@link TableWindowSink.ingestCount} / `ingestAppend`).
  */
 export type TableViewportDelta =
   | {
@@ -51,7 +56,6 @@ export type TableViewportDelta =
       readonly rowKey: string
       readonly reason: string
     }
-  | { readonly kind: 'set_changed'; readonly totalCount: number }
 
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
 export interface TableViewportRow<R> {
@@ -66,13 +70,15 @@ export interface TableViewportRow<R> {
 
 /**
  * The sink the subscription wiring feeds a table's window snapshot and live
- * deltas into — implemented by {@link TableViewportController} and held untyped
- * by the subscription registry, since neither ingest method depends on the row
- * type `R`.
+ * changes into — implemented by {@link TableViewportController} and held untyped
+ * by the subscription wiring, since no ingest method depends on the row type `R`.
+ * A pending row delta gates on apply(); a count update and a tail append are live.
  */
 export interface TableWindowSink {
   ingestWindow(rows: readonly TableRow[], totalCount: number): void
   ingestDelta(delta: TableViewportDelta): void
+  ingestCount(totalCount: number): void
+  ingestAppend(row: TableRow, totalCount: number): void
 }
 
 export interface TableViewportControllerOptions<R> {
@@ -116,8 +122,6 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private readonly pendingCountSignal = createSignal(0)
 
-  private readonly listChangedSignal = createSignal(false)
-
   private readonly searchSignal: ReadonlySignal<string>
 
   private readonly pageSize: number
@@ -127,9 +131,6 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
   private readonly pendingRemoved = new Map<string, string>()
-
-  /** Pending new total under the filter, or null when the set has not changed. */
-  private pendingTotalCount: number | null = null
 
   /** Per-row pending kind ('update' | 'remove') driving the row highlight; rebuilt on every pending change. */
   private readonly pendingKindSignal = createSignal<
@@ -153,14 +154,6 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Count of accumulated pending changes (the badge); 0 when there is nothing to apply. */
   readonly pendingCount: ReadonlySignal<number>
-
-  /**
-   * Whether a pending set-change is waiting under the filter. The default
-   * HilosViewportTable no longer renders a banner for this — the banner shifted
-   * the table layout as it came and went — so this is kept as headless state a
-   * consumer can surface without that jump.
-   */
-  readonly listChanged: ReadonlySignal<boolean>
 
   /** False until the first window has been ingested — the view shows "loading" rather than "empty". */
   readonly loaded: ReadonlySignal<boolean>
@@ -196,7 +189,6 @@ export class TableViewportController<R> implements TableWindowSink {
       Math.max(1, Math.ceil(this.totalCountSignal.get() / this.pageSize)),
     )
     this.pendingCount = this.pendingCountSignal
-    this.listChanged = this.listChangedSignal
     this.loaded = this.loadedSignal
   }
 
@@ -294,6 +286,32 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
+   * Ingest a live count update (`table_viewport_count`): set the total — and thus
+   * the page count — at once. The count is navigation metadata, not row content,
+   * so it is never gated as pending; the pager reflects the real total at once,
+   * even while a removed row still shows as a placeholder.
+   *
+   * @param totalCount Total rows matching the filter.
+   */
+  ingestCount(totalCount: number): void {
+    this.totalCountSignal.set(Math.max(0, totalCount))
+  }
+
+  /**
+   * Ingest a live tail append (`table_viewport_append`): add the new row at the
+   * END of the window and set the total. Sent only when this window is the last
+   * page with room, so the row fits without pushing any shown row out — there is
+   * nothing to gate and it applies at once. The row is already normalized to refs.
+   *
+   * @param row The new row to append, in reference form.
+   * @param totalCount Total rows matching the filter.
+   */
+  ingestAppend(row: TableRow, totalCount: number): void {
+    this.windowSignal.set([...this.windowSignal.get(), row])
+    this.totalCountSignal.set(Math.max(0, totalCount))
+  }
+
+  /**
    * Mark a row this connection is itself changing so its echoed delta is applied
    * at once instead of queuing as pending: the tab that made the edit picks up
    * its own change, while other tabs keep the pending gate (table-subscription.md).
@@ -317,10 +335,10 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Accumulate one live delta as pending — never applied automatically. A row
-   * delta is kept only when its row is in the current window (anchored by
-   * row-id); a set-change is always recorded. An own-change echo for a marked
-   * row is the exception: it applies immediately via {@link applyOwnDelta}.
+   * Accumulate one live row delta as pending — never applied automatically. The
+   * delta is kept only when its row is in the current window (anchored by row-id).
+   * An own-change echo for a marked row is the exception: it applies immediately
+   * via {@link applyOwnDelta}.
    *
    * @param delta The normalized viewport delta.
    */
@@ -345,9 +363,6 @@ export class TableViewportController<R> implements TableWindowSink {
           this.pendingUpdates.delete(delta.rowKey)
           this.pendingRemoved.set(delta.rowKey, delta.reason)
         }
-        break
-      case 'set_changed':
-        this.pendingTotalCount = delta.totalCount
         break
     }
     this.refreshPendingSignals()
@@ -387,9 +402,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /**
    * Apply accumulated pending changes to the displayed rows in place: updates
-   * replace their row, removals become placeholders in their slot (the layout is
-   * not collapsed and no row is pulled from another page), and a set-change
-   * refreshes the count. The window itself does not move.
+   * replace their row and removals become placeholders in their slot (the layout
+   * is not collapsed and no row is pulled from another page). The window itself
+   * does not move; the count is already live and not part of pending.
    */
   apply(): void {
     if (this.pendingCountSignal.get() === 0) {
@@ -410,10 +425,6 @@ export class TableViewportController<R> implements TableWindowSink {
         placeholders.add(rowKey)
       }
       this.placeholderKeysSignal.set(placeholders)
-    }
-
-    if (this.pendingTotalCount !== null) {
-      this.totalCountSignal.set(Math.max(0, this.pendingTotalCount))
     }
 
     this.clearPending()
@@ -452,17 +463,13 @@ export class TableViewportController<R> implements TableWindowSink {
   private clearPending(): void {
     this.pendingUpdates.clear()
     this.pendingRemoved.clear()
-    this.pendingTotalCount = null
     this.refreshPendingSignals()
   }
 
   private refreshPendingSignals(): void {
     this.pendingCountSignal.set(
-      this.pendingUpdates.size +
-        this.pendingRemoved.size +
-        (this.pendingTotalCount !== null ? 1 : 0),
+      this.pendingUpdates.size + this.pendingRemoved.size,
     )
-    this.listChangedSignal.set(this.pendingTotalCount !== null)
     const pendingKinds = new Map<string, 'update' | 'remove'>()
     for (const rowKey of this.pendingUpdates.keys()) {
       pendingKinds.set(rowKey, 'update')

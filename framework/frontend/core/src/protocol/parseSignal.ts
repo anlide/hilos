@@ -8,6 +8,8 @@ import {
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
+  SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
   SIGNAL_TYPE_TABLE_WINDOW,
 } from './constants.js'
@@ -18,9 +20,13 @@ import {
   actionSuccessSignalDataSchema,
   tableWindowSignalDataSchema,
   tableViewportDeltaSignalDataSchema,
+  tableViewportCountSignalDataSchema,
+  tableViewportAppendSignalDataSchema,
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableViewportDeltaSignalData,
+  type TableViewportCountSignalData,
+  type TableViewportAppendSignalData,
 } from './envelope.js'
 
 /**
@@ -57,6 +63,16 @@ export type ParsedSignal =
       data: TableViewportDeltaSignalData
       envelope: SignalEnvelope
     }
+  | {
+      kind: 'tableViewportCount'
+      data: TableViewportCountSignalData
+      envelope: SignalEnvelope
+    }
+  | {
+      kind: 'tableViewportAppend'
+      data: TableViewportAppendSignalData
+      envelope: SignalEnvelope
+    }
   | { kind: 'project'; type: string; data: unknown; envelope: SignalEnvelope }
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
@@ -70,6 +86,14 @@ export type TableWindowSignal = Extract<ParsedSignal, { kind: 'tableWindow' }>
 export type TableViewportDeltaSignal = Extract<
   ParsedSignal,
   { kind: 'tableViewportDelta' }
+>
+export type TableViewportCountSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportCount' }
+>
+export type TableViewportAppendSignal = Extract<
+  ParsedSignal,
+  { kind: 'tableViewportAppend' }
 >
 export type ProjectSignal = Extract<ParsedSignal, { kind: 'project' }>
 export type UnknownSignal = Extract<ParsedSignal, { kind: 'unknown' }>
@@ -242,6 +266,56 @@ export function parseSignal(
         ok: true,
         signal: {
           kind: 'tableViewportDelta',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_COUNT: {
+      const data = tableViewportCountSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportCount',
+          data: data.data,
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_TABLE_VIEWPORT_APPEND: {
+      const data = tableViewportAppendSignalDataSchema.safeParse(
+        envelope.data.data,
+      )
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'tableViewportAppend',
           data: data.data,
           envelope: envelope.data,
         },

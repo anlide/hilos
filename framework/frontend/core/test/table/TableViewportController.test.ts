@@ -136,17 +136,24 @@ describe('TableViewportController', () => {
     expect(rows[1]?.placeholder).toBe(false)
   })
 
-  it('records a set change as a pending list-change banner', () => {
+  it('applies a live count update at once without pending', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
-    controller.ingestDelta({ kind: 'set_changed', totalCount: 5 })
+    controller.ingestCount(5)
 
-    expect(controller.listChanged.get()).toBe(true)
-    expect(controller.pendingCount.get()).toBe(1)
-
-    controller.apply()
     expect(controller.totalCount.get()).toBe(5)
-    expect(controller.listChanged.get()).toBe(false)
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('appends a live tail row at once and bumps the total', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
+    controller.ingestAppend({ rowKey: 'b', slots: {} }, 2)
+
+    const rows = controller.rows.get()
+    expect(rows.map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.totalCount.get()).toBe(2)
+    expect(controller.pendingCount.get()).toBe(0)
   })
 
   it('ignores a delta for a row outside the window', () => {

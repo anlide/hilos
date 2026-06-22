@@ -27,6 +27,8 @@ import {
   type ParseFailure,
   type ProjectSignal,
   type ProjectSignalSchemas,
+  type TableViewportAppendSignal,
+  type TableViewportCountSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
   type UnknownSignal,
@@ -99,6 +101,10 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   tableWindow: TableWindowSignal
   /** A live table pending change (`table_viewport_delta`): scoped to the connection's window. */
   tableViewportDelta: TableViewportDeltaSignal
+  /** A live table count update (`table_viewport_count`): the new total/page count for the window. */
+  tableViewportCount: TableViewportCountSignal
+  /** A live table tail append (`table_viewport_append`): a new row added at the window's end. */
+  tableViewportAppend: TableViewportAppendSignal
   /** A signal the core has no concrete schema for; tolerated and observable. */
   unknownSignal: UnknownSignal
   /** A frame that violated the envelope contract; reported, never fatal. */
@@ -363,6 +369,12 @@ export class HilosConnection {
         break
       case 'tableViewportDelta':
         this.emitter.emit('tableViewportDelta', signal)
+        break
+      case 'tableViewportCount':
+        this.emitter.emit('tableViewportCount', signal)
+        break
+      case 'tableViewportAppend':
+        this.emitter.emit('tableViewportAppend', signal)
         break
       case 'unknown':
         this.emitter.emit('unknownSignal', signal)
