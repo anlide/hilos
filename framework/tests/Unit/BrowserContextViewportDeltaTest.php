@@ -21,6 +21,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
@@ -85,19 +86,48 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertFalse($viewport->hasRow('alpha'));
     }
 
-    public function testOutOfWindowCreateEmitsCountSignal(): void
+    public function testLastPageWithRoomCreateAppends(): void
     {
-        $context = $this->boot(
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 10);
+        $viewport->recordWindow(['alpha'], 1);
+        $context = $this->bootWithViewport(
             [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
-            ['alpha'],
-            1,
+            $viewport,
         );
+
         $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
         $context->flushToSignalRouter();
 
-        $count = $this->nextCount();
-        $this->assertSame(2, $count->totalCount);
-        $this->assertSame(1, $count->pageCount);
+        $append = $this->nextAppend();
+        $this->assertSame(2, $append->totalCount);
+        $this->assertSame(1, $append->pageCount);
+        $this->assertSame(
+            [
+                PagePayload::rowKey => 'beta',
+                PagePayload::slots => [
+                    ViewportDeltaUnitTable::SLOT => ['key' => 'beta', 'label' => 'Beta'],
+                ],
+            ],
+            $append->row,
+        );
+        $this->assertTrue($viewport->hasRow('beta'));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testCreateOffTheLastPageEmitsCount(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 1);
+        $viewport->recordWindow(['alpha'], 5);
+        $context = $this->bootWithViewport(
+            [new ViewportDeltaUnitRow('alpha', 'Alpha'), new ViewportDeltaUnitRow('beta', 'Beta')],
+            $viewport,
+        );
+
+        $context->record(SourceChange::dbCreated(ViewportDeltaUnitTable::SOURCE_KEY, 'beta', ['key' => 'beta', 'label' => 'Beta']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame(6, $this->nextCount()->totalCount);
+        $this->assertFalse($viewport->hasRow('beta'));
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
@@ -189,6 +219,24 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
         $this->assertInstanceOf(TableViewportCountDTO::class, $signal->data->data);
+
+        return $signal->data->data;
+    }
+
+    /**
+     * Asserts the next queued signal is an addressed table viewport append and returns it.
+     *
+     * @return TableViewportAppendDTO The append payload
+     */
+    private function nextAppend(): TableViewportAppendDTO
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(SignalTypeConstants::TABLE_VIEWPORT_APPEND, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(TableViewportAppendDTO::class, $signal->data->data);
 
         return $signal->data->data;
     }

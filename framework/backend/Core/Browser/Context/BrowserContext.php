@@ -40,6 +40,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
@@ -958,11 +959,11 @@ abstract class BrowserContext
     /**
      * Emits live viewport signals for a source change scoped to a connection's window.
      *
-     * A change yields up to two addressed signals: a live table_viewport_count when
-     * the filtered total shifts (navigation metadata the frontend applies at once),
-     * and a pending table_viewport_delta for an in-window row edit or removal. An
-     * out-of-window create or delete only moves the count here; an inbound row that
-     * belongs on the last page is appended by a later step.
+     * A change yields one or two addressed signals. A create whose row lands on the
+     * last page with room is appended live (table_viewport_append, counts included)
+     * and nothing else is sent. Otherwise a live table_viewport_count carries any
+     * total shift (navigation metadata the frontend applies at once), and a pending
+     * table_viewport_delta carries an in-window row edit or removal.
      *
      * The signals are also queued to the connection whose own action caused the
      * change: the fanout runs off grouped source changes and does not carry the
@@ -998,12 +999,87 @@ abstract class BrowserContext
             return;
         }
 
+        if ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $tableKey)) {
+            return;
+        }
+
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $tableKey);
 
         $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $tableKey);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
+    }
+
+    /**
+     * Appends a created row to a last-page-with-room window, or returns false.
+     *
+     * The frozen-viewport rule: a new row is appended at the END of the window
+     * regardless of sort — only when the window reaches the dataset end and has a
+     * free slot — so nothing already shown shifts. The append carries the new total
+     * and page count, so no separate count signal is sent. A filtered window falls
+     * through to the count path (the new row may not match the search).
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
+     * @param TableRowMutationDTO $mutation Mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $tableKey Browser table key
+     * @return bool Whether the row was appended (and no further signal is needed)
+     */
+    private function tryEmitViewportAppend(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $tableKey,
+    ): bool {
+        if ($mutation->type !== TableMutationType::Create || $mutation->row === null) {
+            return false;
+        }
+        if ($viewport->hasRow((string) $mutation->rowKey)) {
+            return false;
+        }
+        if ($this->viewportQuery($viewport)->search !== '' || !$this->viewportIsLastPageWithRoom($viewport)) {
+            return false;
+        }
+
+        $newTotal = $viewport->totalCount() + 1;
+        $viewport->recordWindow([...$viewport->rowIds(), (string) $mutation->rowKey], $newTotal);
+
+        $this->queueAddressedTableSignal(
+            SignalTypeConstants::TABLE_VIEWPORT_APPEND,
+            new TableViewportAppendDTO(
+                $page,
+                $tableKey,
+                $this->browserRowToWire($table->browserRow($mutation->row)),
+                $newTotal,
+                $this->pageCount($newTotal, $viewport->limit),
+            ),
+            $acceptKey,
+        );
+
+        return true;
+    }
+
+    /**
+     * Whether the window reaches the dataset end and has a free slot for one row.
+     *
+     * A non-paginated window (no limit) always has room; otherwise the window must
+     * hold fewer than its limit and end at the total, so a new tail row neither
+     * pushes a row out nor belongs to a later page.
+     *
+     * @param TableViewportSubscription $viewport Connection's window
+     * @return bool Whether a tail row fits without shifting the window
+     */
+    private function viewportIsLastPageWithRoom(TableViewportSubscription $viewport): bool
+    {
+        $windowSize = count($viewport->rowIds());
+        $hasRoom = $viewport->limit === TableConstants::NO_LIMIT || $windowSize < $viewport->limit;
+
+        return $hasRoom && $viewport->offset + $windowSize >= $viewport->totalCount();
     }
 
     /**
