@@ -6,12 +6,13 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -442,28 +443,28 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
     /**
      * Resolves test browser-only table config.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return ?BrowserSourceConfig Test browser-only table config
      */
-    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
     {
-        if ($tableKey !== self::TABLE) {
+        if ($browserKey !== self::TABLE) {
             return null;
         }
 
         return BrowserSourceConfig::fromArray([
-            BrowserConfigKey::ROWS => [
+            BrowserTableConfigKey::ROWS => [
                 [
-                    BrowserFieldKey::SOURCE => self::SOURCE,
-                    BrowserFieldKey::ROW_KEY => 'id',
-                    BrowserFieldKey::FIELDS => [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
                         'id',
                         'name' => 'displayName',
                     ],
-                    BrowserFieldKey::COMPUTED => [
+                    BrowserTableFieldKey::COMPUTED => [
                         'computedLabel',
                     ],
-                    BrowserFieldKey::TRIGGERS => [
+                    BrowserTableFieldKey::TRIGGERS => [
                         'name',
                     ],
                 ],
@@ -544,21 +545,21 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
     /**
      * Reads browser-only table topology through the protected hook.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return ?BrowserSourceConfig Browser-only table config
      */
-    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
     {
-        if ($tableKey !== self::TABLE) {
+        if ($browserKey !== self::TABLE) {
             return null;
         }
 
         return BrowserSourceConfig::fromArray([
-            BrowserConfigKey::ROWS => [
+            BrowserTableConfigKey::ROWS => [
                 [
-                    BrowserFieldKey::SOURCE => self::SOURCE,
-                    BrowserFieldKey::ROW_KEY => 'id',
-                    BrowserFieldKey::FIELDS => [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
                         'id',
                         'name' => 'displayName',
                     ],
@@ -594,11 +595,11 @@ final class BrowserContextRegistryTopologyTestTable
     ];
 
     public const array BROWSER = [
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => self::SOURCE,
-                BrowserFieldKey::ROW_KEY => 'id',
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => self::SOURCE,
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => [
                     'id',
                     'name' => 'displayName',
                 ],

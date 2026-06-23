@@ -9,8 +9,8 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus;
 use Hilos\Constants\HilosPageRouteParams;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 
 /**
@@ -21,22 +21,22 @@ final class GuardianAgentStatusDetailBrowserTable
     public const string TABLE = ChatBrowserTable::GUARDIAN_AGENT_STATUS_DETAIL;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserTableConfigKey::PARAMS => [
             HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => [
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::RT_GUARDIAN_AGENT_STATUSES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_GUARDIAN_AGENT_STATUSES,
-                BrowserFieldKey::ROW_KEY => GuardianAgentStatus::agentId,
-                BrowserFieldKey::WHERE => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_GUARDIAN_AGENT_STATUSES,
+                BrowserTableFieldKey::ROW_KEY => GuardianAgentStatus::agentId,
+                BrowserTableFieldKey::WHERE => [
                     GuardianAgentStatus::agentId => ChatBrowserRef::TABLE_HILOS_GUARDIAN_AGENT_ID,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::FIELDS => [
                     GuardianAgentStatus::agentId,
                     GuardianAgentStatus::status,
                     GuardianAgentStatus::updatedAt,

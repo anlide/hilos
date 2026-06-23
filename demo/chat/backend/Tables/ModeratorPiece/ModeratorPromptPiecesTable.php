@@ -11,8 +11,8 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -33,14 +33,14 @@ use Hilos\Database\DatabaseException;
 final class ModeratorPromptPiecesTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
-                BrowserFieldKey::ROW_KEY => ObjectModeratorPromptPiece::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
+                BrowserTableFieldKey::ROW_KEY => ObjectModeratorPromptPiece::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectModeratorPromptPiece::id => ModeratorPromptPieceTableRow::id,
                     ObjectModeratorPromptPiece::section => ModeratorPromptPieceTableRow::section,
                     ObjectModeratorPromptPiece::promptPiece => ModeratorPromptPieceTableRow::promptPiece,

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Settings;
 
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
@@ -45,20 +45,20 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
     public const string TABLE = 'settings';
 
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             self::DB_SETTINGS_SOURCE,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => self::DB_SETTINGS_SOURCE,
-                BrowserFieldKey::ROW_KEY => ObjectSetting::key,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => self::DB_SETTINGS_SOURCE,
+                BrowserTableFieldKey::ROW_KEY => ObjectSetting::key,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectSetting::id => HilosSettingTableRow::id,
                     ObjectSetting::key => HilosSettingTableRow::key,
                     ObjectSetting::type => HilosSettingTableRow::type,
                     ObjectSetting::value => HilosSettingTableRow::overrideValue,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserTableFieldKey::COMPUTED => [
                     HilosSettingTableRow::value,
                     HilosSettingTableRow::defaultValue,
                     HilosSettingTableRow::defaultReferenceKey,

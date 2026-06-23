@@ -13,8 +13,8 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -36,15 +36,15 @@ use Hilos\Database\DatabaseException;
 final class BotsTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_BOTS,
             ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
-                BrowserFieldKey::ROW_KEY => ObjectBot::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserTableFieldKey::ROW_KEY => ObjectBot::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectBot::id => BotTableRow::id,
                     ObjectBot::name => BotTableRow::name,
                     ObjectBot::description => BotTableRow::description,
@@ -61,9 +61,9 @@ final class BotsTable extends TableDefinition implements ViewportTable
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
-                BrowserFieldKey::ROW_KEY => StateBotAgentStatus::botId,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserTableFieldKey::ROW_KEY => StateBotAgentStatus::botId,
+                BrowserTableFieldKey::FIELDS => [
                     StateBotAgentStatus::botId,
                     StateBotAgentStatus::status,
                     StateBotAgentStatus::updatedAt,

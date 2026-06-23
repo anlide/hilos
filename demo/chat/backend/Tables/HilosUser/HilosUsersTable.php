@@ -12,8 +12,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\HilosUser\Actions\HilosUserItemActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -34,15 +34,15 @@ use Hilos\Tables\Users\AbstractHilosUsersTable;
 final class HilosUsersTable extends AbstractHilosUsersTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => ObjectUser::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserTableFieldKey::ROW_KEY => ObjectUser::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectUser::id => HilosUserTableRow::id,
                     ObjectUser::admin => HilosUserTableRow::admin,
                     ObjectUser::block => HilosUserTableRow::block,
@@ -51,12 +51,12 @@ final class HilosUsersTable extends AbstractHilosUsersTable
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => ConnectionState::userId,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserTableFieldKey::ROW_KEY => ConnectionState::userId,
+                BrowserTableFieldKey::FIELDS => [
                     ConnectionState::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserTableFieldKey::COMPUTED => [
                     HilosUserTableRow::presence,
                     HilosUserTableRow::onlineSessionCount,
                 ],

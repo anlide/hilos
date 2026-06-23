@@ -11,8 +11,8 @@ use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Constants\HilosPageRouteParams;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
@@ -25,39 +25,39 @@ final class UserDetailBrowserTable
     public const string TABLE = ChatBrowserTable::USER_DETAIL;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserTableConfigKey::PARAMS => [
             HilosPageRouteParams::HILOS_USER_USER_ID => [
                 BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => User::id,
-                BrowserFieldKey::WHERE => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserTableFieldKey::ROW_KEY => User::id,
+                BrowserTableFieldKey::WHERE => [
                     User::id => ChatBrowserRef::TABLE_HILOS_USER_ID,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::FIELDS => [
                     User::id => HilosUserTableRow::id,
                     User::name => HilosUserTableRow::name,
                     User::lastActivity => HilosUserTableRow::lastActivity,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => Connection::userId,
-                BrowserFieldKey::WHERE => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserTableFieldKey::ROW_KEY => Connection::userId,
+                BrowserTableFieldKey::WHERE => [
                     Connection::userId => ChatBrowserRef::TABLE_HILOS_USER_ID,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::FIELDS => [
                     Connection::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserTableFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
                 ],

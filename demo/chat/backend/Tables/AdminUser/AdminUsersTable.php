@@ -12,8 +12,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -34,27 +34,27 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 final class AdminUsersTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => ObjectUser::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserTableFieldKey::ROW_KEY => ObjectUser::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectUser::id => AdminUserTableRow::id,
                     ObjectUser::name => AdminUserTableRow::name,
                     ObjectUser::lastActivity => AdminUserTableRow::lastActivity,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => ConnectionState::userId,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserTableFieldKey::ROW_KEY => ConnectionState::userId,
+                BrowserTableFieldKey::FIELDS => [
                     ConnectionState::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserTableFieldKey::COMPUTED => [
                     AdminUserTableRow::presence,
                     AdminUserTableRow::onlineSessionCount,
                 ],
