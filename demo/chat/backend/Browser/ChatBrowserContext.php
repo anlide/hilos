@@ -27,7 +27,7 @@ final class ChatBrowserContext extends BrowserContext
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when unavailable
      */
@@ -37,7 +37,7 @@ final class ChatBrowserContext extends BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): mixed {
         if (
@@ -62,7 +62,7 @@ final class ChatBrowserContext extends BrowserContext
             $rowKey,
             $acceptKey,
             $pageParams,
-            $tableParams,
+            $browserParams,
             $sources,
         );
     }

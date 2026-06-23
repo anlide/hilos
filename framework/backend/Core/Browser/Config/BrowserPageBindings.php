@@ -10,12 +10,12 @@ use Traversable;
 /**
  * Page table bindings declared in project topology.
  *
- * @implements IteratorAggregate<int, BrowserPageTableBinding>
+ * @implements IteratorAggregate<int, BrowserPageBinding>
  */
-final class BrowserPageTableBindings implements IteratorAggregate
+final class BrowserPageBindings implements IteratorAggregate
 {
     /**
-     * @param list<BrowserPageTableBinding> $bindings Page table bindings
+     * @param list<BrowserPageBinding> $bindings Page table bindings
      */
     private function __construct(
         private readonly array $bindings,
@@ -46,7 +46,7 @@ final class BrowserPageTableBindings implements IteratorAggregate
                 continue;
             }
 
-            $bindings[] = BrowserPageTableBinding::fromArray(
+            $bindings[] = BrowserPageBinding::fromArray(
                 tableKey: $tableKey,
                 config: is_array($config) ? $config : [],
             );
@@ -58,7 +58,7 @@ final class BrowserPageTableBindings implements IteratorAggregate
     /**
      * Iterates table bindings in declaration order.
      *
-     * @return Traversable<int, BrowserPageTableBinding> Page table bindings
+     * @return Traversable<int, BrowserPageBinding> Page table bindings
      */
     public function getIterator(): Traversable
     {

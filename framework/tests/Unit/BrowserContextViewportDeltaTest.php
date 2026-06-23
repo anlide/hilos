@@ -7,7 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -268,15 +268,15 @@ final class ViewportDeltaUnitContext extends BrowserContext
      * Binds the test page to the self-snapshot table.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Test page table bindings
+     * @return BrowserPageBindings Test page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         if ($page !== self::PAGE) {
-            return BrowserPageTableBindings::empty();
+            return BrowserPageBindings::empty();
         }
 
-        return BrowserPageTableBindings::fromArray([
+        return BrowserPageBindings::fromArray([
             ViewportDeltaUnitTable::TABLE => [],
         ]);
     }

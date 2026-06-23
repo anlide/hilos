@@ -8,7 +8,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
@@ -426,15 +426,15 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      * Resolves test page table bindings.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Test page table bindings
+     * @return BrowserPageBindings Test page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         if ($page !== self::PAGE) {
-            return BrowserPageTableBindings::empty();
+            return BrowserPageBindings::empty();
         }
 
-        return BrowserPageTableBindings::fromArray([
+        return BrowserPageBindings::fromArray([
             self::TABLE => [],
         ]);
     }
@@ -445,7 +445,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      * @param string $tableKey Browser table key
      * @return ?BrowserSourceConfig Test browser-only table config
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
     {
         if ($tableKey !== self::TABLE) {
             return null;
@@ -479,7 +479,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value
      */
@@ -489,7 +489,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): mixed {
         return $field === 'computedLabel' ? "row-{$rowKey}" : null;
@@ -528,15 +528,15 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
      * Reads page table bindings through the protected topology hook.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Browser page table bindings
+     * @return BrowserPageBindings Browser page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         if ($page !== self::PAGE) {
-            return BrowserPageTableBindings::empty();
+            return BrowserPageBindings::empty();
         }
 
-        return BrowserPageTableBindings::fromArray([
+        return BrowserPageBindings::fromArray([
             self::TABLE => [],
         ]);
     }
@@ -547,7 +547,7 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
      * @param string $tableKey Browser table key
      * @return ?BrowserSourceConfig Browser-only table config
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
     {
         if ($tableKey !== self::TABLE) {
             return null;

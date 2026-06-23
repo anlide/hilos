@@ -7,7 +7,7 @@ namespace Hilos\Core\Browser\Config;
 /**
  * One page-to-table browser binding from project topology.
  */
-final class BrowserPageTableBinding
+final class BrowserPageBinding
 {
     /**
      * @param string $tableKey Bound browser or registered table key

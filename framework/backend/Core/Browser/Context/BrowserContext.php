@@ -10,8 +10,8 @@ use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBinding;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBinding;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
@@ -133,8 +133,8 @@ abstract class BrowserContext
         $this->assertPageGuards($pageConfig, $acceptKey, $pageParams);
 
         $tables = [];
-        foreach ($this->pageTables($page) as $pageTableBinding) {
-            $tableKey = $pageTableBinding->tableKey;
+        foreach ($this->pageBindings($page) as $pageBinding) {
+            $tableKey = $pageBinding->tableKey;
 
             if ($this->viewportTable($tableKey) !== null) {
                 // Viewport tables deliver their rows through the table_viewport /
@@ -142,24 +142,24 @@ abstract class BrowserContext
                 continue;
             }
 
-            $tableConfig = $this->tableConfig($tableKey);
-            if ($tableConfig === null || $tableConfig->isEmpty()) {
+            $browserConfig = $this->browserConfig($tableKey);
+            if ($browserConfig === null || $browserConfig->isEmpty()) {
                 continue;
             }
 
-            $tableParams = $this->tableParams($pageTableBinding, $acceptKey, $pageParams);
+            $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
             $tables[$tableKey] = [
                 BrowserPageSignalData::rows => $this->buildBrowserSnapshotRows(
                     tableKey: $tableKey,
-                    tableConfig: $tableConfig,
+                    browserConfig: $browserConfig,
                     acceptKey: $acceptKey,
                     pageParams: $pageParams,
-                    tableParams: $tableParams,
+                    browserParams: $browserParams,
                 ),
             ];
         }
 
-        $payload = $this->pagePayloadFromBrowserTables($tables);
+        $payload = $this->pagePayloadFromBrowser($tables);
         if ($payload->isEmpty()) {
             return;
         }
@@ -399,8 +399,8 @@ abstract class BrowserContext
                 }
 
                 $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
-                foreach ($this->pageTables($page) as $pageTableBinding) {
-                    $tableKey = $pageTableBinding->tableKey;
+                foreach ($this->pageBindings($page) as $pageBinding) {
+                    $tableKey = $pageBinding->tableKey;
 
                     $viewportTable = $this->viewportTable($tableKey);
                     if ($viewportTable !== null) {
@@ -415,8 +415,8 @@ abstract class BrowserContext
                         continue;
                     }
 
-                    $tableConfig = $this->tableConfig($tableKey);
-                    if ($tableConfig === null || !$this->tableObservesChange($tableConfig, $change)) {
+                    $browserConfig = $this->browserConfig($tableKey);
+                    if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
                         continue;
                     }
 
@@ -425,19 +425,19 @@ abstract class BrowserContext
                         continue;
                     }
 
-                    $tableParams = $this->tableParams($pageTableBinding, $acceptKey, $pageParams);
-                    $rowKey = $this->rowKeyForChange($tableConfig, $change, $tableParams);
+                    $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
+                    $rowKey = $this->rowKeyForChange($browserConfig, $change, $browserParams);
                     if ($rowKey === null) {
                         continue;
                     }
 
                     $row = $this->buildBrowserRow(
                         tableKey: $tableKey,
-                        tableConfig: $tableConfig,
+                        browserConfig: $browserConfig,
                         rowKey: $rowKey,
                         acceptKey: $acceptKey,
                         pageParams: $pageParams,
-                        tableParams: $tableParams,
+                        browserParams: $browserParams,
                     );
 
                     if ($row === null) {
@@ -452,7 +452,7 @@ abstract class BrowserContext
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
             foreach ($pages as $page => $tables) {
-                $payload = $this->pagePayloadFromBrowserTables($tables);
+                $payload = $this->pagePayloadFromBrowser($tables);
                 if ($payload->isEmpty()) {
                     continue;
                 }
@@ -481,7 +481,7 @@ abstract class BrowserContext
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when the field is unknown
      */
@@ -491,7 +491,7 @@ abstract class BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): mixed {
         return null;
@@ -524,14 +524,14 @@ abstract class BrowserContext
      * Resolves page table bindings from project topology.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Page table bindings
+     * @return BrowserPageBindings Page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         $hilosClass = $this->hilosClass;
         $tables = $hilosClass::PAGE_TABLES[$page] ?? [];
 
-        return BrowserPageTableBindings::fromArray(is_array($tables) ? $tables : []);
+        return BrowserPageBindings::fromArray(is_array($tables) ? $tables : []);
     }
 
     /**
@@ -543,7 +543,7 @@ abstract class BrowserContext
      * @param string $tableKey Browser table key
      * @return ?BrowserSourceConfig Browser-only table config, or null when absent
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
     {
         $hilosClass = $this->hilosClass;
         $tableClass = $hilosClass::BROWSER_TABLES[$tableKey] ?? null;
@@ -572,11 +572,11 @@ abstract class BrowserContext
      * Returns page table bindings from project topology.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Page table bindings
+     * @return BrowserPageBindings Page table bindings
      */
-    private function pageTables(string $page): BrowserPageTableBindings
+    private function pageBindings(string $page): BrowserPageBindings
     {
-        return $this->resolveBrowserPageTables($page);
+        return $this->resolveBrowserPageBindings($page);
     }
 
     /**
@@ -585,9 +585,9 @@ abstract class BrowserContext
      * @param string $tableKey Browser or table context key
      * @return ?BrowserSourceConfig Browser source config
      */
-    private function tableConfig(string $tableKey): ?BrowserSourceConfig
+    private function browserConfig(string $tableKey): ?BrowserSourceConfig
     {
-        $browserConfig = $this->resolveBrowserOnlyTableConfig($tableKey);
+        $browserConfig = $this->resolveBrowserOnlyConfig($tableKey);
         if ($browserConfig !== null) {
             return $browserConfig;
         }
@@ -616,7 +616,7 @@ abstract class BrowserContext
      * @param string $tableKey Browser source key
      * @return string One of the BrowserSourceKind constants
      */
-    private function tableKind(string $tableKey): string
+    private function browserKind(string $tableKey): string
     {
         $class = $this->resolveSourceClass($tableKey);
 
@@ -665,15 +665,15 @@ abstract class BrowserContext
     /**
      * Resolves table params for one page subscription.
      *
-     * @param BrowserPageTableBinding $pageTableBinding Page table binding
+     * @param BrowserPageBinding $pageBinding Page table binding
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @return array<string, mixed> Resolved table params
      */
-    private function tableParams(BrowserPageTableBinding $pageTableBinding, string $acceptKey, array $pageParams): array
+    private function browserParams(BrowserPageBinding $pageBinding, string $acceptKey, array $pageParams): array
     {
         $params = [];
-        foreach ($pageTableBinding->paramRefs() as $paramKey => $ref) {
+        foreach ($pageBinding->paramRefs() as $paramKey => $ref) {
             if (!is_string($paramKey)) {
                 continue;
             }
@@ -686,13 +686,13 @@ abstract class BrowserContext
     /**
      * Checks whether any row source in the table observes the source change.
      *
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
      * @return bool True when this table has a row source for the change
      */
-    private function tableObservesChange(BrowserSourceConfig $tableConfig, SourceChange $change): bool
+    private function browserObservesChange(BrowserSourceConfig $browserConfig, SourceChange $change): bool
     {
-        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
             if ($this->rowConfigMatchesChange($rowConfig, $change)) {
                 return true;
             }
@@ -704,12 +704,12 @@ abstract class BrowserContext
     /**
      * Returns row source configs for one browser table.
      *
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @return list<array<string, mixed>> Row source configs
      */
-    private function rowConfigs(BrowserSourceConfig $tableConfig): array
+    private function rowConfigs(BrowserSourceConfig $browserConfig): array
     {
-        return $tableConfig->rowConfigs();
+        return $browserConfig->rowConfigs();
     }
 
     /**
@@ -763,19 +763,19 @@ abstract class BrowserContext
     /**
      * Resolves the logical browser row key affected by a source change.
      *
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @param SourceChange $change Grouped DB/RT source change
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return int|string|null Browser row key, or null when no matching row source can resolve it
      */
-    private function rowKeyForChange(BrowserSourceConfig $tableConfig, SourceChange $change, array $tableParams): int|string|null
+    private function rowKeyForChange(BrowserSourceConfig $browserConfig, SourceChange $change, array $browserParams): int|string|null
     {
-        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
             if (!$this->rowConfigMatchesChange($rowConfig, $change)) {
                 continue;
             }
 
-            $rowKey = $this->rowKeyValue($rowConfig, $change, $tableParams);
+            $rowKey = $this->rowKeyValue($rowConfig, $change, $browserParams);
             if ($rowKey !== null) {
                 return $rowKey;
             }
@@ -789,14 +789,14 @@ abstract class BrowserContext
      *
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param SourceChange $change Grouped DB/RT source change
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return int|string|null Browser row key
      */
-    private function rowKeyValue(array $rowConfig, SourceChange $change, array $tableParams): int|string|null
+    private function rowKeyValue(array $rowConfig, SourceChange $change, array $browserParams): int|string|null
     {
         $rowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
         if (is_array($rowKey)) {
-            return $this->normalizeKey($this->resolveReference($rowKey, '', [], $tableParams));
+            return $this->normalizeKey($this->resolveReference($rowKey, '', [], $browserParams));
         }
 
         if (!is_string($rowKey) || $rowKey === '') {
@@ -822,25 +822,25 @@ abstract class BrowserContext
      * Builds the page-shaped browser row for one logical row key.
      *
      * @param string $tableKey Browser table key
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row payload, or null when row is absent
      */
     private function buildBrowserRow(
         string $tableKey,
-        BrowserSourceConfig $tableConfig,
+        BrowserSourceConfig $browserConfig,
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): ?array {
         $sources = [];
         $anchorChecked = false;
         $anchorFound = false;
-        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
             $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
             if (!is_array($source)) {
                 continue;
@@ -857,7 +857,7 @@ abstract class BrowserContext
                 $anchorChecked = true;
             }
 
-            $items = $this->sourceItemsForRow($rowConfig, $rowKey, $acceptKey, $pageParams, $tableParams, $sources);
+            $items = $this->sourceItemsForRow($rowConfig, $rowKey, $acceptKey, $pageParams, $browserParams, $sources);
             if ($isMany) {
                 $sources[$sourceKey] = array_map(
                     fn(mixed $item): array => $this->projectSourceItem(
@@ -867,7 +867,7 @@ abstract class BrowserContext
                         rowKey: $rowKey,
                         acceptKey: $acceptKey,
                         pageParams: $pageParams,
-                        tableParams: $tableParams,
+                        browserParams: $browserParams,
                         sources: $sources,
                     ),
                     $items,
@@ -893,7 +893,7 @@ abstract class BrowserContext
                 rowKey: $rowKey,
                 acceptKey: $acceptKey,
                 pageParams: $pageParams,
-                tableParams: $tableParams,
+                browserParams: $browserParams,
                 sources: $sources,
             );
         }
@@ -912,28 +912,28 @@ abstract class BrowserContext
      * Builds all current browser rows for one page-bound table.
      *
      * @param string $tableKey Browser table key
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
      */
     private function buildBrowserSnapshotRows(
         string $tableKey,
-        BrowserSourceConfig $tableConfig,
+        BrowserSourceConfig $browserConfig,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): array {
         $rows = [];
-        foreach ($this->snapshotRowKeys($tableConfig, $acceptKey, $pageParams, $tableParams) as $rowKey) {
+        foreach ($this->snapshotRowKeys($browserConfig, $acceptKey, $pageParams, $browserParams) as $rowKey) {
             $row = $this->buildBrowserRow(
                 tableKey: $tableKey,
-                tableConfig: $tableConfig,
+                browserConfig: $browserConfig,
                 rowKey: $rowKey,
                 acceptKey: $acceptKey,
                 pageParams: $pageParams,
-                tableParams: $tableParams,
+                browserParams: $browserParams,
             );
             if ($row !== null) {
                 $rows[] = $row;
@@ -1242,21 +1242,21 @@ abstract class BrowserContext
     /**
      * Collects logical row keys visible in a full browser table snapshot.
      *
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @return list<int|string> Logical row keys for current source items
      */
     private function snapshotRowKeys(
-        BrowserSourceConfig $tableConfig,
+        BrowserSourceConfig $browserConfig,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): array {
         $rowKeys = [];
         $seen = [];
-        foreach ($this->anchorRowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->anchorRowConfigs($browserConfig) as $rowConfig) {
             if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
                 continue;
             }
@@ -1272,11 +1272,11 @@ abstract class BrowserContext
             }
 
             foreach ($sourceItems as $sourceItem) {
-                if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams)) {
+                if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $browserParams)) {
                     continue;
                 }
 
-                $rowKey = $this->rowKeyForSourceItem($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams);
+                $rowKey = $this->rowKeyForSourceItem($rowConfig, $sourceItem, $acceptKey, $pageParams, $browserParams);
                 if ($rowKey === null || isset($seen[(string) $rowKey])) {
                     continue;
                 }
@@ -1295,12 +1295,12 @@ abstract class BrowserContext
      * Only the first non-many source is the row anchor. Joined sources enrich
      * that row and must not add their own keys to the full browser snapshot.
      *
-     * @param BrowserSourceConfig $tableConfig Browser source config
+     * @param BrowserSourceConfig $browserConfig Browser source config
      * @return list<array<string, mixed>> Anchor row config or an empty list
      */
-    private function anchorRowConfigs(BrowserSourceConfig $tableConfig): array
+    private function anchorRowConfigs(BrowserSourceConfig $browserConfig): array
     {
-        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->rowConfigs($browserConfig) as $rowConfig) {
             if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
                 continue;
             }
@@ -1348,7 +1348,7 @@ abstract class BrowserContext
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return list<mixed> Current source items matching this row source
      */
@@ -1357,7 +1357,7 @@ abstract class BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): array {
         $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
@@ -1372,10 +1372,10 @@ abstract class BrowserContext
 
         $items = [];
         foreach ($collection as $sourceItem) {
-            if (!$this->sourceItemMatchesRowKey($rowConfig, $sourceItem, $rowKey, $acceptKey, $pageParams, $tableParams)) {
+            if (!$this->sourceItemMatchesRowKey($rowConfig, $sourceItem, $rowKey, $acceptKey, $pageParams, $browserParams)) {
                 continue;
             }
-            if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams)) {
+            if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $browserParams)) {
                 continue;
             }
             if (!$this->sourceItemMatchesVia($rowConfig, $sourceItem, $sources)) {
@@ -1395,7 +1395,7 @@ abstract class BrowserContext
      * @param mixed $sourceItem Current source item
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @return int|string|null Browser row key
      */
     private function rowKeyForSourceItem(
@@ -1403,11 +1403,11 @@ abstract class BrowserContext
         mixed $sourceItem,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): int|string|null {
         $rowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
         if (is_array($rowKey)) {
-            return $this->normalizeKey($this->resolveReference($rowKey, $acceptKey, $pageParams, $tableParams));
+            return $this->normalizeKey($this->resolveReference($rowKey, $acceptKey, $pageParams, $browserParams));
         }
 
         if (is_string($rowKey) && $rowKey !== '') {
@@ -1425,7 +1425,7 @@ abstract class BrowserContext
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return bool True when the item belongs to the logical row
      */
     private function sourceItemMatchesRowKey(
@@ -1434,11 +1434,11 @@ abstract class BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): bool {
         $declaredRowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
         if (is_array($declaredRowKey)) {
-            return $this->sameValue($this->resolveReference($declaredRowKey, $acceptKey, $pageParams, $tableParams), $rowKey);
+            return $this->sameValue($this->resolveReference($declaredRowKey, $acceptKey, $pageParams, $browserParams), $rowKey);
         }
 
         if (!is_string($declaredRowKey) || $declaredRowKey === '') {
@@ -1455,7 +1455,7 @@ abstract class BrowserContext
      * @param mixed $sourceItem Current source item
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return bool True when all predicates match
      */
     private function sourceItemMatchesWhere(
@@ -1463,7 +1463,7 @@ abstract class BrowserContext
         mixed $sourceItem,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
     ): bool {
         $where = $rowConfig[BrowserFieldKey::WHERE] ?? [];
         if (!is_array($where)) {
@@ -1476,7 +1476,7 @@ abstract class BrowserContext
             }
             if (!$this->sameValue(
                 $this->fieldValue($sourceItem, $field),
-                $this->resolveReference($expected, $acceptKey, $pageParams, $tableParams),
+                $this->resolveReference($expected, $acceptKey, $pageParams, $browserParams),
             )) {
                 return false;
             }
@@ -1521,7 +1521,7 @@ abstract class BrowserContext
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return array<string, mixed> Projected source fragment
      */
@@ -1532,7 +1532,7 @@ abstract class BrowserContext
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): array {
         $payload = [];
@@ -1561,7 +1561,7 @@ abstract class BrowserContext
                     rowKey: $rowKey,
                     acceptKey: $acceptKey,
                     pageParams: $pageParams,
-                    tableParams: $tableParams,
+                    browserParams: $browserParams,
                     sources: $sources,
                 );
             }
@@ -1653,10 +1653,10 @@ abstract class BrowserContext
      * @param mixed $value Literal value or reference declaration
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @return mixed Resolved value
      */
-    private function resolveReference(mixed $value, string $acceptKey, array $pageParams, array $tableParams): mixed
+    private function resolveReference(mixed $value, string $acceptKey, array $pageParams, array $browserParams): mixed
     {
         if (!is_array($value)) {
             return $value;
@@ -1668,7 +1668,7 @@ abstract class BrowserContext
         return match ($type) {
             BrowserRefType::ACCEPT_KEY => $acceptKey,
             BrowserRefType::PAGE_PARAM => is_string($key) ? ($pageParams[$key] ?? null) : null,
-            BrowserRefType::TABLE_PARAM => is_string($key) ? ($tableParams[$key] ?? null) : null,
+            BrowserRefType::TABLE_PARAM => is_string($key) ? ($browserParams[$key] ?? null) : null,
             default => null,
         };
     }
@@ -1939,22 +1939,22 @@ abstract class BrowserContext
      * table source keeps the row-collection shape. The row field bag is renamed
      * from `sources` to `slots` on the wire.
      *
-     * @param array<string, array<string, mixed>> $tablesByKey Per-table rows and deletes keyed by table key
+     * @param array<string, array<string, mixed>> $browserByKey Per-table rows and deletes keyed by table key
      * @return PagePayload Page payload split by section
      */
-    private function pagePayloadFromBrowserTables(array $tablesByKey): PagePayload
+    private function pagePayloadFromBrowser(array $browserByKey): PagePayload
     {
         $lists = [];
         $tables = [];
         $data = [];
-        foreach ($tablesByKey as $tableKey => $table) {
+        foreach ($browserByKey as $tableKey => $table) {
             $rows = $table[BrowserPageSignalData::rows] ?? [];
             $rows = is_array($rows) ? $rows : [];
             $deleted = $table[BrowserPageSignalData::deleted] ?? [];
             $deleted = is_array($deleted) ? $deleted : [];
             $cleared = ($table[BrowserPageSignalData::cleared] ?? false) === true;
 
-            switch ($this->tableKind($tableKey)) {
+            switch ($this->browserKind($tableKey)) {
                 case BrowserSourceKind::LIST:
                     $section = [];
                     if ($cleared) {

@@ -22,7 +22,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -395,7 +395,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
         $resolvePageTables = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $page): BrowserPageTableBindings => $context->resolveBrowserPageTables($page),
+            static fn(ChatBrowserContext $context, string $page): BrowserPageBindings => $context->resolveBrowserPageBindings($page),
             null,
             ChatBrowserContext::class,
         );
@@ -405,8 +405,8 @@ final class ChatTopologyRegistryTest extends TestCase
 
             $this->assertSame(array_keys($tableConfigs), array_map(static fn($binding): string => $binding->tableKey, $bindings));
             foreach ($bindings as $binding) {
-                $tableConfig = $tableConfigs[$binding->tableKey] ?? [];
-                $this->assertSame($this->expectedBindingParamRefs($tableConfig), $binding->paramRefs());
+                $browserConfig = $tableConfigs[$binding->tableKey] ?? [];
+                $this->assertSame($this->expectedBindingParamRefs($browserConfig), $binding->paramRefs());
             }
         }
 
@@ -418,7 +418,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
         $resolveTableConfig = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserSourceConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
+            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserSourceConfig => $context->resolveBrowserOnlyConfig($tableKey),
             null,
             ChatBrowserContext::class,
         );
@@ -525,16 +525,16 @@ final class ChatTopologyRegistryTest extends TestCase
     /**
      * Extracts expected binding param references from a PAGE_TABLES entry.
      *
-     * @param mixed $tableConfig Page table binding config
+     * @param mixed $browserConfig Page table binding config
      * @return array<string, mixed> Table param reference declarations
      */
-    private function expectedBindingParamRefs(mixed $tableConfig): array
+    private function expectedBindingParamRefs(mixed $browserConfig): array
     {
-        if (!is_array($tableConfig)) {
+        if (!is_array($browserConfig)) {
             return [];
         }
 
-        $params = $tableConfig[BrowserParamKey::PARAMS] ?? [];
+        $params = $browserConfig[BrowserParamKey::PARAMS] ?? [];
 
         return is_array($params) ? $params : [];
     }
