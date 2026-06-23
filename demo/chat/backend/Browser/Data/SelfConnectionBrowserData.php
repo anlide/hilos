@@ -11,8 +11,8 @@ use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\ChatUserState;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserDataConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
@@ -25,25 +25,25 @@ final class SelfConnectionBrowserData
     public const string DATA = ChatBrowserData::SELF_CONNECTION;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserDataConfigKey::PARAMS => [
             BrowserRuntimeParam::ACCEPT_KEY => [
                 BrowserParamKey::TYPE => BrowserParamType::STRING,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserDataConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
             ChatBrowserSource::RT_USER_STATES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserDataConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => Connection::userId,
-                BrowserFieldKey::WHERE => [
+                BrowserDataFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserDataFieldKey::ROW_KEY => Connection::userId,
+                BrowserDataFieldKey::WHERE => [
                     Connection::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserDataFieldKey::FIELDS => [
                     Connection::userId => SelfConnectionSignalData::userId,
                     Connection::connectedAt => SelfConnectionSignalData::connectedAt,
                     Connection::outboundModerationPhase,
@@ -57,12 +57,12 @@ final class SelfConnectionBrowserData
                     Connection::fileProgressUploadedBytes,
                     Connection::fileProgressTotalBytes,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserDataFieldKey::COMPUTED => [
                     SelfConnectionSignalData::outboundModerationState,
                     SelfConnectionSignalData::fileUploadState,
                     SelfConnectionSignalData::fileUploadProgress,
                 ],
-                BrowserFieldKey::TRIGGERS => [
+                BrowserDataFieldKey::TRIGGERS => [
                     Connection::userId,
                     Connection::connectedAt,
                     Connection::outboundModerationPhase,
@@ -79,32 +79,32 @@ final class SelfConnectionBrowserData
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => User::id,
-                BrowserFieldKey::VIA => [
+                BrowserDataFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserDataFieldKey::ROW_KEY => User::id,
+                BrowserDataFieldKey::VIA => [
                     User::id => Connection::userId,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserDataFieldKey::FIELDS => [
                     User::id,
                     User::name,
                 ],
-                BrowserFieldKey::TRIGGERS => [
+                BrowserDataFieldKey::TRIGGERS => [
                     User::name,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_USER_STATES,
-                BrowserFieldKey::ROW_KEY => ChatUserState::userId,
-                BrowserFieldKey::VIA => [
+                BrowserDataFieldKey::SOURCE => ChatBrowserSource::RT_USER_STATES,
+                BrowserDataFieldKey::ROW_KEY => ChatUserState::userId,
+                BrowserDataFieldKey::VIA => [
                     ChatUserState::userId => Connection::userId,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserDataFieldKey::FIELDS => [
                     ChatUserState::lastOutboundSubmittedAt,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserDataFieldKey::COMPUTED => [
                     SelfConnectionSignalData::messageRateLimitSecondsRemaining,
                 ],
-                BrowserFieldKey::TRIGGERS => [
+                BrowserDataFieldKey::TRIGGERS => [
                     ChatUserState::lastOutboundSubmittedAt,
                 ],
             ],

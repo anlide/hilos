@@ -9,8 +9,8 @@ use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserDataConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 
@@ -24,23 +24,23 @@ final class BotStatusBrowserData
     public const string DATA = ChatBrowserData::BOT_STATUS;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserDataConfigKey::PARAMS => [
             BotPageSubscribeParams::BOT_ID => [
                 BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserDataConfigKey::SOURCES => [
             ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserDataConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
-                BrowserFieldKey::ROW_KEY => BotAgentStatus::botId,
-                BrowserFieldKey::WHERE => [
+                BrowserDataFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserDataFieldKey::ROW_KEY => BotAgentStatus::botId,
+                BrowserDataFieldKey::WHERE => [
                     BotAgentStatus::botId => ChatBrowserRef::TABLE_BOT_ID,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserDataFieldKey::FIELDS => [
                     BotAgentStatus::botId,
                     BotAgentStatus::status,
                     BotAgentStatus::updatedAt,

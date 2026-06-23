@@ -9,8 +9,8 @@ use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserDataConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
@@ -25,26 +25,26 @@ final class UserPresenceBrowserData
     public const string DATA = ChatBrowserData::USER_PRESENCE;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserDataConfigKey::PARAMS => [
             UserPageSubscribeParams::USER_ID => [
                 BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserDataConfigKey::SOURCES => [
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserDataConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => Connection::userId,
-                BrowserFieldKey::WHERE => [
+                BrowserDataFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserDataFieldKey::ROW_KEY => Connection::userId,
+                BrowserDataFieldKey::WHERE => [
                     Connection::userId => ChatBrowserRef::TABLE_USER_ID,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserDataFieldKey::FIELDS => [
                     Connection::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserDataFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
                 ],
