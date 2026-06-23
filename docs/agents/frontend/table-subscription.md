@@ -96,6 +96,22 @@ Table logic — the viewport descriptor, pending accumulation, and Apply — is 
 on top ([multiframework-core.md](multiframework-core.md)). The view renders rows and badges and emits
 user intents; it holds no table logic of its own.
 
+## Stable selectors (data-id)
+
+The view exposes stable `data-id` selectors for e2e (Playwright's
+`testIdAttribute` is `data-id`). The canonical names:
+
+- the table **root** container is `hilos-viewport-table`;
+- the cells and controls **inside** it keep the `hilos-table-*` prefix —
+  `hilos-table-search`, `hilos-table-row-<rowKey>`, `hilos-table-sort-<key>`,
+  `hilos-table-apply`, `hilos-table-pending`, `hilos-table-placeholder`,
+  `hilos-table-loading`, `hilos-table-count`, `hilos-table-page`,
+  `hilos-table-prev`, `hilos-table-next`.
+
+The `hilos-table-*` cell prefix is the table's own internal naming, not a
+leftover: there is **no** `hilos-table` root selector. Select the table by
+`hilos-viewport-table`; a test that still selects `hilos-table` is stale.
+
 ## Backend contract surface (the gate)
 
 Per-connection viewport tracking is a backend change that passes the Contract
@@ -106,6 +122,13 @@ viewport-changed nudge (A-lite). This folds in the table-system rework tracked i
 the broader refactor.
 
 ## Current implementation status
+
+> **Stale — pending a docs-actualisation step.** This section still describes the
+> pre-viewport model (client-side `TableController` / `HilosTable`, A-lite). The
+> shipped model is full **option A**: server-windowed `TableViewportController` +
+> `HilosViewportTable` with pending/Apply, a live count signal, and tail-append;
+> the old client-side `TableController` / `HilosTable` were removed. The prose
+> below is kept verbatim until that rewrite.
 
 The first table-subscription step ships the **snapshot + live-push** layer, not
 the viewport model above. The backend already streams a table's full row set on

@@ -16,7 +16,7 @@ test('lists users in the framework table and opens a detail page', async ({
   await page.goto('/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
   // The connected client self-registers, so at least its own row is present.
@@ -33,7 +33,7 @@ test('lists users in the framework table and opens a detail page', async ({
 
 test('filters the users table from the search box', async ({ page }) => {
   await page.goto('/hilos/users')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
     page.locator('[data-id^="hilos-users-open-"]').first(),
   ).toBeVisible()
@@ -71,7 +71,7 @@ test('shows the connected user as online with a live session', async ({
 }) => {
   await page.goto('/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // The connected client self-registers as the newest user (highest id), so its
   // own row sorts last under the id-ascending default; open that detail.
