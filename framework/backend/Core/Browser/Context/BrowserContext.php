@@ -7,6 +7,7 @@ namespace Hilos\Core\Browser\Context;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
@@ -17,6 +18,7 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
 use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
@@ -805,7 +807,7 @@ abstract class BrowserContext
      */
     private function rowKeyValue(array $rowConfig, SourceChange $change, array $browserParams): int|string|null
     {
-        $rowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
+        $rowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
         if (is_array($rowKey)) {
             return $this->normalizeKey($this->resolveReference($rowKey, '', [], $browserParams));
         }
@@ -1416,7 +1418,7 @@ abstract class BrowserContext
         array $pageParams,
         array $browserParams,
     ): int|string|null {
-        $rowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
+        $rowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
         if (is_array($rowKey)) {
             return $this->normalizeKey($this->resolveReference($rowKey, $acceptKey, $pageParams, $browserParams));
         }
@@ -1447,7 +1449,7 @@ abstract class BrowserContext
         array $pageParams,
         array $browserParams,
     ): bool {
-        $declaredRowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
+        $declaredRowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
         if (is_array($declaredRowKey)) {
             return $this->sameValue($this->resolveReference($declaredRowKey, $acceptKey, $pageParams, $browserParams), $rowKey);
         }

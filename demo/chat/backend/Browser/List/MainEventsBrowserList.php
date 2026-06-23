@@ -11,8 +11,8 @@ use Demo\Chat\Database\Object\Item\EventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage;
 use Demo\Chat\Database\Object\Item\EventUserRegistration;
 use Demo\Chat\Database\Object\Item\EventUserRename;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
 
 /**
  * Browser list source for the main chat event stream.
@@ -22,27 +22,27 @@ final class MainEventsBrowserList
     public const string LIST = ChatBrowserList::MAIN_EVENTS;
 
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserListConfigKey::SOURCES => [
             ChatBrowserSource::DB_EVENTS,
             ChatBrowserSource::DB_EVENT_MESSAGES,
             ChatBrowserSource::DB_EVENT_USER_REGISTRATIONS,
             ChatBrowserSource::DB_EVENT_USER_RENAMES,
             ChatBrowserSource::DB_EVENT_ATTACHMENTS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserListConfigKey::ITEMS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENTS,
-                BrowserFieldKey::ROW_KEY => Event::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENTS,
+                BrowserListFieldKey::ITEM_KEY => Event::id,
+                BrowserListFieldKey::FIELDS => [
                     Event::id,
                     Event::type,
                     Event::timestamp,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_MESSAGES,
-                BrowserFieldKey::ROW_KEY => EventMessage::eventId,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_MESSAGES,
+                BrowserListFieldKey::ITEM_KEY => EventMessage::eventId,
+                BrowserListFieldKey::FIELDS => [
                     EventMessage::eventId,
                     EventMessage::authorUserId,
                     EventMessage::authorBotId,
@@ -50,17 +50,17 @@ final class MainEventsBrowserList
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_REGISTRATIONS,
-                BrowserFieldKey::ROW_KEY => EventUserRegistration::eventId,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_REGISTRATIONS,
+                BrowserListFieldKey::ITEM_KEY => EventUserRegistration::eventId,
+                BrowserListFieldKey::FIELDS => [
                     EventUserRegistration::eventId,
                     EventUserRegistration::targetUserId,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_RENAMES,
-                BrowserFieldKey::ROW_KEY => EventUserRename::eventId,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_RENAMES,
+                BrowserListFieldKey::ITEM_KEY => EventUserRename::eventId,
+                BrowserListFieldKey::FIELDS => [
                     EventUserRename::eventId,
                     EventUserRename::targetUserId,
                     EventUserRename::actorUserId,
@@ -69,10 +69,10 @@ final class MainEventsBrowserList
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_ATTACHMENTS,
-                BrowserFieldKey::ROW_KEY => EventAttachment::eventId,
-                BrowserFieldKey::MANY => true,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_ATTACHMENTS,
+                BrowserListFieldKey::ITEM_KEY => EventAttachment::eventId,
+                BrowserListFieldKey::MANY => true,
+                BrowserListFieldKey::FIELDS => [
                     EventAttachment::id,
                     EventAttachment::eventId,
                     EventAttachment::filename,

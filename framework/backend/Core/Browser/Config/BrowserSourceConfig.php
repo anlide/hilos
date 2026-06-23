@@ -29,7 +29,7 @@ final class BrowserSourceConfig
      */
     public static function fromArray(array $config): self
     {
-        $rows = $config[BrowserConfigKey::ROWS] ?? [];
+        $rows = $config[BrowserListConfigKey::ITEMS] ?? $config[BrowserTableConfigKey::ROWS] ?? [];
 
         return new self(
             rowConfigs: is_array($rows)
