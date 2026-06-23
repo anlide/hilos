@@ -8,7 +8,6 @@ use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\Object\Item\Bot;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
-use Demo\Chat\Tables\Bot\BotTableRow;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
 
@@ -32,13 +31,13 @@ final class MainBotsBrowserList
                     Bot::active => true,
                 ],
                 BrowserListFieldKey::FIELDS => [
-                    Bot::id => BotTableRow::id,
-                    Bot::name => BotTableRow::name,
-                    Bot::description => BotTableRow::description,
-                    Bot::style => BotTableRow::style,
-                    Bot::topics => BotTableRow::topics,
-                    Bot::personality => BotTableRow::personality,
-                    Bot::active => BotTableRow::active,
+                    Bot::id,
+                    Bot::name,
+                    Bot::description,
+                    Bot::style,
+                    Bot::topics,
+                    Bot::personality,
+                    Bot::active,
                 ],
             ],
             [
