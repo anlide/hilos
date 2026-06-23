@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\Data;
 
+use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\ChatUserState;
@@ -22,7 +22,7 @@ use Hilos\Core\Browser\Config\BrowserRuntimeParam;
  */
 final class SelfConnectionBrowserData
 {
-    public const string DATA = ChatBrowserTable::SELF_CONNECTION;
+    public const string DATA = ChatBrowserData::SELF_CONNECTION;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [

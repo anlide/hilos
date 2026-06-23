@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\Data;
 
+use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -21,7 +21,7 @@ use Hilos\Core\Browser\Config\BrowserParamType;
  */
 final class BotStatusBrowserData
 {
-    public const string DATA = ChatBrowserTable::BOT_STATUS;
+    public const string DATA = ChatBrowserData::BOT_STATUS;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [

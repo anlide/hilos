@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\Data;
 
+use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -22,7 +22,7 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
  */
 final class UserPresenceBrowserData
 {
-    public const string DATA = ChatBrowserTable::USER_PRESENCE;
+    public const string DATA = ChatBrowserData::USER_PRESENCE;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [
