@@ -8,8 +8,8 @@ use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
@@ -20,31 +20,31 @@ final class MainUsersBrowserList
     public const string LIST = ChatBrowserList::MAIN_USERS;
 
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserListConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserListConfigKey::ITEMS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => User::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserListFieldKey::ITEM_KEY => User::id,
+                BrowserListFieldKey::FIELDS => [
                     User::id,
                     User::name,
                     User::lastActivity,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => Connection::userId,
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserListFieldKey::ITEM_KEY => Connection::userId,
+                BrowserListFieldKey::FIELDS => [
                     Connection::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserListFieldKey::COMPUTED => [
                     HilosUserPresenceSummary::presence,
                     HilosUserPresenceSummary::onlineSessionCount,
                 ],
-                BrowserFieldKey::TRIGGERS => [
+                BrowserListFieldKey::TRIGGERS => [
                     Connection::userId,
                     Connection::connectedAt,
                 ],

@@ -9,8 +9,8 @@ use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
@@ -23,23 +23,23 @@ final class AttachmentDraftsBrowserList
     public const string LIST = ChatBrowserList::ATTACHMENT_DRAFTS;
 
     public const array BROWSER = [
-        BrowserConfigKey::PARAMS => [
+        BrowserListConfigKey::PARAMS => [
             BrowserRuntimeParam::ACCEPT_KEY => [
                 BrowserParamKey::TYPE => BrowserParamType::STRING,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],
-        BrowserConfigKey::SOURCES => [
+        BrowserListConfigKey::SOURCES => [
             ChatBrowserSource::RT_ATTACHMENT_DRAFTS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserListConfigKey::ITEMS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_ATTACHMENT_DRAFTS,
-                BrowserFieldKey::ROW_KEY => AttachmentDraft::draftId,
-                BrowserFieldKey::WHERE => [
+                BrowserListFieldKey::SOURCE => ChatBrowserSource::RT_ATTACHMENT_DRAFTS,
+                BrowserListFieldKey::ITEM_KEY => AttachmentDraft::draftId,
+                BrowserListFieldKey::WHERE => [
                     AttachmentDraft::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],
-                BrowserFieldKey::FIELDS => [
+                BrowserListFieldKey::FIELDS => [
                     AttachmentDraft::draftId => AttachmentDraftSignalData::draftId,
                     AttachmentDraft::originalFilename => AttachmentDraftSignalData::filename,
                     AttachmentDraft::mimeType => AttachmentDraftSignalData::mimeType,
