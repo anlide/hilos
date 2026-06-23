@@ -64,11 +64,23 @@ abstract class Hilos
     /** Registered table definition classes keyed by table name. */
     public const array TABLES = [];
 
-    /** Browser-only table config classes keyed by table name. */
+    /** Browser table source config classes keyed by table key. */
     public const array BROWSER_TABLES = [];
+
+    /** Browser list source config classes keyed by list key. */
+    public const array BROWSER_LISTS = [];
+
+    /** Browser data source config classes keyed by data key. */
+    public const array BROWSER_DATA = [];
 
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
+
+    /** Page list bindings keyed by page name, then list key. */
+    public const array PAGE_LISTS = [];
+
+    /** Page data bindings keyed by page name, then data key. */
+    public const array PAGE_DATA = [];
 
     /** Conventional name of the project-level persistent-data directory. */
     public const string DATA_DIR = 'data';

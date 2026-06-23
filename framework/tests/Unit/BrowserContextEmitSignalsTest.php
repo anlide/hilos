@@ -474,7 +474,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
     /**
      * Computes the test-only label declared in the browser table config.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param string $field Computed field name
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
@@ -484,7 +484,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      * @return mixed Computed browser field value
      */
     protected function computeBrowserField(
-        string $tableKey,
+        string $browserKey,
         string $field,
         int|string $rowKey,
         string $acceptKey,

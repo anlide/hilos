@@ -41,13 +41,13 @@ final class BrowserPageBindings implements IteratorAggregate
     public static function fromArray(array $configs): self
     {
         $bindings = [];
-        foreach ($configs as $tableKey => $config) {
-            if (!is_string($tableKey)) {
+        foreach ($configs as $browserKey => $config) {
+            if (!is_string($browserKey)) {
                 continue;
             }
 
             $bindings[] = BrowserPageBinding::fromArray(
-                tableKey: $tableKey,
+                browserKey: $browserKey,
                 config: is_array($config) ? $config : [],
             );
         }

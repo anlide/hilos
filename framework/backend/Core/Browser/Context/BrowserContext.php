@@ -134,23 +134,23 @@ abstract class BrowserContext
 
         $tables = [];
         foreach ($this->pageBindings($page) as $pageBinding) {
-            $tableKey = $pageBinding->tableKey;
+            $browserKey = $pageBinding->browserKey;
 
-            if ($this->viewportTable($tableKey) !== null) {
+            if ($this->viewportTable($browserKey) !== null) {
                 // Viewport tables deliver their rows through the table_viewport /
                 // table_window cycle, not the subscription snapshot.
                 continue;
             }
 
-            $browserConfig = $this->browserConfig($tableKey);
+            $browserConfig = $this->browserConfig($browserKey);
             if ($browserConfig === null || $browserConfig->isEmpty()) {
                 continue;
             }
 
             $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
-            $tables[$tableKey] = [
+            $tables[$browserKey] = [
                 BrowserPageSignalData::rows => $this->buildBrowserSnapshotRows(
-                    tableKey: $tableKey,
+                    browserKey: $browserKey,
                     browserConfig: $browserConfig,
                     acceptKey: $acceptKey,
                     pageParams: $pageParams,
@@ -400,13 +400,13 @@ abstract class BrowserContext
 
                 $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
                 foreach ($this->pageBindings($page) as $pageBinding) {
-                    $tableKey = $pageBinding->tableKey;
+                    $browserKey = $pageBinding->browserKey;
 
-                    $viewportTable = $this->viewportTable($tableKey);
+                    $viewportTable = $this->viewportTable($browserKey);
                     if ($viewportTable !== null) {
-                        $viewport = Hilos::$sr->getTableViewport($acceptKey, $tableKey);
+                        $viewport = Hilos::$sr->getTableViewport($acceptKey, $browserKey);
                         if ($viewport !== null) {
-                            $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $tableKey);
+                            $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
                         }
                         // A viewport table is delivered only through its window and
                         // deltas; with or without an active viewport it never uses the
@@ -415,13 +415,13 @@ abstract class BrowserContext
                         continue;
                     }
 
-                    $browserConfig = $this->browserConfig($tableKey);
+                    $browserConfig = $this->browserConfig($browserKey);
                     if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
                         continue;
                     }
 
                     if ($change->mutationType === TableMutationType::Clear) {
-                        $this->addBrowserClear($signalTables, $acceptKey, $page, $tableKey);
+                        $this->addBrowserClear($signalTables, $acceptKey, $page, $browserKey);
                         continue;
                     }
 
@@ -432,7 +432,7 @@ abstract class BrowserContext
                     }
 
                     $row = $this->buildBrowserRow(
-                        tableKey: $tableKey,
+                        browserKey: $browserKey,
                         browserConfig: $browserConfig,
                         rowKey: $rowKey,
                         acceptKey: $acceptKey,
@@ -441,11 +441,11 @@ abstract class BrowserContext
                     );
 
                     if ($row === null) {
-                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $tableKey, $rowKey);
+                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $browserKey, $rowKey);
                         continue;
                     }
 
-                    $this->addBrowserRow($signalTables, $acceptKey, $page, $tableKey, $rowKey, $row);
+                    $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
                 }
             }
         }
@@ -476,7 +476,7 @@ abstract class BrowserContext
      * Project browser contexts override this for computed names listed in
      * browser table configs. Unknown computed fields resolve to null.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param string $field Computed field name
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
@@ -486,7 +486,7 @@ abstract class BrowserContext
      * @return mixed Computed browser field value, or null when the field is unknown
      */
     protected function computeBrowserField(
-        string $tableKey,
+        string $browserKey,
         string $field,
         int|string $rowKey,
         string $acceptKey,
@@ -529,9 +529,14 @@ abstract class BrowserContext
     protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         $hilosClass = $this->hilosClass;
+        $lists = $hilosClass::PAGE_LISTS[$page] ?? [];
         $tables = $hilosClass::PAGE_TABLES[$page] ?? [];
+        $data = $hilosClass::PAGE_DATA[$page] ?? [];
+        $bindings = (is_array($lists) ? $lists : [])
+            + (is_array($tables) ? $tables : [])
+            + (is_array($data) ? $data : []);
 
-        return BrowserPageBindings::fromArray(is_array($tables) ? $tables : []);
+        return BrowserPageBindings::fromArray($bindings);
     }
 
     /**
@@ -540,13 +545,16 @@ abstract class BrowserContext
      * Returning null lets the generic table context fallback resolve ordinary
      * registered table metadata without requiring it for browser-only topology.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return ?BrowserSourceConfig Browser-only table config, or null when absent
      */
-    protected function resolveBrowserOnlyConfig(string $tableKey): ?BrowserSourceConfig
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
     {
         $hilosClass = $this->hilosClass;
-        $tableClass = $hilosClass::BROWSER_TABLES[$tableKey] ?? null;
+        $tableClass = $hilosClass::BROWSER_LISTS[$browserKey]
+            ?? $hilosClass::BROWSER_TABLES[$browserKey]
+            ?? $hilosClass::BROWSER_DATA[$browserKey]
+            ?? null;
         if (!is_string($tableClass)) {
             return null;
         }
@@ -582,12 +590,12 @@ abstract class BrowserContext
     /**
      * Returns a browser table config from browser-only or registered table metadata.
      *
-     * @param string $tableKey Browser or table context key
+     * @param string $browserKey Browser or table context key
      * @return ?BrowserSourceConfig Browser source config
      */
-    private function browserConfig(string $tableKey): ?BrowserSourceConfig
+    private function browserConfig(string $browserKey): ?BrowserSourceConfig
     {
-        $browserConfig = $this->resolveBrowserOnlyConfig($tableKey);
+        $browserConfig = $this->resolveBrowserOnlyConfig($browserKey);
         if ($browserConfig !== null) {
             return $browserConfig;
         }
@@ -596,7 +604,7 @@ abstract class BrowserContext
             return null;
         }
 
-        $table = Hilos::$table->get($tableKey);
+        $table = Hilos::$table->get($browserKey);
         if ($table === null) {
             return null;
         }
@@ -613,12 +621,12 @@ abstract class BrowserContext
      * A source with no resolvable class — a project hook that returns an inline
      * config — is a table.
      *
-     * @param string $tableKey Browser source key
+     * @param string $browserKey Browser source key
      * @return string One of the BrowserSourceKind constants
      */
-    private function browserKind(string $tableKey): string
+    private function browserKind(string $browserKey): string
     {
-        $class = $this->resolveSourceClass($tableKey);
+        $class = $this->resolveSourceClass($browserKey);
 
         return $class !== null ? $this->sourceKind($class) : BrowserSourceKind::TABLE;
     }
@@ -626,17 +634,20 @@ abstract class BrowserContext
     /**
      * Resolves the declaring class of a page-bound source, when registered.
      *
-     * @param string $tableKey Browser source key
+     * @param string $browserKey Browser source key
      * @return ?string Source class name, or null when resolved without a class
      */
-    private function resolveSourceClass(string $tableKey): ?string
+    private function resolveSourceClass(string $browserKey): ?string
     {
-        $tableClass = $this->hilosClass::BROWSER_TABLES[$tableKey] ?? null;
+        $tableClass = $this->hilosClass::BROWSER_LISTS[$browserKey]
+            ?? $this->hilosClass::BROWSER_TABLES[$browserKey]
+            ?? $this->hilosClass::BROWSER_DATA[$browserKey]
+            ?? null;
         if (is_string($tableClass)) {
             return $tableClass;
         }
 
-        $table = Hilos::$table?->get($tableKey);
+        $table = Hilos::$table?->get($browserKey);
 
         return $table !== null ? $table::class : null;
     }
@@ -821,7 +832,7 @@ abstract class BrowserContext
     /**
      * Builds the page-shaped browser row for one logical row key.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param BrowserSourceConfig $browserConfig Browser source config
      * @param int|string $rowKey Logical row key
      * @param string $acceptKey Subscriber accept key
@@ -830,7 +841,7 @@ abstract class BrowserContext
      * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row payload, or null when row is absent
      */
     private function buildBrowserRow(
-        string $tableKey,
+        string $browserKey,
         BrowserSourceConfig $browserConfig,
         int|string $rowKey,
         string $acceptKey,
@@ -861,7 +872,7 @@ abstract class BrowserContext
             if ($isMany) {
                 $sources[$sourceKey] = array_map(
                     fn(mixed $item): array => $this->projectSourceItem(
-                        tableKey: $tableKey,
+                        browserKey: $browserKey,
                         rowConfig: $rowConfig,
                         item: $item,
                         rowKey: $rowKey,
@@ -887,7 +898,7 @@ abstract class BrowserContext
             }
 
             $sources[$sourceKey] = $this->projectSourceItem(
-                tableKey: $tableKey,
+                browserKey: $browserKey,
                 rowConfig: $rowConfig,
                 item: $items[0],
                 rowKey: $rowKey,
@@ -911,7 +922,7 @@ abstract class BrowserContext
     /**
      * Builds all current browser rows for one page-bound table.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param BrowserSourceConfig $browserConfig Browser source config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
@@ -919,7 +930,7 @@ abstract class BrowserContext
      * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
      */
     private function buildBrowserSnapshotRows(
-        string $tableKey,
+        string $browserKey,
         BrowserSourceConfig $browserConfig,
         string $acceptKey,
         array $pageParams,
@@ -928,7 +939,7 @@ abstract class BrowserContext
         $rows = [];
         foreach ($this->snapshotRowKeys($browserConfig, $acceptKey, $pageParams, $browserParams) as $rowKey) {
             $row = $this->buildBrowserRow(
-                tableKey: $tableKey,
+                browserKey: $browserKey,
                 browserConfig: $browserConfig,
                 rowKey: $rowKey,
                 acceptKey: $acceptKey,
@@ -946,12 +957,12 @@ abstract class BrowserContext
     /**
      * Resolves a page-bound table as a viewport table, when it is one.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return ?ViewportTable Viewport table, or null when absent or not windowed
      */
-    private function viewportTable(string $tableKey): ?ViewportTable
+    private function viewportTable(string $browserKey): ?ViewportTable
     {
-        $table = Hilos::$table?->get($tableKey);
+        $table = Hilos::$table?->get($browserKey);
 
         return $table instanceof ViewportTable ? $table : null;
     }
@@ -979,7 +990,7 @@ abstract class BrowserContext
      * @param SourceChange $change Grouped DB/RT source change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      */
     private function emitViewportDelta(
         ViewportTable $table,
@@ -987,7 +998,7 @@ abstract class BrowserContext
         SourceChange $change,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
     ): void {
         try {
             $mutation = $table->buildMutationForSourceEvent($change);
@@ -999,13 +1010,13 @@ abstract class BrowserContext
             return;
         }
 
-        if ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $tableKey)) {
+        if ($this->tryEmitViewportAppend($table, $viewport, $mutation, $acceptKey, $page, $browserKey)) {
             return;
         }
 
-        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $tableKey);
+        $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey);
 
-        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $tableKey);
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
@@ -1025,7 +1036,7 @@ abstract class BrowserContext
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return bool Whether the row was appended (and no further signal is needed)
      */
     private function tryEmitViewportAppend(
@@ -1034,7 +1045,7 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
     ): bool {
         if ($mutation->type !== TableMutationType::Create || $mutation->row === null) {
             return false;
@@ -1053,7 +1064,7 @@ abstract class BrowserContext
             SignalTypeConstants::TABLE_VIEWPORT_APPEND,
             new TableViewportAppendDTO(
                 $page,
-                $tableKey,
+                $browserKey,
                 $this->browserRowToWire($table->browserRow($mutation->row)),
                 $newTotal,
                 $this->pageCount($newTotal, $viewport->limit),
@@ -1097,7 +1108,7 @@ abstract class BrowserContext
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      */
     private function emitViewportCount(
         ViewportTable $table,
@@ -1105,7 +1116,7 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
     ): void {
         $newTotal = $this->viewportTotalAfterMutation($table, $viewport, $mutation);
         if ($newTotal === null || $newTotal === $viewport->totalCount()) {
@@ -1116,7 +1127,7 @@ abstract class BrowserContext
 
         $this->queueAddressedTableSignal(
             SignalTypeConstants::TABLE_VIEWPORT_COUNT,
-            new TableViewportCountDTO($page, $tableKey, $newTotal, $this->pageCount($newTotal, $viewport->limit)),
+            new TableViewportCountDTO($page, $browserKey, $newTotal, $this->pageCount($newTotal, $viewport->limit)),
             $acceptKey,
         );
     }
@@ -1173,7 +1184,7 @@ abstract class BrowserContext
      * @param ViewportTable $table Viewport table the window is on
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
      */
     private function rowDeltaForMutation(
@@ -1181,7 +1192,7 @@ abstract class BrowserContext
         ViewportTable $table,
         TableRowMutationDTO $mutation,
         string $page,
-        string $tableKey,
+        string $browserKey,
     ): ?TableViewportDeltaDTO {
         $rowKey = (string) $mutation->rowKey;
         if (!$viewport->hasRow($rowKey)) {
@@ -1191,7 +1202,7 @@ abstract class BrowserContext
         if ($mutation->type === TableMutationType::Delete) {
             $viewport->forgetRow($rowKey);
 
-            return TableViewportDeltaDTO::rowRemoved($page, $tableKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED);
+            return TableViewportDeltaDTO::rowRemoved($page, $browserKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED);
         }
 
         if ($mutation->row === null) {
@@ -1200,7 +1211,7 @@ abstract class BrowserContext
 
         return TableViewportDeltaDTO::rowUpdated(
             $page,
-            $tableKey,
+            $browserKey,
             $mutation->rowKey,
             $this->browserRowToWire($table->browserRow($mutation->row)),
         );
@@ -1515,7 +1526,7 @@ abstract class BrowserContext
     /**
      * Projects configured source and computed fields from one current item.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param mixed $item Current source item
      * @param int|string $rowKey Logical row key
@@ -1526,7 +1537,7 @@ abstract class BrowserContext
      * @return array<string, mixed> Projected source fragment
      */
     private function projectSourceItem(
-        string $tableKey,
+        string $browserKey,
         array $rowConfig,
         mixed $item,
         int|string $rowKey,
@@ -1556,7 +1567,7 @@ abstract class BrowserContext
                     continue;
                 }
                 $payload[$field] = $this->computeBrowserField(
-                    tableKey: $tableKey,
+                    browserKey: $browserKey,
                     field: $field,
                     rowKey: $rowKey,
                     acceptKey: $acceptKey,
@@ -1834,7 +1845,7 @@ abstract class BrowserContext
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param int|string $rowKey Logical row key
      * @param array{rowKey: int|string, sources: array<string, mixed>} $row Browser row payload
      */
@@ -1842,12 +1853,12 @@ abstract class BrowserContext
         array &$signalTables,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
         int|string $rowKey,
         array $row,
     ): void {
-        unset($signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey]);
-        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows][(string) $rowKey] = $row;
+        unset($signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::deleted][(string) $rowKey]);
+        $signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::rows][(string) $rowKey] = $row;
     }
 
     /**
@@ -1856,18 +1867,18 @@ abstract class BrowserContext
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param int|string $rowKey Logical row key
      */
     private function addBrowserDelete(
         array &$signalTables,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
         int|string $rowKey,
     ): void {
-        unset($signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows][(string) $rowKey]);
-        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted][(string) $rowKey] = $rowKey;
+        unset($signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::rows][(string) $rowKey]);
+        $signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::deleted][(string) $rowKey] = $rowKey;
     }
 
     /**
@@ -1881,19 +1892,19 @@ abstract class BrowserContext
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      */
     private function addBrowserClear(
         array &$signalTables,
         string $acceptKey,
         string $page,
-        string $tableKey,
+        string $browserKey,
     ): void {
         unset(
-            $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::rows],
-            $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::deleted],
+            $signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::rows],
+            $signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::deleted],
         );
-        $signalTables[$acceptKey][$page][$tableKey][BrowserPageSignalData::cleared] = true;
+        $signalTables[$acceptKey][$page][$browserKey][BrowserPageSignalData::cleared] = true;
     }
 
     /**
@@ -1907,7 +1918,7 @@ abstract class BrowserContext
         $payloads = [];
         foreach ($signalTables as $acceptKey => $pages) {
             foreach ($pages as $page => $tables) {
-                foreach ($tables as $tableKey => $changes) {
+                foreach ($tables as $browserKey => $changes) {
                     $rows = $changes[BrowserPageSignalData::rows] ?? [];
                     $deleted = $changes[BrowserPageSignalData::deleted] ?? [];
                     $cleared = ($changes[BrowserPageSignalData::cleared] ?? false) === true;
@@ -1922,7 +1933,7 @@ abstract class BrowserContext
                         $payload[BrowserPageSignalData::deleted] = array_values($deleted);
                     }
                     if ($payload !== []) {
-                        $payloads[$acceptKey][$page][$tableKey] = $payload;
+                        $payloads[$acceptKey][$page][$browserKey] = $payload;
                     }
                 }
             }
@@ -1947,14 +1958,14 @@ abstract class BrowserContext
         $lists = [];
         $tables = [];
         $data = [];
-        foreach ($browserByKey as $tableKey => $table) {
+        foreach ($browserByKey as $browserKey => $table) {
             $rows = $table[BrowserPageSignalData::rows] ?? [];
             $rows = is_array($rows) ? $rows : [];
             $deleted = $table[BrowserPageSignalData::deleted] ?? [];
             $deleted = is_array($deleted) ? $deleted : [];
             $cleared = ($table[BrowserPageSignalData::cleared] ?? false) === true;
 
-            switch ($this->browserKind($tableKey)) {
+            switch ($this->browserKind($browserKey)) {
                 case BrowserSourceKind::LIST:
                     $section = [];
                     if ($cleared) {
@@ -1966,7 +1977,7 @@ abstract class BrowserContext
                     if ($deleted !== []) {
                         $section[PagePayload::deleted] = array_values($deleted);
                     }
-                    $lists[$tableKey] = $section;
+                    $lists[$browserKey] = $section;
 
                     break;
 
@@ -1977,7 +1988,7 @@ abstract class BrowserContext
                             $rows[array_key_first($rows)][BrowserPageSignalData::sources] ?? [],
                             'is_array',
                         ));
-                    $data[$tableKey] = $fragments === [] ? [] : array_merge(...$fragments);
+                    $data[$browserKey] = $fragments === [] ? [] : array_merge(...$fragments);
 
                     break;
 
@@ -1992,7 +2003,7 @@ abstract class BrowserContext
                     if ($deleted !== []) {
                         $section[PagePayload::deleted] = array_values($deleted);
                     }
-                    $tables[$tableKey] = $section;
+                    $tables[$browserKey] = $section;
             }
         }
 

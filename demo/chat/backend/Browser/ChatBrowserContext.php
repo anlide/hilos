@@ -22,7 +22,7 @@ final class ChatBrowserContext extends BrowserContext
     /**
      * Computes chat browser fields named by page/table configs.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param string $field Computed field name from the mirrored browser config
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
@@ -32,7 +32,7 @@ final class ChatBrowserContext extends BrowserContext
      * @return mixed Computed browser field value, or null when unavailable
      */
     protected function computeBrowserField(
-        string $tableKey,
+        string $browserKey,
         string $field,
         int|string $rowKey,
         string $acceptKey,
@@ -57,7 +57,7 @@ final class ChatBrowserContext extends BrowserContext
         }
 
         return parent::computeBrowserField(
-            $tableKey,
+            $browserKey,
             $field,
             $rowKey,
             $acceptKey,

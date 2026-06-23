@@ -39,13 +39,20 @@ final class TopologyValidator
         $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $tables = $this->constantArray($hilosClass, 'TABLES', $errors);
         $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES', $errors);
+        $browserLists = $this->constantArray($hilosClass, 'BROWSER_LISTS', $errors);
+        $browserData = $this->constantArray($hilosClass, 'BROWSER_DATA', $errors);
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES', $errors);
+        $pageLists = $this->constantArray($hilosClass, 'PAGE_LISTS', $errors);
+        $pageData = $this->constantArray($hilosClass, 'PAGE_DATA', $errors);
+        $browserSources = $browserLists + $browserTables + $browserData;
 
         $this->validatePages($pages, $errors);
         $this->validateGroups($groups, $errors);
         $this->validateAgents($agents, $errors);
         $this->validateRegisteredTables($tables, $errors);
-        $this->validateBrowserTables($browserTables, $errors);
+        $this->validateBrowserTables($browserTables, 'BROWSER_TABLES', $errors);
+        $this->validateBrowserTables($browserLists, 'BROWSER_LISTS', $errors);
+        $this->validateBrowserTables($browserData, 'BROWSER_DATA', $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
@@ -59,7 +66,9 @@ final class TopologyValidator
             $errors,
         );
         $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
-        $this->validatePageTables($pages, $tables, $browserTables, $pageTables, $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageTables, 'PAGE_TABLES', $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageLists, 'PAGE_LISTS', $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageData, 'PAGE_DATA', $errors);
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
@@ -301,20 +310,21 @@ final class TopologyValidator
     }
 
     /**
-     * Validates browser-only table registry keys and config classes.
+     * Validates a browser source registry's keys and config classes.
      *
-     * @param array $browserTables Browser-only table registry
+     * @param array $browserTables Browser source registry (tables, lists, or data)
+     * @param string $registry Registry constant name for error messages
      * @param list<string> $errors Validation error accumulator
      */
-    private function validateBrowserTables(array $browserTables, array &$errors): void
+    private function validateBrowserTables(array $browserTables, string $registry, array &$errors): void
     {
         foreach ($browserTables as $table => $tableClass) {
             if (!is_string($table)) {
-                $errors[] = 'BROWSER_TABLES contains a non-string table key';
+                $errors[] = "{$registry} contains a non-string table key";
                 continue;
             }
 
-            if (!$this->isExistingClassString($tableClass, "BROWSER_TABLES[{$table}]", $errors)) {
+            if (!$this->isExistingClassString($tableClass, "{$registry}[{$table}]", $errors)) {
                 continue;
             }
 
@@ -326,27 +336,27 @@ final class TopologyValidator
                 }
             }
             if ($keyConstName === null) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass} must declare a source key constant (TABLE, LIST, or DATA)";
+                $errors[] = "{$registry}[{$table}] class {$tableClass} must declare a source key constant (TABLE, LIST, or DATA)";
                 continue;
             }
 
             $classTable = constant("{$tableClass}::{$keyConstName}");
             if (!is_string($classTable)) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass}::{$keyConstName} must be a string";
+                $errors[] = "{$registry}[{$table}] class {$tableClass}::{$keyConstName} must be a string";
                 continue;
             }
 
             if ($classTable !== $table) {
-                $errors[] = "BROWSER_TABLES[{$table}] key must match {$tableClass}::{$keyConstName} ({$classTable})";
+                $errors[] = "{$registry}[{$table}] key must match {$tableClass}::{$keyConstName} ({$classTable})";
             }
 
             if (!defined("{$tableClass}::BROWSER")) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass} must declare BROWSER";
+                $errors[] = "{$registry}[{$table}] class {$tableClass} must declare BROWSER";
                 continue;
             }
 
             if (!is_array(constant("{$tableClass}::BROWSER"))) {
-                $errors[] = "BROWSER_TABLES[{$table}] class {$tableClass}::BROWSER must be an array";
+                $errors[] = "{$registry}[{$table}] class {$tableClass}::BROWSER must be an array";
             }
         }
     }
@@ -842,48 +852,50 @@ final class TopologyValidator
     }
 
     /**
-     * Validates page-table bindings against registered pages and tables.
+     * Validates page source bindings against registered pages and sources.
      *
      * @param array $pages Page registry
      * @param array $tables Registered table registry
-     * @param array $browserTables Browser-only table registry
-     * @param array $pageTables Page-table binding registry
+     * @param array $browserSources Merged browser source registry (lists, tables, and data)
+     * @param array $pageTables Page binding registry (tables, lists, or data)
+     * @param string $registry Page binding registry constant name for error messages
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageTables(
         array $pages,
         array $tables,
-        array $browserTables,
+        array $browserSources,
         array $pageTables,
+        string $registry,
         array &$errors,
     ): void {
         foreach ($pageTables as $page => $bindings) {
             if (!is_string($page)) {
-                $errors[] = 'PAGE_TABLES contains a non-string page key';
+                $errors[] = "{$registry} contains a non-string page key";
                 continue;
             }
 
             if (!array_key_exists($page, $pages)) {
-                $errors[] = "PAGE_TABLES[{$page}] references a page missing from PAGES";
+                $errors[] = "{$registry}[{$page}] references a page missing from PAGES";
             }
 
             if (!is_array($bindings)) {
-                $errors[] = "PAGE_TABLES[{$page}] must be an array of table bindings";
+                $errors[] = "{$registry}[{$page}] must be an array of source bindings";
                 continue;
             }
 
             foreach ($bindings as $table => $config) {
                 if (!is_string($table)) {
-                    $errors[] = "PAGE_TABLES[{$page}] contains a non-string table key";
+                    $errors[] = "{$registry}[{$page}] contains a non-string source key";
                     continue;
                 }
 
-                if (!array_key_exists($table, $tables) && !array_key_exists($table, $browserTables)) {
-                    $errors[] = "PAGE_TABLES[{$page}][{$table}] references a table missing from TABLES and BROWSER_TABLES";
+                if (!array_key_exists($table, $tables) && !array_key_exists($table, $browserSources)) {
+                    $errors[] = "{$registry}[{$page}][{$table}] references a source missing from TABLES, BROWSER_LISTS, BROWSER_TABLES, and BROWSER_DATA";
                 }
 
                 if (!is_array($config)) {
-                    $errors[] = "PAGE_TABLES[{$page}][{$table}] config must be an array";
+                    $errors[] = "{$registry}[{$page}][{$table}] config must be an array";
                 }
             }
         }

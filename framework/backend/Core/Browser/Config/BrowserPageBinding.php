@@ -10,11 +10,11 @@ namespace Hilos\Core\Browser\Config;
 final class BrowserPageBinding
 {
     /**
-     * @param string $tableKey Bound browser or registered table key
+     * @param string $browserKey Bound browser or registered table key
      * @param array<string, mixed> $paramRefs Table param reference declarations
      */
     private function __construct(
-        public readonly string $tableKey,
+        public readonly string $browserKey,
         private readonly array $paramRefs,
     ) {
     }
@@ -22,16 +22,16 @@ final class BrowserPageBinding
     /**
      * Builds a table binding from one PAGE_TABLES entry.
      *
-     * @param string $tableKey Bound table key
+     * @param string $browserKey Bound table key
      * @param array<string, mixed> $config PAGE_TABLES binding config
      * @return self Table binding
      */
-    public static function fromArray(string $tableKey, array $config): self
+    public static function fromArray(string $browserKey, array $config): self
     {
         $paramRefs = $config[BrowserParamKey::PARAMS] ?? [];
 
         return new self(
-            tableKey: $tableKey,
+            browserKey: $browserKey,
             paramRefs: is_array($paramRefs) ? $paramRefs : [],
         );
     }

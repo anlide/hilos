@@ -292,30 +292,41 @@ final class Hilos extends \Hilos\Hilos
         ChatTableContext::settings => HilosSettingsTable::class,
     ];
 
-    public const array BROWSER_TABLES = [
+    public const array BROWSER_LISTS = [
         MainEventsBrowserList::LIST => MainEventsBrowserList::class,
         MainUsersBrowserList::LIST => MainUsersBrowserList::class,
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
-        SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
         AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
+    ];
+
+    public const array BROWSER_DATA = [
+        SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
         BotStatusBrowserData::DATA => BotStatusBrowserData::class,
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
         UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
         GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
     ];
 
-    public const array PAGE_TABLES = [
+    public const array PAGE_LISTS = [
         MainPage::PAGE => [
             MainEventsBrowserList::LIST => [],
             MainUsersBrowserList::LIST => [],
             MainBotsBrowserList::LIST => [],
-            SelfConnectionBrowserData::DATA => [
+            AttachmentDraftsBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
-            AttachmentDraftsBrowserList::LIST => [
+        ],
+    ];
+
+    public const array PAGE_DATA = [
+        MainPage::PAGE => [
+            SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
@@ -342,6 +353,9 @@ final class Hilos extends \Hilos\Hilos
                 ],
             ],
         ],
+    ];
+
+    public const array PAGE_TABLES = [
         AdminUsersPage::PAGE => [
             ChatTableContext::adminUsers => [],
         ],
