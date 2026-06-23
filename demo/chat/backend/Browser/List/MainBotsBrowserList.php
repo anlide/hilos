@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\List;
 
+use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\Bot;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
 use Demo\Chat\Tables\Bot\BotTableRow;
@@ -17,7 +17,7 @@ use Hilos\Core\Browser\Config\BrowserFieldKey;
  */
 final class MainBotsBrowserList
 {
-    public const string LIST = ChatBrowserTable::MAIN_BOTS;
+    public const string LIST = ChatBrowserList::MAIN_BOTS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\List;
 
+use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\Event;
 use Demo\Chat\Database\Object\Item\EventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage;
@@ -19,7 +19,7 @@ use Hilos\Core\Browser\Config\BrowserFieldKey;
  */
 final class MainEventsBrowserList
 {
-    public const string LIST = ChatBrowserTable::MAIN_EVENTS;
+    public const string LIST = ChatBrowserList::MAIN_EVENTS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [

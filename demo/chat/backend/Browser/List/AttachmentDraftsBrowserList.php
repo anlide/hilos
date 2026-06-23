@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\List;
 
+use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -20,7 +20,7 @@ use Hilos\Core\Browser\Config\BrowserRuntimeParam;
  */
 final class AttachmentDraftsBrowserList
 {
-    public const string LIST = ChatBrowserTable::ATTACHMENT_DRAFTS;
+    public const string LIST = ChatBrowserList::ATTACHMENT_DRAFTS;
 
     public const array BROWSER = [
         BrowserConfigKey::PARAMS => [

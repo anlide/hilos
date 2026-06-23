@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Browser\Table;
+namespace Demo\Chat\Browser\List;
 
+use Demo\Chat\Browser\ChatBrowserList;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -17,7 +17,7 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
  */
 final class MainUsersBrowserList
 {
-    public const string LIST = ChatBrowserTable::MAIN_USERS;
+    public const string LIST = ChatBrowserList::MAIN_USERS;
 
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [
