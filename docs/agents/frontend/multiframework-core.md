@@ -67,7 +67,7 @@ the logic.
 
 ## Primitives: a headless controller plus a thin view
 
-A UI primitive — `LoadingButton`, `HilosModal`, `HilosTable`, the conflict views —
+A UI primitive — `LoadingButton`, `HilosModal`, `HilosViewportTable`, the conflict views —
 is split the same way the whole SDK is: a **headless controller** in the core and a
 **thin view** per framework.
 
@@ -112,7 +112,7 @@ slice that exercises the core's hardest seams — connect / auth → subscribe �
 conformance demos**, kept green in CI.
 
 The SDK **primitives** are the exception: the reusable toolkit (`LoadingButton`,
-`HilosModal`, `HilosTable`, the conflict and breadcrumb views) *is* built in all
+`HilosModal`, `HilosViewportTable`, the conflict and breadcrumb views) *is* built in all
 three view layers at full parity, because a React or Angular adopter needs the
 real component, not a stub. The bound demo is minimal; the primitive it binds is
 complete.

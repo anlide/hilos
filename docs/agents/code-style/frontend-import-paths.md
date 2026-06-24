@@ -17,9 +17,9 @@ drop the extension and do not shorten `'…/index.js'` to the directory `'…'`.
 ## Preferred Shape
 
 ```ts
-import { TableController } from '../table/TableController.js'  // sibling module
+import { TableViewportController } from '../table/TableViewportController.js' // sibling module
 import {
-  HilosTable,
+  HilosViewportTable,
   createHilosTrackedAction,
 } from '../src/index.js'                                       // package barrel
 ```
@@ -29,7 +29,7 @@ import {
 ```ts
 import { x } from '../src'                                // directory import
 import { x } from '../src/index'                          // no extension
-import { TableController } from '../table/TableController' // no extension
+import { TableViewportController } from '../table/TableViewportController' // no extension
 ```
 
 PhpStorm's **"Import can be shortened"** inspection flags a `'…/index.js'` barrel
