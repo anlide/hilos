@@ -143,4 +143,66 @@ describe('PageSubscription', () => {
     expect(applied).toBe(false)
     expect(scopes.page()?.data.signal('title').get()).toBeUndefined()
   })
+
+  it('records a subscription error for the current page', () => {
+    const pages = new PageSubscription(fakeConnection(), new ScopeManager())
+    pages.subscribe('user', { id: '9' })
+
+    const recorded = pages.handleSubscriptionError({
+      page: 'user',
+      httpCode: 404,
+      errorCode: 'not_found',
+      message: 'Resource #9 not found',
+    })
+
+    expect(recorded).toBe(true)
+    expect(pages.pageError.get()?.httpCode).toBe(404)
+    expect(pages.pageError.get()?.errorCode).toBe('not_found')
+  })
+
+  it('drops a subscription error for a page the client has left', () => {
+    const pages = new PageSubscription(fakeConnection(), new ScopeManager())
+    pages.subscribe('user', { id: '9' })
+    pages.subscribe('main')
+
+    const recorded = pages.handleSubscriptionError({
+      page: 'user',
+      httpCode: 404,
+      errorCode: 'not_found',
+      message: 'Resource #9 not found',
+    })
+
+    expect(recorded).toBe(false)
+    expect(pages.pageError.get()).toBeNull()
+  })
+
+  it('clears the page error when subscribing another page', () => {
+    const pages = new PageSubscription(fakeConnection(), new ScopeManager())
+    pages.subscribe('user', { id: '9' })
+    pages.handleSubscriptionError({
+      page: 'user',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+
+    pages.subscribe('main')
+
+    expect(pages.pageError.get()).toBeNull()
+  })
+
+  it('clears the page error on unsubscribe', () => {
+    const pages = new PageSubscription(fakeConnection(), new ScopeManager())
+    pages.subscribe('user', { id: '9' })
+    pages.handleSubscriptionError({
+      page: 'user',
+      httpCode: 403,
+      errorCode: 'forbidden',
+      message: 'Access forbidden',
+    })
+
+    pages.unsubscribe()
+
+    expect(pages.pageError.get()).toBeNull()
+  })
 })

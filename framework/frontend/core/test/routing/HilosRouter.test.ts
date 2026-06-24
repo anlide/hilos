@@ -6,6 +6,8 @@ import {
   type NavigationEnvironment,
 } from '../../src/routing/HilosRouter.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
+import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
+import { createSignal } from '../../src/state/signal.js'
 
 const router = createPageRouter(
   { main: '/', dash: '/hilos', user: '/user/{id}' },
@@ -43,18 +45,21 @@ function fakeEnvironment(initial: string) {
   }
 }
 
-// A fake page subscription that records what it was asked to subscribe.
+// A fake page subscription that records what it was asked to subscribe and
+// carries a writable page-error signal the navigator proxies.
 function fakePages() {
   const calls: Array<{ page: string; params: Record<string, string> }> = []
+  const pageError = createSignal<PageSubscriptionError | null>(null)
   const pages: NavigablePages = {
     subscribe: (page, params = {}) => {
       calls.push({ page, params })
 
       return null
     },
+    pageError,
   }
 
-  return { pages, calls }
+  return { pages, calls, pageError }
 }
 
 describe('createHilosRouter', () => {
@@ -117,5 +122,22 @@ describe('createHilosRouter', () => {
     expect(isPopAttached()).toBe(false)
     expect(navigator.currentRoute.get().page).toBe('main')
     expect(calls).toEqual([{ page: 'main', params: {} }])
+  })
+
+  it('proxies the page subscription error from the page subscription', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages, pageError } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.pageError.get()).toBeNull()
+
+    pageError.set({
+      page: 'user',
+      httpCode: 404,
+      errorCode: 'not_found',
+      message: 'Resource #9 not found',
+    })
+
+    expect(navigator.pageError.get()?.httpCode).toBe(404)
   })
 })

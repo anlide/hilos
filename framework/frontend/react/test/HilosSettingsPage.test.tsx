@@ -13,6 +13,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({ page: '', params: {} }),
+    pageError: createSignal(null),
     navigate: () => {},
     start: () => {},
     stop: () => {},

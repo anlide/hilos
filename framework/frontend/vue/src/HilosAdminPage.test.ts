@@ -9,6 +9,7 @@ import { hilosRouterKey } from './hilosRouterKey.js'
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({ page: '', params: {} }),
+    pageError: createSignal(null),
     navigate: () => {},
     start: () => {},
     stop: () => {},

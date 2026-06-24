@@ -14,12 +14,14 @@ import {
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
 } from '../protocol/constants.js'
 import { type ConnectionState } from '../connection/HilosConnection.js'
+import { type PageSubscriptionError } from '../protocol/pageError.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
   ingest,
   type NormalizerOptions,
   type ScopePayload,
 } from '../state/normalizer.js'
+import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
 /**
  * The slice of HilosConnection the manager touches; a test double only has to
@@ -36,6 +38,11 @@ export class PageSubscription {
     pageKey: string
     params: Record<string, unknown>
   } | null = null
+
+  /** The current page's subscription error; null while the page loads cleanly. */
+  private readonly pageErrorSignal = createSignal<PageSubscriptionError | null>(
+    null,
+  )
 
   constructor(
     private readonly connection: PageSubscriptionConnection,
@@ -54,6 +61,15 @@ export class PageSubscription {
   }
 
   /**
+   * The current page's subscription error, or null while it loads cleanly. Set
+   * from a `subscription_page_error` for the current page and cleared on any
+   * page change; the routed view shows an error surface while it is set.
+   */
+  get pageError(): ReadonlySignal<PageSubscriptionError | null> {
+    return this.pageErrorSignal
+  }
+
+  /**
    * Subscribe the page, atomically replacing the previous subscription: the
    * old page scope drops, a fresh one opens, and one page_subscribe frame
    * goes out (immediately when connected, on the next `connected` transition
@@ -64,6 +80,7 @@ export class PageSubscription {
    */
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
     this.current = { pageKey, params }
+    this.pageErrorSignal.set(null)
     const scope = this.scopes.openPage(pageKey)
     this.sendSubscribe()
 
@@ -77,6 +94,7 @@ export class PageSubscription {
     }
     const left = this.current.pageKey
     this.current = null
+    this.pageErrorSignal.set(null)
     this.scopes.dropPage()
     this.connection.send(
       JSON.stringify({
@@ -105,6 +123,23 @@ export class PageSubscription {
       return false
     }
     ingest(scope, payload, options)
+
+    return true
+  }
+
+  /**
+   * Record a `subscription_page_error` for the current page. A late error for a
+   * page the client has already left is dropped — the same guard as
+   * {@link ingestPageResponse} — and the return value reports which happened.
+   * The subscription stays active; the error is cleared on the next page change.
+   *
+   * @param error The page, HTTP status, code, and message the server reported.
+   */
+  handleSubscriptionError(error: PageSubscriptionError): boolean {
+    if (error.page !== this.current?.pageKey) {
+      return false
+    }
+    this.pageErrorSignal.set(error)
 
     return true
   }

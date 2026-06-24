@@ -26,6 +26,7 @@ export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
 export { HilosRouterContext } from './hilosRouterContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
+export { ErrorPage, type ErrorPageProps } from './ErrorPage.js'
 export { HilosLayout, type HilosLayoutProps } from './HilosLayout.js'
 export {
   HilosStaticPage,

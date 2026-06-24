@@ -1,10 +1,13 @@
 // HilosView — the routed outlet (the React Router `<Outlet>` of the SDK). It
 // mirrors the core navigator's current route and renders the component the
 // project mapped to that page key, swapping it in place as navigation changes
-// the route. An unmapped page renders nothing. The router must be in context.
+// the route. A page subscription error (subscription_page_error) takes
+// precedence over the mapped component: the full-page ErrorPage shows instead.
+// An unmapped page renders nothing. The router must be in context.
 import { useContext } from 'react'
 import type { ComponentType } from 'react'
 
+import { ErrorPage } from './ErrorPage.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useSignal } from './useSignal.js'
 
@@ -15,7 +18,8 @@ export interface HilosViewProps {
 }
 
 /**
- * Render the component mapped to the navigator's current page.
+ * Render the component mapped to the navigator's current page, or the full-page
+ * error surface when the page carries a subscription error.
  *
  * @param props The page-key → component map.
  */
@@ -26,7 +30,12 @@ export function HilosView({ pages }: HilosViewProps) {
   }
 
   const route = useSignal(router.currentRoute)
+  const pageError = useSignal(router.pageError)
   const View = pages[route.page]
+
+  if (pageError) {
+    return <ErrorPage error={pageError} />
+  }
 
   return View ? <View /> : null
 }

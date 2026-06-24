@@ -20,6 +20,7 @@ export {
 export { HILOS_ROUTER } from './hilosRouterToken.js'
 export { HilosLink } from './HilosLink.js'
 export { HilosView } from './HilosView.js'
+export { ErrorPage } from './ErrorPage.js'
 export { HilosLayout } from './HilosLayout.js'
 export { HilosStaticPage } from './HilosStaticPage.js'
 export { LoadingButton } from './LoadingButton.js'

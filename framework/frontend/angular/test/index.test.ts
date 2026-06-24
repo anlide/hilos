@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 import {
   ConflictActions,
   ConflictHeader,
+  ErrorPage,
   HILOS_ROUTER,
   HilosAdminPage,
   HilosBreadcrumb,
@@ -26,6 +27,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HILOS_ROUTER).toBeTypeOf('object')
   expect(HilosLink).toBeTypeOf('function')
   expect(HilosView).toBeTypeOf('function')
+  expect(ErrorPage).toBeTypeOf('function')
   expect(HilosLayout).toBeTypeOf('function')
   expect(LoadingButton).toBeTypeOf('function')
   expect(HilosBreadcrumb).toBeTypeOf('function')

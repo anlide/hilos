@@ -7,6 +7,7 @@
 // stays testable with no DOM and core keeps its no-browser-environment test
 // rule; browserNavigationEnvironment is the binding a project passes in.
 
+import { type PageSubscriptionError } from '../protocol/pageError.js'
 import {
   createSignal,
   type ReadonlySignal,
@@ -23,6 +24,8 @@ export interface NavigablePages {
    * @param params Route params for the subscription.
    */
   subscribe(pageKey: string, params?: Record<string, string>): unknown
+  /** The current page's subscription error, or null while it loads cleanly. */
+  readonly pageError: ReadonlySignal<PageSubscriptionError | null>
 }
 
 /**
@@ -47,6 +50,12 @@ export interface NavigationEnvironment {
 export interface HilosRouter {
   /** The matched route; updates on every navigation, including back/forward. */
   readonly currentRoute: ReadonlySignal<PageRouteMatch>
+  /**
+   * The current page's subscription error, or null while it loads cleanly. The
+   * routed outlet (HilosView) shows an error surface for the page while it is
+   * set; it is cleared the moment navigation changes the page.
+   */
+  readonly pageError: ReadonlySignal<PageSubscriptionError | null>
   /**
    * Navigate to `pathname` in place: push a history entry, swap the route
    * signal, and re-subscribe the page over the live socket.
@@ -91,6 +100,7 @@ export function createHilosRouter(
 
   return {
     currentRoute,
+    pageError: pages.pageError,
     navigate: (pathname) => {
       env.pushState(pathname)
       apply(pathname)

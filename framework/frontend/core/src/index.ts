@@ -95,6 +95,7 @@ export {
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_ACTION_ERROR,
   FIELD_TYPE,
@@ -104,6 +105,10 @@ export {
   FIELD_DATA,
   KEEPALIVE_TEXT_PING,
 } from './protocol/constants.js'
+export {
+  pageSubscriptionErrorSchema,
+  type PageSubscriptionError,
+} from './protocol/pageError.js'
 export {
   createPageRouter,
   type PageRouter,

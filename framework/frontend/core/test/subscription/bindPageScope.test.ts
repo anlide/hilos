@@ -4,7 +4,10 @@ import {
   PAGE_SIGNAL_SCHEMAS,
 } from '../../src/subscription/bindPageScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
-import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
+import {
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+} from '../../src/protocol/constants.js'
 import { type ConnectionState } from '../../src/connection/HilosConnection.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
 
@@ -14,9 +17,9 @@ import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
  * plus `on('projectSignal')` — cast to the full connection type.
  */
 function fakeConnection() {
-  const stateListeners: Array<(state: ConnectionState) => void> = []
   const projectListeners: Array<(signal: ProjectSignal) => void> = []
-  const double = {
+
+  return {
     state: 'connected' as ConnectionState,
     sent: [] as Array<Record<string, unknown>>,
     send(text: string): boolean {
@@ -25,9 +28,8 @@ function fakeConnection() {
       return true
     },
     on(event: string, listener: (payload: never) => void): () => void {
-      if (event === 'state') {
-        stateListeners.push(listener as (state: ConnectionState) => void)
-      }
+      // The manager subscribes `state` in its constructor; this fake never
+      // replays transitions, so only `projectSignal` listeners are recorded.
       if (event === 'projectSignal') {
         projectListeners.push(listener as (signal: ProjectSignal) => void)
       }
@@ -45,14 +47,52 @@ function fakeConnection() {
         listener(signal)
       }
     },
+    emitSubscriptionError(
+      page: string,
+      httpCode: number,
+      errorCode: string,
+      message: string,
+    ): void {
+      const signal = {
+        kind: 'project',
+        type: SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+        data: { page, httpCode, errorCode, message },
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
   }
-
-  return double
 }
 
 describe('bindPageScope', () => {
   it('exposes the page_response schema keyed for projectSchemas', () => {
     expect(PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_RESPONSE]).toBeDefined()
+  })
+
+  it('exposes the subscription_page_error schema keyed for projectSchemas', () => {
+    expect(
+      PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR],
+    ).toBeDefined()
+  })
+
+  it('routes a subscription_page_error for the current page into the page error', () => {
+    const connection = fakeConnection()
+    const pages = bindPageScope(
+      connection as unknown as HilosConnection,
+      new ScopeManager(),
+    )
+
+    pages.subscribe('user', { id: '9' })
+    connection.emitSubscriptionError(
+      'user',
+      404,
+      'not_found',
+      'Resource #9 not found',
+    )
+
+    expect(pages.pageError.get()?.httpCode).toBe(404)
   })
 
   it('returns a manager that subscribes the page over the connection', () => {

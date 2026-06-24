@@ -6,7 +6,14 @@
 // only project input is the per-slot entity types for the page payloads.
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
-import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
+import {
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+} from '../protocol/constants.js'
+import {
+  pageSubscriptionErrorSchema,
+  type PageSubscriptionError,
+} from '../protocol/pageError.js'
 import {
   pageResponseSchema,
   type PageResponseWire,
@@ -23,6 +30,7 @@ import { PageSubscription } from './PageSubscription.js'
  */
 export const PAGE_SIGNAL_SCHEMAS = {
   [SIGNAL_TYPE_PAGE_RESPONSE]: pageResponseSchema,
+  [SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR]: pageSubscriptionErrorSchema,
 }
 
 /**
@@ -47,6 +55,10 @@ export function bindPageScope(
       // is the declared typed selector for that schema's output.
       const response = signal.data as PageResponseWire
       pages.ingestPageResponse(response.page, response.payload, options)
+    } else if (signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR) {
+      // Validated against pageSubscriptionErrorSchema at the parse boundary;
+      // the typed selector for that schema's output.
+      pages.handleSubscriptionError(signal.data as PageSubscriptionError)
     }
   })
 

@@ -22,6 +22,7 @@ function router(): HilosRouter {
       page: '',
       params: { userId: '1' },
     }),
+    pageError: createSignal(null),
     navigate: () => {},
     start: () => {},
     stop: () => {},

@@ -13,6 +13,9 @@ export const SIGNAL_TYPE_PAGE_UNSUBSCRIBE = 'page_unsubscribe'
 /** Server frame `type` answering a page subscription (PHP `SignalTypeConstants::PAGE_RESPONSE`). */
 export const SIGNAL_TYPE_PAGE_RESPONSE = 'page_response'
 
+/** Server frame `type` reporting a page subscription error (PHP `SignalConstants::SUBSCRIPTION_PAGE_ERROR`). */
+export const SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR = 'subscription_page_error'
+
 /** Client frame `type` invoking a page action (PHP `SignalTypeConstants::ACTION`). */
 export const SIGNAL_TYPE_ACTION = 'action'
 
