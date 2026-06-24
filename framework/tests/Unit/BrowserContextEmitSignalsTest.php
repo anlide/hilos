@@ -6,6 +6,11 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserRefKey;
+use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
@@ -242,6 +247,46 @@ final class BrowserContextEmitSignalsTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testReactiveFanoutSkipsGuardFailedSubscriptionThenResumesWhenResourceAppears(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        // Subscribe to the guarded page for resource '1', which does not exist yet:
+        // the DB_EXISTS guard fails, but the subscription is kept alive.
+        Hilos::$sr->subscribeToPage(
+            BrowserContextPageGuardTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(
+                'ak-1',
+                BrowserContextPageGuardTestContext::PAGE,
+                ['id' => '1'],
+            ),
+        );
+
+        $context = new BrowserContextPageGuardTestContext();
+
+        // A source change while the guard fails (the resource is absent) must fan
+        // out nothing — the leak this fix closes.
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+        $this->assertNull(
+            Hilos::$sr->getNextQueuedSignal(),
+            'a guard-failed subscription must receive no reactive fan-out',
+        );
+
+        // The resource appears: the guard now passes, so the next change fans out —
+        // the kept-alive subscription resumes (the live-promotion model).
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal, 'once the guard passes the kept-alive subscription resumes');
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
     }
 
     public function testSubscribeSnapshotQueuesFullBrowserRowsForPage(): void
@@ -494,6 +539,93 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
         array $sources,
     ): mixed {
         return $field === 'computedLabel' ? "row-{$rowKey}" : null;
+    }
+}
+
+final class BrowserContextPageGuardTestContext extends BrowserContext
+{
+    public const string PAGE = 'guard_browser_page';
+    public const string SIGNAL = 'guard_browser_signal';
+    public const string TABLE = 'guardRows';
+
+    private const array SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+        BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
+    ];
+
+    /**
+     * Resolves the guarded test page config: a DB_EXISTS guard on the `id` route
+     * param, so the page delivers only while the resource exists.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if ($page !== self::PAGE) {
+            return null;
+        }
+
+        return BrowserPageConfig::fromArray([
+            BrowserConfigKey::SIGNAL => self::SIGNAL,
+            BrowserConfigKey::GUARDS => [
+                [
+                    BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                    BrowserGuardKey::SOURCE => self::SOURCE,
+                    BrowserGuardKey::KEY => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'id',
+                    ],
+                    BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Resolves the guarded page's table bindings.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Test page table bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        if ($page !== self::PAGE) {
+            return BrowserPageBindings::empty();
+        }
+
+        return BrowserPageBindings::fromArray([
+            self::TABLE => [],
+        ]);
+    }
+
+    /**
+     * Resolves the guarded page's browser-only table config.
+     *
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig Test browser-only table config
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== self::TABLE) {
+            return null;
+        }
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [
+                [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
+                        'id',
+                        'name' => 'displayName',
+                    ],
+                    BrowserTableFieldKey::TRIGGERS => [
+                        'name',
+                    ],
+                ],
+            ],
+        ]);
     }
 }
 

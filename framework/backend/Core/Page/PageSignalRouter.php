@@ -79,6 +79,16 @@ class PageSignalRouter
         try {
             $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
         } catch (PageSubscriptionException $e) {
+            // The subscription is intentionally KEPT alive, not torn down. A guard
+            // failure is a transient state, not a dead end: if the missing resource
+            // later appears (e.g. user #10 is created while a client sits on its 404
+            // page) or access is later granted, the guard starts passing and the live
+            // fan-out promotes the error page into the real page with no re-subscribe
+            // — the Hilos live-promotion model. Because the subscription stays
+            // registered, the browser delivery paths must re-check the guard on every
+            // fan-out (not rely on the subscription being absent): a guard-failed
+            // subscription receives nothing WHILE the guard fails, yet resumes the
+            // instant it passes.
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
         } catch (Throwable $e) {

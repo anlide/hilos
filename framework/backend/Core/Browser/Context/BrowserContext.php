@@ -201,6 +201,17 @@ abstract class BrowserContext
             return;
         }
 
+        // Re-check the page guards before serving the window: a guard-failed
+        // subscription (kept alive for live-promotion) gets no table data while the
+        // guard fails, and resumes the instant it passes.
+        $pageConfig = $this->pageConfig($page);
+        if ($pageConfig !== null) {
+            $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            if (!$this->pageGuardsAllow($pageConfig, $acceptKey, $pageParams)) {
+                return;
+            }
+        }
+
         try {
             $snapshot = $table->getPage($this->viewportQuery($viewport));
         } catch (Throwable) {
@@ -387,6 +398,10 @@ abstract class BrowserContext
 
         /** @var array<string, array<string, array<string, array<string, mixed>>>> $signalTables */
         $signalTables = [];
+        // Per-acceptKey page-guard result, memoized for this flush: a guard-failed
+        // subscription (kept alive for live-promotion) receives no reactive fan-out
+        // while the guard fails, and resumes the instant it passes.
+        $guardAllows = [];
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
                 $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
@@ -401,6 +416,10 @@ abstract class BrowserContext
                 }
 
                 $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
+                $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($pageConfig, $acceptKey, $pageParams);
+                if (!$guardAllows[$acceptKey]) {
+                    continue;
+                }
                 foreach ($this->pageBindings($page) as $pageBinding) {
                     $browserKey = $pageBinding->browserKey;
 
@@ -1810,6 +1829,33 @@ abstract class BrowserContext
 
             $this->assertDbExistsGuard($guard, $acceptKey, $pageParams);
         }
+    }
+
+    /**
+     * Whether every page guard passes for this connection — the non-throwing twin
+     * of {@see self::assertPageGuards}.
+     *
+     * Browser delivery paths (the reactive fan-out and the table window) re-check
+     * this on EVERY fan-out instead of relying on the subscription being absent: a
+     * subscription is intentionally kept alive after a guard failure (the
+     * live-promotion model, see PageSignalRouter::dispatchPageSubscribe), so a
+     * guard-failed subscription must receive nothing WHILE the guard fails yet
+     * resume the instant it passes (the missing resource appears / access granted).
+     *
+     * @param BrowserPageConfig $pageConfig Browser page config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @return bool Whether this connection may receive the page's browser data now
+     */
+    private function pageGuardsAllow(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): bool
+    {
+        try {
+            $this->assertPageGuards($pageConfig, $acceptKey, $pageParams);
+        } catch (PageSubscriptionException) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

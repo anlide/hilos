@@ -5,6 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserRefKey;
+use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -22,6 +31,7 @@ use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -99,11 +109,80 @@ final class BrowserContextTableWindowTest extends TestCase
 
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
+
+    public function testSendTableWindowSkipsGuardFailedSubscription(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([
+            new TableWindowUnitRow('a', 'Alpha'),
+        ]);
+        Hilos::$table->configure();
+        // The guarded page's DB_EXISTS guard cannot resolve resource '1' (its source
+        // is absent), so the page guard fails; the window must not be served even
+        // though the viewport descriptor is valid.
+        Hilos::$sr->subscribeToPage(
+            TableWindowGuardUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(
+                'ak-1',
+                TableWindowGuardUnitBrowserContext::PAGE,
+                ['id' => '1'],
+            ),
+        );
+
+        (new TableWindowGuardUnitBrowserContext())->sendTableWindow(
+            TableWindowGuardUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),
+        );
+
+        $this->assertNull(
+            Hilos::$sr->getNextQueuedSignal(),
+            'a guard-failed subscription must receive no table window',
+        );
+    }
 }
 
 final class TableWindowUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'table_window_unit_page';
+}
+
+final class TableWindowGuardUnitBrowserContext extends BrowserContext
+{
+    public const string PAGE = 'table_window_guard_unit_page';
+    public const string SIGNAL = 'table_window_guard_unit_signal';
+
+    /**
+     * Resolves a guarded page config whose DB_EXISTS guard always fails (its source
+     * is absent), so the page never delivers a window for it.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if ($page !== self::PAGE) {
+            return null;
+        }
+
+        return BrowserPageConfig::fromArray([
+            BrowserConfigKey::SIGNAL => self::SIGNAL,
+            BrowserConfigKey::GUARDS => [
+                [
+                    BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                    BrowserGuardKey::SOURCE => [
+                        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                        BrowserSourceKey::KEY => 'no_such_source',
+                    ],
+                    BrowserGuardKey::KEY => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'id',
+                    ],
+                    BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+                ],
+            ],
+        ]);
+    }
 }
 
 final class TableWindowUnitTableContext extends TableContext
