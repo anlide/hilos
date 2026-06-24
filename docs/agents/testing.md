@@ -47,6 +47,40 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 
 ---
 
+## Selective testing — what to run for which change
+
+Match the test set to what changed; do not run everything for every edit. The
+heavy suites (full e2e, two-window) cost a Docker stack per demo and minutes of
+wall-clock, so they are a **deliberate, infrequent** run — never an inner loop.
+
+| What changed | Run | How often |
+|---|---|---|
+| PHP backend logic (framework or a demo) | the affected side's PHPUnit — `test:framework:phpunit`, or a demo's `test:phpunit` | every change |
+| FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
+| An Angular view's template | `test:framework:frontend:build` — templates type-check only in the ng-packagr AOT build, not plain tsc | every Angular template change |
+| Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
+| An e2e spec or a selector | that demo's e2e, pointed: `test:e2e-up` once, then `test:e2e -- <grep>` | while editing the spec |
+| Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
+
+**The rare, full run** is `composer run test:frontend:all` (FE install + build +
+check / vitest / lint, then every demo's `test:check` and `test:e2e-full`). Run it
+when:
+
+- a change touches the subscription / viewport / pending / cross-connection path,
+  where a single tab cannot reveal the bug; or
+- before collapsing or merging the branch, as the final gate.
+
+It is **not** part of the inner loop. The two-window coverage lives in chat's
+`moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
+the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one
+representative path per view layer. A green inner loop (check + vitest + pointed
+phpunit) does not require re-running them.
+
+Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
+the next section.
+
+---
+
 ## Re-running tests and state between runs
 
 - A test that **mutates data** is not idempotent across runs on the same database.

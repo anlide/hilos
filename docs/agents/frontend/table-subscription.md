@@ -75,6 +75,29 @@ auto-backfill from adjacent pages, no sorted-position insert. A new row reaches
 the displayed window only as a live tail append (last page with room) or on the
 next explicit re-navigation or re-filter.
 
+## By-design exceptions to the gate
+
+The gate freezes the **rows on screen** — their position and membership — not
+always the **value inside a cell**. Four changes are deliberately not gated:
+
+- **Own changes apply at once.** The tab that made an edit picks up its own echo
+  immediately instead of queuing it — only *other* tabs see the gate. The core
+  marks the row before the action (`expectOwnChange`) and applies the echo in
+  place when it returns (`applyOwnDelta`); a failed action drops the mark.
+- **An entity-backed cell tracks its edit reactively.** When a row resolves from
+  an entity reference — most tables (a piece, a user); settings is the exception,
+  its value is inline in the row payload — the cell re-renders the edited value as
+  soon as the entity updates, *before* Apply. The gate still holds the row's place
+  and the badge still waits, because it is the position and membership that are
+  frozen, not the entity's fields; Apply then only clears the badge and the tint.
+- **Opening an edit / delete dialog applies pending first** (`applyAndResolve`),
+  so the dialog edits the latest committed state, never a stale value — the same
+  reasoning as an explicit viewport change, which is authoritative and also
+  discards or applies pending.
+- **A tail append and a count change are live** (see *Pending vs live* above):
+  they add a row at the tail of a last-page-with-room window or update the pager,
+  disturbing nothing already shown.
+
 ## The viewport changes only by explicit user action
 
 The descriptor's `filter`, `sort`, `offset`, and `limit` change **only** by an

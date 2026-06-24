@@ -1,9 +1,19 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own self-registered row is present, search filters
 // the client viewport, a row links to the user detail page, and a modal rename
 // round-trips through the backend and re-renders with no document reload.
+
+/** Open the users admin and wait for the live table's first row. */
+async function openUsers(page: Page): Promise<void> {
+  await page.goto('/hilos/users')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(
+    page.locator('[data-id^="hilos-users-open-"]').first(),
+  ).toBeVisible()
+}
 
 test('lists users in the framework table and opens a detail page', async ({
   page,
@@ -88,4 +98,40 @@ test('shows the connected user as online with a live session', async ({
   await expect(
     page.locator('[data-id="hilos-user-detail"] .badge'),
   ).toHaveText('online')
+})
+
+test('a rename in one tab hangs as pending in another until applied', async ({
+  page,
+}) => {
+  const newName = `E2E Pending Rename ${Date.now()}`
+
+  // Both tabs watch the users list; tab A then renames a user from its detail page.
+  const tabB = await page.context().newPage()
+  await openUsers(page)
+  await openUsers(tabB)
+
+  // Tab A opens the first user and renames it; its own detail applies at once.
+  await page.locator('[data-id^="hilos-users-open-"]').first().click()
+  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+  await page.getByTestId('hilos-user-edit').click()
+  await page.getByTestId('hilos-user-name-input').fill(newName)
+  await page.getByTestId('hilos-user-save').click()
+  await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
+
+  // Tab B receives the rename from the other connection as a pending update: an
+  // Apply control and a tinted row. The user is an entity reference, so the name
+  // cell tracks the rename reactively; the pending gate still holds (the row
+  // keeps its place) until tab B applies. First two-window test on the Angular layer.
+  await expect(tabB.getByTestId('hilos-table-apply')).toBeVisible()
+  await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveClass(
+    /table-warning/,
+  )
+
+  // Applying clears the pending gate in place.
+  await tabB.getByTestId('hilos-table-apply').click()
+  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await expect(tabB.locator('tbody tr', { hasText: newName })).not.toHaveClass(
+    /table-warning/,
+  )
+  await tabB.close()
 })
