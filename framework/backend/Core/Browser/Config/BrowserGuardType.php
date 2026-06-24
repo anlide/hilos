@@ -10,4 +10,7 @@ namespace Hilos\Core\Browser\Config;
 final class BrowserGuardType
 {
     public const string DB_EXISTS = 'db_exists';
+
+    /** Access guard: the connection's current user must hold a truthy flag field (e.g. admin). */
+    public const string ACCESS = 'access';
 }

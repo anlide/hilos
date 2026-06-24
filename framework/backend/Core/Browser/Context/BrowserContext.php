@@ -1823,11 +1823,11 @@ abstract class BrowserContext
     private function assertPageGuards(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
     {
         foreach ($pageConfig->guardConfigs() as $guard) {
-            if (($guard[BrowserGuardKey::TYPE] ?? '') !== BrowserGuardType::DB_EXISTS) {
-                throw new PageInternalErrorException('Unsupported browser guard type');
-            }
-
-            $this->assertDbExistsGuard($guard, $acceptKey, $pageParams);
+            match ($guard[BrowserGuardKey::TYPE] ?? '') {
+                BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
+                BrowserGuardType::ACCESS => $this->assertAccessGuard($guard, $acceptKey),
+                default => throw new PageInternalErrorException('Unsupported browser guard type'),
+            };
         }
     }
 
@@ -1885,6 +1885,55 @@ abstract class BrowserContext
         }
 
         throw new PageResourceNotFoundException("Resource #{$key} not found");
+    }
+
+    /**
+     * Enforces an access browser guard: the connection's current user must exist
+     * in the guard source and hold a truthy value in the named flag field (e.g.
+     * `admin`). A guest (no resolvable user) or a user missing the flag is denied
+     * with a 403, the same forbidden code an access-denied DB_EXISTS guard uses.
+     *
+     * @param array<string, mixed> $guard Browser guard config
+     * @param string $acceptKey Subscriber accept key
+     * @throws PageForbiddenException When the subscriber is a guest or lacks the flag
+     * @throws PageInternalErrorException When the guard config is malformed
+     */
+    private function assertAccessGuard(array $guard, string $acceptKey): void
+    {
+        $userId = $this->resolveCurrentUserId($acceptKey);
+        if ($userId === null) {
+            throw new PageForbiddenException('Access denied for guests');
+        }
+
+        $source = $guard[BrowserGuardKey::SOURCE] ?? [];
+        $field = $guard[BrowserGuardKey::FIELD] ?? '';
+        if (!is_array($source) || !is_string($field) || $field === '') {
+            throw new PageInternalErrorException('Invalid access guard config');
+        }
+
+        $user = $this->sourceItemById($source, (string) $userId);
+        if ($user === null || $this->fieldValue($user, $field) !== true) {
+            throw new PageForbiddenException('Access forbidden');
+        }
+    }
+
+    /**
+     * Resolves the durable user id behind a connection's accept key, or null when
+     * the connection has no user (a guest, or before any project identity).
+     *
+     * The framework has no acceptKey -> user mapping — that identity is
+     * project-owned (the project's runtime connection registry). A project that
+     * uses the ACCESS guard overrides this to read its own mapping (e.g. its
+     * runtime connections collection by accept key). The framework default denies,
+     * so a project that has not wired identity closes a guarded page to everyone
+     * rather than leaking it.
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @return ?int Durable user id, or null when none is resolvable
+     */
+    protected function resolveCurrentUserId(string $acceptKey): ?int
+    {
+        return null;
     }
 
     /**
