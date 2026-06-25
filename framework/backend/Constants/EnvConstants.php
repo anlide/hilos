@@ -34,6 +34,12 @@ enum EnvConstants
     /** @var string Worker communication port */
     case WORKER_COMM_PORT;
 
+    /** @var string CLI command channel host */
+    case COMMAND_HOST;
+
+    /** @var string CLI command channel port */
+    case COMMAND_PORT;
+
     /** @var string Database host */
     case DB_HOST;
 

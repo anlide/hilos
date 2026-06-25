@@ -20,6 +20,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Utils\Logger;
 
@@ -76,6 +77,12 @@ try {
         Hilos::$env->int(EnvConstants::WEBSOCKET_PORT),
     );
 
+    // Create command server (dedicated CLI <-> daemon command channel)
+    $commandServer = new CommandServer(
+        Hilos::$env[EnvConstants::COMMAND_HOST],
+        Hilos::$env->int(EnvConstants::COMMAND_PORT),
+    );
+
     // Create HTTP router
     $router = new HttpRouter();
 
@@ -115,6 +122,7 @@ try {
     $daemon->registerServer($httpServer);
     $daemon->registerServer($workerServer);
     $daemon->registerServer($webSocketServer);
+    $daemon->registerServer($commandServer);
 
     $frontendDistPath = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH];
     if ($frontendDistPath === '') {

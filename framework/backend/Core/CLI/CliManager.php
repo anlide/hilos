@@ -18,6 +18,7 @@ use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
 use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
+use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Database\DatabaseException;
 
@@ -69,6 +70,7 @@ class CliManager
     {
         $this->commands[CliCommands::DAEMON_STATUS] = new StatusCommand();
         $this->commands[CliCommands::DAEMON_MONITOR] = new MonitorCommand();
+        $this->commands[CliCommands::DAEMON_PING] = new PingCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
