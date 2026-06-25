@@ -14,4 +14,13 @@ final class ChatCommandConstants
 {
     /** @var string Echo command: routed to the chat agent, which echoes the request payload back */
     public const string ECHO = 'echo';
+
+    /** @var string Set-admin command: routed to the chat agent, which flips a user's admin flag */
+    public const string SET_ADMIN = 'setAdmin';
+
+    /** @var string Payload key: target user id for the set-admin command */
+    public const string FIELD_USER_ID = 'userId';
+
+    /** @var string Payload key: new admin flag for the set-admin command */
+    public const string FIELD_ADMIN = 'admin';
 }

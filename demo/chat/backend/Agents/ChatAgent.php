@@ -64,8 +64,10 @@ final class ChatAgent extends AbstractAgent
     /**
      * Handle a CLI command routed to the chat agent.
      *
-     * Echoes the request payload back for the `echo` command (the admin-grant
-     * transport probe); any other command name yields an error reply.
+     * `echo` echoes the request payload back (the admin-grant transport probe).
+     * `setAdmin` flips the admin flag of the user named in the payload and replies
+     * with the resulting state, or an error when the user is unknown or the write
+     * fails. Any other command name yields an error reply.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
@@ -79,7 +81,33 @@ final class ChatAgent extends AbstractAgent
             return;
         }
 
-        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        if ($data->command !== ChatCommandConstants::SET_ADMIN) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+            return;
+        }
+
+        $userId = (int)($data->payload[ChatCommandConstants::FIELD_USER_ID] ?? 0);
+        $admin = (bool)($data->payload[ChatCommandConstants::FIELD_ADMIN] ?? false);
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "No such user: {$userId}"));
+
+            return;
+        }
+
+        try {
+            $user->actions->setAdmin($admin);
+        } catch (HilosException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_USER_ID => $userId,
+            ChatCommandConstants::FIELD_ADMIN => $admin,
+        ]));
     }
 
     /**

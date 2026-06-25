@@ -451,6 +451,7 @@ final class Hilos extends \Hilos\Hilos
     {
         return [
             ChatCommandConstants::ECHO => AgentType::CHAT,
+            ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
         ];
     }
 
