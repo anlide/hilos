@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -176,4 +177,13 @@ interface AgentInterface
      * @param string $name Signal name
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void;
+
+    /**
+     * Handle a CLI command signal routed to this agent.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void;
 }

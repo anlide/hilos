@@ -6,15 +6,18 @@ namespace Hilos\Socket\Command\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * CommandReplyDTO - daemon -> CLI command reply over the command socket channel.
  *
  * Carries the originating correlation id, an ok/error status, and a payload map
  * (the command result on success, or a message on error). Use {@see ok()} and
- * {@see error()} to build the two shapes.
+ * {@see error()} to build the two shapes. Also used as the COMMAND_REPLY signal
+ * payload when an agent answers a routed command, so it implements
+ * SignalDataInterface.
  */
-class CommandReplyDTO extends BaseDTO
+class CommandReplyDTO extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates a command reply.

@@ -6,14 +6,17 @@ namespace Hilos\Socket\Command\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * CommandRequestDTO - CLI -> daemon command request over the command socket channel.
  *
  * Carries the correlation id (so a reply can be matched back to its request), the
- * command name, and an open payload map the concrete command interprets.
+ * command name, and an open payload map the concrete command interprets. Also used
+ * as the COMMAND_REQUEST signal payload when the daemon routes the command to an
+ * agent, so it implements SignalDataInterface.
  */
-class CommandRequestDTO extends BaseDTO
+class CommandRequestDTO extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates a command request.

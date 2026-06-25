@@ -232,6 +232,19 @@ abstract class Hilos
     }
 
     /**
+     * Returns CLI command owner agent types keyed by command name.
+     *
+     * A project overrides this to route a command received over the command socket
+     * channel to the agent that handles it. The framework declares none.
+     *
+     * @return array<string, string> Agent type keyed by command name
+     */
+    public static function getCommandAgentRoutes(): array
+    {
+        return [];
+    }
+
+    /**
      * Returns page-owned non-action signal routes declared by registered page classes.
      *
      * Empty signal name lists declare a type-wide route; non-empty lists declare

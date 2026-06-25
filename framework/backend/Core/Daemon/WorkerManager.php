@@ -31,6 +31,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -954,6 +955,14 @@ abstract class WorkerManager extends BaseManager
                     $this->getPageSignalRouter($agentId, $agent)->dispatchTableViewport($signalData, $source, $name);
                 } else {
                     Logger::error("dispatchTableViewport - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::COMMAND_REQUEST:
+                if ($signalData instanceof CommandRequestDTO) {
+                    $agent->onSignalCommand($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalCommand - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 

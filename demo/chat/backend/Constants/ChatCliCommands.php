@@ -17,4 +17,7 @@ final class ChatCliCommands
 
     /** @var string Test-only: delete the example orphan settings row */
     public const string DELETE_ORPHAN_SETTING = 'test:orphan-setting:delete';
+
+    /** @var string Test-only: echo a message through the command channel via an agent */
+    public const string COMMAND_ECHO = 'test:command:echo';
 }

@@ -12,12 +12,15 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
+use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Hilos;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -576,6 +579,7 @@ class SignalRouter
             ...$this->getPageSubscriptionDestinations($signal),
             ...$this->getGroupSubscriptionDestinations($signal),
             ...$this->getActionDestinations($signal),
+            ...$this->getCommandDestinations($signal),
             ...$this->getAgentDestinations($signal),
             ...$this->getPageOwnedSignalDestinations($signal),
             ...$this->additionalDestinations($signal),
@@ -683,6 +687,41 @@ class SignalRouter
         }
 
         return [new AgentDestination($agentType)];
+    }
+
+    /**
+     * Get destinations for CLI command signals.
+     *
+     * COMMAND_REQUEST routes to the agent that owns the command name through the
+     * project getCommandAgentRoutes() map. COMMAND_REPLY routes back to the held
+     * CLI connection, addressed by the reply's correlation id.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<Destination> Command destinations, or empty when unrouted
+     */
+    private function getCommandDestinations(SignalDTO $signal): array
+    {
+        $signalType = $signal->signalType->getType();
+        $signalData = $signal->data;
+
+        if ($signalType === SignalTypeConstants::COMMAND_REQUEST && $signalData instanceof CommandRequestDTO) {
+            $agentType = $this->hilosClass()::getCommandAgentRoutes()[$signalData->command] ?? null;
+            if (!is_string($agentType) || $agentType === '') {
+                return [];
+            }
+
+            return [new AgentDestination($agentType)];
+        }
+
+        if ($signalType === SignalTypeConstants::COMMAND_REPLY && $signalData instanceof CommandReplyDTO) {
+            if ($signalData->correlationId === '') {
+                return [];
+            }
+
+            return [new CommandReplyDestination($signalData->correlationId)];
+        }
+
+        return [];
     }
 
     /**

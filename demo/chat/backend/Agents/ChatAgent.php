@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
@@ -20,6 +21,8 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
@@ -56,6 +59,27 @@ final class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
 
         Hilos::$db->events->actions->addChatStarted();
+    }
+
+    /**
+     * Handle a CLI command routed to the chat agent.
+     *
+     * Echoes the request payload back for the `echo` command (the admin-grant
+     * transport probe); any other command name yields an error reply.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === ChatCommandConstants::ECHO) {
+            $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $data->payload));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
     }
 
     /**

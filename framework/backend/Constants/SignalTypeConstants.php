@@ -59,6 +59,12 @@ final class SignalTypeConstants
     /** @var string User action signal type */
     public const string ACTION = 'action';
 
+    /** @var string CLI command request signal type (master -> agent) */
+    public const string COMMAND_REQUEST = 'command_request';
+
+    /** @var string CLI command reply signal type (agent -> master, addressed to the held CLI connection) */
+    public const string COMMAND_REPLY = 'command_reply';
+
     /** @var string Binary frame signal type */
     public const string FRAME_BINARY = 'frame_binary';
 

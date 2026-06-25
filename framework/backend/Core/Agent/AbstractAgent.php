@@ -22,6 +22,8 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -168,6 +170,24 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $targetAcceptKey),
+        );
+    }
+
+    /**
+     * Reply to a CLI command routed to this agent.
+     *
+     * Queues a COMMAND_REPLY signal carrying the reply; the daemon writes it back
+     * to the held CLI connection addressed by the reply's correlation id.
+     *
+     * @param CommandReplyDTO $reply Command reply (use CommandReplyDTO::ok() / error())
+     */
+    public function replyToCommand(CommandReplyDTO $reply): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            signalName: new SignalName($reply->correlationId),
+            signalData: $reply,
         );
     }
 
@@ -471,6 +491,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $name Signal name
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no CLI command handling.
+     *
+     * Child classes override this to handle a command routed to the agent and
+     * answer with replyToCommand().
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }

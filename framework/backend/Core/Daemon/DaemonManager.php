@@ -18,6 +18,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
+use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -38,6 +39,8 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
@@ -611,6 +614,15 @@ abstract class DaemonManager extends BaseManager
             }
         }
 
+        // Find Command server once (for command reply destinations)
+        $commandServer = null;
+        foreach ($this->servers as $server) {
+            if ($server instanceof CommandServer) {
+                $commandServer = $server;
+                break;
+            }
+        }
+
         // Sync signals: always send to workers and daemon
         $syncTypes = [
             SignalTypeConstants::DB_SYNC_CREATED,
@@ -713,6 +725,16 @@ abstract class DaemonManager extends BaseManager
                         $this->encodeSignalFrame($signal),
                         $destination->excludeAcceptKey,
                     );
+                } elseif ($destination instanceof CommandReplyDestination) {
+                    // Write the agent reply back to the held CLI command connection
+                    if ($commandServer === null) {
+                        continue;
+                    }
+
+                    $reply = $signal->data;
+                    if ($reply instanceof CommandReplyDTO) {
+                        $commandServer->deliver($destination->correlationId, $reply);
+                    }
                 } else {
                     // Unknown destination type, skip
                     Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
