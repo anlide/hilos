@@ -7,8 +7,10 @@ namespace Demo\Chat\Constants;
 /**
  * ChatCliCommands - chat-specific CLI command names.
  *
- * Currently only the test-only state helpers used to demonstrate the TestOnlyCommand
- * mechanism. Names are namespaced under `test:` so they read as test-only at a glance.
+ * The `test:` commands are test-only helpers demonstrating the TestOnlyCommand
+ * mechanism (orphan-settings state, the command-channel echo probe). The
+ * `admin:` commands are real operator commands that flip a user's admin flag
+ * over the daemon command channel.
  */
 final class ChatCliCommands
 {
@@ -20,4 +22,10 @@ final class ChatCliCommands
 
     /** @var string Test-only: echo a message through the command channel via an agent */
     public const string COMMAND_ECHO = 'test:command:echo';
+
+    /** @var string Grant a user admin rights over the command channel */
+    public const string ADMIN_GRANT = 'admin:grant';
+
+    /** @var string Revoke a user's admin rights over the command channel */
+    public const string ADMIN_REVOKE = 'admin:revoke';
 }

@@ -68,6 +68,25 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
+     * Resolves the durable user id behind an accept key from the chat runtime
+     * connection registry, where the handshake records the acceptKey -> user
+     * mapping. Lets the ACCESS browser guard identify the subscriber; an
+     * unregistered accept key (a guest before any handshake) resolves to null and
+     * is denied.
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @return ?int Durable user id, or null when no connection is registered
+     */
+    protected function resolveCurrentUserId(string $acceptKey): ?int
+    {
+        try {
+            return Hilos::$rt?->connections[$acceptKey]?->userId;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * Computes runtime connection summary fields for user-shaped rows.
      *
      * @param string $field Summary field name
