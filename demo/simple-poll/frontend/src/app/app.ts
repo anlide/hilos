@@ -14,10 +14,10 @@ import { About } from './views/about/about'
 import { License } from './views/license/license'
 import { Main } from './views/main/main'
 import { Privacy } from './views/privacy/privacy'
-import { Settings } from './views/settings/settings'
+import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
-import { User } from './views/users/user'
-import { Users } from './views/users/users'
+import { User } from './views/hilos/users/user'
+import { Users } from './views/hilos/users/users'
 
 @Component({
   selector: 'app-root',
@@ -41,11 +41,11 @@ export class App {
     [HilosPages.DASHBOARD]: HilosDashboardPage,
     // The framework settings admin page, activated configure-only: the framework
     // owns the table and the add/update/delete lifecycle; the project binds only its
-    // scope stores + action lifecycle (views/settings) and its catalog on the backend.
+    // scope stores + action lifecycle (views/hilos/settings) and its catalog on the backend.
     [HilosPages.SETTINGS]: Settings,
     // The framework users/user admin pages: the framework owns the table, the
     // detail, and the rename round-trip; the project binds its scope stores,
-    // connection, and typed user collection (views/users) and supplies its user
+    // connection, and typed user collection (views/hilos/users) and supplies its user
     // entity + presence sources on the backend.
     [HilosPages.USERS]: Users,
     [HilosPages.USER]: User,

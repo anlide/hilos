@@ -5,8 +5,8 @@
 // only where the data lives — and, on its backend, the actual settings catalog.
 import { type HilosSettingsContext } from '@hilos/core'
 
-import { actions, connection } from '../../bootstrap/connection'
-import { scopes } from '../../bootstrap/session'
+import { actions, connection } from '../../../bootstrap/connection'
+import { scopes } from '../../../bootstrap/session'
 
 /** This project's context for the framework settings page. */
 export const hilosSettingsContext: HilosSettingsContext = {

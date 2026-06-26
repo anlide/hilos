@@ -6,9 +6,9 @@
 // (HilosPages.USERS / USER), which carry the same row slots.
 import { type HilosUsersContext } from '@hilos/core'
 
-import { connection } from '../../bootstrap/connection'
-import { scopes } from '../../bootstrap/session'
-import { type User, Users } from '../../types/user'
+import { connection } from '../../../bootstrap/connection'
+import { scopes } from '../../../bootstrap/session'
+import { type User, Users } from '../../../types/user'
 
 /** This project's context for the framework users/user admin pages. */
 export const hilosUsersContext: HilosUsersContext<User> = {
