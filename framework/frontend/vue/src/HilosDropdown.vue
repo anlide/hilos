@@ -13,7 +13,7 @@ setting" dialog — data-model.md, "Cataloged tables"), but it stays a tier-1
 building block for any catalog/option select — live API, not dead code.
 Bootstrap classes only — no CSS of its own. -->
 <script setup lang="ts" generic="V extends string | number">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
 import type { HilosDropdownOption } from './hilosDropdown.js'
 
@@ -43,6 +43,7 @@ const props = withDefaults(
 const emit = defineEmits<{ 'update:modelValue': [value: V] }>()
 
 const open = ref(false)
+const menuId = useId()
 const root = ref<HTMLElement>()
 const menu = ref<HTMLElement>()
 const toggleButton = ref<HTMLButtonElement>()
@@ -158,6 +159,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       class="btn btn-outline-secondary dropdown-toggle d-flex align-items-center justify-content-between w-100"
       :disabled="disabled"
       :aria-expanded="open"
+      :aria-controls="menuId"
       aria-haspopup="listbox"
       data-id="hilos-dropdown-toggle"
       @click="toggle"
@@ -171,6 +173,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     </button>
     <ul
       v-show="open"
+      :id="menuId"
       ref="menu"
       class="dropdown-menu show w-100"
       role="listbox"

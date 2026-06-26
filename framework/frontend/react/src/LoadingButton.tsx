@@ -57,6 +57,7 @@ export function LoadingButton({
       {...rest}
       type={type}
       disabled={isDisabled}
+      aria-busy={loading || undefined}
       className={`btn position-relative${className ? ` ${className}` : ''}`}
       onClick={(event) => {
         if (!isDisabled) {

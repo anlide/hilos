@@ -26,6 +26,7 @@ describe('LoadingButton', () => {
         Save
       </LoadingButton>,
     )
+    expect(screen.getByRole('button').getAttribute('aria-busy')).toBeNull()
     fireEvent.click(screen.getByRole('button'))
     expect(clicks).toBe(1)
   })
@@ -44,6 +45,7 @@ describe('LoadingButton', () => {
     )
     const button = screen.getByRole('button') as HTMLButtonElement
     expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-busy')).toBe('true')
     fireEvent.click(button)
     expect(clicks).toBe(0)
   })

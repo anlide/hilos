@@ -11,13 +11,15 @@ describe('LoadingButton', () => {
 
   it('emits click when enabled', async () => {
     const wrapper = mount(LoadingButton)
+    expect(wrapper.find('button').attributes('aria-busy')).toBeUndefined()
     await wrapper.find('button').trigger('click')
     expect(wrapper.emitted('click')).toHaveLength(1)
   })
 
-  it('disables and swallows clicks while loading', async () => {
+  it('disables, marks itself busy, and swallows clicks while loading', async () => {
     const wrapper = mount(LoadingButton, { props: { loading: true } })
     expect(wrapper.find('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button').attributes('aria-busy')).toBe('true')
     await wrapper.find('button').trigger('click')
     expect(wrapper.emitted('click')).toBeUndefined()
   })

@@ -59,6 +59,7 @@ function onClick(event: MouseEvent): void {
   <button
     :type="type"
     :disabled="isDisabled"
+    :aria-busy="loading || undefined"
     class="btn position-relative"
     @click="onClick"
   >

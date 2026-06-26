@@ -32,6 +32,7 @@ import { hilosSignal } from './hilosSignal.js'
     class: 'btn position-relative',
     '[attr.type]': 'type()',
     '[disabled]': 'isDisabled()',
+    '[attr.aria-busy]': 'loading() || null',
   },
   template: `
     <span [class.invisible]="showSpinner()"><ng-content /></span>
