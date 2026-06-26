@@ -20,6 +20,8 @@ export interface HilosViewportTableProps<R> {
   columns: HilosTableColumn[]
   /** Render the cells of one row; the returned `<td>`s fill the row. */
   row: (row: R, rowKey: string) => ReactNode
+  /** Accessible name for the table, rendered as a visually-hidden caption. */
+  label?: string
   /** Show the search box above the table. */
   searchable?: boolean
   /** Placeholder for the search box. */
@@ -46,12 +48,13 @@ const PENDING_ROW_CLASS: Record<'update' | 'remove', string> = {
 /**
  * The framework-owned table chrome over a headless {@link TableViewportController}.
  *
- * @param props The controller, columns, row renderer, and search / empty / placeholder config.
+ * @param props The controller, columns, row renderer, and label / search / empty / placeholder config.
  */
 export function HilosViewportTable<R>({
   controller,
   columns,
   row,
+  label,
   searchable = false,
   searchPlaceholder = 'Search…',
   emptyText = 'No rows.',
@@ -77,6 +80,22 @@ export function HilosViewportTable<R>({
     return sort.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
   }
 
+  // A sortable header reports its current sort state to assistive tech through
+  // aria-sort: a sortable-but-unsorted column reports 'none', the active column
+  // its direction, and a non-sortable column nothing at all.
+  function ariaSort(
+    column: HilosTableColumn,
+  ): 'ascending' | 'descending' | 'none' | undefined {
+    if (!column.sortable) {
+      return undefined
+    }
+    if (sort?.field !== column.key) {
+      return 'none'
+    }
+
+    return sort.direction === 'asc' ? 'ascending' : 'descending'
+  }
+
   return (
     <div data-id="hilos-viewport-table">
       {searchable || pendingCount > 0 ? (
@@ -86,6 +105,7 @@ export function HilosViewportTable<R>({
               type="search"
               className="form-control"
               placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
               value={search}
               data-id="hilos-table-search"
               onChange={(event) => controller.setSearch(event.target.value)}
@@ -95,6 +115,7 @@ export function HilosViewportTable<R>({
             <button
               type="button"
               className="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-2 ms-auto"
+              aria-label={`Apply ${pendingCount} pending changes`}
               data-id="hilos-table-apply"
               onClick={() => controller.apply()}
             >
@@ -102,6 +123,7 @@ export function HilosViewportTable<R>({
               <span
                 className="badge text-bg-light"
                 data-id="hilos-table-pending"
+                aria-hidden="true"
               >
                 {pendingCount}
               </span>
@@ -112,10 +134,18 @@ export function HilosViewportTable<R>({
 
       <div className="table-responsive">
         <table className="table table-striped table-hover align-middle mb-0">
+          {label ? (
+            <caption className="visually-hidden">{label}</caption>
+          ) : null}
           <thead>
             <tr>
               {columns.map((column) => (
-                <th key={column.key} scope="col" className={column.headerClass}>
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={column.headerClass}
+                  aria-sort={ariaSort(column)}
+                >
                   {column.sortable ? (
                     <button
                       type="button"
@@ -169,6 +199,7 @@ export function HilosViewportTable<R>({
                   {!loaded ? (
                     <span
                       className="d-inline-flex align-items-center gap-2"
+                      role="status"
                       data-id="hilos-table-loading"
                     >
                       <span
@@ -202,7 +233,11 @@ export function HilosViewportTable<R>({
             >
               Previous
             </button>
-            <span className="btn btn-sm disabled" data-id="hilos-table-page">
+            <span
+              className="btn btn-sm disabled"
+              aria-label={`Page ${page + 1} of ${pageCount}`}
+              data-id="hilos-table-page"
+            >
               {page + 1} / {pageCount}
             </span>
             <button

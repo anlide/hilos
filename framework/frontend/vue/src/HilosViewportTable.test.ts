@@ -114,4 +114,27 @@ describe('HilosViewportTable', () => {
       false,
     )
   })
+
+  it('names the table with a caption and reports sort state to assistive tech', async () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: COLUMNS, label: 'Users', searchable: true },
+      slots: {
+        row: (props: { row: unknown; rowKey: string }) =>
+          h('td', {}, (props.row as Row).name),
+      },
+    })
+
+    const caption = wrapper.find('caption')
+    expect(caption.text()).toBe('Users')
+    expect(caption.classes()).toContain('visually-hidden')
+    expect(
+      wrapper.find('[data-id="hilos-table-search"]').attributes('aria-label'),
+    ).toBe('Search…')
+
+    expect(wrapper.find('th').attributes('aria-sort')).toBe('none')
+    await wrapper.find('[data-id="hilos-table-sort-name"]').trigger('click')
+    expect(wrapper.find('th').attributes('aria-sort')).toBe('ascending')
+  })
 })

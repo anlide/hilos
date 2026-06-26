@@ -53,6 +53,7 @@ export interface ViewportTableRowContext<R> {
               type="search"
               class="form-control"
               [placeholder]="searchPlaceholder()"
+              [attr.aria-label]="searchPlaceholder()"
               [value]="search()"
               data-id="hilos-table-search"
               (input)="onSearchInput($event)"
@@ -62,11 +63,16 @@ export interface ViewportTableRowContext<R> {
             <button
               type="button"
               class="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-2 ms-auto"
+              [attr.aria-label]="'Apply ' + pendingCount() + ' pending changes'"
               data-id="hilos-table-apply"
               (click)="controller().apply()"
             >
               Apply changes
-              <span class="badge text-bg-light" data-id="hilos-table-pending">
+              <span
+                class="badge text-bg-light"
+                data-id="hilos-table-pending"
+                aria-hidden="true"
+              >
                 {{ pendingCount() }}
               </span>
             </button>
@@ -76,10 +82,21 @@ export interface ViewportTableRowContext<R> {
 
       <div class="table-responsive">
         <table class="table table-striped table-hover align-middle mb-0">
+          @if (label(); as label) {
+            <caption class="visually-hidden">
+              {{
+                label
+              }}
+            </caption>
+          }
           <thead>
             <tr>
               @for (column of columns(); track column.key) {
-                <th scope="col" [class]="column.headerClass ?? ''">
+                <th
+                  scope="col"
+                  [class]="column.headerClass ?? ''"
+                  [attr.aria-sort]="ariaSort(column)"
+                >
                   @if (column.sortable) {
                     <button
                       type="button"
@@ -134,6 +151,7 @@ export interface ViewportTableRowContext<R> {
                   @if (!loaded()) {
                     <span
                       class="d-inline-flex align-items-center gap-2"
+                      role="status"
                       data-id="hilos-table-loading"
                     >
                       <span
@@ -169,7 +187,11 @@ export interface ViewportTableRowContext<R> {
             >
               Previous
             </button>
-            <span class="btn btn-sm disabled" data-id="hilos-table-page">
+            <span
+              class="btn btn-sm disabled"
+              [attr.aria-label]="'Page ' + (page() + 1) + ' of ' + pageCount()"
+              data-id="hilos-table-page"
+            >
               {{ page() + 1 }} / {{ pageCount() }}
             </span>
             <button
@@ -192,6 +214,8 @@ export class HilosViewportTable<R> {
   readonly controller = input.required<TableViewportController<R>>()
   /** Column declarations for the header (labels and sort controls). */
   readonly columns = input.required<HilosTableColumn[]>()
+  /** Accessible name for the table, rendered as a visually-hidden caption. */
+  readonly label = input<string>()
   /** Show the search box above the table. */
   readonly searchable = input(false)
   /** Placeholder for the search box. */
@@ -265,6 +289,23 @@ export class HilosViewportTable<R> {
     }
 
     return sort.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
+  }
+
+  // A sortable header reports its current sort state to assistive tech through
+  // aria-sort: a sortable-but-unsorted column reports 'none', the active column
+  // its direction, and a non-sortable column nothing at all.
+  protected ariaSort(
+    column: HilosTableColumn,
+  ): 'ascending' | 'descending' | 'none' | undefined {
+    if (!column.sortable) {
+      return undefined
+    }
+    const sort = this.sort()
+    if (sort?.field !== column.key) {
+      return 'none'
+    }
+
+    return sort.direction === 'asc' ? 'ascending' : 'descending'
   }
 
   protected onSearchInput(event: Event): void {

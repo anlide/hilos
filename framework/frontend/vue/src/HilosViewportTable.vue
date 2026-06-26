@@ -19,6 +19,8 @@ const props = withDefaults(
     controller: TableViewportController<R>
     /** Column declarations for the header (labels and sort controls). */
     columns: HilosTableColumn[]
+    /** Accessible name for the table, rendered as a visually-hidden caption. */
+    label?: string
     /** Show the search box above the table. */
     searchable?: boolean
     /** Placeholder for the search box. */
@@ -31,6 +33,7 @@ const props = withDefaults(
     placeholderText?: string
   }>(),
   {
+    label: undefined,
     searchable: false,
     searchPlaceholder: 'Search…',
     emptyText: 'No rows.',
@@ -74,6 +77,22 @@ function sortIcon(key: string): string {
   return sort.value.direction === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
 }
 
+// A sortable header reports its current sort state to assistive tech through
+// aria-sort: a sortable-but-unsorted column reports 'none', the active column
+// its direction, and a non-sortable column nothing at all.
+function ariaSort(
+  column: HilosTableColumn,
+): 'ascending' | 'descending' | 'none' | undefined {
+  if (!column.sortable) {
+    return undefined
+  }
+  if (sort.value?.field !== column.key) {
+    return 'none'
+  }
+
+  return sort.value.direction === 'asc' ? 'ascending' : 'descending'
+}
+
 function onSearchInput(event: Event): void {
   props.controller.setSearch((event.target as HTMLInputElement).value)
 }
@@ -90,6 +109,7 @@ function onSearchInput(event: Event): void {
         type="search"
         class="form-control"
         :placeholder="searchPlaceholder"
+        :aria-label="searchPlaceholder"
         :value="search"
         data-id="hilos-table-search"
         @input="onSearchInput"
@@ -98,11 +118,16 @@ function onSearchInput(event: Event): void {
         v-if="pendingCount > 0"
         type="button"
         class="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-2 ms-auto"
+        :aria-label="`Apply ${pendingCount} pending changes`"
         data-id="hilos-table-apply"
         @click="controller.apply()"
       >
         Apply changes
-        <span class="badge text-bg-light" data-id="hilos-table-pending">
+        <span
+          class="badge text-bg-light"
+          data-id="hilos-table-pending"
+          aria-hidden="true"
+        >
           {{ pendingCount }}
         </span>
       </button>
@@ -110,6 +135,11 @@ function onSearchInput(event: Event): void {
 
     <div class="table-responsive">
       <table class="table table-striped table-hover align-middle mb-0">
+        <caption v-if="label" class="visually-hidden">
+          {{
+            label
+          }}
+        </caption>
         <thead>
           <tr>
             <th
@@ -117,6 +147,7 @@ function onSearchInput(event: Event): void {
               :key="column.key"
               scope="col"
               :class="column.headerClass"
+              :aria-sort="ariaSort(column)"
             >
               <button
                 v-if="column.sortable"
@@ -154,6 +185,7 @@ function onSearchInput(event: Event): void {
               <span
                 v-if="!loaded"
                 class="d-inline-flex align-items-center gap-2"
+                role="status"
                 data-id="hilos-table-loading"
               >
                 <span
@@ -186,7 +218,11 @@ function onSearchInput(event: Event): void {
         >
           Previous
         </button>
-        <span class="btn btn-sm disabled" data-id="hilos-table-page">
+        <span
+          class="btn btn-sm disabled"
+          :aria-label="`Page ${page + 1} of ${pageCount}`"
+          data-id="hilos-table-page"
+        >
           {{ page + 1 }} / {{ pageCount }}
         </span>
         <button

@@ -118,4 +118,36 @@ describe('HilosViewportTable', () => {
       container.querySelector('[data-id="hilos-table-list-changed"]'),
     ).toBeNull()
   })
+
+  it('names the table with a caption and reports sort state to assistive tech', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'Alice' } }], 1)
+    const { container } = render(
+      <HilosViewportTable
+        controller={controller}
+        columns={COLUMNS}
+        label="Users"
+        searchable
+        row={(r) => <td className="cell">{r.name}</td>}
+      />,
+    )
+
+    const caption = container.querySelector('caption')
+    expect(caption?.textContent).toBe('Users')
+    expect(caption?.classList.contains('visually-hidden')).toBe(true)
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-search"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Search…')
+
+    const header = container.querySelector('th')
+    expect(header?.getAttribute('aria-sort')).toBe('none')
+    fireEvent.click(
+      container.querySelector('[data-id="hilos-table-sort-name"]') as Element,
+    )
+    expect(container.querySelector('th')?.getAttribute('aria-sort')).toBe(
+      'ascending',
+    )
+  })
 })
