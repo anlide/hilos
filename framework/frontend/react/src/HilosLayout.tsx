@@ -70,6 +70,13 @@ export function HilosLayout({
       className="d-flex flex-column vh-100 overflow-hidden"
       data-id="app-root"
     >
+      <a
+        href="#hilos-main-content"
+        className="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
+        data-id="skip-to-content"
+      >
+        Skip to main content
+      </a>
       <nav
         className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
         aria-label="Main"
@@ -106,7 +113,11 @@ export function HilosLayout({
           </div>
         </div>
       </nav>
-      <main className="container flex-grow-1 min-h-0 overflow-auto py-4">
+      <main
+        id="hilos-main-content"
+        tabIndex={-1}
+        className="container flex-grow-1 min-h-0 overflow-auto py-4"
+      >
         {children}
       </main>
       <footer

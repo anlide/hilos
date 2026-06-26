@@ -69,6 +69,7 @@ describe('createHilosRouter', () => {
     const navigator = createHilosRouter(router, pages, env)
 
     expect(navigator.currentRoute.get().page).toBe('dash')
+    expect(navigator.currentPath.get()).toBe('/hilos')
   })
 
   it('subscribes the current page and attaches popstate on start', () => {
@@ -91,6 +92,7 @@ describe('createHilosRouter', () => {
     navigator.navigate('/user/42')
 
     expect(env.pathname()).toBe('/user/42')
+    expect(navigator.currentPath.get()).toBe('/user/42')
     expect(navigator.currentRoute.get()).toEqual({
       page: 'user',
       params: { id: '42' },

@@ -52,6 +52,13 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
 
 <template>
   <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
+    <a
+      href="#hilos-main-content"
+      class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary btn-sm z-3"
+      data-id="skip-to-content"
+    >
+      Skip to main content
+    </a>
     <nav
       class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
       aria-label="Main"
@@ -88,7 +95,11 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         </div>
       </div>
     </nav>
-    <main class="container flex-grow-1 min-h-0 overflow-auto py-4">
+    <main
+      id="hilos-main-content"
+      tabindex="-1"
+      class="container flex-grow-1 min-h-0 overflow-auto py-4"
+    >
       <slot />
     </main>
     <footer

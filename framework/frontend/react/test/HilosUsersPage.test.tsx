@@ -14,6 +14,7 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({ page: '', params: {} }),
+    currentPath: createSignal(''),
     pageError: createSignal(null),
     navigate: () => {},
     start: () => {},

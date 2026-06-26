@@ -50,6 +50,8 @@ export interface NavigationEnvironment {
 export interface HilosRouter {
   /** The matched route; updates on every navigation, including back/forward. */
   readonly currentRoute: ReadonlySignal<PageRouteMatch>
+  /** The current location pathname; updates with the route on every navigation. */
+  readonly currentPath: ReadonlySignal<string>
   /**
    * The current page's subscription error, or null while it loads cleanly. The
    * routed outlet (HilosView) shows an error surface for the page while it is
@@ -88,18 +90,21 @@ export function createHilosRouter(
   const currentRoute = createSignal<PageRouteMatch>(
     router.match(env.pathname()),
   )
+  const currentPath = createSignal<string>(env.pathname())
   let detachPopState: Unsubscribe | null = null
 
-  // Resolve a pathname, publish it as the current route, and re-subscribe its
-  // page — shared by start, navigate, and the popstate listener.
+  // Resolve a pathname, publish it as the current route and path, and
+  // re-subscribe its page — shared by start, navigate, and the popstate listener.
   const apply = (pathname: string): void => {
     const match = router.match(pathname)
     currentRoute.set(match)
+    currentPath.set(pathname)
     pages.subscribe(match.page, match.params)
   }
 
   return {
     currentRoute,
+    currentPath,
     pageError: pages.pageError,
     navigate: (pathname) => {
       env.pushState(pathname)

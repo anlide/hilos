@@ -45,10 +45,32 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   const before = await header.getAttribute('aria-sort')
 
   // Its sort control is operable from the keyboard: focusing it and pressing
-  // Enter re-sorts the column and the header announces the new direction.
+  // Enter re-sorts the column and the header announces the new direction. The
+  // table is server-windowed, so wait for the announced state to change rather
+  // than snapshot it (the new descriptor round-trips to the backend).
   await sortButton.focus()
   await expect(sortButton).toBeFocused()
   await page.keyboard.press('Enter')
+  await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
   await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
-  expect(await header.getAttribute('aria-sort')).not.toBe(before)
+})
+
+test('the shell exposes a skip link and marks the active nav item', async ({
+  page,
+}) => {
+  await page.goto('/hilos')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  // The skip link targets the main landmark.
+  await expect(page.getByTestId('skip-to-content')).toHaveAttribute(
+    'href',
+    '#hilos-main-content',
+  )
+  await expect(page.locator('main#hilos-main-content')).toBeVisible()
+
+  // The admin gear points at /hilos, the current page, so it is aria-current.
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
 })
