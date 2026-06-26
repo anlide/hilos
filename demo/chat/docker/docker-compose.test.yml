@@ -162,6 +162,10 @@ services:
       BASE_URL: https://chat-nginx-test
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The admin-gating spec grants admin over the daemon command channel
+      # (the CLI admin:grant wire) in-network, since the runner has no PHP.
+      COMMAND_HOST: chat-test
+      COMMAND_PORT: "8094"
     profiles:
       - e2e
     networks:

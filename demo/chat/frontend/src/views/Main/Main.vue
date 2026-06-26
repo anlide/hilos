@@ -12,7 +12,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
 import { connection } from '../../bootstrap/connection'
-import { currentUserName } from '../../bootstrap/session'
+import { currentUserId, currentUserName } from '../../bootstrap/session'
 import {
   attachmentDrafts,
   mainParticipants,
@@ -31,6 +31,7 @@ import { useComposerUpload } from './useComposerUpload'
 defineOptions({ name: 'MainPage' })
 
 const selfName = useSignal(currentUserName)
+const selfId = useSignal(currentUserId)
 const participants = useSignal(mainParticipants)
 const bots = useSignal(mainBots)
 const events = useSignal(mainEvents)
@@ -218,6 +219,7 @@ onUnmounted(() => {
   <div class="d-flex flex-column h-100">
     <p class="flex-shrink-0">
       Signed in as <span data-id="self-user">{{ selfName }}</span>
+      <span data-id="self-user-id" hidden>{{ selfId }}</span>
     </p>
 
     <div class="row g-3 flex-grow-1 min-h-0">

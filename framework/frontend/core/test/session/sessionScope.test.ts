@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bindSessionScope,
   sessionUserName,
+  sessionUserId,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -51,6 +52,21 @@ describe('sessionScope', () => {
     })
 
     expect(name.get()).toBe('Ada')
+  })
+
+  it('ingests the handshake response and resolves the current user id', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const id = sessionUserId(scopes)
+
+    expect(id.get()).toBeNull()
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+    })
+
+    expect(id.get()).toBe(1)
   })
 
   it('resolves the current user under a custom slot, type, and name field', () => {

@@ -101,3 +101,32 @@ export function sessionUserName(
     return snapshot ? readString(snapshot.fields, field) : ''
   })
 }
+
+/**
+ * The current user's id, or null until the handshake response lands. Derived from
+ * the same session-scope current-user reference the name selector resolves, so a
+ * project never restates it; the id rides the EntityRef, so no entity snapshot
+ * lookup is needed.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Current-user slot override.
+ */
+export function sessionUserId(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<number | null> {
+  const slot = options.currentUserSlot ?? DEFAULT_CURRENT_USER_SLOT
+  const currentUserRef = scopes.session.data.signal(slot) as ReadonlySignal<
+    EntityRef | undefined
+  >
+
+  return computedSignal(() => {
+    const ref = currentUserRef.get()
+    if (!ref) {
+      return null
+    }
+    const id = Number(ref.id)
+
+    return Number.isFinite(id) ? id : null
+  })
+}

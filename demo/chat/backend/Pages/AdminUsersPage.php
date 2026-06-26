@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -38,6 +42,13 @@ final class AdminUsersPage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::ACCESS,
+                BrowserGuardKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserGuardKey::FIELD => User::admin,
+            ],
+        ],
     ];
 
     /**

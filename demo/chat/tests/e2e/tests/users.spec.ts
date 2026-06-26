@@ -70,15 +70,16 @@ test('renames a user from the detail page and re-renders live', async ({
 test('shows the connected user as online with a live session', async ({
   page,
 }) => {
-  await page.goto('/hilos/users')
+  // Read the connected client's own id (the chat page exposes it), then open its
+  // detail directly. Robust against how many users the shared DB has accumulated:
+  // the self row need not be on the first viewport page of /hilos/users.
+  await page.goto('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByTestId('self-user-id')).toHaveText(/^\d+$/)
+  const userId = await page.getByTestId('self-user-id').textContent()
 
-  // The connected client self-registers as the newest user (highest id), so its
-  // own row sorts last under the id-ascending default; open that detail.
-  const selfOpen = page.locator('[data-id^="hilos-users-open-"]').last()
-  await expect(selfOpen).toBeVisible()
-  await selfOpen.click()
+  await page.goto(`/hilos/user/${userId}`)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
   // Regression: a connected user must render online with at least one live
