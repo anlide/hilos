@@ -228,6 +228,7 @@ async function submitDelete(): Promise<void> {
     </div>
 
     <HilosViewportTable
+      label="Bots"
       :controller="botsTable"
       :columns="columns"
       searchable

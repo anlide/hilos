@@ -108,6 +108,7 @@ async function submitEdit(): Promise<void> {
     </div>
 
     <HilosViewportTable
+      label="Users"
       :controller="adminUsersTable"
       :columns="columns"
       searchable

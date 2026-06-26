@@ -53,6 +53,7 @@ const COLUMNS: HilosTableColumn[] = [
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table
+        label="Users"
         [controller]="users().controller"
         [columns]="columns"
         [searchable]="true"

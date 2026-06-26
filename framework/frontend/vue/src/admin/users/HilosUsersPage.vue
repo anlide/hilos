@@ -54,6 +54,7 @@ const columns: HilosTableColumn[] = [
 <template>
   <HilosAdminPage :page="HilosPages.USERS">
     <HilosViewportTable
+      label="Users"
       :controller="usersTable"
       :columns="columns"
       searchable

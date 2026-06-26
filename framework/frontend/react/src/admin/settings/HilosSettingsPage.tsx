@@ -166,6 +166,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   return (
     <HilosAdminPage page={HilosPages.SETTINGS}>
       <HilosViewportTable
+        label="Settings"
         controller={settings.controller}
         columns={COLUMNS}
         searchable

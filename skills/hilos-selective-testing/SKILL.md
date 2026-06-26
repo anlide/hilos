@@ -22,9 +22,10 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    template, a wire/signal/subscription contract, an e2e spec, or cross-connection
    behavior.
 2. Run the narrowest set the map prescribes for that class.
-3. Reach for the heavy suites — `test:e2e-full` per demo and the two-window tests —
-   only for cross-connection behavior (subscription / viewport / pending / presence)
-   or as the pre-merge gate; they are not an inner-loop step.
+3. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
+   the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /
+   viewport / pending / presence), accessibility changes (ARIA / keyboard / focus), or
+   as the pre-merge gate; they are not an inner-loop step.
 4. The full cross-demo pass is `composer run test:frontend:all`; run it rarely.
 5. Reset before re-running a data-mutating e2e (`test:e2e-up`).
 

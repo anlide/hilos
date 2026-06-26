@@ -177,6 +177,7 @@ async function submitDelete(): Promise<void> {
 <template>
   <HilosAdminPage :page="HilosPages.SETTINGS">
     <HilosViewportTable
+      label="Settings"
       :controller="settingsTable"
       :columns="columns"
       searchable

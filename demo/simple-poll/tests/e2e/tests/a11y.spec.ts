@@ -1,0 +1,54 @@
+import { test, expect, type Page } from '@playwright/test'
+
+// Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
+// docs/agents/testing.md "Selective testing"). Asserts the framework viewport
+// table exposes a correct accessibility tree over the live socket: an accessible
+// name from its visually-hidden caption, a labelled search box, and a sortable
+// header that reports aria-sort and is operable from the keyboard. The poll
+// (Angular) layer checks this on the users table; the file grows as the a11y arc
+// lands its later steps (modals, app-shell, focus).
+
+/** Open the users admin and wait for the live table. */
+async function openUsers(page: Page): Promise<void> {
+  await page.goto('/hilos/users')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+}
+
+test('the viewport table has an accessible name and a labelled search', async ({
+  page,
+}) => {
+  await openUsers(page)
+
+  // The visually-hidden <caption> is the table's accessible name.
+  await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
+
+  // The search box is reachable by an accessible name, not just a placeholder.
+  await expect(
+    page.getByRole('searchbox', { name: 'Search users…' }),
+  ).toBeVisible()
+})
+
+test('a sortable header reports aria-sort and sorts from the keyboard', async ({
+  page,
+}) => {
+  await openUsers(page)
+
+  const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
+  const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
+
+  // The sortable header announces a sort state for assistive tech.
+  await expect(header).toHaveAttribute(
+    'aria-sort',
+    /^(none|ascending|descending)$/,
+  )
+  const before = await header.getAttribute('aria-sort')
+
+  // Its sort control is operable from the keyboard: focusing it and pressing
+  // Enter re-sorts the column and the header announces the new direction.
+  await sortButton.focus()
+  await expect(sortButton).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
+  expect(await header.getAttribute('aria-sort')).not.toBe(before)
+})

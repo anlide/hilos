@@ -61,6 +61,7 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
 | An e2e spec or a selector | that demo's e2e, pointed: `test:e2e-up` once, then `test:e2e -- <grep>` | while editing the spec |
 | Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
+| Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
 
 **The rare, full run** is `composer run test:frontend:all` (FE install + build +
 check / vitest / lint, then every demo's `test:check` and `test:e2e-full`). Run it
@@ -68,13 +69,19 @@ when:
 
 - a change touches the subscription / viewport / pending / cross-connection path,
   where a single tab cannot reveal the bug; or
+- a change touches accessibility — ARIA, keyboard operability, focus, or
+  screen-reader semantics; or
 - before collapsing or merging the branch, as the final gate.
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 `moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
 the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one
-representative path per view layer. A green inner loop (check + vitest + pointed
-phpunit) does not require re-running them.
+representative path per view layer. The **a11y** coverage is the same kind of
+separate, rarely-run category — an `a11y.spec.ts` per demo (chat checks the
+settings table, simple-todo and simple-poll the users table) asserting the
+accessibility tree (accessible names, `aria-sort`, keyboard operability); run it
+in the full pass or pointed (`test:e2e -- a11y.spec`) while editing a11y. A green
+inner loop (check + vitest + pointed phpunit) does not require re-running them.
 
 Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
 the next section.

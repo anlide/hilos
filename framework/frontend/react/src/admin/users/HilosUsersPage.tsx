@@ -58,6 +58,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
   return (
     <HilosAdminPage page={HilosPages.USERS}>
       <HilosViewportTable
+        label="Users"
         controller={users.controller}
         columns={COLUMNS}
         searchable

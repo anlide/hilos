@@ -74,6 +74,7 @@ function inputStep(type: string | undefined): 'any' | undefined {
   template: `
     <hilos-admin-page [page]="page">
       <hilos-viewport-table
+        label="Settings"
         [controller]="settings().controller"
         [columns]="columns"
         [searchable]="true"
