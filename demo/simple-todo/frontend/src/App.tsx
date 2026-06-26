@@ -4,7 +4,7 @@
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator (an extra status
 // surface allowed by docs/agents/frontend/core-and-connection.md).
-import { HilosDashboardPage, HilosLayout, HilosView } from '@hilos/react'
+import { HilosLayout, HilosView, hilosAdminViews } from '@hilos/react'
 import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
@@ -23,10 +23,11 @@ import Terms from './views/Terms/Terms'
 // (other routes land later) render nothing.
 const pages: Record<string, ComponentType> = {
   [PAGE_MAIN]: Main,
-  // The framework dashboard is rendered straight from the SDK — this demo adds no
-  // dashboard sections of its own, so it gets the framework sections as-is (a
-  // project that does would wrap HilosDashboardPage and pass its cards as children).
-  [HilosPages.DASHBOARD]: HilosDashboardPage,
+  // The Hilos admin section. The framework ships a real default page for every
+  // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
+  // the pages it implements itself; the rest render the framework default, never
+  // recopied per project (page-module-structure.md).
+  ...hilosAdminViews(),
   // The framework settings admin page, activated configure-only: the framework
   // owns the table and the add/update/delete lifecycle; the project binds only its
   // scope stores + action lifecycle (views/Hilos/Settings) and its catalog on the backend.

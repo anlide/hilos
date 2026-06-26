@@ -5,7 +5,7 @@
 // The live connection state is the shell's own indicator.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import type { Type } from '@angular/core'
-import { HilosDashboardPage, HilosLayout, HilosView } from '@hilos/angular'
+import { HilosLayout, HilosView, hilosAdminViews } from '@hilos/angular'
 import { HilosPages } from '@hilos/core'
 
 import { connection } from './bootstrap/connection'
@@ -35,10 +35,11 @@ export class App {
   // (other routes land later) render nothing.
   protected readonly pages: Record<string, Type<unknown>> = {
     [PAGE_MAIN]: Main,
-    // The framework dashboard is rendered straight from the SDK — this demo adds
-    // no dashboard sections of its own, so it gets the framework sections as-is (a
-    // project that does would wrap HilosDashboardPage and project its cards).
-    [HilosPages.DASHBOARD]: HilosDashboardPage,
+    // The Hilos admin section. The framework ships a real default page for every
+    // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
+    // the pages it implements itself; the rest render the framework default, never
+    // recopied per project (page-module-structure.md).
+    ...hilosAdminViews(),
     // The framework settings admin page, activated configure-only: the framework
     // owns the table and the add/update/delete lifecycle; the project binds only its
     // scope stores + action lifecycle (views/hilos/settings) and its catalog on the backend.

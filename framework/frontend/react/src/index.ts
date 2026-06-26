@@ -43,6 +43,7 @@ export {
   type ConflictActionsProps,
 } from './ConflictActions.js'
 export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'
+export { hilosAdminViews } from './admin/hilosAdminViews.js'
 export {
   HilosDashboardPage,
   type HilosDashboardPageProps,
