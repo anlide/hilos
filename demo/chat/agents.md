@@ -30,6 +30,7 @@ Chat demo navigation for AI agents. Read framework index first: [/agents.md](../
 | [data-flow/message-flow.md](agents/data-flow/message-flow.md) | tracing a text message from user input to broadcast |
 | [data-flow/file-upload-flow.md](agents/data-flow/file-upload-flow.md) | binary upload: init, binary frames, progress, quarantine |
 | [data-flow/file-moderation-flow.md](agents/data-flow/file-moderation-flow.md) | file moderation after upload, approve/reject, cleanup |
+| [data-flow/attachment-serving.md](agents/data-flow/attachment-serving.md) | serving an attachment back to the browser — cookie auth, same-origin, X-Accel-Redirect, render-by-mimeType |
 
 ## Runtime State
 

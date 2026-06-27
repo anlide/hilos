@@ -53,6 +53,12 @@ Read this when writing or changing PHPDoc in project PHP code.
     `@property-read`, `@method`, `@param`, `@return`, `@var`, and `@throws`,
     add a `use` import and reference the short class name or alias instead of
     writing a leading-backslash fully qualified class name in the docblock.
+13. On a View item the class-level `@method __construct(...)` documents an
+    *inherited* constructor. Keep it on a DB View item, which inherits the base
+    constructor, so the construction contract stays visible. Do **not** put it on
+    an RT View item that overrides `__construct` for real — the real override
+    already carries its own docblock, and an `@method` next to a real method of
+    the same name triggers a "Method already defined" warning.
 
 ## `@throws` and error contracts
 
@@ -102,6 +108,13 @@ documenting non-obvious error contracts.
   incidental infrastructure risks through every private helper. Document broad
   infrastructure failures at the nearest public/protected boundary where they
   matter to the caller.
+- A long-running loop entrypoint (a `run()` loop, a tick dispatcher) should
+  **contain** failures of the per-iteration hooks it calls — wrap the call, log
+  via the agent error logger, and continue — so the loop truthfully declares only
+  its own narrow exceptions instead of a broad `@throws Throwable` propagated from
+  a hook. A narrow `@throws` sitting next to an uncaught broad-`Throwable` callee
+  is a contradictory contract; fix it by containing the hook failure, not by
+  widening the loop's declared contract.
 - Prefer the narrowest useful exception when the caller can act on it
   (`EmptyValueException`, `ValueTooLongException`, `PageResourceNotFoundException`).
 - Use the relevant base exception when the caller only needs the category

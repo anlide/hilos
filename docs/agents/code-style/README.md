@@ -22,6 +22,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
+| [scaffold-markers.md](scaffold-markers.md) | leaving code/config wired but intentionally unused — marking a scaffold or a deliberate keep so a dead-code sweep does not cull it |
 
 The rules here complement the architecture guides in `docs/agents/`.
 Architecture rules decide where code belongs; code style rules decide how the
