@@ -98,14 +98,18 @@ While a guard fails, the fan-out delivers **nothing** to that connection.
 
 A failed guard does **not** tear the subscription down — preserving it is
 intentional. It enables *live-promotion*: open `/user/10` when only 9 users exist
-→ 404 ErrorPage; user #10 is then created → the same live subscription starts
-delivering and the page promotes from error to real with no re-subscribe. The
-access case is symmetric: a guest on a gated page is granted the flag → delivery
-resumes.
+→ 404 ErrorPage; user #10 is then created → the same live subscription resumes
+delivering on the backend with no re-subscribe. The access case is symmetric: a
+guest on a gated page is granted the flag → delivery resumes.
 
 This rules out both tearing the subscription down and a static "guard passed" tag
 set once at subscribe. The guard is re-evaluated dynamically on each delivery
 (above), so the instant it passes, delivery resumes.
+
+The backend half ships today: the moment a guard passes, the fan-out delivers
+again. Making the promotion *visible* also needs the frontend to clear the error
+view when real data arrives — that frontend piece is not yet wired, so a promoted
+page still needs a navigate/refresh to drop the error view until it is.
 
 ## The cross-agent guard rule
 
