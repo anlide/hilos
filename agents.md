@@ -20,6 +20,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors |
 | [architecture/admin-features.md](docs/agents/architecture/admin-features.md) | graduating or building an admin feature (page + browser table + actions): framework-owned vs project-owned-by-pattern, the framework/project boundary, extension points |
 | [architecture/admin-feature-scaffold.md](docs/agents/architecture/admin-feature-scaffold.md) | activating or building an admin feature in a project: the layer-by-layer scaffold order and the three activation paths (configure-only / bound-sources / project-owned) |
+| [architecture/page-access-control.md](docs/agents/architecture/page-access-control.md) | gating a page subscription: DB_EXISTS / ACCESS guards, the resolveCurrentUserId identity hook, 403/404/401 errors, guards on every delivery path, the cross-agent guard rule |
+| [architecture/command-server.md](docs/agents/architecture/command-server.md) | CLI↔daemon control plane: the command socket, request/reply DTOs, held-parking, routing a command to an agent, admin:grant as the worked example |
 
 ## Framework Development
 
