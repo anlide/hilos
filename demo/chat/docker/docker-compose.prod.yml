@@ -23,11 +23,13 @@ services:
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
       - FRONTEND_HTML_HOST=${FRONTEND_HTML_HOST:-0.0.0.0}
       - FRONTEND_HTML_PORT=${FRONTEND_HTML_PORT:-8093}
       - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
+      - CHAT_FILES_XACCEL_LOCATION=${CHAT_FILES_XACCEL_LOCATION:-/__chat_published}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:
@@ -65,6 +67,8 @@ services:
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - nginx-ssl-prod:/etc/nginx/ssl
+      # Published attachments, streamed by nginx via the daemon's X-Accel-Redirect.
+      - ../data/chat_attachments/published:/published:ro
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
       - "${NGINX_HTTPS_PORT:-443}:443"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Selective Testing"
+  short_description: "Pick the test scope for a change; gate the heavy e2e runs"
+  default_prompt: "Use $hilos-selective-testing to choose which tests a change warrants."

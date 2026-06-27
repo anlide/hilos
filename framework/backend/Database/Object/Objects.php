@@ -6,8 +6,10 @@ use ArrayAccess;
 use Countable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Hilos;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -566,7 +568,25 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public function deleteAll(): void
     {
         Database::sql("DELETE FROM `" . $this->getTableName() . "` WHERE true;");
+        $this->clearInMemory();
+
+        $collectionKey = static::COLLECTION_KEY;
+        if ($collectionKey !== '') {
+            Hilos::$sr?->queueDbSyncClearedSignal(new DbSyncClearedSignalData($collectionKey));
+        }
+    }
+
+    /**
+     * Drops every row from the in-memory collection without touching the database.
+     *
+     * Mirrors a remote deleteAll() truncate for DB_SYNC_CLEARED apply: the physical
+     * DELETE already ran in the originating process, so here only the local
+     * in-memory rows are dropped.
+     */
+    public function clearInMemory(): void
+    {
         $this->objects = [];
+        $this->index = 0;
     }
 
     /**

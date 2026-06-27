@@ -13,4 +13,7 @@ final class BrowserGuardKey
     public const string SOURCE = 'source';
     public const string KEY = 'key';
     public const string ERROR = 'error';
+
+    /** Access guard: the boolean flag field on the current user that must be truthy. */
+    public const string FIELD = 'field';
 }

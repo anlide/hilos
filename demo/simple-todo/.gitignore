@@ -1,11 +1,17 @@
 # Environment configuration
 .env
 .env.local
+tests/.env
 .env.*.local
 
 # Log files
 data/logs/*.log
 data/logs/archive/
+data/logs-test/*.log
+data/logs-test/archive/
+
+# PHPUnit
+tests/.phpunit.cache/
 
 # Vendor
 vendor/
@@ -13,3 +19,15 @@ vendor/
 # Node.js
 node_modules/
 npm-debug.log*
+
+# Frontend build output
+/frontend/dist/
+/frontend/dist-prerender/
+
+# Vite dependency-optimizer cache (a cold container start can drop it at the
+# package root instead of node_modules/.vite)
+/frontend/.vite/
+
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/

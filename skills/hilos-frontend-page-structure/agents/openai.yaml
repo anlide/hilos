@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Frontend Page Module Structure"
+  short_description: "Per-page folders, view/Page/Actions files, and type placement"
+  default_prompt: "Use $hilos-frontend-page-structure when organizing frontend page files and placing page types."

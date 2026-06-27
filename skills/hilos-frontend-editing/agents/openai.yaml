@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Frontend Data Editing"
+  short_description: "Edit surfaces are modals with a baseline/draft/incoming merge — never inline forms"
+  default_prompt: "Use $hilos-frontend-editing when implementing or changing a data-editing form on the frontend."

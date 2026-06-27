@@ -55,6 +55,11 @@ final class ActionSuccessSignalData extends SignalData implements SignalDataInte
         return 'success';
     }
 
+    public function getEnvelopeRequestId(): ?string
+    {
+        return null;
+    }
+
     public function getEnvelopeTime(): ?int
     {
         return null;

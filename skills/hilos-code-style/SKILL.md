@@ -30,6 +30,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - PHP class member order: `docs/agents/code-style/php-class-members.md` -
   read when adding or reordering class constants, properties, or methods.
+- Database table names: `docs/agents/code-style/table-names.md` - read when
+  naming a DB table; entity first then purpose, bridge tables order both
+  entities by project dominance.
 - Broader style guide: `docs/code-style.md`
 - Quality guide: `docs/quality.md`
 

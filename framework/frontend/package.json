@@ -1,16 +1,32 @@
 {
-  "name": "@hilos/framework-frontend",
+  "name": "hilos-frontend",
+  "version": "0.0.0",
   "private": true,
-  "description": "Framework frontend — shared Vue components, stores, composables, and services for Hilos projects",
-  "peerDependencies": {
-    "vue": "^3.5.0",
-    "vue-router": "^4.0.0",
-    "pinia": "^2.0.0"
+  "description": "Hilos frontend SDK workspace: the agnostic core and the framework view layers.",
+  "workspaces": [
+    "core",
+    "angular",
+    "react",
+    "vue"
+  ],
+  "scripts": {
+    "check": "npm run check --workspaces --if-present",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build": "npm run build --workspaces --if-present",
+    "pack": "npm run build && mkdir -p dist-pack && npm pack --workspaces --pack-destination ./dist-pack"
   },
   "devDependencies": {
-    "vue": "^3.5.22",
-    "vue-router": "^4.6.3",
-    "pinia": "^2.3.1",
-    "vue-tsc": "^3.1.0"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.2",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
   }
 }

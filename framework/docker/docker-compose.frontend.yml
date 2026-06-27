@@ -1,0 +1,22 @@
+# Node CLI runner for the Hilos frontend SDK (@hilos/core + @hilos/vue):
+# install, build, lint, and unit tests run here — never on the host Node.
+#
+# The container only provides the pinned Node/npm toolchain. node_modules lives
+# in the project on the host (the bind-mount), exactly where a normal install
+# would put it, so PhpStorm resolves the SDK packages like any other project.
+
+name: hilos-framework-frontend
+
+services:
+  hilos-frontend-cli:
+    image: node:22-bookworm-slim
+    container_name: hilos-frontend-cli
+    volumes:
+      - ../..:/hilos
+    working_dir: /hilos/framework/frontend
+    # Silence npm's "new version available" update-notifier; the npm version is
+    # pinned by the image, so the upgrade hint is just noise in every command.
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli

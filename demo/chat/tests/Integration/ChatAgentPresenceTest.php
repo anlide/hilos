@@ -7,7 +7,6 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\ChatDbContext;
@@ -71,7 +70,8 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                     acceptKey: 'presence-ak-1',
                     cookies: [],
                     clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
+                    queryParams: RequestQueryParams::empty(),
+                    sessionToken: $sessionToken,
                 ),
                 '',
                 '',
@@ -106,77 +106,6 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      * Verifies connection changes update main browser user rows without legacy presence delivery.
      *
      * @throws HilosException When test setup or agent signal handling fails
-     */
-    public function testConnectionChangesEmitBrowserMainUsersWithoutLegacyPresence(): void
-    {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-        Hilos::$db->events->actions->deleteAll();
-
-        $sessionToken = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($sessionToken);
-        $agent = new ChatAgent();
-
-        Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initBrowser();
-        Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
-            'presence-main-listener-ak',
-            PageConstants::MAIN,
-            [],
-        ));
-        Hilos::$sr->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
-            'presence-stats-listener-ak',
-            PageConstants::ADMIN_USERS,
-            [],
-        ));
-        Hilos::$sr->subscribeToPage(PageConstants::HILOS_USERS, new WebSocketPageSubscribeSignalDTO(
-            'hilos-presence-stats-listener-ak',
-            PageConstants::HILOS_USERS,
-            [],
-        ));
-
-        try {
-            $agent->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: 'presence-ak-1',
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
-                ),
-                '',
-                '',
-            );
-            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 1);
-
-            $agent->onSignalHandshake(
-                new WebSocketHandshakeSignalDTO(
-                    headers: [],
-                    acceptKey: 'presence-ak-2',
-                    cookies: [],
-                    clientIp: '127.0.0.1',
-                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
-                ),
-                '',
-                '',
-            );
-            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 2);
-
-            $this->closeConnection($agent, 'presence-ak-2');
-            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 1);
-
-            $this->closeConnection($agent, 'presence-ak-1');
-            $this->assertSingleMainUserBrowserUpdate($user->id, 'offline', 0);
-            $this->assertNoPresenceEventsInHistory();
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-        }
-    }
-
-    /**
-     * Verifies closing a connection deletes only that connection's attachment drafts.
-     *
-     * @throws HilosException When runtime setup or connection close handling fails
      */
     public function testCloseDeletesSelfConnectionAttachmentDrafts(): void
     {

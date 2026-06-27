@@ -9,14 +9,6 @@
             "email": "alexander.baranov@anlide.online"
         }
     ],
-    "scripts": {
-        "post-install-cmd": [
-            "@php ../../framework/scripts/link-frontend-sdk.php"
-        ],
-        "post-update-cmd": [
-            "@php ../../framework/scripts/link-frontend-sdk.php"
-        ]
-    },
     "repositories": [
         {
             "type": "path",

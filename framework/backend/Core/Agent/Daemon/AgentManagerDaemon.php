@@ -16,6 +16,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -39,6 +40,9 @@ abstract class AgentManagerDaemon
 
     /** @var array<string, int> Mapping agentId => workerId (negative = monopolistic, positive = regular) */
     protected array $agentToWorker = [];
+
+    /** @var array<string, true> Ids of agents that reported agent_started, so their onStart has completed */
+    private array $startedAgentIds = [];
 
     /**
      * Create agent daemon instance (factory method)
@@ -105,6 +109,7 @@ abstract class AgentManagerDaemon
     {
         unset($this->agentDaemons[$agentId]);
         unset($this->agentToWorker[$agentId]);
+        unset($this->startedAgentIds[$agentId]);
     }
 
     /**
@@ -148,6 +153,15 @@ abstract class AgentManagerDaemon
     public function hasAgent(string $agentId): bool
     {
         return isset($this->agentDaemons[$agentId]);
+    }
+
+    /**
+     * @param string $agentId Agent ID
+     * @return bool True once the agent reported agent_started, so its onStart has completed
+     */
+    public function isAgentStarted(string $agentId): bool
+    {
+        return isset($this->startedAgentIds[$agentId]);
     }
 
     /**
@@ -212,7 +226,7 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Runs the daemon-side onStart hook for an already-registered agent and logs it.
+     * Runs the daemon-side onStart hook for an already-registered agent, records it as started, and logs it.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonNotRegisteredException When the worker reports an agent the manager never registered
@@ -227,6 +241,7 @@ abstract class AgentManagerDaemon
         }
 
         $this->getAgent($agentId)?->onStart();
+        $this->startedAgentIds[$agentId] = true;
         $workerIndex = $this->getAgentWorkerInfo($agentId)?->workerIndex ?? 'unknown';
 
         Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");
@@ -314,6 +329,21 @@ abstract class AgentManagerDaemon
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_DELETED),
             signalName: new SignalName(SignalConstants::DB_SYNC_DELETED),
+            signalData: $dto->signalData,
+        );
+    }
+
+    /**
+     * Handle DB sync cleared message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncClearedMessageDTO $dto DTO with cleared collection data
+     */
+    public function handleWorkerDbSyncCleared(WorkerDbSyncClearedMessageDTO $dto): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalName: new SignalName(SignalConstants::DB_SYNC_CLEARED),
             signalData: $dto->signalData,
         );
     }

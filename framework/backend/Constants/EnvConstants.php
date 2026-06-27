@@ -34,6 +34,12 @@ enum EnvConstants
     /** @var string Worker communication port */
     case WORKER_COMM_PORT;
 
+    /** @var string CLI command channel host */
+    case COMMAND_HOST;
+
+    /** @var string CLI command channel port */
+    case COMMAND_PORT;
+
     /** @var string Database host */
     case DB_HOST;
 
@@ -208,4 +214,29 @@ enum EnvConstants
      * When PROD or STAGING: database seeds are disabled.
      */
     case APP_ENV;
+
+    /**
+     * Build timestamp carried in the WebSocket handshake welcome frame.
+     * Bumped at frontend build time; the frontend compares it on every
+     * (re)connect and forces a page refresh on mismatch. 'dev' when unset.
+     */
+    case HILOS_BUILD_TIMESTAMP;
+
+    /**
+     * Name of the session-token cookie the daemon sets on the WebSocket
+     * handshake (101) when the client has none. Override to rename it.
+     */
+    case HILOS_SESSION_COOKIE_NAME;
+
+    /**
+     * Whether the daemon issues the session-token cookie on the handshake.
+     * Default true; set false to opt a project out of framework-issued cookies.
+     */
+    case HILOS_SESSION_COOKIE_ENABLED;
+
+    /**
+     * Whether the session-token cookie carries the Secure attribute. Default
+     * false so it works over the plain-http dev stack; set true under TLS.
+     */
+    case HILOS_SESSION_COOKIE_SECURE;
 }

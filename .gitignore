@@ -6,10 +6,6 @@ vendor/
 
 # Node
 node_modules/
-framework/agent-core/dist/
-framework/agent-core/.tmp-data/
-framework/agent-host/dist/
-framework/agent-host/.tmp-data/
 
 # IDE
 .vscode/
@@ -34,10 +30,17 @@ Thumbs.db
 *.njsproj
 *.sln
 
-# AI agents
+# AI agents — artifacts materialized by `composer ai:install`
+# (canonical sources stay tracked: agents.md, docs/agents/, skills/hilos-*)
 .codex
+/.agents/
+/AGENTS.md
+/GEMINI.md
+/.aider.conf.yml
 
 # Claude Code (personal/local settings only; shared .claude config stays tracked)
 /.claude/settings.local.json
-# Local junction to skills/ (skills are tracked at their real path)
+# Skills copied from skills/ by `composer ai:install` (tracked at their real path)
 /.claude/skills
+# Git worktrees created by Claude Code sessions
+/.claude/worktrees

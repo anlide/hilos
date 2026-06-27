@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Admin Features"
+  short_description: "Graduate or build a Hilos admin feature (table+page+actions)"
+  default_prompt: "Use $hilos-admin-features for admin pages, tables, and their framework/project split in Hilos."

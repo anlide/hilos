@@ -33,6 +33,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
             ),
             EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::WORKER_COMM_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
+            EnvConstants::COMMAND_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '0.0.0.0', emptyIsMissing: true),
+            EnvConstants::COMMAND_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8094, emptyIsMissing: true),
             EnvConstants::DB_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::HOST, emptyIsMissing: true),
             EnvConstants::DB_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, DatabaseConnectionDefaults::PORT, emptyIsMissing: true),
             EnvConstants::DB_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_db', emptyIsMissing: true),
@@ -188,6 +190,26 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::APP_ENV->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 AppEnv::DEV->value,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_BUILD_TIMESTAMP->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'dev',
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_SESSION_COOKIE_NAME->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'hilos_session_token',
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_SESSION_COOKIE_ENABLED->name => self::entry(
+                EnvCatalogConstants::TYPE_BOOLEAN,
+                true,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_SESSION_COOKIE_SECURE->name => self::entry(
+                EnvCatalogConstants::TYPE_BOOLEAN,
+                false,
                 emptyIsMissing: true,
             ),
         ];

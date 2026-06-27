@@ -13,6 +13,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -72,6 +73,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerDbSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerDbSyncCreatedMessageDTO::fromArray($data),
             WorkerDbSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerDbSyncUpdatedMessageDTO::fromArray($data),
             WorkerDbSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerDbSyncDeletedMessageDTO::fromArray($data),
+            WorkerDbSyncClearedMessageDTO::MESSAGE_TYPE => WorkerDbSyncClearedMessageDTO::fromArray($data),
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
             WorkerRtSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncUpdatedMessageDTO::fromArray($data),
             WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),

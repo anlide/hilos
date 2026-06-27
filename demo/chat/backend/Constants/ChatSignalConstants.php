@@ -29,20 +29,11 @@ final class ChatSignalConstants
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
-    /** @var string Rename success ack (sent only to initiator; envelope outcome='success') */
-    public const string RENAME_SUCCESS = 'rename_success';
-
-    /** @var string Rename failure ack (sent only to initiator; envelope outcome='fail') */
-    public const string RENAME_FAIL = 'rename_fail';
-
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
-
-    /** @var string Subscription page profile signal name */
-    public const string SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile';
 
     /** @var string Subscription page user signal name */
     public const string SUBSCRIPTION_PAGE_USER = 'subscription_page_user';
@@ -65,9 +56,6 @@ final class ChatSignalConstants
     /** @var string Subscription page admin bots signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 
-    /** @var string Subscription page Hilos settings signal name */
-    public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
-
     // ── Agent-to-agent signals ───────────────────────────────────────────
     /** @var string ModeratorAgent → ChatAgent: message moderation result */
     public const string MODERATION_RESULT = 'moderation_result';
@@ -86,15 +74,6 @@ final class ChatSignalConstants
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
 
-    /** @var string Hilos user detail: update display name (handled on HILOS_USER page) */
-    public const string HILOS_USER_UPDATE = 'hilos_user_update';
-
-    /** @var string Ack: hilos_user_update succeeded (sent to initiator) */
-    public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
-
-    /** @var string Ack: hilos_user_update failed (sent to initiator with reason text) */
-    public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
-
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';
 
@@ -112,15 +91,6 @@ final class ChatSignalConstants
 
     /** @var string Moderator piece delete signal name */
     public const string MODERATOR_PIECE_DELETE = 'moderator_piece_delete';
-
-    /** @var string Setting add signal name */
-    public const string SETTING_ADD = 'setting_add';
-
-    /** @var string Setting update signal name */
-    public const string SETTING_UPDATE = 'setting_update';
-
-    /** @var string Setting delete signal name */
-    public const string SETTING_DELETE = 'setting_delete';
 
     /** @var string Guardian agent run start action name */
     public const string GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start';

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Admin Scaffold"
+  short_description: "Wire/activate an admin feature into a project (layers + order)"
+  default_prompt: "Use $hilos-admin-scaffold to activate or build an admin feature in a Hilos project, layer by layer against the chat reference."

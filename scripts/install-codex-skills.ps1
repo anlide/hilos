@@ -1,3 +1,8 @@
+# DEPRECATED: superseded by `composer ai:install`, which materializes the
+# in-repo `.agents/skills` tree (read by Codex, Cursor, and Windsurf) plus every
+# other tool. Kept only for installing into a global $CODEX_HOME/skills. See
+# docs/agents/ai-tools.md.
+
 param(
     [string]$TargetRoot = $(if ($env:CODEX_HOME) { Join-Path $env:CODEX_HOME 'skills' } else { Join-Path (Join-Path $HOME '.codex') 'skills' })
 )

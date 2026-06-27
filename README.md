@@ -8,6 +8,14 @@ Hilos is an event-driven, non-blocking framework designed for building scalable 
 
 **[→ Documentation for AI Agents](docs/ai-agents.md)**
 
+Set up your AI assistant (Claude Code, Codex, Cursor, Gemini, Windsurf, Aider) from the shared rule source:
+
+```bash
+composer ai:install
+```
+
+This materializes per-tool config (skills, entry points) from `agents.md`, `docs/agents/`, and `skills/hilos-*`. Re-run it after pulling rule changes; see [docs/agents/ai-tools.md](docs/agents/ai-tools.md).
+
 ## ✨ Key Features
 
 - **🐳 Docker-first**: Designed for development and deployment in Docker

@@ -8,6 +8,9 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -131,7 +134,33 @@ abstract class AbstractPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        $payload = $this->buildPagePayload($params);
+        if ($payload !== null && !$payload->isEmpty()) {
+            $this->sendToUser(
+                SignalTypeConstants::PAGE_RESPONSE,
+                $acceptKey,
+                new PageResponseSignalData(static::PAGE, $payload),
+            );
+        }
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
+    }
+
+    /**
+     * Builds the page scope payload sent to a subscribing client.
+     *
+     * Default returns null: the page contributes no entities or page-data and
+     * only the browser snapshot path runs. Override in concrete pages to send
+     * an entity/data payload, returning null when there is nothing to send.
+     * An override that reads domain state should raise a
+     * PageSubscriptionException on failure so the framework reports a
+     * subscription error to the client.
+     *
+     * @param PageRouteParams $params Route params from page subscription
+     * @return ?PagePayload Page scope payload, or null when the page carries none
+     */
+    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    {
+        return null;
     }
 
     /**
@@ -194,6 +223,48 @@ abstract class AbstractPage
             SignalConstants::ACTION_ERROR,
             $acceptKey,
             new PageActionErrorSignalData($action, $e->getMessage()),
+        );
+    }
+
+    /**
+     * Sends the framework action-success reply for a tracked action.
+     *
+     * Called by PageSignalRouter after onAction() returns without throwing, only
+     * when the action carried a client-minted requestId. The reply carries no
+     * domain body — it releases the action's loading state and resolves its
+     * request on the client, correlated by the echoed requestId.
+     *
+     * @param string $acceptKey WebSocket accept key of the initiating client
+     * @param string $action Action name that committed
+     * @param string $requestId Client-minted request id to echo back for correlation
+     */
+    public function sendActionSuccess(string $acceptKey, string $action, string $requestId): void
+    {
+        $this->sendToUser(
+            SignalConstants::ACTION_SUCCESS,
+            $acceptKey,
+            new PageActionSuccessSignalData($action, $requestId),
+        );
+    }
+
+    /**
+     * Sends the framework action-failure reply for a tracked action.
+     *
+     * Called by PageSignalRouter when onAction() throws, only when the action
+     * carried a client-minted requestId; it supersedes onActionException() on
+     * the tracked path so the failure correlates by the echoed requestId.
+     *
+     * @param string $acceptKey WebSocket accept key of the initiating client
+     * @param string $action Action name that failed
+     * @param string $requestId Client-minted request id to echo back for correlation
+     * @param string $reason Human-readable error message exposed to the client
+     */
+    public function sendActionFail(string $acceptKey, string $action, string $requestId, string $reason): void
+    {
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $acceptKey,
+            new PageActionErrorSignalData($action, $reason, $requestId),
         );
     }
 

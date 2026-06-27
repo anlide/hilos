@@ -1,0 +1,211 @@
+# Docker Compose configuration for LOCAL development.
+# The full dev stack runs in Docker: MySQL, phpMyAdmin, the daemon, and the Vite
+# frontend dev server (todo-frontend-local, HMR). `composer run daemon-start`
+# brings the whole stack up; the cli services (profile cli) run on-demand
+# commands (see the composer scripts).
+#
+# Port plan: the daemon binds fixed in-container ports (8090 status / 8091
+# worker comm / 8092 websocket, same as every demo — the nginx template proxies
+# /ws to :8092); only the host-side publishes shift per demo so the stacks run
+# side by side (chat holds 8090-8097, simple-todo takes 8098-8103).
+
+name: hilos-simple-todo-local
+
+services:
+  # MySQL: inside the network use todo-mysql-local:3306. From host use
+  # localhost:${MYSQL_HOST_PORT} (default 33063 — 33060-33062 belong to
+  # chat-local, chat-test, and the framework test stack).
+  todo-mysql-local:
+    image: mariadb:11.4
+    container_name: todo-mysql-local
+    ports:
+      - "${MYSQL_HOST_PORT:-33063}:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-todo}
+      - MYSQL_USER=${MYSQL_USER:-hilos}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - TZ=UTC
+    volumes:
+      - ../data/mysql:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --skip-character-set-client-handshake
+    restart: unless-stopped
+    networks:
+      hilos-simple-todo-local-network:
+        ipv4_address: ${DOCKER_MYSQL_IP:-172.27.0.10}
+
+  todo-phpmyadmin-local:
+    image: phpmyadmin:latest
+    container_name: todo-phpmyadmin-local
+    environment:
+      - PMA_HOST=todo-mysql-local
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - PMA_ARBITRARY=1
+      - UPLOAD_LIMIT=256M
+    depends_on:
+      - todo-mysql-local
+    ports:
+      - "${PHPMYADMIN_PORT:-8081}:80"
+    restart: unless-stopped
+    networks:
+      - hilos-simple-todo-local-network
+
+  # The Hilos daemon. The .env file is optional at the compose level: when it
+  # is missing, the in-container bootstrap copies .env.example to .env itself
+  # (Hilos::initEnv), so a fresh checkout starts without a setup step.
+  todo-daemon-local:
+    build: .
+    env_file:
+      - path: ../.env
+        required: false
+    container_name: todo-daemon-local
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      - DB_HOST=${DB_HOST:-todo-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-todo}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      # Two monopolistic workers: one for the todo agent, one for the Hilos
+      # dashboard's hilos_index agent the shell gear subscribes. The framework
+      # default already gives two, but the demos prescribe it here (like chat)
+      # so the worker pool is explicit and not at the mercy of env drift.
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-2}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
+    depends_on:
+      - todo-mysql-local
+    ports:
+      # Host-side publishes: container ports stay fixed, the host side shifts
+      # per the demo port plan so several stacks run side by side.
+      - "${HTTP_STATUS_HOST_PORT:-8098}:8090"
+      - "${WORKER_COMM_HOST_PORT:-8099}:8091"
+      - "${WEBSOCKET_HOST_PORT:-8100}:8092"
+    restart: unless-stopped
+    networks:
+      hilos-simple-todo-local-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.27.0.11}
+
+  todo-cli-local:
+    build: .
+    env_file:
+      - path: ../.env
+        required: false
+    container_name: todo-cli-local
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - DOCKER=true
+      - HILOS_DAEMON_HOST=${DOCKER_DAEMON_IP:-172.27.0.11}
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_PORT=8091
+      - DB_HOST=${DB_HOST:-todo-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-todo}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      - todo-mysql-local
+    networks:
+      - hilos-simple-todo-local-network
+
+  # Prod-parity nginx over the BUILT frontend artifact (profile full — only
+  # `daemon-start-build` starts it; the dev loop uses the Vite server instead).
+  todo-nginx-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: todo-nginx-local
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - nginx-ssl-local:/etc/nginx/ssl
+    ports:
+      - "${NGINX_HTTP_PORT:-81}:80"
+      - "${NGINX_HTTPS_PORT:-444}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=todo-daemon-local
+    depends_on:
+      - todo-daemon-local
+    restart: unless-stopped
+    profiles:
+      - full
+    networks:
+      - hilos-simple-todo-local-network
+
+  # Vite dev server with HMR for the simple-todo frontend. Mounts the whole repo
+  # at /hilos so the @hilos/react `file:` symlink into framework/frontend
+  # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor
+  # is picked up. Native WSL2 filesystem events drive HMR — no polling (see
+  # frontend/vite.config.ts). The host port defaults away from the chat demo's
+  # 5173 so both local stacks can run side by side.
+  todo-frontend-local:
+    image: node:22-bookworm-slim
+    container_name: todo-frontend-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/simple-todo/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The dev page is served by Vite, not nginx, so the app's same-origin
+      # /ws default cannot reach the daemon; point it at the published
+      # WebSocket port instead (see frontend/src/connection.ts).
+      VITE_WS_URL: "ws://localhost:${WEBSOCKET_HOST_PORT:-8100}"
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "${FRONTEND_DEV_PORT:-5174}:5173"
+    restart: unless-stopped
+    networks:
+      - hilos-simple-todo-local-network
+
+  # On-demand Node toolchain for the simple-todo frontend (npm install / build /
+  # check). Profile cli so it never starts with the stack — invoked per command
+  # via `run --rm` (see the composer frontend:* scripts).
+  todo-frontend-cli-local:
+    image: node:22-bookworm-slim
+    container_name: todo-frontend-cli-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/simple-todo/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
+    networks:
+      - hilos-simple-todo-local-network
+
+volumes:
+  nginx-ssl-local:
+
+networks:
+  hilos-simple-todo-local-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.27.0.0/16}

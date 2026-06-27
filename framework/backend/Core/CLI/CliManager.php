@@ -18,6 +18,7 @@ use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
 use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
+use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Database\DatabaseException;
 
@@ -69,6 +70,7 @@ class CliManager
     {
         $this->commands[CliCommands::DAEMON_STATUS] = new StatusCommand();
         $this->commands[CliCommands::DAEMON_MONITOR] = new MonitorCommand();
+        $this->commands[CliCommands::DAEMON_PING] = new PingCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
@@ -78,7 +80,30 @@ class CliManager
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
+
+        $this->registerProjectCommands();
+
         $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
+    }
+
+    /**
+     * Registers project-specific commands.
+     *
+     * Override point for a project: a CliManager subclass overrides this and calls
+     * addCommand() for each project command. The default registers none.
+     */
+    protected function registerProjectCommands(): void
+    {
+    }
+
+    /**
+     * Registers a command under its own name.
+     *
+     * @param CommandInterface $command Command to register
+     */
+    protected function addCommand(CommandInterface $command): void
+    {
+        $this->commands[$command->getName()] = $command;
     }
 
     /**

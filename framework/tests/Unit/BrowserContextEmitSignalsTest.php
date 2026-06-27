@@ -6,17 +6,25 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserRefKey;
+use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
-use Hilos\Core\Browser\Config\BrowserTableConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\DbContext;
@@ -40,7 +48,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$table = null;
-        Hilos::$browser = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }
@@ -64,22 +72,25 @@ final class BrowserContextEmitSignalsTest extends TestCase
 
         $this->assertNotNull($signal);
         $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
-        $this->assertSame(BrowserContextEmitSignalsTestContext::SIGNAL, $signal->signalName->getName());
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
-        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                BrowserPageSignalData::tables => [
-                    BrowserContextEmitSignalsTestContext::TABLE => [
-                        BrowserPageSignalData::rows => [
-                            [
-                                BrowserPageSignalData::rowKey => '1',
-                                BrowserPageSignalData::sources => [
-                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                        'id' => '1',
-                                        'displayName' => 'Ada',
-                                        'computedLabel' => 'row-1',
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                            'computedLabel' => 'row-1',
+                                        ],
                                     ],
                                 ],
                             ],
@@ -109,12 +120,110 @@ final class BrowserContextEmitSignalsTest extends TestCase
 
         $this->assertNotNull($signal);
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                BrowserPageSignalData::tables => [
-                    BrowserContextEmitSignalsTestContext::TABLE => [
-                        BrowserPageSignalData::deleted => ['1'],
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::deleted => ['1'],
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    public function testFlushQueuesPageShapedBrowserClearWhenSourceCleared(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$sr->subscribeToPage(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', BrowserContextEmitSignalsTestContext::PAGE),
+        );
+
+        $context = new BrowserContextEmitSignalsTestContext();
+        $context->record(new SourceChange(
+            SourceChange::KIND_RT,
+            BrowserContextEmitSignalsTestRtContext::ROWS,
+            '',
+            TableMutationType::Clear,
+        ));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::cleared => true,
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    public function testFlushTruncatesThenReAddsRowWhenClearAndUpdateInSameTick(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$sr->subscribeToPage(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', BrowserContextEmitSignalsTestContext::PAGE),
+        );
+
+        // Clear is recorded before the row that survives the truncate, mirroring a
+        // deleteAll() followed by a fresh marker row in the same tick.
+        $context = new BrowserContextEmitSignalsTestContext();
+        $context->record(new SourceChange(
+            SourceChange::KIND_RT,
+            BrowserContextEmitSignalsTestRtContext::ROWS,
+            '',
+            TableMutationType::Clear,
+        ));
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::cleared => true,
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                            'computedLabel' => 'row-1',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
                     ],
                 ],
             ],
@@ -140,6 +249,46 @@ final class BrowserContextEmitSignalsTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testReactiveFanoutSkipsGuardFailedSubscriptionThenResumesWhenResourceAppears(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        // Subscribe to the guarded page for resource '1', which does not exist yet:
+        // the DB_EXISTS guard fails, but the subscription is kept alive.
+        Hilos::$sr->subscribeToPage(
+            BrowserContextPageGuardTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO(
+                'ak-1',
+                BrowserContextPageGuardTestContext::PAGE,
+                ['id' => '1'],
+            ),
+        );
+
+        $context = new BrowserContextPageGuardTestContext();
+
+        // A source change while the guard fails (the resource is absent) must fan
+        // out nothing — the leak this fix closes.
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+        $this->assertNull(
+            Hilos::$sr->getNextQueuedSignal(),
+            'a guard-failed subscription must receive no reactive fan-out',
+        );
+
+        // The resource appears: the guard now passes, so the next change fans out —
+        // the kept-alive subscription resumes (the live-promotion model).
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['name' => 'Ada']));
+        $context->flushToSignalRouter();
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal, 'once the guard passes the kept-alive subscription resumes');
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+    }
+
     public function testSubscribeSnapshotQueuesFullBrowserRowsForPage(): void
     {
         Hilos::$sr = new SignalRouter();
@@ -158,32 +307,35 @@ final class BrowserContextEmitSignalsTest extends TestCase
 
         $this->assertNotNull($signal);
         $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
-        $this->assertSame(BrowserContextEmitSignalsTestContext::SIGNAL, $signal->signalName->getName());
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
         $this->assertSame('ak-1', $signal->data->targetAcceptKey);
-        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                BrowserPageSignalData::tables => [
-                    BrowserContextEmitSignalsTestContext::TABLE => [
-                        BrowserPageSignalData::rows => [
-                            [
-                                BrowserPageSignalData::rowKey => '1',
-                                BrowserPageSignalData::sources => [
-                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                        'id' => '1',
-                                        'displayName' => 'Ada',
-                                        'computedLabel' => 'row-1',
+                PageResponseSignalData::page => BrowserContextEmitSignalsTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextEmitSignalsTestContext::TABLE => [
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                            'computedLabel' => 'row-1',
+                                        ],
                                     ],
                                 ],
-                            ],
-                            [
-                                BrowserPageSignalData::rowKey => '2',
-                                BrowserPageSignalData::sources => [
-                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                        'id' => '2',
-                                        'displayName' => 'Grace',
-                                        'computedLabel' => 'row-2',
+                                [
+                                    PagePayload::rowKey => '2',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '2',
+                                            'displayName' => 'Grace',
+                                            'computedLabel' => 'row-2',
+                                        ],
                                     ],
                                 ],
                             ],
@@ -212,20 +364,23 @@ final class BrowserContextEmitSignalsTest extends TestCase
 
         $this->assertNull(Hilos::$table);
         $this->assertNotNull($signal);
-        $this->assertSame(BrowserContextTopologyHooksTestContext::SIGNAL, $signal->signalName->getName());
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                BrowserPageSignalData::tables => [
-                    BrowserContextTopologyHooksTestContext::TABLE => [
-                        BrowserPageSignalData::rows => [
-                            [
-                                BrowserPageSignalData::rowKey => '1',
-                                BrowserPageSignalData::sources => [
-                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                        'id' => '1',
-                                        'displayName' => 'Ada',
+                PageResponseSignalData::page => BrowserContextTopologyHooksTestContext::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextTopologyHooksTestContext::TABLE => [
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                        ],
                                     ],
                                 ],
                             ],
@@ -255,20 +410,23 @@ final class BrowserContextEmitSignalsTest extends TestCase
         $signal = Hilos::$sr->getNextQueuedSignal();
 
         $this->assertNotNull($signal);
-        $this->assertSame(BrowserContextRegistryTopologyTestPage::SIGNAL, $signal->signalName->getName());
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
         $this->assertSame(
             [
-                BrowserPageSignalData::tables => [
-                    BrowserContextRegistryTopologyTestTable::TABLE => [
-                        BrowserPageSignalData::rows => [
-                            [
-                                BrowserPageSignalData::rowKey => '1',
-                                BrowserPageSignalData::sources => [
-                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
-                                        'id' => '1',
-                                        'displayName' => 'Ada',
+                PageResponseSignalData::page => BrowserContextRegistryTopologyTestPage::PAGE,
+                PageResponseSignalData::payload => [
+                    PagePayload::tables => [
+                        BrowserContextRegistryTopologyTestTable::TABLE => [
+                            PagePayload::rows => [
+                                [
+                                    PagePayload::rowKey => '1',
+                                    PagePayload::slots => [
+                                        BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                            'id' => '1',
+                                            'displayName' => 'Ada',
+                                        ],
                                     ],
                                 ],
                             ],
@@ -279,6 +437,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
             $signal->data->data->toArray(),
         );
     }
+
 }
 
 final class BrowserContextEmitSignalsTestContext extends BrowserContext
@@ -313,15 +472,15 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      * Resolves test page table bindings.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Test page table bindings
+     * @return BrowserPageBindings Test page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         if ($page !== self::PAGE) {
-            return BrowserPageTableBindings::empty();
+            return BrowserPageBindings::empty();
         }
 
-        return BrowserPageTableBindings::fromArray([
+        return BrowserPageBindings::fromArray([
             self::TABLE => [],
         ]);
     }
@@ -329,28 +488,28 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
     /**
      * Resolves test browser-only table config.
      *
-     * @param string $tableKey Browser table key
-     * @return ?BrowserTableConfig Test browser-only table config
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig Test browser-only table config
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
     {
-        if ($tableKey !== self::TABLE) {
+        if ($browserKey !== self::TABLE) {
             return null;
         }
 
-        return BrowserTableConfig::fromArray([
-            BrowserConfigKey::ROWS => [
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [
                 [
-                    BrowserFieldKey::SOURCE => self::SOURCE,
-                    BrowserFieldKey::ROW_KEY => 'id',
-                    BrowserFieldKey::FIELDS => [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
                         'id',
                         'name' => 'displayName',
                     ],
-                    BrowserFieldKey::COMPUTED => [
+                    BrowserTableFieldKey::COMPUTED => [
                         'computedLabel',
                     ],
-                    BrowserFieldKey::TRIGGERS => [
+                    BrowserTableFieldKey::TRIGGERS => [
                         'name',
                     ],
                 ],
@@ -361,25 +520,112 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
     /**
      * Computes the test-only label declared in the browser table config.
      *
-     * @param string $tableKey Browser table key
+     * @param string $browserKey Browser table key
      * @param string $field Computed field name
      * @param int|string $rowKey Logical browser table row key
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
-     * @param array<string, mixed> $tableParams Resolved table params
+     * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value
      */
     protected function computeBrowserField(
-        string $tableKey,
+        string $browserKey,
         string $field,
         int|string $rowKey,
         string $acceptKey,
         array $pageParams,
-        array $tableParams,
+        array $browserParams,
         array $sources,
     ): mixed {
         return $field === 'computedLabel' ? "row-{$rowKey}" : null;
+    }
+}
+
+final class BrowserContextPageGuardTestContext extends BrowserContext
+{
+    public const string PAGE = 'guard_browser_page';
+    public const string SIGNAL = 'guard_browser_signal';
+    public const string TABLE = 'guardRows';
+
+    private const array SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+        BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
+    ];
+
+    /**
+     * Resolves the guarded test page config: a DB_EXISTS guard on the `id` route
+     * param, so the page delivers only while the resource exists.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if ($page !== self::PAGE) {
+            return null;
+        }
+
+        return BrowserPageConfig::fromArray([
+            BrowserConfigKey::SIGNAL => self::SIGNAL,
+            BrowserConfigKey::GUARDS => [
+                [
+                    BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                    BrowserGuardKey::SOURCE => self::SOURCE,
+                    BrowserGuardKey::KEY => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'id',
+                    ],
+                    BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Resolves the guarded page's table bindings.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageBindings Test page table bindings
+     */
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
+    {
+        if ($page !== self::PAGE) {
+            return BrowserPageBindings::empty();
+        }
+
+        return BrowserPageBindings::fromArray([
+            self::TABLE => [],
+        ]);
+    }
+
+    /**
+     * Resolves the guarded page's browser-only table config.
+     *
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig Test browser-only table config
+     */
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
+    {
+        if ($browserKey !== self::TABLE) {
+            return null;
+        }
+
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [
+                [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
+                        'id',
+                        'name' => 'displayName',
+                    ],
+                    BrowserTableFieldKey::TRIGGERS => [
+                        'name',
+                    ],
+                ],
+            ],
+        ]);
     }
 }
 
@@ -415,15 +661,15 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
      * Reads page table bindings through the protected topology hook.
      *
      * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Browser page table bindings
+     * @return BrowserPageBindings Browser page table bindings
      */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    protected function resolveBrowserPageBindings(string $page): BrowserPageBindings
     {
         if ($page !== self::PAGE) {
-            return BrowserPageTableBindings::empty();
+            return BrowserPageBindings::empty();
         }
 
-        return BrowserPageTableBindings::fromArray([
+        return BrowserPageBindings::fromArray([
             self::TABLE => [],
         ]);
     }
@@ -431,21 +677,21 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
     /**
      * Reads browser-only table topology through the protected hook.
      *
-     * @param string $tableKey Browser table key
-     * @return ?BrowserTableConfig Browser-only table config
+     * @param string $browserKey Browser table key
+     * @return ?BrowserSourceConfig Browser-only table config
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
+    protected function resolveBrowserOnlyConfig(string $browserKey): ?BrowserSourceConfig
     {
-        if ($tableKey !== self::TABLE) {
+        if ($browserKey !== self::TABLE) {
             return null;
         }
 
-        return BrowserTableConfig::fromArray([
-            BrowserConfigKey::ROWS => [
+        return BrowserSourceConfig::fromArray([
+            BrowserTableConfigKey::ROWS => [
                 [
-                    BrowserFieldKey::SOURCE => self::SOURCE,
-                    BrowserFieldKey::ROW_KEY => 'id',
-                    BrowserFieldKey::FIELDS => [
+                    BrowserTableFieldKey::SOURCE => self::SOURCE,
+                    BrowserTableFieldKey::ROW_KEY => 'id',
+                    BrowserTableFieldKey::FIELDS => [
                         'id',
                         'name' => 'displayName',
                     ],
@@ -481,11 +727,11 @@ final class BrowserContextRegistryTopologyTestTable
     ];
 
     public const array BROWSER = [
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => self::SOURCE,
-                BrowserFieldKey::ROW_KEY => 'id',
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => self::SOURCE,
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => [
                     'id',
                     'name' => 'displayName',
                 ],

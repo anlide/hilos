@@ -1,5 +1,8 @@
-# Docker Compose configuration for LOCAL development (Windows)
-# Backend runs in Docker, frontend can run locally or in Docker (via chat-frontend-local service)
+# Docker Compose configuration for LOCAL development.
+# The full dev stack runs in Docker: MySQL, phpMyAdmin, the daemon, and the Vite
+# frontend dev server (chat-frontend-local, HMR). `composer run daemon-start` brings
+# the whole stack up; the chat-frontend-cli-local service (profile cli) runs on-demand
+# npm commands (see the composer frontend:* scripts).
 
 name: hilos-chat-local
 
@@ -70,6 +73,8 @@ services:
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+      - COMMAND_HOST=${COMMAND_HOST:-0.0.0.0}
+      - COMMAND_PORT=${COMMAND_PORT:-8094}
       - DB_HOST=${DB_HOST:-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
@@ -116,6 +121,7 @@ services:
       - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - COMMAND_PORT=${COMMAND_PORT:-8094}
       - DB_HOST=${DB_HOST:-mysql-local}
       - DB_PORT=${DB_PORT:-3306}
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
@@ -149,19 +155,6 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
-  chat-frontend-builder:
-    image: node:20-alpine
-    container_name: chat-frontend-builder
-    volumes:
-      - ../../..:/workspace
-    working_dir: /workspace/demo/chat/frontend
-    environment:
-      - NODE_ENV=production
-      - DOCKER=true
-    command: sh -c "npm ci --include=dev && npm run build:docker"
-    profiles:
-      - build
-
   chat-nginx-local:
     build:
       context: .
@@ -183,23 +176,46 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # Vite dev server with HMR for the chat frontend. No profile: it is part of the
+  # default local stack, so `daemon-start` brings it up with the backend. Mounts the
+  # whole repo at /hilos so the @hilos/vue `file:` symlink into framework/frontend
+  # resolves, and runs npm install first so a fresh checkout or an SDK re-vendor is
+  # picked up. Native WSL2 filesystem events drive HMR — no polling (see vite.config.ts).
   chat-frontend-local:
-    image: node:20-alpine
+    image: node:22-bookworm-slim
     container_name: chat-frontend-local
     volumes:
-      - ../../..:/workspace
-    working_dir: /workspace/demo/chat/frontend
+      - ../../..:/hilos
+    working_dir: /hilos/demo/chat/frontend
     environment:
-      - NODE_ENV=development
-      - DOCKER=true
-    command: npm run dev
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      # The dev page is served by Vite, not nginx, so the app's same-origin
+      # /ws default cannot reach the daemon; point it at the published
+      # WebSocket port instead (see frontend/src/connection.ts).
+      VITE_WS_URL: "ws://localhost:${WEBSOCKET_PORT:-8092}"
+      # Attachment downloads proxy same-origin (Vite → daemon) so the session
+      # cookie rides along; in-network the daemon's HTTP router is chat-local:8090.
+      VITE_ATTACHMENT_TARGET: "http://chat-local:8090"
+    command: sh -c "npm install && npm run dev"
     ports:
       - "${FRONTEND_DEV_PORT:-5173}:5173"
     restart: unless-stopped
-    profiles:
-      - dev
     networks:
       - hilos-demo-chat-local-network
+
+  # On-demand Node toolchain for the chat frontend (npm install / build / check).
+  # Profile cli so it never starts with the stack — invoked per command via
+  # `run --rm` (see the composer frontend:* scripts).
+  chat-frontend-cli-local:
+    image: node:22-bookworm-slim
+    container_name: chat-frontend-cli-local
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/chat/frontend
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles:
+      - cli
 
 volumes:
   nginx-ssl-local:

@@ -19,9 +19,7 @@ Composer scripts live in the repo-root `composer.json`:
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
 | `composer run test:framework:phpunit` | Run both PHPUnit suites. |
-| `composer run test:framework:frontend-install` | First-time `npm install` for the framework Vitest project (also regenerates `package-lock.json`). |
-| `composer run test:framework:frontend` | Run framework frontend Vitest suite (`framework/tests/frontend`). No DB. |
-| `composer run test:framework:all` | `install-deps` → `frontend` → `up` → `phpunit` → `down`. Runs every available test type for the framework. |
+| `composer run test:framework:all` | `install-deps` → `up` → `phpunit` → `down`. Runs every available test type for the framework. |
 | `composer run test:framework:down[-volumes]` | Stop (and optionally wipe volumes). |
 
 ---
@@ -38,78 +36,73 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 | `composer run test:unit` | Run unit tests (`tests/Unit`). No DB needed. |
 | `composer run test:integration` | Run integration tests (`tests/Integration`). Requires DB. |
 | `composer run test:phpunit` | Run both PHPUnit suites. |
-| `composer run test:frontend-install` | First-time `npm install` for the demo Vitest project (also regenerates `package-lock.json`). |
-| `composer run test:frontend` | Run demo frontend Vitest suite (`tests/frontend`). No DB. |
-| `composer run test:all` | `frontend` → `db-reset` → `phpunit` → `down` → `e2e-full`. Runs every available test type for demo/chat (Vitest, then PHPUnit, then Playwright e2e). Slow — full pass before a PR. |
+| `composer run test:all` | `db-reset` → `phpunit` → `down`. Runs every available test type for demo/chat. |
 | `composer run test:down[-volumes]` | Stop (and optionally wipe volumes). |
 
 **Typical local loops:**
 
 - Pure unit test iteration: `composer run test:unit` (fast, no DB).
-- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration` (first run only; subsequent iterations can skip `db-reset` if the test doesn't mutate schema).
-- Frontend iteration: `composer run test:frontend` (fast, no DB; first run is slower while npm caches in the docker volume).
-- Full pass before a PR: `composer run test:all` (Vitest + PHPUnit + Playwright e2e, several minutes).
+- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration` (first run only; subsequent iterations can skip `db-reset` only if the test mutates neither schema nor data — a data-mutating test needs a reset before each rerun).
+- Full pass before a PR: `composer run test:all` (PHPUnit suites).
 
 ---
 
-## demo/chat end-to-end (`demo/chat/tests/e2e/`)
+## Selective testing — what to run for which change
 
-Playwright, runs the full chat demo (chat + nginx + mysql) against a real
-browser. **The Playwright runner itself runs in a docker container**
-(`chat-e2e-runner`, image `mcr.microsoft.com/playwright:vX.Y.Z-noble`
-with browsers baked in). The runner reaches the app over the docker
-network at `https://chat-nginx-test`, not via host ports — so a working
-e2e prerequisite is just docker, not host Node/browsers.
+Match the test set to what changed; do not run everything for every edit. The
+heavy suites (full e2e, two-window) cost a Docker stack per demo and minutes of
+wall-clock, so they are a **deliberate, infrequent** run — never an inner loop.
 
-Composer scripts are in `demo/chat/composer.json`:
+| What changed | Run | How often |
+|---|---|---|
+| PHP backend logic (framework or a demo) | the affected side's PHPUnit — `test:framework:phpunit`, or a demo's `test:phpunit` | every change |
+| FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
+| An Angular view's template | `test:framework:frontend:build` — templates type-check only in the ng-packagr AOT build, not plain tsc | every Angular template change |
+| Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
+| An e2e spec or a selector | that demo's e2e, pointed: `test:e2e-up` once, then `test:e2e -- <grep>` | while editing the spec |
+| Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
+| Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
 
-| Script | What it does |
-|---|---|
-| `composer run test:e2e-build` | Build frontend assets for the test container. |
-| `composer run test:e2e-up` | Build/recreate and bring up mysql-test + chat-test + chat-nginx-test. |
-| `composer run test:e2e` | `npm ci` + `npx playwright test` inside `chat-e2e-runner`. |
-| `composer run test:e2e-realtime` | Run only Playwright specs tagged `@realtime`. Requires the stack to be up. |
-| `composer run test:e2e-realtime-full` | Build frontend → mysql up → DB wait/reset → app/nginx up → run only `@realtime` specs → down. |
-| `composer run test:e2e-down` | Tear everything down. |
-| `composer run test:e2e-full` | End-to-end: build frontend → mysql up → DB wait/reset → app/nginx up → run → down. |
+**The rare, full run** is `composer run test:frontend:all` (FE install + build +
+check / vitest / lint, then every demo's `test:check` and `test:e2e-full`). Run it
+when:
 
-The Playwright image tag (`v1.X.Y-noble` in `docker-compose.test.yml`)
-**must** match the `@playwright/test` version pinned in
-`tests/e2e/package.json` — otherwise Playwright cannot locate its
-browser executables at `/ms-playwright`. Bump them together.
+- a change touches the subscription / viewport / pending / cross-connection path,
+  where a single tab cannot reveal the bug; or
+- a change touches accessibility — ARIA, keyboard operability, focus, or
+  screen-reader semantics; or
+- before collapsing or merging the branch, as the final gate.
 
-Realtime specs (`tests/e2e/tests/realtime/*`, tagged `@realtime`) are the
-multi-actor layer: cross-tab sync, cross-user propagation, admin-to-user fan-out,
-table mutation fan-out, and concurrent edit/conflict flows. Run the realtime
-subset when changing WebSocket/page subscription routing, frontend stores,
-table mutation handling, DB/RT browser fan-out, admin actions, or Hilos pages. The
-regular `test:e2e-full` includes realtime specs because it runs the whole
-Playwright suite.
+It is **not** part of the inner loop. The two-window coverage lives in chat's
+`moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
+the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one
+representative path per view layer. The **a11y** coverage is the same kind of
+separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
+accessibility tree over the live socket: table accessible names and `aria-sort`,
+keyboard sort operability, the skip link and `aria-current`, the document title
+and page-change announcement, one top-level heading per page, and presence
+exposed as text. Run it in the full pass or pointed (`test:e2e -- a11y.spec`)
+while editing a11y; a green inner loop (check + vitest + pointed phpunit) does not
+require re-running them. The normative AA requirements those specs guard are in
+[frontend/accessibility.md](frontend/accessibility.md).
+
+Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
+the next section.
 
 ---
 
-## Frontend unit tests (Vitest)
+## Re-running tests and state between runs
 
-Two self-contained Vitest projects, mirroring the layout of `tests/e2e/`:
-
-- `framework/tests/frontend/` — covers `framework/frontend/src/**` (the SDK).
-- `demo/chat/tests/frontend/` — covers `demo/chat/frontend/src/**`; can also
-  reach framework code through the `@hilos/sdk/*` alias.
-
-Both run in a dedicated `node:22-alpine` container with `node_modules`
-on an anonymous volume (the host repo never gets a `node_modules/`
-directory under `tests/frontend/`). Default DOM environment is `jsdom`.
-
-| Script | What it does |
-|---|---|
-| `composer run test:framework:frontend` | Framework Vitest suite (run from repo root). |
-| `composer run test:frontend` | Demo Vitest suite (run from `demo/chat/`). |
-| `composer run test:framework:frontend-install` | First-time `npm install` to generate `package-lock.json` (rerun after editing dev deps in `framework/tests/frontend/package.json`). |
-| `composer run test:frontend-install` | Same for the demo Vitest project. |
-
-The first run is slow (downloads `node:22-alpine` + ~160 npm packages
-into the anonymous volume). Subsequent runs are ~1 second of `npm ci`
-plus the actual test time. `docker compose down -v` wipes the cache.
+- A test that **mutates data** is not idempotent across runs on the same database.
+  Reset before re-running it (`composer run test:db-reset`, or `test:e2e-up` for
+  e2e); the full pass (`test:all` / `test:e2e-full`) resets for you. **Do not treat a
+  failure on a repeated run *without* a reset as a bug** — reset is the contract;
+  re-running against a dirty database is not a supported scenario.
+- To test an **irreversible or time-delayed** operation repeatedly (deleting an
+  orphan row, an account deleted N days after the request), do **not** engineer
+  idempotency into the test. The designed path is a **test-only CLI command** —
+  gated to refuse on production — that sets up or tears down the state, not an
+  ad-hoc reset hack inside the test.
 
 ---
 
@@ -121,19 +114,8 @@ plus the actual test time. `docker compose down -v` wipes the cache.
   `demo/chat/tests/Unit/ActionFailSignalDataTest.php` for reference.
 - **PHPUnit integration tests** (`tests/Integration/`): extend
   `IntegrationTestCase` for a prepared test DB and Hilos bootstrap.
-- **Vitest unit tests** (`tests/frontend/tests/*.test.ts`): pure
-  TypeScript, no Vue mounting unless you actually need it. Import
-  `describe`, `it`, `expect` from `'vitest'` (no globals). Use the
-  `@/` alias for the project's own source and `@hilos/sdk/*` for the
-  framework SDK (demo only). See
-  `framework/tests/frontend/tests/tableSignals.test.ts` and
-  `demo/chat/tests/frontend/tests/hilosUserUpdate.test.ts` for reference.
 - For signal-layer DTOs that cross the worker → daemon IPC boundary,
   always cover the `fromArray(toArray())` roundtrip — a missing or
   broken `fromArray` silently falls back to generic `SignalData` and
   drops any `WebSocketEnvelopeAware` metadata. See
   `ActionSuccessSignalDataTest::testRoundtripPreservesConcreteTypeAndEnvelopeMarker`.
-- The frontend signal parsers (`SignalDefinition.parse(...)`) are the
-  TypeScript counterpart of those backend DTO contracts — when you add
-  a new wire signal, cover both sides: `fromArray(toArray())` on PHP
-  and `parse(validShape) / parse(invalidShape) === null` on TS.

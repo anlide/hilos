@@ -21,6 +21,7 @@ final class SignalConstants
     public const string DB_SYNC_CREATED = SignalTypeConstants::DB_SYNC_CREATED;
     public const string DB_SYNC_UPDATED = SignalTypeConstants::DB_SYNC_UPDATED;
     public const string DB_SYNC_DELETED = SignalTypeConstants::DB_SYNC_DELETED;
+    public const string DB_SYNC_CLEARED = SignalTypeConstants::DB_SYNC_CLEARED;
 
     /** @var string RT sync signal names (operation); canonical values in SignalTypeConstants */
     public const string RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
@@ -30,6 +31,9 @@ final class SignalConstants
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
 
-    /** @var string Page action error signal - sent when onAction throws and page does not override handling */
+    /** @var string Page action error signal - the framework reply when a tracked action throws (also the legacy untracked error) */
     public const string ACTION_ERROR = 'action_error';
+
+    /** @var string Page action success signal - the framework reply confirming a tracked action committed */
+    public const string ACTION_SUCCESS = 'action_success';
 }

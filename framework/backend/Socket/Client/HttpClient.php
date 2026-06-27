@@ -12,6 +12,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 
 /**
  * HttpClient - Represents a single HTTP client connection.
@@ -124,7 +125,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     /**
      * Resolve whether the response may use a persistent TCP connection.
      *
-     * @param array<string, string> $headers Request headers
+     * @param array<string, string> $headers Request headers (lowercase header names)
      * @param string $version HTTP version from the request line
      * @return bool True when keep-alive is allowed for this response
      */
@@ -134,13 +135,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             return false;
         }
 
-        $conn = '';
-        foreach ($headers as $key => $value) {
-            if (strtolower($key) === strtolower(HttpConstants::HEADER_CONNECTION)) {
-                $conn = strtolower(is_string($value) ? trim($value) : '');
-                break;
-            }
-        }
+        $conn = strtolower(trim(HttpHeaderHelper::get($headers, HttpConstants::HEADER_CONNECTION) ?? ''));
         if ($conn !== '') {
             if (str_contains($conn, HttpConstants::CONNECTION_VALUE_CLOSE)) {
                 return false;

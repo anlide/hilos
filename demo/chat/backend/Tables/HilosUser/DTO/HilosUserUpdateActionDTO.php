@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\HilosUser\DTO;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
@@ -22,7 +22,7 @@ final class HilosUserUpdateActionDTO extends ChatActionPayloadDTO
 
     public function getAction(): string
     {
-        return ChatSignalConstants::HILOS_USER_UPDATE;
+        return HilosSignalConstants::HILOS_USER_UPDATE;
     }
 
     /**

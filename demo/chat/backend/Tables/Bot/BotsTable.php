@@ -13,14 +13,18 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
@@ -29,18 +33,18 @@ use Hilos\Database\DatabaseException;
  *
  * @property-read BotsTableActions $actions Table-level bot creation actions
  */
-final class BotsTable extends TableDefinition
+final class BotsTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_BOTS,
             ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
-                BrowserFieldKey::ROW_KEY => ObjectBot::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserTableFieldKey::ROW_KEY => ObjectBot::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectBot::id => BotTableRow::id,
                     ObjectBot::name => BotTableRow::name,
                     ObjectBot::description => BotTableRow::description,
@@ -57,9 +61,9 @@ final class BotsTable extends TableDefinition
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
-                BrowserFieldKey::ROW_KEY => StateBotAgentStatus::botId,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserTableFieldKey::ROW_KEY => StateBotAgentStatus::botId,
+                BrowserTableFieldKey::FIELDS => [
                     StateBotAgentStatus::botId,
                     StateBotAgentStatus::status,
                     StateBotAgentStatus::updatedAt,
@@ -81,6 +85,34 @@ final class BotsTable extends TableDefinition
             ChatRtContext::botAgentStatuses => $this->mutationForBotAgentStatus($change),
             default => null,
         };
+    }
+
+    /**
+     * Serializes one bot row into its internal browser-row envelope.
+     *
+     * The runtime agent status rides the inline `botAgentStatuses` slot and the
+     * bot profile fields the entity-bearing `bots` slot — the same shape the
+     * declarative fan-out delivers, so a windowed or delta row resolves through
+     * the frontend identically (and an edit fans out through the bot entity).
+     *
+     * @param AbstractTableRow $row Bot row from this table's window or mutation
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        $fields = $row->toArray();
+        $status = $fields[BotTableRow::status] ?? null;
+        unset($fields[BotTableRow::status]);
+
+        return [
+            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::sources => [
+                ChatDbContext::bots => $fields,
+                ChatRtContext::botAgentStatuses => [
+                    StateBotAgentStatus::status => $status,
+                ],
+            ],
+        ];
     }
 
     /**
@@ -138,24 +170,26 @@ final class BotsTable extends TableDefinition
     }
 
     /**
-     * Loads one page of bot rows for the bots table.
+     * Loads one window of bot rows, filtered in memory.
      *
-     * @param TableQueryDTO $query Table query parameters
-     * @return TableSnapshotDTO Bot table snapshot
+     * Bots carry a runtime agent status (presence) that is not a DB column, so
+     * the window — search, sort (including by presence), and paging — is applied
+     * in memory over the runtime-enriched rows rather than pushed to the database.
+     *
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Bot table window
      * @throws DatabaseException When bot query execution fails
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $result = Hilos::$db->bots->queryPageItems($query);
+        $result = Hilos::$db->bots->queryPageItems(new TableQueryDTO());
 
-        return new TableSnapshotDTO(
+        return InMemoryTableFilter::apply(
             rows: array_map(
-                fn(DbBot $bot): BotTableRow => $this->rowFromBot($bot),
+                fn(DbBot $bot): array => $this->rowFromBot($bot)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
-            totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
-            offset: $query->offset,
-            limit: $query->limit,
+            query: $query,
         );
     }
 
@@ -181,6 +215,7 @@ final class BotsTable extends TableDefinition
             topicMatchRequired: $bot->topicMatchRequired,
             cooldownAfterMessage: $bot->cooldownAfterMessage,
             priority: $bot->priority,
+            status: $bot->agentStatus?->status,
         );
     }
 

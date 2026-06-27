@@ -18,6 +18,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [architecture/agent-lifecycle.md](docs/agents/architecture/agent-lifecycle.md) | creating agents, onStart/onTick/onStop, sending signals |
 | [architecture/event-loop.md](docs/agents/architecture/event-loop.md) | anything involving sockets, I/O, blocking operations |
 | [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors |
+| [architecture/admin-features.md](docs/agents/architecture/admin-features.md) | graduating or building an admin feature (page + browser table + actions): framework-owned vs project-owned-by-pattern, the framework/project boundary, extension points |
+| [architecture/admin-feature-scaffold.md](docs/agents/architecture/admin-feature-scaffold.md) | activating or building an admin feature in a project: the layer-by-layer scaffold order and the three activation paths (configure-only / bound-sources / project-owned) |
 
 ## Framework Development
 
@@ -25,11 +27,28 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions |
 
+## Feature Development
+
+| File | Read when... |
+|---|---|
+| [feature-development-flow.md](docs/agents/feature-development-flow.md) | starting a feature with AI assistance — tiers (spike/experimental/production), data-structure-first elicitation, the iterative planner, orchestration shape (working design) |
+
 ## App Topology
 
 | File | Read when... |
 |---|---|
 | [app-topology.md](docs/agents/app-topology.md) | adding pages, page subscription routes, registered tables, browser-only tables, or page-table bindings |
+
+## Frontend
+
+| File | Read when... |
+|---|---|
+| [frontend/README.md](docs/agents/frontend/README.md) | any frontend change — routes to the core/connection, wire-protocol, data-model, table-subscription, conflict-resolution, SDK-packaging, multiframework-core, page-module file layout, styling, testing, and build specs, plus the AI-first premise and the rules/violations catalog |
+
+The frontend is rebuilt from zero on this branch (Path 1 rewrite) and its
+specification is graduated ahead of the code. Frontend FE↔BE contract changes
+(signals, signal/action DTOs, routes, entity/RT shapes) pass the Contract
+approval gate below.
 
 ## Agent System
 
@@ -50,8 +69,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 ## ORM
 
 Start with [orm/README.md](docs/agents/orm/README.md) for any ORM change; it
-routes to the mandatory entity, object, collection, bridge, accessor,
-frontend representation, and migration documents.
+routes to the mandatory entity, object, collection, bridge, accessor, and
+migration documents.
 
 Minimum ORM rules before editing:
 
@@ -71,20 +90,13 @@ Minimum ORM rules before editing:
 | [runtime/rt-context.md](docs/agents/runtime/rt-context.md) | Hilos::$rt usage, runtime collections, sync between workers |
 | [runtime/rt-state.md](docs/agents/runtime/rt-state.md) | creating RtState subclasses, writing/reading state items |
 
-## Frontend SDK
-
-| File | Read when... |
-|---|---|
-| [frontend-sdk/websocket-connection.md](docs/agents/frontend-sdk/websocket-connection.md) | WS connection lifecycle, acceptKey, reconnect |
-| [frontend-sdk/backend-contract.md](docs/agents/frontend-sdk/backend-contract.md) | actions (client→server), signals (server→client), page subscription |
-| [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md) | editing an entity from a Vue page (rename, update fields) — always use Modal, never inline forms |
-
 ## Anti-patterns (read before writing code)
 
 | File | Read when... |
 |---|---|
 | [antipatterns/no-repository-service.md](docs/agents/antipatterns/no-repository-service.md) | any time you think about adding a Service or Repository class |
 | [antipatterns/blocking-in-ontick.md](docs/agents/antipatterns/blocking-in-ontick.md) | any time you write code inside onTick() or signal handlers |
+| [antipatterns/heavy-work-in-master.md](docs/agents/antipatterns/heavy-work-in-master.md) | any time you add DB, file, network, or blocking work to the master daemon / connection / handshake path, or weigh such an option |
 
 ## CLI
 
@@ -108,9 +120,11 @@ Minimum ORM rules before editing:
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
+| [code-style/frontend-import-paths.md](docs/agents/code-style/frontend-import-paths.md) | adding or changing a relative import in frontend TS — explicit `.js`, the barrel `index.js`, the "Import can be shortened" warning |
+| [code-style/cross-layer-field-names.md](docs/agents/code-style/cross-layer-field-names.md) | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TS field |
+| [code-style/table-names.md](docs/agents/code-style/table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
-| [code-style/frontend-vue.md](docs/agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## AI Tool Integration
 
@@ -147,11 +161,10 @@ additional change in one of these surfaces, stop and ask again before editing it
 3. **Only the truth source agent** writes to its DB/RT collection
 4. All PHP files: `declare(strict_types=1)` at top
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
-6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
-7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
-8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
-9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
-10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
+6. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
+7. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason; do not leave magic-string keys in internal structured arrays — use named constants at minimum, a value object preferably
+8. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
+9. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 
 ## Project docs (existing)
 
@@ -159,3 +172,4 @@ additional change in one of these surfaces, stop and ask again before editing it
 - [docs/quality.md](docs/quality.md) — application quality guidelines
 - [docs/reference.md](docs/reference.md) — API reference
 - [docs/cli-commands.md](docs/cli-commands.md) — CLI reference (legacy, prefer docs/agents/cli/commands.md)
+- [docs/new-project/README.md](docs/new-project/README.md) — creating a new Hilos project (backend + frontend), routes to the per-framework frontend parts

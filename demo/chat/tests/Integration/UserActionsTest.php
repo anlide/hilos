@@ -122,4 +122,40 @@ final class UserActionsTest extends IntegrationTestCase
         $refreshed = Hilos::$db->users[$user->id];
         $this->assertSame($originalName, $refreshed->name);
     }
+
+    /**
+     * setAdmin grants then revokes the admin flag.
+     *
+     * @throws HilosException On database error
+     */
+    public function testSetAdminGrantsThenRevokes(): void
+    {
+        $token = RandomHelper::hex(16);
+        $user = Hilos::$db->users->actions->register($token);
+        $userId = $user->id;
+        $this->assertNotNull($userId);
+        $this->assertFalse($user->admin);
+
+        Hilos::$db->users[$userId]->actions->setAdmin(true);
+        $this->assertTrue(Hilos::$db->users[$userId]?->admin);
+
+        Hilos::$db->users[$userId]->actions->setAdmin(false);
+        $this->assertFalse(Hilos::$db->users[$userId]?->admin);
+    }
+
+    /**
+     * setAdmin with the same value performs no-op.
+     *
+     * @throws HilosException On database error
+     */
+    public function testSetAdminSameValueNoOp(): void
+    {
+        $token = RandomHelper::hex(16);
+        $user = Hilos::$db->users->actions->register($token);
+        $userId = $user->id;
+
+        Hilos::$db->users[$userId]->actions->setAdmin(false);
+
+        $this->assertFalse(Hilos::$db->users[$userId]?->admin);
+    }
 }

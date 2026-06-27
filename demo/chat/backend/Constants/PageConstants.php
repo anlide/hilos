@@ -43,6 +43,9 @@ final class PageConstants
     /** @var string Hilos dashboard page */
     public const string HILOS_DASHBOARD = HilosPageConstants::HILOS_DASHBOARD;
 
+    /** @var string Hilos current-user profile page */
+    public const string HILOS_PROFILE = HilosPageConstants::HILOS_PROFILE;
+
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = HilosPageConstants::HILOS_SETTINGS;
 
@@ -169,4 +172,16 @@ final class PageConstants
     public const string HILOS_CHANGE_LOG_TABLES = HilosPageConstants::HILOS_CHANGE_LOG_TABLES;
 
     public const string HILOS_CHANGE_LOG_TABLE = HilosPageConstants::HILOS_CHANGE_LOG_TABLE;
+
+    /** @var string Hilos public About page */
+    public const string HILOS_ABOUT = HilosPageConstants::HILOS_ABOUT;
+
+    /** @var string Hilos public Terms page */
+    public const string HILOS_TERMS = HilosPageConstants::HILOS_TERMS;
+
+    /** @var string Hilos public Privacy page */
+    public const string HILOS_PRIVACY = HilosPageConstants::HILOS_PRIVACY;
+
+    /** @var string Hilos public License page */
+    public const string HILOS_LICENSE = HilosPageConstants::HILOS_LICENSE;
 }

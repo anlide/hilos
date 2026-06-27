@@ -24,6 +24,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
@@ -118,6 +119,7 @@ final class MainPage extends AbstractPage
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Moderation result signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
+     * @throws LogicException When the moderation result payload type does not match the signal contract
      * @throws ValidationException When moderation rejects the message or is unavailable
      * @throws AgentException When moderation result does not match an active connection
      * @throws HilosException When moderation follow-up exposes storage, database, or runtime failure
@@ -126,6 +128,11 @@ final class MainPage extends AbstractPage
     {
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
+                if (!$data->data instanceof ModerationResultSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::MODERATION_RESULT . ' payload must be ' . ModerationResultSignalData::class,
+                    );
+                }
                 $this->handleTextModerationResult($data->data);
 
                 return;

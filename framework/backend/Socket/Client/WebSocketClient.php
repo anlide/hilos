@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\SignalPayloadConstants;
@@ -16,6 +17,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -26,6 +28,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\WebSocket\Exception\HandshakeFailedException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
 use Hilos\Socket\WebSocket\Exception\InvalidFrameSequenceException;
@@ -33,12 +36,14 @@ use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Hilos;
-use Hilos\Socket\WebSocket\WebSocketException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\JsonHelper;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection.
@@ -49,7 +54,7 @@ use Hilos\Core\Exception\UnsupportedOperationException;
 abstract class WebSocketClient extends AbstractClient implements WebSocketClientInterface
 {
 
-    /** @var string Accept key identifier (from handshake) */
+    /** @var string Daemon-minted connection identifier, assigned at handshake (not the RFC Sec-WebSocket-Accept value) */
     public string $acceptKey {
         get {
             return $this->acceptKeyValue;
@@ -91,6 +96,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private const string PACK_FORMAT_16BIT = 'n';    // Unsigned short (16-bit, big-endian)
     private const string PACK_FORMAT_64BIT = 'J';    // Unsigned long long (64-bit, machine byte order)
 
+    /** @var int Byte length of the minted connection identifier (128-bit) */
+    private const int ACCEPT_KEY_RANDOM_BYTES = 16;
+
+    /** @var int Byte length of a minted session token (becomes 32 lowercase hex chars) */
+    private const int SESSION_TOKEN_RANDOM_BYTES = 16;
+
+    /** @var int Session-token cookie lifetime in seconds (two years) */
+    private const int SESSION_COOKIE_MAX_AGE_SECONDS = 63072000;
+
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
 
@@ -115,6 +129,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFrameException If frame payload is invalid
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
+     * @throws EnvException When the build timestamp env value cannot be read
      */
     protected function processReadBuffer(): void
     {
@@ -246,9 +261,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Handle WebSocket handshake (validate upgrade, send 101 response).
      *
+     * Mints the random connection identifier (acceptKey) and appends the
+     * framework welcome frame right behind the 101 response bytes.
+     *
      * @throws HandshakeFailedException When handshake validation fails
      * @throws SocketException When socket error occurs
      * @throws UnsupportedProtocolVersionException When protocol version is not 13
+     * @throws EnvException When the build timestamp env value cannot be read
      */
     private function handleHandshake(): void
     {
@@ -267,17 +286,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH] ?? '');
 
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
-        array_shift($lines);
         $headers = $this->parseHeaders($lines);
 
         // Check if it's a WebSocket upgrade request
-        if (!isset($headers[HttpConstants::HEADER_UPGRADE]) ||
-            strtolower($headers[HttpConstants::HEADER_UPGRADE]) !== HttpConstants::WEBSOCKET_PROTOCOL) {
+        $upgrade = HttpHeaderHelper::get($headers, HttpConstants::HEADER_UPGRADE);
+        if ($upgrade === null || strtolower($upgrade) !== HttpConstants::WEBSOCKET_PROTOCOL) {
             throw new HandshakeFailedException("Missing or invalid Upgrade header");
         }
 
         // Check WebSocket protocol version (RFC 6455 requires version 13)
-        $version = $headers[HttpConstants::HEADER_SEC_WEBSOCKET_VERSION] ?? '';
+        $version = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_VERSION) ?? '';
         if ($version !== WebSocketConstants::PROTOCOL_VERSION) {
             throw new UnsupportedProtocolVersionException($version ?: 'not specified');
         }
@@ -285,22 +303,36 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // Generate WebSocket-Accept header value
         // RFC 6455 Section 4.2.2: The server must concatenate the client's Sec-WebSocket-Key
         // with the magic string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", compute SHA1 hash,
-        // and encode it as base64 to get the Sec-WebSocket-Accept value.
-        $key = $headers[HttpConstants::HEADER_SEC_WEBSOCKET_KEY] ?? '';
+        // and encode it as base64 to get the Sec-WebSocket-Accept value. The value is
+        // derivable from the client-chosen key, so it serves the 101 header ONLY and is
+        // never the connection identity.
+        $key = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_KEY) ?? '';
         if (empty($key)) {
             throw new HandshakeFailedException("Missing Sec-WebSocket-Key header");
         }
 
         // Concatenate key + magic string, compute SHA1 (binary output), encode as base64
-        $acceptKey = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
+        $secWebSocketAccept = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
+
+        // Mint the connection identifier: random and server-owned, so no client can
+        // choose or predict another connection's identity.
+        $acceptKey = self::mintAcceptKey();
+
+        // Resolve the session token: reuse the client's cookie, or mint one and
+        // queue a Set-Cookie on the 101. Minting is in-memory (no I/O), so the
+        // master stays light; the worker handshake reads the token from the DTO.
+        $cookies = $this->parseCookies($headers);
+        $setSessionCookie = null;
+        $sessionToken = $this->resolveSessionToken($cookies, $setSessionCookie);
 
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
             $headers,
             $acceptKey,
-            $this->parseCookies($headers),
+            $cookies,
             $this->getClientIp(),
             $queryParams,
+            $sessionToken,
         );
 
         // Send handshake response
@@ -310,11 +342,105 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_UPGRADE . ": " . HttpConstants::WEBSOCKET_PROTOCOL . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
-        $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $acceptKey . HttpConstants::HTTP_LINE_SEPARATOR;
+        $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $secWebSocketAccept . HttpConstants::HTTP_LINE_SEPARATOR;
+        if ($setSessionCookie !== null) {
+            $response .= $setSessionCookie;
+        }
         $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
+        $this->sendHandshakeWelcome();
+    }
+
+    /**
+     * Mint a connection identifier: 128-bit random, base64url without padding.
+     *
+     * The RFC 6455 Sec-WebSocket-Accept value is derivable by the client from
+     * its own Sec-WebSocket-Key, so it cannot serve as a trusted identity.
+     *
+     * @return string Minted accept key (22 base64url characters)
+     */
+    private static function mintAcceptKey(): string
+    {
+        $random = RandomHelper::bytes(self::ACCEPT_KEY_RANDOM_BYTES);
+
+        return rtrim(strtr(base64_encode($random), '+/', '-_'), '=');
+    }
+
+    /**
+     * Resolve the session token cookie, minting one and queuing a Set-Cookie
+     * when the client sent none. In-memory only (random bytes, like the accept
+     * key), so the master stays light; the worker reads the token from the DTO.
+     *
+     * @param array<string, string> $cookies Parsed request cookies
+     * @param ?string $setCookie Out: Set-Cookie header line for the 101, or null when nothing is issued
+     * @return string Session token (existing cookie value, or freshly minted)
+     */
+    private function resolveSessionToken(array $cookies, ?string &$setCookie): string
+    {
+        $setCookie = null;
+        $name = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
+        $existing = $cookies[$name] ?? '';
+        if (!Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_ENABLED)) {
+            // Project opted out: pass the client's cookie through, never issue one.
+            return $existing;
+        }
+        if ($existing !== '') {
+            return $existing;
+        }
+        $token = bin2hex(RandomHelper::bytes(self::SESSION_TOKEN_RANDOM_BYTES));
+        $setCookie = $this->buildSessionCookieHeader($name, $token);
+
+        return $token;
+    }
+
+    /**
+     * Build the Set-Cookie header line for a freshly issued session token.
+     * HttpOnly and SameSite=Strict always; Secure only when configured (TLS).
+     *
+     * @param string $name Cookie name
+     * @param string $token Session token value
+     * @return string Set-Cookie header line including the trailing separator
+     */
+    private function buildSessionCookieHeader(string $name, string $token): string
+    {
+        $cookie = $name . '=' . $token
+            . '; Path=/; HttpOnly; SameSite=Strict'
+            . '; Max-Age=' . self::SESSION_COOKIE_MAX_AGE_SECONDS;
+        if (Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_SECURE)) {
+            $cookie .= '; Secure';
+        }
+
+        return HttpConstants::HEADER_SET_COOKIE . ': ' . $cookie . HttpConstants::HTTP_LINE_SEPARATOR;
+    }
+
+    /**
+     * Append the framework welcome frame right behind the 101 response bytes.
+     *
+     * First frame of every connection: {type: 'handshake', data: {build}} with
+     * the HILOS_BUILD_TIMESTAMP env value. The frontend compares build on every
+     * (re)connect and forces a page refresh on mismatch. Written directly to
+     * the write buffer so the 101 response and the welcome leave in one flush.
+     *
+     * @throws EnvException When the build timestamp env value cannot be read
+     */
+    private function sendHandshakeWelcome(): void
+    {
+        $welcome = new HandshakeWelcomeSignalData(
+            build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
+        );
+        $message = [
+            SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,
+            SignalPayloadConstants::FIELD_DATA => $welcome->toArray(),
+        ];
+        $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($messageJson === false) {
+            Logger::error('Failed to encode the handshake welcome frame');
+            return;
+        }
+
+        $this->writeBuffer .= $this->buildFrameHeader(strlen($messageJson), self::OPCODE_TEXT) . $messageJson;
     }
 
     /**
@@ -528,10 +654,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     ? $decoded[SignalPayloadConstants::FIELD_DATA]
                     : [];
 
+                $requestId = isset($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
+                    && is_string($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
+                    && $decoded[SignalPayloadConstants::FIELD_REQUEST_ID] !== ''
+                    ? $decoded[SignalPayloadConstants::FIELD_REQUEST_ID]
+                    : null;
+
                 $dto = new WebSocketActionSignalDTO(
                     acceptKey: $acceptKey,
                     action: $actionName,
                     data: $actionData,
+                    requestId: $requestId,
                 );
 
                 $userActionId = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
@@ -614,6 +747,29 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 break;
             }
 
+            case SignalTypeConstants::TABLE_VIEWPORT: {
+                $page = isset($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    && is_string($decoded[SignalPayloadConstants::FIELD_PAGE])
+                    ? $decoded[SignalPayloadConstants::FIELD_PAGE]
+                    : throw new InvalidFrameException("Page is required for {$type} signal");
+                if ($page === '') {
+                    throw new InvalidFrameException("Page is empty for {$type} signal");
+                }
+
+                $decoded[SignalPayloadConstants::FIELD_ACCEPT_KEY] = $acceptKey;
+                $dto = WebSocketTableViewportSignalDTO::fromArray($decoded);
+
+                Hilos::$sr->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
+                    new SignalName($page),
+                    $dto,
+                );
+
+                $this->onTableViewportParsed($page, $dto);
+                break;
+            }
+
             case SignalTypeConstants::GROUP_SUBSCRIBE:
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
             case SignalTypeConstants::GROUP_UNSUBSCRIBE: {
@@ -672,6 +828,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param WebSocketPageSubscribeSignalDTO $dto Subscribe signal (acceptKey, params)
      */
     protected function onPageSubscribeParsed(string $page, WebSocketPageSubscribeSignalDTO $dto): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after a table viewport payload is parsed and queued.
+     *
+     * @param string $page Page identifier
+     * @param WebSocketTableViewportSignalDTO $dto Table viewport signal
+     */
+    protected function onTableViewportParsed(string $page, WebSocketTableViewportSignalDTO $dto): void
     {
         // Default: no-op
     }
@@ -803,11 +970,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * This method is final to ensure framework-level handshake logic is always executed.
      * Child classes should override onHandshake() for custom behavior.
      *
-     * @param array<string, string> $headers HTTP headers from handshake request
-     * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
+     * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
+     * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
      * @param RequestQueryParams $queryParams Query parameters from request URL
+     * @param string $sessionToken Session token resolved on the 101 (cookie value or freshly minted)
      */
     final protected function handleHandshakeInternal(
         array $headers,
@@ -815,25 +983,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         array $cookies,
         string $clientIp,
         RequestQueryParams $queryParams,
+        string $sessionToken = '',
     ): void {
         $this->acceptKey = $acceptKey;
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
-        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
-            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN)
-            ?? null;
-        $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
-        $acceptLanguage = $headers[HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? null;
-        Hilos::$ac?->ensureBrowserSession(
-            is_string($sessionToken) ? $sessionToken : null,
-            is_string($userAgent) ? $userAgent : null,
-            is_string($acceptLanguage) ? $acceptLanguage : null,
-        );
-        Hilos::$ac?->openWsConnection(
-            $acceptKey,
-            is_string($sessionToken) ? $sessionToken : null,
-            $clientIp,
-        );
+        $analyticsToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
+            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
+        $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
+        $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
+        Hilos::$ac?->ensureBrowserSession($analyticsToken, $userAgent, $acceptLanguage);
+        Hilos::$ac?->openWsConnection($acceptKey, $analyticsToken, $clientIp);
 
         $dto = new WebSocketHandshakeSignalDTO(
             headers: $headers,
@@ -841,6 +1001,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             cookies: $cookies,
             clientIp: $clientIp,
             queryParams: $queryParams,
+            sessionToken: $sessionToken,
         );
 
         Hilos::$sr->queueSignal(
@@ -857,8 +1018,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Called after successful handshake validation but before sending the response.
      * Can be used to inspect headers, cookies, client IP, etc.
      *
-     * @param array<string, string> $headers HTTP headers from handshake request
-     * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
+     * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
+     * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
      * @param RequestQueryParams $queryParams Query parameters from request URL

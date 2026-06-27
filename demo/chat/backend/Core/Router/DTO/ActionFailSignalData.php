@@ -39,6 +39,11 @@ final class ActionFailSignalData extends SignalData implements SignalDataInterfa
         return 'fail';
     }
 
+    public function getEnvelopeRequestId(): ?string
+    {
+        return null;
+    }
+
     public function getEnvelopeTime(): ?int
     {
         return null;

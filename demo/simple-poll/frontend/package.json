@@ -1,0 +1,35 @@
+{
+  "name": "demo-simple-poll",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Simple-poll demo — an end project that consumes the Hilos frontend SDK (@hilos/angular); doubles as the Angular conformance demo.",
+  "scripts": {
+    "ng": "ng",
+    "dev": "ng serve --host 0.0.0.0 --port 5173",
+    "build": "ng build && ng build --configuration prerender && node dist-prerender/server/server.mjs",
+    "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
+    "check": "tsc --noEmit -p tsconfig.dev.json"
+  },
+  "dependencies": {
+    "@angular/common": "^22.0.0",
+    "@angular/compiler": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "@angular/platform-browser": "^22.0.0",
+    "@hilos/angular": "file:../../../framework/frontend/angular",
+    "@hilos/core": "file:../../../framework/frontend/core",
+    "@vue/reactivity": "^3.5.35",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.0.0",
+    "@angular/cli": "^22.0.0",
+    "@angular/compiler-cli": "^22.0.0",
+    "@angular/platform-server": "22.0.0",
+    "@angular/ssr": "22.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "~6.0.2"
+  }
+}

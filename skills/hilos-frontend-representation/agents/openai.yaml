@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hilos Frontend Representation"
-  short_description: "Browser DB/RT payload and page-table topology contracts"
-  default_prompt: "Use $hilos-frontend-representation to shape Hilos browser payloads with BrowserContext rows, page-table topology, typed frontend state payloads, table rows, and legacy DB/RT serialization boundaries."

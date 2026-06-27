@@ -12,6 +12,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos dashboard page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DASHBOARD = 'subscription_page_hilos';
 
+    /** Subscription signal for Hilos current-user profile page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_PROFILE = 'subscription_page_hilos_profile';
+
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 
@@ -197,4 +200,24 @@ final class HilosSignalConstants
 
     /** Wire signal name for incremental table row mutations. */
     public const string TABLE_MUTATION = 'table_mutation';
+
+    // ── Hilos users admin: single-user rename action + acks (client ↔ server) ──
+    /** Client → server: rename the displayed user (handled on the HILOS_USER page). */
+    public const string HILOS_USER_UPDATE = 'hilos_user_update';
+
+    /** Server → initiator: hilos_user_update succeeded. */
+    public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
+
+    /** Server → initiator: hilos_user_update failed (carries a reason text). */
+    public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
+
+    // ── Hilos settings admin: table mutation actions (client → server) ──
+    /** Client → server: add a setting override on the HILOS_SETTINGS page. */
+    public const string SETTING_ADD = 'setting_add';
+
+    /** Client → server: update a setting value on the HILOS_SETTINGS page. */
+    public const string SETTING_UPDATE = 'setting_update';
+
+    /** Client → server: delete an orphan setting on the HILOS_SETTINGS page. */
+    public const string SETTING_DELETE = 'setting_delete';
 }

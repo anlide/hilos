@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Frontend Page Registry"
+  short_description: "The pages/ folder (keys, routes, entity types) and its @hilos/core binding"
+  default_prompt: "Use $hilos-frontend-page-registry when setting up a project's page registry and binding the page scope."

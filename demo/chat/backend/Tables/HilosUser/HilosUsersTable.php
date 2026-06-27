@@ -12,46 +12,51 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\HilosUser\Actions\HilosUserItemActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Source\SourceChange;
-use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\View\Collection\HilosPresenceSource;
+use Hilos\Tables\Users\AbstractHilosUsersTable;
 
 /**
- * Table definition for the Hilos users page.
+ * Chat activation of the framework Hilos users table.
+ *
+ * Binds the chat DB users and RT connections to the framework presence-merge
+ * engine and projects them into the chat user row (the framework
+ * admin/block/presence fields plus the chat profile fields).
  */
-final class HilosUsersTable extends TableDefinition
+final class HilosUsersTable extends AbstractHilosUsersTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
-                BrowserFieldKey::ROW_KEY => ObjectUser::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserTableFieldKey::ROW_KEY => ObjectUser::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectUser::id => HilosUserTableRow::id,
+                    ObjectUser::admin => HilosUserTableRow::admin,
+                    ObjectUser::block => HilosUserTableRow::block,
                     ObjectUser::name => HilosUserTableRow::name,
                     ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
                 ],
             ],
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => ConnectionState::userId,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserTableFieldKey::ROW_KEY => ConnectionState::userId,
+                BrowserTableFieldKey::FIELDS => [
                     ConnectionState::userId,
                 ],
-                BrowserFieldKey::COMPUTED => [
+                BrowserTableFieldKey::COMPUTED => [
                     HilosUserTableRow::presence,
                     HilosUserTableRow::onlineSessionCount,
                 ],
@@ -60,102 +65,83 @@ final class HilosUsersTable extends TableDefinition
     ];
 
     /**
-     * Builds a Hilos users row mutation from one user-affecting source change.
-     *
-     * Reacts to two sources:
-     * - {@see ChatDbContext::users} — DB user create/update/delete.
-     * - {@see ChatRtContext::connections} — connection lifecycle that flips the
-     *   user's online session count and presence summary projected into the row.
-     *
-     * @param SourceChange $change DB or RT source change to project into the Hilos users table
-     * @return ?TableRowMutationDTO Hilos users row mutation, or null when the change does not affect this table
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * Binds the chat DB users collection as this table's user source.
      */
-    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    protected function usersSourceKey(): string
     {
-        return match ($change->sourceKey) {
-            ChatDbContext::users => $this->mutationForDbUser($change),
-            ChatRtContext::connections => $this->mutationForConnection($change),
-            default => null,
-        };
+        return ChatDbContext::users;
     }
 
     /**
-     * Builds a row mutation for a DB user create, update, or delete.
+     * Binds the chat RT connections collection as this table's presence source.
+     */
+    protected function presenceSourceKey(): string
+    {
+        return ChatRtContext::connections;
+    }
+
+    /**
+     * The chat RT connections collection, which implements the presence source.
+     */
+    protected function presenceSource(): HilosPresenceSource
+    {
+        return Hilos::$rt->connections;
+    }
+
+    /**
+     * Builds the current row for a user id from the chat DB users collection.
      *
-     * @param SourceChange $change DB user source change
-     * @return ?TableRowMutationDTO Hilos users row mutation, or null for an invalid source id
+     * @param int $userId User id to project into a row
+     * @return ?HilosUserTableRow Current row, or null when the user no longer exists
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
-    private function mutationForDbUser(SourceChange $change): ?TableRowMutationDTO
+    protected function rowForUserId(int $userId): ?HilosUserTableRow
     {
-        $userId = (int) $change->sourceId;
-        if ($userId <= 0) {
-            return null;
-        }
-
-        if ($change->mutationType === TableMutationType::Delete) {
-            return $this->mutation(TableMutationType::Delete, $userId);
-        }
-
         $dbUser = Hilos::$db->users[$userId] ?? null;
-        if ($dbUser === null) {
-            return null;
-        }
 
-        return $this->mutation(
-            $change->mutationType,
-            $userId,
-            $this->rowFromUser($dbUser),
-        );
+        return $dbUser === null ? null : $this->rowFromUser($dbUser);
     }
 
     /**
-     * Connection lifecycle never removes a user row; it always projects to an
-     * Update with refreshed onlineSessionCount/presence aggregates.
-     *
-     * @param SourceChange $change Runtime connection source change
-     * @return ?TableRowMutationDTO Hilos users row update, or null when no user can be resolved
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     */
-    private function mutationForConnection(SourceChange $change): ?TableRowMutationDTO
-    {
-        $userId = $this->resolveUserIdForConnection($change);
-        if ($userId <= 0) {
-            return null;
-        }
-
-        $dbUser = Hilos::$db->users[$userId] ?? null;
-        if ($dbUser === null) {
-            return null;
-        }
-
-        return $this->mutation(
-            TableMutationType::Update,
-            $userId,
-            $this->rowFromUser($dbUser),
-        );
-    }
-
-    /**
-     * Resolves the user id affected by a connection source change.
+     * Resolves the affected user id from a connection source change.
      *
      * On Create the row carries the full state. On Update the row may carry a
-     * narrow diff without userId, so we fall back to the live RT row. On Delete
-     * the RT row is already gone, so we rely on the previous-row payload that
-     * the source emits when available.
+     * narrow diff without userId, so we fall back to the live RT row.
      *
      * @param SourceChange $change Runtime connection source change
      * @return int Affected user id, or 0 when it cannot be resolved
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
-    private function resolveUserIdForConnection(SourceChange $change): int
+    protected function resolveUserIdForPresence(SourceChange $change): int
     {
         $userId = (int) ($change->row[ConnectionState::userId] ?? 0);
         if ($userId > 0) {
             return $userId;
         }
-        $liveConnection = Hilos::$rt->connections[$change->sourceId] ?? null;
-        return $liveConnection?->userId ?? 0;
+
+        return Hilos::$rt->connections[$change->sourceId]?->userId ?? 0;
+    }
+
+    /**
+     * Builds the Hilos users row from DB fields plus runtime presence.
+     *
+     * @param DbUser $user User DB item to project into the Hilos users table
+     * @return HilosUserTableRow Runtime-enriched Hilos users table row
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     */
+    public function rowFromUser(DbUser $user): HilosUserTableRow
+    {
+        $summary = $this->presenceForUser((int) $user->id);
+
+        return new HilosUserTableRow(
+            id: (int) $user->id,
+            admin: $user->admin,
+            block: $user->block,
+            name: $user->name,
+            lastActivity: $user->lastActivity,
+            onlineSessionCount: $summary->onlineSessionCount,
+            presence: $summary->presence,
+        );
     }
 
     /**
@@ -176,26 +162,6 @@ final class HilosUsersTable extends TableDefinition
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             query: $query,
-        );
-    }
-
-    /**
-     * Builds the Hilos users table row from DB fields plus runtime connection state.
-     *
-     * @param DbUser $user User DB item to project into the Hilos users table
-     * @return HilosUserTableRow Runtime-enriched Hilos users table row
-     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
-     */
-    public function rowFromUser(DbUser $user): HilosUserTableRow
-    {
-        $summary = Hilos::$rt->connections->summaryForUser((int) $user->id);
-
-        return new HilosUserTableRow(
-            id: (int) $user->id,
-            name: $user->name,
-            lastActivity: $user->lastActivity,
-            onlineSessionCount: $summary->onlineSessionCount,
-            presence: $summary->presence,
         );
     }
 

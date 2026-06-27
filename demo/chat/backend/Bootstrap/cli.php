@@ -9,7 +9,7 @@ use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\CliManager;
+use Demo\Chat\CLI\ChatCliManager;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Utils\Logger;
@@ -49,7 +49,7 @@ try {
     Database::initialize(initHilos: $initHilos);
 
     // Create CLI manager instance with command line arguments
-    $cliManager = new CliManager($argv);
+    $cliManager = new ChatCliManager($argv);
 
     // Run CLI manager and get exit code
     exit($cliManager->run());

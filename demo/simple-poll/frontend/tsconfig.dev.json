@@ -1,0 +1,38 @@
+/* Dev + check config: consume the SDK from source for a live edit loop, the way
+   the Vite demos do. The `paths` below redirect @hilos/angular and @hilos/core
+   to their `src`, so `ng serve` (the development build) and `npm run check` pick
+   up an SDK edit immediately, with no ng-packagr rebuild. The production build
+   keeps tsconfig.app.json, where the SDK resolves to its ng-packagr dist (the
+   package `main`/`types`), so e2e and prod test the shipped FESM.
+
+   Why `paths` and not the package `development` export condition (the mechanism
+   the Vite demos use): @hilos/angular is built by ng-packagr, which owns the
+   `exports` of its dist package.json and warns when the source package.json
+   declares conflicting `types`/`default` conditions — so the source package
+   stays plain (`main`/`module`/`types`) and the dev-source redirect lives here.
+   The @angular/* pins collapse the duplicate copies the SDK reaches through its
+   real path (NG0203/NG3004); they are restated here because a child tsconfig
+   replaces `paths` wholesale instead of merging it.
+
+   Angular's AOT compiler only emits declarables for components it owns as
+   program inputs, so the SDK component sources are listed in `include` by their
+   node_modules path (the path preserveSymlinks resolves them to); core needs no
+   AOT but is listed so its sources join the same program. A dist consumer never
+   needs any of this — the FESM ships everything pre-compiled. */
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "paths": {
+      "@angular/core": ["./node_modules/@angular/core"],
+      "@angular/common": ["./node_modules/@angular/common"],
+      "@hilos/angular": ["./node_modules/@hilos/angular/src/index.ts"],
+      "@hilos/core": ["./node_modules/@hilos/core/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "node_modules/@hilos/angular/src/**/*.ts",
+    "node_modules/@hilos/core/src/**/*.ts"
+  ],
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "src/prerender/**"]
+}

@@ -7,11 +7,9 @@ namespace Hilos\Core\Table\Definition;
 use ArrayAccess;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
-use Hilos\Core\Table\DTO\TablePageQueryDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -224,13 +222,28 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Loads a complete table snapshot for initial page rendering.
+     * Loads a complete table snapshot — the empty-query case of getPage().
      *
      * @return TableSnapshotDTO Full snapshot with typed rows and metadata
      */
     public function getFullSnapshot(): TableSnapshotDTO
     {
-        $result = $this->query(new TableQueryDTO());
+        return $this->getPage(new TableQueryDTO());
+    }
+
+    /**
+     * Loads one window of the table for the given query.
+     *
+     * Runs the concrete table query and wraps the result rows as typed row
+     * objects; getFullSnapshot() is the empty-query case. The window's search,
+     * sort, offset, and limit are carried by the query.
+     *
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Window snapshot with typed rows and metadata
+     */
+    public function getPage(TableQueryDTO $query): TableSnapshotDTO
+    {
+        $result = $this->query($query);
 
         return new TableSnapshotDTO(
             rows: $this->makeRows($result->rows),
@@ -238,21 +251,6 @@ abstract class TableDefinition implements ArrayAccess
             offset: $result->offset,
             limit: $result->limit,
         );
-    }
-
-    /**
-     * Reserved API for future partial table loading.
-     *
-     * Paging is intentionally not implemented yet; current page subscriptions
-     * must use a full table snapshot from getFullSnapshot().
-     *
-     * @param TablePageQueryDTO $query Page query parameters
-     * @return TableSnapshotDTO Partial table page once implemented
-     * @throws NotImplementedException Always, until partial table loading is implemented
-     */
-    public function getPage(TablePageQueryDTO $query): TableSnapshotDTO
-    {
-        throw new NotImplementedException('TableDefinition::getPage() is not implemented; use getFullSnapshot() for the current full table snapshot');
     }
 
     // ── Actions property ─────────────────────────────────────────────────

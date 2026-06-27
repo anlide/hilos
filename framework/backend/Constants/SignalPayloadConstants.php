@@ -24,6 +24,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for action name */
     public const string FIELD_ACTION = 'action';
 
+    /** @var string Payload field key for the client-minted action request id (reply correlation) */
+    public const string FIELD_REQUEST_ID = 'requestId';
+
     /** @var string Payload field key for data payload */
     public const string FIELD_DATA = 'data';
 
@@ -32,6 +35,21 @@ final class SignalPayloadConstants
 
     /** @var string Payload field key for WebSocket accept key */
     public const string FIELD_ACCEPT_KEY = 'acceptKey';
+
+    /** @var string Payload field key for table key */
+    public const string FIELD_TABLE_KEY = 'tableKey';
+
+    /** @var string Payload field key for a table viewport filter map */
+    public const string FIELD_FILTER = 'filter';
+
+    /** @var string Payload field key for a table viewport sort ({field, direction}) */
+    public const string FIELD_SORT = 'sort';
+
+    /** @var string Payload field key for a table viewport offset */
+    public const string FIELD_OFFSET = 'offset';
+
+    /** @var string Payload field key for a table viewport limit */
+    public const string FIELD_LIMIT = 'limit';
 
     /** @var string Subscription payload key for page (same wire key as FIELD_PAGE) */
     public const string SUBSCRIPTION_PAGE_KEY = self::FIELD_PAGE;

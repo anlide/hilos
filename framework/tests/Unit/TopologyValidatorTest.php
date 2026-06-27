@@ -322,7 +322,7 @@ final class TopologyValidatorTest extends TestCase
     public function testPageTablesRejectUnknownTables(): void
     {
         $this->expectException(InvalidTopologyException::class);
-        $this->expectExceptionMessage('PAGE_TABLES[valid_page][missing_table] references a table missing from TABLES and BROWSER_TABLES');
+        $this->expectExceptionMessage('PAGE_TABLES[valid_page][missing_table] references a source missing from TABLES, BROWSER_LISTS, BROWSER_TABLES, and BROWSER_DATA');
 
         TopologyUnknownTableReferenceHilos::validateTopology();
     }

@@ -1,0 +1,15 @@
+/* Build config for the prerender server bundle (angular.json `prerender`
+   configuration). The public pages are rendered to static HTML in Node by
+   src/prerender/server.ts, which uses node: built-ins — so this config adds the
+   node types and keeps src/prerender in the program, unlike tsconfig.app.json
+   (the browser build) which excludes it. The SDK still resolves to its dist, the
+   same as the production build. */
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/server",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts"]
+}

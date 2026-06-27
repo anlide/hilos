@@ -9,14 +9,6 @@
             "email": "alexander.baranov@anlide.online"
         }
     ],
-    "scripts": {
-        "post-install-cmd": [
-            "@php ../../framework/scripts/link-frontend-sdk.php"
-        ],
-        "post-update-cmd": [
-            "@php ../../framework/scripts/link-frontend-sdk.php"
-        ]
-    },
     "repositories": [
         {
             "type": "path",
@@ -30,9 +22,81 @@
         "php": ">=8.4",
         "anlide/hilos": "^2.0"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
     "autoload": {
         "psr-4": {
             "Demo\\SimplePoll\\": "backend/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\SimplePoll\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "hilos-frontend-reminder": "@php -r \"echo PHP_EOL . 'Hilos frontend: run npm install in the frontend container after composer changes, so the vendored SDK is not stale - see framework/frontend/README.md.' . PHP_EOL;\"",
+        "post-install-cmd": "@hilos-frontend-reminder",
+        "post-update-cmd": "@hilos-frontend-reminder",
+        "setup-env": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local sh -c \"cd /hilos/demo/simple-poll && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
+        "install-deps": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local composer install",
+        "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
+        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d",
+        "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart poll-daemon-local",
+        "daemon-status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php",
+        "db:migration:up": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:migration:up",
+        "db:migration:down": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:migration:down",
+        "db:migration:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:migration:status",
+        "db:migration:retry": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:migration:retry",
+        "db:seed:apply": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:seed:apply",
+        "db:schema:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:schema:status",
+        "db:entity:diff": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:entity:diff",
+        "pma": "docker compose -f docker/docker-compose.local.yml up -d poll-phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8082",
+        "pma-stop": "docker compose -f docker/docker-compose.local.yml stop poll-phpmyadmin-local",
+        "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm install",
+        "frontend:check": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm run check",
+        "frontend:build": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm run build",
+        "frontend:logs": "docker compose -f docker/docker-compose.local.yml logs -f poll-frontend-local",
+        "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test composer update phpunit/phpunit --no-interaction",
+        "test:up": "docker compose -f docker/docker-compose.test.yml up -d poll-mysql-test",
+        "test:down": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
+        "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php backend/Bootstrap/cli.php db:test:reset",
+        "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php backend/Bootstrap/cli.php db:wait",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-frontend-cli-test sh -c \"npm install && npm run check\"",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm poll-frontend-cli-test sh -c \"npm install && npm run build\"",
+        "test:e2e-install": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npm install",
+        "test:e2e-check": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npm run check",
+        "test:e2e-up": [
+            "@test:up",
+            "@test:db-wait",
+            "@test:db-reset",
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d poll-daemon-test poll-nginx-test"
+        ],
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npx playwright test",
+        "test:e2e-down": "@test:down",
+        "test:e2e-full": [
+            "@test:e2e-build",
+            "@test:e2e-install",
+            "@test:e2e-check",
+            "@test:e2e-up",
+            "@test:e2e",
+            "@test:e2e-down"
+        ],
+        "test:all": [
+            "@test:db-reset",
+            "@test:phpunit",
+            "@test:down",
+            "@test:e2e-full"
+        ]
+    },
+    "config": {
+        "process-timeout": 0
     }
 }

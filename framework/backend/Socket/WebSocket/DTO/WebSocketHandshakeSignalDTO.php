@@ -23,15 +23,17 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public const string COOKIES = 'cookies';
     public const string CLIENT_IP = 'clientIp';
     public const string QUERY_PARAMS = 'queryParams';
+    public const string SESSION_TOKEN = 'sessionToken';
 
     /**
      * Creates WebSocket handshake signal DTO.
      *
-     * @param array<string, string> $headers HTTP headers
-     * @param string $acceptKey WebSocket accept key
+     * @param array<string, string> $headers HTTP headers (lowercase header names)
+     * @param string $acceptKey Daemon-minted connection identifier
      * @param array<string, string> $cookies Cookies
      * @param string $clientIp Client IP address
      * @param RequestQueryParams $queryParams Query string params
+     * @param string $sessionToken Session token resolved by the daemon (from the cookie, or freshly issued on the handshake)
      */
     public function __construct(
         public readonly array $headers,
@@ -39,6 +41,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
         public readonly array $cookies,
         public readonly string $clientIp,
         public readonly RequestQueryParams $queryParams = new RequestQueryParams(),
+        public readonly string $sessionToken = '',
     ) {
     }
 
@@ -60,6 +63,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             self::COOKIES => $this->cookies,
             self::CLIENT_IP => $this->clientIp,
             self::QUERY_PARAMS => $this->queryParams->toArray(),
+            self::SESSION_TOKEN => $this->sessionToken,
         ];
     }
 
@@ -80,6 +84,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             queryParams: RequestQueryParams::fromStringMap(
                 is_array($data[self::QUERY_PARAMS] ?? null) ? $data[self::QUERY_PARAMS] : [],
             ),
+            sessionToken: (string)($data[self::SESSION_TOKEN] ?? ''),
         );
     }
 }

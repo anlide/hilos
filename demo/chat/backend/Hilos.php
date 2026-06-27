@@ -24,15 +24,18 @@ use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
-use Demo\Chat\Browser\Table\BotDetailBrowserTable;
+use Demo\Chat\Browser\Data\BotStatusBrowserData;
+use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
+use Demo\Chat\Browser\Data\UserPresenceBrowserData;
+use Demo\Chat\Browser\List\AttachmentDraftsBrowserList;
+use Demo\Chat\Browser\List\MainBotsBrowserList;
+use Demo\Chat\Browser\List\MainEventsBrowserList;
+use Demo\Chat\Browser\List\MainUsersBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
-use Demo\Chat\Browser\Table\MainBotsBrowserTable;
-use Demo\Chat\Browser\Table\MainEventsBrowserTable;
-use Demo\Chat\Browser\Table\MainUsersBrowserTable;
-use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
+use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
@@ -44,6 +47,8 @@ use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
+use Demo\Chat\Pages\Hilos\AboutPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
@@ -85,6 +90,7 @@ use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
 use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
 use Demo\Chat\Pages\Hilos\I18nPage;
+use Demo\Chat\Pages\Hilos\LicensePage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
@@ -95,6 +101,8 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
+use Demo\Chat\Pages\Hilos\PrivacyPage;
+use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -104,11 +112,11 @@ use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
+use Demo\Chat\Pages\Hilos\TermsPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ModeratorPage;
-use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUsersTable;
@@ -116,7 +124,6 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
-use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
@@ -128,6 +135,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -228,6 +236,10 @@ final class Hilos extends \Hilos\Hilos
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+        AboutPage::PAGE => AboutPage::class,
+        TermsPage::PAGE => TermsPage::class,
+        PrivacyPage::PAGE => PrivacyPage::class,
+        LicensePage::PAGE => LicensePage::class,
     ];
 
     public const array GROUPS = [
@@ -279,58 +291,73 @@ final class Hilos extends \Hilos\Hilos
         ChatTableContext::hilosUsers => HilosUsersTable::class,
         ChatTableContext::bots => BotsTable::class,
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
-        ChatTableContext::settings => SettingsTable::class,
+        ChatTableContext::settings => HilosSettingsTable::class,
+    ];
+
+    public const array BROWSER_LISTS = [
+        MainEventsBrowserList::LIST => MainEventsBrowserList::class,
+        MainUsersBrowserList::LIST => MainUsersBrowserList::class,
+        MainBotsBrowserList::LIST => MainBotsBrowserList::class,
+        AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
+    ];
+
+    public const array BROWSER_DATA = [
+        SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
+        BotStatusBrowserData::DATA => BotStatusBrowserData::class,
+        UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
     ];
 
     public const array BROWSER_TABLES = [
-        MainEventsBrowserTable::TABLE => MainEventsBrowserTable::class,
-        MainUsersBrowserTable::TABLE => MainUsersBrowserTable::class,
-        MainBotsBrowserTable::TABLE => MainBotsBrowserTable::class,
-        SelfConnectionBrowserTable::TABLE => SelfConnectionBrowserTable::class,
-        AttachmentDraftsBrowserTable::TABLE => AttachmentDraftsBrowserTable::class,
-        BotDetailBrowserTable::TABLE => BotDetailBrowserTable::class,
         UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
         GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
         GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
     ];
 
-    public const array PAGE_TABLES = [
+    public const array PAGE_LISTS = [
         MainPage::PAGE => [
-            MainEventsBrowserTable::TABLE => [],
-            MainUsersBrowserTable::TABLE => [],
-            MainBotsBrowserTable::TABLE => [],
-            SelfConnectionBrowserTable::TABLE => [
+            MainEventsBrowserList::LIST => [],
+            MainUsersBrowserList::LIST => [],
+            MainBotsBrowserList::LIST => [],
+            AttachmentDraftsBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
-            AttachmentDraftsBrowserTable::TABLE => [
+        ],
+    ];
+
+    public const array PAGE_DATA = [
+        MainPage::PAGE => [
+            SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
         ],
         ProfilePage::PAGE => [
-            SelfConnectionBrowserTable::TABLE => [
+            SelfConnectionBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
             ],
         ],
         ChatUserPage::PAGE => [
-            UserDetailBrowserTable::TABLE => [
+            UserPresenceBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::USER_ID,
+                    UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
                 ],
             ],
         ],
         BotPage::PAGE => [
-            BotDetailBrowserTable::TABLE => [
+            BotStatusBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
                 ],
             ],
         ],
+    ];
+
+    public const array PAGE_TABLES = [
         AdminUsersPage::PAGE => [
             ChatTableContext::adminUsers => [],
         ],
@@ -413,6 +440,19 @@ final class Hilos extends \Hilos\Hilos
     protected static function createFs(): ?FsContext
     {
         return new ChatFsContext();
+    }
+
+    /**
+     * Routes the chat command channel: the echo command goes to the chat agent.
+     *
+     * @return array<string, string> Agent type keyed by command name
+     */
+    public static function getCommandAgentRoutes(): array
+    {
+        return [
+            ChatCommandConstants::ECHO => AgentType::CHAT,
+            ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
+        ];
     }
 
 }

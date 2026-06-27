@@ -16,6 +16,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -23,6 +24,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -77,6 +79,16 @@ class PageSignalRouter
         try {
             $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
         } catch (PageSubscriptionException $e) {
+            // The subscription is intentionally KEPT alive, not torn down. A guard
+            // failure is a transient state, not a dead end: if the missing resource
+            // later appears (e.g. user #10 is created while a client sits on its 404
+            // page) or access is later granted, the guard starts passing and the live
+            // fan-out promotes the error page into the real page with no re-subscribe
+            // — the Hilos live-promotion model. Because the subscription stays
+            // registered, the browser delivery paths must re-check the guard on every
+            // fan-out (not rely on the subscription being absent): a guard-failed
+            // subscription receives nothing WHILE the guard fails, yet resumes the
+            // instant it passes.
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
         } catch (Throwable $e) {
@@ -144,10 +156,45 @@ class PageSignalRouter
     }
 
     /**
+     * Dispatch a table viewport signal: store the descriptor and reply the window.
+     *
+     * Records the connection's window descriptor for one table (so live deltas can
+     * be scoped to the rows it shows), then has the browser context build and reply
+     * the table_window snapshot for that descriptor.
+     *
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     */
+    public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
+    {
+        if ($data->acceptKey === '' || $data->tableKey === '') {
+            return;
+        }
+
+        $viewport = new TableViewportSubscription(
+            tableKey: $data->tableKey,
+            filter: $data->filter,
+            sortField: $data->sortField,
+            sortDirection: $data->sortDirection,
+            offset: $data->offset,
+            limit: $data->limit,
+        );
+        Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
+        Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport);
+    }
+
+    /**
      * Dispatch action signal to page handler
      *
      * Resolves page from payload or action route configuration.
      * Creates ActionPayloadDTO via PageFactory.
+     *
+     * When the action carried a client-minted requestId (a tracked action) the
+     * framework replies with the action-success ack on success or the
+     * action-error ack on failure, both correlated by that requestId. An
+     * untracked action keeps the legacy path: silent on success,
+     * onActionException() on failure.
      *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
@@ -171,8 +218,15 @@ class PageSignalRouter
 
         try {
             $pageInstance->onAction($data->acceptKey, $data->action, $dto);
+            if ($data->requestId !== null) {
+                $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId);
+            }
         } catch (Throwable $e) {
-            $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+            if ($data->requestId !== null) {
+                $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage());
+            } else {
+                $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+            }
         }
     }
 

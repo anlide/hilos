@@ -75,6 +75,16 @@ class SettingsAccessor implements ArrayAccess
     }
 
     /**
+     * Returns the full settings catalog backing this accessor.
+     *
+     * @return array<string, array<string, mixed>> Catalog keyed by setting key
+     */
+    public function catalog(): array
+    {
+        return $this->getCatalog();
+    }
+
+    /**
      * Returns the catalog type for a setting key.
      *
      * @param string $key Setting key

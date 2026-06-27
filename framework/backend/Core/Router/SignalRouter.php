@@ -12,17 +12,22 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
+use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Hilos;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Logger;
 use SplQueue;
 
@@ -54,6 +59,14 @@ class SignalRouter
         SignalTypeConstants::CRON => SignalSource::DAEMON,
         SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
     ];
+
+    /**
+     * @var string Self-broadcast id used for collection-scoped clear syncs.
+     *
+     * A clear fact has no row id, so the (collectionKey, id) self-broadcast guard
+     * keys on this sentinel instead. It never collides with real row ids.
+     */
+    private const string CLEAR_BROADCAST_ID = '*';
 
     /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
     private SplQueue $queuedSignals;
@@ -284,6 +297,39 @@ class SignalRouter
     }
 
     /**
+     * Queue a DB sync cleared signal (collection-scoped truncate).
+     * Skips if broadcast disabled. Registers the collection for self-apply skip.
+     *
+     * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
+     */
+    public function queueDbSyncClearedSignal(DbSyncClearedSignalData $signalData): void
+    {
+        if (!$this->dbSyncBroadcastEnabled || $signalData->collectionKey === '') {
+            return;
+        }
+
+        $this->dbSelfBroadcast->register($signalData->collectionKey, self::CLEAR_BROADCAST_ID);
+
+        $this->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Check if a clear apply should be skipped (self-broadcast) and remove from registry.
+     *
+     * @param string $collectionKey Collection key for the clear sync
+     * @return bool True if this was our broadcast, skip apply
+     */
+    public function shouldSkipDbSyncClearApply(string $collectionKey): bool
+    {
+        return $this->dbSelfBroadcast->consume($collectionKey, self::CLEAR_BROADCAST_ID);
+    }
+
+    /**
      * Queue RT sync signal (from RtActions write operations).
      * Registers (collectionKey, stateId) for self-apply skip.
      *
@@ -430,6 +476,40 @@ class SignalRouter
     }
 
     /**
+     * Stores or replaces a connection's viewport for one table.
+     *
+     * @param string $acceptKey Client accept key
+     * @param TableViewportSubscription $viewport Table viewport descriptor
+     */
+    public function setTableViewport(string $acceptKey, TableViewportSubscription $viewport): void
+    {
+        $this->subscriptions->setTableViewport($acceptKey, $viewport);
+    }
+
+    /**
+     * Returns a connection's viewport for one table, or null when not set.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     * @return ?TableViewportSubscription Stored viewport or null
+     */
+    public function getTableViewport(string $acceptKey, string $tableKey): ?TableViewportSubscription
+    {
+        return $this->subscriptions->getTableViewport($acceptKey, $tableKey);
+    }
+
+    /**
+     * Returns all table viewports held by a connection, keyed by table key.
+     *
+     * @param string $acceptKey Client accept key
+     * @return array<string, TableViewportSubscription> Viewports keyed by table key
+     */
+    public function getTableViewports(string $acceptKey): array
+    {
+        return $this->subscriptions->getTableViewports($acceptKey);
+    }
+
+    /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
      * @param string $page Page identifier to match subscriptions against
@@ -499,6 +579,7 @@ class SignalRouter
             ...$this->getPageSubscriptionDestinations($signal),
             ...$this->getGroupSubscriptionDestinations($signal),
             ...$this->getActionDestinations($signal),
+            ...$this->getCommandDestinations($signal),
             ...$this->getAgentDestinations($signal),
             ...$this->getPageOwnedSignalDestinations($signal),
             ...$this->additionalDestinations($signal),
@@ -609,6 +690,41 @@ class SignalRouter
     }
 
     /**
+     * Get destinations for CLI command signals.
+     *
+     * COMMAND_REQUEST routes to the agent that owns the command name through the
+     * project getCommandAgentRoutes() map. COMMAND_REPLY routes back to the held
+     * CLI connection, addressed by the reply's correlation id.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<Destination> Command destinations, or empty when unrouted
+     */
+    private function getCommandDestinations(SignalDTO $signal): array
+    {
+        $signalType = $signal->signalType->getType();
+        $signalData = $signal->data;
+
+        if ($signalType === SignalTypeConstants::COMMAND_REQUEST && $signalData instanceof CommandRequestDTO) {
+            $agentType = $this->hilosClass()::getCommandAgentRoutes()[$signalData->command] ?? null;
+            if (!is_string($agentType) || $agentType === '') {
+                return [];
+            }
+
+            return [new AgentDestination($agentType)];
+        }
+
+        if ($signalType === SignalTypeConstants::COMMAND_REPLY && $signalData instanceof CommandReplyDTO) {
+            if ($signalData->correlationId === '') {
+                return [];
+            }
+
+            return [new CommandReplyDestination($signalData->correlationId)];
+        }
+
+        return [];
+    }
+
+    /**
      * Get agent destinations for page subscription signals (subscribe/unsubscribe/update)
      *
      * Uses the active project topology to resolve per-page agent type.
@@ -625,6 +741,7 @@ class SignalRouter
         $page = match ($signalType) {
             SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : '',
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : '',
+            SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : '',
             SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),
             default => '',
         };

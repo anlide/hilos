@@ -16,6 +16,7 @@ use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -173,6 +174,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerDbSyncCreatedMessageDTO => $this->handleWorkerDbSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncUpdatedMessageDTO => $this->handleWorkerDbSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncDeletedMessageDTO => $this->handleWorkerDbSyncDeletedMessage($workerDTO),
+            $workerDTO instanceof WorkerDbSyncClearedMessageDTO => $this->handleWorkerDbSyncClearedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
@@ -264,6 +266,16 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $dto): void
     {
         $this->agentManager->handleWorkerDbSyncDeleted($dto);
+    }
+
+    /**
+     * Handle DB sync cleared message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncClearedMessageDTO $dto DTO with cleared collection data
+     */
+    private function handleWorkerDbSyncClearedMessage(WorkerDbSyncClearedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerDbSyncCleared($dto);
     }
 
     /**

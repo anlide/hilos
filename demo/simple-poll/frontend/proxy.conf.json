@@ -1,0 +1,6 @@
+{
+  "/ws": {
+    "target": "http://poll-daemon-local:8092",
+    "ws": true
+  }
+}

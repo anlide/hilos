@@ -6,7 +6,6 @@ namespace Demo\Chat\Runtime\View\Collection;
 
 use Demo\Chat\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
@@ -17,7 +16,9 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
  * Connections - Read-only wrapper around Connections state.
@@ -29,7 +30,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
  * @property-read ConnectionsActions $actions Actions for write operations
  * @property-read DbUsers $relevantUsers Users who are online or mentioned in events
  */
-final class Connections extends RtCollection
+final class Connections extends RtCollection implements HilosPresenceSource
 {
     public const string relevantUsers = 'relevantUsers';
 
@@ -67,12 +68,12 @@ final class Connections extends RtCollection
      * Builds the runtime connection summary used by user-facing table rows.
      *
      * @param ?int $userId User id to summarize active runtime connections for
-     * @return UserConnectionSummary Runtime presence and session count summary
+     * @return HilosUserPresenceSummary Runtime presence and session count summary
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
-    public function summaryForUser(?int $userId): UserConnectionSummary
+    public function summaryForUser(?int $userId): HilosUserPresenceSummary
     {
-        return new UserConnectionSummary(count($this->forUser($userId)));
+        return new HilosUserPresenceSummary(count($this->forUser($userId)));
     }
 
     /**

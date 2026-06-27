@@ -95,6 +95,44 @@ final class BrowserContextSourceChangeBufferTest extends TestCase
         $this->assertSame(['id' => 1, 'name' => 'Grace'], $changes[0]->row);
     }
 
+    public function testFlushKeepsClearAsSeparateGroupFromRowChanges(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        // A deleteAll() truncate followed by a fresh marker row in the same tick.
+        $context->record(SourceChange::dbCleared('events'));
+        $context->record(SourceChange::dbCreated('events', '7', ['id' => 7, 'type' => 'chat_cleared']));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(2, $changes);
+
+        $this->assertSame(SourceChange::KIND_DB, $changes[0]->kind);
+        $this->assertSame('events', $changes[0]->sourceKey);
+        $this->assertSame('', $changes[0]->sourceId);
+        $this->assertSame(TableMutationType::Clear, $changes[0]->mutationType);
+        $this->assertSame([], $changes[0]->row);
+
+        $this->assertSame('7', $changes[1]->sourceId);
+        $this->assertSame(TableMutationType::Create, $changes[1]->mutationType);
+    }
+
+    public function testFlushMergesRepeatedClearsForSameCollection(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        $context->record(SourceChange::dbCleared('events'));
+        $context->record(SourceChange::dbCleared('events'));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(1, $changes);
+        $this->assertSame(TableMutationType::Clear, $changes[0]->mutationType);
+        $this->assertSame('events', $changes[0]->sourceKey);
+    }
+
     public function testFlushTreatsDeleteThenCreateAsUpdateWithReplacementRow(): void
     {
         $context = new BrowserContextSourceChangeBufferTestContext();

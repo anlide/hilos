@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -17,6 +18,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
+use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -25,6 +27,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -36,6 +39,8 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
@@ -48,6 +53,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
@@ -77,6 +83,9 @@ abstract class DaemonManager extends BaseManager
         'proc_terminate',
     ];
 
+    /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
+    private const float READINESS_LOG_INTERVAL = 60.0;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -103,6 +112,18 @@ abstract class DaemonManager extends BaseManager
 
     /** @var bool Flag indicating if initial workers are ready */
     private bool $workersReady = false;
+
+    /** @var bool True once the WebSocket server has been started */
+    private bool $webSocketStarted = false;
+
+    /** @var ?float microtime when the readiness wait began; null until workers are ready */
+    private ?float $readinessWaitSince = null;
+
+    /** @var ?float microtime of the last stuck-readiness log line; null until the first one */
+    private ?float $lastReadinessLogAt = null;
+
+    /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
+    protected ?float $readinessTimeout = null;
 
     /**
      * Initializes daemon manager.
@@ -192,6 +213,9 @@ abstract class DaemonManager extends BaseManager
 
             // Call tick method
             $this->onTick();
+
+            // Open the WebSocket server once the required startup agents are ready
+            $this->tickReadiness();
 
             // Check cron jobs (not more than once per minute)
             $this->checkCronJobs();
@@ -323,6 +347,93 @@ abstract class DaemonManager extends BaseManager
                 }
             }
         }
+    }
+
+    /**
+     * Agent ids whose onStart must finish before the WebSocket server opens.
+     *
+     * Default is empty: the WebSocket server opens as soon as the workers are ready. A project
+     * overrides this to gate the socket on its critical startup agents, so no connection is
+     * accepted before those agents have built their state.
+     *
+     * @return list<string> Agent ids to wait for; empty opens the socket as soon as workers are ready
+     */
+    protected function getRequiredReadinessAgents(): array
+    {
+        return [];
+    }
+
+    /**
+     * Opens the WebSocket server once the required startup agents are ready.
+     *
+     * Runs every main-loop iteration after the workers are ready. Opens the socket when every
+     * required agent has reported agent_started; while they are pending it logs at most once per
+     * READINESS_LOG_INTERVAL, and opens the socket degraded once readinessTimeout elapses.
+     */
+    private function tickReadiness(): void
+    {
+        if (!$this->workersReady || $this->webSocketStarted) {
+            return;
+        }
+
+        $pending = $this->pendingReadinessAgents();
+
+        if ($pending === []) {
+            $this->startWebSocketServer();
+            $this->webSocketStarted = true;
+            return;
+        }
+
+        $waited = microtime(true) - ($this->readinessWaitSince ?? microtime(true));
+
+        if ($this->readinessTimeout !== null && $waited >= $this->readinessTimeout) {
+            Logger::error(sprintf(
+                'WebSocket readiness timed out after %.0fs; opening degraded, agents still not started: %s',
+                $waited,
+                implode(', ', $pending),
+            ));
+            $this->startWebSocketServer();
+            $this->webSocketStarted = true;
+            return;
+        }
+
+        $this->logReadinessStuck($pending, $waited);
+    }
+
+    /**
+     * @return list<string> Required startup agent ids that have not reported agent_started yet
+     */
+    private function pendingReadinessAgents(): array
+    {
+        $pending = [];
+        foreach ($this->getRequiredReadinessAgents() as $agentId) {
+            if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
+                $pending[] = $agentId;
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
+     * Logs a stuck startup at most once per READINESS_LOG_INTERVAL.
+     *
+     * @param list<string> $pending Required agent ids still not started
+     * @param float $waited Seconds elapsed since the readiness wait began
+     */
+    private function logReadinessStuck(array $pending, float $waited): void
+    {
+        $lastLog = $this->lastReadinessLogAt ?? $this->readinessWaitSince ?? microtime(true);
+        if (microtime(true) - $lastLog < self::READINESS_LOG_INTERVAL) {
+            return;
+        }
+
+        $this->lastReadinessLogAt = microtime(true);
+        Logger::error(sprintf(
+            'WebSocket not opened: waited %.0fs for startup agents to report ready: %s',
+            $waited,
+            implode(', ', $pending),
+        ));
     }
 
     /**
@@ -503,11 +614,21 @@ abstract class DaemonManager extends BaseManager
             }
         }
 
+        // Find Command server once (for command reply destinations)
+        $commandServer = null;
+        foreach ($this->servers as $server) {
+            if ($server instanceof CommandServer) {
+                $commandServer = $server;
+                break;
+            }
+        }
+
         // Sync signals: always send to workers and daemon
         $syncTypes = [
             SignalTypeConstants::DB_SYNC_CREATED,
             SignalTypeConstants::DB_SYNC_UPDATED,
             SignalTypeConstants::DB_SYNC_DELETED,
+            SignalTypeConstants::DB_SYNC_CLEARED,
             SignalTypeConstants::RT_SYNC_CREATED,
             SignalTypeConstants::RT_SYNC_UPDATED,
             SignalTypeConstants::RT_SYNC_DELETED,
@@ -531,12 +652,11 @@ abstract class DaemonManager extends BaseManager
             // Handle workers ready signal internally (before routing to agents)
             if ($signalType === SignalTypeConstants::SYSTEM && $signalName === SignalConstants::WORKERS_READY) {
                 $this->workersReady = true;
+                $this->readinessWaitSince = microtime(true);
                 Logger::info("Workers ready - cron jobs are now enabled");
 
-                // Start WebSocket server when workers are ready
-                $this->startWebSocketServer();
-
-                // Continue to allow signal to be routed if needed, but flag is already set
+                // The WebSocket server no longer opens here: tickReadiness() opens it once the
+                // required startup agents have finished onStart (or the readiness timeout fires).
             }
 
             if (empty($destinations)) {
@@ -605,6 +725,16 @@ abstract class DaemonManager extends BaseManager
                         $this->encodeSignalFrame($signal),
                         $destination->excludeAcceptKey,
                     );
+                } elseif ($destination instanceof CommandReplyDestination) {
+                    // Write the agent reply back to the held CLI command connection
+                    if ($commandServer === null) {
+                        continue;
+                    }
+
+                    $reply = $signal->data;
+                    if ($reply instanceof CommandReplyDTO) {
+                        $commandServer->deliver($destination->correlationId, $reply);
+                    }
                 } else {
                     // Unknown destination type, skip
                     Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
@@ -632,6 +762,9 @@ abstract class DaemonManager extends BaseManager
             ),
             SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+            ),
+            SignalConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO(
+                self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
             SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
@@ -675,6 +808,9 @@ abstract class DaemonManager extends BaseManager
             ),
             SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted(
                 self::syncSignalData($signal->data, DbSyncDeletedSignalData::class),
+            ),
+            SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
+                self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
@@ -723,6 +859,10 @@ abstract class DaemonManager extends BaseManager
         $outcome = $inner->getEnvelopeOutcome();
         if ($outcome !== null) {
             $message['outcome'] = $outcome;
+        }
+        $requestId = $inner->getEnvelopeRequestId();
+        if ($requestId !== null) {
+            $message[SignalPayloadConstants::FIELD_REQUEST_ID] = $requestId;
         }
         $time = $inner->getEnvelopeTime();
         if ($time !== null) {

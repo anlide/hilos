@@ -11,8 +11,8 @@ use Hilos\Core\Daemon\DaemonManager;
  * into the WebSocket envelope alongside the standard `{type, data}`.
  *
  * Currently used by action-acknowledgement DTOs (success/fail) to add an
- * `outcome` marker, and reserved for future clock-sync DTOs to add a `time`
- * tick.
+ * `outcome` marker plus the `requestId` that correlates the reply to its
+ * action, and reserved for future clock-sync DTOs to add a `time` tick.
  *
  * Inspected by {@see DaemonManager} when building the
  * outgoing frame.
@@ -25,6 +25,14 @@ interface WebSocketEnvelopeAware
      * @return 'success'|'fail'|null Action acknowledgement outcome, or null when absent
      */
     public function getEnvelopeOutcome(): ?string;
+
+    /**
+     * Envelope-level request id echoed back to correlate this reply with the
+     * client action that triggered it.
+     *
+     * @return ?string Client-minted request id, or null when this signal is not an action reply
+     */
+    public function getEnvelopeRequestId(): ?string;
 
     /**
      * Envelope-level server clock tick in milliseconds, if this signal carries one.

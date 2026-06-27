@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -19,10 +18,11 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Http\Exception\MissingRequestQueryParamException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
@@ -62,29 +62,86 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the session token, registers the connection, emits registration updates, and sends
-     * the handshake response with the current user id and page catalog.
+     * Handle a CLI command routed to the chat agent.
+     *
+     * `echo` echoes the request payload back (the admin-grant transport probe).
+     * `setAdmin` flips the admin flag of the user named in the payload and replies
+     * with the resulting state, or an error when the user is unknown or the write
+     * fails. Any other command name yields an error reply.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command === ChatCommandConstants::ECHO) {
+            $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $data->payload));
+
+            return;
+        }
+
+        if ($data->command !== ChatCommandConstants::SET_ADMIN) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+            return;
+        }
+
+        $userId = (int)($data->payload[ChatCommandConstants::FIELD_USER_ID] ?? 0);
+        $admin = (bool)($data->payload[ChatCommandConstants::FIELD_ADMIN] ?? false);
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "No such user: {$userId}"));
+
+            return;
+        }
+
+        try {
+            $user->actions->setAdmin($admin);
+        } catch (HilosException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_USER_ID => $userId,
+            ChatCommandConstants::FIELD_ADMIN => $admin,
+        ]));
+    }
+
+    /**
+     * Authenticates the daemon-resolved session token, registers the connection, emits registration updates, and
+     * sends the handshake response with the current-user entity fragment.
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only
      * first online transitions. Outbound moderation, draft, and file-upload session
      * state are sent on main page subscribe only.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and query params with a required session token
+     * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws MissingRequestQueryParamException When session token is missing
-     * @throws EmptyValueException When session token is empty
-     * @throws InvalidFormatException When session token is not a 32-character lowercase hex string
+     * @throws EmptyValueException When the session token is empty
+     * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
-        $sessionToken = $data->queryParams->requireStringMatching(
-            HttpHeaders::SESSION_TOKEN,
-            self::SESSION_TOKEN_PATTERN,
-            HttpHeaders::SESSION_TOKEN . ' must be a 32-character lowercase hex token',
-        );
+        // The daemon resolved the session token on the 101 (the client's cookie
+        // or a freshly issued one) and carried it on the handshake DTO. Validate
+        // inside the ValidationException family so the worker dispatcher contains
+        // a bad token instead of crashing.
+        $sessionToken = $data->sessionToken;
+        if ($sessionToken === '') {
+            throw new EmptyValueException('session token is required');
+        }
+
+        if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
+            throw new InvalidFormatException(
+                'session token must be a 32-character lowercase hex token',
+            );
+        }
 
         $user = Hilos::$db->users->findBySession($sessionToken);
         $wasRegisteredNow = false;
@@ -108,7 +165,7 @@ final class ChatAgent extends AbstractAgent
             $data->acceptKey,
             new HandshakeResponseSignalData(
                 selfId: $userId,
-                pageCatalog: ChatPageCatalog::getCatalog(),
+                selfName: $user->name,
             ),
         );
     }
@@ -180,7 +237,7 @@ final class ChatAgent extends AbstractAgent
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws HilosException On bot message publish failure
-     * @throws LogicException If event id is null after sync
+     * @throws LogicException On payload type mismatch, or if event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -189,6 +246,11 @@ final class ChatAgent extends AbstractAgent
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
+                if (!$data->data instanceof BotMessageSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::BOT_MESSAGE . ' payload must be ' . BotMessageSignalData::class,
+                    );
+                }
                 $this->handleBotMessage($data->data);
                 return;
             default:

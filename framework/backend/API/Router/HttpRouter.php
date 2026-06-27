@@ -8,6 +8,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 
 /**
  * HttpRouter - Routes HTTP requests to handlers.
@@ -59,20 +60,20 @@ class HttpRouter
             : [];
         $queryParams = $this->queryParamsFromRequest($request);
         $request[HttpConstants::REQUEST_KEY_QUERY_PARAMS] = $queryParams;
-        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
+        $sessionToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
             ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
-        $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
-        $acceptLanguage = $headers[HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? null;
+        $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
+        $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
 
         // Find matching route
         $route = $this->registry->match($method, $path);
         $apiRequestId = Hilos::$ac?->startApiRequest(
-            is_string($sessionToken) ? $sessionToken : null,
+            $sessionToken,
             (string)$method,
             (string)$path,
             is_array($route['params'] ?? null) ? $route['params'] : null,
-            is_string($userAgent) ? $userAgent : null,
-            is_string($acceptLanguage) ? $acceptLanguage : null,
+            $userAgent,
+            $acceptLanguage,
         );
 
         if ($route === null) {

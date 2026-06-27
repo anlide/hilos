@@ -64,11 +64,23 @@ abstract class Hilos
     /** Registered table definition classes keyed by table name. */
     public const array TABLES = [];
 
-    /** Browser-only table config classes keyed by table name. */
+    /** Browser table source config classes keyed by table key. */
     public const array BROWSER_TABLES = [];
+
+    /** Browser list source config classes keyed by list key. */
+    public const array BROWSER_LISTS = [];
+
+    /** Browser data source config classes keyed by data key. */
+    public const array BROWSER_DATA = [];
 
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
+
+    /** Page list bindings keyed by page name, then list key. */
+    public const array PAGE_LISTS = [];
+
+    /** Page data bindings keyed by page name, then data key. */
+    public const array PAGE_DATA = [];
 
     /** Conventional name of the project-level persistent-data directory. */
     public const string DATA_DIR = 'data';
@@ -217,6 +229,19 @@ abstract class Hilos
         }
 
         return $actionAgentRoutes;
+    }
+
+    /**
+     * Returns CLI command owner agent types keyed by command name.
+     *
+     * A project overrides this to route a command received over the command socket
+     * channel to the agent that handles it. The framework declares none.
+     *
+     * @return array<string, string> Agent type keyed by command name
+     */
+    public static function getCommandAgentRoutes(): array
+    {
+        return [];
     }
 
     /**
@@ -451,6 +476,17 @@ abstract class Hilos
     {
         static::$browser = $browser ?? static::createBrowser();
         static::bindBrowserContext();
+    }
+
+    /**
+     * Clears the worker-local browser context.
+     *
+     * Tests restore the clean unset state between cases without assigning the
+     * facade global directly, which project facades narrow to a read-only type.
+     */
+    public static function resetBrowser(): void
+    {
+        static::$browser = null;
     }
 
     /**

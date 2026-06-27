@@ -16,7 +16,6 @@ catalog for small code-style rules.
 | [Internal Backend API](agents/code-style/internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
 | [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 | [PHP Class Members](agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
-| [Frontend Vue](agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## Baseline
 

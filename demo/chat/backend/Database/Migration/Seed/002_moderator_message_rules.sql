@@ -6,5 +6,5 @@ DELETE FROM `moderator_prompt_piece` WHERE `section` = 'message_rule';
 
 INSERT INTO `moderator_prompt_piece` (`section`, `prompt_piece`) VALUES
 ('message_rule', 'Allow benign. Block: insults, threats, hate speech, sexual, spam. Don''t block greetings, names, neutral.'),
-('message_rule', 'Explicit text only; no inference. Uncertain→allow.'),
+('message_rule', 'Explicit text only; no inference. Uncertain→allow. Attachments never cause a block.'),
 ('message_rule', 'Reasons: ok, insult, threat, hate_speech, sexual, spam.');

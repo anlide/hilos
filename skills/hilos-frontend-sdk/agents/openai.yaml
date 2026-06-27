@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hilos Frontend SDK"
-  short_description: "WebSocket, actions, signals, Vue page, and topology rules"
-  default_prompt: "Use $hilos-frontend-sdk to change Hilos frontend SDK, Vue page, or page/browser topology behavior."

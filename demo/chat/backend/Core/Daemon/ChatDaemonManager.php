@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Daemon;
 
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -54,5 +55,16 @@ final class ChatDaemonManager extends DaemonManager
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
         return new ChatAgentManagerDaemon();
+    }
+
+    /**
+     * Keeps the WebSocket server closed until the chat agent finishes onStart, so no client
+     * subscribes a page before the agent has built its state.
+     *
+     * @return list<string> Required startup agent ids
+     */
+    protected function getRequiredReadinessAgents(): array
+    {
+        return [AgentType::CHAT];
     }
 }

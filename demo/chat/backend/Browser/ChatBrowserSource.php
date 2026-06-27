@@ -8,7 +8,6 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
-use Hilos\Database\Context\HilosDbContext;
 
 /**
  * DB and RT sources used by chat browser configs.
@@ -53,11 +52,6 @@ final class ChatBrowserSource
     public const array DB_MODERATOR_PROMPT_PIECES = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => ChatDbContext::moderatorPromptPieces,
-    ];
-
-    public const array DB_SETTINGS = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => HilosDbContext::settings,
     ];
 
     public const array RT_CONNECTIONS = [

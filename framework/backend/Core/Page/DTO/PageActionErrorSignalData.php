@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 
@@ -12,17 +13,21 @@ use Hilos\Core\Router\WebSocketEnvelopeAware;
  * PageActionErrorSignalData - Error signal data for page action failures.
  *
  * Sent to the initiating WebSocket connection when AbstractPage::onAction()
- * throws and the page does not override onActionException().
+ * throws: the framework reply for a tracked action (carrying the `requestId`
+ * to correlate it), or the legacy untracked error when the page does not
+ * override onActionException() and no requestId was supplied.
  */
 class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, WebSocketEnvelopeAware
 {
     /**
      * @param string $action Action name that failed
      * @param string $reason Human-readable error message
+     * @param ?string $requestId Client-minted request id to correlate the reply, or null for a legacy untracked error
      */
     public function __construct(
         public readonly string $action,
         public readonly string $reason,
+        public readonly ?string $requestId = null,
     ) {
     }
 
@@ -31,10 +36,16 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
      */
     public function toArray(): array
     {
-        return [
+        $result = [
             'action' => $this->action,
             'reason' => $this->reason,
         ];
+
+        if ($this->requestId !== null) {
+            $result[SignalPayloadConstants::FIELD_REQUEST_ID] = $this->requestId;
+        }
+
+        return $result;
     }
 
     /**
@@ -45,12 +56,20 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
         return new static(
             action: (string)($data['action'] ?? ''),
             reason: (string)($data['reason'] ?? ''),
+            requestId: isset($data[SignalPayloadConstants::FIELD_REQUEST_ID]) && is_string($data[SignalPayloadConstants::FIELD_REQUEST_ID])
+                ? $data[SignalPayloadConstants::FIELD_REQUEST_ID]
+                : null,
         );
     }
 
     public function getEnvelopeOutcome(): ?string
     {
         return 'fail';
+    }
+
+    public function getEnvelopeRequestId(): ?string
+    {
+        return $this->requestId;
     }
 
     public function getEnvelopeTime(): ?int

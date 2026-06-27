@@ -14,7 +14,6 @@ Use this skill for every change that affects signal shape, route, subscription, 
   `docs/agents/app-topology.md`
 - Page/group subscriptions and send helpers: `docs/agents/signals/subscriptions.md`
 - Payload DTOs and agent-to-agent signals: `docs/agents/signals/dto-convention.md`
-- Frontend action/signal contract: `docs/agents/frontend-sdk/backend-contract.md`
 - Page action handler style: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler style: `docs/agents/code-style/signal-handlers.md`
 

@@ -20,10 +20,9 @@ touched ORM surfaces.
   collection contracts: `docs/agents/orm/db-item-bridges.md`
 - Magic, array, result, and finder selection:
   `docs/agents/orm/accessor-contracts.md` or `$hilos-accessor-contracts`
-- Frontend-safe DB item serialization and computed item fields:
-  `docs/agents/orm/frontend-representation.md` or
-  `$hilos-frontend-representation`
 - Entity classes and DB table mapping: `docs/agents/orm/entity.md`
+- Database table names (entity-first, bridge ordering):
+  `docs/agents/code-style/table-names.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
@@ -82,7 +81,8 @@ touched ORM surfaces.
 10. Put read helpers and lookup methods on the existing collection/item layer
    before introducing new API surface. During transparent data-shape refactors,
    keep simple field checks explicit unless a new method was approved by name.
-11. Add migrations for schema changes and update Entities to match schema.
+11. Add migrations for schema changes and update Entities to match schema; name
+   new tables entity-first per `docs/agents/code-style/table-names.md`.
 12. Run schema/test validation through composer scripts, never direct host
    phpunit.
 

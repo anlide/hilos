@@ -29,6 +29,24 @@ final class SignalTypeConstants
     /** @var string Page update subscription signal type */
     public const string PAGE_UPDATE_SUBSCRIPTION = 'page_update_subscription';
 
+    /** @var string Page response signal type (server-to-client page scope payload) */
+    public const string PAGE_RESPONSE = 'page_response';
+
+    /** @var string Table viewport signal type (client-to-server window descriptor for one table) */
+    public const string TABLE_VIEWPORT = 'table_viewport';
+
+    /** @var string Table window signal type (server-to-client window snapshot for one table) */
+    public const string TABLE_WINDOW = 'table_window';
+
+    /** @var string Table viewport delta signal type (server-to-client live pending change for one table) */
+    public const string TABLE_VIEWPORT_DELTA = 'table_viewport_delta';
+
+    /** @var string Table viewport count signal type (server-to-client live page/total count update for one table) */
+    public const string TABLE_VIEWPORT_COUNT = 'table_viewport_count';
+
+    /** @var string Table viewport append signal type (server-to-client live tail append for one table) */
+    public const string TABLE_VIEWPORT_APPEND = 'table_viewport_append';
+
     /** @var string Group subscribe signal type */
     public const string GROUP_SUBSCRIBE = 'group_subscribe';
 
@@ -40,6 +58,12 @@ final class SignalTypeConstants
 
     /** @var string User action signal type */
     public const string ACTION = 'action';
+
+    /** @var string CLI command request signal type (master -> agent) */
+    public const string COMMAND_REQUEST = 'command_request';
+
+    /** @var string CLI command reply signal type (agent -> master, addressed to the held CLI connection) */
+    public const string COMMAND_REPLY = 'command_reply';
 
     /** @var string Binary frame signal type */
     public const string FRAME_BINARY = 'frame_binary';
@@ -70,6 +94,9 @@ final class SignalTypeConstants
 
     /** @var string DB sync deleted signal type */
     public const string DB_SYNC_DELETED = 'db_sync_deleted';
+
+    /** @var string DB sync cleared signal type (whole collection truncated) */
+    public const string DB_SYNC_CLEARED = 'db_sync_cleared';
 
     /** @var string RT sync created signal type */
     public const string RT_SYNC_CREATED = 'rt_sync_created';

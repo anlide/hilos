@@ -10,6 +10,8 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Database\Object\Item\User;
+use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
@@ -18,13 +20,19 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
- * Handles the chat user-detail browser subscription.
+ * Handles the chat user-detail subscription.
+ *
+ * Contributes the requested user's profile as a page-scope entity through
+ * buildPagePayload(); the runtime presence rides the reactive browser snapshot
+ * (the `userPresence` data source), so it stays out of the one-shot entity
+ * payload.
  *
  * @property ChatAgent $agent
  */
@@ -33,6 +41,9 @@ final class UserPage extends AbstractPage
     public const string PAGE = PageConstants::USER;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
+
+    /** Page payload entity slot carrying the requested user's profile. */
+    public const string ENTITY_SLOT = 'user';
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_USER,
@@ -66,5 +77,33 @@ final class UserPage extends AbstractPage
         UserPageSubscribeParams::fromPageRouteParams($params);
 
         parent::onSubscribe($acceptKey, $params);
+    }
+
+    /**
+     * Builds the user detail page payload: the requested user's profile as a
+     * page-scope entity the frontend resolves by reference. Returns null when
+     * the user is absent, leaving the browser DB_EXISTS guard to reject the
+     * subscription with a structured error.
+     *
+     * @param PageRouteParams $params Route params for the user detail subscription
+     * @return ?PagePayload User profile entity payload, or null when the user is absent
+     * @throws MissingPageRouteParamException When `id` is absent
+     * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
+     */
+    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    {
+        $userId = UserPageSubscribeParams::fromPageRouteParams($params)->userId;
+        if (!isset(Hilos::$db->users[$userId])) {
+            return null;
+        }
+        $user = Hilos::$db->users[$userId];
+
+        return new PagePayload(entities: [
+            self::ENTITY_SLOT => [
+                User::id => $user->id,
+                User::name => $user->name,
+                User::lastActivity => $user->lastActivity,
+            ],
+        ]);
     }
 }

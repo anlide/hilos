@@ -10,26 +10,29 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * HandshakeResponseSignalData - Signal data for handshake response.
  *
- * Carries the current authorized user id and bootstrap page catalog. Display
- * name, chat snapshot, and session fields are sent through browser rows after
- * page subscription.
+ * Carries the session-scope payload in the `{entities: {currentUser: {...}}}`
+ * wire form: the frontend normalizer upserts the current-user entity fragment
+ * into the session entity store and places the current-user reference in the
+ * session data store. Display name updates, chat snapshot, and session fields
+ * are sent through browser rows after page subscription.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
-    public const string currentUser = 'self';
+    public const string entities = 'entities';
+    public const string currentUser = 'currentUser';
     public const string id = 'id';
-    public const string pageCatalog = 'pageCatalog';
+    public const string name = 'name';
 
     /**
      * Creates handshake response signal data.
      *
      * @param int $selfId Current authorized user id
-     * @param array<string, array<string, mixed>> $pageCatalog Page catalog for breadcrumb rendering
+     * @param string $selfName Current authorized user display name
      */
     public function __construct(
         public readonly int $selfId,
-        public readonly array $pageCatalog = [],
+        public readonly string $selfName,
     ) {
     }
 
@@ -41,10 +44,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function toArray(): array
     {
         return [
-            self::currentUser => [
-                self::id => $this->selfId,
+            self::entities => [
+                self::currentUser => [
+                    self::id => $this->selfId,
+                    self::name => $this->selfName,
+                ],
             ],
-            self::pageCatalog => $this->pageCatalog,
         ];
     }
 
@@ -56,11 +61,15 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      */
     public static function fromArray(array $data): static
     {
-        $self = $data[self::currentUser] ?? [];
+        $entities = $data[self::entities] ?? null;
+        $currentUser = is_array($entities) ? ($entities[self::currentUser] ?? null) : null;
+        if (!is_array($currentUser)) {
+            $currentUser = [];
+        }
 
         return new static(
-            selfId: is_array($self) ? (int)($self[self::id] ?? 0) : 0,
-            pageCatalog: is_array($data[self::pageCatalog] ?? null) ? $data[self::pageCatalog] : [],
+            selfId: (int)($currentUser[self::id] ?? 0),
+            selfName: (string)($currentUser[self::name] ?? ''),
         );
     }
 }

@@ -100,6 +100,22 @@ abstract class DbContext
     }
 
     /**
+     * Clears one collection's in-memory state (object rows + cached DbItems)
+     * without touching the database.
+     *
+     * Used by DB_SYNC_CLEARED apply to mirror a remote deleteAll() truncate:
+     * the physical DELETE already ran in the originating process, so this drops
+     * the local rows without the reload that the magic getter would trigger.
+     *
+     * @param string $name Collection name (e.g. users, events)
+     */
+    public function clearCollectionInMemory(string $name): void
+    {
+        ($this->_objectCollections[$name] ?? null)?->clearInMemory();
+        ($this->_dbItemCollections[$name] ?? null)?->clearCache();
+    }
+
+    /**
      * Get DB collection by name (magic getter for $db->users, $db->events, etc.).
      *
      * @param string $name Collection name (e.g. users, events)

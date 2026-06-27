@@ -1,29 +1,30 @@
-/**
- * Re-export domain types
- */
-export * from './domain'
-export * from './PageCatalog'
-
-// Explicitly export classes for better TypeScript support
-export { ChatBot, Event, User } from './domain'
-
-/**
- * Re-export WebSocket transport types from framework.
- *
- * Historical note: earlier iterations re-exported a dozen flat-protocol
- * message types that never matched this project's actual `{type, data, time?,
- * outcome?}` wire shape. The modern set is intentionally small — envelope
- * types plus action-ack payload shapes — and the whole module is re-exported
- * below so downstream imports don't need to know internal filenames.
- */
-export type {
-  WebSocketIncoming,
-  WebSocketIncomingEmpty,
-  WebSocketTimeSync,
-  WebSocketActionSuccess,
-  WebSocketActionFail,
-  WebSocketActionMessage,
-  WebSocketPageSubscribeMessage,
-  WebSocketOutcome,
-  ActionFailData,
-} from '@hilos/sdk/types/websocket-messages'
+// The chat domain types and their entity collections, re-exported for the page
+// selectors. Entities (User/Bot/Event/EventAttachment) carry an id and resolve
+// through their collection; presence and the inline event details are plain
+// value types projected from a slot. The composer's page-local SelfConnection
+// value type lives with the main page module that uses it, not here.
+export { type Presence, toPresence } from './Presence'
+export { type User, USER_TYPE, userFromFields, Users } from './User'
+export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
+export {
+  type ModeratorPiece,
+  MODERATOR_PIECE_TYPE,
+  moderatorPieceFromFields,
+  ModeratorPieces,
+} from './ModeratorPiece'
+export {
+  type Event,
+  type EventAttachment,
+  type EventMessage,
+  type EventUserRegistration,
+  type EventUserRename,
+  EVENT_TYPE,
+  EVENT_ATTACHMENT_TYPE,
+  eventFromFields,
+  eventAttachmentFromFields,
+  eventMessageFrom,
+  eventRegistrationFrom,
+  eventRenameFrom,
+  Events,
+  EventAttachments,
+} from './Event'

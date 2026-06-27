@@ -1,0 +1,58 @@
+// Root view. The application shell is the SDK's HilosLayout; the demo fills its
+// brand slot and routes the content through HilosView, which renders the
+// component mapped to the navigator's current page. The brand and the shell's
+// gear move between the main page and the framework dashboard with no refresh.
+// The live connection state is the shell's own indicator.
+import { ChangeDetectionStrategy, Component } from '@angular/core'
+import type { Type } from '@angular/core'
+import { HilosLayout, HilosView, hilosAdminViews } from '@hilos/angular'
+import { HilosPages } from '@hilos/core'
+
+import { connection } from './bootstrap/connection'
+import { PAGE_MAIN } from './pages/keys'
+import { About } from './views/about/about'
+import { License } from './views/license/license'
+import { Main } from './views/main/main'
+import { Privacy } from './views/privacy/privacy'
+import { Settings } from './views/hilos/settings/settings'
+import { Terms } from './views/terms/terms'
+import { User } from './views/hilos/users/user'
+import { Users } from './views/hilos/users/users'
+
+@Component({
+  selector: 'app-root',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [HilosLayout, HilosView],
+  template: `<hilos-layout [connection]="connection">
+    <span brand>Hilos Poll</span>
+    <hilos-view [pages]="pages" />
+  </hilos-layout>`,
+})
+export class App {
+  protected readonly connection = connection
+
+  // The page-key → view map HilosView renders from. Pages without a mapped view
+  // (other routes land later) render nothing.
+  protected readonly pages: Record<string, Type<unknown>> = {
+    [PAGE_MAIN]: Main,
+    // The Hilos admin section. The framework ships a real default page for every
+    // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
+    // the pages it implements itself; the rest render the framework default, never
+    // recopied per project (page-module-structure.md).
+    ...hilosAdminViews(),
+    // The framework settings admin page, activated configure-only: the framework
+    // owns the table and the add/update/delete lifecycle; the project binds only its
+    // scope stores + action lifecycle (views/hilos/settings) and its catalog on the backend.
+    [HilosPages.SETTINGS]: Settings,
+    // The framework users/user admin pages: the framework owns the table, the
+    // detail, and the rename round-trip; the project binds its scope stores,
+    // connection, and typed user collection (views/hilos/users) and supplies its user
+    // entity + presence sources on the backend.
+    [HilosPages.USERS]: Users,
+    [HilosPages.USER]: User,
+    [HilosPages.ABOUT]: About,
+    [HilosPages.TERMS]: Terms,
+    [HilosPages.PRIVACY]: Privacy,
+    [HilosPages.LICENSE]: License,
+  }
+}

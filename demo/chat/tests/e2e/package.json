@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:realtime": "playwright test --grep @realtime",
-    "test:non-realtime": "playwright test --grep-invert @realtime",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "1.58.2"
+    "@playwright/test": "1.60.0",
+    "@types/node": "^24.13.1",
+    "typescript": "^6.0.3"
   }
 }

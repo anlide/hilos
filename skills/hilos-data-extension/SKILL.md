@@ -17,13 +17,9 @@ you choose.
   use `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- BrowserContext rows, frontend state payloads, and legacy `toFrontend` serialization:
-  use `$hilos-frontend-representation`.
 - Truth source ownership: `docs/agents/agent-system/monopolistic-agent.md`.
 - Repository/service anti-pattern:
   `docs/agents/antipatterns/no-repository-service.md`.
-- Frontend state contracts, if the value is sent to a page:
-  use `$hilos-frontend-sdk`.
 - Test command selection: use `$hilos-testing-cli`.
 
 ## DB vs RT

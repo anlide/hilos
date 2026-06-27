@@ -9,12 +9,6 @@ namespace Demo\Chat\Browser;
  */
 final class ChatBrowserTable
 {
-    public const string MAIN_EVENTS = 'mainEvents';
-    public const string MAIN_USERS = 'mainUsers';
-    public const string MAIN_BOTS = 'mainBots';
-    public const string SELF_CONNECTION = 'selfConnection';
-    public const string ATTACHMENT_DRAFTS = 'attachmentDrafts';
-    public const string BOT_DETAIL = 'botDetail';
     public const string USER_DETAIL = 'userDetail';
     public const string GUARDIAN_AGENT_STATUSES = 'guardianAgentStatuses';
     public const string GUARDIAN_AGENT_STATUS_DETAIL = 'guardianAgentStatusDetail';

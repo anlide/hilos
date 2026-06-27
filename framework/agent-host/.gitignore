@@ -1,0 +1,3 @@
+# Build output and scratch data for this package.
+/dist/
+/.tmp-data/

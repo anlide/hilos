@@ -14,16 +14,18 @@ use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
-use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
-use Hilos\Core\Browser\Config\BrowserTableConfig;
+use Hilos\Core\Browser\Config\BrowserSourceConfig;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
@@ -39,7 +41,7 @@ final class ChatTopologyRegistryTest extends TestCase
 {
     protected function tearDown(): void
     {
-        Hilos::$browser = null;
+        Hilos::resetBrowser();
 
         parent::tearDown();
     }
@@ -56,7 +58,7 @@ final class ChatTopologyRegistryTest extends TestCase
 
     public function testRegistryValuesAreClassStrings(): void
     {
-        foreach ([Hilos::PAGES, Hilos::GROUPS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
+        foreach ([Hilos::PAGES, Hilos::GROUPS, Hilos::TABLES, $this->mergedBrowserSources()] as $registry) {
             foreach ($registry as $class) {
                 $this->assertIsString($class);
                 $this->assertTrue(class_exists($class), "{$class} must be a concrete class string");
@@ -136,7 +138,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
-            ChatSignalConstants::RENAME => PageConstants::PROFILE,
+            ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
@@ -144,12 +146,12 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
             ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,
             ChatSignalConstants::BOT_DELETE => PageConstants::ADMIN_BOTS,
-            ChatSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
-            ChatSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
-            ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
+            HilosSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
+            HilosSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
+            HilosSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
-            ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -167,12 +169,12 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_CREATE => AgentType::LIBRARY,
             ChatSignalConstants::BOT_UPDATE => AgentType::LIBRARY,
             ChatSignalConstants::BOT_DELETE => AgentType::LIBRARY,
-            ChatSignalConstants::SETTING_ADD => AgentType::HILOS_INDEX,
-            ChatSignalConstants::SETTING_UPDATE => AgentType::HILOS_INDEX,
-            ChatSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SETTING_ADD => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SETTING_UPDATE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
-            ChatSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
@@ -182,7 +184,7 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
+                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::HILOS_PROFILE,
             ],
         ], Hilos::getPageSignalRoutes());
     }
@@ -322,20 +324,27 @@ final class ChatTopologyRegistryTest extends TestCase
 
     public function testBrowserTableRegistryKeysMatchTableClassConstants(): void
     {
-        foreach (Hilos::BROWSER_TABLES as $table => $tableClass) {
-            $this->assertSame($table, $tableClass::TABLE);
+        foreach ($this->mergedBrowserSources() as $table => $tableClass) {
+            $sourceKey = match (true) {
+                defined("{$tableClass}::LIST") => $tableClass::LIST,
+                defined("{$tableClass}::DATA") => $tableClass::DATA,
+                default => $tableClass::TABLE,
+            };
+            $this->assertSame($table, $sourceKey);
         }
     }
 
     public function testPageTablesUseRegisteredTableKeys(): void
     {
-        foreach (Hilos::PAGE_TABLES as $page => $tables) {
+        $browserSources = $this->mergedBrowserSources();
+
+        foreach ($this->mergedPageSources() as $page => $tables) {
             $this->assertArrayHasKey($page, Hilos::PAGES);
 
             foreach ($tables as $table => $config) {
                 $this->assertTrue(
-                    isset(Hilos::TABLES[$table]) || isset(Hilos::BROWSER_TABLES[$table]),
-                    "{$page} references unknown table {$table}",
+                    isset(Hilos::TABLES[$table]) || isset($browserSources[$table]),
+                    "{$page} references unknown source {$table}",
                 );
                 $this->assertIsArray($config);
             }
@@ -389,18 +398,18 @@ final class ChatTopologyRegistryTest extends TestCase
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
         $resolvePageTables = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $page): BrowserPageTableBindings => $context->resolveBrowserPageTables($page),
+            static fn(ChatBrowserContext $context, string $page): BrowserPageBindings => $context->resolveBrowserPageBindings($page),
             null,
             ChatBrowserContext::class,
         );
 
-        foreach (Hilos::PAGE_TABLES as $page => $tableConfigs) {
+        foreach ($this->mergedPageSources() as $page => $tableConfigs) {
             $bindings = iterator_to_array($resolvePageTables($context, $page), false);
 
-            $this->assertSame(array_keys($tableConfigs), array_map(static fn($binding): string => $binding->tableKey, $bindings));
+            $this->assertSame(array_keys($tableConfigs), array_map(static fn($binding): string => $binding->browserKey, $bindings));
             foreach ($bindings as $binding) {
-                $tableConfig = $tableConfigs[$binding->tableKey] ?? [];
-                $this->assertSame($this->expectedBindingParamRefs($tableConfig), $binding->paramRefs());
+                $browserConfig = $tableConfigs[$binding->browserKey] ?? [];
+                $this->assertSame($this->expectedBindingParamRefs($browserConfig), $binding->paramRefs());
             }
         }
 
@@ -412,12 +421,12 @@ final class ChatTopologyRegistryTest extends TestCase
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
         $resolveTableConfig = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserTableConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
+            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserSourceConfig => $context->resolveBrowserOnlyConfig($tableKey),
             null,
             ChatBrowserContext::class,
         );
 
-        foreach (Hilos::BROWSER_TABLES as $table => $tableClass) {
+        foreach ($this->mergedBrowserSources() as $table => $tableClass) {
             $config = $resolveTableConfig($context, $table);
 
             $this->assertNotNull($config);
@@ -519,16 +528,16 @@ final class ChatTopologyRegistryTest extends TestCase
     /**
      * Extracts expected binding param references from a PAGE_TABLES entry.
      *
-     * @param mixed $tableConfig Page table binding config
+     * @param mixed $browserConfig Page table binding config
      * @return array<string, mixed> Table param reference declarations
      */
-    private function expectedBindingParamRefs(mixed $tableConfig): array
+    private function expectedBindingParamRefs(mixed $browserConfig): array
     {
-        if (!is_array($tableConfig)) {
+        if (!is_array($browserConfig)) {
             return [];
         }
 
-        $params = $tableConfig[BrowserParamKey::PARAMS] ?? [];
+        $params = $browserConfig[BrowserParamKey::PARAMS] ?? [];
 
         return is_array($params) ? $params : [];
     }
@@ -541,10 +550,37 @@ final class ChatTopologyRegistryTest extends TestCase
      */
     private function expectedTableRows(array $browserConfig): array
     {
-        $rows = $browserConfig[BrowserConfigKey::ROWS] ?? [];
+        $rows = $browserConfig[BrowserListConfigKey::ITEMS] ?? $browserConfig[BrowserTableConfigKey::ROWS] ?? [];
 
         return is_array($rows)
             ? array_values(array_filter($rows, static fn(mixed $row): bool => is_array($row)))
             : [];
+    }
+
+    /**
+     * Merges the three browser source registries into one source-class map.
+     *
+     * @return array<string, class-string> Source config class keyed by source key
+     */
+    private function mergedBrowserSources(): array
+    {
+        return Hilos::BROWSER_LISTS + Hilos::BROWSER_TABLES + Hilos::BROWSER_DATA;
+    }
+
+    /**
+     * Merges the three page source registries, unioning each page's bindings.
+     *
+     * @return array<string, array<string, mixed>> Source binding map keyed by page
+     */
+    private function mergedPageSources(): array
+    {
+        $merged = [];
+        foreach ([Hilos::PAGE_LISTS, Hilos::PAGE_TABLES, Hilos::PAGE_DATA] as $registry) {
+            foreach ($registry as $page => $bindings) {
+                $merged[$page] = ($merged[$page] ?? []) + $bindings;
+            }
+        }
+
+        return $merged;
     }
 }

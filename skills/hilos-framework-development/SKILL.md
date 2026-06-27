@@ -18,8 +18,6 @@ that match the affected subsystem.
 - Facade, magic, array, and key-based accessors: use `$hilos-accessor-contracts`
 - DB model changes: use `$hilos-orm` and respect the contract approval gate
 - Runtime state changes: use `$hilos-runtime` and respect the contract approval gate
-- Frontend framework views/components: use `$hilos-frontend-sdk` and
-  `docs/agents/code-style/frontend-vue.md`
 
 ## Workflow
 

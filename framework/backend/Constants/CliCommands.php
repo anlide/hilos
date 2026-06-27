@@ -18,6 +18,9 @@ final class CliCommands
     /** @var string Command: Monitor daemon in real-time */
     public const string DAEMON_MONITOR = 'daemon:monitor';
 
+    /** @var string Command: Ping the daemon over the command channel */
+    public const string DAEMON_PING = 'daemon:ping';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

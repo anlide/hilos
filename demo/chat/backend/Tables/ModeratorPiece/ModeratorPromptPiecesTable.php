@@ -11,14 +11,17 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
-use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
@@ -27,17 +30,17 @@ use Hilos\Database\DatabaseException;
  *
  * @property-read ModeratorPromptPiecesTableActions $actions Table-level prompt piece creation actions
  */
-final class ModeratorPromptPiecesTable extends TableDefinition
+final class ModeratorPromptPiecesTable extends TableDefinition implements ViewportTable
 {
     public const array BROWSER = [
-        BrowserConfigKey::SOURCES => [
+        BrowserTableConfigKey::SOURCES => [
             ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
         ],
-        BrowserConfigKey::ROWS => [
+        BrowserTableConfigKey::ROWS => [
             [
-                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
-                BrowserFieldKey::ROW_KEY => ObjectModeratorPromptPiece::id,
-                BrowserFieldKey::FIELDS => [
+                BrowserTableFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
+                BrowserTableFieldKey::ROW_KEY => ObjectModeratorPromptPiece::id,
+                BrowserTableFieldKey::FIELDS => [
                     ObjectModeratorPromptPiece::id => ModeratorPromptPieceTableRow::id,
                     ObjectModeratorPromptPiece::section => ModeratorPromptPieceTableRow::section,
                     ObjectModeratorPromptPiece::promptPiece => ModeratorPromptPieceTableRow::promptPiece,
@@ -77,6 +80,27 @@ final class ModeratorPromptPiecesTable extends TableDefinition
             $pieceId,
             $this->rowFromModeratorPromptPiece($dbPiece),
         );
+    }
+
+    /**
+     * Serializes one prompt piece row into its internal browser-row envelope.
+     *
+     * The piece rides a single entity slot keyed by the DB source name (its `id`
+     * makes it an entity the frontend resolves through its piece collection), the
+     * same shape the declarative fan-out delivers, so a windowed or delta row
+     * resolves through the frontend identically.
+     *
+     * @param AbstractTableRow $row Prompt piece row from this table's window or mutation
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::sources => [
+                ChatDbContext::moderatorPromptPieces => $row->toArray(),
+            ],
+        ];
     }
 
     /**

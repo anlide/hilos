@@ -75,8 +75,8 @@ initial snapshot, and that is fine.
 ## Browser Tables
 
 Browser table configs declare the DB/RT sources that shape a page row. A source
-fact can trigger a `BrowserPageSignalData` row update or delete when the
-subscribed page includes a table observing that source.
+fact can trigger a `BrowserPageSignalData` row update, delete, or a whole-table
+clear when the subscribed page includes a table observing that source.
 
 Register browser-only table config classes in `Hilos::BROWSER_TABLES` and bind
 them to pages through `Hilos::PAGE_TABLES`; see
@@ -99,10 +99,20 @@ fan-out:
 
 - `kind` — `KIND_DB` or `KIND_RT`;
 - `sourceKey` — DB or RT collection key;
-- `sourceId` — row id or runtime state id, serialized as `string`;
-- `mutationType` — `TableMutationType` (`Create`, `Update`, `Delete`);
+- `sourceId` — row id or runtime state id, serialized as `string`; empty on a
+  collection-scoped clear;
+- `mutationType` — `TableMutationType` (`Create`, `Update`, `Delete`, `Clear`);
 - `row` — full row on create, diff on update, previous row on delete when
-  available.
+  available, empty on clear.
+
+`Clear` is collection-scoped, not row-scoped: it carries the `sourceKey` with an
+empty `sourceId`/`row` and means "every row in this collection was removed". It
+is queued by the framework `Objects::deleteAll()` (signal `DB_SYNC_CLEARED`,
+DTO `DbSyncClearedSignalData`), so any DB collection's bulk truncate fans out
+without per-project wiring. A table observing the cleared source emits a
+`cleared: true` marker in its list/table section; the frontend truncates the
+list/table before applying any rows delivered in the same payload. Unlike
+create/update/delete, a clear is browser-only and is not dispatched to agents.
 
 `SourceChange` extends `BaseDTO`, so it is also serializable for worker/daemon
 transport payloads that need to carry a source fact.

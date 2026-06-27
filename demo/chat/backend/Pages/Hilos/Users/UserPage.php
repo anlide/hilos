@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages\Hilos\Users;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Hilos;
@@ -39,7 +38,7 @@ final class UserPage extends AbstractHilosUserPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
-        ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
+        HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -74,7 +73,7 @@ final class UserPage extends AbstractHilosUserPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
-            case ChatSignalConstants::HILOS_USER_UPDATE:
+            case HilosSignalConstants::HILOS_USER_UPDATE:
                 if (!$dto instanceof HilosUserUpdateActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosUserUpdateActionDTO::class, $dto);
                 }
@@ -97,9 +96,9 @@ final class UserPage extends AbstractHilosUserPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        if ($action === ChatSignalConstants::HILOS_USER_UPDATE) {
+        if ($action === HilosSignalConstants::HILOS_USER_UPDATE) {
             $this->sendToUser(
-                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
+                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
                 new ActionFailSignalData($e->getMessage()),
             );
@@ -138,7 +137,7 @@ final class UserPage extends AbstractHilosUserPage
         );
 
         $this->sendToUser(
-            ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS,
+            HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
             $acceptKey,
             new ActionSuccessSignalData(),
         );

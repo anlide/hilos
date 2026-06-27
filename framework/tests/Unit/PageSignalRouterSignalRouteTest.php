@@ -22,11 +22,13 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -55,6 +57,35 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $this->assertInstanceOf(PageSignalRouterTestPage::class, $page);
         $this->assertSame($data, $page->agentSignalData);
         $this->assertSame('moderation_result', $page->agentSignalName);
+    }
+
+    public function testDispatchTableViewportStoresTheDescriptor(): void
+    {
+        $previousRouter = HilosFacade::$sr;
+        HilosFacade::$sr = new SignalRouter();
+        try {
+            $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+            $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+            $router->dispatchTableViewport(
+                new WebSocketTableViewportSignalDTO(
+                    acceptKey: 'ak',
+                    page: PageSignalRouterTestPage::PAGE,
+                    tableKey: 'settings',
+                    offset: 10,
+                    limit: 10,
+                ),
+                'websocket',
+                PageSignalRouterTestPage::PAGE,
+            );
+
+            $viewport = HilosFacade::$sr->getTableViewport('ak', 'settings');
+            $this->assertNotNull($viewport);
+            $this->assertSame('settings', $viewport->tableKey);
+            $this->assertSame(10, $viewport->offset);
+        } finally {
+            HilosFacade::$sr = $previousRouter;
+        }
     }
 
     public function testDispatchesBinaryFrameBySignalTypeRoute(): void

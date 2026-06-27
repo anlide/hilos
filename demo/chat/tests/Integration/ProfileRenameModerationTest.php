@@ -10,15 +10,15 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
-use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\ProfilePage;
+use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\SignalRouteConfig;
@@ -66,7 +66,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testApprovedRenameModerationResultRenamesUserAndSendsSuccess(): void
+    public function testApprovedRenameModerationResultRenamesUser(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -97,10 +97,8 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             );
             $this->assertUserRenamedEventExists($user->id, $oldName, 'Alice');
 
-            $successSignal = $this->takeQueuedWebSocketSignal(ChatSignalConstants::RENAME_SUCCESS);
-            $this->assertNotNull($successSignal);
-            $this->assertSame('rename-approve-ak', $successSignal->targetAcceptKey);
-            $this->assertInstanceOf(ActionSuccessSignalData::class, $successSignal->data);
+            // Success is state-driven: the renamed user fans out over the
+            // self-connection data, so no explicit success ack is queued.
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();
@@ -108,7 +106,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testRejectedRenameModerationResultPreservesNameAndSendsFail(): void
+    public function testRejectedRenameModerationResultPreservesNameAndReportsActionError(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -139,11 +137,15 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             );
             $this->assertSame('policy', Hilos::$rt->connections['rename-reject-ak']?->renameModerationReason);
 
-            $failSignal = $this->takeQueuedWebSocketSignal(ChatSignalConstants::RENAME_FAIL);
-            $this->assertNotNull($failSignal);
-            $this->assertSame('rename-reject-ak', $failSignal->targetAcceptKey);
-            $this->assertInstanceOf(ActionFailSignalData::class, $failSignal->data);
-            $this->assertSame('policy', $failSignal->data->reason);
+            // The reject is routed back through the framework action_error
+            // contract (PageSignalRouter → default onActionException), not a
+            // bespoke fail signal.
+            $errorSignal = $this->takeQueuedWebSocketSignal(SignalConstants::ACTION_ERROR);
+            $this->assertNotNull($errorSignal);
+            $this->assertSame('rename-reject-ak', $errorSignal->targetAcceptKey);
+            $this->assertInstanceOf(PageActionErrorSignalData::class, $errorSignal->data);
+            $this->assertSame(ChatSignalConstants::RENAME, $errorSignal->data->action);
+            $this->assertSame('policy', $errorSignal->data->reason);
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();

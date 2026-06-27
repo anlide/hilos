@@ -39,6 +39,36 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 | `daemon:monitor` | Live monitoring of daemon |
 | `help` | List available commands |
 
+## Test-only commands
+
+Some operations are irreversible (deleting an orphan settings row) or time-delayed
+(an account deleted N days after a request). To set up or tear down such state for a
+test, do **not** engineer idempotency into the test — use a **test-only CLI command**.
+
+These extend `Hilos\Core\CLI\Commands\TestOnlyCommand`, whose `final execute()` refuses
+to run unless `APP_ENV` is non-production (same guard as `Seed::isProduction`). Subclassing
+is the marker: a reader sees `extends TestOnlyCommand` and knows the command must never run
+on prod. Subclasses implement `run()`.
+
+A project registers its own commands by subclassing `CliManager` and overriding
+`registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
+news the project manager:
+
+```php
+final class ChatCliManager extends CliManager
+{
+    protected function registerProjectCommands(): void
+    {
+        $this->addCommand(new CreateOrphanSettingCommand());
+        $this->addCommand(new DeleteOrphanSettingCommand());
+    }
+}
+```
+
+Worked example (chat): `test:orphan-setting:create` / `test:orphan-setting:delete` write and
+remove an orphan settings row — a demonstration of the mechanism, in
+`demo/chat/backend/CLI/Commands/`.
+
 ## Typical development flow
 
 ```bash
