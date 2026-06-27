@@ -82,6 +82,17 @@
               "extractLicenses": false,
               "sourceMap": true,
               "tsConfig": "tsconfig.dev.json"
+            },
+            "prerender": {
+              "server": "src/prerender/main.server.ts",
+              "ssr": {
+                "entry": "src/prerender/server.ts"
+              },
+              "tsConfig": "tsconfig.server.json",
+              "outputPath": {
+                "base": "dist-prerender",
+                "browser": "browser"
+              }
             }
           },
           "defaultConfiguration": "production"

@@ -22,6 +22,7 @@ npm-debug.log*
 
 # Frontend build output
 /frontend/dist/
+/frontend/dist-prerender/
 
 # Vite dependency-optimizer cache (a cold container start can drop it at the
 # package root instead of node_modules/.vite)

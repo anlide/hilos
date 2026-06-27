@@ -6,7 +6,7 @@
   "scripts": {
     "ng": "ng",
     "dev": "ng serve --host 0.0.0.0 --port 5173",
-    "build": "ng build",
+    "build": "ng build && ng build --configuration prerender && node dist-prerender/server/server.mjs",
     "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
     "check": "tsc --noEmit -p tsconfig.dev.json"
   },
@@ -27,6 +27,9 @@
     "@angular/build": "^22.0.0",
     "@angular/cli": "^22.0.0",
     "@angular/compiler-cli": "^22.0.0",
+    "@angular/platform-server": "22.0.0",
+    "@angular/ssr": "22.0.0",
+    "@types/node": "^22.0.0",
     "typescript": "~6.0.2"
   }
 }

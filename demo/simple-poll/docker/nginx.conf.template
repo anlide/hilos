@@ -69,10 +69,12 @@ http {
             try_files /index.html =404;
         }
 
-        # SPA fallback: the simple-poll demo has no prerendered routes, so
-        # unknown paths resolve to index.html and the client takes over.
+        # Hybrid SSG: a prerendered public page (Angular emits <route>/index.html)
+        # is served as static HTML; every other path cold-loads the SPA shell,
+        # which then takes over client-side. The authed area is never prerendered
+        # (docs/agents/frontend/build-and-docker.md).
         location / {
-            try_files $uri $uri/ /index.html;
+            try_files $uri $uri.html $uri/index.html /index.html;
         }
 
         # Security headers

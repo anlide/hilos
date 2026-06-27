@@ -9,7 +9,7 @@ import pluginVue from 'eslint-plugin-vue'
 import configPrettier from 'eslint-config-prettier'
 
 export default tseslint.config(
-  { ignores: ['dist/**'] },
+  { ignores: ['dist/**', 'dist-prerender/**'] },
   js.configs.recommended,
   // As of PhpStorm 2026.1, the IDE type inspection falsely flags the next line —
   // it rejects typescript-eslint's CompatibleConfigArray for config()'s parameter,

@@ -74,7 +74,17 @@ chunk after a redeploy is caught by the build-version → forced-refresh check
 
 The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 (skeletons fill it as data streams — there is nothing for SSG to prerender behind
-auth). A public, SEO-relevant surface (marketing pages) is **statically
-prerendered**. SSG stays in v1 but is low priority; the build must support the
-prerender path for public routes without forcing it on the authed area
-([core-and-connection.md](core-and-connection.md)).
+auth). The public, SEO-relevant surface — the framework's footer pages (About,
+Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**:
+each is a framework-declared static page whose content needs no socket, so a
+post-build step renders it to a static `<route>.html` through the view
+framework's own server renderer (Vue and React via a Vite SSR build of a
+prerender entry; Angular via `@angular/platform-server`). The same step emits
+`robots.txt` and a `sitemap.xml` of those routes.
+
+nginx then serves `<route>.html` for a public path and falls back to the SPA
+shell (`index.html`) only for the app's own deep links, so the authed area is
+never forced through the prerender path
+([core-and-connection.md](core-and-connection.md)). SSG is low priority but part
+of v1; a project adds a public route by mapping a content component to its page
+key — the prerender step picks it up from `HILOS_FOOTER_LINKS`.
