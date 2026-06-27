@@ -106,16 +106,18 @@ Mobile and desktop compatibility comes for free when the rule holds — Bootstra
 responsive utilities and breakpoints cover it. v1 is responsive out of the box;
 there is no first-class touch-specific design.
 
-## Accessibility — full, in v1
+## Accessibility — full AA, in v1
 
-Accessibility ships from day one, out of the box — a serious framework supports it
-without trouble. The rules are not complex:
+Accessibility ships from day one at **WCAG 2.1 AA**, not as a later bolt-on, and
+it leans directly on this styling rule: building from stock Bootstrap 5.3 classes
+delivers the visual a11y layer for free — `:focus-visible` focus rings, a nuanced
+`prefers-reduced-motion` story (spinners slow, they do not freeze), and an
+AA-tuned theme — so hand-authored CSS would only regress it (a blanket
+reduced-motion reset, for instance, freezes the loading spinners). Hilos adds the
+structure on top: landmarks, one heading per page, ARIA roles and names, text
+alternatives for status color, focus-trapped modals, and the live regions.
 
-- **focus-trap and focus-return** in modals (ties to edit-in-modal,
-  [conflict-resolution.md](conflict-resolution.md));
-- **full keyboard navigation** of every interactive element;
-- **ARIA** roles and labels;
-- **visible focus** and adequate **contrast** (via the Bootstrap theme).
-
-Accessibility is not deferred or bolted on later; it is part of every component
-from the start.
+The normative checklist — the four pillars, the app-shell layer, the per-component
+patterns, what Bootstrap already covers, and the new-page checklist — is
+[accessibility.md](accessibility.md). Read it before building or reviewing any
+view or SDK component.

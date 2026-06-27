@@ -77,11 +77,14 @@ It is **not** part of the inner loop. The two-window coverage lives in chat's
 `moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
 the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one
 representative path per view layer. The **a11y** coverage is the same kind of
-separate, rarely-run category — an `a11y.spec.ts` per demo (chat checks the
-settings table, simple-todo and simple-poll the users table) asserting the
-accessibility tree (accessible names, `aria-sort`, keyboard operability); run it
-in the full pass or pointed (`test:e2e -- a11y.spec`) while editing a11y. A green
-inner loop (check + vitest + pointed phpunit) does not require re-running them.
+separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
+accessibility tree over the live socket: table accessible names and `aria-sort`,
+keyboard sort operability, the skip link and `aria-current`, the document title
+and page-change announcement, one top-level heading per page, and presence
+exposed as text. Run it in the full pass or pointed (`test:e2e -- a11y.spec`)
+while editing a11y; a green inner loop (check + vitest + pointed phpunit) does not
+require re-running them. The normative AA requirements those specs guard are in
+[frontend/accessibility.md](frontend/accessibility.md).
 
 Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
 the next section.

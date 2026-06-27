@@ -234,9 +234,11 @@ Topic documents are referenced by filename; several are still being authored.
   only in the Bootstrap Sass layer (variables, maps, custom-utilities), each with
   a comment stating why Bootstrap utilities cannot achieve it. See
   [styling-rules.md](styling-rules.md).
-- **Full accessibility in v1.** Focus-trap and focus-return in modals, full
-  keyboard navigation, ARIA roles and labels, and visible focus with adequate
-  contrast ship from day one. See [styling-rules.md](styling-rules.md).
+- **Full accessibility (WCAG 2.1 AA) in v1.** Focus-trap and focus-return in
+  modals, full keyboard operability, ARIA roles and names, one heading per page,
+  text alternatives for status color, and visible focus with adequate contrast
+  ship from day one. The normative checklist is
+  [accessibility.md](accessibility.md).
 
 ## H. Feedback and freshness
 
