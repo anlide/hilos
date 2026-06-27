@@ -16,11 +16,19 @@
 // no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
 // Icons (`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap.
 import type { ConnectionState, HilosConnection } from '@hilos/core'
-import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import {
+  HILOS_FOOTER_LINKS,
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  createSignal,
+} from '@hilos/core'
+import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosLayout}. */
 export interface HilosLayoutProps {
@@ -50,6 +58,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 // framework page catalog, not restated here as a literal (routing/hilosPages).
 const ADMIN_HREF = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
 
+// A stable empty fallback so useSignal always has a real signal without a router
+// (tests, the hard-link fallback); the page title then stays empty.
+const NO_TITLE = createSignal('')
+
 /**
  * The application shell: top navigation with the brand, the admin gear, the
  * live connection indicator, and the routed page content.
@@ -65,6 +77,18 @@ export function HilosLayout({
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
 
+  // Mirror the navigator's current page title: set it as the document title so
+  // the browser tab tracks the no-refresh navigation, and render it in the live
+  // region below so a screen reader announces the page change (WCAG 2.4.2).
+  // Without a router (tests, the hard-link fallback) the title stays empty.
+  const router = useContext(HilosRouterContext)
+  const pageTitle = useSignal(router?.currentTitle ?? NO_TITLE)
+  useEffect(() => {
+    if (pageTitle) {
+      document.title = pageTitle
+    }
+  }, [pageTitle])
+
   return (
     <div
       className="d-flex flex-column vh-100 overflow-hidden"
@@ -77,6 +101,14 @@ export function HilosLayout({
       >
         Skip to main content
       </a>
+      <div
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="page-title"
+      >
+        {pageTitle}
+      </div>
       <nav
         className="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
         aria-label="Main"

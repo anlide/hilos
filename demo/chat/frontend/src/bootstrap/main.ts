@@ -9,11 +9,19 @@ import { createApp } from 'vue'
 
 import App from '../App.vue'
 import { pageEntityTypes } from '../pages/entityTypes'
+import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
 import { connection } from './connection'
 import { scopes } from './session'
 
-const hilosRouter = bootHilos({ connection, scopes, router, pageEntityTypes })
+const hilosRouter = bootHilos({
+  connection,
+  scopes,
+  router,
+  pageEntityTypes,
+  pageTitles,
+  appName,
+})
 
 const app = createApp(App)
 app.provide(hilosRouterKey, hilosRouter)

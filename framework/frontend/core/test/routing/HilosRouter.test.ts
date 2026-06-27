@@ -72,6 +72,33 @@ describe('createHilosRouter', () => {
     expect(navigator.currentPath.get()).toBe('/hilos')
   })
 
+  it('derives the current title from the route via the resolver', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const titles: Record<string, string> = { main: 'Home', user: 'User' }
+    const navigator = createHilosRouter(
+      router,
+      pages,
+      env,
+      (page) => titles[page] ?? '',
+    )
+    navigator.start()
+
+    expect(navigator.currentTitle.get()).toBe('Home')
+
+    navigator.navigate('/user/42')
+
+    expect(navigator.currentTitle.get()).toBe('User')
+  })
+
+  it('defaults the current title to empty without a resolver', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+
+    expect(navigator.currentTitle.get()).toBe('')
+  })
+
   it('subscribes the current page and attaches popstate on start', () => {
     const { env, isPopAttached } = fakeEnvironment('/hilos')
     const { pages, calls } = fakePages()

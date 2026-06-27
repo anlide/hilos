@@ -14,6 +14,7 @@ function router(): HilosRouter {
   return {
     currentRoute: createSignal<PageRouteMatch>({ page: '', params: {} }),
     currentPath: createSignal(''),
+    currentTitle: createSignal(''),
     pageError: createSignal(null),
     navigate: () => {},
     start: () => {},

@@ -97,6 +97,22 @@ describe('bootHilos', () => {
     expect(ref?.type).toBe('user')
   })
 
+  it('resolves the current title from the project titles and app name', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const router = createAppPageRouter({ main: '/' }, { fallback: 'main' })
+    const hilosRouter = bootHilos({
+      connection: connection as unknown as HilosConnection,
+      scopes,
+      router,
+      navigationEnvironment: fakeNavigation('/'),
+      pageTitles: { main: 'Home' },
+      appName: 'Demo',
+    })
+
+    expect(hilosRouter.currentTitle.get()).toBe('Home · Demo')
+  })
+
   it('binds the page scope so a page_response lands in the page scope', () => {
     const connection = fakeConnection()
     const { scopes } = boot(connection)

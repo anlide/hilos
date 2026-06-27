@@ -27,6 +27,7 @@ view files, which live in `views/<Page>/`:
 | `keys.ts` | the app's page-key constants | always |
 | `routes.ts` | the page-key → URL-template map and the `router` | always |
 | `entityTypes.ts` | per-slot canonical entity types for page payloads | only when page payloads carry entity slots |
+| `pageTitles.ts` | the page-key → browser-tab title map and the `appName` | recommended (an accessible document title) |
 
 - **`keys.ts` — page keys.** A `const` per page, mirroring the demo-specific
   rows of the backend `PageConstants`. Each value is the subscription wire
@@ -47,6 +48,13 @@ view files, which live in `views/<Page>/`:
   payloads carry entity slots; a one-page app with no entity-bearing slots omits
   it. It is frontend config, never emitted on the wire — keep it in sync with
   the backend browser sources ([rules-and-violations.md](rules-and-violations.md)).
+- **`pageTitles.ts` — document titles (recommended).** The `pageTitles` map from
+  a page key to its browser-tab title, plus the `appName` composed into every
+  title. `bootHilos` merges it with the framework admin/footer labels into
+  `HilosRouter.currentTitle`, which the app shell binds to `document.title` and a
+  page-change live region (WCAG 2.4.2 Page Titled). A project lists only its
+  **own** pages — framework admin and footer pages are titled from their
+  catalogs. Frontend config, never emitted on the wire.
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.
@@ -116,11 +124,11 @@ The three conformance demos exercise the registry at different sizes:
   routes, and an `entityTypes.ts` (`users` / `bots` / `events` /
   `eventAttachments`) wired into `bindPageScope` so a message author dedupes
   against the bot the list delivered. `pages/` holds `keys.ts`, `routes.ts`,
-  `entityTypes.ts`.
-- **simple-todo (React)** — `pages/keys.ts` + `pages/routes.ts` only. One page,
-  no entity-bearing page slots, so there is no `entityTypes.ts` and the bind is
-  `bindPageScope(connection, scopes)`.
-- **simple-poll (Angular)** — the same two-file registry as todo, kept under
+  `entityTypes.ts`, `pageTitles.ts`.
+- **simple-todo (React)** — `pages/keys.ts`, `pages/routes.ts`, and
+  `pages/pageTitles.ts`. One page, no entity-bearing page slots, so there is no
+  `entityTypes.ts` and the bind is `bindPageScope(connection, scopes)`.
+- **simple-poll (Angular)** — the same registry as todo, kept under
   `src/app/pages/` per the Angular layout.
 
 ## Violations

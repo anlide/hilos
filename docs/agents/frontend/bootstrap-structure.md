@@ -23,9 +23,13 @@ configures rather than re-implements:
   the socket opens.
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
-- `bootHilos({ connection, scopes, router, pageEntityTypes? })` — bind the
-  session and page scopes, build the navigator, open the socket, apply the URL,
-  and return the navigator to provide to the view.
+- `bootHilos({ connection, scopes, router, pageEntityTypes?, pageTitles?, appName? })`
+  — bind the session and page scopes, build the navigator, open the socket, apply
+  the URL, and return the navigator to provide to the view. `pageTitles` (the
+  project's page key → browser-tab title) and `appName` feed the navigator's
+  `currentTitle`, which the app shell binds to `document.title` and a page-change
+  live region (WCAG 2.4.2); framework admin and footer pages are titled from
+  their own catalogs, so a project lists only its own pages.
 
 ## Workflow
 
@@ -43,8 +47,10 @@ configures rather than re-implements:
    from `sessionUserName(scopes)`.
 4. **`bootstrap/main`** (`main.ts` / `main.tsx`) calls `bootHilos(...)` with the
    project's `connection`, `scopes`, page `router`, and optional
-   `pageEntityTypes`, then mounts the view and provides the returned navigator
-   (Vue `hilosRouterKey`, React `HilosRouterContext`, Angular `HILOS_ROUTER`).
+   `pageEntityTypes`, `pageTitles`, and `appName` (the latter two from
+   `pages/pageTitles.ts`), then mounts the view and provides the returned
+   navigator (Vue `hilosRouterKey`, React `HilosRouterContext`, Angular
+   `HILOS_ROUTER`).
 5. A new cross-cutting app-setup concern (error reporting, analytics, i18n,
    feature flags) gets its own `bootstrap/` file, wired from `bootstrap/main`. It
    never lands at the src root.
@@ -69,7 +75,7 @@ src/
     connection.ts     # createHilosConnection → connection (+ actionErrors)
     session.ts        # ScopeManager + ensureSessionTokenCookie + currentUserName
     main.ts           # bootHilos(...) + mount + provide navigator
-  pages/              # page registry (keys, routes, entity-slot types)
+  pages/              # page registry (keys, routes, entity-slot types, titles)
   types/              # domain entities and shared value types
   views/              # one folder per page
 ```

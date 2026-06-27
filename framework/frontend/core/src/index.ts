@@ -141,6 +141,7 @@ export {
   type HilosCrumb,
   type HilosAdminChild,
 } from './routing/hilosAdmin.js'
+export { resolvePageTitle } from './routing/pageTitle.js'
 export { assertNever } from './protocol/assertNever.js'
 export {
   signalEnvelopeSchema,

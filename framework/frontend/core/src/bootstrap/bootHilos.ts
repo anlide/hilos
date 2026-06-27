@@ -11,6 +11,7 @@ import {
   type HilosRouter,
   type NavigationEnvironment,
 } from '../routing/HilosRouter.js'
+import { resolvePageTitle } from '../routing/pageTitle.js'
 import { type PageRouter } from '../routing/PageRouter.js'
 import {
   bindSessionScope,
@@ -29,6 +30,19 @@ export interface BootHilosConfig {
   router: PageRouter
   /** Per-slot canonical entity types for the page payloads. */
   pageEntityTypes?: Record<string, string>
+  /**
+   * Project page key → document title, for the project's own pages. The
+   * framework's admin and footer pages are titled from their own catalogs, so a
+   * project lists only its own pages here. Merged with {@link BootHilosConfig.appName}
+   * into `HilosRouter.currentTitle` for the browser tab and the page-change
+   * announcement (WCAG 2.4.2).
+   */
+  pageTitles?: Record<string, string>
+  /**
+   * The application name composed into every document title as `"<page> ·
+   * <app>"`. Omit it and a title is the bare page label.
+   */
+  appName?: string
   /** Current-user slot, entity-type, and name-field overrides. */
   session?: SessionScopeOptions
   /**
@@ -56,6 +70,8 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     config.router,
     pages,
     config.navigationEnvironment ?? browserNavigationEnvironment(),
+    (pageKey) =>
+      resolvePageTitle(pageKey, config.pageTitles ?? {}, config.appName ?? ''),
   )
   config.connection.connect()
   hilosRouter.start()

@@ -9,6 +9,7 @@
 
 import { type PageSubscriptionError } from '../protocol/pageError.js'
 import {
+  computedSignal,
   createSignal,
   type ReadonlySignal,
   type Unsubscribe,
@@ -53,6 +54,14 @@ export interface HilosRouter {
   /** The current location pathname; updates with the route on every navigation. */
   readonly currentPath: ReadonlySignal<string>
   /**
+   * The current page's document title; updates with the route on every
+   * navigation. The view binds it to `document.title` and announces it in a live
+   * region, so the browser tab title and the screen-reader page-change
+   * announcement track the no-refresh navigation (WCAG 2.4.2). Empty when the
+   * project configured no titles.
+   */
+  readonly currentTitle: ReadonlySignal<string>
+  /**
    * The current page's subscription error, or null while it loads cleanly. The
    * routed outlet (HilosView) shows an error surface for the page while it is
    * set; it is cleared the moment navigation changes the page.
@@ -81,16 +90,25 @@ export interface HilosRouter {
  * @param router Resolves a pathname to its page key and route params.
  * @param pages The page subscription the navigator drives.
  * @param env The browser binding; see {@link browserNavigationEnvironment}.
+ * @param resolveTitle Maps the current page key to its document title; defaults
+ *   to no title (an empty string). `bootHilos` supplies the project resolver.
  */
 export function createHilosRouter(
   router: PageRouter,
   pages: NavigablePages,
   env: NavigationEnvironment,
+  resolveTitle: (pageKey: string) => string = () => '',
 ): HilosRouter {
   const currentRoute = createSignal<PageRouteMatch>(
     router.match(env.pathname()),
   )
   const currentPath = createSignal<string>(env.pathname())
+  // The title is derived, not set in apply(): it recomputes from the route on
+  // every navigation, so a single source feeds both document.title and the
+  // page-change live region in the shell.
+  const currentTitle = computedSignal<string>(() =>
+    resolveTitle(currentRoute.get().page),
+  )
   let detachPopState: Unsubscribe | null = null
 
   // Resolve a pathname, publish it as the current route and path, and
@@ -105,6 +123,7 @@ export function createHilosRouter(
   return {
     currentRoute,
     currentPath,
+    currentTitle,
     pageError: pages.pageError,
     navigate: (pathname) => {
       env.pushState(pathname)

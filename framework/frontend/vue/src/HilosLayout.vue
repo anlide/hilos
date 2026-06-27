@@ -17,14 +17,32 @@ like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
-import { computed } from 'vue'
+import { computed, inject, watch } from 'vue'
 
 import HilosLink from './HilosLink.vue'
+import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useSignal } from './useSignal.js'
 
 const props = defineProps<{ connection: HilosConnection }>()
 
 const connectionState = useConnectionState(props.connection)
+
+// Mirror the navigator's current page title: set it as the document title so the
+// browser tab tracks the no-refresh navigation, and render it in the live region
+// below so a screen reader announces the page change (WCAG 2.4.2). Without a
+// router (tests, the hard-link fallback) there is no title to track.
+const router = inject(hilosRouterKey, undefined)
+const pageTitle = router ? useSignal(router.currentTitle) : undefined
+watch(
+  () => pageTitle?.value,
+  (title) => {
+    if (title) {
+      document.title = title
+    }
+  },
+  { immediate: true },
+)
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
 // green while the socket is live, amber while it is (re)connecting, red when it
@@ -59,6 +77,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
     >
       Skip to main content
     </a>
+    <div
+      class="visually-hidden"
+      role="status"
+      aria-live="polite"
+      data-id="page-title"
+    >
+      {{ pageTitle }}
+    </div>
     <nav
       class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
       aria-label="Main"

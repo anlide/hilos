@@ -10,11 +10,19 @@ import { createRoot } from 'react-dom/client'
 
 import App from '../App'
 import { pageEntityTypes } from '../pages/entityTypes'
+import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
 import { connection } from './connection'
 import { scopes } from './session'
 
-const hilosRouter = bootHilos({ connection, scopes, router, pageEntityTypes })
+const hilosRouter = bootHilos({
+  connection,
+  scopes,
+  router,
+  pageEntityTypes,
+  pageTitles,
+  appName,
+})
 
 createRoot(document.getElementById('app')!).render(
   <StrictMode>

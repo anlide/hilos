@@ -74,3 +74,24 @@ test('the shell exposes a skip link and marks the active nav item', async ({
     'page',
   )
 })
+
+test('each page titles the tab and announces the page on navigation', async ({
+  page,
+}) => {
+  await openSettings(page)
+
+  // The settings page titles the browser tab (framework label + app name), and
+  // the live region carries the same title for a screen-reader announcement.
+  await expect(page).toHaveTitle('Settings · Hilos Chat')
+  await expect(page.getByTestId('page-title')).toHaveText(
+    'Settings · Hilos Chat',
+  )
+
+  // A no-refresh navigation (the brand → home) updates both the tab title and
+  // the announcement.
+  await page.getByTestId('nav-brand').click()
+  await expect(page).toHaveTitle('Conversations · Hilos Chat')
+  await expect(page.getByTestId('page-title')).toHaveText(
+    'Conversations · Hilos Chat',
+  )
+})

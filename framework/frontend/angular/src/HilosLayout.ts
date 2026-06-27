@@ -19,6 +19,7 @@ import {
   Component,
   computed,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
@@ -26,6 +27,8 @@ import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
+import { HILOS_ROUTER } from './hilosRouterToken.js'
+import { hilosSignal } from './hilosSignal.js'
 
 // Each transport state maps to a Bootstrap Icon and a Bootstrap text color:
 // green while the socket is live, amber while it is (re)connecting, red when it
@@ -55,6 +58,14 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         data-id="skip-to-content"
         >Skip to main content</a
       >
+      <div
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-id="page-title"
+      >
+        {{ pageTitle() }}
+      </div>
       <nav
         class="navbar navbar-expand bg-body-tertiary border-bottom flex-shrink-0"
         aria-label="Main"
@@ -141,6 +152,15 @@ export class HilosLayout {
     () => 'bi ' + CONN_VISUAL[this.connState()].icon,
   )
 
+  // Mirror the navigator's current page title: set it as the document title so
+  // the browser tab tracks the no-refresh navigation, and render it in the live
+  // region below so a screen reader announces the page change (WCAG 2.4.2).
+  // Without a router (tests, the hard-link fallback) the title stays empty.
+  private readonly router = inject(HILOS_ROUTER, { optional: true })
+  protected readonly pageTitle = this.router
+    ? hilosSignal(this.router.currentTitle)
+    : signal('')
+
   constructor() {
     // Read the connection input once it is bound and mirror its machine state;
     // the effect's cleanup releases the listener when the shell is destroyed.
@@ -152,6 +172,14 @@ export class HilosLayout {
           this.connState.set(next)
         }),
       )
+    })
+
+    // Track the page title onto the document title across no-refresh navigation.
+    effect(() => {
+      const title = this.pageTitle()
+      if (title) {
+        document.title = title
+      }
     })
   }
 }

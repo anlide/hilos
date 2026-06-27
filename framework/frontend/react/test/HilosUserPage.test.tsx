@@ -23,6 +23,7 @@ function router(): HilosRouter {
       params: { userId: '1' },
     }),
     currentPath: createSignal(''),
+    currentTitle: createSignal(''),
     pageError: createSignal(null),
     navigate: () => {},
     start: () => {},
