@@ -1,6 +1,6 @@
 ---
 name: hilos-framework-development
-description: Develop Hilos framework-level APIs and extension points safely. Use when changing framework/backend or framework/frontend shared APIs, Hilos facade globals, app topology registry, lifecycle factories, cross-project base classes, subsystem exception families, settings/catalog accessors, or docs/skills that govern framework development.
+description: Develop Hilos framework-level APIs and extension points safely. Use when changing framework/backend or framework/frontend shared APIs, Hilos facade globals, app topology registry, lifecycle factories, cross-project base classes, subsystem exception families, settings/catalog accessors, weighing or adding a third-party dependency, or docs/skills that govern framework development.
 ---
 
 # Hilos Framework Development
@@ -58,3 +58,7 @@ that match the affected subsystem.
 - Do not hide framework extension behind project services or repositories.
 - Do not use unstructured arrays in internal framework APIs unless the local
   docs name that catalog/map shape as an explicit exception.
+- Do not add a backend third-party dependency without justifying why a
+  hand-rolled or standard-library solution will not do; a frontend dependency
+  must stay behind the SDK boundary and reversible (see
+  `docs/agents/framework-development.md` → Dependencies).

@@ -17,6 +17,22 @@ value objects just to make them reachable. That creates a second dependency
 contract, can capture stale instances before initialization changes, and hides
 the fact that the framework source of truth is the active facade.
 
+## Dependencies
+
+Keep third-party dependencies deliberately low — most of all on the **backend**.
+Hilos is a framework, so every dependency it takes is inherited by every project
+built on it; each one is supply-chain and maintenance risk passed downstream.
+
+- Before adding a library, prefer a hand-rolled or standard-library solution and
+  justify why the dependency earns its place. On the backend, lean hand-rolled.
+- A dependency is more acceptable on the **frontend** when it sits behind the SDK
+  boundary and stays reversible: hidden behind a parse/adapter seam and swappable
+  through a standard interface, so a consuming project never couples to it
+  directly. The SDK's runtime schema-validation library is the precedent — it
+  lives behind the SDK parse-boundary and a standard-schema interface.
+- "It is convenient" is not a justification. Weigh the maintenance cost, the
+  transitive tree, and whether the real need is one function or a whole library.
+
 ## Extension points
 
 - Framework base classes expose project variation through protected factory or
