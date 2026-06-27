@@ -106,6 +106,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
               }`}
               style={{ width: '10px', height: '10px' }}
+              aria-hidden="true"
             />
             <span className="h5 mb-0" data-id="hilos-user-name">
               {detail.name}

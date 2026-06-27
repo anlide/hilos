@@ -109,6 +109,7 @@ watch(error, (reason) => {
           class="rounded-circle flex-shrink-0"
           :class="detail.presence === 'online' ? 'bg-success' : 'bg-secondary'"
           style="width: 10px; height: 10px"
+          aria-hidden="true"
         />
         <span class="h5 mb-0" data-id="hilos-user-name">{{ detail.name }}</span>
         <span class="badge text-bg-secondary">{{ detail.presence }}</span>

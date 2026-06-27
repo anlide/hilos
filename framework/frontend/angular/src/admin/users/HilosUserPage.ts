@@ -51,6 +51,7 @@ import { LoadingButton } from '../../LoadingButton.js'
                 detail.presence === 'online' ? 'bg-success' : 'bg-secondary'
               "
               style="width: 10px; height: 10px"
+              aria-hidden="true"
             ></span>
             <span class="h5 mb-0" data-id="hilos-user-name">{{
               detail.name

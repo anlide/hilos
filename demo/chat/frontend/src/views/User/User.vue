@@ -23,8 +23,9 @@ const detail = useSignal(userDetail)
           class="rounded-circle flex-shrink-0"
           :class="detail.presence === 'online' ? 'bg-success' : 'bg-secondary'"
           style="width: 10px; height: 10px"
+          aria-hidden="true"
         />
-        <span class="h5 mb-0" data-id="user-name">{{ detail.name }}</span>
+        <h1 class="h5 mb-0" data-id="user-name">{{ detail.name }}</h1>
         <span class="badge text-bg-secondary" data-id="user-presence">{{
           detail.presence
         }}</span>

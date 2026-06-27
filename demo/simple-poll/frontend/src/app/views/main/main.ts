@@ -9,9 +9,10 @@ import { currentUserName } from '../../bootstrap/session'
 @Component({
   selector: 'app-main',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<p>
-    Signed in as <span data-id="self-user">{{ selfName() }}</span>
-  </p>`,
+  template: `<h1 class="visually-hidden">Polls</h1>
+    <p>
+      Signed in as <span data-id="self-user">{{ selfName() }}</span>
+    </p>`,
 })
 export class Main {
   protected readonly selfName = hilosSignal(currentUserName)

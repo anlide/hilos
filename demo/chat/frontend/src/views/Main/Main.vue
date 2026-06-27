@@ -217,6 +217,7 @@ onUnmounted(() => {
 
 <template>
   <div class="d-flex flex-column h-100">
+    <h1 class="visually-hidden">Conversations</h1>
     <p class="flex-shrink-0">
       Signed in as <span data-id="self-user">{{ selfName }}</span>
       <span data-id="self-user-id" hidden>{{ selfId }}</span>
@@ -229,7 +230,7 @@ onUnmounted(() => {
             class="card-header d-flex justify-content-between align-items-center flex-shrink-0"
             data-id="events-header"
           >
-            <strong>Event stream</strong>
+            <h2 class="h6 fw-bold mb-0">Event stream</h2>
             <span class="badge text-bg-secondary" data-id="events-count">{{
               events.length
             }}</span>
@@ -328,7 +329,7 @@ onUnmounted(() => {
             class="card-header d-flex justify-content-between align-items-center"
             data-id="participants-header"
           >
-            <strong>Participants</strong>
+            <h2 class="h6 fw-bold mb-0">Participants</h2>
             <span
               class="badge text-bg-secondary"
               data-id="participants-count"
@@ -357,8 +358,10 @@ onUnmounted(() => {
                     : 'bg-secondary'
                 "
                 style="width: 10px; height: 10px"
+                aria-hidden="true"
               />
               <span data-id="participant-name">{{ participant.name }}</span>
+              <span class="visually-hidden">{{ participant.presence }}</span>
             </div>
           </div>
         </div>
@@ -368,7 +371,7 @@ onUnmounted(() => {
             class="card-header d-flex justify-content-between align-items-center"
             data-id="bots-header"
           >
-            <strong>Bots</strong>
+            <h2 class="h6 fw-bold mb-0">Bots</h2>
             <span class="badge text-bg-secondary" data-id="bots-count">{{
               bots.length
             }}</span>

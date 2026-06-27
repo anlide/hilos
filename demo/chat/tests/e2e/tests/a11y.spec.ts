@@ -95,3 +95,23 @@ test('each page titles the tab and announces the page on navigation', async ({
     'Conversations · Hilos Chat',
   )
 })
+
+test('the home page exposes a heading and presence as text', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  // Exactly one top-level heading names the page (visually hidden here).
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Conversations',
+  )
+
+  // A participant exposes presence as text for assistive tech, not the colored
+  // dot alone — the connected self user is online.
+  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+  await expect(
+    page.getByTestId('participant').filter({ hasText: selfName }),
+  ).toContainText('online')
+})

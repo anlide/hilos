@@ -91,3 +91,9 @@ test('each page titles the tab and announces the page on navigation', async ({
   await expect(page).toHaveTitle('Polls · Hilos Poll')
   await expect(page.getByTestId('page-title')).toHaveText('Polls · Hilos Poll')
 })
+
+test('the home page exposes a single top-level heading', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
+})

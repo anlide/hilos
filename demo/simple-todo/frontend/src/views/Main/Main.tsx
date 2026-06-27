@@ -8,8 +8,11 @@ import { currentUserName } from '../../bootstrap/session'
 export default function Main() {
   const selfName = useSignal(currentUserName)
   return (
-    <p>
-      Signed in as <span data-id="self-user">{selfName}</span>
-    </p>
+    <>
+      <h1 className="visually-hidden">Tasks</h1>
+      <p>
+        Signed in as <span data-id="self-user">{selfName}</span>
+      </p>
+    </>
   )
 }

@@ -19,9 +19,9 @@ const detail = useSignal(botDetail)
   <section data-id="bot-view">
     <div v-if="detail" class="card" data-id="bot-detail">
       <div class="card-header d-flex align-items-center gap-2 flex-wrap">
-        <span class="h5 mb-0" data-id="bot-name">
+        <h1 class="h5 mb-0" data-id="bot-name">
           <span class="me-1" aria-hidden="true">🤖</span>{{ detail.name }}
-        </span>
+        </h1>
         <span
           class="badge"
           :class="detail.online ? 'text-bg-success' : 'text-bg-secondary'"
