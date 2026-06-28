@@ -16,7 +16,7 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 | Command | Description |
 |---|---|
 | `db:schema:status` | Check DB schema vs expected structure |
-| `db:entity:diff` | Diff Entity class fields vs actual DB columns |
+| `db:entity:diff` | Diff Entity class fields vs actual DB columns (deprecated — do not rely on it) |
 
 ## Seed commands
 
@@ -36,7 +36,7 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 | Command | Description |
 |---|---|
 | `daemon:status` | Show daemon status (workers, memory, uptime) |
-| `daemon:monitor` | Live monitoring of daemon |
+| `daemon:monitor` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
 | `help` | List available commands |
 
 ## Test-only commands
@@ -74,9 +74,6 @@ remove an orphan settings row — a demonstration of the mechanism, in
 ```bash
 # After changing DB schema (add column, new table):
 php cli.php db:migration:up
-
-# Check what's different between Entity and DB:
-php cli.php db:entity:diff
 
 # Reset test database:
 php cli.php db:test:reset

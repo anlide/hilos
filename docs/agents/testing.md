@@ -8,6 +8,19 @@ live inside the test container).
 
 ---
 
+## Environment split — use the test env, not the developer's sandbox
+
+The local environment is the **developer's** running sandbox: the `daemon-start`
+/ `daemon-stop` / `daemon-restart` / `daemon-monitor` scripts
+(`docker-compose.local.yml`) and the local database are theirs, and local
+migrations apply automatically on a local daemon restart. An AI agent works the
+**test** environment instead — the `test:*` composer scripts below, against the
+test database — and does not touch the local daemon or run local migrations
+(`db:migration:up/down` against local is the developer's). This keeps an agent
+out of a running local sandbox.
+
+---
+
 ## Framework backend (`framework/`)
 
 Composer scripts live in the repo-root `composer.json`:
