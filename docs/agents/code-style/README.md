@@ -23,6 +23,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
 | [scaffold-markers.md](scaffold-markers.md) | leaving code/config wired but intentionally unused — marking a scaffold or a deliberate keep so a dead-code sweep does not cull it |
+| [warnings-and-ide.md](warnings-and-ide.md) | silencing a toolchain/IDE warning — the zero-warning bar, the canonical-shape-over-suppression priority, TSDoc-all-params, Angular data-id placement |
 
 The rules here complement the architecture guides in `docs/agents/`.
 Architecture rules decide where code belongs; code style rules decide how the
