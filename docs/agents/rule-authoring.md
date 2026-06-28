@@ -102,6 +102,17 @@ sections unless they prevent a recurring mistake.
   also says what action that requires.
 - Keep examples short, project-shaped, and focused on the disputed decision.
 
+## When a rule keeps getting missed
+
+A rule living only in `docs/agents/*` does not reliably bind at code time — an
+agent can write past it without ever opening the file. When a committed rule is
+violated, or is easy to miss, the fix is a **trigger skill**, not a one-off
+correction: author or extend a `hilos-*` skill whose `description` fires on the
+task shape ("when implementing or changing X …") and routes to the canonical
+doc. The rule stays canonical in `docs/agents/*`; the skill is the thin trigger
+that makes the agent read it at the right moment. A rule that is hard to enforce
+without a matching trigger skill is incomplete.
+
 ## Codex Skill Wrapper Shape
 
 A Hilos skill wrapper should stay small:
