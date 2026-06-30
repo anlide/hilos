@@ -20,6 +20,12 @@ final class ChatCliCommands
     /** @var string Test-only: delete the example orphan settings row */
     public const string DELETE_ORPHAN_SETTING = 'test:orphan-setting:delete';
 
+    /** @var string Test-only: create a true orphan settings row for a non-catalog key */
+    public const string CREATE_ORPHAN = 'test:orphan:create';
+
+    /** @var string Test-only: delete a true orphan settings row for a non-catalog key */
+    public const string DELETE_ORPHAN = 'test:orphan:delete';
+
     /** @var string Test-only: echo a message through the command channel via an agent */
     public const string COMMAND_ECHO = 'test:command:echo';
 

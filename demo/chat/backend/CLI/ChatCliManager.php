@@ -6,7 +6,9 @@ namespace Demo\Chat\CLI;
 
 use Demo\Chat\CLI\Commands\AdminGrantCommand;
 use Demo\Chat\CLI\Commands\AdminRevokeCommand;
+use Demo\Chat\CLI\Commands\CreateOrphanCommand;
 use Demo\Chat\CLI\Commands\CreateOrphanSettingCommand;
+use Demo\Chat\CLI\Commands\DeleteOrphanCommand;
 use Demo\Chat\CLI\Commands\DeleteOrphanSettingCommand;
 use Demo\Chat\CLI\Commands\EchoCommand;
 use Hilos\Core\CLI\CliManager;
@@ -24,6 +26,8 @@ final class ChatCliManager extends CliManager
     {
         $this->addCommand(new CreateOrphanSettingCommand());
         $this->addCommand(new DeleteOrphanSettingCommand());
+        $this->addCommand(new CreateOrphanCommand());
+        $this->addCommand(new DeleteOrphanCommand());
         $this->addCommand(new EchoCommand());
         $this->addCommand(new AdminGrantCommand());
         $this->addCommand(new AdminRevokeCommand());
