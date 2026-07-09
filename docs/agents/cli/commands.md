@@ -69,6 +69,19 @@ Worked example (chat): `test:orphan-setting:create` / `test:orphan-setting:delet
 remove an orphan settings row — a demonstration of the mechanism, in
 `demo/chat/backend/CLI/Commands/`.
 
+### Time-based features: no universal clock
+
+There is deliberately **no injectable clock, `now()` override, or global time-mock** in the
+framework, and we do not add one. A single knob that fast-forwards time — "purge the account
+in 5 seconds instead of 21 days" — is exactly what must never be reachable on prod, and a test
+cannot test its own harness, so the only guard is discipline: keep the capability small and
+per-feature so it is obvious in review.
+
+So each time-based feature gets its **own** narrow test-only command that ages the one stored
+timestamp it needs, making the scheduled logic fire now. For example `test:account:force-purge`
+writes the deletion timestamp into the past so the scheduled purge runs immediately. Write these
+per-feature and carefully; never generalise them into a shared time-travel utility.
+
 ## Typical development flow
 
 ```bash

@@ -132,3 +132,8 @@ the next section.
   broken `fromArray` silently falls back to generic `SignalData` and
   drops any `WebSocketEnvelopeAware` metadata. See
   `ActionSuccessSignalDataTest::testRoundtripPreservesConcreteTypeAndEnvelopeMarker`.
+- **Time-based features** (grace periods, token/session expiry, digests,
+  scheduled rounds/settlement): there is no global clock to mock — see
+  `cli/commands.md` § "Time-based features: no universal clock". Add a small,
+  per-feature test-only CLI (`extends TestOnlyCommand`) that ages the one stored
+  timestamp so the scheduled logic fires now; never build a shared time-travel knob.
