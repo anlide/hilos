@@ -1,0 +1,43 @@
+# Reverse proxy for the in-tailnet Hilos preview lane.
+#
+# Serves the demos under readable *.hilos names on the host's Tailscale IP and
+# hides their per-demo ports. Certificates come from Caddy's own internal CA
+# (the names are private, so public ACME can't validate them) — install the CA
+# root on client devices once to get a green padlock. See the preview docs.
+#
+# Binds only the Tailscale IP so it never clashes with the hleb.studio proxy on
+# the public IP. Override HILOS_PREVIEW_BIND for a different host.
+{
+	default_bind {$HILOS_PREVIEW_BIND:100.111.250.126}
+}
+
+# Shared per-demo settings: private cert from the internal CA.
+(demo) {
+	tls internal
+}
+
+# Plain-HTTP endpoint to download the internal CA root, so devices can trust the
+# *.hilos certs. Open http://ca.hilos/root.crt on each device and install it.
+http://ca.hilos {
+	root * /data/caddy/pki/authorities/local
+	file_server browse
+}
+
+# --- chat ---
+chat.hilos {
+	import demo
+	# Vite dev server blocks unknown Host values; present a host it allows.
+	reverse_proxy 127.0.0.1:5173 {
+		header_up Host localhost
+	}
+}
+
+pma.chat.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8080
+}
+
+status.chat.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8090
+}
