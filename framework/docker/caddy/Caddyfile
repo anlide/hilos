@@ -17,10 +17,19 @@
 }
 
 # Plain-HTTP endpoint to download the internal CA root, so devices can trust the
-# *.hilos certs. Open http://ca.hilos/root.crt on each device and install it.
+# *.hilos certs. Open http://ca.hilos/nova-lt.crt on each device and install it.
+# Serves ONLY the public root cert — never the CA private keys that sit in the
+# same directory (no directory listing, everything else gets a plain message).
 http://ca.hilos {
-	root * /data/caddy/pki/authorities/local
-	file_server browse
+	@cert path /nova-lt.crt /root.crt
+	handle @cert {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		file_server
+	}
+	handle {
+		respond "Hilos preview CA — download the root at /nova-lt.crt" 200
+	}
 }
 
 # --- chat ---
