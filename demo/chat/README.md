@@ -51,8 +51,16 @@ From `demo/chat/`, everything in containers:
    ```bash
    composer run install-deps
    ```
-3. **Frontend dependencies** (npm, in the Node container):
+3. **Frontend dependencies** (npm, in the Node containers). First install the
+   framework SDK workspace, then the demo app. The SDK step is required on a fresh
+   checkout: `@hilos/core` / `@hilos/vue` are linked in via `file:` symlinks, so their
+   own dependencies (e.g. `zod`) resolve against `framework/frontend/node_modules` —
+   without this step Vite fails with `Failed to resolve import "zod"`.
    ```bash
+   # from the repo root: install the SDK npm workspace once per checkout
+   docker compose -f framework/docker/docker-compose.frontend.yml --profile cli \
+     run --rm hilos-frontend-cli npm install
+   # then, from demo/chat/: install the demo app's own frontend deps
    composer run frontend:install
    ```
 4. **Start the dev stack** (MySQL + phpMyAdmin + daemon + Vite dev server):
