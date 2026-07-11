@@ -1,0 +1,18 @@
+# Preview-lane overlay for the in-tailnet demo lane (see framework/docker/caddy/Caddyfile).
+#
+# Layer this on top of docker-compose.local.yml when serving the demo to other
+# Tailscale devices behind the Caddy reverse proxy:
+#   docker compose -f docker-compose.local.yml -f docker-compose.preview.yml up -d
+# The framework/docker/preview script does this for you.
+#
+# The local lane points VITE_WS_URL at ws://localhost:8092, which only works on
+# the host itself — another device (a phone) would dial its own localhost, and a
+# plain ws:// is blocked as mixed content under the https preview. Point the
+# browser at wss://ws.chat.hilos instead, which Caddy terminates and proxies to
+# the daemon's WebSocket. HMR is turned off because its own socket can't traverse
+# the TLS proxy cleanly and the preview shows finished work, not live edits.
+services:
+  chat-frontend-local:
+    environment:
+      VITE_WS_URL: "wss://ws.chat.hilos"
+      VITE_DISABLE_HMR: "1"

@@ -55,3 +55,52 @@ status.chat.hilos {
 	import demo
 	reverse_proxy 127.0.0.1:8090
 }
+
+# --- simple-todo ---
+todo.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:5174
+}
+
+# Daemon WebSocket over TLS (see the chat note above). VITE_WS_URL points here.
+ws.todo.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8100
+}
+
+pma.todo.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8081
+}
+
+status.todo.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8098
+}
+
+# --- simple-poll ---
+# Angular serves the app and proxies its own same-origin /ws to the daemon, so a
+# single route carries both the page and the WebSocket — no ws.poll.hilos needed.
+poll.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:5175
+}
+
+pma.poll.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8082
+}
+
+status.poll.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8104
+}
+
+# --- landing page ---
+# One place that lists every demo and links the CA-install page. Served from the
+# static site mounted into the caddy container (docker-compose.caddy.yml).
+home.hilos {
+	import demo
+	root * /srv/preview
+	file_server
+}

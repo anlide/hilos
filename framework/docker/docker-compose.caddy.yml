@@ -12,6 +12,7 @@ services:
     network_mode: host
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/site:/srv/preview:ro
       - hilos-preview-caddy-data:/data
       - hilos-preview-caddy-config:/config
     restart: unless-stopped

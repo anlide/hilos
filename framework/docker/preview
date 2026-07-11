@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# Control the in-tailnet Hilos preview lane.
+#
+# Serves the demos under readable *.hilos names on the host's Tailscale IP,
+# behind a Caddy reverse proxy (caddy/Caddyfile) with a dnsmasq split-DNS
+# resolver (docker-compose.dns.yml). Each demo runs its normal local stack plus
+# a preview overlay (docker-compose.preview.yml) that points its WebSocket at the
+# TLS proxy. Any device on the tailnet then opens https://chat.hilos etc.
+#
+# Usage:
+#   preview up [demo ...]      bring up the DNS + proxy and the demos (default: all)
+#   preview down [demo ...]    stop the demos and the DNS + proxy (default: all)
+#   preview status             show what is running and the URLs
+#
+# demo is one of: chat todo poll
+#
+# Host binding defaults to nova-lt's Tailscale IP; override for another host:
+#   HILOS_PREVIEW_BIND=<ip> HILOS_DEV_DNS_IP=<ip> preview up
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd "$here/../.." && pwd)"
+
+# demo key -> directory under demo/
+declare -A DEMO_DIR=([chat]=chat [todo]=simple-todo [poll]=simple-poll)
+ALL_DEMOS=(chat todo poll)
+
+BIND="${HILOS_PREVIEW_BIND:-${HILOS_DEV_DNS_IP:-100.111.250.126}}"
+
+dc() {
+  if docker compose version >/dev/null 2>&1; then docker compose "$@"; else docker-compose "$@"; fi
+}
+
+die() {
+  echo "preview: $*" >&2
+  exit 1
+}
+
+# Resolve the demo arguments into a validated list, defaulting to all demos.
+resolve_demos() {
+  local -n out="$1"
+  shift
+  if [ "$#" -eq 0 ]; then
+    out=("${ALL_DEMOS[@]}")
+    return
+  fi
+  out=()
+  local key
+  for key in "$@"; do
+    [ -n "${DEMO_DIR[$key]:-}" ] || die "unknown demo '$key' (want: ${ALL_DEMOS[*]})"
+    out+=("$key")
+  done
+}
+
+# The local stack requires a .env; a fresh checkout has only .env.example.
+ensure_env() {
+  local dir="${DEMO_DIR[$1]}"
+  local envf="$repo/demo/$dir/.env"
+  if [ ! -f "$envf" ] && [ -f "$envf.example" ]; then
+    cp "$envf.example" "$envf"
+    echo "  created demo/$dir/.env from .env.example"
+  fi
+}
+
+demo_compose() {
+  local dir="${DEMO_DIR[$1]}"
+  (cd "$repo/demo/$dir/docker" &&
+    dc -f docker-compose.local.yml -f docker-compose.preview.yml "${@:2}")
+}
+
+infra_up() {
+  echo "==> DNS + reverse proxy (bind ${BIND})"
+  HILOS_DEV_DNS_IP="$BIND" dc -f "$here/docker-compose.dns.yml" up -d
+  HILOS_PREVIEW_BIND="$BIND" dc -f "$here/docker-compose.caddy.yml" up -d
+}
+
+infra_down() {
+  echo "==> stopping DNS + reverse proxy"
+  dc -f "$here/docker-compose.caddy.yml" stop || true
+  dc -f "$here/docker-compose.dns.yml" stop || true
+}
+
+cmd_up() {
+  local demos
+  resolve_demos demos "$@"
+  infra_up
+  local key
+  for key in "${demos[@]}"; do
+    echo "==> ${key} (demo/${DEMO_DIR[$key]})"
+    ensure_env "$key"
+    demo_compose "$key" up -d
+  done
+  echo
+  echo "Preview up. Open https://home.hilos (install the CA once: http://ca.hilos/nova-lt.crt)."
+}
+
+cmd_down() {
+  local demos
+  resolve_demos demos "$@"
+  local key
+  for key in "${demos[@]}"; do
+    echo "==> stopping ${key}"
+    demo_compose "$key" stop || true
+  done
+  # Only drop the shared proxy when the whole lane is going down.
+  if [ "$#" -eq 0 ]; then
+    infra_down
+  fi
+}
+
+cmd_status() {
+  echo "== preview lane =="
+  docker ps --filter name=hilos-dev-dns --filter name=hilos-preview-caddy \
+    --format 'table {{.Names}}\t{{.Status}}' | tail -n +1
+  echo
+  local key dir
+  for key in "${ALL_DEMOS[@]}"; do
+    dir="${DEMO_DIR[$key]}"
+    echo "-- ${key} (hilos-${dir}-local) --"
+    docker ps --filter "label=com.docker.compose.project=hilos-${dir}-local" \
+      --format 'table {{.Names}}\t{{.Status}}' | tail -n +2 || true
+  done
+  echo
+  echo "URLs: https://home.hilos  https://chat.hilos  https://todo.hilos  https://poll.hilos"
+}
+
+case "${1:-}" in
+  up)     shift; cmd_up "$@" ;;
+  down)   shift; cmd_down "$@" ;;
+  status) shift; cmd_status ;;
+  *)      die "usage: preview {up|down|status} [chat|todo|poll ...]" ;;
+esac

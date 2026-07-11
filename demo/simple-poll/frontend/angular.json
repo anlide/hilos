@@ -103,7 +103,8 @@
             "proxyConfig": "proxy.conf.json",
             "prebundle": {
               "exclude": ["@hilos/angular", "@hilos/core"]
-            }
+            },
+            "allowedHosts": [".hilos"]
           },
           "configurations": {
             "production": {

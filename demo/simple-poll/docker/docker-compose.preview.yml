@@ -1,0 +1,17 @@
+# Preview-lane overlay for the in-tailnet demo lane (see framework/docker/caddy/Caddyfile).
+#
+# Layer this on top of docker-compose.local.yml when serving the demo to other
+# Tailscale devices behind the Caddy reverse proxy:
+#   docker compose -f docker-compose.local.yml -f docker-compose.preview.yml up -d
+# The framework/docker/preview script does this for you.
+#
+# Angular has no import.meta.env, so unlike chat/todo there is no VITE_WS_URL to
+# override: the app's same-origin /ws is proxied to the daemon by ng serve
+# (frontend/proxy.conf.json), and Caddy carries that socket over wss through the
+# single poll.hilos route. The *.hilos host-check is allowed in angular.json
+# (serve.allowedHosts). Here we only turn off the dev server's live-reload, whose
+# own socket can't traverse the TLS proxy cleanly and is pointless for a preview
+# that shows finished work rather than live edits.
+services:
+  poll-frontend-local:
+    command: sh -c "npm install && npm run dev -- --live-reload false"
