@@ -35,10 +35,15 @@ http://ca.hilos {
 # --- chat ---
 chat.hilos {
 	import demo
-	# Vite dev server blocks unknown Host values; present a host it allows.
-	reverse_proxy 127.0.0.1:5173 {
-		header_up Host localhost
-	}
+	reverse_proxy 127.0.0.1:5173
+}
+
+# Daemon WebSocket over TLS: the app runs on https://chat.hilos, so its socket
+# must be wss (a plain ws:// would be blocked as mixed content). VITE_WS_URL points
+# the browser here.
+ws.chat.hilos {
+	import demo
+	reverse_proxy 127.0.0.1:8092
 }
 
 pma.chat.hilos {

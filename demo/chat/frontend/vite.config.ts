@@ -39,6 +39,15 @@ export default defineConfig(({ mode }) => {
       host: true,
       port: 5173,
       strictPort: true,
+      // Allow the in-tailnet preview names (chat.hilos, ws.chat.hilos, ...) so the
+      // Caddy reverse proxy can reach the dev server by hostname without Vite's
+      // host-check rejecting it. Harmless for normal localhost dev.
+      allowedHosts: ['.hilos'],
+      // HMR's own WebSocket can't traverse the TLS preview proxy cleanly and is
+      // pointless there (the preview shows finished work, not live edits), so the
+      // preview sets VITE_DISABLE_HMR to turn it off. Undefined keeps the normal
+      // localhost-dev default.
+      hmr: env.VITE_DISABLE_HMR ? false : undefined,
       proxy: {
         '/chat/attachment': {
           target: env.VITE_ATTACHMENT_TARGET || 'http://chat-local:8090',
