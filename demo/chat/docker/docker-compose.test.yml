@@ -13,7 +13,7 @@ name: hilos-chat-test
 services:
   mysql-test:
     image: mariadb:11.4
-    container_name: hilos-mysql-test
+    container_name: chat-mysql-test
     ports:
       - "${MYSQL_TEST_HOST_PORT:-33061}:3306"
     environment:

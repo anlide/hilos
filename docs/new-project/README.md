@@ -105,9 +105,10 @@ Calling `Hilos::init()` before migrations breaks first boot on an empty DB.
 
 ## Docker stacks
 
-Two compose files per project; service/container names prefixed with the
-project name (`container_name` and explicitly named volumes are docker-GLOBAL,
-not project-scoped — never reuse another project's).
+Two compose files per project; every `container_name` is prefixed with the
+app key (`chat-…`, `poll-…`, `todo-…`) so it stays globally unique
+(`container_name` and explicitly named volumes are docker-GLOBAL, not
+project-scoped — never reuse another project's).
 
 **Local** (`docker-compose.local.yml`, the developer sandbox): mysql (datadir
 bind-mounted at `data/mysql`, `mysql/init.sql`), phpMyAdmin, the daemon, a cli

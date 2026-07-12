@@ -11,7 +11,7 @@ services:
   # Other demos should set their own MYSQL_HOST_PORT in .env (33061, 33062, …).
   mysql-local:
     image: mariadb:11.4
-    container_name: hilos-mysql-local
+    container_name: chat-mysql-local
     ports:
       - "${MYSQL_HOST_PORT:-33060}:3306"
     environment:
@@ -35,7 +35,7 @@ services:
 
   phpmyadmin-local:
     image: phpmyadmin:latest
-    container_name: hilos-phpmyadmin-local
+    container_name: chat-phpmyadmin-local
     environment:
       - PMA_HOST=mysql-local
       - PMA_PORT=3306
