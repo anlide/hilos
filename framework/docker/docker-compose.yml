@@ -201,8 +201,13 @@ volumes:
     name: hilos-ollama-local-data
   agent-host-local-data:
     name: hilos-agent-host-local-data
+  # Pinned by name: the /data volume holds Caddy's internal CA root that devices
+  # trust for the *.hilos certs. An unpinned (project-prefixed) name would orphan
+  # that CA whenever the compose project is renamed, silently breaking trust.
   hilos-preview-caddy-data:
+    name: hilos-preview-caddy-data
   hilos-preview-caddy-config:
+    name: hilos-preview-caddy-config
   mysql-framework-test-data:
     name: hilos-framework-mysql-test-data
   composer-cache:
