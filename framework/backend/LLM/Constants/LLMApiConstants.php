@@ -45,14 +45,8 @@ class LLMApiConstants
     /** Ollama num_predict key */
     public const string KEY_NUM_PREDICT = 'num_predict';
 
-    /** Number of images key */
-    public const string KEY_N = 'n';
-
     /** Response format key */
     public const string KEY_RESPONSE_FORMAT = 'response_format';
-
-    /** Size key (image dimensions) */
-    public const string KEY_SIZE = 'size';
 
     // ── Ollama response keys ─────────────────────────────────────────────────
 
@@ -66,20 +60,6 @@ class LLMApiConstants
 
     /** Message object key */
     public const string KEY_MESSAGE = 'message';
-
-    // ── OpenAI image response keys ───────────────────────────────────────────
-
-    /** Data array key */
-    public const string KEY_DATA = 'data';
-
-    /** Base64 JSON key */
-    public const string KEY_B64_JSON = 'b64_json';
-
-    /** URL key */
-    public const string KEY_URL = 'url';
-
-    /** Base64 data key (DTO) */
-    public const string KEY_BASE64 = 'base64';
 
     /** Timeout seconds key (DTO) */
     public const string KEY_TIMEOUT_SEC = 'timeoutSec';

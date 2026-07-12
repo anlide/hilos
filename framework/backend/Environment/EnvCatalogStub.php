@@ -86,11 +86,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 LLMConstants::PROVIDER_LOCAL,
                 emptyIsMissing: true,
             ),
-            EnvConstants::LLM_IMAGE_PROVIDER->name => self::entry(
-                EnvCatalogConstants::TYPE_STRING,
-                LLMConstants::PROVIDER_EXTERNAL,
-                emptyIsMissing: true,
-            ),
             EnvConstants::LLM_LOCAL_URL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::DEFAULT_LOCAL_URL,
@@ -99,11 +94,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LLM_LOCAL_CHAT_MODEL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::DEFAULT_LOCAL_CHAT_MODEL,
-                emptyIsMissing: true,
-            ),
-            EnvConstants::LLM_LOCAL_IMAGE_MODEL->name => self::entry(
-                EnvCatalogConstants::TYPE_STRING,
-                LLMConstants::DEFAULT_LOCAL_IMAGE_MODEL,
                 emptyIsMissing: true,
             ),
             EnvConstants::LLM_EXTERNAL_URL->name => self::entry(
@@ -115,11 +105,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LLM_EXTERNAL_CHAT_MODEL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL,
-                emptyIsMissing: true,
-            ),
-            EnvConstants::LLM_EXTERNAL_IMAGE_MODEL->name => self::entry(
-                EnvCatalogConstants::TYPE_STRING,
-                LLMConstants::DEFAULT_EXTERNAL_IMAGE_MODEL,
                 emptyIsMissing: true,
             ),
             EnvConstants::CHAT_MODERATION_MODEL->name => self::entry(

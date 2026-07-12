@@ -123,17 +123,11 @@ enum EnvConstants
     /** @var string LLM chat provider: local | external */
     case LLM_CHAT_PROVIDER;
 
-    /** @var string LLM image provider: local | external */
-    case LLM_IMAGE_PROVIDER;
-
     /** @var string Local LLM base URL (e.g. Ollama) */
     case LLM_LOCAL_URL;
 
     /** @var string Local LLM chat model name */
     case LLM_LOCAL_CHAT_MODEL;
-
-    /** @var string Local LLM image model name */
-    case LLM_LOCAL_IMAGE_MODEL;
 
     /** @var string External LLM base URL (e.g. OpenAI) */
     case LLM_EXTERNAL_URL;
@@ -143,9 +137,6 @@ enum EnvConstants
 
     /** @var string External LLM chat model name */
     case LLM_EXTERNAL_CHAT_MODEL;
-
-    /** @var string External LLM image model name */
-    case LLM_EXTERNAL_IMAGE_MODEL;
 
     // ── Chat moderation (demo) ──────────────────────────────────────────────
 

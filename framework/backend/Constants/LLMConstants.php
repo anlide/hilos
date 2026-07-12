@@ -20,17 +20,11 @@ final class LLMConstants
     /** @var string Default local chat model (Ollama) */
     public const string DEFAULT_LOCAL_CHAT_MODEL = 'qwen2.5:3b';
 
-    /** @var string Default local image model (placeholder until implemented) */
-    public const string DEFAULT_LOCAL_IMAGE_MODEL = '';
-
     /** @var string Default external (OpenAI) base URL */
     public const string DEFAULT_EXTERNAL_URL = 'https://api.openai.com';
 
     /** @var string Default external chat model */
     public const string DEFAULT_EXTERNAL_CHAT_MODEL = 'gpt-4o-mini';
-
-    /** @var string Default external image model */
-    public const string DEFAULT_EXTERNAL_IMAGE_MODEL = 'dall-e-3';
 
     /** @var string Provider type: local */
     public const string PROVIDER_LOCAL = 'local';
