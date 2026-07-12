@@ -11,25 +11,23 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
-use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Routing\LlmProfile;
 
 /**
  * Regular agent that discovers runtime user moderation requests and returns decisions.
@@ -45,6 +43,8 @@ final class ModeratorAgent extends AbstractAgent
     private const string REQUEST_TYPE_MESSAGE = 'message';
     private const string REQUEST_TYPE_RENAME = 'rename';
 
+    private LlmProfile $profile;
+
     private AsyncChatLLMInterface $chatClient;
 
     private ?string $currentAcceptKey = null;
@@ -59,26 +59,16 @@ final class ModeratorAgent extends AbstractAgent
     private int $currentModerationUpdatedAt = 0;
 
     /**
-     * Creates a moderator with an LLM client from moderation settings.
+     * Creates a moderator with an LLM client from the chat.moderation profile.
      *
-     * @throws DatabaseException When reading persisted moderation LLM setting rows fails
-     * @throws SettingException When moderation LLM catalog keys are missing, read through the wrong type, or resolve to invalid values
+     * @throws LLMConfigurationException When the chat.moderation profile cannot be resolved
      */
     public function __construct()
     {
-        if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
-            $this->chatClient = new TestModerationChatClient();
-            return;
-        }
-
-        $this->chatClient = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_PROVIDER]->string()
-            === LLMConstants::PROVIDER_EXTERNAL
-            ? ClientFactory::createChatClient()
-            : ClientFactory::createChatClientWithConfig(
-                url: Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_URL]->string()
-                    ?: Hilos::$env[EnvConstants::LLM_LOCAL_URL],
-                model: Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string(),
-            );
+        $this->profile = Hilos::$llm->resolve('chat.moderation');
+        $this->chatClient = Hilos::$env[EnvConstants::APP_ENV] === 'test'
+            ? new TestModerationChatClient()
+            : ClientFactory::createChatClientForProfile($this->profile);
     }
 
     /**
@@ -238,11 +228,10 @@ final class ModeratorAgent extends AbstractAgent
         $this->currentModerationValue = $value;
         $this->currentModerationUpdatedAt = $updatedAt;
 
-        $timeoutSec = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC]->float();
         $options = new ChatGenerateOptions(
-            model: Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string(),
+            model: $this->profile->model,
             temperature: 0.0,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: $this->profile->timeoutSec,
             maxTokens: 32,
         );
 
