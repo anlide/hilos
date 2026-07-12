@@ -22,6 +22,8 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
+use Hilos\LLM\Routing\LlmProfileCatalogStub;
+use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
@@ -47,6 +49,9 @@ abstract class Hilos
 
     /** @var class-string<CatalogProviderInterface> Settings catalog provider class. */
     protected const string SETTINGS_CATALOG = SettingsCatalogStub::class;
+
+    /** @var class-string<CatalogProviderInterface> LLM profile catalog provider class. */
+    protected const string LLM_PROFILE_CATALOG = LlmProfileCatalogStub::class;
 
     /** Page classes keyed by page name. */
     public const array PAGES = [];
@@ -93,6 +98,9 @@ abstract class Hilos
 
     /** @var ?SettingsAccessor Catalog-backed settings accessor */
     public static ?SettingsAccessor $setting = null;
+
+    /** @var ?LlmRouter Catalog-backed LLM profile router */
+    public static ?LlmRouter $llm = null;
 
     /** @var ?RtContext Runtime layer singleton */
     public static ?RtContext $rt = null;
@@ -410,6 +418,10 @@ abstract class Hilos
         }
 
         static::$env->init($rootPath, $copyExample);
+
+        if (static::$llm === null) {
+            static::$llm = static::createLlm();
+        }
     }
 
     /**
@@ -522,6 +534,16 @@ abstract class Hilos
     protected static function createEnv(): EnvAccessor
     {
         return new EnvAccessor(static::ENV_CATALOG);
+    }
+
+    /**
+     * Creates the LLM profile router.
+     *
+     * @return LlmRouter LLM profile router
+     */
+    protected static function createLlm(): LlmRouter
+    {
+        return new LlmRouter(static::LLM_PROFILE_CATALOG);
     }
 
     /**

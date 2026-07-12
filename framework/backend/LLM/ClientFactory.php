@@ -12,6 +12,8 @@ use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
 use Hilos\LLM\External\Image\OpenAIImageProvider;
 use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Local\Image\PlaceholderLocalImageProvider;
+use Hilos\LLM\Routing\LlmProfile;
+use Hilos\LLM\Routing\LlmProvider;
 use Hilos\Hilos;
 
 /**
@@ -79,6 +81,22 @@ class ClientFactory
         $model = $model ?? Hilos::$env[EnvConstants::LLM_LOCAL_CHAT_MODEL];
 
         return new AsyncOllamaChatProvider($url, $model);
+    }
+
+    /**
+     * Create an async chat client from a resolved LLM profile.
+     *
+     * Provider is taken from the profile's explicit provider field, not inferred
+     * from the API key; profile resolution and validation live in the router.
+     *
+     * @param LlmProfile $profile Resolved LLM profile
+     * @return AsyncChatLLMInterface AsyncOpenAIChatProvider (external) or AsyncOllamaChatProvider (local)
+     */
+    public static function createChatClientForProfile(LlmProfile $profile): AsyncChatLLMInterface
+    {
+        return $profile->provider === LlmProvider::EXTERNAL
+            ? new AsyncOpenAIChatProvider($profile->url, $profile->apiKey ?? '', $profile->model)
+            : new AsyncOllamaChatProvider($profile->url, $profile->model);
     }
 
     /**
