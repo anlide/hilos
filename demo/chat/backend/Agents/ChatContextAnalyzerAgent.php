@@ -13,17 +13,14 @@ use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Constants\EnvConstants;
-use Hilos\Constants\LLMConstants;
-use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\HilosException;
-use Hilos\LLM\ClientFactory;
-use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Routing\LlmProvider;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
@@ -31,28 +28,18 @@ use Hilos\Utils\Helpers\JsonHelper;
  *
  * It owns the chat context runtime collection and uses async LLM summarization when message events arrive.
  */
-final class ChatContextAnalyzerAgent extends AbstractAgent
+final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
-
-    private AsyncChatLLMInterface $chatClient;
 
     private bool $pendingSummarize = false;
 
     /**
-     * Creates an analyzer with an LLM client from context-analyzer settings.
+     * @return string The chat analyzer LLM profile key
      */
-    public function __construct()
+    protected function profileKey(): string
     {
-        $this->chatClient = Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER] === LLMConstants::PROVIDER_EXTERNAL
-            ? ClientFactory::createChatClient()
-            : ClientFactory::createChatClientWithConfig(
-                url: Hilos::$env->normalizedLlmUrl(
-                    EnvConstants::CHAT_CONTEXT_ANALYZER_URL,
-                    EnvConstants::LLM_LOCAL_URL,
-                ),
-                model: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL],
-            );
+        return 'chat.analyzer';
     }
 
     /**
@@ -71,47 +58,24 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Advances async summarization and applies parsed analyzer results to chat context runtime state.
-     *
-     * @throws HilosException When runtime context update or event lookup fails
+     * @return bool Whether a summarization is queued
      */
-    public function onTick(): void
+    protected function hasPendingWork(): bool
     {
-        try {
-            $this->chatClient->tick(microtime(true) * 1000);
-        } catch (LLMException $e) {
-            $this->logAgentError($e->getMessage());
-            $this->chatClient->reset();
-            if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
-                $this->startSummarize();
-            }
-            return;
-        }
+        return $this->pendingSummarize;
+    }
 
-        if (!$this->chatClient->hasResult()) {
-            if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
-                $this->startSummarize();
-            }
-            return;
-        }
-
-        try {
-            $text = $this->chatClient->consumeResult();
-        } catch (LLMException $e) {
-            $this->logAgentError($e->getMessage());
-            if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
-                $this->startSummarize();
-            }
-            return;
-        }
-
+    /**
+     * Applies parsed analyzer output to chat context runtime state.
+     *
+     * @param string $text Raw LLM response text
+     * @throws HilosException When runtime context update fails
+     */
+    protected function handleResult(string $text): void
+    {
         $parsed = $this->parseAnalyzerOutput($text);
         if ($parsed !== null) {
             Hilos::$rt->chatContext->actions->update($parsed);
-        }
-
-        if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
-            $this->startSummarize();
         }
     }
 
@@ -167,12 +131,8 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
      *
      * @throws HilosException When recent event lookup fails
      */
-    private function startSummarize(): void
+    protected function startRequest(): void
     {
-        if ($this->chatClient->isBusy()) {
-            return;
-        }
-
         $this->pendingSummarize = false;
 
         $eventsText = $this->buildRecentEventsContext();
@@ -207,13 +167,12 @@ PROMPT;
             new Message(Message::ROLE_USER, $eventsText),
         ];
 
-        $timeoutSec = Hilos::$env->float(EnvConstants::CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC);
         $options = new ChatGenerateOptions(
-            model: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL],
+            model: $this->profile->model,
             temperature: 0.0,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: $this->profile->timeoutSec,
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
-            responseFormat: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER] === LLMConstants::PROVIDER_EXTERNAL
+            responseFormat: $this->profile->provider === LlmProvider::EXTERNAL
                 ? [ChatContextAnalyzerConstants::RESPONSE_FORMAT_TYPE => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON_OBJECT]
                 : [ChatContextAnalyzerConstants::RESPONSE_FORMAT_FORMAT => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON],
         );
