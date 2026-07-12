@@ -19,9 +19,6 @@ use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Utils\ChatLLMHelper;
-use Hilos\Constants\EnvConstants;
-use Hilos\Constants\LLMConstants;
-use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
@@ -30,13 +27,11 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
-use Hilos\LLM\ClientFactory;
-use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\Agent\AbstractLlmChatAgent;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -45,7 +40,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * One agent is keyed by bot id through agentIndex. It reacts to chat context syncs and its own bot row changes.
  */
-final class BotAgent extends AbstractAgent
+final class BotAgent extends AbstractLlmChatAgent
 {
     public const string AGENT_TYPE = AgentType::BOT;
 
@@ -57,8 +52,6 @@ final class BotAgent extends AbstractAgent
     ];
 
     private const int MAX_RESPONSE_TOKENS = 256;
-
-    private AsyncChatLLMInterface $chatClient;
 
     private float $scheduledReactAt = 0.0;
 
@@ -74,8 +67,7 @@ final class BotAgent extends AbstractAgent
      * @param string $agentIndex Bot id from the agent manager
      * @throws AgentIndexRequiredException When agentIndex is empty
      * @throws InvalidAgentIndexException When agentIndex is not a positive integer
-     * @throws DatabaseException When reading persisted bot LLM setting rows fails
-     * @throws SettingException When bot LLM catalog keys are missing, read through the wrong type, or resolve to invalid values
+     * @throws LLMConfigurationException When the chat.bot profile cannot be resolved
      */
     public function __construct(string $agentIndex)
     {
@@ -91,14 +83,15 @@ final class BotAgent extends AbstractAgent
         $this->agentIndex = $agentIndex;
         $this->botId = $botId;
 
-        $this->chatClient = Hilos::$setting[ChatSettingsConstants::CHAT_BOT_PROVIDER]->string()
-            === LLMConstants::PROVIDER_EXTERNAL
-            ? ClientFactory::createChatClient()
-            : ClientFactory::createChatClientWithConfig(
-                url: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_URL]->string()
-                    ?: Hilos::$env[EnvConstants::LLM_LOCAL_URL],
-                model: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string(),
-            );
+        parent::__construct();
+    }
+
+    /**
+     * @return string The chat bot LLM profile key
+     */
+    protected function profileKey(): string
+    {
+        return 'chat.bot';
     }
 
     /**
@@ -207,47 +200,54 @@ final class BotAgent extends AbstractAgent
     }
 
     /**
-     * Advances async LLM work, sends completed messages to ChatAgent, and starts due reactions.
+     * @return bool Whether a scheduled reaction is due
+     */
+    protected function hasPendingWork(): bool
+    {
+        return $this->scheduledReactAt > 0.0 && microtime(true) >= $this->scheduledReactAt;
+    }
+
+    /**
+     * Consumes the scheduled reaction and starts generation when the bot should react.
      *
      * @throws HilosException On bot or chat context lookup failure
      */
-    public function onTick(): void
+    protected function startRequest(): void
     {
-        $nowSec = microtime(true);
-
-        try {
-            $this->chatClient->tick(microtime(true) * 1000);
-        } catch (LLMException $e) {
-            $this->logAgentError($e->getMessage());
-            $this->chatClient->reset();
-            $this->generationInFlight = false;
+        $this->scheduledReactAt = 0.0;
+        if ($this->shouldReact()) {
+            $this->startGenerate();
         }
+    }
 
-        if ($this->chatClient->hasResult()) {
-            $this->generationInFlight = false;
+    /**
+     * Publishes a generated bot message to ChatAgent.
+     *
+     * @param string $text Generated message text
+     */
+    protected function handleResult(string $text): void
+    {
+        $this->generationInFlight = false;
 
-            try {
-                $message = trim($this->chatClient->consumeResult());
-            } catch (LLMException $e) {
-                $this->logAgentError($e->getMessage());
-                $message = '';
-            }
-
-            if ($message !== '') {
-                $this->lastMessageSentAt = $nowSec;
-                $this->sendToAgent(
-                    ChatSignalConstants::BOT_MESSAGE,
-                    new BotMessageSignalData(botId: $this->botId, message: $message),
-                );
-            }
+        $message = trim($text);
+        if ($message !== '') {
+            $this->lastMessageSentAt = microtime(true);
+            $this->sendToAgent(
+                ChatSignalConstants::BOT_MESSAGE,
+                new BotMessageSignalData(botId: $this->botId, message: $message),
+            );
         }
+    }
 
-        if ($this->scheduledReactAt > 0 && $nowSec >= $this->scheduledReactAt && !$this->chatClient->isBusy()) {
-            $this->scheduledReactAt = 0.0;
-            if ($this->shouldReact()) {
-                $this->startGenerate();
-            }
-        }
+    /**
+     * Clears the in-flight flag on LLM errors before the default logging.
+     *
+     * @param LLMException $error The error raised while driving the client
+     */
+    protected function onLlmError(LLMException $error): void
+    {
+        $this->generationInFlight = false;
+        parent::onLlmError($error);
     }
 
     /**
@@ -379,11 +379,10 @@ final class BotAgent extends AbstractAgent
             return;
         }
 
-        $timeoutSec = Hilos::$setting[ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC]->float();
         $options = new ChatGenerateOptions(
-            model: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string(),
+            model: $this->profile->model,
             temperature: 0.7,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: $this->profile->timeoutSec,
             maxTokens: self::MAX_RESPONSE_TOKENS,
         );
 
