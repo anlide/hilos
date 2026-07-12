@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
@@ -91,7 +92,7 @@ final class BotAgent extends AbstractLlmChatAgent
      */
     protected function profileKey(): string
     {
-        return 'chat.bot';
+        return ChatLLMConstants::PROFILE_BOT;
     }
 
     /**

@@ -10,6 +10,7 @@ use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Hilos\Constants\LLMConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\LLM\Routing\LlmProfileCatalogConstants;
 use Hilos\LLM\Routing\LlmProvider;
 use Hilos\LLM\Routing\LlmRouter;
 use PHPUnit\Framework\TestCase;
@@ -45,27 +46,27 @@ final class ChatLlmProfileCatalogTest extends TestCase
 
     public function testResolvesEachRoleModelFromChatEnv(): void
     {
-        $bot = $this->router()->resolve('chat.bot');
+        $bot = $this->router()->resolve(ChatLLMConstants::PROFILE_BOT);
         self::assertSame(LlmProvider::LOCAL, $bot->provider);
         self::assertSame(ChatLLMConstants::MODEL_BOT, $bot->model);
         self::assertSame(LLMConstants::DEFAULT_LOCAL_URL, $bot->url);
         self::assertNull($bot->apiKey);
 
-        self::assertSame(ChatLLMConstants::MODEL_MODERATION, $this->router()->resolve('chat.moderation')->model);
-        self::assertSame(ChatLLMConstants::MODEL_CONTEXT_ANALYZER, $this->router()->resolve('chat.analyzer')->model);
+        self::assertSame(ChatLLMConstants::MODEL_MODERATION, $this->router()->resolve(ChatLLMConstants::PROFILE_MODERATION)->model);
+        self::assertSame(ChatLLMConstants::MODEL_CONTEXT_ANALYZER, $this->router()->resolve(ChatLLMConstants::PROFILE_ANALYZER)->model);
     }
 
     public function testLocalUrlFallsBackToGlobalLocalUrl(): void
     {
         // The per-role URL is empty by default, so it falls back to LLM_LOCAL_URL.
-        self::assertSame(LLMConstants::DEFAULT_LOCAL_URL, $this->router()->resolve('chat.bot')->url);
+        self::assertSame(LLMConstants::DEFAULT_LOCAL_URL, $this->router()->resolve(ChatLLMConstants::PROFILE_BOT)->url);
     }
 
     public function testPerRoleLocalUrlOverridesFallback(): void
     {
         putenv('CHAT_BOT_URL=http://ollama.internal:11434');
 
-        self::assertSame('http://ollama.internal:11434', $this->router()->resolve('chat.bot')->url);
+        self::assertSame('http://ollama.internal:11434', $this->router()->resolve(ChatLLMConstants::PROFILE_BOT)->url);
     }
 
     public function testExternalRoleUsesPerRoleModelAndGlobalExternalConfig(): void
@@ -73,7 +74,7 @@ final class ChatLlmProfileCatalogTest extends TestCase
         putenv('CHAT_BOT_PROVIDER=' . LLMConstants::PROVIDER_EXTERNAL);
         putenv('LLM_EXTERNAL_API_KEY=sk-test');
 
-        $bot = $this->router()->resolve('chat.bot');
+        $bot = $this->router()->resolve(ChatLLMConstants::PROFILE_BOT);
 
         self::assertSame(LlmProvider::EXTERNAL, $bot->provider);
         self::assertSame('sk-test', $bot->apiKey);
@@ -83,6 +84,6 @@ final class ChatLlmProfileCatalogTest extends TestCase
 
     public function testFrameworkDefaultProfileStillResolves(): void
     {
-        self::assertSame('default', $this->router()->resolve('default')->key);
+        self::assertSame('default', $this->router()->resolve(LlmProfileCatalogConstants::DEFAULT_PROFILE)->key);
     }
 }

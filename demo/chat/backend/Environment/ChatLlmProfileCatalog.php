@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Environment;
 
+use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\LLM\Routing\LlmProfileCatalogConstants;
@@ -27,19 +28,19 @@ final class ChatLlmProfileCatalog implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return array_replace(LlmProfileCatalogStub::getCatalog(), [
-            'chat.bot' => self::role(
+            ChatLLMConstants::PROFILE_BOT => self::role(
                 EnvConstants::CHAT_BOT_PROVIDER,
                 EnvConstants::CHAT_BOT_URL,
                 EnvConstants::CHAT_BOT_MODEL,
                 EnvConstants::CHAT_BOT_TIMEOUT_SEC,
             ),
-            'chat.moderation' => self::role(
+            ChatLLMConstants::PROFILE_MODERATION => self::role(
                 EnvConstants::CHAT_MODERATION_PROVIDER,
                 EnvConstants::CHAT_MODERATION_URL,
                 EnvConstants::CHAT_MODERATION_MODEL,
                 EnvConstants::CHAT_MODERATION_TIMEOUT_SEC,
             ),
-            'chat.analyzer' => self::role(
+            ChatLLMConstants::PROFILE_ANALYZER => self::role(
                 EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER,
                 EnvConstants::CHAT_CONTEXT_ANALYZER_URL,
                 EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL,

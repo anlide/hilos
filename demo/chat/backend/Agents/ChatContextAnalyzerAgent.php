@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
@@ -39,7 +40,7 @@ final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
      */
     protected function profileKey(): string
     {
-        return 'chat.analyzer';
+        return ChatLLMConstants::PROFILE_ANALYZER;
     }
 
     /**

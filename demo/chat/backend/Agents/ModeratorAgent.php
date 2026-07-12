@@ -6,6 +6,7 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
@@ -65,7 +66,7 @@ final class ModeratorAgent extends AbstractAgent
      */
     public function __construct()
     {
-        $this->profile = Hilos::$llm->resolve('chat.moderation');
+        $this->profile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_MODERATION);
         $this->chatClient = Hilos::$env[EnvConstants::APP_ENV] === 'test'
             ? new TestModerationChatClient()
             : ClientFactory::createChatClientForProfile($this->profile);

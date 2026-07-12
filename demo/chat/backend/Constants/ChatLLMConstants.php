@@ -21,4 +21,13 @@ final class ChatLLMConstants
 
     /** @var string Heavier model for bots (generated messages) */
     public const string MODEL_BOT = 'qwen2.5:3b';
+
+    /** @var string LLM profile key for bot message generation */
+    public const string PROFILE_BOT = 'chat.bot';
+
+    /** @var string LLM profile key for moderation */
+    public const string PROFILE_MODERATION = 'chat.moderation';
+
+    /** @var string LLM profile key for context analysis */
+    public const string PROFILE_ANALYZER = 'chat.analyzer';
 }
