@@ -133,6 +133,21 @@ services:
     restart: unless-stopped
     profiles: [preview]
 
+  # Whitelisted control service behind Caddy on home.hilos/api (in-tailnet only).
+  # Holds the host Docker socket to run a fixed allowlist of preview/docker
+  # actions; published only on 127.0.0.1 so Caddy is the sole front door.
+  hilos-preview-control:
+    build:
+      context: ./control
+    container_name: hilos-preview-control
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      # Host 9099 (8099 is taken by a demo daemon's worker-comm mapping).
+      - "127.0.0.1:9099:8099"
+    restart: unless-stopped
+    profiles: [preview]
+
   # --- Frontend SDK Node CLI runner ------------------------------------------
   # Install, build, lint and unit tests run here — never on the host Node.
   # node_modules lands in the project via the bind-mount, where PhpStorm sees it.

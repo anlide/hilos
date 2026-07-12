@@ -1,68 +1,163 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hilos preview lane</title>
+  <link rel="stylesheet" href="/assets/bootstrap.min.css">
   <style>
-    :root { color-scheme: light dark; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 2rem 1rem; line-height: 1.5;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: #0f1115; color: #e6e8ec;
-    }
-    main { max-width: 44rem; margin: 0 auto; }
-    h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
-    .sub { color: #9aa0aa; margin: 0 0 2rem; }
-    .card {
-      background: #171a21; border: 1px solid #262b35; border-radius: .75rem;
-      padding: 1rem 1.25rem; margin-bottom: 1rem;
-    }
-    .card h2 { font-size: 1.15rem; margin: 0 0 .1rem; }
-    .card p { margin: 0 0 .75rem; color: #9aa0aa; font-size: .9rem; }
-    .open { display: inline-block; font-weight: 600; text-decoration: none;
-      background: #3b82f6; color: #fff; padding: .45rem .9rem; border-radius: .5rem; }
-    .open:hover { background: #2f6fd6; }
-    .aux { margin-top: .6rem; font-size: .85rem; }
-    .aux a { color: #7aa2f7; margin-right: 1rem; }
-    .note { margin-top: 2rem; font-size: .85rem; color: #9aa0aa;
-      border-top: 1px solid #262b35; padding-top: 1rem; }
-    .note a { color: #7aa2f7; }
-    code { background: #262b35; padding: .1rem .35rem; border-radius: .3rem; }
+    .dot { display:inline-block; width:.55rem; height:.55rem; border-radius:50%; margin-right:.4rem; }
+    .dot.up { background:#22c55e; } .dot.down { background:#6b7280; }
+    .st { display:inline-block; width:.7rem; height:.7rem; border-radius:50%; margin-right:.5rem; flex:0 0 auto; }
+    .st.up { background:#22c55e; border:1px solid #22c55e; }
+    .st.down { background:transparent; border:1px solid #6b7280; }
+    .st.partial { background:linear-gradient(90deg,#22c55e 50%,transparent 50%); border:1px solid #22c55e; }
+    .accordion-button { font-size:.95rem; }
+    #sys-body table td { padding:.3rem .6rem; }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Hilos preview lane</h1>
-    <p class="sub">Demos running in the tailnet on <code>nova-lt</code>. Reachable only from devices on the Tailscale mesh.</p>
+  <div class="container py-4" style="max-width: 48rem;">
+    <h1 class="h3 mb-1">Hilos preview lane</h1>
+    <p class="text-secondary">Demos running in the tailnet on <code>nova-lt</code>. Reachable only from devices on the Tailscale mesh.</p>
 
-    <section class="card">
-      <h2>Chat</h2>
-      <p>Real-time chat demo (Vue SDK).</p>
-      <a class="open" href="https://chat.hilos">Open chat</a>
-      <div class="aux"><a href="https://pma.chat.hilos">phpMyAdmin</a><a href="https://status.chat.hilos/status">daemon status</a></div>
-    </section>
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="h5 mb-0">System</h2>
+          <button id="refresh" class="btn btn-sm btn-outline-secondary" type="button">Refresh</button>
+        </div>
+        <div id="sys-body"><p class="text-secondary mb-0">Loading status…</p></div>
+      </div>
+    </div>
 
-    <section class="card">
-      <h2>Simple todo</h2>
-      <p>Collaborative to-do list demo (React SDK).</p>
-      <a class="open" href="https://todo.hilos">Open todo</a>
-      <div class="aux"><a href="https://pma.todo.hilos">phpMyAdmin</a><a href="https://status.todo.hilos/status">daemon status</a></div>
-    </section>
+    <div class="row row-cols-1 row-cols-sm-3 g-3 mb-4">
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <h3 class="h5 card-title mb-1">Chat</h3>
+        <p class="card-text text-secondary small mb-3">Real-time chat demo (Vue SDK).</p>
+        <a class="btn btn-primary btn-sm mb-2 d-block" href="https://chat.hilos">Open chat</a>
+        <div class="small"><a href="https://pma.chat.hilos">phpMyAdmin</a> · <a href="https://status.chat.hilos/status">status</a></div>
+      </div></div></div>
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <h3 class="h5 card-title mb-1">Simple todo</h3>
+        <p class="card-text text-secondary small mb-3">Collaborative to-do list demo (React SDK).</p>
+        <a class="btn btn-primary btn-sm mb-2 d-block" href="https://todo.hilos">Open todo</a>
+        <div class="small"><a href="https://pma.todo.hilos">phpMyAdmin</a> · <a href="https://status.todo.hilos/status">status</a></div>
+      </div></div></div>
+      <div class="col"><div class="card h-100"><div class="card-body">
+        <h3 class="h5 card-title mb-1">Simple poll</h3>
+        <p class="card-text text-secondary small mb-3">Live poll demo (Angular SDK).</p>
+        <a class="btn btn-primary btn-sm mb-2 d-block" href="https://poll.hilos">Open poll</a>
+        <div class="small"><a href="https://pma.poll.hilos">phpMyAdmin</a> · <a href="https://status.poll.hilos/status">status</a></div>
+      </div></div></div>
+    </div>
 
-    <section class="card">
-      <h2>Simple poll</h2>
-      <p>Live poll demo (Angular SDK).</p>
-      <a class="open" href="https://poll.hilos">Open poll</a>
-      <div class="aux"><a href="https://pma.poll.hilos">phpMyAdmin</a><a href="https://status.poll.hilos/status">daemon status</a></div>
-    </section>
-
-    <p class="note">
+    <div class="alert alert-secondary small" role="alert">
       Seeing a certificate warning? Install the preview CA root once per device:
-      <a href="http://ca.hilos/nova-lt.crt">download the CA root</a> and trust it.
+      <a href="http://ca.hilos/nova-lt.crt" class="alert-link">download the CA root</a> and trust it.
       The <code>*.hilos</code> names resolve through the tailnet split-DNS rule.
-    </p>
-  </main>
+    </div>
+  </div>
+
+  <script src="/assets/bootstrap.bundle.min.js"></script>
+  <script>
+    const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const fmtMem = m => m == null ? "—" : (m / 1024).toFixed(1) + " GiB";
+    // Our stacks are all hilos-*; anything else (a container someone else raises)
+    // is grouped under "other".
+    const projLabel = p => p && p.startsWith("hilos") ? p : "other";
+    const slug = s => s.replace(/[^a-z0-9]+/gi, "-");
+    // Parse a docker-stats mem field ("213.6MiB" / "1.5GiB" / "980KiB") to MiB.
+    function memMiB(s) {
+      const m = /([\d.]+)\s*([KMGT]?i?B)/i.exec(s || "");
+      if (!m) return 0;
+      const f = { B: 1 / 1048576, KIB: 1 / 1024, MIB: 1, GIB: 1024, TIB: 1048576 };
+      return parseFloat(m[1]) * (f[m[2].toUpperCase()] || 1);
+    }
+    const fmtMiB = v => v >= 1024 ? (v / 1024).toFixed(2) + " GiB" : Math.round(v) + " MiB";
+    const cpuPct = s => parseFloat(s) || 0;
+
+    let first = true;
+    let prevStatus = {};
+    const openKeys = () => new Set(
+      [...document.querySelectorAll("#projAcc .accordion-collapse.show")].map(e => e.dataset.proj));
+
+    async function load() {
+      const body = document.getElementById("sys-body");
+      const open = first ? null : openKeys();  // null => open every group on first render
+      try {
+        const r = await fetch("/api/status", { cache: "no-store" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        body.innerHTML = render(await r.json(), open);
+        first = false;
+      } catch (e) {
+        body.innerHTML = '<p class="text-danger mb-0">Control API unreachable (' + esc(e.message) + ").</p>";
+      }
+    }
+
+    function render(d, open) {
+      const h = d.host || {}, o = d.ollama || {}, cs = d.containers || [];
+      let out = "";
+      if (h.total_mib) {
+        const pct = Math.round(100 * h.used_mib / h.total_mib);
+        out += '<div class="d-flex justify-content-between small text-secondary">'
+             + "<span>Host RAM</span><span>" + fmtMem(h.used_mib) + " / " + fmtMem(h.total_mib)
+             + " · " + fmtMem(h.available_mib) + ' free</span></div>'
+             + '<div class="progress mb-3" style="height:.5rem;"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
+      }
+      out += '<div class="mb-3"><span class="badge ' + (o.up ? "text-bg-success" : "text-bg-secondary") + '">Ollama '
+           + (o.up ? "up" : "down") + "</span> "
+           + (o.models && o.models.length
+                ? o.models.map(m => '<span class="badge text-bg-dark border">' + esc(m) + "</span>").join(" ")
+                : '<span class="text-secondary small">no models</span>')
+           + "</div>";
+
+      const groups = {};
+      for (const c of cs) { const g = projLabel(c.project); (groups[g] = groups[g] || []).push(c); }
+      const names = Object.keys(groups).sort((a, b) =>
+        a === "other" ? 1 : b === "other" ? -1 : a.localeCompare(b));
+
+      const nextStatus = {};
+      out += '<div class="accordion" id="projAcc">';
+      for (const g of names) {
+        const id = "p-" + slug(g);
+        const items = groups[g];
+        const running = items.filter(c => c.state === "running").length;
+        const status = running === items.length ? "up" : running === 0 ? "down" : "partial";
+        nextStatus[g] = status;
+        // Collapsed by default when uniform (all up / all down), expanded when
+        // partial. Re-apply that default on first render and whenever the status
+        // changes; otherwise keep whatever the user toggled.
+        const isOpen = (open === null || prevStatus[g] !== status)
+          ? status === "partial"
+          : open.has(g);
+        const ramSum = items.reduce((a, c) => a + memMiB((c.mem || "").split(" / ")[0]), 0);
+        const cpuSum = items.reduce((a, c) => a + cpuPct(c.cpu), 0);
+        out += '<div class="accordion-item">'
+             + '<h3 class="accordion-header"><button class="accordion-button py-2' + (isOpen ? "" : " collapsed")
+             + '" type="button" data-bs-toggle="collapse" data-bs-target="#' + id + '">'
+             + '<span class="st ' + status + '"></span><span class="me-auto">' + esc(g) + "</span>"
+             + '<span class="badge text-bg-secondary ms-2">' + running + "/" + items.length + "</span>"
+             + '<span class="text-secondary small ms-3 text-nowrap">' + fmtMiB(ramSum) + " · " + cpuSum.toFixed(1) + "%</span>"
+             + "</button></h3>"
+             + '<div id="' + id + '" data-proj="' + esc(g) + '" class="accordion-collapse collapse' + (isOpen ? " show" : "")
+             + '"><div class="accordion-body p-0"><table class="table table-sm mb-0 align-middle"><tbody>';
+        for (const c of items) {
+          const mem = (c.mem || "").split(" / ")[0];
+          out += '<tr><td><span class="dot ' + (c.state === "running" ? "up" : "down") + '"></span>' + esc(c.name) + "</td>"
+               + '<td class="text-end text-nowrap">' + esc(mem) + "</td>"
+               + '<td class="text-end text-nowrap">' + esc(c.cpu || "") + "</td></tr>";
+        }
+        out += "</tbody></table></div></div></div>";
+      }
+      out += "</div>";
+      prevStatus = nextStatus;
+      return out;
+    }
+
+    document.getElementById("refresh").addEventListener("click", load);
+    load();
+    setInterval(load, 5000);
+  </script>
 </body>
 </html>

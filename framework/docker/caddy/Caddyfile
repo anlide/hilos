@@ -101,6 +101,13 @@ status.poll.hilos {
 # static site mounted into the caddy container (docker-compose.caddy.yml).
 home.hilos {
 	import demo
-	root * /srv/preview
-	file_server
+	# Control API → the whitelisted control service (127.0.0.1 only, so Caddy is
+	# the single front door). Everything else is the static landing page.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:9099
+	}
+	handle {
+		root * /srv/preview
+		file_server
+	}
 }
