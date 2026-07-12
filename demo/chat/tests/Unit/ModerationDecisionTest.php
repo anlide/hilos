@@ -24,6 +24,37 @@ final class ModerationDecisionTest extends TestCase
     }
 
     /**
+     * The reason is a label the model may omit for clear-cut cases; the allow
+     * decision stands and the reason defaults rather than failing moderation.
+     *
+     * @param string $text Raw model output
+     * @param bool $allow Expected allow decision
+     * @param string $reason Expected defaulted reason
+     *
+     * @dataProvider defaultedReasonProvider
+     */
+    public function testFromModelOutputDefaultsMissingOrEmptyReason(string $text, bool $allow, string $reason): void
+    {
+        $decision = ModerationDecision::fromModelOutput($text);
+
+        $this->assertSame($allow, $decision->allow);
+        $this->assertSame($reason, $decision->reason);
+    }
+
+    /**
+     * @return list<array{0: string, 1: bool, 2: string}>
+     */
+    public static function defaultedReasonProvider(): array
+    {
+        return [
+            ['{"allow": true}', true, ModerationDecision::REASON_ALLOWED],
+            ['{"allow": true, "reason": ""}', true, ModerationDecision::REASON_ALLOWED],
+            ['{"allow": true, "reason": "   "}', true, ModerationDecision::REASON_ALLOWED],
+            ['{"allow": false}', false, ModerationDecision::REASON_BLOCKED],
+        ];
+    }
+
+    /**
      * @param string $text Raw invalid model output
      *
      * @dataProvider invalidDecisionOutputProvider
@@ -42,9 +73,6 @@ final class ModerationDecisionTest extends TestCase
     {
         return [
             ['{"allow": "yes", "reason": "spam"}'],
-            ['{"allow": true}'],
-            ['{"allow": true, "reason": ""}'],
-            ['{"allow": true, "reason": "   "}'],
             ['{"reason": "spam"}'],
             ['not json'],
         ];

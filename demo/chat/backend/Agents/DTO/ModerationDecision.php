@@ -17,6 +17,12 @@ final readonly class ModerationDecision
     public const string KEY_ALLOW = 'allow';
     public const string KEY_REASON = 'reason';
 
+    /** Default reason label when the model omits one for an allowed message. */
+    public const string REASON_ALLOWED = 'ok';
+
+    /** Default reason label when the model omits one for a blocked message. */
+    public const string REASON_BLOCKED = 'blocked';
+
     public function __construct(
         public bool $allow,
         public string $reason,
@@ -55,19 +61,19 @@ final readonly class ModerationDecision
             throw new InvalidArgumentException('Moderation response allow decision must be boolean');
         }
 
-        $reason = property_exists($decoded, self::KEY_REASON)
-            ? $decoded->{self::KEY_REASON}
-            : throw new InvalidArgumentException('Moderation response reason must exist');
-        if (!is_string($reason)) {
-            throw new InvalidArgumentException('Moderation response reason must be a string');
-        }
-        if (trim($reason) === '') {
-            throw new InvalidArgumentException('Moderation response reason must be a non-empty string');
+        // The allow decision is authoritative. The reason is only a label and
+        // small models often omit it for clear-cut cases, so default it rather
+        // than rejecting the whole decision (which would block benign messages).
+        $reason = property_exists($decoded, self::KEY_REASON) && is_string($decoded->{self::KEY_REASON})
+            ? trim($decoded->{self::KEY_REASON})
+            : '';
+        if ($reason === '') {
+            $reason = $allow ? self::REASON_ALLOWED : self::REASON_BLOCKED;
         }
 
         return new self(
             allow: $allow,
-            reason: trim($reason),
+            reason: $reason,
         );
     }
 }
