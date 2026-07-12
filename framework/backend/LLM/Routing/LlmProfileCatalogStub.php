@@ -26,6 +26,7 @@ final class LlmProfileCatalogStub implements CatalogProviderInterface
             LlmProfileCatalogConstants::DEFAULT_PROFILE => [
                 LlmProfileCatalogConstants::PROVIDER_ENV => EnvConstants::LLM_CHAT_PROVIDER->name,
                 LlmProfileCatalogConstants::LOCAL_URL_ENV => EnvConstants::LLM_LOCAL_URL->name,
+                LlmProfileCatalogConstants::LOCAL_URL_FALLBACK_ENV => null,
                 LlmProfileCatalogConstants::LOCAL_MODEL_ENV => EnvConstants::LLM_LOCAL_CHAT_MODEL->name,
                 LlmProfileCatalogConstants::EXTERNAL_URL_ENV => EnvConstants::LLM_EXTERNAL_URL->name,
                 LlmProfileCatalogConstants::EXTERNAL_MODEL_ENV => EnvConstants::LLM_EXTERNAL_CHAT_MODEL->name,

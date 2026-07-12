@@ -67,7 +67,10 @@ class LlmRouter
                 );
             }
         } else {
-            $url = Hilos::$env[$entry[LlmProfileCatalogConstants::LOCAL_URL_ENV]];
+            $url = Hilos::$env->normalizedLlmUrl(
+                $entry[LlmProfileCatalogConstants::LOCAL_URL_ENV],
+                $entry[LlmProfileCatalogConstants::LOCAL_URL_FALLBACK_ENV] ?? null,
+            );
             $model = Hilos::$env[$entry[LlmProfileCatalogConstants::LOCAL_MODEL_ENV]];
             $apiKey = null;
         }

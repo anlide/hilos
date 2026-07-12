@@ -20,6 +20,9 @@ final class LlmProfileCatalogConstants
     /** Env key for the base URL used when the provider resolves to local. */
     public const string LOCAL_URL_ENV = 'localUrlEnv';
 
+    /** Optional env key the local URL falls back to when its own value is empty. */
+    public const string LOCAL_URL_FALLBACK_ENV = 'localUrlFallbackEnv';
+
     /** Env key for the model used when the provider resolves to local. */
     public const string LOCAL_MODEL_ENV = 'localModelEnv';
 

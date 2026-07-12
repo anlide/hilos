@@ -39,6 +39,7 @@ use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
+use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Pages\AdminBotsPage;
@@ -163,6 +164,8 @@ final class Hilos extends \Hilos\Hilos
     protected const string ENV_CATALOG = ChatEnvCatalog::class;
 
     protected const string SETTINGS_CATALOG = SettingsCatalog::class;
+
+    protected const string LLM_PROFILE_CATALOG = ChatLlmProfileCatalog::class;
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
