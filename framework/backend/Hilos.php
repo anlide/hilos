@@ -23,6 +23,7 @@ use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\LLM\Routing\LlmProfileCatalogStub;
+use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
@@ -52,6 +53,9 @@ abstract class Hilos
 
     /** @var class-string<CatalogProviderInterface> LLM profile catalog provider class. */
     protected const string LLM_PROFILE_CATALOG = LlmProfileCatalogStub::class;
+
+    /** @var ?class-string<LlmProfileOverrideSource> Optional runtime LLM profile override source (e.g. admin settings). */
+    protected const ?string LLM_PROFILE_OVERRIDE = null;
 
     /** Page classes keyed by page name. */
     public const array PAGES = [];
@@ -543,7 +547,11 @@ abstract class Hilos
      */
     protected static function createLlm(): LlmRouter
     {
-        return new LlmRouter(static::LLM_PROFILE_CATALOG);
+        $override = static::LLM_PROFILE_OVERRIDE !== null
+            ? new (static::LLM_PROFILE_OVERRIDE)()
+            : null;
+
+        return new LlmRouter(static::LLM_PROFILE_CATALOG, $override);
     }
 
     /**
