@@ -2,6 +2,32 @@
 
 PHP backend (`framework/backend`) and shared frontend SDK (`framework/frontend`) for Hilos applications. Demos and apps consume this package via Composer path repository and local SDK linking.
 
+## Docker: single framework compose file
+
+**Rule: the framework level has exactly one Docker Compose file —
+`framework/docker/docker-compose.yml`.** Every framework stack lives in it as a
+service behind a **profile**, so nothing starts implicitly and each stack is
+opt-in. Do not add sibling `docker-compose.*.yml` or `*-local.yml` override
+files at framework level; add a service and a profile to the one file instead.
+(This is the framework-level rule only — each demo/app under `demo/` keeps its
+own project-level `docker-compose.local.yml` + `docker-compose.test.yml`.)
+
+Profiles:
+
+| Profile | Stack |
+|---|---|
+| `ollama` / `ollama-gpu-nvidia` / `ollama-gpu-amd` | local Ollama (one service per device variant, shared data volume) |
+| `agent-host` | dev-only unified agent host (code guardian), port 9309 |
+| `preview` | in-tailnet preview lane: dnsmasq split-DNS + Caddy proxy |
+| `frontend` | Node CLI runner for the frontend SDK |
+| `test` | MySQL + CLI runner for framework PHPUnit |
+
+Select a stack with `--profile <name>` (or target a service explicitly). Most
+stacks have `composer run` wrappers. Because it is one project, lifecycle
+scripts scope teardown to their own services (`rm -sf <service>`) rather than a
+project-wide `down`, so tearing down one stack never removes another stack's
+volumes.
+
 ## E2E tests and Docker: local Nginx vs test Nginx
 
 Projects that use Docker for both **day-to-day development** and **automated E2E** often run two Compose files:

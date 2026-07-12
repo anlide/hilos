@@ -48,7 +48,7 @@ composer run install-deps       # composer install in the PHP container
 # @hilos/* are linked via file: symlinks, so their deps (e.g. zod) resolve against
 # framework/frontend/node_modules — without this the dev server fails with
 # "Failed to resolve import zod":
-#   docker compose -f framework/docker/docker-compose.frontend.yml --profile cli \
+#   docker compose -f framework/docker/docker-compose.yml \
 #     run --rm hilos-frontend-cli npm install
 composer run frontend:install   # npm install in the frontend container
 composer run daemon-start       # MySQL + phpMyAdmin + daemon + Vite dev server

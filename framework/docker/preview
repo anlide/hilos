@@ -4,7 +4,8 @@
 #
 # Serves the demos under readable *.hilos names on the host's Tailscale IP,
 # behind a Caddy reverse proxy (caddy/Caddyfile) with a dnsmasq split-DNS
-# resolver (docker-compose.dns.yml). Each demo runs its normal local stack plus
+# resolver — both in the `preview` profile of docker-compose.yml. Each demo
+# runs its normal local stack plus
 # a preview overlay (docker-compose.preview.yml) that points its WebSocket at the
 # TLS proxy. Any device on the tailnet then opens https://chat.hilos etc.
 #
@@ -71,14 +72,13 @@ demo_compose() {
 
 infra_up() {
   echo "==> DNS + reverse proxy (bind ${BIND})"
-  HILOS_DEV_DNS_IP="$BIND" dc -f "$here/docker-compose.dns.yml" up -d
-  HILOS_PREVIEW_BIND="$BIND" dc -f "$here/docker-compose.caddy.yml" up -d
+  HILOS_DEV_DNS_IP="$BIND" HILOS_PREVIEW_BIND="$BIND" \
+    dc -f "$here/docker-compose.yml" --profile preview up -d
 }
 
 infra_down() {
   echo "==> stopping DNS + reverse proxy"
-  dc -f "$here/docker-compose.caddy.yml" stop || true
-  dc -f "$here/docker-compose.dns.yml" stop || true
+  dc -f "$here/docker-compose.yml" stop hilos-preview-caddy hilos-dev-dns || true
 }
 
 cmd_up() {

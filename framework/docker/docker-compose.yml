@@ -1,0 +1,212 @@
+# The single framework-level Docker Compose file.
+#
+# One file, one project (`hilos-framework`), every framework stack behind a
+# profile so nothing starts implicitly. Pick a stack with `--profile <name>`
+# (or target a service explicitly). Demos keep their own per-project compose
+# files under demo/<name>/docker/ — this file is framework infrastructure only.
+#
+# Profiles:
+#   ollama              local Ollama (CPU)
+#   ollama-gpu-nvidia   local Ollama (NVIDIA)
+#   ollama-gpu-amd      local Ollama (AMD ROCm)
+#   agent-host          dev-only unified agent host (code guardian), port 9309
+#   preview             in-tailnet preview lane: dnsmasq split-DNS + Caddy proxy
+#   frontend            Node CLI runner for the frontend SDK
+#   test                MySQL + CLI runner for framework PHPUnit
+#
+# Usage examples (from repo root):
+#   docker compose -f framework/docker/docker-compose.yml --profile ollama up -d
+#   docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test ...
+# Most stacks have composer wrappers (see composer.json).
+
+name: hilos-framework
+
+# Shared base for the three Ollama variants: only image / devices / placement
+# differ between CPU, NVIDIA and AMD, so the rest is defined once here.
+x-ollama-base: &ollama-base
+  volumes:
+    - ollama-local-data:/root/.ollama
+  environment:
+    - OLLAMA_HOST=0.0.0.0:11434
+  ports:
+    - "${OLLAMA_HOST_PORT:-11434}:11434"
+  restart: unless-stopped
+
+services:
+  # --- Ollama (local LLM), one variant per profile, shared data volume -------
+  # Demos connect via LLM_LOCAL_URL (e.g. http://host.docker.internal:11434) and
+  # do not depend on this project's internals. Only one variant runs at a time.
+  ollama-local:
+    <<: *ollama-base
+    image: ollama/ollama:latest
+    container_name: hilos-ollama-local
+    profiles: [ollama]
+
+  ollama-local-gpu-nvidia:
+    <<: *ollama-base
+    image: ollama/ollama:latest
+    container_name: hilos-ollama-local-gpu-nvidia
+    # Prerequisites: NVIDIA Container Toolkit, drivers for WSL2/Linux.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles: [ollama-gpu-nvidia]
+
+  ollama-local-gpu-amd:
+    <<: *ollama-base
+    image: ollama/ollama:rocm
+    container_name: hilos-ollama-local-gpu-amd
+    # Prerequisites: AMD GPU with ROCm support, /dev/kfd and /dev/dri on host.
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    profiles: [ollama-gpu-amd]
+
+  # --- Unified agent host (DEV-only code-guardian tooling) -------------------
+  # Exposes port 9309. Mounts the repo read-only as its analysis target.
+  # API keys are optional here: an unset key just leaves that provider
+  # unconfigured (the service checks at runtime), so this never blocks other
+  # framework commands that parse this file.
+  agent-host-local:
+    build:
+      context: ../..
+      dockerfile: framework/agent-host/Dockerfile
+    container_name: hilos-agent-host-local
+    environment:
+      AGENT_HOST: ${AGENT_HOST:-0.0.0.0}
+      AGENT_PORT: ${AGENT_PORT:-9309}
+      AGENT_WORKSPACE_ROOT: ${AGENT_WORKSPACE_ROOT:-/workspace}
+      AGENT_ALLOWED_ROOTS: ${AGENT_ALLOWED_ROOTS:-/workspace}
+      AGENT_DATA_DIR: ${AGENT_DATA_DIR:-/data}
+      AGENT_REPORTS_DIR: ${AGENT_REPORTS_DIR:-/data/reports}
+      AGENT_RUNS_DIR: ${AGENT_RUNS_DIR:-/data/runs}
+      AGENT_FINGERPRINT_FILE: ${AGENT_FINGERPRINT_FILE:-/data/fingerprints.json}
+      AGENT_MAX_FILE_SIZE_BYTES: ${AGENT_MAX_FILE_SIZE_BYTES:-256000}
+      AGENT_MAX_LIST_FILES: ${AGENT_MAX_LIST_FILES:-1000}
+      AGENT_PROMPT_TEMPLATE_VERSION: ${AGENT_PROMPT_TEMPLATE_VERSION:-2026-04-05}
+      AGENT_DEFAULT_PROVIDER: ${AGENT_DEFAULT_PROVIDER:-claude}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      CLAUDE_MAX_TURNS: ${CLAUDE_MAX_TURNS:-25}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-medium}
+    volumes:
+      - ../..:/workspace:ro
+      - agent-host-local-data:/data
+    ports:
+      - "${AGENT_PORT:-9309}:${AGENT_PORT:-9309}"
+    restart: unless-stopped
+    profiles: [agent-host]
+
+  # --- Preview lane: split-DNS resolver + Caddy reverse proxy ----------------
+  # Host networking on purpose so both bind the Tailscale IP directly. Driven by
+  # the `preview` helper script; brought up together under the preview profile.
+  hilos-dev-dns:
+    image: 4km3/dnsmasq@sha256:52e25fb2601156ab66f6a0872c180b285df7cafaa41267d8d65689f066490641
+    container_name: hilos-dev-dns
+    network_mode: host
+    entrypoint: ["dnsmasq"]
+    command:
+      - "-k"                 # keep in foreground so the container stays up
+      - "--log-facility=-"   # log to stderr (visible via docker logs)
+      - "--no-resolv"        # only answer the .hilos split zone, never forward
+      - "--bind-dynamic"     # bind only the address below, not a 0.0.0.0 wildcard
+      - "--listen-address=${HILOS_DEV_DNS_IP:-100.111.250.126}"
+      - "--address=/hilos/${HILOS_DEV_DNS_IP:-100.111.250.126}"
+    restart: unless-stopped
+    profiles: [preview]
+
+  hilos-preview-caddy:
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    container_name: hilos-preview-caddy
+    network_mode: host
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/site:/srv/preview:ro
+      - hilos-preview-caddy-data:/data
+      - hilos-preview-caddy-config:/config
+    restart: unless-stopped
+    profiles: [preview]
+
+  # --- Frontend SDK Node CLI runner ------------------------------------------
+  # Install, build, lint and unit tests run here — never on the host Node.
+  # node_modules lands in the project via the bind-mount, where PhpStorm sees it.
+  hilos-frontend-cli:
+    image: node:22-bookworm-slim
+    container_name: hilos-frontend-cli
+    volumes:
+      - ../..:/hilos
+    working_dir: /hilos/framework/frontend
+    environment:
+      # Silence npm's update-notifier; the version is pinned by the image.
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    profiles: [frontend]
+
+  # --- Framework test stack: MySQL + CLI runner (PHPUnit) --------------------
+  # Isolated from demo test stacks by host port (33062). hilos-cli-test has no
+  # depends_on so unit tests run without DB; integration tests need the DB up.
+  mysql-framework-test:
+    image: mariadb:11.4
+    container_name: hilos-mysql-framework-test
+    ports:
+      - "${MYSQL_FRAMEWORK_TEST_HOST_PORT:-33062}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    volumes:
+      - mysql-framework-test-data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-framework-test-network
+    profiles: [test]
+
+  hilos-cli-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-cli
+    container_name: hilos-cli-framework-test
+    volumes:
+      - ../..:/hilos
+      - composer-cache:/root/.composer/cache
+    working_dir: /hilos
+    environment:
+      APP_ENV: test
+      DB_HOST: mysql-framework-test
+      DB_PORT: "3306"
+      DB_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}
+      DB_USERNAME: ${MYSQL_USER:-hilos}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+    networks:
+      - hilos-framework-test-network
+    profiles: [test]
+
+volumes:
+  ollama-local-data:
+    name: hilos-ollama-local-data
+  agent-host-local-data:
+    name: hilos-agent-host-local-data
+  hilos-preview-caddy-data:
+  hilos-preview-caddy-config:
+  mysql-framework-test-data:
+    name: hilos-framework-mysql-test-data
+  composer-cache:
+
+networks:
+  hilos-framework-test-network:
+    driver: bridge

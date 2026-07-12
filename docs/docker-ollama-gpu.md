@@ -1,22 +1,22 @@
 # Docker: Ollama and GPU
 
-Ollama runs as a **standalone** docker-compose project at framework level. It exposes port 11434 to the host. Demos connect via `LLM_LOCAL_URL` without depending on any specific container name or project—they just use the host port or external AI service URL.
+Ollama is one stack in the single framework compose file, selected by profile. It exposes port 11434 to the host. Demos connect via `LLM_LOCAL_URL` without depending on any specific container name or project—they just use the host port or external AI service URL.
 
-## Framework Ollama (standalone)
+## Framework Ollama
 
-**Location:** `framework/docker/ollama-local.yml`, `ollama-local.gpu-nvidia.yml`, `ollama-local.gpu-amd.yml`
+**Location:** the `ollama` / `ollama-gpu-nvidia` / `ollama-gpu-amd` profiles of `framework/docker/docker-compose.yml` (one service per variant, shared data volume). See [framework/README.md](../framework/README.md#docker-single-framework-compose-file) for the one-file rule.
 
 ### Start Ollama
 
 ```bash
 # CPU (from repo root)
-docker compose -f framework/docker/ollama-local.yml up -d
+docker compose -f framework/docker/docker-compose.yml --profile ollama up -d
 
 # NVIDIA GPU
-docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml up -d
+docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-nvidia up -d
 
 # AMD ROCm
-docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml up -d
+docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-amd up -d
 ```
 
 Or via composer (from repo root):

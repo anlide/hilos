@@ -58,7 +58,7 @@ From `demo/chat/`, everything in containers:
    without this step Vite fails with `Failed to resolve import "zod"`.
    ```bash
    # from the repo root: install the SDK npm workspace once per checkout
-   docker compose -f framework/docker/docker-compose.frontend.yml --profile cli \
+   docker compose -f framework/docker/docker-compose.yml \
      run --rm hilos-frontend-cli npm install
    # then, from demo/chat/: install the demo app's own frontend deps
    composer run frontend:install

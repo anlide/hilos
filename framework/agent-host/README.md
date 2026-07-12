@@ -11,7 +11,8 @@ Unified Node/TypeScript API server for Hilos AI agents with:
 ## Docker
 
 ```bash
-docker compose --env-file .env -f framework/docker/agent-host-local.yml up -d --build
+docker compose --env-file .env -f framework/docker/docker-compose.yml \
+  --profile agent-host up -d --build
 ```
 
 The service listens on `9309`.
