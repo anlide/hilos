@@ -20,6 +20,9 @@ class Logger
     /** Log level: error messages */
     public const string LEVEL_ERROR = 'ERROR';
 
+    /** Log level: warning messages */
+    public const string LEVEL_WARNING = 'WARNING';
+
     /** Log level: debug messages */
     public const string LEVEL_DEBUG = 'DEBUG';
 
@@ -113,6 +116,20 @@ class Logger
     }
 
     /**
+     * Log warning message.
+     *
+     * A recoverable but noteworthy condition. Written to the main log with a
+     * WARNING prefix, not to the error log or stderr.
+     *
+     * @param string $message Warning message
+     * @param array<string, mixed> $context Optional context data
+     */
+    public static function warning(string $message, array $context = []): void
+    {
+        self::log(self::LEVEL_WARNING, $message, $context);
+    }
+
+    /**
      * Log debug message.
      *
      * Only logs if debug logging is enabled via setDebugEnabled(true).
@@ -132,7 +149,7 @@ class Logger
     /**
      * Log message.
      *
-     * @param string $level Log level (INFO, ERROR, DEBUG)
+     * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
      * @param string $message Message
      * @param array<string, mixed> $context Optional context data
      * @param bool $useStderr If true, write to stderr instead of stdout
@@ -300,7 +317,7 @@ class Logger
      * Log message in agent format
      *
      * @param string $agentId Agent ID
-     * @param string $level Log level (INFO, ERROR, DEBUG)
+     * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
      * @param string $message Message
      * @param bool $useStderr If true, write to stderr instead of stdout
      */
