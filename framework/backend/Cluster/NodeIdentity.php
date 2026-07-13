@@ -63,6 +63,22 @@ final class NodeIdentity
     }
 
     /**
+     * Builds an identity for a known node from explicit values.
+     *
+     * Used for a remote peer whose identity arrived over the wire, as opposed to
+     * {@see fromEnv()} which resolves the local node from configuration.
+     *
+     * @param string $nodeId Node id
+     * @param NodeRole $role Node role
+     * @param list<string> $capabilities Declared capability tags
+     * @return self Node identity
+     */
+    public static function of(string $nodeId, NodeRole $role, array $capabilities): self
+    {
+        return new self($nodeId, $role, $capabilities);
+    }
+
+    /**
      * Reports whether this node declares the given capability tag.
      *
      * @param string $capability Capability tag to test

@@ -248,4 +248,13 @@ enum EnvConstants
 
     /** @var string Declared node capability tags, comma-separated (e.g. "gpu-local,ssd"). */
     case CLUSTER_NODE_CAPABILITIES;
+
+    /** @var string Host to bind this node's peer transport listener. Required when CLUSTER_ENABLED. */
+    case CLUSTER_PEER_HOST;
+
+    /** @var string Port to bind this node's peer transport listener. Required when CLUSTER_ENABLED. */
+    case CLUSTER_PEER_PORT;
+
+    /** @var string Comma-separated host:port seed peers to dial on join; empty for the first (bootstrap) node. */
+    case CLUSTER_SEEDS;
 }

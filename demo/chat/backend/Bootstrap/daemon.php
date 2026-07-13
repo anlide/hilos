@@ -14,6 +14,8 @@ use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
 use Demo\Chat\Core\Socket\Server\FrontendHtmlServer;
 use Demo\Chat\Database\Database;
 use Hilos\API\Router\HttpRouter;
+use Hilos\Cluster\Peer\PeerSeed;
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
@@ -123,6 +125,18 @@ try {
     $daemon->registerServer($workerServer);
     $daemon->registerServer($webSocketServer);
     $daemon->registerServer($commandServer);
+
+    // Cluster peer transport: opened only when this daemon opts into cluster mode.
+    // A non-cluster single-node daemon stays first-class and never binds the peer port.
+    if (Hilos::$cluster->isEnabled()) {
+        $peerServer = new PeerServer(
+            Hilos::$env[EnvConstants::CLUSTER_PEER_HOST],
+            Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT),
+            Hilos::$cluster->identity(),
+            PeerSeed::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]),
+        );
+        $daemon->registerServer($peerServer);
+    }
 
     $frontendDistPath = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH];
     if ($frontendDistPath === '') {
