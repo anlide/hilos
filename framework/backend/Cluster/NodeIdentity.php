@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -12,11 +13,12 @@ use Hilos\Hilos;
 /**
  * Immutable self-declared identity of the local cluster node.
  *
- * Identity is "who am I", not "who else is in the cluster": it carries only the
- * node's own id, role, and declared capability tags. Membership (the live set of
- * peers) is a separate runtime registry built by peer-join and is not modelled
- * here. Capabilities are a flat tag list for now; the hard/soft matching and
- * coordinator-preference model is layered on top in HIL-182.
+ * Identity is "who am I", not "who else is in the cluster": it carries the node's
+ * own id, role, declared capability tags, and the address peers dial to reach it.
+ * Membership (the live set of peers) is a separate runtime registry built by
+ * peer-join and is not modelled here. Capabilities are a flat tag list for now;
+ * the hard/soft matching and coordinator-preference model is layered on top in
+ * HIL-182.
  */
 final class NodeIdentity
 {
@@ -24,11 +26,13 @@ final class NodeIdentity
      * @param string $nodeId Unique self-declared node id
      * @param NodeRole $role Self-declared node role
      * @param list<string> $capabilities Declared capability tags
+     * @param ?PeerAddress $address Advertised address peers dial to reach this node, or null when none is configured
      */
     private function __construct(
         public readonly string $nodeId,
         public readonly NodeRole $role,
         public readonly array $capabilities,
+        public readonly ?PeerAddress $address,
     ) {
     }
 
@@ -59,7 +63,35 @@ final class NodeIdentity
             throw ClusterConfigurationException::invalidRole($roleValue);
         }
 
-        return new self($nodeId, $role, self::parseCapabilities(Hilos::$env[EnvConstants::CLUSTER_NODE_CAPABILITIES]));
+        return new self(
+            $nodeId,
+            $role,
+            self::parseCapabilities(Hilos::$env[EnvConstants::CLUSTER_NODE_CAPABILITIES]),
+            self::resolveAdvertiseAddress(),
+        );
+    }
+
+    /**
+     * Resolves the address peers dial to reach this node.
+     *
+     * Prefers the explicit CLUSTER_PEER_ADVERTISE value; when it is empty or
+     * malformed, falls back to the peer bind host:port (which is only reachable
+     * when the bind host is a concrete address, not a wildcard).
+     *
+     * @return ?PeerAddress Advertised address, or null when none can be resolved
+     * @throws EnvException When a peer address env value cannot be read
+     */
+    private static function resolveAdvertiseAddress(): ?PeerAddress
+    {
+        $advertised = PeerAddress::fromString(Hilos::$env[EnvConstants::CLUSTER_PEER_ADVERTISE]);
+        if ($advertised !== null) {
+            return $advertised;
+        }
+
+        $host = trim(Hilos::$env[EnvConstants::CLUSTER_PEER_HOST]);
+        $port = Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT);
+
+        return $host !== '' && $port > 0 ? new PeerAddress($host, $port) : null;
     }
 
     /**
@@ -71,11 +103,12 @@ final class NodeIdentity
      * @param string $nodeId Node id
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
+     * @param ?PeerAddress $address Advertised address peers dial to reach the node
      * @return self Node identity
      */
-    public static function of(string $nodeId, NodeRole $role, array $capabilities): self
+    public static function of(string $nodeId, NodeRole $role, array $capabilities, ?PeerAddress $address = null): self
     {
-        return new self($nodeId, $role, $capabilities);
+        return new self($nodeId, $role, $capabilities, $address);
     }
 
     /**

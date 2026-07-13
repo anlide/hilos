@@ -35,7 +35,7 @@ final class PeerServer extends AbstractServer
     /** @var NodeIdentity Local node identity announced to peers */
     private NodeIdentity $localIdentity;
 
-    /** @var list<PeerSeed> Seed peers to dial on join */
+    /** @var list<PeerAddress> Seed peers to dial on join */
     private array $seeds;
 
     /** @var array<int, PeerDial> Per-seed dial state, indexed by seed list position */
@@ -45,7 +45,7 @@ final class PeerServer extends AbstractServer
      * @param string $host Host to bind the peer listener
      * @param int $port Port to bind the peer listener
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
-     * @param list<PeerSeed> $seeds Seed peers to dial on join (empty for a bootstrap node)
+     * @param list<PeerAddress> $seeds Seed peers to dial on join (empty for a bootstrap node)
      */
     public function __construct(string $host, int $port, NodeIdentity $localIdentity, array $seeds)
     {

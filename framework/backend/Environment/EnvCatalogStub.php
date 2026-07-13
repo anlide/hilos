@@ -204,6 +204,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::CLUSTER_PEER_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '0.0.0.0', emptyIsMissing: true),
             EnvConstants::CLUSTER_PEER_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8095, emptyIsMissing: true),
             EnvConstants::CLUSTER_SEEDS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CLUSTER_PEER_ADVERTISE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
         ];
     }
 

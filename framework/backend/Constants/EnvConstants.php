@@ -257,4 +257,7 @@ enum EnvConstants
 
     /** @var string Comma-separated host:port seed peers to dial on join; empty for the first (bootstrap) node. */
     case CLUSTER_SEEDS;
+
+    /** @var string Host:port this node advertises to peers as its own reachable address; falls back to CLUSTER_PEER_HOST:PORT. */
+    case CLUSTER_PEER_ADVERTISE;
 }

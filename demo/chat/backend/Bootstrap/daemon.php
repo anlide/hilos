@@ -14,7 +14,7 @@ use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
 use Demo\Chat\Core\Socket\Server\FrontendHtmlServer;
 use Demo\Chat\Database\Database;
 use Hilos\API\Router\HttpRouter;
-use Hilos\Cluster\Peer\PeerSeed;
+use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
@@ -133,7 +133,7 @@ try {
             Hilos::$env[EnvConstants::CLUSTER_PEER_HOST],
             Hilos::$env->int(EnvConstants::CLUSTER_PEER_PORT),
             Hilos::$cluster->identity(),
-            PeerSeed::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]),
+            PeerAddress::parseList(Hilos::$env[EnvConstants::CLUSTER_SEEDS]),
         );
         $daemon->registerServer($peerServer);
     }

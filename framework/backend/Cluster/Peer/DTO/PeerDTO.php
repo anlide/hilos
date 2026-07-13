@@ -7,6 +7,7 @@ namespace Hilos\Cluster\Peer\DTO;
 use Hilos\BaseDTO;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\PeerAddress;
 
 /**
  * Base for the framed handshake messages exchanged over a peer channel.
@@ -34,17 +35,22 @@ abstract class PeerDTO extends BaseDTO
     /** @var string Payload key: sender declared capability tags */
     public const string FIELD_NODE_CAPABILITIES = 'capabilities';
 
+    /** @var string Payload key: sender advertised host:port address */
+    public const string FIELD_ADDRESS = 'address';
+
     /**
      * @param int $protocolVersion Sender peer wire-protocol version
      * @param string $nodeId Sender self-declared node id
      * @param NodeRole $role Sender self-declared role
      * @param list<string> $capabilities Sender declared capability tags
+     * @param ?PeerAddress $address Sender advertised address, or null when none is advertised
      */
     public function __construct(
         public readonly int $protocolVersion,
         public readonly string $nodeId,
         public readonly NodeRole $role,
         public readonly array $capabilities,
+        public readonly ?PeerAddress $address = null,
     ) {
     }
 
@@ -68,6 +74,7 @@ abstract class PeerDTO extends BaseDTO
             self::FIELD_NODE_ID => $this->nodeId,
             self::FIELD_NODE_ROLE => $this->role->value,
             self::FIELD_NODE_CAPABILITIES => $this->capabilities,
+            self::FIELD_ADDRESS => $this->address?->toString(),
         ];
     }
 
@@ -96,6 +103,7 @@ abstract class PeerDTO extends BaseDTO
             nodeId: $nodeId,
             role: $role,
             capabilities: self::parseCapabilities($data[self::FIELD_NODE_CAPABILITIES] ?? []),
+            address: PeerAddress::fromString((string)($data[self::FIELD_ADDRESS] ?? '')),
         );
     }
 

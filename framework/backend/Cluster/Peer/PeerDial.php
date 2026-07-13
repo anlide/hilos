@@ -30,10 +30,10 @@ final class PeerDial
     public ?PeerLink $link = null;
 
     /**
-     * @param PeerSeed $seed Seed address this dial targets
+     * @param PeerAddress $seed Seed address this dial targets
      */
     public function __construct(
-        public readonly PeerSeed $seed,
+        public readonly PeerAddress $seed,
     ) {
     }
 }

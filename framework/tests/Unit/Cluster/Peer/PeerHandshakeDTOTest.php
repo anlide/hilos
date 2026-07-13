@@ -9,6 +9,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\PeerAddress;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -76,6 +77,26 @@ final class PeerHandshakeDTOTest extends TestCase
             PeerDTO::FIELD_NODE_ID => 'node-a',
             PeerDTO::FIELD_NODE_ROLE => 'overlord',
         ]);
+    }
+
+    public function testHandshakeCarriesTheAdvertisedAddress(): void
+    {
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095'));
+
+        $parsed = PeerDTO::fromWire($hello->toJson());
+
+        $this->assertNotNull($parsed->address);
+        $this->assertSame('10.0.0.1', $parsed->address->host);
+        $this->assertSame(8095, $parsed->address->port);
+    }
+
+    public function testHandshakeWithoutAddressRoundTripsNull(): void
+    {
+        $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, []);
+
+        $parsed = PeerDTO::fromWire($hello->toJson());
+
+        $this->assertNull($parsed->address);
     }
 
     public function testFromArrayNormalizesCapabilities(): void

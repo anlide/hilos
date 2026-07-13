@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\PeerAddress;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,6 +27,17 @@ final class ClusterRegistryTest extends TestCase
         $this->assertSame('node-a', $snapshot[0]->nodeId);
         $this->assertTrue($snapshot[0]->online);
         $this->assertSame(1, $registry->version());
+    }
+
+    public function testSeedLocalKeepsTheAdvertisedAddress(): void
+    {
+        $registry = new ClusterRegistry();
+        $registry->seedLocal(
+            NodeIdentity::of('node-a', NodeRole::Master, [], PeerAddress::fromString('10.0.0.1:8095')),
+            100.0,
+        );
+
+        $this->assertSame('10.0.0.1:8095', $registry->snapshot()[0]->address?->toString());
     }
 
     public function testRecordPeerAddsAndRefreshes(): void

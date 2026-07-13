@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Peer\PeerAddress;
+
 /**
  * Immutable snapshot of one cluster node's identity and liveness.
  *
  * Held by the master-owned {@see ClusterRegistry} as a value object, replaced
- * wholesale on every membership change rather than mutated. `online` and
- * `lastSeen` describe liveness as the master observed it; richer heartbeat
- * semantics land with node health (HIL-183).
+ * wholesale on every membership change rather than mutated. `address` is the
+ * endpoint peers dial to reach the node; `online` and `lastSeen` describe
+ * liveness as the master observed it; richer heartbeat semantics land with node
+ * health (HIL-183).
  */
 final class ClusterNode
 {
@@ -18,6 +21,7 @@ final class ClusterNode
      * @param string $nodeId Node id
      * @param NodeRole $role Node role
      * @param list<string> $capabilities Declared capability tags
+     * @param ?PeerAddress $address Advertised address peers dial to reach the node
      * @param bool $online Whether the node is currently connected
      * @param float $lastSeen Microtime the node was last observed
      */
@@ -25,6 +29,7 @@ final class ClusterNode
         public readonly string $nodeId,
         public readonly NodeRole $role,
         public readonly array $capabilities,
+        public readonly ?PeerAddress $address,
         public readonly bool $online,
         public readonly float $lastSeen,
     ) {
@@ -40,7 +45,7 @@ final class ClusterNode
      */
     public static function fromIdentity(NodeIdentity $identity, bool $online, float $lastSeen): self
     {
-        return new self($identity->nodeId, $identity->role, $identity->capabilities, $online, $lastSeen);
+        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address, $online, $lastSeen);
     }
 
     /**
@@ -51,6 +56,6 @@ final class ClusterNode
      */
     public function asOffline(float $lastSeen): self
     {
-        return new self($this->nodeId, $this->role, $this->capabilities, false, $lastSeen);
+        return new self($this->nodeId, $this->role, $this->capabilities, $this->address, false, $lastSeen);
     }
 }

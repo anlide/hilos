@@ -59,6 +59,7 @@ final class PeerLink extends AbstractClient
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
+            $this->localIdentity->address,
         ));
     }
 
@@ -158,13 +159,14 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected hello on the dialing side of a peer link');
         }
 
-        $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities);
+        $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
         $this->remoteIdentity = $remote;
         $this->writeBuffer .= $this->handshakeFrame(new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
+            $this->localIdentity->address,
         ));
         $this->registerPeer($remote);
         Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
@@ -182,7 +184,7 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected welcome on the accepting side of a peer link');
         }
 
-        $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities);
+        $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities, $welcome->address);
         $this->remoteIdentity = $remote;
         $this->registerPeer($remote);
         Logger::info("Peer handshake complete with {$remote->nodeId} role={$remote->role->value}");
