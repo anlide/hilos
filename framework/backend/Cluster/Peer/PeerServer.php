@@ -4,8 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
+use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
+use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
@@ -18,9 +24,10 @@ use Hilos\Utils\Logger;
  * accepts inbound peer links from other nodes and, in the same non-blocking
  * onTick, dials the configured seeds to join an existing cluster; both
  * directions become framed {@see PeerLink} connections that exchange a
- * hello/welcome handshake. Every socket operation here is non-blocking, so the
- * master loop is never stalled. This is the transport only — the live node
- * registry it will feed is built in a later slice.
+ * hello/welcome handshake, then gossip membership. Every socket operation here
+ * is non-blocking, so the master loop is never stalled. The server owns the
+ * membership side effects: it merges peers into the master registry and fans
+ * out roster/announce gossip so every node's registry converges.
  *
  * @extends AbstractServer<PeerLink>
  */
@@ -72,7 +79,7 @@ final class PeerServer extends AbstractServer
      */
     protected function onCreateClient($socket): ClientInterface
     {
-        return new PeerLink($socket, $this->localIdentity, dialer: false);
+        return new PeerLink($socket, $this, $this->localIdentity, dialer: false);
     }
 
     /**
@@ -239,7 +246,7 @@ final class PeerServer extends AbstractServer
         socket_set_nonblock($socket);
 
         try {
-            $link = new PeerLink($socket, $this->localIdentity, dialer: true);
+            $link = new PeerLink($socket, $this, $this->localIdentity, dialer: true);
         } catch (EnvException $e) {
             Logger::error("Failed to open dialed peer link: {$e->getMessage()}");
             socket_close($socket);
@@ -271,5 +278,160 @@ final class PeerServer extends AbstractServer
         $dial->socket = null;
         $dial->connecting = false;
         $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+    }
+
+    /**
+     * Records a freshly handshaked peer, bootstraps it with the local roster, and
+     * announces it to the other links.
+     *
+     * @param PeerLink $link Link that just completed its handshake
+     * @param NodeIdentity $remote Remote node identity learned from the handshake
+     */
+    public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        $changed = $registry->merge($remote, true, microtime(true));
+        $this->sendRoster($link, $registry);
+
+        if ($changed) {
+            $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, true), $link);
+        }
+    }
+
+    /**
+     * Merges a received roster and re-announces every entry that was new to us.
+     *
+     * @param PeerLink $link Link the roster arrived on
+     * @param PeerRosterDTO $roster Received roster
+     */
+    public function onRosterReceived(PeerLink $link, PeerRosterDTO $roster): void
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        $now = microtime(true);
+        foreach ($roster->nodes as $entry) {
+            if ($this->mergeEntry($registry, $entry, $now)) {
+                $this->broadcastAnnounce($entry, $link);
+            }
+        }
+    }
+
+    /**
+     * Merges a received announcement and re-announces it only when it changed us.
+     *
+     * @param PeerLink $link Link the announcement arrived on
+     * @param PeerAnnounceDTO $announce Received announcement
+     */
+    public function onAnnounceReceived(PeerLink $link, PeerAnnounceDTO $announce): void
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        if ($this->mergeEntry($registry, $announce->node, microtime(true))) {
+            $this->broadcastAnnounce($announce->node, $link);
+        }
+    }
+
+    /**
+     * Marks the closed link's peer offline and announces the leave to the others.
+     *
+     * @param PeerLink $link Link that closed
+     */
+    public function onLinkClosed(PeerLink $link): void
+    {
+        $remote = $link->remoteIdentity();
+        if ($remote === null) {
+            return;
+        }
+
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        if ($registry->markOffline($remote->nodeId, microtime(true))) {
+            $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, false), $link);
+        }
+    }
+
+    /**
+     * Merges one gossip entry, ignoring any entry that describes the local node.
+     *
+     * The local node is authoritative about itself, so its own record is never
+     * overwritten from a peer's view of it.
+     *
+     * @param ClusterRegistry $registry Master registry
+     * @param PeerNodeEntry $entry Received node entry
+     * @param float $now Current microtime
+     * @return bool True when the entry changed the membership meaningfully
+     */
+    private function mergeEntry(ClusterRegistry $registry, PeerNodeEntry $entry, float $now): bool
+    {
+        if ($entry->nodeId === $this->localIdentity->nodeId) {
+            return false;
+        }
+
+        return $registry->merge($entry->toIdentity(), $entry->online, $now);
+    }
+
+    /**
+     * Sends the local membership roster to one link.
+     *
+     * @param PeerLink $link Link to bootstrap
+     * @param ClusterRegistry $registry Master registry
+     */
+    private function sendRoster(PeerLink $link, ClusterRegistry $registry): void
+    {
+        $entries = array_map(
+            static fn(ClusterNode $node): PeerNodeEntry => PeerNodeEntry::fromNode($node),
+            $registry->snapshot(),
+        );
+
+        $link->sendFrame(new PeerRosterDTO($entries));
+    }
+
+    /**
+     * Announces one node entry to every handshaked link except its source.
+     *
+     * @param PeerNodeEntry $entry Node entry to announce
+     * @param PeerLink $source Link the change came from, excluded from the fan-out
+     */
+    private function broadcastAnnounce(PeerNodeEntry $entry, PeerLink $source): void
+    {
+        $announce = new PeerAnnounceDTO($entry);
+        foreach ($this->clients as $client) {
+            if ($client === $source || $client->remoteIdentity() === null) {
+                continue;
+            }
+
+            $client->sendFrame($announce);
+        }
+    }
+
+    /**
+     * Returns the master cluster registry, or null when it is unavailable.
+     *
+     * A registry hiccup must not tear down the daemon loop, so any failure is
+     * logged and swallowed rather than propagated.
+     *
+     * @return ?ClusterRegistry Master registry, or null on failure
+     */
+    private function registry(): ?ClusterRegistry
+    {
+        try {
+            return Hilos::$cluster?->registry();
+        } catch (\Throwable $e) {
+            Logger::warning("Cluster registry unavailable: {$e->getMessage()}");
+            return null;
+        }
     }
 }

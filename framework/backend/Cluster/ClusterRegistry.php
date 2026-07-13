@@ -79,16 +79,19 @@ final class ClusterRegistry
      *
      * @param string $nodeId Node id that went offline
      * @param float $now Current microtime
+     * @return bool True when a known online node was flipped offline
      */
-    public function markOffline(string $nodeId, float $now): void
+    public function markOffline(string $nodeId, float $now): bool
     {
         $node = $this->nodes[$nodeId] ?? null;
         if ($node === null || !$node->online) {
-            return;
+            return false;
         }
 
         $this->nodes[$nodeId] = $node->asOffline($now);
         $this->version++;
+
+        return true;
     }
 
     /**

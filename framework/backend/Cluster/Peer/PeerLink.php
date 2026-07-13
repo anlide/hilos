@@ -6,11 +6,13 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Hilos;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Utils\Logger;
 
@@ -18,14 +20,18 @@ use Hilos\Utils\Logger;
  * One framed connection to a remote cluster node, either dialed or accepted.
  *
  * The dialing side opens the connection and sends {@see PeerHelloDTO} first; the
- * accepting side answers with {@see PeerWelcomeDTO}. Both then hold the remote
- * node identity learned from that handshake. Frames are newline-delimited JSON.
- * A malformed frame or a rejected handshake closes the link rather than
- * propagating out of the daemon loop. Heartbeat and reconnection are later
- * slices; this link only establishes identity.
+ * accepting side answers with {@see PeerWelcomeDTO}. Once the handshake sets the
+ * remote identity, the two sides exchange membership gossip
+ * ({@see PeerRosterDTO}, {@see PeerAnnounceDTO}). This link only parses and
+ * frames; the registry updates and the fan-out to other peers are owned by the
+ * {@see PeerServer}. A malformed frame or a rejected handshake closes the link
+ * rather than propagating out of the daemon loop.
  */
 final class PeerLink extends AbstractClient
 {
+    /** @var PeerServer Owning peer server, driven for membership fan-out */
+    private PeerServer $server;
+
     /** @var NodeIdentity Local node identity announced to the remote peer */
     private NodeIdentity $localIdentity;
 
@@ -37,14 +43,16 @@ final class PeerLink extends AbstractClient
 
     /**
      * @param resource|object $socket Connected peer socket
+     * @param PeerServer $server Owning peer server for membership fan-out
      * @param NodeIdentity $localIdentity Local node identity to announce
      * @param bool $dialer True for the dialing side, false for the accepting side
      * @throws EnvException When the socket read buffer env value is missing or invalid
      */
-    public function __construct($socket, NodeIdentity $localIdentity, bool $dialer)
+    public function __construct($socket, PeerServer $server, NodeIdentity $localIdentity, bool $dialer)
     {
         parent::__construct($socket);
 
+        $this->server = $server;
         $this->localIdentity = $localIdentity;
         $this->dialer = $dialer;
     }
@@ -54,13 +62,23 @@ final class PeerLink extends AbstractClient
      */
     public function startHandshake(): void
     {
-        $this->writeBuffer .= $this->handshakeFrame(new PeerHelloDTO(
+        $this->sendFrame(new PeerHelloDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
             $this->localIdentity->address,
         ));
+    }
+
+    /**
+     * Queues one peer frame for delivery to this link.
+     *
+     * @param PeerDTO $frame Frame to send
+     */
+    public function sendFrame(PeerDTO $frame): void
+    {
+        $this->writeBuffer .= $frame->toJson() . "\n";
     }
 
     /**
@@ -103,7 +121,7 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Logs the peer leaving when a handshaked link closes.
+     * Notifies the server so it can mark the peer offline and announce the leave.
      */
     protected function onClose(): void
     {
@@ -111,47 +129,32 @@ final class PeerLink extends AbstractClient
             return;
         }
 
-        try {
-            Hilos::$cluster?->registry()->markOffline($this->remoteIdentity->nodeId, microtime(true));
-        } catch (\Throwable $e) {
-            Logger::warning("Cluster registry update failed on peer leave: {$e->getMessage()}");
-        }
-
         Logger::info("Peer left: {$this->remoteIdentity->nodeId}");
+        $this->server->onLinkClosed($this);
     }
 
     /**
-     * Validates the protocol version and routes the frame to its handler.
+     * Routes a parsed frame to its handler.
      *
      * @param PeerDTO $frame Parsed peer frame
-     * @throws PeerTransportException When the protocol version or frame direction is invalid
+     * @throws PeerTransportException When the frame is out of sequence or of an unknown type
      */
     private function handleFrame(PeerDTO $frame): void
     {
-        if (!PeerProtocol::isCompatible($frame->protocolVersion)) {
-            throw new PeerTransportException(
-                "Incompatible peer protocol version {$frame->protocolVersion}, expected " . PeerProtocol::VERSION,
-            );
-        }
-
-        if ($frame instanceof PeerHelloDTO) {
-            $this->onHello($frame);
-            return;
-        }
-
-        if ($frame instanceof PeerWelcomeDTO) {
-            $this->onWelcome($frame);
-            return;
-        }
-
-        throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType());
+        match (true) {
+            $frame instanceof PeerHelloDTO => $this->onHello($frame),
+            $frame instanceof PeerWelcomeDTO => $this->onWelcome($frame),
+            $frame instanceof PeerRosterDTO => $this->onRoster($frame),
+            $frame instanceof PeerAnnounceDTO => $this->onAnnounce($frame),
+            default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
+        };
     }
 
     /**
      * Accepting side: records the remote identity and answers with a welcome.
      *
      * @param PeerHelloDTO $hello Incoming hello frame
-     * @throws PeerTransportException When a hello arrives on the dialing side
+     * @throws PeerTransportException When a hello arrives on the dialing side or the version is incompatible
      */
     private function onHello(PeerHelloDTO $hello): void
     {
@@ -159,24 +162,26 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected hello on the dialing side of a peer link');
         }
 
+        $this->requireCompatible($hello);
+
         $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
         $this->remoteIdentity = $remote;
-        $this->writeBuffer .= $this->handshakeFrame(new PeerWelcomeDTO(
+        $this->sendFrame(new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
             $this->localIdentity->address,
         ));
-        $this->registerPeer($remote);
         Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
+        $this->server->onHandshakeComplete($this, $remote);
     }
 
     /**
      * Dialing side: records the remote identity from the welcome reply.
      *
      * @param PeerWelcomeDTO $welcome Incoming welcome frame
-     * @throws PeerTransportException When a welcome arrives on the accepting side
+     * @throws PeerTransportException When a welcome arrives on the accepting side or the version is incompatible
      */
     private function onWelcome(PeerWelcomeDTO $welcome): void
     {
@@ -184,37 +189,63 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected welcome on the accepting side of a peer link');
         }
 
+        $this->requireCompatible($welcome);
+
         $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities, $welcome->address);
         $this->remoteIdentity = $remote;
-        $this->registerPeer($remote);
         Logger::info("Peer handshake complete with {$remote->nodeId} role={$remote->role->value}");
+        $this->server->onHandshakeComplete($this, $remote);
     }
 
     /**
-     * Records the handshaked peer into the master cluster registry.
+     * Hands a received roster to the server to merge and propagate.
      *
-     * A registry hiccup must not tear down the link or the daemon loop, so any
-     * failure is logged and swallowed rather than propagated.
-     *
-     * @param NodeIdentity $remote Remote node identity just learned
+     * @param PeerRosterDTO $roster Incoming roster frame
+     * @throws PeerTransportException When the roster arrives before the handshake
      */
-    private function registerPeer(NodeIdentity $remote): void
+    private function onRoster(PeerRosterDTO $roster): void
     {
-        try {
-            Hilos::$cluster?->registry()->recordPeer($remote, microtime(true));
-        } catch (\Throwable $e) {
-            Logger::warning("Cluster registry update failed on peer join: {$e->getMessage()}");
+        $this->requireHandshaked('roster');
+        $this->server->onRosterReceived($this, $roster);
+    }
+
+    /**
+     * Hands a received announcement to the server to merge and propagate.
+     *
+     * @param PeerAnnounceDTO $announce Incoming announce frame
+     * @throws PeerTransportException When the announcement arrives before the handshake
+     */
+    private function onAnnounce(PeerAnnounceDTO $announce): void
+    {
+        $this->requireHandshaked('announce');
+        $this->server->onAnnounceReceived($this, $announce);
+    }
+
+    /**
+     * Rejects a handshake frame whose protocol version is incompatible.
+     *
+     * @param PeerHandshakeDTO $frame Handshake frame to check
+     * @throws PeerTransportException When the protocol version does not match
+     */
+    private function requireCompatible(PeerHandshakeDTO $frame): void
+    {
+        if (!PeerProtocol::isCompatible($frame->protocolVersion)) {
+            throw new PeerTransportException(
+                "Incompatible peer protocol version {$frame->protocolVersion}, expected " . PeerProtocol::VERSION,
+            );
         }
     }
 
     /**
-     * Renders a handshake DTO as one newline-delimited JSON frame.
+     * Rejects a gossip frame that arrives before the handshake has completed.
      *
-     * @param PeerDTO $dto Handshake frame to serialize
-     * @return string Newline-terminated JSON frame
+     * @param string $frameKind Frame kind for the error message
+     * @throws PeerTransportException When the link has no remote identity yet
      */
-    private function handshakeFrame(PeerDTO $dto): string
+    private function requireHandshaked(string $frameKind): void
     {
-        return $dto->toJson() . "\n";
+        if ($this->remoteIdentity === null) {
+            throw new PeerTransportException("Received a peer {$frameKind} before the handshake completed");
+        }
     }
 }

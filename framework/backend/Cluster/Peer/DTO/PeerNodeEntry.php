@@ -65,6 +65,18 @@ final class PeerNodeEntry extends BaseDTO
     }
 
     /**
+     * Builds a wire entry from an identity plus an online flag.
+     *
+     * @param NodeIdentity $identity Node identity
+     * @param bool $online Whether the node is online
+     * @return self Wire entry
+     */
+    public static function fromIdentity(NodeIdentity $identity, bool $online): self
+    {
+        return new self($identity->nodeId, $identity->role, $identity->capabilities, $identity->address, $online);
+    }
+
+    /**
      * Reads this wire entry back as a node identity for the registry to merge.
      *
      * @return NodeIdentity Node identity
