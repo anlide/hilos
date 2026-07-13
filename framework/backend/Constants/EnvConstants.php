@@ -230,4 +230,22 @@ enum EnvConstants
      * false so it works over the plain-http dev stack; set true under TLS.
      */
     case HILOS_SESSION_COOKIE_SECURE;
+
+    // ── Cluster ──────────────────────────────────────────────────────────────
+
+    /**
+     * Whether this daemon participates in a cluster. Default false: the daemon
+     * runs as a single node exactly as today (non-cluster is the first-class
+     * default). When true, the node-identity variables below become required.
+     */
+    case CLUSTER_ENABLED;
+
+    /** @var string Self-declared cluster node id (unique per node). Required when CLUSTER_ENABLED. */
+    case CLUSTER_NODE_ID;
+
+    /** @var string Self-declared node role: master | slave. Required when CLUSTER_ENABLED. */
+    case CLUSTER_NODE_ROLE;
+
+    /** @var string Declared node capability tags, comma-separated (e.g. "gpu-local,ssd"). */
+    case CLUSTER_NODE_CAPABILITIES;
 }

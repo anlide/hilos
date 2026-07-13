@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -42,6 +43,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$fs         — filesystem layer
  * - Hilos::$sr         — signal router
  * - Hilos::$ac         — analytics collector
+ * - Hilos::$cluster    — cluster mode and local node identity
  */
 abstract class Hilos
 {
@@ -123,6 +125,9 @@ abstract class Hilos
 
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
+
+    /** @var ?ClusterContext Cluster mode and local node identity singleton */
+    public static ?ClusterContext $cluster = null;
 
     /**
      * Returns page subscription owner agent types declared by registered page classes.
@@ -426,6 +431,10 @@ abstract class Hilos
         if (static::$llm === null) {
             static::$llm = static::createLlm();
         }
+
+        if (static::$cluster === null) {
+            static::$cluster = static::createCluster();
+        }
     }
 
     /**
@@ -552,6 +561,16 @@ abstract class Hilos
             : null;
 
         return new LlmRouter(static::LLM_PROFILE_CATALOG, $override);
+    }
+
+    /**
+     * Creates the cluster context bound to the active environment accessor.
+     *
+     * @return ClusterContext Cluster mode and node-identity context
+     */
+    protected static function createCluster(): ClusterContext
+    {
+        return new ClusterContext();
     }
 
     /**

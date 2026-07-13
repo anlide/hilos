@@ -21,6 +21,9 @@ final class CliCommands
     /** @var string Command: Ping the daemon over the command channel */
     public const string DAEMON_PING = 'daemon:ping';
 
+    /** @var string Command: List the cluster nodes the daemon knows about */
+    public const string CLUSTER_NODES = 'cluster:nodes';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

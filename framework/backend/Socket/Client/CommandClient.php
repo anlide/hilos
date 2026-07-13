@@ -11,6 +11,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -77,6 +78,17 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
             if ($request->command === CommandConstants::COMMAND_PING) {
                 $this->writeBuffer .= CommandReplyDTO::ok($request->correlationId, $request->payload)->toJson() . "\n";
+                continue;
+            }
+
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_NODES) {
+                // A misconfigured cluster must reply an error, not throw inside the master loop.
+                try {
+                    $reply = CommandReplyDTO::ok($request->correlationId, Hilos::$cluster?->snapshot() ?? []);
+                } catch (HilosException $e) {
+                    $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
                 continue;
             }
 

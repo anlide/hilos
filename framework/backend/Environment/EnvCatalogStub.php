@@ -197,6 +197,10 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 false,
                 emptyIsMissing: true,
             ),
+            EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
+            EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CLUSTER_NODE_CAPABILITIES->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
         ];
     }
 

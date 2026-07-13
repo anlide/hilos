@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\ClusterNodesCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
@@ -71,6 +72,7 @@ class CliManager
         $this->commands[CliCommands::DAEMON_STATUS] = new StatusCommand();
         $this->commands[CliCommands::DAEMON_MONITOR] = new MonitorCommand();
         $this->commands[CliCommands::DAEMON_PING] = new PingCommand();
+        $this->commands[CliCommands::CLUSTER_NODES] = new ClusterNodesCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();

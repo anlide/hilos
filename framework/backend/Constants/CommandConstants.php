@@ -38,4 +38,7 @@ final class CommandConstants
 
     /** @var string Built-in command: transport health check; the daemon echoes the request payload */
     public const string COMMAND_PING = 'ping';
+
+    /** @var string Built-in command: the daemon answers synchronously with the cluster node snapshot */
+    public const string COMMAND_CLUSTER_NODES = 'cluster:nodes';
 }
