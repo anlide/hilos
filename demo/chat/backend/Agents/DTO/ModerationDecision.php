@@ -30,7 +30,8 @@ final readonly class ModerationDecision
     }
 
     /**
-     * Parses a moderation model output object with bool allow and non-empty string reason.
+     * Parses a moderation model output object; the boolean allow decision is
+     * authoritative and a missing or blank reason is defaulted to a label.
      *
      * @param string $text Raw model output
      * @throws InvalidArgumentException When output does not contain a valid moderation decision
