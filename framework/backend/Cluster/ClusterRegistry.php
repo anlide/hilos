@@ -33,8 +33,7 @@ final class ClusterRegistry
      */
     public function seedLocal(NodeIdentity $self, float $now): void
     {
-        $this->nodes[$self->nodeId] = ClusterNode::fromIdentity($self, true, $now);
-        $this->version++;
+        $this->merge($self, true, $now);
     }
 
     /**
@@ -45,8 +44,34 @@ final class ClusterRegistry
      */
     public function recordPeer(NodeIdentity $peer, float $now): void
     {
-        $this->nodes[$peer->nodeId] = ClusterNode::fromIdentity($peer, true, $now);
+        $this->merge($peer, true, $now);
+    }
+
+    /**
+     * Upserts a node and reports whether it changed the membership meaningfully.
+     *
+     * A change of role, capabilities, address, or online status counts; a
+     * repeated identical record does not, so membership gossip converges instead
+     * of echoing forever. `lastSeen` alone is never a meaningful change.
+     *
+     * @param NodeIdentity $node Node identity to upsert
+     * @param bool $online Whether the node is currently online
+     * @param float $now Current microtime
+     * @return bool True when the membership changed meaningfully
+     */
+    public function merge(NodeIdentity $node, bool $online, float $now): bool
+    {
+        $existing = $this->nodes[$node->nodeId] ?? null;
+        $incoming = ClusterNode::fromIdentity($node, $online, $now);
+
+        if ($existing !== null && !self::isMeaningfulChange($existing, $incoming)) {
+            return false;
+        }
+
+        $this->nodes[$node->nodeId] = $incoming;
         $this->version++;
+
+        return true;
     }
 
     /**
@@ -64,6 +89,21 @@ final class ClusterRegistry
 
         $this->nodes[$nodeId] = $node->asOffline($now);
         $this->version++;
+    }
+
+    /**
+     * Reports whether a gossip-relevant field differs between two node records.
+     *
+     * @param ClusterNode $existing Current node record
+     * @param ClusterNode $incoming Candidate node record
+     * @return bool True when role, capabilities, address, or online status differs
+     */
+    private static function isMeaningfulChange(ClusterNode $existing, ClusterNode $incoming): bool
+    {
+        return $existing->role !== $incoming->role
+            || $existing->online !== $incoming->online
+            || $existing->capabilities !== $incoming->capabilities
+            || $existing->address?->toString() !== $incoming->address?->toString();
     }
 
     /**

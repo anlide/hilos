@@ -7,7 +7,7 @@ namespace Hilos\Cluster\Peer\DTO;
 /**
  * Handshake frame the accepting node sends back to acknowledge a hello.
  */
-final class PeerWelcomeDTO extends PeerDTO
+final class PeerWelcomeDTO extends PeerHandshakeDTO
 {
     /** @var string Wire message type for the welcome frame */
     public const string MESSAGE_TYPE = 'peer_welcome';

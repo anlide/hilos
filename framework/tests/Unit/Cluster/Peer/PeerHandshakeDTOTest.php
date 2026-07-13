@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerAddress;
@@ -63,8 +64,8 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerHelloDTO::fromArray([
-            PeerDTO::FIELD_PROTOCOL_VERSION => 1,
-            PeerDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
         ]);
     }
 
@@ -73,9 +74,9 @@ final class PeerHandshakeDTOTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerHelloDTO::fromArray([
-            PeerDTO::FIELD_PROTOCOL_VERSION => 1,
-            PeerDTO::FIELD_NODE_ID => 'node-a',
-            PeerDTO::FIELD_NODE_ROLE => 'overlord',
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'overlord',
         ]);
     }
 
@@ -102,10 +103,10 @@ final class PeerHandshakeDTOTest extends TestCase
     public function testFromArrayNormalizesCapabilities(): void
     {
         $hello = PeerHelloDTO::fromArray([
-            PeerDTO::FIELD_PROTOCOL_VERSION => 1,
-            PeerDTO::FIELD_NODE_ID => 'node-a',
-            PeerDTO::FIELD_NODE_ROLE => 'master',
-            PeerDTO::FIELD_NODE_CAPABILITIES => ['gpu-local', '', 123, 'ssd'],
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => ['gpu-local', '', 123, 'ssd'],
         ]);
 
         $this->assertSame(['gpu-local', 'ssd'], $hello->capabilities);

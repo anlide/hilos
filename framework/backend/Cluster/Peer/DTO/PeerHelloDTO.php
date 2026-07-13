@@ -7,7 +7,7 @@ namespace Hilos\Cluster\Peer\DTO;
 /**
  * Handshake frame a dialing node sends first to introduce itself to a peer.
  */
-final class PeerHelloDTO extends PeerDTO
+final class PeerHelloDTO extends PeerHandshakeDTO
 {
     /** @var string Wire message type for the hello frame */
     public const string MESSAGE_TYPE = 'peer_hello';

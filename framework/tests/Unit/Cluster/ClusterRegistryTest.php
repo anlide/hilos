@@ -40,7 +40,7 @@ final class ClusterRegistryTest extends TestCase
         $this->assertSame('10.0.0.1:8095', $registry->snapshot()[0]->address?->toString());
     }
 
-    public function testRecordPeerAddsAndRefreshes(): void
+    public function testRecordPeerAddsAndDedupesIdenticalRefresh(): void
     {
         $registry = new ClusterRegistry();
         $registry->seedLocal(NodeIdentity::of('node-a', NodeRole::Master, []), 100.0);
@@ -49,13 +49,34 @@ final class ClusterRegistryTest extends TestCase
         $this->assertCount(2, $registry->snapshot());
         $this->assertSame(2, $registry->version());
 
-        // Refreshing the same peer keeps one row but updates lastSeen and bumps version.
+        // Re-recording an identical peer is a no-op: no new row, no version bump.
         $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 105.0);
 
         $this->assertCount(2, $registry->snapshot());
-        $this->assertSame(3, $registry->version());
-        $nodeB = $this->findNode($registry, 'node-b');
-        $this->assertSame(105.0, $nodeB->lastSeen);
+        $this->assertSame(2, $registry->version());
+    }
+
+    public function testRecordPeerBumpsOnMeaningfulChange(): void
+    {
+        $registry = new ClusterRegistry();
+        $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu']), 100.0);
+        $this->assertSame(1, $registry->version());
+
+        // A changed capability set is a meaningful change: replace and bump.
+        $registry->recordPeer(NodeIdentity::of('node-b', NodeRole::Slave, ['cpu', 'gpu-local']), 105.0);
+
+        $this->assertCount(1, $registry->snapshot());
+        $this->assertSame(2, $registry->version());
+        $this->assertSame(['cpu', 'gpu-local'], $this->findNode($registry, 'node-b')->capabilities);
+    }
+
+    public function testMergeReportsWhetherItChanged(): void
+    {
+        $registry = new ClusterRegistry();
+
+        $this->assertTrue($registry->merge(NodeIdentity::of('node-b', NodeRole::Slave, []), true, 100.0));
+        $this->assertFalse($registry->merge(NodeIdentity::of('node-b', NodeRole::Slave, []), true, 101.0));
+        $this->assertTrue($registry->merge(NodeIdentity::of('node-b', NodeRole::Slave, []), false, 102.0));
     }
 
     public function testMarkOfflineFlipsOnlineAndBumpsVersion(): void
