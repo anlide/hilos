@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Utils\Logger;
 
@@ -105,9 +106,17 @@ final class PeerLink extends AbstractClient
      */
     protected function onClose(): void
     {
-        if ($this->remoteIdentity !== null) {
-            Logger::info("Peer left: {$this->remoteIdentity->nodeId}");
+        if ($this->remoteIdentity === null) {
+            return;
         }
+
+        try {
+            Hilos::$cluster?->registry()->markOffline($this->remoteIdentity->nodeId, microtime(true));
+        } catch (\Throwable $e) {
+            Logger::warning("Cluster registry update failed on peer leave: {$e->getMessage()}");
+        }
+
+        Logger::info("Peer left: {$this->remoteIdentity->nodeId}");
     }
 
     /**
@@ -149,14 +158,16 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected hello on the dialing side of a peer link');
         }
 
-        $this->remoteIdentity = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities);
+        $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities);
+        $this->remoteIdentity = $remote;
         $this->writeBuffer .= $this->handshakeFrame(new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
         ));
-        Logger::info("Peer joined: {$this->remoteIdentity->nodeId} role={$this->remoteIdentity->role->value}");
+        $this->registerPeer($remote);
+        Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
     }
 
     /**
@@ -171,8 +182,27 @@ final class PeerLink extends AbstractClient
             throw new PeerTransportException('Unexpected welcome on the accepting side of a peer link');
         }
 
-        $this->remoteIdentity = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities);
-        Logger::info("Peer handshake complete with {$this->remoteIdentity->nodeId} role={$this->remoteIdentity->role->value}");
+        $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities);
+        $this->remoteIdentity = $remote;
+        $this->registerPeer($remote);
+        Logger::info("Peer handshake complete with {$remote->nodeId} role={$remote->role->value}");
+    }
+
+    /**
+     * Records the handshaked peer into the master cluster registry.
+     *
+     * A registry hiccup must not tear down the link or the daemon loop, so any
+     * failure is logged and swallowed rather than propagated.
+     *
+     * @param NodeIdentity $remote Remote node identity just learned
+     */
+    private function registerPeer(NodeIdentity $remote): void
+    {
+        try {
+            Hilos::$cluster?->registry()->recordPeer($remote, microtime(true));
+        } catch (\Throwable $e) {
+            Logger::warning("Cluster registry update failed on peer join: {$e->getMessage()}");
+        }
     }
 
     /**

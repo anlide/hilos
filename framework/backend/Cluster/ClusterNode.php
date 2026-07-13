@@ -1,0 +1,56 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Cluster;
+
+/**
+ * Immutable snapshot of one cluster node's identity and liveness.
+ *
+ * Held by the master-owned {@see ClusterRegistry} as a value object, replaced
+ * wholesale on every membership change rather than mutated. `online` and
+ * `lastSeen` describe liveness as the master observed it; richer heartbeat
+ * semantics land with node health (HIL-183).
+ */
+final class ClusterNode
+{
+    /**
+     * @param string $nodeId Node id
+     * @param NodeRole $role Node role
+     * @param list<string> $capabilities Declared capability tags
+     * @param bool $online Whether the node is currently connected
+     * @param float $lastSeen Microtime the node was last observed
+     */
+    private function __construct(
+        public readonly string $nodeId,
+        public readonly NodeRole $role,
+        public readonly array $capabilities,
+        public readonly bool $online,
+        public readonly float $lastSeen,
+    ) {
+    }
+
+    /**
+     * Builds a node record from a resolved identity.
+     *
+     * @param NodeIdentity $identity Node identity
+     * @param bool $online Whether the node is currently connected
+     * @param float $lastSeen Microtime the node was last observed
+     * @return self Node record
+     */
+    public static function fromIdentity(NodeIdentity $identity, bool $online, float $lastSeen): self
+    {
+        return new self($identity->nodeId, $identity->role, $identity->capabilities, $online, $lastSeen);
+    }
+
+    /**
+     * Returns a copy of this node marked offline as of the given time.
+     *
+     * @param float $lastSeen Microtime the node went offline
+     * @return self Offline copy
+     */
+    public function asOffline(float $lastSeen): self
+    {
+        return new self($this->nodeId, $this->role, $this->capabilities, false, $lastSeen);
+    }
+}

@@ -97,6 +97,7 @@ final class ClusterContextTest extends TestCase
                 ClusterCommandConstants::FIELD_NODE_ID => 'node-a',
                 ClusterCommandConstants::FIELD_NODE_ROLE => 'master',
                 ClusterCommandConstants::FIELD_NODE_CAPABILITIES => ['gpu-local'],
+                ClusterCommandConstants::FIELD_NODE_ONLINE => true,
             ]],
             $snapshot[ClusterCommandConstants::FIELD_NODES],
         );

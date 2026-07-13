@@ -26,4 +26,7 @@ final class ClusterCommandConstants
 
     /** @var string Node-row key: declared capability tags */
     public const string FIELD_NODE_CAPABILITIES = 'capabilities';
+
+    /** @var string Node-row key: whether the node is currently online */
+    public const string FIELD_NODE_ONLINE = 'online';
 }

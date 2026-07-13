@@ -29,6 +29,9 @@ final class ClusterContext
     /** @var ?NodeIdentity Resolved local node identity, memoized on first access. */
     private ?NodeIdentity $identity = null;
 
+    /** @var ?ClusterRegistry Master-owned live membership registry, built on first access. */
+    private ?ClusterRegistry $registry = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -54,14 +57,38 @@ final class ClusterContext
     }
 
     /**
+     * Returns the master-owned live membership registry, seeded with the local node.
+     *
+     * The registry is the single source of truth for cluster membership and lives
+     * on the daemon master; it is built lazily and self-seeds the local node on
+     * first access. The peer transport records and removes peers through it.
+     *
+     * @return ClusterRegistry Live membership registry
+     * @throws ClusterDisabledException When cluster mode is disabled
+     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
+     * @throws EnvException When a cluster env value cannot be read
+     */
+    public function registry(): ClusterRegistry
+    {
+        if (!$this->isEnabled()) {
+            throw new ClusterDisabledException('The cluster registry is unavailable while cluster mode is disabled');
+        }
+
+        if ($this->registry === null) {
+            $this->registry = new ClusterRegistry();
+            $this->registry->seedLocal($this->identity(), microtime(true));
+        }
+
+        return $this->registry;
+    }
+
+    /**
      * Builds the cluster node snapshot answered by the `cluster:nodes` command.
      *
-     * Until the live peer-join registry lands (HIL-178), the known set is just
-     * the local node, so the list holds a single row when enabled and is empty
-     * when cluster mode is off.
+     * Reads the live membership registry (local node plus any connected peers)
+     * when enabled, and reports an empty set when cluster mode is off.
      *
      * @return array{enabled: bool, nodes: list<array<string, mixed>>} Node snapshot payload
-     * @throws ClusterDisabledException When cluster mode is disabled
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
      */
@@ -74,17 +101,19 @@ final class ClusterContext
             ];
         }
 
-        $node = $this->identity();
+        $nodes = [];
+        foreach ($this->registry()->snapshot() as $node) {
+            $nodes[] = [
+                ClusterCommandConstants::FIELD_NODE_ID => $node->nodeId,
+                ClusterCommandConstants::FIELD_NODE_ROLE => $node->role->value,
+                ClusterCommandConstants::FIELD_NODE_CAPABILITIES => $node->capabilities,
+                ClusterCommandConstants::FIELD_NODE_ONLINE => $node->online,
+            ];
+        }
 
         return [
             ClusterCommandConstants::FIELD_ENABLED => true,
-            ClusterCommandConstants::FIELD_NODES => [
-                [
-                    ClusterCommandConstants::FIELD_NODE_ID => $node->nodeId,
-                    ClusterCommandConstants::FIELD_NODE_ROLE => $node->role->value,
-                    ClusterCommandConstants::FIELD_NODE_CAPABILITIES => $node->capabilities,
-                ],
-            ],
+            ClusterCommandConstants::FIELD_NODES => $nodes,
         ];
     }
 }

@@ -130,12 +130,13 @@ HELP;
 
             $nodeId = (string) ($node[ClusterCommandConstants::FIELD_NODE_ID] ?? '?');
             $role = (string) ($node[ClusterCommandConstants::FIELD_NODE_ROLE] ?? '?');
+            $online = ($node[ClusterCommandConstants::FIELD_NODE_ONLINE] ?? false) === true ? 'online' : 'offline';
             $capabilities = $node[ClusterCommandConstants::FIELD_NODE_CAPABILITIES] ?? [];
             $capabilitiesText = is_array($capabilities) && $capabilities !== []
                 ? implode(',', array_map('strval', $capabilities))
                 : '-';
 
-            echo "  {$nodeId}  role={$role}  capabilities={$capabilitiesText}\n";
+            echo "  {$nodeId}  role={$role}  {$online}  capabilities={$capabilitiesText}\n";
         }
     }
 
