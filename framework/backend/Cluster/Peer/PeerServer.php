@@ -146,12 +146,19 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
      */
     private function driveDial(PeerDial $dial, float $now): void
     {
-        // Linked: only act once the link has dropped out of the client set, then back off.
+        // Our own dialed link is still alive (handshaking or established): leave it be.
+        // A link discarded by the duplicate collapse is marked to close, so it counts as dropped.
         if ($dial->link !== null) {
-            if (!in_array($dial->link, $this->clients, true)) {
-                $dial->link = null;
-                $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+            if (in_array($dial->link, $this->clients, true) && !$dial->link->shouldClose()) {
+                return;
             }
+            $dial->link = null;
+            $dial->nextAttemptAt = $now + self::DIAL_RETRY_INTERVAL_SEC;
+        }
+
+        // The peer at this seed already reaches us over another link (an inbound dial, or the
+        // link that won a duplicate collapse): do not open a second connection to the same node.
+        if ($dial->remoteNodeId !== null && $this->hasHandshakedLinkToNode($dial->remoteNodeId)) {
             return;
         }
 
@@ -296,12 +303,67 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             return;
         }
 
+        $this->stampDialRemote($link, $remote->nodeId);
+
+        if ($this->collapseDuplicateLink($link, $remote->nodeId)) {
+            // This link lost the tie-break; the surviving link already owns the peer.
+            return;
+        }
+
         $changed = $registry->merge($remote, true, microtime(true));
         $this->sendRoster($link, $registry);
 
         if ($changed) {
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, true), $link);
         }
+    }
+
+    /**
+     * Records the peer's node id on the seed dial that owns this link, if any.
+     *
+     * Inbound links have no dial; for a dialed link this lets the seed recognise
+     * the peer later and stop re-dialing it once it is reachable another way.
+     *
+     * @param PeerLink $link Link that just handshaked
+     * @param string $nodeId Remote node id learned from the handshake
+     */
+    private function stampDialRemote(PeerLink $link, string $nodeId): void
+    {
+        $dial = $this->dialForLink($link);
+        if ($dial !== null) {
+            $dial->remoteNodeId = $nodeId;
+        }
+    }
+
+    /**
+     * Collapses a second connection to an already-linked peer down to one link.
+     *
+     * A simultaneous bootstrap leaves each node with a dialed and an accepted link
+     * to the same peer. Both nodes apply the shared tie-break
+     * ({@see PeerProtocol::dialedLinkWinsTieBreak()}) and drop the same connection,
+     * so exactly one survives on each end. The loser is discarded silently, leaving
+     * the peer online over the survivor. Returns true when the just-handshaked link
+     * is the one discarded.
+     *
+     * @param PeerLink $link Link that just handshaked
+     * @param string $remoteNodeId Remote node id learned from the handshake
+     * @return bool True when this link lost the tie-break and was discarded
+     */
+    private function collapseDuplicateLink(PeerLink $link, string $remoteNodeId): bool
+    {
+        $existing = $this->findHandshakedLinkToNode($remoteNodeId, $link);
+        if ($existing === null) {
+            return false;
+        }
+
+        $dialedWins = PeerProtocol::dialedLinkWinsTieBreak($this->localIdentity->nodeId, $remoteNodeId);
+        $keep = $link->isDialer() === $dialedWins ? $link : $existing;
+        $drop = $keep === $link ? $existing : $link;
+
+        $drop->discardAsDuplicate();
+        Logger::info("Collapsed duplicate peer link to {$remoteNodeId}");
+
+        return $drop === $link;
     }
 
     /**
@@ -346,6 +408,11 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     /**
      * Marks the closed link's peer offline and announces the leave to the others.
      *
+     * A peer can briefly hold two links to us — during a simultaneous-bootstrap
+     * collapse, or any transient reconnect overlap — so a close only means the peer
+     * departed when it was the last link to that node. While another handshaked link
+     * still reaches it, the close is one duplicate dropping and the node stays online.
+     *
      * @param PeerLink $link Link that closed
      */
     public function onLinkClosed(PeerLink $link): void
@@ -357,6 +424,11 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
 
         $registry = $this->registry();
         if ($registry === null) {
+            return;
+        }
+
+        if ($this->findHandshakedLinkToNode($remote->nodeId, $link) !== null) {
+            // The peer is still reachable over another link; this was a duplicate, not a departure.
             return;
         }
 
@@ -440,6 +512,58 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
 
             $client->sendFrame($announce);
         }
+    }
+
+    /**
+     * Finds the seed dial that owns a link, or null for an inbound link.
+     *
+     * @param PeerLink $link Link to match
+     * @return ?PeerDial Owning dial, or null when the link was accepted
+     */
+    private function dialForLink(PeerLink $link): ?PeerDial
+    {
+        foreach ($this->dials as $dial) {
+            if ($dial->link === $link) {
+                return $dial;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Finds another handshaked link to the given node, excluding one link.
+     *
+     * @param string $nodeId Remote node id to match
+     * @param PeerLink $exclude Link to skip (the one that just handshaked)
+     * @return ?PeerLink Other handshaked link to the node, or null when none
+     */
+    private function findHandshakedLinkToNode(string $nodeId, PeerLink $exclude): ?PeerLink
+    {
+        foreach ($this->clients as $client) {
+            if ($client !== $exclude && $client->remoteIdentity()?->nodeId === $nodeId) {
+                return $client;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Reports whether any handshaked link currently reaches the given node.
+     *
+     * @param string $nodeId Remote node id to match
+     * @return bool True when a link to that node is established
+     */
+    private function hasHandshakedLinkToNode(string $nodeId): bool
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity()?->nodeId === $nodeId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

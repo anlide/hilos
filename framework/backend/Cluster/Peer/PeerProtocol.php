@@ -27,4 +27,24 @@ final class PeerProtocol
     {
         return $version === self::VERSION;
     }
+
+    /**
+     * Decides which of two duplicate links to the same peer survives a collapse.
+     *
+     * When two nodes list each other as seeds and bootstrap at the same time they
+     * dial each other simultaneously, so each ends up with two links to the same
+     * peer — one it dialed, one it accepted. Both nodes must independently keep the
+     * same connection, or they would either drop both or keep both. The shared rule
+     * is to keep the link dialed by the lexicographically smaller node id: it is
+     * deterministic, symmetric across the pair, and needs no coordination. Returns
+     * true when the link this node dialed is the survivor.
+     *
+     * @param string $localNodeId This node's id
+     * @param string $remoteNodeId The peer's id
+     * @return bool True when the locally-dialed link is the one to keep
+     */
+    public static function dialedLinkWinsTieBreak(string $localNodeId, string $remoteNodeId): bool
+    {
+        return $localNodeId < $remoteNodeId;
+    }
 }

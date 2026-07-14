@@ -30,6 +30,14 @@ final class PeerDial
     public ?PeerLink $link = null;
 
     /**
+     * @var ?string Remote node id learned once this seed first handshaked, or null until then.
+     *
+     * Kept even after the dialed link is dropped so the seed is not re-dialed while
+     * the same peer is already reachable over an inbound link.
+     */
+    public ?string $remoteNodeId = null;
+
+    /**
      * @param PeerAddress $seed Seed address this dial targets
      */
     public function __construct(

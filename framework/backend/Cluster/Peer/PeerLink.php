@@ -92,11 +92,46 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Reports whether this side opened the connection (sent the hello).
+     *
+     * The duplicate-link tie-break keeps the connection dialed by the smaller node
+     * id, so the collapse needs to know each link's direction.
+     *
+     * @return bool True for the dialing side, false for the accepting side
+     */
+    public function isDialer(): bool
+    {
+        return $this->dialer;
+    }
+
+    /**
+     * Silently drops this link after it lost the duplicate-link tie-break.
+     *
+     * The peer is still reachable over the surviving link, so this must not look
+     * like a departure: the remote identity is cleared first, which makes
+     * {@see onClose()} a no-op and keeps the registry entry and the leave gossip
+     * untouched. The link is then scheduled to close on the next tick.
+     */
+    public function discardAsDuplicate(): void
+    {
+        $this->remoteIdentity = null;
+        $this->markShouldClose();
+    }
+
+    /**
      * Parses complete peer frames and dispatches them, closing on a bad frame.
      */
     protected function processReadBuffer(): void
     {
         while ($this->readBuffer !== '') {
+            // Handling a frame can tear this link down mid-buffer — a completed handshake that
+            // loses the duplicate collapse discards its own link. Once it is closing, stop
+            // parsing the frames that followed in the same read, or a trailing gossip frame
+            // would be mis-flagged as arriving before the (now-undone) handshake.
+            if ($this->shouldClose) {
+                return;
+            }
+
             $message = $this->extractCompleteJsonMessage($this->readBuffer);
             if ($message === null) {
                 // Incomplete frame, wait for more data.
