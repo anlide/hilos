@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer;
 
 /**
- * Mutable per-seed dial state owned by {@see PeerServer}.
+ * Mutable per-target dial state owned by {@see PeerServer}.
  *
- * Tracks one seed through the non-blocking connect state machine: idle (waiting
- * for the next attempt), connecting (socket opened, awaiting writability), or
- * linked (promoted to a {@see PeerLink}). It is an internal state holder, not a
- * value object — the server mutates it in place on each tick.
+ * Tracks one dial target — a configured seed or a peer learned through gossip —
+ * through the non-blocking connect state machine: idle (waiting for the next
+ * attempt), connecting (socket opened, awaiting writability), or linked (promoted
+ * to a {@see PeerLink}). It is an internal state holder, not a value object — the
+ * server mutates it in place on each tick.
  */
 final class PeerDial
 {
@@ -30,18 +31,20 @@ final class PeerDial
     public ?PeerLink $link = null;
 
     /**
-     * @var ?string Remote node id learned once this seed first handshaked, or null until then.
+     * @var ?string Remote node id this dial targets, or null until it is known.
      *
-     * Kept even after the dialed link is dropped so the seed is not re-dialed while
-     * the same peer is already reachable over an inbound link.
+     * A dial-on-learn target sets it at creation (the peer's node id is already
+     * known from gossip); a seed dial learns it once it first handshakes. Kept even
+     * after the dialed link is dropped so the target is not re-dialed while the same
+     * peer is already reachable over another link.
      */
     public ?string $remoteNodeId = null;
 
     /**
-     * @param PeerAddress $seed Seed address this dial targets
+     * @param PeerAddress $address Endpoint this dial targets
      */
     public function __construct(
-        public readonly PeerAddress $seed,
+        public readonly PeerAddress $address,
     ) {
     }
 }

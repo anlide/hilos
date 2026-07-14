@@ -19,16 +19,20 @@ use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
 
 /**
- * Inter-daemon peer transport: listens for peer links and dials the seeds.
+ * Inter-daemon peer transport: accepts peer links and dials out to form the mesh.
  *
  * Runs beside the worker and command servers on the daemon master loop. It
  * accepts inbound peer links from other nodes and, in the same non-blocking
- * onTick, dials the configured seeds to join an existing cluster; both
- * directions become framed {@see PeerLink} connections that exchange a
- * hello/welcome handshake, then gossip membership. Every socket operation here
- * is non-blocking, so the master loop is never stalled. The server owns the
- * membership side effects: it merges peers into the master registry and fans
- * out roster/announce gossip so every node's registry converges.
+ * onTick, dials out to form direct links: the configured seeds to join an
+ * existing cluster, and — driven by a {@see ConnectionPolicy}, full mesh by
+ * default — every peer learned through gossip, so two nodes that only know each
+ * other transitively still raise a direct link. Both directions become framed
+ * {@see PeerLink} connections that exchange a hello/welcome handshake, then
+ * gossip membership. Every socket operation here is non-blocking, so the master
+ * loop is never stalled. The server owns the membership side effects: it merges
+ * peers into the master registry and fans out roster/announce gossip so every
+ * node's registry converges. Knowing a peer (registry + gossip) stays separate
+ * from dialing one (the policy): a later partial-mesh is a policy swap alone.
  *
  * @extends AbstractServer<PeerLink>
  */
@@ -46,21 +50,29 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     /** @var list<PeerAddress> Seed peers to dial on join */
     private array $seeds;
 
+    /** @var ConnectionPolicy Decides which known peers to dial a direct link to */
+    private ConnectionPolicy $connectionPolicy;
+
     /** @var array<int, PeerDial> Per-seed dial state, indexed by seed list position */
-    private array $dials = [];
+    private array $seedDials = [];
+
+    /** @var array<string, PeerDial> Dial-on-learn state for gossip-learned peers, keyed by node id */
+    private array $peerDials = [];
 
     /**
      * @param string $host Host to bind the peer listener
      * @param int $port Port to bind the peer listener
      * @param NodeIdentity $localIdentity Local node identity to announce to peers
      * @param list<PeerAddress> $seeds Seed peers to dial on join (empty for a bootstrap node)
+     * @param ?ConnectionPolicy $connectionPolicy Policy choosing which known peers to dial; full mesh when null
      */
-    public function __construct(string $host, int $port, NodeIdentity $localIdentity, array $seeds)
+    public function __construct(string $host, int $port, NodeIdentity $localIdentity, array $seeds, ?ConnectionPolicy $connectionPolicy = null)
     {
         parent::__construct($host, $port);
 
         $this->localIdentity = $localIdentity;
         $this->seeds = $seeds;
+        $this->connectionPolicy = $connectionPolicy ?? new FullMeshConnectionPolicy();
     }
 
     /**
@@ -111,7 +123,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
      */
     public function stop(): void
     {
-        foreach ($this->dials as $dial) {
+        foreach ($this->allDials() as $dial) {
             if ($dial->socket !== null) {
                 socket_close($dial->socket);
                 $dial->socket = null;
@@ -123,7 +135,8 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     }
 
     /**
-     * Advances the connect state machine for every configured seed.
+     * Ensures a dial for every seed and every policy-selected peer, then advances
+     * each one through the connect state machine.
      */
     private function driveDials(): void
     {
@@ -131,11 +144,60 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             return;
         }
 
-        $now = microtime(true);
         foreach ($this->seeds as $index => $seed) {
-            $dial = $this->dials[$index] ??= new PeerDial($seed);
+            $this->seedDials[$index] ??= new PeerDial($seed);
+        }
+        $this->reconcilePeerDials();
+
+        $now = microtime(true);
+        foreach ($this->allDials() as $dial) {
             $this->driveDial($dial, $now);
         }
+    }
+
+    /**
+     * Turns membership knowledge into dial intent for the mesh.
+     *
+     * Reads the master registry — the source of truth for who is in the cluster —
+     * and, for every known node the {@see ConnectionPolicy} selects, lazily opens a
+     * dial toward its advertised address keyed by node id. This is the single point
+     * where knowing a peer becomes dialing it, so a partial-mesh topology is a
+     * policy swap here and nothing else; the registry and gossip stay untouched.
+     * The node id is stamped on the dial up front so an inbound link to the same
+     * peer suppresses the outbound dial through {@see driveDial()}. A peer with no
+     * advertised address is left to reach us inbound; a peer's address is captured
+     * once (address churn is HIL-183).
+     */
+    private function reconcilePeerDials(): void
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        foreach ($registry->snapshot() as $node) {
+            if ($node->address === null || isset($this->peerDials[$node->nodeId])) {
+                continue;
+            }
+
+            if (!$this->connectionPolicy->shouldDial($this->localIdentity, $node)) {
+                continue;
+            }
+
+            $dial = new PeerDial($node->address);
+            $dial->remoteNodeId = $node->nodeId;
+            $this->peerDials[$node->nodeId] = $dial;
+        }
+    }
+
+    /**
+     * Returns every active dial, seed and dial-on-learn alike.
+     *
+     * @return list<PeerDial> All dials the server is driving
+     */
+    private function allDials(): array
+    {
+        return array_merge(array_values($this->seedDials), array_values($this->peerDials));
     }
 
     /**
@@ -189,7 +251,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
         socket_set_nonblock($socket);
 
         // A non-blocking connect returns false with EINPROGRESS; completion is polled next tick.
-        if (@socket_connect($socket, $dial->seed->host, $dial->seed->port)) {
+        if (@socket_connect($socket, $dial->address->host, $dial->address->port)) {
             $this->promoteDial($dial, $socket, $now);
             return;
         }
@@ -269,7 +331,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
         $dial->socket = null;
         $dial->connecting = false;
         $dial->link = $link;
-        Logger::info("Dialed seed {$dial->seed->host}:{$dial->seed->port}");
+        Logger::info($dial->remoteNodeId !== null
+            ? "Dialed peer {$dial->remoteNodeId}"
+            : "Dialed seed {$dial->address->host}:{$dial->address->port}");
     }
 
     /**
@@ -522,7 +586,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
      */
     private function dialForLink(PeerLink $link): ?PeerDial
     {
-        foreach ($this->dials as $dial) {
+        foreach ($this->allDials() as $dial) {
             if ($dial->link === $link) {
                 return $dial;
             }
