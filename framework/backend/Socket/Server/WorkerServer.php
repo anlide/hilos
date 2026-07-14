@@ -239,6 +239,30 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
+     * Stops this node's cluster-singleton agents; the mirror of {@see onBecameSingletonHost()}.
+     *
+     * Invoked by the daemon when this node loses leadership, so a truth source never
+     * outlives the term it was elected for: every running agent that requires cluster
+     * leadership ({@see AgentDaemonInterface::requiresClusterLeadership()}) is stopped,
+     * leaving the per-node agents that opted out untouched. Idempotent — safe to call
+     * with nothing to stop — so a second leadership-loss signal is harmless. A child
+     * that starts extra cluster-singletons in {@see onBecameSingletonHost()} may override
+     * to release matching resources, calling parent::onLostSingletonHost() first.
+     */
+    public function onLostSingletonHost(): void
+    {
+        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
+            $agentDaemon = $this->agentManager->getAgent($agentId);
+            if ($agentDaemon === null || !$agentDaemon->requiresClusterLeadership()) {
+                continue;
+            }
+
+            $parsed = $this->parseAgentId($agentId);
+            $this->stopAgent($parsed->type, $parsed->index);
+        }
+    }
+
+    /**
      * Get count of active regular worker processes.
      *
      * @return int Number of active regular workers

@@ -81,7 +81,8 @@ use Hilos\Utils\Logger;
  * itself on the cluster context at start and exposes {@see onNodeJoined()} /
  * {@see onNodeLeft()} hooks so a project can react to nodes joining and leaving the
  * mesh, plus {@see onBecameLeader()} / {@see onLostLeadership()} /
- * {@see onQuorumGained()} / {@see onQuorumLost()} for the consensus transitions.
+ * {@see onQuorumGained()} / {@see onQuorumLost()} for the consensus transitions and the
+ * broad {@see onClusterWorkStop()} directive on quorum loss or a planned graceful-leave.
  */
 abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver
 {
@@ -126,8 +127,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
     /**
      * @var bool True once this node's cluster-singleton agents have been started for
-     *     the current leadership term. Set by the leader-gated ensure-once; reset on
-     *     leadership loss by HIL-341.
+     *     the current leadership term. Set by the leader-gated ensure-once
+     *     ({@see ensureSingletonsStarted()}); cleared on leadership loss by
+     *     {@see stopClusterSingletons()} so a later promotion re-runs the start.
      */
     private bool $singletonsStarted = false;
 
@@ -307,6 +309,16 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      */
     private function initiateShutdown(): void
     {
+        // Planned graceful-leave: fire the broad work-stop directive locally so the
+        // project can persist and stop its in-flight work before the node departs the
+        // cluster. The peer transport announces the departure with a NodeLeaving frame
+        // in its own prepareShutdown(). Gated on cluster mode so a standalone daemon is
+        // unchanged. Distinct from onLostLeadership: a leaving follower loses no
+        // leadership yet must still halt business work.
+        if ($this->clusterEnabled()) {
+            $this->onClusterWorkStop();
+        }
+
         // Tell all servers to prepare for shutdown
         foreach ($this->servers as $server) {
             $server->prepareShutdown();
@@ -1152,8 +1164,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * the first time workers are ready and remembers it in {@see $singletonsStarted}.
      * The two conditions may arrive in any order — a node promoted before its workers
      * register, or workers ready before promotion — and this covers both without a
-     * per-tick liveness scan. HIL-341 resets the flag on leadership loss so a later
-     * promotion re-runs the start.
+     * per-tick liveness scan. {@see stopClusterSingletons()} clears the flag on
+     * leadership loss so a later promotion re-runs the start.
      */
     private function ensureSingletonsStarted(): void
     {
@@ -1168,6 +1180,38 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
         $workerServer->onBecameSingletonHost();
         $this->singletonsStarted = true;
+    }
+
+    /**
+     * Stops this node's cluster-singleton agents and re-arms the ensure-once.
+     *
+     * The reaction side of leadership loss: it fires {@see WorkerServer::onLostSingletonHost()}
+     * to stop every leader-only agent, then clears {@see $singletonsStarted} so a later
+     * promotion re-runs {@see ensureSingletonsStarted()} from scratch. No-op when no worker
+     * server is registered. A truth source therefore never outlives the term it was
+     * elected for.
+     */
+    private function stopClusterSingletons(): void
+    {
+        $this->findWorkerServer()?->onLostSingletonHost();
+        $this->singletonsStarted = false;
+    }
+
+    /**
+     * Whether cluster mode is enabled, defended against a misconfiguration.
+     *
+     * A failure reading the flag must not derail the shutdown sequence, so any error is
+     * swallowed and treated as off — the graceful-leave work-stop simply does not fire.
+     *
+     * @return bool True when cluster mode is enabled
+     */
+    private function clusterEnabled(): bool
+    {
+        try {
+            return Hilos::$cluster?->isEnabled() ?? false;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**
@@ -1294,15 +1338,18 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Hook called when this node loses cluster leadership.
      *
      * Fired when the coordinator steps down — on a newer observed term or on losing
-     * quorum (anti-split-brain). Default implementation does nothing; a project
-     * overrides it to relinquish singleton duties. Runs on the daemon master loop,
-     * so it must stay non-blocking.
+     * quorum (anti-split-brain). Narrow and ex-leader only. The framework default
+     * relinquishes the singleton duties this node held as leader: it stops the
+     * cluster-singleton agents and resets the ensure-once so a later promotion re-runs
+     * the start (the mirror of {@see WorkerServer::onBecameSingletonHost()}). A project
+     * may override to add its own teardown, calling parent::onLostLeadership() first.
+     * Runs on the daemon master loop, so overrides must stay non-blocking.
      *
      * @param int $term Election term in which leadership was held and then lost
      */
     public function onLostLeadership(int $term): void
     {
-        // Default: do nothing, child classes may override
+        $this->stopClusterSingletons();
     }
 
     /**
@@ -1319,12 +1366,35 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /**
      * Hook called when this node loses its quorum of the master set.
      *
-     * Default implementation does nothing; child classes override to react. Runs on
-     * the daemon master loop, so it must stay non-blocking.
+     * Fired on every node of a minority partition (leader and followers alike). The
+     * framework default fires the broad {@see onClusterWorkStop()} directive: without a
+     * quorum a node must halt all in-flight business work immediately until quorum
+     * returns, so a split cluster never runs the same work on both sides. A project may
+     * override to add its own reaction, calling parent::onQuorumLost() first. Runs on the
+     * daemon master loop, so overrides must stay non-blocking.
      */
     public function onQuorumLost(): void
     {
-        // Default: do nothing, child classes may override
+        $this->onClusterWorkStop();
+    }
+
+    /**
+     * Hook called when this node must stop all in-flight cluster business work.
+     *
+     * The broad, cause-agnostic project directive to halt and (if it wishes) persist
+     * business work: fired on quorum loss (every node of a minority partition) and on a
+     * planned graceful-leave, before the node departs. Distinct from
+     * {@see onLostLeadership()}, which is the ex-leader's narrow singleton teardown — a
+     * follower loses no leadership yet must still stop working. The framework only
+     * delivers this event; persisting and resurrecting the work is project code, which
+     * resumes through the existing {@see onQuorumGained()} / {@see onBecameLeader()}
+     * hooks and the slave work-grant. Default is a no-op. May fire more than once
+     * (quorum lost then shutdown), so an override must be idempotent, and it runs on the
+     * daemon master loop, so it must stay non-blocking.
+     */
+    public function onClusterWorkStop(): void
+    {
+        // Default: do nothing, child classes may override to persist and stop their work
     }
 
     /**

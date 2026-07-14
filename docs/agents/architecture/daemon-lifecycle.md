@@ -88,10 +88,12 @@ overridable hooks:
 - `onQuorumGained()` — the online master set reached a quorum
 - `onQuorumLost()` — the online master set fell below a quorum
 
-All four default to no-ops and run on the master loop, so overrides must stay
-non-blocking. The framework only *delivers* these events; reacting to them (gating
-singleton duties, stopping in-flight work) is the project's job and lands in the
-neighbouring cluster slices, not here.
+`onBecameLeader` and `onQuorumGained` default to no-ops; the other two carry the
+HIL-341 reaction defaults below. A fifth hook, `onClusterWorkStop()`, is fired by
+the framework (not the coordinator) on quorum loss and on a planned graceful-leave.
+All run on the master loop, so overrides must stay non-blocking, and a project that
+overrides `onLostLeadership` / `onQuorumLost` should call `parent::` first to keep the
+framework default.
 
 ## Consensus coordinator (HIL-339)
 
@@ -154,13 +156,47 @@ double-running a truth source (a correctness bug). Per-node agents opt out with
 
 Coordination state is **not** persisted (MySQL is kept out of coordination). A new
 leader rebuilds membership/placement by re-querying the mesh; singleton agents are
-launched fresh (the previous leader's were killed). Stopping singletons and resetting
-`singletonsStarted` on leadership loss is HIL-341.
+launched fresh (the previous leader's were killed — see HIL-341 below).
+
+## Quorum-loss reaction and graceful-leave (HIL-341)
+
+HIL-339 *detects* quorum loss and flips the flags (`hasQuorum()` → false, `amLeader()`
+→ false); this slice *reacts* to those transitions. The trigger for stopping work is
+**quorum loss, not every leader change** — a leader change with a live majority lets the
+survivors keep working under the new leader.
+
+- **`onClusterWorkStop()` (broad, cause-agnostic).** Fired on **every** node of a
+  minority partition on quorum loss (default of `onQuorumLost()`), and locally on a
+  planned graceful-leave (from `initiateShutdown()`, cluster mode only). It is the
+  project's directive to halt — and, if it wishes, persist — its in-flight business
+  work. Distinct from `onLostLeadership`: a follower loses no leadership yet must still
+  stop. The framework only delivers it; persisting and resurrecting the work is project
+  code. It may fire more than once (quorum lost, then shutdown), so it must be
+  **idempotent**.
+- **`onLostLeadership()` (narrow, ex-leader only).** The framework default stops this
+  node's cluster-singleton agents (`WorkerServer::onLostSingletonHost()`, the mirror of
+  `onBecameSingletonHost()`) and clears `singletonsStarted`, so a truth source never
+  outlives its term and a later promotion re-runs the start.
+- **Resume.** No new hook — the project resurrects through the existing
+  `onQuorumGained()` / `onBecameSingletonHost()` (leader) and the slave work-grant.
+- **Graceful-leave.** A planned stop broadcasts a `PeerNodeLeavingDTO` on the peer mesh
+  (a crash is silence), so peers tell an orderly departure from a failure. A leaving
+  **leader** names its most-recently-heard follower as the `designatedSuccessor`, which
+  campaigns immediately on receipt (`ClusterCoordinator::triggerDesignatedElection()`,
+  raft TimeoutNow-style) while the other followers keep waiting their randomized timeout
+  — leadership transfers with no election-timeout wait and no split vote. Fire-and-forget:
+  the ordinary election is the fallback if the successor never takes over. A leaving
+  **non-leader** names no successor and peers just update membership.
+- **Slave grace.** On a leader change a slave keeps working (if it was) until a bounded
+  grace deadline (`CLUSTER_SLAVE_WORK_GRACE_MS`) while it awaits the new leader's
+  work-decision, so an isolated slave does not run forever. Dormant in Phase-1 until
+  slaves get placed work (HIL-179); the env constant is the config seam.
 
 ## Graceful shutdown
 
 - SIGTERM/SIGINT → `shouldExit = true`
-- `initiateShutdown()` → calls `prepareShutdown()` on all servers
+- `initiateShutdown()` → fires `onClusterWorkStop()` (cluster mode only), then calls
+  `prepareShutdown()` on all servers (the `PeerServer` broadcasts the `NodeLeaving` frame)
 - Loop continues until all servers report `isReadyToShutdown()` or `shutdownTimeout` (20s) expires
 
 ## Key properties

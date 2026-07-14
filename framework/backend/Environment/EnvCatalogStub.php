@@ -209,6 +209,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::CLUSTER_ELECTION_TIMEOUT_MIN_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1500, emptyIsMissing: true),
             EnvConstants::CLUSTER_ELECTION_TIMEOUT_MAX_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3000, emptyIsMissing: true),
             EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 500, emptyIsMissing: true),
+            EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 6000, emptyIsMissing: true),
         ];
     }
 

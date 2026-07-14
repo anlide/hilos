@@ -241,6 +241,28 @@ final class ClusterCoordinator implements Leadership
     }
 
     /**
+     * Immediate-election trigger for a designated successor (raft TimeoutNow-style).
+     *
+     * A gracefully-leaving leader names its most-recently-heard follower in the
+     * {@see \Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO} frame; that follower calls this
+     * to campaign at once, bypassing its randomized election timeout, while the other
+     * followers keep waiting theirs. Only the successor short-circuits its timer, so it
+     * wins cleanly with no split vote — the delay a broadcast-and-race would reintroduce.
+     * Still gated on a live quorum by {@see tickFollower()}, so a successor stranded in a
+     * minority never inflates the term. A no-op unless this node is a follower.
+     */
+    public function triggerDesignatedElection(): void
+    {
+        if ($this->role !== ConsensusRole::Follower) {
+            return;
+        }
+
+        $this->currentLeaderId = null;
+        $this->electionDeadline = 0.0;
+        $this->deferElectionReset = false;
+    }
+
+    /**
      * Recomputes whether the online master set still forms a quorum.
      *
      * @return bool True when online master-set members meet the quorum size

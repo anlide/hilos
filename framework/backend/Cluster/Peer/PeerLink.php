@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -187,6 +188,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerRequestVoteDTO => $this->onRequestVote($frame),
             $frame instanceof PeerVoteReplyDTO => $this->onVoteReply($frame),
             $frame instanceof PeerHeartbeatDTO => $this->onHeartbeat($frame),
+            $frame instanceof PeerNodeLeavingDTO => $this->onNodeLeaving($frame),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -296,6 +298,19 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('heartbeat');
         $this->server->onHeartbeat($frame);
+    }
+
+    /**
+     * Hands a received graceful-leave to the server to update membership and,
+     * when this node is the named successor, trigger an immediate election.
+     *
+     * @param PeerNodeLeavingDTO $frame Incoming graceful-leave frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onNodeLeaving(PeerNodeLeavingDTO $frame): void
+    {
+        $this->requireHandshaked('node leaving');
+        $this->server->onNodeLeaving($frame);
     }
 
     /**

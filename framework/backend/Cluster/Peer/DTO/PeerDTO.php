@@ -15,8 +15,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * DTO. The handshake frames share a payload shape via {@see PeerHandshakeDTO};
  * the membership-gossip frames ({@see PeerRosterDTO}, {@see PeerAnnounceDTO})
  * carry node entries; the consensus frames ({@see PeerRequestVoteDTO},
- * {@see PeerVoteReplyDTO}, {@see PeerHeartbeatDTO}) carry election terms. All
- * extend this base directly.
+ * {@see PeerVoteReplyDTO}, {@see PeerHeartbeatDTO}) carry election terms; the
+ * graceful-leave frame ({@see PeerNodeLeavingDTO}) announces a planned departure.
+ * All extend this base directly.
  */
 abstract class PeerDTO extends BaseDTO
 {
@@ -54,6 +55,7 @@ abstract class PeerDTO extends BaseDTO
             PeerRequestVoteDTO::MESSAGE_TYPE => PeerRequestVoteDTO::fromArray($data),
             PeerVoteReplyDTO::MESSAGE_TYPE => PeerVoteReplyDTO::fromArray($data),
             PeerHeartbeatDTO::MESSAGE_TYPE => PeerHeartbeatDTO::fromArray($data),
+            PeerNodeLeavingDTO::MESSAGE_TYPE => PeerNodeLeavingDTO::fromArray($data),
             default => throw new PeerTransportException("Unknown peer frame type: '{$type}'"),
         };
     }

@@ -17,6 +17,7 @@ use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
+use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -155,6 +156,73 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         parent::onTick();
 
         $this->coordinator?->tick(microtime(true));
+    }
+
+    /**
+     * Announces a planned graceful-leave before the transport begins shutting down.
+     *
+     * Broadcasts a {@see PeerNodeLeavingDTO} so peers can tell an orderly departure
+     * (announced) from a crash (silence) and skip the failover panic. A leaving leader
+     * names its most-recently-heard follower as the successor, which campaigns at once
+     * on receipt (raft TimeoutNow-style); the frame is fire-and-forget and the ordinary
+     * HIL-339 election remains the fallback. Then defers to the base to stop accepting.
+     */
+    public function prepareShutdown(): void
+    {
+        $this->broadcastGracefulLeave();
+
+        parent::prepareShutdown();
+    }
+
+    /**
+     * Broadcasts the graceful-leave frame to every handshaked peer.
+     *
+     * A leaving leader designates a successor so leadership transfers without an
+     * election-timeout wait; a leaving non-leader names none and peers simply update
+     * membership.
+     */
+    private function broadcastGracefulLeave(): void
+    {
+        $wasLeader = $this->coordinator?->amLeader() ?? false;
+        $successor = $wasLeader ? $this->pickDesignatedSuccessor() : null;
+
+        $this->broadcastToAllPeers(new PeerNodeLeavingDTO($this->localIdentity->nodeId, $wasLeader, $successor));
+
+        Logger::info(
+            "Announced graceful leave for node {$this->localIdentity->nodeId}"
+            . ($successor !== null ? " with designated successor {$successor}" : ''),
+        );
+    }
+
+    /**
+     * Picks the successor a leaving leader designates: the most-recently-heard online
+     * master peer, excluding self.
+     *
+     * Naming the freshest peer makes it the most likely to be reachable and current.
+     * Returns null when no other online master is known, leaving the ordinary election
+     * as the sole path to a new leader.
+     *
+     * @return ?string Successor node id, or null when no online master peer is known
+     */
+    private function pickDesignatedSuccessor(): ?string
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return null;
+        }
+
+        $best = null;
+        foreach ($registry->snapshot() as $node) {
+            if (!$node->online || $node->role !== NodeRole::Master || $node->nodeId === $this->localIdentity->nodeId) {
+                continue;
+            }
+
+            if ($best === null || $node->lastSeen > $best->lastSeen) {
+                $best = $node;
+            }
+        }
+
+        return $best?->nodeId;
     }
 
     /**
@@ -553,6 +621,36 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
+     * Reacts to a peer's announced graceful-leave.
+     *
+     * Marks the leaving node offline ahead of its link closing — a planned departure,
+     * so membership converges at once rather than waiting for the socket to drop — and
+     * fans the leave out to the other peers. When this node is the designated successor,
+     * triggers an immediate election so leadership transfers without the election-timeout
+     * wait; the other followers keep waiting theirs, avoiding a split vote. The ordinary
+     * HIL-339 election (driven by the link close's fast path) remains the fallback.
+     *
+     * @param PeerNodeLeavingDTO $frame Received graceful-leave frame
+     */
+    public function onNodeLeaving(PeerNodeLeavingDTO $frame): void
+    {
+        $registry = $this->registry();
+        if ($registry !== null) {
+            $leaving = $this->onlineNodeById($registry, $frame->nodeId);
+            $now = microtime(true);
+            if ($leaving !== null && $registry->markOffline($frame->nodeId, $now)) {
+                $identity = NodeIdentity::of($leaving->nodeId, $leaving->role, $leaving->capabilities, $leaving->address);
+                $this->notifyLeft($identity, $now);
+                $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($identity, false));
+            }
+        }
+
+        if ($frame->designatedSuccessor === $this->localIdentity->nodeId) {
+            $this->coordinator?->triggerDesignatedElection();
+        }
+    }
+
+    /**
      * Marks the closed link's peer offline and announces the leave to the others.
      *
      * A peer can briefly hold two links to us — during a simultaneous-bootstrap
@@ -719,6 +817,23 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
+     * Sends a frame to every handshaked peer, master or slave alike.
+     *
+     * Used for the graceful-leave announcement, which every peer needs (not just the
+     * master set) so their membership converges on the planned departure.
+     *
+     * @param PeerDTO $frame Frame to broadcast
+     */
+    private function broadcastToAllPeers(PeerDTO $frame): void
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity() !== null) {
+                $client->sendFrame($frame);
+            }
+        }
+    }
+
+    /**
      * Sends a consensus frame to one master peer by node id, if it is linked.
      *
      * @param string $nodeId Target master node id
@@ -802,6 +917,24 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         }
 
         return false;
+    }
+
+    /**
+     * Finds an online node in the registry by id, or null when absent or offline.
+     *
+     * @param ClusterRegistry $registry Master registry
+     * @param string $nodeId Node id to look up
+     * @return ?ClusterNode Online node record, or null
+     */
+    private function onlineNodeById(ClusterRegistry $registry, string $nodeId): ?ClusterNode
+    {
+        foreach ($registry->snapshot() as $node) {
+            if ($node->nodeId === $nodeId && $node->online) {
+                return $node;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -113,6 +113,41 @@ final class ClusterCoordinatorTest extends TestCase
         $this->assertFalse($coordinator->amLeader());
         $this->assertSame([1], $observer->lostLeadership);
         $this->assertSame('b', $coordinator->leaderId());
+        $this->assertSame(0, $observer->quorumLost, 'A leader change with a live majority does not stop survivors');
+    }
+
+    public function testDesignatedSuccessorCampaignsWithoutWaitingTheTimeout(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+
+        // Follow leader 'b', then it announces a graceful leave naming this node successor.
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $coordinator->tick(0.0);
+        $this->assertSame('b', $coordinator->leaderId());
+        $this->assertCount(0, $mesh->requestVotes());
+
+        $coordinator->triggerDesignatedElection();
+        $coordinator->tick(0.001);
+
+        $votes = $mesh->requestVotes();
+        $this->assertCount(1, $votes, 'The designated successor campaigns at once');
+        $this->assertSame(2, $votes[0]->term);
+        $this->assertNull($coordinator->leaderId(), 'The leaving leader is cleared before the campaign');
+    }
+
+    public function testDesignatedElectionIsIgnoredWhenNotAFollower(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = $this->electedLeader($mesh, new RecordingLeadershipObserver());
+        $before = count($mesh->requestVotes());
+
+        // A stray designation reaching the sitting leader must not restart an election.
+        $coordinator->triggerDesignatedElection();
+        $coordinator->tick(1.2);
+
+        $this->assertTrue($coordinator->amLeader());
+        $this->assertCount($before, $mesh->requestVotes());
     }
 
     public function testLeaderStepsDownWhenQuorumIsLost(): void

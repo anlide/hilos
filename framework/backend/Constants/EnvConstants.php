@@ -272,4 +272,12 @@ enum EnvConstants
 
     /** @var string Leader heartbeat interval in ms; must be below the election minimum. Default 500. */
     case CLUSTER_HEARTBEAT_INTERVAL_MS;
+
+    /**
+     * @var string Grace period in ms a slave keeps its in-flight work running after a
+     * leader change while it awaits the new leader's work-decision; bounds an isolated
+     * slave so it does not run forever. Default 6000. Consumed when slaves get placed
+     * work (HIL-179); the reaction seam is introduced by HIL-341.
+     */
+    case CLUSTER_SLAVE_WORK_GRACE_MS;
 }
