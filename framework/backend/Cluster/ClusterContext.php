@@ -129,6 +129,22 @@ final class ClusterContext
     }
 
     /**
+     * Convenience over {@see leadership()}: whether the local node currently holds
+     * cluster leadership.
+     *
+     * A standalone daemon ({@see StandaloneLeadership}) is always its own leader, so
+     * this reports true when cluster mode is off. Singleton duties key off this seam
+     * to run on exactly one node cluster-wide.
+     *
+     * @return bool True when the local node is the leader (or cluster mode is off)
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    public function amLeader(): bool
+    {
+        return $this->leadership()->amLeader();
+    }
+
+    /**
      * Installs the consensus coordinator as the local node's leadership seam.
      *
      * The peer transport builds the {@see \Hilos\Cluster\Consensus\ClusterCoordinator}

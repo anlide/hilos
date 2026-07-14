@@ -48,6 +48,20 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
+     * Default implementation - fail-safe leader-only.
+     *
+     * Returns true so every existing agent becomes a cluster-singleton without a
+     * code change: on a cluster it runs only on the leader node. Per-node agents
+     * override this to return false.
+     *
+     * @return bool True: run only on the cluster leader
+     */
+    public function requiresClusterLeadership(): bool
+    {
+        return true;
+    }
+
+    /**
      * @param WorkerClient $workerClient Worker client connection
      */
     public function setWorkerClient(WorkerClient $workerClient): void

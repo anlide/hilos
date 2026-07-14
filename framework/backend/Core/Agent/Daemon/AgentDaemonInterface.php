@@ -45,6 +45,22 @@ interface AgentDaemonInterface
     public function requiresMonopolisticProcess(): bool;
 
     /**
+     * Whether this agent is a cluster-singleton that runs only on the leader node.
+     *
+     * A leader-only agent (truth source, monopolistic/singleton, startup service)
+     * must exist on exactly one node cluster-wide, so {@see \Hilos\Socket\Server\WorkerServer::startAgent()}
+     * refuses to start it on a node that is not the cluster leader. Standalone
+     * daemons are always their own leader, so the flag has no effect off-cluster.
+     *
+     * The default is true (fail-safe leader-only): forgetting to mark an agent
+     * under-runs it (safe) rather than double-running a truth source (a
+     * correctness bug). Per-node agents opt out by returning false.
+     *
+     * @return bool True if the agent may run only on the cluster leader
+     */
+    public function requiresClusterLeadership(): bool;
+
+    /**
      * Set worker client connection
      *
      * WorkerClient represents the connection to the worker process where

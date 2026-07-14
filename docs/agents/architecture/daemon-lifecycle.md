@@ -24,8 +24,10 @@ missing agent ids.
 processEventLoop()     ← epoll: accept connections, read data
 servers->onTick()      ← process buffered client data
 dispatchRoleTick()     ← per-iteration hook for the current node lifecycle phase
-tickReadiness()        ← open the WS once required startup agents are ready
-checkCronJobs()        ← once per minute, after workers ready
+if amLeader():         ← leader (or standalone); a follower skips all three
+  ensureSingletonsStarted()  ← start cluster-singleton agents once per leadership term
+  tickReadiness()            ← open the WS once required startup agents are ready
+  checkCronJobs()            ← once per minute, after workers ready
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
 Hilos::$ac->tick()     ← analytics flush
 pcntl_signal_dispatch()
@@ -120,6 +122,41 @@ replicated log or state machine.
   `onTick` after servicing links. The coordinator only reads liveness and queues
   frames — it never gates or stops work; that is the neighbouring slices' job.
 
+## Role-based singleton duties (HIL-340)
+
+Singleton duties run on **exactly one node cluster-wide** — the leader, or the sole
+node when cluster mode is off. Each main-loop iteration the daemon gates them behind
+`amLeader()` (`Hilos::$cluster->amLeader()`, which is true for a `StandaloneLeadership`
+daemon), so a standalone daemon is unchanged and a clustered follower runs none of
+them:
+
+- **Cluster-singleton agents.** `ensureSingletonsStarted()` is an ensure-once for the
+  "leader AND local workers ready" start condition (the two arrive in any order). The
+  first tick both hold, it fires `WorkerServer::onBecameSingletonHost()` and sets an
+  internal `singletonsStarted` flag; real `startAgent` calls happen once per
+  leadership term, not per tick. The base `onBecameSingletonHost()` queues
+  `INITIAL_AGENTS_START` (launching the bootstrap agent list via routing); a project
+  overrides it to start its own cluster-singletons (e.g. one agent per active bot).
+  `WorkerServer::onInitialWorkersReady()` is now a per-node "local workers up" hook
+  only and no longer starts singletons.
+- **WebSocket.** A follower does not open its WebSocket (`tickReadiness()` is inside
+  the gate), so browsers never reach a non-leader until cross-node routing exists
+  (HIL-180). On promotion the socket opens and duties start.
+- **Cron.** `checkCronJobs()` runs only inside the gate.
+
+**The leader-only agent flag.** `AgentDaemonInterface::requiresClusterLeadership()`
+(default `true` in `AbstractAgentDaemon`) marks an agent as a cluster-singleton.
+`WorkerServer::startAgent()` refuses to start such an agent when the node is not the
+leader, covering **both** the bootstrap-list path and direct project starts. The
+default is fail-safe: forgetting to mark an agent under-runs it (safe) rather than
+double-running a truth source (a correctness bug). Per-node agents opt out with
+`false`.
+
+Coordination state is **not** persisted (MySQL is kept out of coordination). A new
+leader rebuilds membership/placement by re-querying the mesh; singleton agents are
+launched fresh (the previous leader's were killed). Stopping singletons and resetting
+`singletonsStarted` on leadership loss is HIL-341.
+
 ## Graceful shutdown
 
 - SIGTERM/SIGINT → `shouldExit = true`
@@ -145,3 +182,9 @@ handler declared in topology). Override `onCron()` only for daemon-local work
 that must not go through the signal router.
 
 Cron fires only after `WORKERS_READY` and at most once per minute.
+
+Cron runs on the leader (or standalone) node only, and last-run state is not
+persisted — a new leader schedules "from now". Because `shouldRun()` fires at most
+once for a matching minute, no catch-up burst is possible on a leadership change.
+**Cron jobs must therefore be idempotent:** a job may be skipped or repeated across a
+leadership handover, and that must be acceptable.

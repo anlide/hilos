@@ -10,6 +10,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotFoundException;
@@ -198,14 +199,36 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Called when initial workers are ready
+     * Called once when this node's local workers are ready.
      *
-     * This method is called once when the minimum number of registered workers
-     * (both regular and monopolistic) has been reached according to configuration.
-     * Default implementation queues INITIAL_AGENTS_START signal. Child classes should call
-     * parent::onInitialWorkersReady() and add project-specific initialization.
+     * This is a per-node hook: it fires on every node when the minimum number of
+     * registered workers (both regular and monopolistic) has been reached, whether
+     * or not the node is the cluster leader. It no longer starts cluster-singleton
+     * agents — that is the leader-gated {@see onBecameSingletonHost()}, driven by the
+     * daemon's ensure-once. The base is a no-op, reserved for future per-node agents;
+     * child classes may override for local, non-singleton setup.
      */
     protected function onInitialWorkersReady(): void
+    {
+        // No-op: cluster-singleton agents start in onBecameSingletonHost() on the leader.
+    }
+
+    /**
+     * Starts this node's cluster-singleton agents; fired once per leadership term.
+     *
+     * Invoked by the daemon's leader-gated ensure-once once this node is the cluster
+     * leader (or the sole node when cluster mode is off) and its workers are ready.
+     * The base queues INITIAL_AGENTS_START so the project bootstrap agent list is
+     * launched through the existing signal routing. Child classes override to start
+     * their own cluster-singletons (e.g. one agent per active bot), calling
+     * parent::onBecameSingletonHost() first.
+     *
+     * Every agent started here still passes the leadership gate in
+     * {@see startAgent()}, so a per-node agent that opts out with
+     * {@see AgentDaemonInterface::requiresClusterLeadership()} is unaffected. Re-fires
+     * when a follower is later promoted, so it must stay idempotent.
+     */
+    public function onBecameSingletonHost(): void
     {
         Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::DAEMON),
@@ -761,7 +784,8 @@ abstract class WorkerServer extends AbstractServer
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
         // Check if agent already exists and is linked
-        if ($this->agentManager->hasAgent($agentId)) {
+        $agentExisted = $this->agentManager->hasAgent($agentId);
+        if ($agentExisted) {
             $agentDaemon = $this->agentManager->getAgent($agentId);
             if ($agentDaemon !== null && $agentDaemon->hasWorkerClient()) {
                 return; // Agent already running and linked to worker
@@ -776,6 +800,19 @@ abstract class WorkerServer extends AbstractServer
 
         $agentDaemon = $this->agentManager->getAgent($agentId)
             ?? throw new AgentDaemonCreationFailedException($agentType, $agentIndex);
+
+        // Cluster leadership gate: a leader-only (cluster-singleton) agent runs on
+        // exactly one node cluster-wide. A node that is not the cluster leader skips
+        // the start, covering both the bootstrap-list path and direct project starts.
+        // Standalone nodes are always the leader, so this is a no-op off-cluster.
+        if ($agentDaemon->requiresClusterLeadership() && !$this->amClusterLeader()) {
+            // Roll back the temporary record so a later promotion starts it cleanly.
+            if (!$agentExisted) {
+                $this->agentManager->removeAgent($agentId);
+            }
+            Logger::debug("Agent {$agentId} not started: node is not the cluster leader");
+            return;
+        }
 
         // Select appropriate worker
         $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
@@ -795,6 +832,26 @@ abstract class WorkerServer extends AbstractServer
 
         // Send agent_start signal to worker
         $workerClient->sendAgentStart($agentType, $agentIndex);
+    }
+
+    /**
+     * Whether the local node currently holds cluster leadership.
+     *
+     * Off-cluster the facade reports the node as its own leader, so this is true for
+     * a standalone daemon. A failure reading the leadership seam must not block agent
+     * start on a single-node daemon, so it is treated as leader (the same defensive
+     * stance the daemon takes when resolving its lifecycle phase).
+     *
+     * @return bool True when the node is the leader, cluster mode is off, or leadership is unreadable
+     */
+    private function amClusterLeader(): bool
+    {
+        try {
+            return Hilos::$cluster?->amLeader() ?? true;
+        } catch (\Throwable $e) {
+            Logger::error("Cluster leadership unavailable, assuming standalone leader: {$e->getMessage()}");
+            return true;
+        }
     }
 
     /**

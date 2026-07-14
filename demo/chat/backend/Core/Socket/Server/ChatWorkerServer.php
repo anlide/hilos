@@ -25,16 +25,19 @@ final class ChatWorkerServer extends WorkerServer
     }
 
     /**
-     * Called when initial workers are ready.
+     * Starts the chat cluster-singleton agents on the leader node.
      *
-     * Calls parent to queue INITIAL_AGENTS_START, then starts BotAgent for each active bot.
+     * Calls parent to queue INITIAL_AGENTS_START, then starts a BotAgent for each
+     * active bot. Bots are cluster-singletons (leader-only by default), so the
+     * per-bot startAgent() is a no-op on a follower; the daemon re-runs this on
+     * promotion, so it must stay idempotent (startAgent() skips a running agent).
      *
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      */
-    protected function onInitialWorkersReady(): void
+    public function onBecameSingletonHost(): void
     {
-        parent::onInitialWorkersReady();
+        parent::onBecameSingletonHost();
 
         foreach (Hilos::$db->bots as $bot) {
             if (!$bot->active) {

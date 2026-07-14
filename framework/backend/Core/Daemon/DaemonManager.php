@@ -124,6 +124,13 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /** @var bool Flag indicating if initial workers are ready */
     private bool $workersReady = false;
 
+    /**
+     * @var bool True once this node's cluster-singleton agents have been started for
+     *     the current leadership term. Set by the leader-gated ensure-once; reset on
+     *     leadership loss by HIL-341.
+     */
+    private bool $singletonsStarted = false;
+
     /** @var bool True once the WebSocket server has been started */
     private bool $webSocketStarted = false;
 
@@ -231,11 +238,19 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             // Dispatch the per-iteration hook for the current node lifecycle phase
             $this->dispatchRoleTick();
 
-            // Open the WebSocket server once the required startup agents are ready
-            $this->tickReadiness();
+            // Singleton duties run on exactly one node cluster-wide: the leader, or the
+            // sole node when cluster mode is off. A follower starts no cluster-singleton
+            // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
+            if ($this->amLeader()) {
+                // Start this node's cluster-singleton agents once per leadership term
+                $this->ensureSingletonsStarted();
 
-            // Check cron jobs (not more than once per minute)
-            $this->checkCronJobs();
+                // Open the WebSocket server once the required startup agents are ready
+                $this->tickReadiness();
+
+                // Check cron jobs (not more than once per minute)
+                $this->checkCronJobs();
+            }
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -1109,6 +1124,67 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     }
 
     /**
+     * Whether the local node currently holds cluster leadership.
+     *
+     * True for a standalone daemon (its own leader when cluster mode is off), true
+     * for a clustered master that won the election, false for a follower or a master
+     * without quorum. A failure reading the seam must not silence a single-node
+     * daemon's duties, so it is treated as leader — the same defensive fallback
+     * {@see resolveLifecycleState()} uses.
+     *
+     * @return bool True when the node is the leader, cluster mode is off, or leadership is unreadable
+     */
+    private function amLeader(): bool
+    {
+        try {
+            return Hilos::$cluster?->amLeader() ?? true;
+        } catch (\Throwable $e) {
+            Logger::error("Cluster leadership unavailable, assuming standalone leader: {$e->getMessage()}");
+            return true;
+        }
+    }
+
+    /**
+     * Starts this node's cluster-singleton agents once per leadership term.
+     *
+     * The ensure-once for the "leader AND workers ready" start condition: called only
+     * on the leader (or standalone) node, it fires {@see WorkerServer::onBecameSingletonHost()}
+     * the first time workers are ready and remembers it in {@see $singletonsStarted}.
+     * The two conditions may arrive in any order — a node promoted before its workers
+     * register, or workers ready before promotion — and this covers both without a
+     * per-tick liveness scan. HIL-341 resets the flag on leadership loss so a later
+     * promotion re-runs the start.
+     */
+    private function ensureSingletonsStarted(): void
+    {
+        if ($this->singletonsStarted || !$this->workersReady) {
+            return;
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        $workerServer->onBecameSingletonHost();
+        $this->singletonsStarted = true;
+    }
+
+    /**
+     * @return ?WorkerServer The registered worker server, or null when none is registered
+     */
+    private function findWorkerServer(): ?WorkerServer
+    {
+        foreach ($this->servers as $server) {
+            if ($server instanceof WorkerServer) {
+                return $server;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Routes one main-loop tick to the hook for the given lifecycle phase.
      *
      * @param NodeLifecycleState $state Lifecycle phase to dispatch
@@ -1138,11 +1214,14 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /**
      * Per-iteration hook for a clustered master that holds leadership.
      *
-     * Unreachable until HIL-339 grants real leadership; a no-op scaffold for now.
+     * A project override point for leader-only per-loop logic. The framework's own
+     * leader duties (cluster-singleton start, cron, WebSocket readiness) are gated on
+     * {@see amLeader()} in the main loop rather than here, so they also cover the
+     * standalone phase; the default is a no-op.
      */
     protected function onTickLeaderMaster(): void
     {
-        // Default: do nothing, filled by later cluster slices
+        // Default: do nothing, child classes may override for leader-only per-loop logic
     }
 
     /**
