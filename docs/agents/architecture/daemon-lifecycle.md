@@ -53,11 +53,12 @@ Rules:
 - The phase comes from `Hilos::$cluster->lifecycleState()`; when cluster mode is
   off it is always `Standalone`, so a non-clustered project only ever sees
   `onTickStandalone()`.
-- Until the consensus coordinator lands (HIL-339) the leadership seam
-  (`Leadership`: `amLeader()` / `leaderId()` / `hasQuorum()`) reports **no leader
-  and no quorum** for a clustered node, so a clustered master is always
-  `MasterNoQuorum` and `onTickLeaderMaster()` / `onTickNotLeaderMaster()` stay
-  dormant. Enabling cluster mode therefore changes no behaviour on its own.
+- On a clustered master the leadership seam (`Leadership`: `amLeader()` /
+  `leaderId()` / `hasQuorum()`) is backed by the consensus coordinator (HIL-339,
+  see [Consensus coordinator](#consensus-coordinator-hil-339)), so a master moves
+  between `MasterNoQuorum`, `MasterFollowerOrCandidate`, and `MasterLeader` as it
+  gains quorum and wins or loses elections. A slave never consults leadership and
+  always runs `onTickSlave()`.
 - All four `onTick*` hooks must obey the **< 0.1s** rule — they run on the master
   loop. A failure reading the phase is contained: it logs and falls back to
   `Standalone` rather than tearing down the loop.
@@ -73,6 +74,51 @@ transport reports mesh transitions through the cluster context, which calls:
 Both default to no-ops and both run on the master loop, so overrides must stay
 non-blocking. The registry stays a pure data structure — there is no per-tick
 membership polling; transitions are pushed to the observer.
+
+### Leadership hooks
+
+The daemon also registers itself as the cluster `LeadershipObserver` at start. The
+consensus coordinator (below) fires four transitions the daemon exposes as
+overridable hooks:
+
+- `onBecameLeader(int $term)` — this node won leadership for `$term`
+- `onLostLeadership(int $term)` — this node stepped down (newer term or lost quorum)
+- `onQuorumGained()` — the online master set reached a quorum
+- `onQuorumLost()` — the online master set fell below a quorum
+
+All four default to no-ops and run on the master loop, so overrides must stay
+non-blocking. The framework only *delivers* these events; reacting to them (gating
+singleton duties, stopping in-flight work) is the project's job and lands in the
+neighbouring cluster slices, not here.
+
+## Consensus coordinator (HIL-339)
+
+A clustered **master** runs a self-written, raft-like coordinator
+(`Cluster/Consensus/ClusterCoordinator`) that decides leadership behind the
+`Leadership` seam. It takes raft's leader-election and anti-split-brain only — no
+replicated log or state machine.
+
+- **Transport.** Consensus multiplexes three new frames on the existing HIL-178
+  peer mesh (no new connections): `PeerRequestVoteDTO`, `PeerVoteReplyDTO`,
+  `PeerHeartbeatDTO`. The peer protocol version is `2`. Consensus runs only between
+  master nodes; slaves are in the mesh but never vote and host no coordinator.
+- **Quorum.** A static expected-master-set (`CLUSTER_MASTER_SET`) defines the
+  quorum as a fixed majority (`floor(n/2)+1`). `hasQuorum()` counts master-set
+  members currently online in the registry, including self, so a partition shrinks
+  one side below majority for free. A master that cannot see a quorum stops leading.
+- **Election.** Followers hold a randomized election timeout
+  (`CLUSTER_ELECTION_TIMEOUT_MIN_MS`..`MAX_MS`); the first to expire becomes a
+  candidate, requests votes, and leads on a majority. Candidacy is gated on a live
+  quorum, so an isolated minority never inflates the term. A leader asserts its
+  term with a one-way heartbeat every `CLUSTER_HEARTBEAT_INTERVAL_MS`; liveness for
+  quorum comes from the registry, so heartbeats need no ack. Re-election happens
+  only when the leader disappears — a dropped leader link marks it offline
+  instantly (fast path) ahead of the election timeout. Term is in-memory only; on
+  restart it is re-learned from the first heartbeat or request-vote seen.
+- **Driver.** The `PeerServer` builds the coordinator at start (master only),
+  installs it via `ClusterContext::registerLeadership()`, and ticks it each
+  `onTick` after servicing links. The coordinator only reads liveness and queues
+  frames — it never gates or stops work; that is the neighbouring slices' job.
 
 ## Graceful shutdown
 

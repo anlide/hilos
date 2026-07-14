@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Constants\SignalConstants;
@@ -76,11 +77,13 @@ use Hilos\Utils\Logger;
  * dispatched by node lifecycle phase (see {@see dispatchRoleTick()}), with an
  * optional no-op hook per phase that child classes may override.
  *
- * The manager is also the cluster membership observer: it registers itself on the
- * cluster context at start and exposes {@see onNodeJoined()} / {@see onNodeLeft()}
- * hooks so a project can react to nodes joining and leaving the mesh.
+ * The manager is also the cluster membership and leadership observer: it registers
+ * itself on the cluster context at start and exposes {@see onNodeJoined()} /
+ * {@see onNodeLeft()} hooks so a project can react to nodes joining and leaving the
+ * mesh, plus {@see onBecameLeader()} / {@see onLostLeadership()} /
+ * {@see onQuorumGained()} / {@see onQuorumLost()} for the consensus transitions.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver
+abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver
 {
     /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
     private const array REQUIRED_FUNCTIONS = [
@@ -201,6 +204,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver
 
         // Receive membership transitions (onNodeJoined/onNodeLeft) from the peer transport
         Hilos::$cluster?->registerMembershipObserver($this);
+
+        // Receive leadership/quorum transitions from the consensus coordinator
+        Hilos::$cluster?->registerLeadershipObserver($this);
 
         Logger::info("Daemon started with epoll");
 
@@ -1186,6 +1192,58 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver
      * @param ClusterNode $node Node that left
      */
     public function onNodeLeft(ClusterNode $node): void
+    {
+        // Default: do nothing, child classes may override
+    }
+
+    /**
+     * Hook called when this node wins cluster leadership for a term.
+     *
+     * Fired by the consensus coordinator once a majority of the master set elected
+     * this node. Default implementation does nothing; a project overrides it to take
+     * up singleton duties. Runs on the daemon master loop, so it must stay
+     * non-blocking.
+     *
+     * @param int $term Election term in which leadership was won
+     */
+    public function onBecameLeader(int $term): void
+    {
+        // Default: do nothing, child classes may override
+    }
+
+    /**
+     * Hook called when this node loses cluster leadership.
+     *
+     * Fired when the coordinator steps down — on a newer observed term or on losing
+     * quorum (anti-split-brain). Default implementation does nothing; a project
+     * overrides it to relinquish singleton duties. Runs on the daemon master loop,
+     * so it must stay non-blocking.
+     *
+     * @param int $term Election term in which leadership was held and then lost
+     */
+    public function onLostLeadership(int $term): void
+    {
+        // Default: do nothing, child classes may override
+    }
+
+    /**
+     * Hook called when this node gains a quorum of the master set.
+     *
+     * Default implementation does nothing; child classes override to react. Runs on
+     * the daemon master loop, so it must stay non-blocking.
+     */
+    public function onQuorumGained(): void
+    {
+        // Default: do nothing, child classes may override
+    }
+
+    /**
+     * Hook called when this node loses its quorum of the master set.
+     *
+     * Default implementation does nothing; child classes override to react. Runs on
+     * the daemon master loop, so it must stay non-blocking.
+     */
+    public function onQuorumLost(): void
     {
         // Default: do nothing, child classes may override
     }

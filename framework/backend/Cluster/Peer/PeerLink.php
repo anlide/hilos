@@ -9,8 +9,11 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
+use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\AbstractClient;
@@ -181,6 +184,9 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerWelcomeDTO => $this->onWelcome($frame),
             $frame instanceof PeerRosterDTO => $this->onRoster($frame),
             $frame instanceof PeerAnnounceDTO => $this->onAnnounce($frame),
+            $frame instanceof PeerRequestVoteDTO => $this->onRequestVote($frame),
+            $frame instanceof PeerVoteReplyDTO => $this->onVoteReply($frame),
+            $frame instanceof PeerHeartbeatDTO => $this->onHeartbeat($frame),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -254,6 +260,42 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('announce');
         $this->server->onAnnounceReceived($this, $announce);
+    }
+
+    /**
+     * Hands a received request-vote to the server for the coordinator to answer.
+     *
+     * @param PeerRequestVoteDTO $frame Incoming request-vote frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRequestVote(PeerRequestVoteDTO $frame): void
+    {
+        $this->requireHandshaked('request vote');
+        $this->server->onRequestVote($frame);
+    }
+
+    /**
+     * Hands a received vote-reply to the server for the coordinator to count.
+     *
+     * @param PeerVoteReplyDTO $frame Incoming vote-reply frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onVoteReply(PeerVoteReplyDTO $frame): void
+    {
+        $this->requireHandshaked('vote reply');
+        $this->server->onVoteReply($frame);
+    }
+
+    /**
+     * Hands a received heartbeat to the server for the coordinator to accept.
+     *
+     * @param PeerHeartbeatDTO $frame Incoming heartbeat frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onHeartbeat(PeerHeartbeatDTO $frame): void
+    {
+        $this->requireHandshaked('heartbeat');
+        $this->server->onHeartbeat($frame);
     }
 
     /**

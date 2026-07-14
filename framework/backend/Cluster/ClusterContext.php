@@ -41,6 +41,9 @@ final class ClusterContext
     /** @var ?MembershipObserver Observer notified of membership transitions, registered by the daemon at start. */
     private ?MembershipObserver $membershipObserver = null;
 
+    /** @var ?LeadershipObserver Observer notified of leadership/quorum transitions, registered by the daemon at start. */
+    private ?LeadershipObserver $leadershipObserver = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -110,9 +113,10 @@ final class ClusterContext
      * Unlike {@see identity()} and {@see registry()}, this is available even when
      * cluster mode is off: a standalone daemon gets a {@see StandaloneLeadership}
      * (its own leader, trivial quorum), and a clustered node gets a
-     * {@see PendingLeadership} (no leader, no quorum) until the consensus
-     * coordinator replaces it in HIL-339. The instance is memoized so callers keep
-     * observing one seam across the process lifetime.
+     * {@see PendingLeadership} (no leader, no quorum) until the peer transport
+     * registers the consensus coordinator through {@see registerLeadership()}. The
+     * instance is memoized so callers keep observing one seam across the process
+     * lifetime.
      *
      * @return Leadership Local node's leadership seam
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -122,6 +126,21 @@ final class ClusterContext
         return $this->leadership ??= $this->isEnabled()
             ? new PendingLeadership()
             : new StandaloneLeadership();
+    }
+
+    /**
+     * Installs the consensus coordinator as the local node's leadership seam.
+     *
+     * The peer transport builds the {@see \Hilos\Cluster\Consensus\ClusterCoordinator}
+     * for a clustered master at start and registers it here, replacing the inert
+     * {@see PendingLeadership} so {@see leadership()} — and thus
+     * {@see lifecycleState()} — start reflecting real election and quorum results.
+     *
+     * @param Leadership $leadership Leadership seam to install
+     */
+    public function registerLeadership(Leadership $leadership): void
+    {
+        $this->leadership = $leadership;
     }
 
     /**
@@ -160,6 +179,31 @@ final class ClusterContext
     public function registerMembershipObserver(MembershipObserver $observer): void
     {
         $this->membershipObserver = $observer;
+    }
+
+    /**
+     * Registers the observer notified of leadership and quorum transitions.
+     *
+     * The daemon registers itself here at start so the four transitions the
+     * consensus coordinator fires reach its project-overridable hooks. Symmetric to
+     * {@see registerMembershipObserver()}; the coordinator resolves the observer via
+     * {@see leadershipObserver()} when the transport builds it.
+     *
+     * @param LeadershipObserver $observer Observer to receive leadership transitions
+     */
+    public function registerLeadershipObserver(LeadershipObserver $observer): void
+    {
+        $this->leadershipObserver = $observer;
+    }
+
+    /**
+     * Returns the registered leadership observer, or an inert no-op when none is set.
+     *
+     * @return LeadershipObserver Registered observer, or a {@see NullLeadershipObserver}
+     */
+    public function leadershipObserver(): LeadershipObserver
+    {
+        return $this->leadershipObserver ??= new NullLeadershipObserver();
     }
 
     /**

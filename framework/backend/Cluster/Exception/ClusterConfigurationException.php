@@ -32,4 +32,29 @@ class ClusterConfigurationException extends ClusterException
     {
         return new self("Invalid cluster node role '{$role}'; expected 'master' or 'slave'");
     }
+
+    /**
+     * Builds an exception for a master whose id is absent from the master set.
+     *
+     * The expected-master-set defines the quorum, so a master that does not list
+     * itself cannot count itself and would compute an off-by-one majority.
+     *
+     * @param string $nodeId Local node id missing from CLUSTER_MASTER_SET
+     * @return self Configuration exception
+     */
+    public static function nodeNotInMasterSet(string $nodeId): self
+    {
+        return new self("Cluster node '{$nodeId}' is not listed in CLUSTER_MASTER_SET");
+    }
+
+    /**
+     * Builds an exception for consensus timings that cannot elect a stable leader.
+     *
+     * @param string $detail What is wrong with the configured timings
+     * @return self Configuration exception
+     */
+    public static function invalidTiming(string $detail): self
+    {
+        return new self("Invalid cluster consensus timing: {$detail}");
+    }
 }

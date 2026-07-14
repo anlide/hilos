@@ -6,11 +6,20 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
+use Hilos\Cluster\Consensus\ClusterConsensusConfig;
+use Hilos\Cluster\Consensus\ClusterCoordinator;
+use Hilos\Cluster\Consensus\ConsensusMesh;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
+use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
@@ -34,9 +43,15 @@ use Hilos\Utils\Logger;
  * node's registry converges. Knowing a peer (registry + gossip) stays separate
  * from dialing one (the policy): a later partial-mesh is a policy swap alone.
  *
+ * On a clustered master the server also hosts the {@see ClusterCoordinator}: it
+ * builds it at start, drives its tick each onTick, routes the consensus frames
+ * (request-vote, vote-reply, heartbeat) into it, and serves as its
+ * {@see ConsensusMesh} — turning the master registry into a liveness view and the
+ * live links into an outbound channel. A slave keeps no coordinator.
+ *
  * @extends AbstractServer<PeerLink>
  */
-final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
+final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -59,6 +74,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     /** @var array<string, PeerDial> Dial-on-learn state for gossip-learned peers, keyed by node id */
     private array $peerDials = [];
 
+    /** @var ?ClusterCoordinator Consensus coordinator, built at start for a master node; null for a slave */
+    private ?ClusterCoordinator $coordinator = null;
+
     /**
      * @param string $host Host to bind the peer listener
      * @param int $port Port to bind the peer listener
@@ -76,11 +94,28 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     }
 
     /**
-     * Registers as the local-node announcer and logs that the listener is open.
+     * Registers as the local-node announcer and, on a master, starts consensus.
+     *
+     * A clustered master builds its {@see ClusterCoordinator} here and installs it as
+     * the leadership seam, so election and quorum results begin flowing the moment
+     * the listener is open; a slave takes no part in consensus and keeps none.
+     *
+     * @throws ClusterConfigurationException When the master consensus config is missing or invalid
+     * @throws EnvException When a consensus env value cannot be read
      */
     protected function onStart(): void
     {
         Hilos::$cluster?->registerLocalAnnouncer($this);
+
+        if ($this->localIdentity->role === NodeRole::Master && Hilos::$cluster !== null) {
+            $this->coordinator = new ClusterCoordinator(
+                ClusterConsensusConfig::fromEnv($this->localIdentity),
+                $this,
+                Hilos::$cluster->leadershipObserver(),
+            );
+            Hilos::$cluster->registerLeadership($this->coordinator);
+        }
+
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
     }
 
@@ -107,13 +142,19 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     }
 
     /**
-     * Drives the seed dials, then services all established links.
+     * Drives the seed dials, services all links, then advances consensus.
+     *
+     * The coordinator ticks after the links are serviced so any request-vote,
+     * vote-reply, or heartbeat that arrived this iteration is already folded in
+     * before it recomputes deadlines, quorum, and leadership.
      */
     public function onTick(): void
     {
         $this->driveDials();
 
         parent::onTick();
+
+        $this->coordinator?->tick(microtime(true));
     }
 
     /**
@@ -479,6 +520,39 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
     }
 
     /**
+     * Routes a received request-vote to the consensus coordinator, if one runs.
+     *
+     * A no-op on a slave (no coordinator) or before the coordinator is built; the
+     * coordinator answers by sending a vote-reply back through this server's mesh.
+     *
+     * @param PeerRequestVoteDTO $frame Received request-vote frame
+     */
+    public function onRequestVote(PeerRequestVoteDTO $frame): void
+    {
+        $this->coordinator?->onRequestVote($frame);
+    }
+
+    /**
+     * Routes a received vote-reply to the consensus coordinator, if one runs.
+     *
+     * @param PeerVoteReplyDTO $frame Received vote-reply frame
+     */
+    public function onVoteReply(PeerVoteReplyDTO $frame): void
+    {
+        $this->coordinator?->onVoteReply($frame);
+    }
+
+    /**
+     * Routes a received heartbeat to the consensus coordinator, if one runs.
+     *
+     * @param PeerHeartbeatDTO $frame Received heartbeat frame
+     */
+    public function onHeartbeat(PeerHeartbeatDTO $frame): void
+    {
+        $this->coordinator?->onHeartbeat($frame);
+    }
+
+    /**
      * Marks the closed link's peer offline and announces the leave to the others.
      *
      * A peer can briefly hold two links to us — during a simultaneous-bootstrap
@@ -510,6 +584,10 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             $this->notifyLeft($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, false), $link);
         }
+
+        // Fast-path leader-loss: a dropped link marks the peer offline instantly, so
+        // a follower can react at once instead of waiting out the election timeout.
+        $this->coordinator?->noteNodeOffline($remote->nodeId);
     }
 
     /**
@@ -596,6 +674,61 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
         foreach ($registry->snapshot() as $node) {
             if ($node->nodeId === $this->localIdentity->nodeId) {
                 $this->broadcastAnnounce(PeerNodeEntry::fromNode($node));
+                return;
+            }
+        }
+    }
+
+    /**
+     * Returns the online master-role node ids from the registry, including self.
+     *
+     * Backs the coordinator's quorum check. A registry hiccup yields an empty set,
+     * which the coordinator reads as no quorum — the safe, leadership-dropping side.
+     *
+     * @return list<string> Online master node ids
+     */
+    public function onlineMasterIds(): array
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($registry->snapshot() as $node) {
+            if ($node->online && $node->role === NodeRole::Master) {
+                $ids[] = $node->nodeId;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Sends a consensus frame to every handshaked master peer.
+     *
+     * @param PeerDTO $frame Consensus frame to broadcast
+     */
+    public function broadcastToMasters(PeerDTO $frame): void
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity()?->role === NodeRole::Master) {
+                $client->sendFrame($frame);
+            }
+        }
+    }
+
+    /**
+     * Sends a consensus frame to one master peer by node id, if it is linked.
+     *
+     * @param string $nodeId Target master node id
+     * @param PeerDTO $frame Consensus frame to send
+     */
+    public function sendToMaster(string $nodeId, PeerDTO $frame): void
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity()?->nodeId === $nodeId) {
+                $client->sendFrame($frame);
                 return;
             }
         }

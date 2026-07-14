@@ -260,4 +260,16 @@ enum EnvConstants
 
     /** @var string Host:port this node advertises to peers as its own reachable address; falls back to CLUSTER_PEER_HOST:PORT. */
     case CLUSTER_PEER_ADVERTISE;
+
+    /** @var string Comma-separated node ids of the static expected-master-set; quorum = floor(n/2)+1. Required when CLUSTER_ENABLED and role=master. */
+    case CLUSTER_MASTER_SET;
+
+    /** @var string Lower bound in ms of the randomized election timeout. Default 1500. */
+    case CLUSTER_ELECTION_TIMEOUT_MIN_MS;
+
+    /** @var string Upper bound in ms of the randomized election timeout. Default 3000. */
+    case CLUSTER_ELECTION_TIMEOUT_MAX_MS;
+
+    /** @var string Leader heartbeat interval in ms; must be below the election minimum. Default 500. */
+    case CLUSTER_HEARTBEAT_INTERVAL_MS;
 }
