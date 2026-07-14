@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
@@ -26,6 +27,7 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Process;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -51,7 +53,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<WorkerClientInterface>
  */
-abstract class WorkerServer extends AbstractServer implements PlacementExecutor
+abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink
 {
     /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
     private array $workers = [];
@@ -1028,6 +1030,32 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor
 
         // Agent exists and is linked, send message DTO immediately
         $workerClient->send($messageDto->toJson());
+    }
+
+    /**
+     * Delivers a signal forwarded from another node to a local agent.
+     *
+     * Implements {@see AgentSignalSink} for cross-node signal routing: the target agent was
+     * already resolved on the sending node, so this only wraps the signal for the local
+     * worker and reuses {@see sendSignalToAgent()} — the same path a locally-dispatched
+     * signal takes, including starting the agent if it is not yet running.
+     *
+     * @param string $agentType Target agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param SignalDTO $signal Signal to deliver
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
+     * @throws AgentNotFoundException If agent does not exist after startAgent() call
+     * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
+     * @throws WorkerClientNotFoundException If worker client is not found for agent
+     */
+    public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
+    {
+        $this->sendSignalToAgent(
+            $agentType,
+            $agentIndex,
+            new DaemonAgentMessageDTO($this->buildAgentId($agentType, $agentIndex), $signal),
+        );
     }
 
     /**

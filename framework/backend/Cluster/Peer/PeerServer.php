@@ -23,10 +23,12 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
@@ -133,6 +135,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         if ($executor !== null) {
             $this->placement = new ClusterPlacement($this->localIdentity->nodeId, $this, $executor);
             Hilos::$cluster->registerPlacement($this->placement);
+            // The placement coordinator doubles as the router's read-only placement lookup, so
+            // cross-node signal routing (HIL-180) can ask where a placed agent lives.
+            Hilos::$cluster->registerWorkerPlacement($this->placement);
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
@@ -959,6 +964,66 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         }
 
         return false;
+    }
+
+    /**
+     * Forwards one resolved signal to an agent on another node over the peer channel.
+     *
+     * The router already resolved the final target on this node; this wraps it in a
+     * {@see PeerSignalDTO} stamped with the local node as origin and hands it to the target
+     * over a live link. Delivery is best-effort: a false return (no handshaked link to the
+     * node) is the caller's cue to drop and log, matching the local path that skips when no
+     * worker hosts the agent. Buffering and retry on an offline node are out of scope (HIL-183).
+     *
+     * @param string $targetNodeId Id of the node hosting the target agent
+     * @param string $agentType Resolved target agent type
+     * @param ?string $agentIndex Resolved target agent index, or null for a singleton agent
+     * @param SignalDTO $signal Signal to deliver on the target node
+     * @return bool True when a live link carried the frame, false when the node is unlinked
+     */
+    public function sendSignalToNode(string $targetNodeId, string $agentType, ?string $agentIndex, SignalDTO $signal): bool
+    {
+        return $this->sendToNode($targetNodeId, new PeerSignalDTO(
+            $this->localIdentity->nodeId,
+            $targetNodeId,
+            $agentType,
+            $agentIndex,
+            $signal,
+        ));
+    }
+
+    /**
+     * Delivers a received cross-node signal to the resolved agent on this node.
+     *
+     * Verifies the frame is addressed to this node, then hands the already-resolved target
+     * straight to the local delivery sink — no re-routing, which structurally rules out a
+     * forward loop or a second fan-out (F2). A mismatched target, an unregistered sink, or a
+     * delivery failure is dropped and logged, keeping a bad forward from tearing down the
+     * daemon loop (F1).
+     *
+     * @param PeerLink $link Link the signal arrived on
+     * @param PeerSignalDTO $frame Received signal-forward frame
+     */
+    public function onSignalReceived(PeerLink $link, PeerSignalDTO $frame): void
+    {
+        if ($frame->targetNodeId !== $this->localIdentity->nodeId) {
+            Logger::warning(
+                "Dropping peer signal addressed to node '{$frame->targetNodeId}' received on node '{$this->localIdentity->nodeId}'",
+            );
+            return;
+        }
+
+        $sink = Hilos::$cluster?->agentSignalSink();
+        if ($sink === null) {
+            Logger::warning("Dropping peer signal for agent '{$frame->agentType}': no local agent signal sink registered");
+            return;
+        }
+
+        try {
+            $sink->deliverSignalToAgent($frame->agentType, $frame->agentIndex, $frame->signal);
+        } catch (\Throwable $e) {
+            Logger::warning("Failed to deliver peer signal to agent '{$frame->agentType}': {$e->getMessage()}");
+        }
     }
 
     /**

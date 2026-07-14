@@ -6,10 +6,12 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
+use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
@@ -24,6 +26,7 @@ use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
+use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -224,6 +227,11 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         $workerServer = $this->findWorkerServer();
         if ($workerServer instanceof PlacementExecutor) {
             Hilos::$cluster?->registerPlacementExecutor($workerServer);
+        }
+        // Expose the worker server as the delivery sink for signals forwarded from other
+        // nodes, so the peer transport can hand a received cross-node signal to its agent.
+        if ($workerServer instanceof AgentSignalSink) {
+            Hilos::$cluster?->registerAgentSignalSink($workerServer);
         }
 
         Logger::info("Daemon started with epoll");
@@ -676,6 +684,15 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             }
         }
 
+        // Find Peer server once (for cross-node agent destinations)
+        $peerServer = null;
+        foreach ($this->servers as $server) {
+            if ($server instanceof PeerServer) {
+                $peerServer = $server;
+                break;
+            }
+        }
+
         // Sync signals: always send to workers and daemon
         $syncTypes = [
             SignalTypeConstants::DB_SYNC_CREATED,
@@ -753,6 +770,25 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                         // Re-throw if not shutting down
                         Logger::error("Failed to send signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
                         throw $e;
+                    }
+                } elseif ($destination instanceof RemoteAgentDestination) {
+                    // Forward the signal to the agent on its host node over the peer channel.
+                    // Best-effort: no live link (offline node / no peer server) drops and logs,
+                    // matching the local path that skips when no worker hosts the agent (HIL-183
+                    // owns durability).
+                    if ($peerServer === null) {
+                        Logger::error("Peer signal dropped: {$signalType}/{$signalName} -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
+                        continue;
+                    }
+
+                    $delivered = $peerServer->sendSignalToNode(
+                        $destination->nodeId,
+                        $destination->agentType,
+                        $destination->agentIndex,
+                        $signal,
+                    );
+                    if (!$delivered) {
+                        Logger::warning("Peer signal dropped: {$signalType}/{$signalName} -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
                     }
                 } elseif ($destination instanceof WebSocketDestination) {
                     // Send signal to WebSocket client

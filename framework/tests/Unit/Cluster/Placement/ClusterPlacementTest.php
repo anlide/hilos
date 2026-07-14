@@ -195,6 +195,31 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('gpu-node', $record?->nodeId);
         $this->assertSame(PlacementState::Started, $record?->state);
     }
+
+    public function testNodeForReportsTheHostingNodeOfARemotelyPlacedAgent(): void
+    {
+        $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
+        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
+
+        $this->assertSame('gpu-node', $placement->nodeFor('render', '9'));
+    }
+
+    public function testNodeForReturnsNullForALocallyPlacedAgent(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => []]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->placeAgentOnNode('chat', '1', self::SELF);
+
+        // The self short-circuit lives in the lookup, so a local agent routes locally.
+        $this->assertNull($placement->nodeFor('chat', '1'));
+    }
+
+    public function testNodeForReturnsNullForAnUnknownAgent(): void
+    {
+        $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
+
+        $this->assertNull($placement->nodeFor('never_placed', null));
+    }
 }
 
 /**

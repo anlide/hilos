@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Placement;
 
 use Hilos\Cluster\Exception\PlacementCapabilityException;
+use Hilos\Cluster\WorkerPlacement;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
@@ -37,10 +38,11 @@ use Hilos\Utils\Logger;
  *   set. This is what a data-plane slave does with the placements a leader hands it.
  *
  * There is no automatic node-choosing here — that is HIL-182's policy layered on top of
- * this primitive. General work-signal delivery to a placed agent is HIL-180, and
- * crash-failover of a placed agent is HIL-183.
+ * this primitive. It also serves as the read side of {@see WorkerPlacement}: the signal
+ * router asks {@see nodeFor()} where a placed agent lives so HIL-180 can forward work
+ * signals cross-node. Crash-failover of a placed agent is HIL-183.
  */
-final class ClusterPlacement
+final class ClusterPlacement implements WorkerPlacement
 {
     /** @var string Id of the node this coordinator runs on */
     private string $selfNodeId;
@@ -78,6 +80,29 @@ final class ClusterPlacement
     public function registry(): PlacementRegistry
     {
         return $this->registry;
+    }
+
+    /**
+     * Reports which node hosts an agent so the signal router can forward cross-node.
+     *
+     * Reads the leader-side placement view: an agent placed on another node returns that
+     * node's id; one placed on this node, or absent from the view, returns null so the
+     * router keeps delivering it locally. Because the view is leader-owned soft-state, a
+     * non-leader answers null for everything — cluster-wide placement knowledge on every
+     * node is a later slice; this gives the leader a working forward path today.
+     *
+     * @param string $agentType Agent type to look up
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return ?string Hosting node id when remote, or null for local / unknown
+     */
+    public function nodeFor(string $agentType, ?string $agentIndex): ?string
+    {
+        $record = $this->registry->get($this->agentId($agentType, $agentIndex));
+        if ($record === null || $record->nodeId === $this->selfNodeId) {
+            return null;
+        }
+
+        return $record->nodeId;
     }
 
     /**

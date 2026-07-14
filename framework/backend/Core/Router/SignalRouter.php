@@ -14,6 +14,7 @@ use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
+use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
@@ -585,7 +586,43 @@ class SignalRouter
             ...$this->additionalDestinations($signal),
         ];
 
-        return $this->dedupeDestinations($destinations);
+        return $this->applyPlacement($this->dedupeDestinations($destinations));
+    }
+
+    /**
+     * Rewrites agent destinations that resolve to another node into remote destinations.
+     *
+     * Cross-node routing preserves the declarative route-by-sender model: destinations are
+     * resolved exactly as before, then this post-pass asks the placement lookup where each
+     * agent lives. An agent on another node becomes a {@see RemoteAgentDestination} the
+     * daemon forwards over the peer channel; a local agent (or any target when the lookup
+     * reports null) stays an {@see AgentDestination} and is delivered locally. Off-cluster,
+     * or on a node with no registered lookup, there is no lookup and the list is returned
+     * untouched, so single-node behaviour is unchanged. Only {@see AgentDestination} is
+     * eligible — WebSocket, all-clients, and command-reply targets are bound to this node.
+     *
+     * @param list<Destination> $destinations Resolved destinations before placement
+     * @return list<Destination> Destinations with cross-node agents rewritten to remote
+     */
+    private function applyPlacement(array $destinations): array
+    {
+        $placement = Hilos::$cluster?->workerPlacement();
+        if ($placement === null) {
+            return $destinations;
+        }
+
+        foreach ($destinations as $index => $destination) {
+            if (!$destination instanceof AgentDestination) {
+                continue;
+            }
+
+            $nodeId = $placement->nodeFor($destination->agentType, $destination->agentIndex);
+            if ($nodeId !== null) {
+                $destinations[$index] = new RemoteAgentDestination($nodeId, $destination->agentType, $destination->agentIndex);
+            }
+        }
+
+        return $destinations;
     }
 
     /**

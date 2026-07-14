@@ -18,6 +18,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
@@ -199,6 +200,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerAgentStatusDTO => $this->onAgentStatus($frame),
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
+            $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -381,6 +383,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement report');
         $this->server->onPlacementReportReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received cross-node signal to the server for local delivery.
+     *
+     * @param PeerSignalDTO $frame Incoming signal-forward frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onSignal(PeerSignalDTO $frame): void
+    {
+        $this->requireHandshaked('signal');
+        $this->server->onSignalReceived($this, $frame);
     }
 
     /**

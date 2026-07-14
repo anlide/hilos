@@ -52,6 +52,12 @@ final class ClusterContext
     /** @var ?ClusterPlacement Agent-placement coordinator, registered by the peer transport at start. */
     private ?ClusterPlacement $placement = null;
 
+    /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
+    private ?WorkerPlacement $workerPlacement = null;
+
+    /** @var ?AgentSignalSink Local delivery port for cross-node signals, registered by the daemon at start. */
+    private ?AgentSignalSink $agentSignalSink = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -278,6 +284,58 @@ final class ClusterContext
     public function placement(): ?ClusterPlacement
     {
         return $this->placement;
+    }
+
+    /**
+     * Installs the read-only placement lookup the signal router consults.
+     *
+     * The peer transport registers the placement coordinator here as its lookup so the
+     * router can ask which node hosts an agent without depending on the concrete
+     * coordinator. Separate from {@see registerPlacement()}: that is the write/track side,
+     * this is the narrow read seam the router binds to (and a test can supply a fake for).
+     *
+     * @param WorkerPlacement $workerPlacement Placement lookup to install
+     */
+    public function registerWorkerPlacement(WorkerPlacement $workerPlacement): void
+    {
+        $this->workerPlacement = $workerPlacement;
+    }
+
+    /**
+     * Returns the placement lookup the signal router reads, or null when none is set.
+     *
+     * Null off-cluster and on a clustered node before the transport registers one, so the
+     * router's cross-node post-pass is inert and every signal stays local (opt-in).
+     *
+     * @return ?WorkerPlacement Placement lookup, or null
+     */
+    public function workerPlacement(): ?WorkerPlacement
+    {
+        return $this->workerPlacement;
+    }
+
+    /**
+     * Registers the local delivery port for signals forwarded from other nodes.
+     *
+     * The daemon registers its worker server here at start so the peer transport can hand a
+     * received cross-node signal straight to the target agent. Symmetric to
+     * {@see registerPlacementExecutor()}.
+     *
+     * @param AgentSignalSink $sink Local delivery port for cross-node signals
+     */
+    public function registerAgentSignalSink(AgentSignalSink $sink): void
+    {
+        $this->agentSignalSink = $sink;
+    }
+
+    /**
+     * Returns the local delivery port for cross-node signals, or null when none is set.
+     *
+     * @return ?AgentSignalSink Delivery port, or null
+     */
+    public function agentSignalSink(): ?AgentSignalSink
+    {
+        return $this->agentSignalSink;
     }
 
     /**
