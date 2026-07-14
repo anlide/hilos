@@ -374,10 +374,12 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             return;
         }
 
-        $changed = $registry->merge($remote, true, microtime(true));
+        $now = microtime(true);
+        $changed = $registry->merge($remote, true, $now);
         $this->sendRoster($link, $registry);
 
         if ($changed) {
+            $this->notifyJoined($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, true), $link);
         }
     }
@@ -464,7 +466,14 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             return;
         }
 
-        if ($this->mergeEntry($registry, $announce->node, microtime(true))) {
+        $now = microtime(true);
+        if ($this->mergeEntry($registry, $announce->node, $now)) {
+            $identity = $announce->node->toIdentity();
+            if ($announce->node->online) {
+                $this->notifyJoined($identity, $now);
+            } else {
+                $this->notifyLeft($identity, $now);
+            }
             $this->broadcastAnnounce($announce->node, $link);
         }
     }
@@ -496,9 +505,41 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
             return;
         }
 
-        if ($registry->markOffline($remote->nodeId, microtime(true))) {
+        $now = microtime(true);
+        if ($registry->markOffline($remote->nodeId, $now)) {
+            $this->notifyLeft($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, false), $link);
         }
+    }
+
+    /**
+     * Reports a node coming online to the membership observer.
+     *
+     * The registry already merged the record; this only fans the transition out to
+     * the daemon's {@see \Hilos\Core\Daemon\DaemonManager::onNodeJoined} hook via
+     * the cluster context. A no-op when the context is absent (non-daemon process).
+     *
+     * @param NodeIdentity $identity Node that came online
+     * @param float $now Microtime of the transition
+     */
+    private function notifyJoined(NodeIdentity $identity, float $now): void
+    {
+        Hilos::$cluster?->notifyNodeJoined(ClusterNode::fromIdentity($identity, true, $now));
+    }
+
+    /**
+     * Reports a node going offline to the membership observer.
+     *
+     * The registry already marked the node offline; this only fans the transition
+     * out to the daemon's {@see \Hilos\Core\Daemon\DaemonManager::onNodeLeft} hook
+     * via the cluster context. A no-op when the context is absent.
+     *
+     * @param NodeIdentity $identity Node that went offline
+     * @param float $now Microtime of the transition
+     */
+    private function notifyLeft(NodeIdentity $identity, float $now): void
+    {
+        Hilos::$cluster?->notifyNodeLeft(ClusterNode::fromIdentity($identity, false, $now));
     }
 
     /**

@@ -35,6 +35,12 @@ final class ClusterContext
     /** @var ?LocalNodeAnnouncer Peer-mesh announcer for local node changes, registered by the transport at start. */
     private ?LocalNodeAnnouncer $localAnnouncer = null;
 
+    /** @var ?Leadership Local node's leadership seam, built on first access from the current mode. */
+    private ?Leadership $leadership = null;
+
+    /** @var ?MembershipObserver Observer notified of membership transitions, registered by the daemon at start. */
+    private ?MembershipObserver $membershipObserver = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -96,6 +102,84 @@ final class ClusterContext
     public function registerLocalAnnouncer(LocalNodeAnnouncer $announcer): void
     {
         $this->localAnnouncer = $announcer;
+    }
+
+    /**
+     * Returns the local node's leadership seam.
+     *
+     * Unlike {@see identity()} and {@see registry()}, this is available even when
+     * cluster mode is off: a standalone daemon gets a {@see StandaloneLeadership}
+     * (its own leader, trivial quorum), and a clustered node gets a
+     * {@see PendingLeadership} (no leader, no quorum) until the consensus
+     * coordinator replaces it in HIL-339. The instance is memoized so callers keep
+     * observing one seam across the process lifetime.
+     *
+     * @return Leadership Local node's leadership seam
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    public function leadership(): Leadership
+    {
+        return $this->leadership ??= $this->isEnabled()
+            ? new PendingLeadership()
+            : new StandaloneLeadership();
+    }
+
+    /**
+     * Resolves the local node's coarse lifecycle phase.
+     *
+     * Disabled mode is Standalone; otherwise the phase is derived from the
+     * self-declared role and the leadership seam (see
+     * {@see NodeLifecycleState::forEnabledNode()}). In this slice a clustered
+     * master is always MasterNoQuorum because {@see PendingLeadership} reports no
+     * quorum, so MasterLeader and MasterFollowerOrCandidate are unreachable until
+     * HIL-339.
+     *
+     * @return NodeLifecycleState Current lifecycle phase of the local node
+     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
+     * @throws EnvException When a cluster env value cannot be read
+     */
+    public function lifecycleState(): NodeLifecycleState
+    {
+        if (!$this->isEnabled()) {
+            return NodeLifecycleState::Standalone;
+        }
+
+        return NodeLifecycleState::forEnabledNode($this->identity()->role, $this->leadership());
+    }
+
+    /**
+     * Registers the observer notified of cluster membership transitions.
+     *
+     * The peer transport reports joins and leaves through {@see notifyNodeJoined()}
+     * / {@see notifyNodeLeft()}; the daemon registers itself here at start so those
+     * transitions reach its project-overridable hooks. Symmetric to
+     * {@see registerLocalAnnouncer()}.
+     *
+     * @param MembershipObserver $observer Observer to receive membership transitions
+     */
+    public function registerMembershipObserver(MembershipObserver $observer): void
+    {
+        $this->membershipObserver = $observer;
+    }
+
+    /**
+     * Forwards a node-joined transition to the registered observer, if any.
+     *
+     * @param ClusterNode $node Node that joined (or came back online)
+     */
+    public function notifyNodeJoined(ClusterNode $node): void
+    {
+        $this->membershipObserver?->onNodeJoined($node);
+    }
+
+    /**
+     * Forwards a node-left transition to the registered observer, if any.
+     *
+     * @param ClusterNode $node Node that left (went offline)
+     */
+    public function notifyNodeLeft(ClusterNode $node): void
+    {
+        $this->membershipObserver?->onNodeLeft($node);
     }
 
     /**

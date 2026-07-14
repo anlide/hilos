@@ -6,8 +6,15 @@ namespace Hilos\Tests\Unit\Cluster;
 
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\LocalNodeAnnouncer;
+use Hilos\Cluster\MembershipObserver;
+use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\PendingLeadership;
+use Hilos\Cluster\StandaloneLeadership;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -171,5 +178,100 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ROLE=slave');
         $context->reload();
         $this->assertSame(1, $announcer->announced);
+    }
+
+    public function testLeadershipIsStandaloneWhenDisabled(): void
+    {
+        $leadership = (new ClusterContext())->leadership();
+
+        $this->assertInstanceOf(StandaloneLeadership::class, $leadership);
+        $this->assertTrue($leadership->amLeader());
+        $this->assertTrue($leadership->hasQuorum());
+        $this->assertNull($leadership->leaderId());
+    }
+
+    public function testLeadershipIsPendingWhenEnabled(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+
+        $leadership = (new ClusterContext())->leadership();
+
+        $this->assertInstanceOf(PendingLeadership::class, $leadership);
+        $this->assertFalse($leadership->amLeader());
+        $this->assertFalse($leadership->hasQuorum());
+        $this->assertNull($leadership->leaderId());
+    }
+
+    public function testLeadershipIsMemoized(): void
+    {
+        $context = new ClusterContext();
+
+        $this->assertSame($context->leadership(), $context->leadership());
+    }
+
+    public function testLifecycleStateIsStandaloneWhenDisabled(): void
+    {
+        $this->assertSame(NodeLifecycleState::Standalone, (new ClusterContext())->lifecycleState());
+    }
+
+    public function testLifecycleStateIsSlaveForAClusteredSlave(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=slave');
+
+        $this->assertSame(NodeLifecycleState::Slave, (new ClusterContext())->lifecycleState());
+    }
+
+    public function testLifecycleStateIsMasterNoQuorumForAClusteredMaster(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+
+        // In this slice PendingLeadership reports no quorum, so a master is dormant.
+        $this->assertSame(NodeLifecycleState::MasterNoQuorum, (new ClusterContext())->lifecycleState());
+    }
+
+    public function testMembershipTransitionsReachTheRegisteredObserver(): void
+    {
+        $observer = new class implements MembershipObserver {
+            /** @var list<string> Node ids reported joined */
+            public array $joined = [];
+
+            /** @var list<string> Node ids reported left */
+            public array $left = [];
+
+            public function onNodeJoined(ClusterNode $node): void
+            {
+                $this->joined[] = $node->nodeId;
+            }
+
+            public function onNodeLeft(ClusterNode $node): void
+            {
+                $this->left[] = $node->nodeId;
+            }
+        };
+
+        $context = new ClusterContext();
+        $context->registerMembershipObserver($observer);
+
+        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Master, []), true, 100.0);
+        $context->notifyNodeJoined($node);
+        $context->notifyNodeLeft($node->asOffline(200.0));
+
+        $this->assertSame(['node-b'], $observer->joined);
+        $this->assertSame(['node-b'], $observer->left);
+    }
+
+    public function testMembershipNotificationsAreSafeWithoutAnObserver(): void
+    {
+        $node = ClusterNode::fromIdentity(NodeIdentity::of('node-b', NodeRole::Master, []), true, 100.0);
+
+        $context = new ClusterContext();
+        $context->notifyNodeJoined($node);
+        $context->notifyNodeLeft($node);
+
+        $this->expectNotToPerformAssertions();
     }
 }

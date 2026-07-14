@@ -6,6 +6,9 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
+use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\MembershipObserver;
+use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -69,10 +72,15 @@ use Hilos\Utils\Logger;
  * non-blocking iteration.
  *
  * Child classes supply the signal router and agent manager daemon through
- * createSignalRouter() and createAgentManagerDaemon(); onTick() is an optional
- * per-iteration hook that does nothing by default.
+ * createSignalRouter() and createAgentManagerDaemon(); the per-iteration work is
+ * dispatched by node lifecycle phase (see {@see dispatchRoleTick()}), with an
+ * optional no-op hook per phase that child classes may override.
+ *
+ * The manager is also the cluster membership observer: it registers itself on the
+ * cluster context at start and exposes {@see onNodeJoined()} / {@see onNodeLeft()}
+ * hooks so a project can react to nodes joining and leaving the mesh.
  */
-abstract class DaemonManager extends BaseManager
+abstract class DaemonManager extends BaseManager implements MembershipObserver
 {
     /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
     private const array REQUIRED_FUNCTIONS = [
@@ -191,6 +199,9 @@ abstract class DaemonManager extends BaseManager
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
 
+        // Receive membership transitions (onNodeJoined/onNodeLeft) from the peer transport
+        Hilos::$cluster?->registerMembershipObserver($this);
+
         Logger::info("Daemon started with epoll");
 
         // Main loop
@@ -211,8 +222,8 @@ abstract class DaemonManager extends BaseManager
                 $server->onTick();
             }
 
-            // Call tick method
-            $this->onTick();
+            // Dispatch the per-iteration hook for the current node lifecycle phase
+            $this->dispatchRoleTick();
 
             // Open the WebSocket server once the required startup agents are ready
             $this->tickReadiness();
@@ -1059,14 +1070,124 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Tick method - called regularly in main loop
+     * Dispatches the per-iteration hook for the current node lifecycle phase.
      *
-     * Child classes can override this method for app-specific daemon logic.
-     * Default implementation does nothing.
+     * Reads the phase from the cluster context (Standalone when cluster mode is
+     * off) and calls the matching hook. A masters-without-quorum node and a
+     * master-that-is-not-leader both run {@see onTickNotLeaderMaster()}; in this
+     * slice a clustered master is always the former until HIL-339 adds real
+     * leadership.
      */
-    protected function onTick(): void
+    private function dispatchRoleTick(): void
+    {
+        $this->runPhaseTick($this->resolveLifecycleState());
+    }
+
+    /**
+     * Resolves the current node lifecycle phase, defaulting to Standalone.
+     *
+     * A cluster misconfiguration must not tear down the daemon loop, so any
+     * failure reading the phase is logged and treated as Standalone (the same
+     * defensive stance the peer transport takes on the registry).
+     *
+     * @return NodeLifecycleState Current lifecycle phase, or Standalone on failure
+     */
+    private function resolveLifecycleState(): NodeLifecycleState
+    {
+        try {
+            return Hilos::$cluster?->lifecycleState() ?? NodeLifecycleState::Standalone;
+        } catch (\Throwable $e) {
+            Logger::error("Cluster lifecycle state unavailable, falling back to standalone: {$e->getMessage()}");
+            return NodeLifecycleState::Standalone;
+        }
+    }
+
+    /**
+     * Routes one main-loop tick to the hook for the given lifecycle phase.
+     *
+     * @param NodeLifecycleState $state Lifecycle phase to dispatch
+     */
+    private function runPhaseTick(NodeLifecycleState $state): void
+    {
+        match ($state) {
+            NodeLifecycleState::Standalone => $this->onTickStandalone(),
+            NodeLifecycleState::MasterLeader => $this->onTickLeaderMaster(),
+            NodeLifecycleState::MasterFollowerOrCandidate,
+            NodeLifecycleState::MasterNoQuorum => $this->onTickNotLeaderMaster(),
+            NodeLifecycleState::Slave => $this->onTickSlave(),
+        };
+    }
+
+    /**
+     * Per-iteration hook for a single-node (non-clustered) daemon.
+     *
+     * This is the app-specific daemon tick: child classes override it for their
+     * own per-loop logic. Default implementation does nothing.
+     */
+    protected function onTickStandalone(): void
     {
         // Default: do nothing, child classes should override
+    }
+
+    /**
+     * Per-iteration hook for a clustered master that holds leadership.
+     *
+     * Unreachable until HIL-339 grants real leadership; a no-op scaffold for now.
+     */
+    protected function onTickLeaderMaster(): void
+    {
+        // Default: do nothing, filled by later cluster slices
+    }
+
+    /**
+     * Per-iteration hook for a clustered master that is not the leader.
+     *
+     * Covers both the no-quorum and follower/candidate phases. A no-op scaffold
+     * for now; filled by later cluster slices.
+     */
+    protected function onTickNotLeaderMaster(): void
+    {
+        // Default: do nothing, filled by later cluster slices
+    }
+
+    /**
+     * Per-iteration hook for a clustered slave (data-plane) node.
+     *
+     * A no-op scaffold for now; filled by HIL-179.
+     */
+    protected function onTickSlave(): void
+    {
+        // Default: do nothing, filled by HIL-179
+    }
+
+    /**
+     * Hook called when a node joins the cluster mesh (or comes back online).
+     *
+     * Invoked by the cluster context after the peer transport merged the join into
+     * the master registry. Default implementation does nothing; child classes
+     * override to react. Runs on the daemon master loop, so it must stay
+     * non-blocking.
+     *
+     * @param ClusterNode $node Node that joined
+     */
+    public function onNodeJoined(ClusterNode $node): void
+    {
+        // Default: do nothing, child classes may override
+    }
+
+    /**
+     * Hook called when a node leaves the cluster mesh (goes offline).
+     *
+     * Invoked by the cluster context after the peer transport marked the node
+     * offline in the master registry. Default implementation does nothing; child
+     * classes override to react. Runs on the daemon master loop, so it must stay
+     * non-blocking.
+     *
+     * @param ClusterNode $node Node that left
+     */
+    public function onNodeLeft(ClusterNode $node): void
+    {
+        // Default: do nothing, child classes may override
     }
 
     /**

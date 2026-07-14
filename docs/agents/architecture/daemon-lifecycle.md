@@ -23,7 +23,7 @@ missing agent ids.
 ```
 processEventLoop()     ← epoll: accept connections, read data
 servers->onTick()      ← process buffered client data
-onTick()               ← app logic (override in subclass)
+dispatchRoleTick()     ← per-iteration hook for the current node lifecycle phase
 tickReadiness()        ← open the WS once required startup agents are ready
 checkCronJobs()        ← once per minute, after workers ready
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
@@ -31,6 +31,48 @@ Hilos::$ac->tick()     ← analytics flush
 pcntl_signal_dispatch()
 sleepWithPreciseTiming()
 ```
+
+## Node lifecycle & role-based onTick
+
+The daemon does not call a single `onTick()`. Each main-loop iteration it asks the
+cluster context for the local node's **lifecycle phase** and dispatches the hook
+for that phase (`dispatchRoleTick()` → `runPhaseTick()`):
+
+| Phase (`NodeLifecycleState`) | When | Hook |
+|---|---|---|
+| `Standalone` | cluster mode off | `onTickStandalone()` |
+| `MasterLeader` | clustered master holding leadership | `onTickLeaderMaster()` |
+| `MasterFollowerOrCandidate` | clustered master with quorum, not leader | `onTickNotLeaderMaster()` |
+| `MasterNoQuorum` | clustered master without quorum | `onTickNotLeaderMaster()` |
+| `Slave` | clustered data-plane node | `onTickSlave()` |
+
+Rules:
+
+- **App daemon logic goes in `onTickStandalone()`**, not a generic `onTick()`.
+  This is the single-node hook and the verbatim successor of the old `onTick()`.
+- The phase comes from `Hilos::$cluster->lifecycleState()`; when cluster mode is
+  off it is always `Standalone`, so a non-clustered project only ever sees
+  `onTickStandalone()`.
+- Until the consensus coordinator lands (HIL-339) the leadership seam
+  (`Leadership`: `amLeader()` / `leaderId()` / `hasQuorum()`) reports **no leader
+  and no quorum** for a clustered node, so a clustered master is always
+  `MasterNoQuorum` and `onTickLeaderMaster()` / `onTickNotLeaderMaster()` stay
+  dormant. Enabling cluster mode therefore changes no behaviour on its own.
+- All four `onTick*` hooks must obey the **< 0.1s** rule — they run on the master
+  loop. A failure reading the phase is contained: it logs and falls back to
+  `Standalone` rather than tearing down the loop.
+
+### Membership hooks
+
+The daemon registers itself as the cluster `MembershipObserver` at start. The peer
+transport reports mesh transitions through the cluster context, which calls:
+
+- `onNodeJoined(ClusterNode $node)` — a node joined (or came back online)
+- `onNodeLeft(ClusterNode $node)` — a node went offline
+
+Both default to no-ops and both run on the master loop, so overrides must stay
+non-blocking. The registry stays a pure data structure — there is no per-tick
+membership polling; transitions are pushed to the observer.
 
 ## Graceful shutdown
 
