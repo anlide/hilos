@@ -61,6 +61,19 @@ interface AgentDaemonInterface
     public function requiresClusterLeadership(): bool;
 
     /**
+     * Capability tags a node must advertise to host this agent.
+     *
+     * The cluster hard-constraint for placement: the leader refuses to place the agent on
+     * a node whose advertised capabilities do not include every tag returned here (see
+     * {@see \Hilos\Cluster\Placement\ClusterPlacement::placeAgentOnNode()}). The default is
+     * an empty list — the agent runs anywhere. Soft preferences and choosing among several
+     * fit nodes are node-selection policy (HIL-182), not this binary gate.
+     *
+     * @return list<string> Required capability tags; empty when the agent runs anywhere
+     */
+    public function requiredCapabilities(): array;
+
+    /**
      * Set worker client connection
      *
      * WorkerClient represents the connection to the worker process where

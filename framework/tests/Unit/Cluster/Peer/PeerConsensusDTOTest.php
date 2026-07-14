@@ -19,8 +19,9 @@ final class PeerConsensusDTOTest extends TestCase
 {
     public function testProtocolVersionBumpedForConsensusFrames(): void
     {
-        // The consensus frames extend the peer channel, so the version moved to 2.
-        $this->assertSame(2, PeerProtocol::VERSION);
+        // The consensus frames extended the peer channel to version 2; later frame
+        // additions (e.g. placement, HIL-179) move it further, so it is at least 2.
+        $this->assertGreaterThanOrEqual(2, PeerProtocol::VERSION);
     }
 
     public function testRequestVoteRoundTripsThroughTheWire(): void

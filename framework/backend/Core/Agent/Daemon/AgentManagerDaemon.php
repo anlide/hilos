@@ -200,6 +200,23 @@ abstract class AgentManagerDaemon
     }
 
     /**
+     * Builds a throwaway agent daemon without registering it, to read its type-level
+     * contract (e.g. required capabilities) before deciding where to place it.
+     *
+     * Distinct from {@see createAndAddAgent()}, which registers the daemon and links it to a
+     * worker; this one has no side effects on the manager's state.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return AgentDaemonInterface Transient agent daemon instance
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     */
+    public function instantiateAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
+    {
+        return $this->createAgentDaemon($agentType, $agentIndex);
+    }
+
+    /**
      * Returns the agent daemon already registered for this id, or creates and registers a new one.
      *
      * @param string $agentType Agent type

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
@@ -50,7 +51,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<WorkerClientInterface>
  */
-abstract class WorkerServer extends AbstractServer
+abstract class WorkerServer extends AbstractServer implements PlacementExecutor
 {
     /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
     private array $workers = [];
@@ -1058,6 +1059,59 @@ abstract class WorkerServer extends AbstractServer
 
         $workerClient->sendAgentStop($agentType, $agentIndex);
         $this->agentManager->removeAgent($agentId);
+    }
+
+    /**
+     * Resolves the capability tags an agent type requires, for the leader's placement
+     * hard-check ({@see PlacementExecutor}).
+     *
+     * Builds a throwaway agent daemon to read its type-level requirement without
+     * registering it or touching a worker.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return list<string> Required capability tags; empty when the agent runs anywhere
+     * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
+     */
+    public function requiredCapabilities(string $agentType, ?string $agentIndex): array
+    {
+        return $this->agentManager->instantiateAgentDaemon($agentType, $agentIndex)->requiredCapabilities();
+    }
+
+    /**
+     * Launches a placed agent on this node and returns the worker it landed on
+     * ({@see PlacementExecutor}).
+     *
+     * Reuses {@see startAgent()} — no new spawn logic — so a placed agent is hosted exactly
+     * like a locally-started one, then reads back the worker id the agent manager recorded.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return int Worker id the agent was placed on (negative = monopolistic, positive = regular)
+     * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
+     * @throws NoSuitableWorkerException If no suitable worker is available to host it
+     * @throws AgentNotLinkedToWorkerException If the agent did not link to a worker
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex): int
+    {
+        $this->startAgent($agentType, $agentIndex);
+
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+
+        return $this->agentManager->getAgentWorkerId($agentId)
+            ?? throw new AgentNotLinkedToWorkerException($agentId);
+    }
+
+    /**
+     * Stops a placed agent on this node ({@see PlacementExecutor}); a no-op when it is not
+     * running.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     */
+    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    {
+        $this->stopAgent($agentType, $agentIndex);
     }
 
     /**

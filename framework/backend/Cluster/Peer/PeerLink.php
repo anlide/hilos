@@ -6,14 +6,19 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Environment\Exception\EnvException;
@@ -189,6 +194,11 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerVoteReplyDTO => $this->onVoteReply($frame),
             $frame instanceof PeerHeartbeatDTO => $this->onHeartbeat($frame),
             $frame instanceof PeerNodeLeavingDTO => $this->onNodeLeaving($frame),
+            $frame instanceof PeerPlaceAgentDTO => $this->onPlaceAgent($frame),
+            $frame instanceof PeerStopAgentDTO => $this->onStopAgent($frame),
+            $frame instanceof PeerAgentStatusDTO => $this->onAgentStatus($frame),
+            $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
+            $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -311,6 +321,66 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('node leaving');
         $this->server->onNodeLeaving($frame);
+    }
+
+    /**
+     * Hands a received place-agent request to the server so this node launches it.
+     *
+     * @param PeerPlaceAgentDTO $frame Incoming place-agent frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlaceAgent(PeerPlaceAgentDTO $frame): void
+    {
+        $this->requireHandshaked('place agent');
+        $this->server->onPlaceAgentReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received stop-agent request to the server so this node stops it.
+     *
+     * @param PeerStopAgentDTO $frame Incoming stop-agent frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onStopAgent(PeerStopAgentDTO $frame): void
+    {
+        $this->requireHandshaked('stop agent');
+        $this->server->onStopAgentReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received agent-status reply to the server for the leader to track.
+     *
+     * @param PeerAgentStatusDTO $frame Incoming agent-status frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onAgentStatus(PeerAgentStatusDTO $frame): void
+    {
+        $this->requireHandshaked('agent status');
+        $this->server->onAgentStatusReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received placement query to the server so this node reports what it hosts.
+     *
+     * @param PeerPlacementQueryDTO $frame Incoming placement-query frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementQuery(PeerPlacementQueryDTO $frame): void
+    {
+        $this->requireHandshaked('placement query');
+        $this->server->onPlacementQueryReceived($this);
+    }
+
+    /**
+     * Hands a received placement report to the server for the leader to rebuild its view.
+     *
+     * @param PeerPlacementReportDTO $frame Incoming placement-report frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementReport(PeerPlacementReportDTO $frame): void
+    {
+        $this->requireHandshaked('placement report');
+        $this->server->onPlacementReportReceived($this, $frame);
     }
 
     /**

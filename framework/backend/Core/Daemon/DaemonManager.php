@@ -10,6 +10,7 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -216,6 +217,14 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
         // Receive leadership/quorum transitions from the consensus coordinator
         Hilos::$cluster?->registerLeadershipObserver($this);
+
+        // Expose the worker server as the placement executor so the peer transport can
+        // launch and stop placed agents on this node (registered before the loop so it is
+        // present when the peer server builds its placement coordinator at start).
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer instanceof PlacementExecutor) {
+            Hilos::$cluster?->registerPlacementExecutor($workerServer);
+        }
 
         Logger::info("Daemon started with epoll");
 
@@ -1282,11 +1291,15 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /**
      * Per-iteration hook for a clustered slave (data-plane) node.
      *
-     * A no-op scaffold for now; filled by HIL-179.
+     * A slave hosts the agents the leader places on it (HIL-179); that work is
+     * event-driven — a placed agent launches when a place-agent frame arrives over the
+     * peer channel, not on a timer — so there is no periodic slave work in this phase. The
+     * base stays a no-op; a project overrides it for its own per-loop slave logic. Runs on
+     * the daemon master loop, so an override must stay non-blocking.
      */
     protected function onTickSlave(): void
     {
-        // Default: do nothing, filled by HIL-179
+        // Default: do nothing; placement execution is event-driven, not per-tick. Child classes may override.
     }
 
     /**
@@ -1323,15 +1336,17 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Hook called when this node wins cluster leadership for a term.
      *
      * Fired by the consensus coordinator once a majority of the master set elected
-     * this node. Default implementation does nothing; a project overrides it to take
-     * up singleton duties. Runs on the daemon master loop, so it must stay
-     * non-blocking.
+     * this node. The framework default rebuilds the leader-side placement view from the
+     * mesh (placement tracking is soft-state). A project may override to take up its own
+     * singleton duties, calling parent::onBecameLeader() first. Runs on the daemon master
+     * loop, so it must stay non-blocking.
      *
      * @param int $term Election term in which leadership was won
      */
     public function onBecameLeader(int $term): void
     {
-        // Default: do nothing, child classes may override
+        // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh.
+        Hilos::$cluster?->placement()?->onBecameLeader();
     }
 
     /**
@@ -1341,7 +1356,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * quorum (anti-split-brain). Narrow and ex-leader only. The framework default
      * relinquishes the singleton duties this node held as leader: it stops the
      * cluster-singleton agents and resets the ensure-once so a later promotion re-runs
-     * the start (the mirror of {@see WorkerServer::onBecameSingletonHost()}). A project
+     * the start (the mirror of {@see WorkerServer::onBecameSingletonHost()}), and drops the
+     * leader-side placement view (the next leader rebuilds it from the mesh). A project
      * may override to add its own teardown, calling parent::onLostLeadership() first.
      * Runs on the daemon master loop, so overrides must stay non-blocking.
      *
@@ -1350,6 +1366,10 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     public function onLostLeadership(int $term): void
     {
         $this->stopClusterSingletons();
+
+        // Drop the leader-side placement view; the placed agents keep running (data-plane)
+        // and the next leader rebuilds the view from the mesh.
+        Hilos::$cluster?->placement()?->onLostLeadership();
     }
 
     /**

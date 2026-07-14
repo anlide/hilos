@@ -62,6 +62,20 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
+     * Default implementation - no required capabilities.
+     *
+     * Returns an empty list so an agent runs on any node by default. An agent that needs a
+     * node to advertise a capability (a GPU, a licensed binary, a region) overrides this to
+     * return the required tags, and the leader hard-checks them before placing it.
+     *
+     * @return list<string> Required capability tags; empty runs anywhere
+     */
+    public function requiredCapabilities(): array
+    {
+        return [];
+    }
+
+    /**
      * @param WorkerClient $workerClient Worker client connection
      */
     public function setWorkerClient(WorkerClient $workerClient): void

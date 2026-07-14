@@ -13,14 +13,20 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
+use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
@@ -52,7 +58,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<PeerLink>
  */
-final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh
+final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh, PlacementMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -77,6 +83,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
 
     /** @var ?ClusterCoordinator Consensus coordinator, built at start for a master node; null for a slave */
     private ?ClusterCoordinator $coordinator = null;
+
+    /** @var ?ClusterPlacement Agent-placement coordinator, built at start on any clustered node; null when no worker executor is registered */
+    private ?ClusterPlacement $placement = null;
 
     /**
      * @param string $host Host to bind the peer listener
@@ -115,6 +124,15 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
                 Hilos::$cluster->leadershipObserver(),
             );
             Hilos::$cluster->registerLeadership($this->coordinator);
+        }
+
+        // Agent placement runs on every clustered node: a master issues placements and
+        // tracks them, a data-plane node executes the ones it is handed. The worker server
+        // registers itself as the executor before the loop, so it is available here.
+        $executor = Hilos::$cluster?->placementExecutor();
+        if ($executor !== null) {
+            $this->placement = new ClusterPlacement($this->localIdentity->nodeId, $this, $executor);
+            Hilos::$cluster->registerPlacement($this->placement);
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
@@ -651,6 +669,78 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
+     * Routes a received place-agent request to the placement coordinator to launch locally.
+     *
+     * A no-op before the coordinator is built; the coordinator answers the requesting
+     * leader with a status frame through this server's mesh.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerPlaceAgentDTO $frame Received place-agent frame
+     */
+    public function onPlaceAgentReceived(PeerLink $link, PeerPlaceAgentDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlaceAgent($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received stop-agent request to the placement coordinator to stop locally.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerStopAgentDTO $frame Received stop-agent frame
+     */
+    public function onStopAgentReceived(PeerLink $link, PeerStopAgentDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onStopAgent($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received agent-status reply to the placement coordinator to track.
+     *
+     * @param PeerLink $link Link the reply arrived on
+     * @param PeerAgentStatusDTO $frame Received agent-status frame
+     */
+    public function onAgentStatusReceived(PeerLink $link, PeerAgentStatusDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onAgentStatus($from, $frame);
+        }
+    }
+
+    /**
+     * Routes a received placement query to the placement coordinator to answer.
+     *
+     * @param PeerLink $link Link the query arrived on
+     */
+    public function onPlacementQueryReceived(PeerLink $link): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementQuery($from);
+        }
+    }
+
+    /**
+     * Routes a received placement report to the placement coordinator to rebuild its view.
+     *
+     * @param PeerLink $link Link the report arrived on
+     * @param PeerPlacementReportDTO $frame Received placement-report frame
+     */
+    public function onPlacementReportReceived(PeerLink $link, PeerPlacementReportDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementReport($from, $frame);
+        }
+    }
+
+    /**
      * Marks the closed link's peer offline and announces the leave to the others.
      *
      * A peer can briefly hold two links to us — during a simultaneous-bootstrap
@@ -847,6 +937,67 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
                 return;
             }
         }
+    }
+
+    /**
+     * Delivers a placement frame to one node by id, over any handshaked link.
+     *
+     * Unlike {@see sendToMaster()}, placement addresses any node — a data-plane slave
+     * hosts placed agents — so no role filter applies. Returns whether a link carried it.
+     *
+     * @param string $nodeId Target node id
+     * @param PeerDTO $frame Placement frame to send
+     * @return bool True when a handshaked link carried the frame
+     */
+    public function sendToNode(string $nodeId, PeerDTO $frame): bool
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity()?->nodeId === $nodeId) {
+                $client->sendFrame($frame);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Delivers a placement frame to every handshaked peer, master or slave alike.
+     *
+     * Backs the leader-change rebuild query, which every node must answer.
+     *
+     * @param PeerDTO $frame Placement frame to broadcast
+     */
+    public function broadcastToNodes(PeerDTO $frame): void
+    {
+        foreach ($this->clients as $client) {
+            if ($client->remoteIdentity() !== null) {
+                $client->sendFrame($frame);
+            }
+        }
+    }
+
+    /**
+     * Returns the advertised capabilities of an online node from the registry, or null
+     * when the node is unknown or offline.
+     *
+     * @param string $nodeId Node id to look up
+     * @return ?list<string> Advertised capability tags, or null when unknown or offline
+     */
+    public function nodeCapabilities(string $nodeId): ?array
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return null;
+        }
+
+        foreach ($registry->snapshot() as $node) {
+            if ($node->nodeId === $nodeId && $node->online) {
+                return $node->capabilities;
+            }
+        }
+
+        return null;
     }
 
     /**

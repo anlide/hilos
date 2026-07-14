@@ -6,6 +6,8 @@ namespace Hilos\Cluster;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -43,6 +45,12 @@ final class ClusterContext
 
     /** @var ?LeadershipObserver Observer notified of leadership/quorum transitions, registered by the daemon at start. */
     private ?LeadershipObserver $leadershipObserver = null;
+
+    /** @var ?PlacementExecutor Local worker executor for placed agents, registered by the daemon at start. */
+    private ?PlacementExecutor $placementExecutor = null;
+
+    /** @var ?ClusterPlacement Agent-placement coordinator, registered by the peer transport at start. */
+    private ?ClusterPlacement $placement = null;
 
     /**
      * @return bool True when cluster mode is enabled
@@ -220,6 +228,56 @@ final class ClusterContext
     public function leadershipObserver(): LeadershipObserver
     {
         return $this->leadershipObserver ??= new NullLeadershipObserver();
+    }
+
+    /**
+     * Registers the local worker executor used to launch and stop placed agents.
+     *
+     * The daemon registers its worker server here at start so the peer transport can build
+     * the {@see ClusterPlacement} coordinator against it. Symmetric to
+     * {@see registerLocalAnnouncer()}.
+     *
+     * @param PlacementExecutor $executor Local worker executor for placed agents
+     */
+    public function registerPlacementExecutor(PlacementExecutor $executor): void
+    {
+        $this->placementExecutor = $executor;
+    }
+
+    /**
+     * Returns the registered local worker executor, or null when none is set.
+     *
+     * @return ?PlacementExecutor Local worker executor, or null
+     */
+    public function placementExecutor(): ?PlacementExecutor
+    {
+        return $this->placementExecutor;
+    }
+
+    /**
+     * Installs the agent-placement coordinator built by the peer transport.
+     *
+     * The transport builds the {@see ClusterPlacement} for a clustered node at start and
+     * registers it here so the daemon's leadership hooks can drive its leader-side rebuild.
+     *
+     * @param ClusterPlacement $placement Placement coordinator to install
+     */
+    public function registerPlacement(ClusterPlacement $placement): void
+    {
+        $this->placement = $placement;
+    }
+
+    /**
+     * Returns the agent-placement coordinator, or null on a node without one.
+     *
+     * Null off-cluster (no peer transport) and on a clustered node whose worker executor
+     * was never registered.
+     *
+     * @return ?ClusterPlacement Placement coordinator, or null
+     */
+    public function placement(): ?ClusterPlacement
+    {
+        return $this->placement;
     }
 
     /**

@@ -16,8 +16,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * the membership-gossip frames ({@see PeerRosterDTO}, {@see PeerAnnounceDTO})
  * carry node entries; the consensus frames ({@see PeerRequestVoteDTO},
  * {@see PeerVoteReplyDTO}, {@see PeerHeartbeatDTO}) carry election terms; the
- * graceful-leave frame ({@see PeerNodeLeavingDTO}) announces a planned departure.
- * All extend this base directly.
+ * graceful-leave frame ({@see PeerNodeLeavingDTO}) announces a planned departure;
+ * the placement frames ({@see PeerPlaceAgentDTO}, {@see PeerStopAgentDTO},
+ * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO})
+ * launch, stop, and track agents placed on a named node. All extend this base directly.
  */
 abstract class PeerDTO extends BaseDTO
 {
@@ -56,6 +58,11 @@ abstract class PeerDTO extends BaseDTO
             PeerVoteReplyDTO::MESSAGE_TYPE => PeerVoteReplyDTO::fromArray($data),
             PeerHeartbeatDTO::MESSAGE_TYPE => PeerHeartbeatDTO::fromArray($data),
             PeerNodeLeavingDTO::MESSAGE_TYPE => PeerNodeLeavingDTO::fromArray($data),
+            PeerPlaceAgentDTO::MESSAGE_TYPE => PeerPlaceAgentDTO::fromArray($data),
+            PeerStopAgentDTO::MESSAGE_TYPE => PeerStopAgentDTO::fromArray($data),
+            PeerAgentStatusDTO::MESSAGE_TYPE => PeerAgentStatusDTO::fromArray($data),
+            PeerPlacementQueryDTO::MESSAGE_TYPE => PeerPlacementQueryDTO::fromArray($data),
+            PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
             default => throw new PeerTransportException("Unknown peer frame type: '{$type}'"),
         };
     }
