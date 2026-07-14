@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
@@ -85,6 +86,21 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // A misconfigured cluster must reply an error, not throw inside the master loop.
                 try {
                     $reply = CommandReplyDTO::ok($request->correlationId, Hilos::$cluster?->snapshot() ?? []);
+                } catch (HilosException $e) {
+                    $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_RELOAD) {
+                // Rare operator action: re-read config and re-announce on the master.
+                // A bad config or disabled cluster must reply an error, not throw here.
+                try {
+                    $changed = Hilos::$cluster?->reload() ?? false;
+                    $payload = Hilos::$cluster?->snapshot() ?? [];
+                    $payload[ClusterCommandConstants::FIELD_CHANGED] = $changed;
+                    $reply = CommandReplyDTO::ok($request->correlationId, $payload);
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }

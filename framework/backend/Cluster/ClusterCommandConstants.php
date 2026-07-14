@@ -15,6 +15,9 @@ final class ClusterCommandConstants
     /** @var string Reply key: whether cluster mode is enabled on the daemon */
     public const string FIELD_ENABLED = 'enabled';
 
+    /** @var string Reply key: whether a cluster:reload changed the local node record */
+    public const string FIELD_CHANGED = 'changed';
+
     /** @var string Reply key: list of node rows the daemon knows about */
     public const string FIELD_NODES = 'nodes';
 

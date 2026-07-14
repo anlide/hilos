@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Cluster;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -101,5 +102,74 @@ final class ClusterContextTest extends TestCase
             ]],
             $snapshot[ClusterCommandConstants::FIELD_NODES],
         );
+    }
+
+    public function testReloadThrowsWhenDisabled(): void
+    {
+        $this->expectException(ClusterDisabledException::class);
+
+        (new ClusterContext())->reload();
+    }
+
+    public function testReloadRebuildsLocalNodeFromChangedConfig(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
+
+        $context = new ClusterContext();
+        // Seed the registry with the original identity, as the daemon does at start.
+        $context->snapshot();
+
+        putenv('CLUSTER_NODE_CAPABILITIES=gpu-remote,fast-disk');
+        $changed = $context->reload();
+
+        $this->assertTrue($changed);
+        $this->assertSame(
+            ['gpu-remote', 'fast-disk'],
+            $context->snapshot()[ClusterCommandConstants::FIELD_NODES][0][ClusterCommandConstants::FIELD_NODE_CAPABILITIES],
+        );
+    }
+
+    public function testReloadReturnsFalseWhenConfigUnchanged(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
+
+        $context = new ClusterContext();
+        $context->snapshot();
+
+        $this->assertFalse($context->reload());
+    }
+
+    public function testReloadAnnouncesOnlyWhenTheLocalNodeChanged(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
+
+        $announcer = new class implements LocalNodeAnnouncer {
+            public int $announced = 0;
+
+            public function announceLocalNode(): void
+            {
+                $this->announced++;
+            }
+        };
+
+        $context = new ClusterContext();
+        $context->snapshot();
+        $context->registerLocalAnnouncer($announcer);
+
+        $context->reload();
+        $this->assertSame(0, $announcer->announced);
+
+        putenv('CLUSTER_NODE_ROLE=slave');
+        $context->reload();
+        $this->assertSame(1, $announcer->announced);
     }
 }

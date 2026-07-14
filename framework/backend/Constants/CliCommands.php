@@ -24,6 +24,9 @@ final class CliCommands
     /** @var string Command: List the cluster nodes the daemon knows about */
     public const string CLUSTER_NODES = 'cluster:nodes';
 
+    /** @var string Command: Reload cluster config and re-announce the local node */
+    public const string CLUSTER_RELOAD = 'cluster:reload';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

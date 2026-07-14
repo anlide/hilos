@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
+use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
@@ -31,7 +32,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<PeerLink>
  */
-final class PeerServer extends AbstractServer
+final class PeerServer extends AbstractServer implements LocalNodeAnnouncer
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -63,10 +64,11 @@ final class PeerServer extends AbstractServer
     }
 
     /**
-     * Logs that the peer listener is open.
+     * Registers as the local-node announcer and logs that the listener is open.
      */
     protected function onStart(): void
     {
+        Hilos::$cluster?->registerLocalAnnouncer($this);
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
     }
 
@@ -400,12 +402,35 @@ final class PeerServer extends AbstractServer
     }
 
     /**
-     * Announces one node entry to every handshaked link except its source.
+     * Re-announces the local node's current registry record to every peer.
+     *
+     * Invoked by the control-plane reload after the local role, capabilities, or
+     * address were refreshed: it reads the freshly-merged local record from the
+     * master registry and gossips it to all handshaked links so peers converge on
+     * the new identity. A no-op when the registry or the local record is absent.
+     */
+    public function announceLocalNode(): void
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return;
+        }
+
+        foreach ($registry->snapshot() as $node) {
+            if ($node->nodeId === $this->localIdentity->nodeId) {
+                $this->broadcastAnnounce(PeerNodeEntry::fromNode($node));
+                return;
+            }
+        }
+    }
+
+    /**
+     * Announces one node entry to every handshaked link, optionally skipping its source.
      *
      * @param PeerNodeEntry $entry Node entry to announce
-     * @param PeerLink $source Link the change came from, excluded from the fan-out
+     * @param ?PeerLink $source Link the change came from, excluded from the fan-out; null fans out to all
      */
-    private function broadcastAnnounce(PeerNodeEntry $entry, PeerLink $source): void
+    private function broadcastAnnounce(PeerNodeEntry $entry, ?PeerLink $source = null): void
     {
         $announce = new PeerAnnounceDTO($entry);
         foreach ($this->clients as $client) {

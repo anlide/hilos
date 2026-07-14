@@ -41,4 +41,7 @@ final class CommandConstants
 
     /** @var string Built-in command: the daemon answers synchronously with the cluster node snapshot */
     public const string COMMAND_CLUSTER_NODES = 'cluster:nodes';
+
+    /** @var string Built-in command: the daemon re-reads cluster config, refreshes the local node, and re-announces it */
+    public const string COMMAND_CLUSTER_RELOAD = 'cluster:reload';
 }

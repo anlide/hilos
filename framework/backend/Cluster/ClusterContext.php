@@ -32,6 +32,9 @@ final class ClusterContext
     /** @var ?ClusterRegistry Master-owned live membership registry, built on first access. */
     private ?ClusterRegistry $registry = null;
 
+    /** @var ?LocalNodeAnnouncer Peer-mesh announcer for local node changes, registered by the transport at start. */
+    private ?LocalNodeAnnouncer $localAnnouncer = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -80,6 +83,51 @@ final class ClusterContext
         }
 
         return $this->registry;
+    }
+
+    /**
+     * Registers the peer-mesh announcer used to gossip local node changes.
+     *
+     * The peer transport calls this once at start so a later {@see reload()} can
+     * re-announce the local node without the context depending on the transport.
+     *
+     * @param LocalNodeAnnouncer $announcer Peer-mesh announcer for the local node
+     */
+    public function registerLocalAnnouncer(LocalNodeAnnouncer $announcer): void
+    {
+        $this->localAnnouncer = $announcer;
+    }
+
+    /**
+     * Re-reads cluster configuration and refreshes the local node in the registry.
+     *
+     * Reloads the environment source, rebuilds the local identity from it (so an
+     * operator's role/capability/address edits are picked up without a restart),
+     * and merges the new record into the master registry. When the record changed
+     * meaningfully, the local node is re-announced to the peer mesh so peers
+     * converge on it. The node id is treated as stable: changing it requires a
+     * restart rather than a reload.
+     *
+     * @return bool True when the local node record changed meaningfully
+     * @throws ClusterDisabledException When cluster mode is disabled
+     * @throws ClusterConfigurationException When the reloaded node config is missing or invalid
+     * @throws EnvException When a cluster env value cannot be read
+     */
+    public function reload(): bool
+    {
+        if (!$this->isEnabled()) {
+            throw new ClusterDisabledException('The cluster registry cannot be reloaded while cluster mode is disabled');
+        }
+
+        Hilos::$env->reload();
+        $this->identity = NodeIdentity::fromEnv();
+
+        $changed = $this->registry()->merge($this->identity, true, microtime(true));
+        if ($changed) {
+            $this->localAnnouncer?->announceLocalNode();
+        }
+
+        return $changed;
     }
 
     /**
