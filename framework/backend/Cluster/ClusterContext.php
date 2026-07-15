@@ -9,7 +9,9 @@ use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\NullPlacementObserver;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -47,6 +49,9 @@ final class ClusterContext
 
     /** @var ?LeadershipObserver Observer notified of leadership/quorum transitions, registered by the daemon at start. */
     private ?LeadershipObserver $leadershipObserver = null;
+
+    /** @var ?PlacementObserver Observer notified of placement-degradation events, registered by the daemon at start. */
+    private ?PlacementObserver $placementObserver = null;
 
     /** @var ?PlacementExecutor Local worker executor for placed agents, registered by the daemon at start. */
     private ?PlacementExecutor $placementExecutor = null;
@@ -236,6 +241,31 @@ final class ClusterContext
     public function leadershipObserver(): LeadershipObserver
     {
         return $this->leadershipObserver ??= new NullLeadershipObserver();
+    }
+
+    /**
+     * Registers the observer notified when failover degrades an agent to unplaced.
+     *
+     * The daemon registers itself here at start so the degradation event reaches its
+     * project-overridable {@see DaemonManager::onPlacementDegraded()} hook. Symmetric to
+     * {@see registerLeadershipObserver()}; the placement coordinator resolves the observer via
+     * {@see placementObserver()} when the transport builds it.
+     *
+     * @param PlacementObserver $observer Observer to receive placement-degradation events
+     */
+    public function registerPlacementObserver(PlacementObserver $observer): void
+    {
+        $this->placementObserver = $observer;
+    }
+
+    /**
+     * Returns the registered placement observer, or an inert no-op when none is set.
+     *
+     * @return PlacementObserver Registered observer, or a {@see NullPlacementObserver}
+     */
+    public function placementObserver(): PlacementObserver
+    {
+        return $this->placementObserver ??= new NullPlacementObserver();
     }
 
     /**

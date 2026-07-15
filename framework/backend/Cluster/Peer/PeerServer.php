@@ -28,6 +28,7 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Environment\Exception\EnvException;
@@ -114,7 +115,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * the listener is open; a slave takes no part in consensus and keeps none.
      *
      * @throws ClusterConfigurationException When the master consensus config is missing or invalid
-     * @throws EnvException When a consensus env value cannot be read
+     * @throws EnvException When a consensus or failover env value cannot be read
      */
     protected function onStart(): void
     {
@@ -134,7 +135,14 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         // registers itself as the executor before the loop, so it is available here.
         $executor = Hilos::$cluster?->placementExecutor();
         if ($executor !== null) {
-            $this->placement = new ClusterPlacement($this->localIdentity->nodeId, $this, $executor);
+            $this->placement = new ClusterPlacement(
+                $this->localIdentity->nodeId,
+                $this,
+                $executor,
+                Hilos::$cluster->placementObserver(),
+                Hilos::$env->int(EnvConstants::CLUSTER_FAILOVER_GRACE_MS),
+                Hilos::$env->int(EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS),
+            );
             Hilos::$cluster->registerPlacement($this->placement);
             // The placement coordinator doubles as the router's read-only placement lookup, so
             // cross-node signal routing (HIL-180) can ask where a placed agent lives.
@@ -179,7 +187,10 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
 
         parent::onTick();
 
-        $this->coordinator?->tick(microtime(true));
+        $now = microtime(true);
+        $this->coordinator?->tick($now);
+        // Placement failover and slave self-fence run off their grace timers on the same loop.
+        $this->placement?->tick($now);
     }
 
     /**
@@ -299,7 +310,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * The node id is stamped on the dial up front so an inbound link to the same
      * peer suppresses the outbound dial through {@see driveDial()}. A peer with no
      * advertised address is left to reach us inbound; a peer's address is captured
-     * once (address churn is HIL-183).
+     * once (address churn is HIL-343).
      */
     private function reconcilePeerDials(): void
     {
@@ -515,6 +526,10 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             $this->notifyJoined($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote, true), $link);
         }
+
+        // Reconcile-on-rejoin: report the agents this node still hosts so a leader on the
+        // other end can stop any that it has already re-placed elsewhere (a no-op otherwise).
+        $this->placement?->onPeerHandshaked($remote->nodeId);
     }
 
     /**
@@ -974,7 +989,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * {@see PeerSignalDTO} stamped with the local node as origin and hands it to the target
      * over a live link. Delivery is best-effort: a false return (no handshaked link to the
      * node) is the caller's cue to drop and log, matching the local path that skips when no
-     * worker hosts the agent. Buffering and retry on an offline node are out of scope (HIL-183).
+     * worker hosts the agent. Buffering and retry on an offline node are out of scope.
      *
      * @param string $targetNodeId Id of the node hosting the target agent
      * @param string $agentType Resolved target agent type
@@ -1064,6 +1079,32 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         }
 
         return null;
+    }
+
+    /**
+     * Returns the ids of every currently-online node, including the local node.
+     *
+     * Reads the master registry so failover can scan the online set for a capable host. A
+     * registry hiccup yields an empty set — the safe side, which simply degrades a re-placement
+     * to unplaced rather than risking a bad target.
+     *
+     * @return list<string> Online node ids
+     */
+    public function onlineNodeIds(): array
+    {
+        $registry = $this->registry();
+        if ($registry === null) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($registry->snapshot() as $node) {
+            if ($node->online) {
+                $ids[] = $node->nodeId;
+            }
+        }
+
+        return $ids;
     }
 
     /**

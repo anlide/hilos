@@ -20,8 +20,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * the placement frames ({@see PeerPlaceAgentDTO}, {@see PeerStopAgentDTO},
  * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO})
  * launch, stop, and track agents placed on a named node; the signal-forward frame
- * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node. All
- * extend this base directly.
+ * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
+ * liveness frames ({@see PeerPingDTO}, {@see PeerPongDTO}) keep a quiet link proven alive.
+ * All extend this base directly.
  */
 abstract class PeerDTO extends BaseDTO
 {
@@ -66,6 +67,8 @@ abstract class PeerDTO extends BaseDTO
             PeerPlacementQueryDTO::MESSAGE_TYPE => PeerPlacementQueryDTO::fromArray($data),
             PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
             PeerSignalDTO::MESSAGE_TYPE => PeerSignalDTO::fromArray($data),
+            PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
+            PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),
             default => throw new PeerTransportException("Unknown peer frame type: '{$type}'"),
         };
     }

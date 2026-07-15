@@ -276,8 +276,32 @@ enum EnvConstants
     /**
      * @var string Grace period in ms a slave keeps its in-flight work running after a
      * leader change while it awaits the new leader's work-decision; bounds an isolated
-     * slave so it does not run forever. Default 6000. Consumed when slaves get placed
-     * work (HIL-179); the reaction seam is introduced by HIL-341.
+     * slave so it does not run forever. Default 6000. Consumed by the slave self-fence
+     * (HIL-183): a slave isolated from the leader stops its placed agents after this
+     * grace, and it is held at or below the failover grace so the old copy stops before
+     * the leader starts a new one.
      */
     case CLUSTER_SLAVE_WORK_GRACE_MS;
+
+    /**
+     * @var string Interval in ms a peer link may stay silent before it sends a keepalive
+     * ping; any inbound frame resets the timer, so a busy link never pings. Default 1000.
+     */
+    case CLUSTER_LINK_KEEPALIVE_INTERVAL_MS;
+
+    /**
+     * @var string Duration in ms of link silence after which a peer link is closed as
+     * dead (a hung-but-connected node the keepalive ping never answered), reusing the
+     * ordinary link-close failover path. Also bounds a stalled half-open handshake.
+     * Must exceed the keepalive interval. Default 5000.
+     */
+    case CLUSTER_LINK_TIMEOUT_MS;
+
+    /**
+     * @var string Grace period in ms the leader waits after a node hosting placed agents
+     * goes offline before it re-places those agents elsewhere, absorbing a brief flap.
+     * Held at or above the slave work grace so an isolated node stops its copy first.
+     * Default 8000.
+     */
+    case CLUSTER_FAILOVER_GRACE_MS;
 }

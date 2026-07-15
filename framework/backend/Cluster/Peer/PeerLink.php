@@ -13,16 +13,20 @@ use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Utils\Logger;
 
@@ -51,12 +55,24 @@ final class PeerLink extends AbstractClient
     /** @var ?NodeIdentity Remote node identity, known once the handshake completes */
     private ?NodeIdentity $remoteIdentity = null;
 
+    /** @var float Seconds of silence before a keepalive ping is sent */
+    private float $keepaliveIntervalSec;
+
+    /** @var float Seconds of silence after which the link is closed as dead */
+    private float $linkTimeoutSec;
+
+    /** @var float Microtime the last inbound traffic arrived, refreshed on every read */
+    private float $lastHeardAt;
+
+    /** @var float Microtime the last keepalive ping was sent, to space pings by the interval */
+    private float $lastPingAt = 0.0;
+
     /**
      * @param resource|object $socket Connected peer socket
      * @param PeerServer $server Owning peer server for membership fan-out
      * @param NodeIdentity $localIdentity Local node identity to announce
      * @param bool $dialer True for the dialing side, false for the accepting side
-     * @throws EnvException When the socket read buffer env value is missing or invalid
+     * @throws EnvException When the socket read buffer or keepalive env values are missing or invalid
      */
     public function __construct($socket, PeerServer $server, NodeIdentity $localIdentity, bool $dialer)
     {
@@ -65,6 +81,10 @@ final class PeerLink extends AbstractClient
         $this->server = $server;
         $this->localIdentity = $localIdentity;
         $this->dialer = $dialer;
+
+        $this->keepaliveIntervalSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS) / 1000.0;
+        $this->linkTimeoutSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_TIMEOUT_MS) / 1000.0;
+        $this->lastHeardAt = microtime(true);
     }
 
     /**
@@ -133,6 +153,10 @@ final class PeerLink extends AbstractClient
      */
     protected function processReadBuffer(): void
     {
+        // Any inbound traffic proves the peer is alive; refresh the keepalive clock before
+        // parsing so a partial frame split across reads still staves off the timeout.
+        $this->lastHeardAt = microtime(true);
+
         while ($this->readBuffer !== '') {
             // Handling a frame can tear this link down mid-buffer — a completed handshake that
             // loses the duplicate collapse discards its own link. Once it is closing, stop
@@ -159,10 +183,34 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * No periodic work: handshake timeout and heartbeat belong to later slices.
+     * Runs the per-link keepalive: closes a silent link, otherwise pings a quiet one.
+     *
+     * A link that has heard nothing for the timeout is closed as dead — a hung-but-connected
+     * node whose event loop froze with the socket open, which the ordinary link close then
+     * routes through the offline/failover path; the same timeout also bounds a stalled
+     * half-open handshake. Before that, a link quiet for the keepalive interval sends a
+     * {@see PeerPingDTO} (spaced by the interval) to draw a pong and prove the peer alive; a
+     * busy link resets its clock on every inbound frame and never pings. Pinging waits for the
+     * handshake, so a half-open link only times out.
      */
     public function onTick(): void
     {
+        $now = microtime(true);
+        $silentFor = $now - $this->lastHeardAt;
+
+        if ($silentFor >= $this->linkTimeoutSec) {
+            Logger::warning("Peer link timed out after {$silentFor}s of silence"
+                . ($this->remoteIdentity !== null ? " to {$this->remoteIdentity->nodeId}" : ' (handshake never completed)'));
+            $this->markShouldClose();
+            return;
+        }
+
+        if ($this->remoteIdentity !== null
+            && $silentFor >= $this->keepaliveIntervalSec
+            && ($now - $this->lastPingAt) >= $this->keepaliveIntervalSec) {
+            $this->sendFrame(new PeerPingDTO());
+            $this->lastPingAt = $now;
+        }
     }
 
     /**
@@ -201,6 +249,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
+            $frame instanceof PeerPingDTO => $this->onPing($frame),
+            $frame instanceof PeerPongDTO => $this->onPong(),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
         };
     }
@@ -395,6 +445,31 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('signal');
         $this->server->onSignalReceived($this, $frame);
+    }
+
+    /**
+     * Answers a keepalive ping with a pong echoing its nonce.
+     *
+     * Liveness frames carry no membership meaning and may arrive at any point in a link's
+     * life, so — unlike the gossip frames — they are not gated on the handshake: replying
+     * keeps a transient race from tearing the link down. The refresh of the last-heard clock
+     * already happened when the bytes were read.
+     *
+     * @param PeerPingDTO $frame Incoming ping frame
+     */
+    private function onPing(PeerPingDTO $frame): void
+    {
+        $this->sendFrame(new PeerPongDTO($frame->nonce));
+    }
+
+    /**
+     * Accepts a keepalive pong; the proof of life is the inbound frame itself.
+     *
+     * Reading the frame already refreshed the last-heard clock, so no further work is needed;
+     * like {@see onPing()} it is not gated on the handshake.
+     */
+    private function onPong(): void
+    {
     }
 
     /**

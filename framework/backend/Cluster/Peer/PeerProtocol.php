@@ -15,7 +15,7 @@ namespace Hilos\Cluster\Peer;
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 3;
+    public const int VERSION = 4;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

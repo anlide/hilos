@@ -15,6 +15,7 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use PHPUnit\Framework\TestCase;
@@ -220,11 +221,158 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertNull($placement->nodeFor('never_placed', null));
     }
+
+    public function testLeaderReplacesADeadNodesAgentOnlyAfterTheFailoverGrace(): void
+    {
+        // 'leader' lacks the gpu tag, so the only capable target is the spare 'node-c'.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500, slaveWorkGraceMs: 250);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $mesh->sent = [];
+
+        // node-b dies; the spare is the only survivor able to host the agent.
+        $mesh->online = [self::SELF, 'node-c'];
+        $placement->noteNodeOffline('node-b', 1000.0);
+
+        $placement->tick(1000.4);
+        $this->assertSame([], $mesh->sent, 'Nothing is re-placed before the failover grace elapses');
+        $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
+
+        $placement->tick(1000.6);
+        [$nodeId, $frame] = $mesh->sent[0];
+        $this->assertSame('node-c', $nodeId, 'The agent is re-placed onto the surviving capable node');
+        $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame);
+        $this->assertSame('node-c', $placement->registry()->get('render:9')?->nodeId);
+    }
+
+    public function testAFlappedNodeBackBeforeGraceCancelsItsFailover(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu'], 'node-c' => ['gpu']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $mesh->sent = [];
+
+        $placement->noteNodeOffline('node-b', 1000.0);
+        $placement->noteNodeOnline('node-b', 1000.2);
+        $placement->tick(1000.9);
+
+        $this->assertSame([], $mesh->sent, 'A node back before its grace keeps its agents; no re-placement');
+        $this->assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
+    }
+
+    public function testFailoverDegradesToUnplacedThenRetriesWhenACapableNodeJoins(): void
+    {
+        // No capable node besides the dead one: failover has nowhere to go.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu']],
+            linked: ['node-b'],
+            online: [self::SELF, 'node-b'],
+        );
+        $observer = new FakePlacementObserver();
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), $observer, failoverGraceMs: 500);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+
+        $mesh->online = [self::SELF];
+        $placement->noteNodeOffline('node-b', 1000.0);
+        $placement->tick(1000.6);
+
+        $this->assertSame(PlacementState::Unplaced, $placement->registry()->get('render:9')?->state);
+        $this->assertSame([['render', '9']], $observer->degraded, 'The degradation is reported to the observer');
+        $this->assertNull($placement->nodeFor('render', '9'), 'An unplaced agent routes nowhere');
+
+        // A capable node joins: the leader retries the unplaced agent onto it.
+        $mesh->capabilities['node-c'] = ['gpu'];
+        $mesh->linked[] = 'node-c';
+        $mesh->online = [self::SELF, 'node-c'];
+        $placement->noteNodeOnline('node-c', 2000.0);
+
+        $record = $placement->registry()->get('render:9');
+        $this->assertSame('node-c', $record?->nodeId, 'The previously-unplaced agent is placed on the newcomer');
+        $this->assertNotSame(PlacementState::Unplaced, $record?->state);
+    }
+
+    public function testSlaveSelfFencesItsHostedAgentsWhenIsolatedFromThePlacingLeader(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->tick(1000.4);
+        $this->assertSame([], $executor->revoked, 'The slave keeps working through the grace window');
+
+        $placement->tick(1000.6);
+        $this->assertSame([['render', '9']], $executor->revoked, 'The slave stops its placed agents once isolated past the grace');
+    }
+
+    public function testSlaveCancelsSelfFenceWhenThePlacingLeaderReturnsInTime(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->noteNodeOnline('leader', 1000.2);
+        $placement->tick(1000.9);
+
+        $this->assertSame([], $executor->revoked, 'A leader back before the grace leaves the slave running');
+    }
+
+    public function testLeaderReconcilesARejoinReportByStoppingAMovedAgent(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['node-b', 'node-c']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader();
+        // The leader already re-placed render:9 onto node-c while node-b was gone.
+        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $mesh->sent = [];
+
+        // node-b rejoins reporting it still hosts the moved agent.
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+
+        [$nodeId, $frame] = $mesh->sent[0];
+        $this->assertSame('node-b', $nodeId);
+        $this->assertInstanceOf(PeerStopAgentDTO::class, $frame, 'The returning node is told to stop the moved agent');
+        $this->assertSame('node-c', $placement->registry()->get('render:9')?->nodeId, 'The leader-owned placement is unchanged');
+    }
+
+    public function testRejoinReportSendsHostedAgentsAndANonLeaderIgnoresReports(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $mesh->sent = [];
+
+        // On rejoin the node reports what it still hosts...
+        $placement->onPeerHandshaked('leader');
+        [$nodeId, $report] = $mesh->sent[0];
+        $this->assertSame('leader', $nodeId);
+        $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
+        $this->assertSame('render', $report->agents[0]->agentType);
+
+        // ...but a non-leader that receives a report folds nothing into its inert view.
+        $placement->onPlacementReport('other', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ghost', null)]));
+        $this->assertNull($placement->registry()->get('ghost'));
+    }
 }
 
 /**
- * Fake mesh that records sent and broadcast frames and answers capability lookups from a
- * fixed map, so the coordinator runs without a peer socket.
+ * Fake mesh that records sent and broadcast frames and answers capability and online-set
+ * lookups from mutable maps, so the coordinator runs without a peer socket. The maps are
+ * public so a failover test can flip a node online/offline or add a capability mid-run.
  */
 final class FakePlacementMesh implements PlacementMesh
 {
@@ -234,14 +382,25 @@ final class FakePlacementMesh implements PlacementMesh
     /** @var list<PeerDTO> Broadcast frames */
     public array $broadcast = [];
 
+    /** @var array<string, list<string>> Advertised capabilities keyed by node id */
+    public array $capabilities;
+
+    /** @var list<string> Node ids a link exists to (sendToNode succeeds) */
+    public array $linked;
+
+    /** @var list<string> Currently-online node ids */
+    public array $online;
+
     /**
      * @param array<string, list<string>> $capabilities Advertised capabilities keyed by node id
      * @param list<string> $linked Node ids a link exists to (sendToNode succeeds)
+     * @param list<string> $online Currently-online node ids
      */
-    public function __construct(
-        private readonly array $capabilities,
-        private readonly array $linked = [],
-    ) {
+    public function __construct(array $capabilities, array $linked = [], array $online = [])
+    {
+        $this->capabilities = $capabilities;
+        $this->linked = $linked;
+        $this->online = $online;
     }
 
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
@@ -259,6 +418,25 @@ final class FakePlacementMesh implements PlacementMesh
     public function nodeCapabilities(string $nodeId): ?array
     {
         return $this->capabilities[$nodeId] ?? null;
+    }
+
+    public function onlineNodeIds(): array
+    {
+        return $this->online;
+    }
+}
+
+/**
+ * Fake placement observer that records the agents failover degraded to unplaced.
+ */
+final class FakePlacementObserver implements PlacementObserver
+{
+    /** @var list<array{0: string, 1: ?string}> Degraded agents, as [type, index] */
+    public array $degraded = [];
+
+    public function onPlacementDegraded(string $agentType, ?string $agentIndex): void
+    {
+        $this->degraded[] = [$agentType, $agentIndex];
     }
 }
 

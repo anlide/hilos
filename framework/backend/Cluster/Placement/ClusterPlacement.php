@@ -40,10 +40,27 @@ use Hilos\Utils\Logger;
  * There is no automatic node-choosing here — that is HIL-182's policy layered on top of
  * this primitive. It also serves as the read side of {@see WorkerPlacement}: the signal
  * router asks {@see nodeFor()} where a placed agent lives so HIL-180 can forward work
- * signals cross-node. Crash-failover of a placed agent is HIL-183.
+ * signals cross-node.
+ *
+ * Crash-failover (HIL-183) hangs off the same two sides. Driven by node up/down transitions
+ * ({@see noteNodeOffline()} / {@see noteNodeOnline()}) and a grace-timer {@see tick()}: the
+ * leader re-places a dead node's agents onto another capable node after
+ * `CLUSTER_FAILOVER_GRACE_MS`, degrading an agent to {@see PlacementState::Unplaced} (and
+ * notifying the {@see PlacementObserver}) when no capable node is online; a node isolated
+ * from the leader that placed its work self-fences those agents after
+ * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
+ * before the leader starts a new one). On rejoin a node reports what it still hosts
+ * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
+ * stopping anything already re-placed elsewhere.
  */
 final class ClusterPlacement implements WorkerPlacement
 {
+    /** @var int Default leader failover grace in ms when none is configured */
+    private const int DEFAULT_FAILOVER_GRACE_MS = 8000;
+
+    /** @var int Default slave self-fence grace in ms when none is configured */
+    private const int DEFAULT_SLAVE_WORK_GRACE_MS = 6000;
+
     /** @var string Id of the node this coordinator runs on */
     private string $selfNodeId;
 
@@ -53,22 +70,55 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var PlacementExecutor Local port to launch, stop, and describe agents on this node */
     private PlacementExecutor $executor;
 
+    /** @var PlacementObserver Seam that receives placement-degradation events */
+    private PlacementObserver $observer;
+
+    /** @var float Leader failover grace in seconds */
+    private float $failoverGraceSec;
+
+    /** @var float Slave self-fence grace in seconds */
+    private float $slaveWorkGraceSec;
+
     /** @var PlacementRegistry Leader-side soft-state view of every placement, cluster-wide */
     private PlacementRegistry $registry;
 
     /** @var array<string, PlacementRecord> Agents this node currently hosts, keyed by agent id */
     private array $hosted = [];
 
+    /** @var bool True while this node holds leadership and owns the placement view */
+    private bool $isLeader = false;
+
+    /** @var array<string, float> Failover deadline (microtime) per orphaned agent id awaiting re-placement */
+    private array $failoverDeadlines = [];
+
+    /** @var ?string Node id of the leader that placed this node's hosted agents, for self-fence detection */
+    private ?string $placingLeaderId = null;
+
+    /** @var ?float Self-fence deadline (microtime) after the placing leader was lost, or null when not isolated */
+    private ?float $selfFenceDeadline = null;
+
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
      * @param PlacementMesh $mesh Outbound port to reach nodes and read capabilities
      * @param PlacementExecutor $executor Local port to launch and stop agents on this node
+     * @param ?PlacementObserver $observer Degradation seam; a no-op observer when null
+     * @param int $failoverGraceMs Leader failover grace in ms
+     * @param int $slaveWorkGraceMs Slave self-fence grace in ms
      */
-    public function __construct(string $selfNodeId, PlacementMesh $mesh, PlacementExecutor $executor)
-    {
+    public function __construct(
+        string $selfNodeId,
+        PlacementMesh $mesh,
+        PlacementExecutor $executor,
+        ?PlacementObserver $observer = null,
+        int $failoverGraceMs = self::DEFAULT_FAILOVER_GRACE_MS,
+        int $slaveWorkGraceMs = self::DEFAULT_SLAVE_WORK_GRACE_MS,
+    ) {
         $this->selfNodeId = $selfNodeId;
         $this->mesh = $mesh;
         $this->executor = $executor;
+        $this->observer = $observer ?? new NullPlacementObserver();
+        $this->failoverGraceSec = $failoverGraceMs / 1000.0;
+        $this->slaveWorkGraceSec = $slaveWorkGraceMs / 1000.0;
         $this->registry = new PlacementRegistry();
     }
 
@@ -93,12 +143,13 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type to look up
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ?string Hosting node id when remote, or null for local / unknown
+     * @return ?string Hosting node id when remote, or null for local / unknown / unplaced
      */
     public function nodeFor(string $agentType, ?string $agentIndex): ?string
     {
         $record = $this->registry->get($this->agentId($agentType, $agentIndex));
-        if ($record === null || $record->nodeId === $this->selfNodeId) {
+        // A degraded (unplaced) agent runs nowhere, so it has no node to forward to.
+        if ($record === null || $record->nodeId === $this->selfNodeId || $record->state === PlacementState::Unplaced) {
             return null;
         }
 
@@ -194,6 +245,8 @@ final class ClusterPlacement implements WorkerPlacement
             $this->selfNodeId,
             PlacementState::Started,
         );
+        // Remember which leader placed our work so its loss triggers the self-fence.
+        $this->placingLeaderId = $fromNodeId;
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::started($agentType, $agentIndex, $workerId));
     }
 
@@ -236,29 +289,40 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onPlacementQuery(string $fromNodeId): void
     {
-        $entries = array_map(
-            static fn(PlacementRecord $record): PeerPlacedAgentEntry => new PeerPlacedAgentEntry(
-                $record->agentType,
-                $record->agentIndex,
-            ),
-            array_values($this->hosted),
-        );
-
-        $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($entries));
+        $this->mesh->sendToNode($fromNodeId, new PeerPlacementReportDTO($this->hostedEntries()));
     }
 
     /**
-     * Leader side: folds a node's hosted-agent report into the placement view.
+     * Leader side: folds a node's hosted-agent report into the placement view, reconciling
+     * against the leader-owned truth.
      *
-     * Each reported agent is recorded as started on the reporting node; this is how a
-     * fresh leader rebuilds its view from the mesh after {@see onBecameLeader()}.
+     * Two callers land here: a fresh leader's rebuild broadcast ({@see onBecameLeader()}) and
+     * a node's rejoin report ({@see onPeerHandshaked()}). For each reported agent the leader
+     * is the arbiter — if it already tracks that agent on a different node (it was re-placed
+     * there while this node was gone, or another node hosts it), the reporting node is told to
+     * stop its stale copy so a moved agent is never resurrected; otherwise the report is
+     * accepted, which both rebuilds the view and lets a returning node re-adopt an agent that
+     * failover had left {@see PlacementState::Unplaced}. Ignored on a non-leader, whose
+     * placement view is inert.
      *
      * @param string $fromNodeId Id of the node that reported
      * @param PeerPlacementReportDTO $frame Received placement report
      */
     public function onPlacementReport(string $fromNodeId, PeerPlacementReportDTO $frame): void
     {
+        if (!$this->isLeader) {
+            return;
+        }
+
         foreach ($frame->agents as $entry) {
+            $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
+            $existing = $this->registry->get($agentId);
+            if ($existing !== null && $existing->nodeId !== $fromNodeId && $existing->state !== PlacementState::Unplaced) {
+                $this->mesh->sendToNode($fromNodeId, new PeerStopAgentDTO($entry->agentType, $entry->agentIndex));
+                Logger::info("Reconcile: telling node '{$fromNodeId}' to stop '{$agentId}' already placed on '{$existing->nodeId}'");
+                continue;
+            }
+
             $this->registry->put(new PlacementRecord($entry->agentType, $entry->agentIndex, $fromNodeId, PlacementState::Started));
         }
     }
@@ -272,6 +336,7 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function onBecameLeader(): void
     {
+        $this->isLeader = true;
         $this->registry->clear();
         foreach ($this->hosted as $record) {
             $this->registry->put($record);
@@ -285,11 +350,252 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * The node keeps hosting the agents it was placed with — they are data-plane and run
      * on regardless of who leads — but it no longer owns the cluster-wide view, which the
-     * next leader rebuilds from the mesh.
+     * next leader rebuilds from the mesh. Any pending failover timers drop with the view;
+     * the next leader re-derives them from its own rebuilt placements.
      */
     public function onLostLeadership(): void
     {
+        $this->isLeader = false;
         $this->registry->clear();
+        $this->failoverDeadlines = [];
+    }
+
+    /**
+     * Reacts to a node going offline: schedules failover and, if isolated, arms self-fence.
+     *
+     * Leader side — for every placed agent the offline node hosted, arms a failover deadline
+     * one grace period out, absorbing a brief flap before {@see tick()} re-places it. Node
+     * side — if the offline node is the leader that placed this node's work, arms the
+     * self-fence deadline so those agents stop before the leader could start copies elsewhere.
+     * Both are idempotent: a deadline already armed is left as it stands.
+     *
+     * @param string $nodeId Node id the transport just marked offline
+     * @param float $now Current microtime
+     */
+    public function noteNodeOffline(string $nodeId, float $now): void
+    {
+        if ($this->isLeader) {
+            foreach ($this->registry->all() as $record) {
+                if ($record->nodeId === $nodeId
+                    && $record->state !== PlacementState::Unplaced
+                    && !isset($this->failoverDeadlines[$record->agentId()])) {
+                    $this->failoverDeadlines[$record->agentId()] = $now + $this->failoverGraceSec;
+                }
+            }
+        }
+
+        if ($nodeId === $this->placingLeaderId && $this->hosted !== [] && $this->selfFenceDeadline === null) {
+            $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        }
+    }
+
+    /**
+     * Reacts to a node coming online: cancels a stale failover/self-fence, retries degraded.
+     *
+     * Node side — if the returning node is the placing leader, the isolation is over, so the
+     * self-fence is disarmed. Leader side — a flapped node back before its grace keeps its
+     * agents, so its pending failover is cancelled; and since a capable node may now be
+     * available, every agent failover had to leave {@see PlacementState::Unplaced} is retried.
+     *
+     * @param string $nodeId Node id the transport just marked online
+     * @param float $now Current microtime
+     */
+    public function noteNodeOnline(string $nodeId, float $now): void
+    {
+        if ($nodeId === $this->placingLeaderId) {
+            $this->selfFenceDeadline = null;
+        }
+
+        if (!$this->isLeader) {
+            return;
+        }
+
+        foreach ($this->registry->all() as $record) {
+            if ($record->nodeId === $nodeId) {
+                unset($this->failoverDeadlines[$record->agentId()]);
+            }
+        }
+
+        $this->retryUnplaced();
+    }
+
+    /**
+     * Fires any failover or self-fence whose grace has elapsed. Driven each daemon tick.
+     *
+     * @param float $now Current microtime
+     */
+    public function tick(float $now): void
+    {
+        foreach ($this->failoverDeadlines as $agentId => $deadline) {
+            if ($now >= $deadline) {
+                unset($this->failoverDeadlines[$agentId]);
+                $this->failOver($agentId);
+            }
+        }
+
+        if ($this->selfFenceDeadline !== null && $now >= $this->selfFenceDeadline) {
+            $this->selfFenceDeadline = null;
+            $this->selfFence();
+        }
+    }
+
+    /**
+     * Node side: reports this node's still-hosted agents to a freshly-linked peer on rejoin.
+     *
+     * The reconcile-on-rejoin safety net: after a partition a node may still host agents the
+     * leader re-placed elsewhere, so on every new link it sends what it hosts and lets the
+     * leader ({@see onPlacementReport()}) stop the stale copies. A no-op when this node hosts
+     * nothing; a non-leader peer that receives the report simply ignores it.
+     *
+     * @param string $nodeId Node id of the peer that just handshaked
+     */
+    public function onPeerHandshaked(string $nodeId): void
+    {
+        if ($this->hosted === []) {
+            return;
+        }
+
+        $this->mesh->sendToNode($nodeId, new PeerPlacementReportDTO($this->hostedEntries()));
+    }
+
+    /**
+     * Re-places one orphaned agent onto another capable+online node, degrading it when none.
+     *
+     * Skips an agent that was stopped, moved, or already degraded in the meantime. Otherwise
+     * it hard-checks capabilities against the online set (excluding the lost node) and re-runs
+     * the ordinary placement primitive onto the pick; when no capable node is online, or the
+     * re-placement fails, the agent is degraded to {@see PlacementState::Unplaced}. Any error
+     * is caught so a bad failover never tears down the daemon loop.
+     *
+     * @param string $agentId Agent id whose failover grace has elapsed
+     */
+    private function failOver(string $agentId): void
+    {
+        $record = $this->registry->get($agentId);
+        if ($record === null || $record->state === PlacementState::Unplaced) {
+            return;
+        }
+
+        try {
+            $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
+            $target = $this->pickCapableNode($required, $record->nodeId);
+            if ($target !== null) {
+                Logger::info("Failover: re-placing '{$agentId}' from lost node '{$record->nodeId}' onto '{$target}'");
+                $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
+                return;
+            }
+        } catch (\Throwable $e) {
+            Logger::warning("Failover of '{$agentId}' could not re-place: {$e->getMessage()}");
+        }
+
+        $this->degrade($record);
+    }
+
+    /**
+     * Retries every degraded agent, placing it if a capable node is now online.
+     *
+     * Called when a node comes online (a new capability may have appeared). A still-uncoverable
+     * agent stays {@see PlacementState::Unplaced}; an error on one agent is caught so the rest
+     * are still tried.
+     */
+    private function retryUnplaced(): void
+    {
+        foreach ($this->registry->all() as $record) {
+            if ($record->state !== PlacementState::Unplaced) {
+                continue;
+            }
+
+            try {
+                $required = $this->executor->requiredCapabilities($record->agentType, $record->agentIndex);
+                $target = $this->pickCapableNode($required, '');
+                if ($target !== null) {
+                    Logger::info("Failover retry: placing unplaced '{$record->agentId()}' onto '{$target}'");
+                    $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
+                }
+            } catch (\Throwable $e) {
+                Logger::warning("Failover retry of '{$record->agentId()}' failed: {$e->getMessage()}");
+            }
+        }
+    }
+
+    /**
+     * Marks an agent degraded and notifies the observer.
+     *
+     * @param PlacementRecord $record Record of the agent that could not be placed
+     */
+    private function degrade(PlacementRecord $record): void
+    {
+        $this->registry->put($record->withState(PlacementState::Unplaced));
+        Logger::warning("Failover: no capable+online node for '{$record->agentId()}'; marked unplaced");
+        $this->observer->onPlacementDegraded($record->agentType, $record->agentIndex);
+    }
+
+    /**
+     * Picks the first capable online node other than the excluded one, or null when none.
+     *
+     * A binary capability gate over the online set in a deterministic order; the soft-preference
+     * policy among several capable nodes is HIL-182.
+     *
+     * @param list<string> $required Capability tags the agent needs
+     * @param string $excludeNodeId Node id to skip (the lost host, or '' to exclude none)
+     * @return ?string Chosen node id, or null when no online node is capable
+     */
+    private function pickCapableNode(array $required, string $excludeNodeId): ?string
+    {
+        $candidates = $this->mesh->onlineNodeIds();
+        sort($candidates);
+        foreach ($candidates as $nodeId) {
+            if ($nodeId === $excludeNodeId) {
+                continue;
+            }
+
+            $advertised = $this->mesh->nodeCapabilities($nodeId) ?? [];
+            if (array_diff($required, $advertised) === []) {
+                return $nodeId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Node side: stops every agent this node hosts when it is isolated from its placing leader.
+     *
+     * Prevents a double-run: an isolated node stops its (possibly truth-source) agents before
+     * the leader's failover could start copies elsewhere. Reconnect is left to the existing
+     * peer dial retry; on rejoin the node re-adopts nothing on its own.
+     */
+    private function selfFence(): void
+    {
+        if ($this->hosted === []) {
+            return;
+        }
+
+        Logger::warning(
+            "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping " . count($this->hosted) . ' placed agent(s)',
+        );
+        foreach ($this->hosted as $record) {
+            $this->executor->revokePlacement($record->agentType, $record->agentIndex);
+        }
+
+        $this->hosted = [];
+        $this->placingLeaderId = null;
+    }
+
+    /**
+     * Builds the wire entries for the agents this node currently hosts.
+     *
+     * @return list<PeerPlacedAgentEntry> Hosted-agent entries
+     */
+    private function hostedEntries(): array
+    {
+        return array_map(
+            static fn(PlacementRecord $record): PeerPlacedAgentEntry => new PeerPlacedAgentEntry(
+                $record->agentType,
+                $record->agentIndex,
+            ),
+            array_values($this->hosted),
+        );
     }
 
     /**

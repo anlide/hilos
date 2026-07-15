@@ -13,6 +13,7 @@ use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -81,14 +82,16 @@ use Hilos\Utils\Logger;
  * dispatched by node lifecycle phase (see {@see dispatchRoleTick()}), with an
  * optional no-op hook per phase that child classes may override.
  *
- * The manager is also the cluster membership and leadership observer: it registers
- * itself on the cluster context at start and exposes {@see onNodeJoined()} /
+ * The manager is also the cluster membership, leadership, and placement observer: it
+ * registers itself on the cluster context at start and exposes {@see onNodeJoined()} /
  * {@see onNodeLeft()} hooks so a project can react to nodes joining and leaving the
  * mesh, plus {@see onBecameLeader()} / {@see onLostLeadership()} /
- * {@see onQuorumGained()} / {@see onQuorumLost()} for the consensus transitions and the
- * broad {@see onClusterWorkStop()} directive on quorum loss or a planned graceful-leave.
+ * {@see onQuorumGained()} / {@see onQuorumLost()} for the consensus transitions, the
+ * broad {@see onClusterWorkStop()} directive on quorum loss or a planned graceful-leave,
+ * and {@see onPlacementDegraded()} when failover cannot re-place an orphaned agent. The
+ * node up/down defaults also drive placement failover, so an override must call the parent.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver
+abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver
 {
     /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
     private const array REQUIRED_FUNCTIONS = [
@@ -220,6 +223,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
         // Receive leadership/quorum transitions from the consensus coordinator
         Hilos::$cluster?->registerLeadershipObserver($this);
+
+        // Receive placement-degradation events from the placement failover coordinator
+        Hilos::$cluster?->registerPlacementObserver($this);
 
         // Expose the worker server as the placement executor so the peer transport can
         // launch and stop placed agents on this node (registered before the loop so it is
@@ -774,8 +780,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 } elseif ($destination instanceof RemoteAgentDestination) {
                     // Forward the signal to the agent on its host node over the peer channel.
                     // Best-effort: no live link (offline node / no peer server) drops and logs,
-                    // matching the local path that skips when no worker hosts the agent (HIL-183
-                    // owns durability).
+                    // matching the local path that skips when no worker hosts the agent. Durable
+                    // delivery to an offline node is out of scope.
                     if ($peerServer === null) {
                         Logger::error("Peer signal dropped: {$signalType}/{$signalName} -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
                         continue;
@@ -1341,31 +1347,35 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /**
      * Hook called when a node joins the cluster mesh (or comes back online).
      *
-     * Invoked by the cluster context after the peer transport merged the join into
-     * the master registry. Default implementation does nothing; child classes
-     * override to react. Runs on the daemon master loop, so it must stay
+     * Invoked by the cluster context after the peer transport merged the join into the
+     * master registry. The framework default drives placement recovery: a returning node
+     * cancels a pending failover for its agents, and a newly-capable node lets the leader
+     * retry any agent that failover had left unplaced. A project may override to react,
+     * calling parent::onNodeJoined() first. Runs on the daemon master loop, so it must stay
      * non-blocking.
      *
      * @param ClusterNode $node Node that joined
      */
     public function onNodeJoined(ClusterNode $node): void
     {
-        // Default: do nothing, child classes may override
+        Hilos::$cluster?->placement()?->noteNodeOnline($node->nodeId, microtime(true));
     }
 
     /**
      * Hook called when a node leaves the cluster mesh (goes offline).
      *
-     * Invoked by the cluster context after the peer transport marked the node
-     * offline in the master registry. Default implementation does nothing; child
-     * classes override to react. Runs on the daemon master loop, so it must stay
+     * Invoked by the cluster context after the peer transport marked the node offline in the
+     * master registry. The framework default drives placement failover: the leader arms
+     * re-placement of the agents the node hosted, and a node isolated from its placing leader
+     * arms its self-fence (both after their grace). A project may override to react, calling
+     * parent::onNodeLeft() first. Runs on the daemon master loop, so it must stay
      * non-blocking.
      *
      * @param ClusterNode $node Node that left
      */
     public function onNodeLeft(ClusterNode $node): void
     {
-        // Default: do nothing, child classes may override
+        Hilos::$cluster?->placement()?->noteNodeOffline($node->nodeId, microtime(true));
     }
 
     /**
@@ -1451,6 +1461,23 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     public function onClusterWorkStop(): void
     {
         // Default: do nothing, child classes may override to persist and stop their work
+    }
+
+    /**
+     * Hook called when failover could not re-place an orphaned agent on any capable node.
+     *
+     * Fired on the leader when a node hosting a placed agent went down and no other
+     * capable+online node was available, so the agent is degraded to unplaced. The framework
+     * only reports it and retries automatically once a capable node joins; a project overrides
+     * to alert or shed dependent work. Default is a no-op. Runs on the daemon master loop, so
+     * an override must stay non-blocking.
+     *
+     * @param string $agentType Agent type left unplaced
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     */
+    public function onPlacementDegraded(string $agentType, ?string $agentIndex): void
+    {
+        // Default: do nothing, child classes may override
     }
 
     /**

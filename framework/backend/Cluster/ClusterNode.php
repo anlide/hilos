@@ -12,8 +12,9 @@ use Hilos\Cluster\Peer\PeerAddress;
  * Held by the master-owned {@see ClusterRegistry} as a value object, replaced
  * wholesale on every membership change rather than mutated. `address` is the
  * endpoint peers dial to reach the node; `online` and `lastSeen` describe
- * liveness as the master observed it; richer heartbeat semantics land with node
- * health (HIL-183).
+ * liveness as the master observed it. Per-link keepalive detects a hung node and
+ * marks it offline through the same close path (HIL-183); this snapshot's shape is
+ * unchanged.
  */
 final class ClusterNode
 {

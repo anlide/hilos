@@ -104,8 +104,9 @@ replicated log or state machine.
 
 - **Transport.** Consensus multiplexes three new frames on the existing HIL-178
   peer mesh (no new connections): `PeerRequestVoteDTO`, `PeerVoteReplyDTO`,
-  `PeerHeartbeatDTO`. The peer protocol version is `2`. Consensus runs only between
-  master nodes; slaves are in the mesh but never vote and host no coordinator.
+  `PeerHeartbeatDTO`, raising the peer protocol version to `2` (later slices raise it
+  further; it is `4` as of HIL-183). Consensus runs only between master nodes; slaves
+  are in the mesh but never vote and host no coordinator.
 - **Quorum.** A static expected-master-set (`CLUSTER_MASTER_SET`) defines the
   quorum as a fixed majority (`floor(n/2)+1`). `hasQuorum()` counts master-set
   members currently online in the registry, including self, so a partition shrinks
@@ -189,8 +190,41 @@ survivors keep working under the new leader.
   **non-leader** names no successor and peers just update membership.
 - **Slave grace.** On a leader change a slave keeps working (if it was) until a bounded
   grace deadline (`CLUSTER_SLAVE_WORK_GRACE_MS`) while it awaits the new leader's
-  work-decision, so an isolated slave does not run forever. Dormant in Phase-1 until
-  slaves get placed work (HIL-179); the env constant is the config seam.
+  work-decision, so an isolated slave does not run forever. Now consumed by the self-fence
+  below (HIL-183).
+
+## Node health and failover (HIL-183)
+
+Detection and failover for a node that goes down — including a hung-but-connected node the
+ordinary socket close never catches — built on the registry (HIL-177), peer transport
+(HIL-178), placement primitive (HIL-179), and quorum-loss reaction (HIL-341). Node-selection
+*policy* is HIL-182; this slice picks any capable+online node.
+
+- **Health detection — per-link keepalive.** Each `PeerLink` runs a keepalive in its
+  `onTick`: any inbound frame refreshes "last heard"; after
+  `CLUSTER_LINK_KEEPALIVE_INTERVAL_MS` of silence it sends a `peer_ping` (answered by a
+  `peer_pong`), and after `CLUSTER_LINK_TIMEOUT_MS` of silence it closes the link. Closing
+  reuses the existing `onLinkClosed → markOffline → onNodeLeft → noteNodeOffline` path — no
+  new registry scan. It is symmetric (slave, master↔master, master↔slave), a busy link
+  never pings, and the same timeout bounds a stalled half-open handshake.
+- **Failover re-placement (leader).** `onNodeLeft` arms a failover for each placed agent the
+  lost node hosted; after `CLUSTER_FAILOVER_GRACE_MS` (flap tolerance) the leader re-runs
+  the `ClusterPlacement::placeAgentOnNode()` primitive onto another capable+online node
+  (capability gate only). A node back before its grace cancels its own failover.
+- **Slave self-fence (no double-run).** A slave that loses the link to the leader that
+  placed its work stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects
+  via the existing peer dial. The self-fence grace is held **at or below** the failover
+  grace, so the old copy of a truth source is stopped before the leader starts a new one.
+  On rejoin the node reports what it still hosts (`PeerPlacementReportDTO`) and the leader
+  reconciles against its view (leader = truth), issuing `peer_stop_agent` for anything
+  already re-placed elsewhere — a returning node never resurrects a moved agent.
+- **Degrade gracefully.** When re-placement finds no capable+online node, the agent is
+  marked `PlacementState::Unplaced`, logged, and the project `onPlacementDegraded()` hook
+  fires; the leader retries automatically when a capable node joins (`onNodeJoined`).
+- **Wiring.** `PlacementState::Unplaced` and the `peer_ping` / `peer_pong` frames raise the
+  peer protocol version to `4`. The framework `onNodeLeft` / `onNodeJoined` defaults now
+  drive failover, so a project override must call the parent. `ClusterPlacement::tick()`
+  runs the grace timers on the `PeerServer` loop beside the coordinator tick.
 
 ## Graceful shutdown
 

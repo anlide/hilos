@@ -52,4 +52,15 @@ interface PlacementMesh
      * @return ?list<string> Advertised capability tags, or null when unknown or offline
      */
     public function nodeCapabilities(string $nodeId): ?array;
+
+    /**
+     * Returns the ids of every currently-online node, including the local node.
+     *
+     * Backs failover node-selection: the leader scans the online set for a capable host to
+     * re-place an orphaned agent onto. Ordering is stable so the pick is deterministic; the
+     * soft-preference policy among capable nodes is HIL-182.
+     *
+     * @return list<string> Online node ids
+     */
+    public function onlineNodeIds(): array;
 }
