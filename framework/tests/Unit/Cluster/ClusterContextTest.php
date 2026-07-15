@@ -7,7 +7,10 @@ namespace Hilos\Tests\Unit\Cluster;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\Consensus\ConsensusInspection;
+use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Leadership;
 use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeIdentity;
@@ -273,5 +276,85 @@ final class ClusterContextTest extends TestCase
         $context->notifyNodeLeft($node);
 
         $this->expectNotToPerformAssertions();
+    }
+
+    public function testInspectWhenDisabledReportsOnlyDisabled(): void
+    {
+        $this->assertSame(
+            [ClusterCommandConstants::FIELD_ENABLED => false],
+            (new ClusterContext())->inspect(),
+        );
+    }
+
+    public function testInspectWhenEnabledReportsMembershipAndAPendingConsensusView(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
+
+        $inspection = (new ClusterContext())->inspect();
+
+        $this->assertTrue($inspection[ClusterCommandConstants::FIELD_ENABLED]);
+        $this->assertSame('node-a', $inspection[ClusterCommandConstants::FIELD_LOCAL_NODE_ID]);
+        // A clustered master before the coordinator lands is dormant with no consensus values.
+        $this->assertSame('MasterNoQuorum', $inspection[ClusterCommandConstants::FIELD_LIFECYCLE_STATE]);
+        $this->assertNull($inspection[ClusterCommandConstants::FIELD_LEADER_ID]);
+        $this->assertNull($inspection[ClusterCommandConstants::FIELD_TERM]);
+        $this->assertNull($inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
+        $this->assertFalse($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
+        $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENTS]);
+
+        $nodes = $inspection[ClusterCommandConstants::FIELD_NODES];
+        $this->assertCount(1, $nodes);
+        $this->assertSame('node-a', $nodes[0][ClusterCommandConstants::FIELD_NODE_ID]);
+        $this->assertSame(['gpu-local'], $nodes[0][ClusterCommandConstants::FIELD_NODE_CAPABILITIES]);
+        $this->assertTrue($nodes[0][ClusterCommandConstants::FIELD_NODE_ONLINE]);
+        $this->assertArrayHasKey(ClusterCommandConstants::FIELD_NODE_LAST_SEEN, $nodes[0]);
+    }
+
+    public function testInspectReportsConsensusTermAndRoleFromARegisteredCoordinator(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+
+        $leadership = new class implements Leadership, ConsensusInspection {
+            public function amLeader(): bool
+            {
+                return true;
+            }
+
+            public function leaderId(): ?string
+            {
+                return 'node-a';
+            }
+
+            public function hasQuorum(): bool
+            {
+                return true;
+            }
+
+            public function term(): int
+            {
+                return 7;
+            }
+
+            public function consensusRole(): ConsensusRole
+            {
+                return ConsensusRole::Leader;
+            }
+        };
+
+        $context = new ClusterContext();
+        $context->registerLeadership($leadership);
+
+        $inspection = $context->inspect();
+
+        $this->assertSame('MasterLeader', $inspection[ClusterCommandConstants::FIELD_LIFECYCLE_STATE]);
+        $this->assertSame('node-a', $inspection[ClusterCommandConstants::FIELD_LEADER_ID]);
+        $this->assertSame(7, $inspection[ClusterCommandConstants::FIELD_TERM]);
+        $this->assertSame('leader', $inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
+        $this->assertTrue($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
     }
 }

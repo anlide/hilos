@@ -29,7 +29,7 @@ use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
  * the first heartbeat or request-vote the node sees. Candidacy is gated on a live
  * quorum, so an isolated minority never inflates the term.
  */
-final class ClusterCoordinator implements Leadership
+final class ClusterCoordinator implements Leadership, ConsensusInspection
 {
     /** @var ClusterConsensusConfig Captured consensus configuration for the local node */
     private ClusterConsensusConfig $config;
@@ -101,6 +101,22 @@ final class ClusterCoordinator implements Leadership
     public function hasQuorum(): bool
     {
         return $this->lastQuorum;
+    }
+
+    /**
+     * @return int Current election term (monotonic, in-memory only)
+     */
+    public function term(): int
+    {
+        return $this->currentTerm;
+    }
+
+    /**
+     * @return ConsensusRole Current consensus role of the local node
+     */
+    public function consensusRole(): ConsensusRole
+    {
+        return $this->role;
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -423,5 +424,83 @@ final class ClusterContext
             ClusterCommandConstants::FIELD_ENABLED => true,
             ClusterCommandConstants::FIELD_NODES => $nodes,
         ];
+    }
+
+    /**
+     * Builds the rich, machine-readable cluster snapshot answered by the
+     * `cluster:test:inspect` command (HIL-325).
+     *
+     * Reports this daemon's own view — membership, the local node's consensus
+     * verdicts (leader / term / role / quorum) and lifecycle phase, and the
+     * leader-tracked agent placements — so a multi-node test harness can assert on
+     * each node deterministically. A node whose leadership seam is not a consensus
+     * coordinator (a slave, or a master before the transport builds one) reports null
+     * term and role; placements are empty on any non-leader, since that view is
+     * leader-owned soft-state. Reports only `enabled: false` when cluster mode is off.
+     *
+     * @return array<string, mixed> Inspection snapshot payload
+     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
+     * @throws EnvException When a cluster env value cannot be read
+     */
+    public function inspect(): array
+    {
+        if (!$this->isEnabled()) {
+            return [ClusterCommandConstants::FIELD_ENABLED => false];
+        }
+
+        $leadership = $this->leadership();
+        $consensus = $leadership instanceof ConsensusInspection ? $leadership : null;
+
+        $nodes = [];
+        foreach ($this->registry()->snapshot() as $node) {
+            $nodes[] = [
+                ClusterCommandConstants::FIELD_NODE_ID => $node->nodeId,
+                ClusterCommandConstants::FIELD_NODE_ROLE => $node->role->value,
+                ClusterCommandConstants::FIELD_NODE_CAPABILITIES => $node->capabilities,
+                ClusterCommandConstants::FIELD_NODE_ONLINE => $node->online,
+                ClusterCommandConstants::FIELD_NODE_LAST_SEEN => $node->lastSeen,
+            ];
+        }
+
+        return [
+            ClusterCommandConstants::FIELD_ENABLED => true,
+            ClusterCommandConstants::FIELD_LOCAL_NODE_ID => $this->identity()->nodeId,
+            ClusterCommandConstants::FIELD_LIFECYCLE_STATE => $this->lifecycleState()->name,
+            ClusterCommandConstants::FIELD_LEADER_ID => $leadership->leaderId(),
+            ClusterCommandConstants::FIELD_TERM => $consensus?->term(),
+            ClusterCommandConstants::FIELD_CONSENSUS_ROLE => $consensus?->consensusRole()->value,
+            ClusterCommandConstants::FIELD_HAS_QUORUM => $leadership->hasQuorum(),
+            ClusterCommandConstants::FIELD_NODES => $nodes,
+            ClusterCommandConstants::FIELD_PLACEMENTS => $this->inspectPlacements(),
+        ];
+    }
+
+    /**
+     * Builds the placement rows from the leader-side placement view, if present.
+     *
+     * Empty when this node has no placement coordinator (off-cluster) or is not the
+     * leader, since the placement view is leader-owned soft-state.
+     *
+     * @return list<array<string, mixed>> Placement rows
+     */
+    private function inspectPlacements(): array
+    {
+        $placement = $this->placement();
+        if ($placement === null) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($placement->registry()->all() as $record) {
+            $rows[] = [
+                ClusterCommandConstants::FIELD_PLACEMENT_AGENT_TYPE => $record->agentType,
+                ClusterCommandConstants::FIELD_PLACEMENT_AGENT_INDEX => $record->agentIndex,
+                ClusterCommandConstants::FIELD_PLACEMENT_AGENT_ID => $record->agentId(),
+                ClusterCommandConstants::FIELD_NODE_ID => $record->nodeId,
+                ClusterCommandConstants::FIELD_PLACEMENT_STATE => $record->state->value,
+            ];
+        }
+
+        return $rows;
     }
 }

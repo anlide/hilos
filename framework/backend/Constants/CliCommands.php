@@ -27,6 +27,9 @@ final class CliCommands
     /** @var string Command: Reload cluster config and re-announce the local node */
     public const string CLUSTER_RELOAD = 'cluster:reload';
 
+    /** @var string Command: Inspect the daemon's cluster/consensus/placement state (test-only) */
+    public const string CLUSTER_TEST_INSPECT = 'cluster:test:inspect';
+
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 

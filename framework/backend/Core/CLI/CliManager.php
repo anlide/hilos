@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\ClusterNodesCommand;
 use Hilos\Core\CLI\Commands\ClusterReloadCommand;
+use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
@@ -75,6 +76,7 @@ class CliManager
         $this->commands[CliCommands::DAEMON_PING] = new PingCommand();
         $this->commands[CliCommands::CLUSTER_NODES] = new ClusterNodesCommand();
         $this->commands[CliCommands::CLUSTER_RELOAD] = new ClusterReloadCommand();
+        $this->commands[CliCommands::CLUSTER_TEST_INSPECT] = new ClusterTestInspectCommand();
         $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();

@@ -108,6 +108,18 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_CLUSTER_INSPECT) {
+                // Test-only read of the master's cluster/consensus/placement view.
+                // A misconfigured cluster must reply an error, not throw inside the master loop.
+                try {
+                    $reply = CommandReplyDTO::ok($request->correlationId, Hilos::$cluster?->inspect() ?? []);
+                } catch (HilosException $e) {
+                    $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);

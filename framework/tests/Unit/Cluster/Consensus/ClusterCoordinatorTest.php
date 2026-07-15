@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Cluster\Consensus;
 use Hilos\Cluster\Consensus\ClusterConsensusConfig;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusMesh;
+use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
@@ -201,6 +202,23 @@ final class ClusterCoordinatorTest extends TestCase
         $votes = $mesh->requestVotes();
         $this->assertCount(1, $votes, 'Election starts at once instead of waiting a full timeout');
         $this->assertSame(2, $votes[0]->term);
+    }
+
+    public function testTermAndRoleAreReadableThroughTheInspectionSeam(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+
+        $this->assertSame(0, $coordinator->term());
+        $this->assertSame(ConsensusRole::Follower, $coordinator->consensusRole());
+
+        $coordinator->tick(0.0);
+        $coordinator->tick(1.0);
+        $coordinator->onVoteReply(new PeerVoteReplyDTO(1, true, 'b'));
+
+        $this->assertTrue($coordinator->amLeader());
+        $this->assertSame(1, $coordinator->term());
+        $this->assertSame(ConsensusRole::Leader, $coordinator->consensusRole());
     }
 
     /**

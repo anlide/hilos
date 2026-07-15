@@ -44,4 +44,7 @@ final class CommandConstants
 
     /** @var string Built-in command: the daemon re-reads cluster config, refreshes the local node, and re-announces it */
     public const string COMMAND_CLUSTER_RELOAD = 'cluster:reload';
+
+    /** @var string Test-only command: the daemon answers synchronously with a rich cluster/consensus/placement snapshot */
+    public const string COMMAND_CLUSTER_INSPECT = 'cluster:test:inspect';
 }
