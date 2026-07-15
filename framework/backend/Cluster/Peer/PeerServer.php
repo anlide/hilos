@@ -309,8 +309,10 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * policy swap here and nothing else; the registry and gossip stay untouched.
      * The node id is stamped on the dial up front so an inbound link to the same
      * peer suppresses the outbound dial through {@see driveDial()}. A peer with no
-     * advertised address is left to reach us inbound; a peer's address is captured
-     * once (address churn is HIL-343).
+     * advertised address is left to reach us inbound. When a known peer re-handshakes
+     * on a changed address (a restart on a new port, a NAT/DHCP change), its dial is
+     * refreshed in place through {@see refreshPeerDial()} so the stale endpoint is not
+     * dialed forever.
      */
     private function reconcilePeerDials(): void
     {
@@ -320,7 +322,15 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         }
 
         foreach ($registry->snapshot() as $node) {
-            if ($node->address === null || isset($this->peerDials[$node->nodeId])) {
+            if ($node->address === null) {
+                continue;
+            }
+
+            $existing = $this->peerDials[$node->nodeId] ?? null;
+            if ($existing !== null) {
+                if ($existing->address->toString() !== $node->address->toString()) {
+                    $this->refreshPeerDial($existing, $node->address);
+                }
                 continue;
             }
 
@@ -332,6 +342,29 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             $dial->remoteNodeId = $node->nodeId;
             $this->peerDials[$node->nodeId] = $dial;
         }
+    }
+
+    /**
+     * Re-points an existing dial at a peer's new advertised address.
+     *
+     * An address change is not a failure: any in-flight connect to the old endpoint is
+     * torn down and the backoff is cleared so the new address is dialed promptly, while
+     * a live established link is left untouched — only its future re-dial target moves.
+     *
+     * @param PeerDial $dial Dial to re-point
+     * @param PeerAddress $address New advertised address to dial
+     */
+    private function refreshPeerDial(PeerDial $dial, PeerAddress $address): void
+    {
+        $dial->address = $address;
+
+        if ($dial->connecting && $dial->socket !== null) {
+            socket_close($dial->socket);
+            $dial->socket = null;
+            $dial->connecting = false;
+        }
+
+        $dial->nextAttemptAt = 0.0;
     }
 
     /**

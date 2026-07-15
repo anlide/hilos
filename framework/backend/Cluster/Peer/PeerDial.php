@@ -41,10 +41,12 @@ final class PeerDial
     public ?string $remoteNodeId = null;
 
     /**
-     * @param PeerAddress $address Endpoint this dial targets
+     * @param PeerAddress $address Endpoint this dial targets. Mutable, not readonly: the
+     *     server refreshes it in place when the peer re-handshakes on a changed address
+     *     (HIL-343 address churn), so a stale endpoint is not dialed forever.
      */
     public function __construct(
-        public readonly PeerAddress $address,
+        public PeerAddress $address,
     ) {
     }
 }
