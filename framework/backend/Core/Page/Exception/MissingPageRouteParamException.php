@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page\Exception;
 
+use Hilos\Core\Page\PageRouteParams;
 use Throwable;
 
 /**
  * MissingPageRouteParamException - Required page route param is missing.
  *
- * Thrown by {@see \Hilos\Core\Page\PageRouteParams} when a `require*` accessor
+ * Thrown by {@see PageRouteParams} when a `require*` accessor
  * does not find the key (or finds an empty string, which is treated as missing).
  * Maps to HTTP 400 and error code 'missing_page_route_param'.
  */

@@ -7,6 +7,7 @@ namespace Hilos\Cluster\Placement;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Socket\Server\WorkerServer;
 
 /**
  * Local port the placement coordinator uses to launch, stop, and describe agents on
@@ -14,7 +15,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
  *
  * This is the seam between placement and the worker pool: the coordinator decides which
  * node an agent belongs on, this port carries out the local half. The worker server
- * implements it by reusing its existing {@see \Hilos\Socket\Server\WorkerServer::startAgent()}
+ * implements it by reusing its existing {@see WorkerServer::startAgent()}
  * / stopAgent path — no new spawn logic — so a placed agent is hosted exactly like a
  * locally-started one. A test supplies a fake so the coordinator runs without a worker
  * pool.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Consensus\ClusterCoordinator;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
@@ -162,7 +163,7 @@ final class ClusterContext
     /**
      * Installs the consensus coordinator as the local node's leadership seam.
      *
-     * The peer transport builds the {@see \Hilos\Cluster\Consensus\ClusterCoordinator}
+     * The peer transport builds the {@see ClusterCoordinator}
      * for a clustered master at start and registers it here, replacing the inert
      * {@see PendingLeadership} so {@see leadership()} — and thus
      * {@see lifecycleState()} — start reflecting real election and quorum results.

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\DaemonManager;
+
 /**
  * Seam that receives cluster membership transitions as they happen.
  *
@@ -11,9 +13,9 @@ namespace Hilos\Cluster;
  * master registry and gossips the change), while the daemon wants to react to
  * nodes joining and leaving without polling the registry every tick. This
  * interface lets {@see ClusterContext} forward a transition to whoever registered
- * as the observer — the {@see \Hilos\Core\Daemon\DaemonManager} does so at start,
- * exposing project-overridable {@see \Hilos\Core\Daemon\DaemonManager::onNodeJoined}
- * / {@see \Hilos\Core\Daemon\DaemonManager::onNodeLeft} hooks — keeping the
+ * as the observer — the {@see DaemonManager} does so at start,
+ * exposing project-overridable {@see DaemonManager::onNodeJoined}
+ * / {@see DaemonManager::onNodeLeft} hooks — keeping the
  * registry a pure data structure with no observer wired inside it.
  */
 interface MembershipObserver

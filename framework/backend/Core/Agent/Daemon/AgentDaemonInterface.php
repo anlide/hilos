@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\BaseDTO;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 
 /**
  * AgentDaemonInterface - Interface for agent proxies running in daemon.
@@ -48,7 +50,7 @@ interface AgentDaemonInterface
      * Whether this agent is a cluster-singleton that runs only on the leader node.
      *
      * A leader-only agent (truth source, monopolistic/singleton, startup service)
-     * must exist on exactly one node cluster-wide, so {@see \Hilos\Socket\Server\WorkerServer::startAgent()}
+     * must exist on exactly one node cluster-wide, so {@see WorkerServer::startAgent()}
      * refuses to start it on a node that is not the cluster leader. Standalone
      * daemons are always their own leader, so the flag has no effect off-cluster.
      *
@@ -65,7 +67,7 @@ interface AgentDaemonInterface
      *
      * The cluster hard-constraint for placement: the leader refuses to place the agent on
      * a node whose advertised capabilities do not include every tag returned here (see
-     * {@see \Hilos\Cluster\Placement\ClusterPlacement::placeAgentOnNode()}). The default is
+     * {@see ClusterPlacement::placeAgentOnNode()}). The default is
      * an empty list — the agent runs anywhere. Soft preferences and choosing among several
      * fit nodes are node-selection policy (HIL-182), not this binary gate.
      *

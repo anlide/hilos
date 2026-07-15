@@ -7,14 +7,16 @@ namespace Hilos\Cluster\Consensus;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
+use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
+use Hilos\Cluster\PendingLeadership;
 
 /**
  * Self-written raft-like consensus for the master set: leader election and
  * anti-split-brain, without a replicated log.
  *
- * This is the real {@see Leadership} that replaces {@see \Hilos\Cluster\PendingLeadership}
+ * This is the real {@see Leadership} that replaces {@see PendingLeadership}
  * on a clustered master. It is a flat in-process state machine on the daemon master:
  * {@see tick()} drives it once per loop iteration (from the peer server), the on*
  * handlers fold in consensus frames delivered over the existing peer mesh, and it
@@ -260,7 +262,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * Immediate-election trigger for a designated successor (raft TimeoutNow-style).
      *
      * A gracefully-leaving leader names its most-recently-heard follower in the
-     * {@see \Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO} frame; that follower calls this
+     * {@see PeerNodeLeavingDTO} frame; that follower calls this
      * to campaign at once, bypassing its randomized election timeout, while the other
      * followers keep waiting theirs. Only the successor short-circuits its timer, so it
      * wins cleanly with no split vote — the delay a broadcast-and-race would reintroduce.

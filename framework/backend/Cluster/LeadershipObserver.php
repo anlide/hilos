@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\DaemonManager;
+
 /**
  * Seam that receives cluster leadership and quorum transitions as they happen.
  *
  * The consensus coordinator decides leadership and quorum; the daemon wants to
  * react to the four transitions without polling the seam every tick. Symmetric to
  * {@see MembershipObserver}: {@see ClusterContext} exposes the registered observer
- * to the coordinator, and the {@see \Hilos\Core\Daemon\DaemonManager} registers
+ * to the coordinator, and the {@see DaemonManager} registers
  * itself at start, turning these into project-overridable hooks. The framework only
  * delivers the events — reacting to them (gating singleton work, stopping in-flight
  * duties) is the project's job and lands in the neighbouring cluster slices.

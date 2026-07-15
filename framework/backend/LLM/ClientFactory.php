@@ -9,12 +9,13 @@ use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
 use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\LLM\Routing\LlmProvider;
+use Hilos\LLM\Routing\LlmRouter;
 
 /**
  * Builds an async chat client from a resolved LLM profile.
  *
  * The low-level provider constructor beneath the routing policy: the
- * {@see \Hilos\LLM\Routing\LlmRouter} resolves a profile and calls this to get a
+ * {@see LlmRouter} resolves a profile and calls this to get a
  * ready client. Provider comes from the profile's explicit provider field.
  */
 class ClientFactory

@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\RemoteAgentDestination;
+
 /**
  * Read-only placement-lookup seam the signal router consults to learn which node hosts
  * an agent.
  *
  * This is the narrow contract the router reads from: for a resolved agent target it asks
  * {@see nodeFor()} whether that agent lives on another node, and — only when it does —
- * turns the local {@see \Hilos\Core\Router\Destination\AgentDestination} into a
- * {@see \Hilos\Core\Router\Destination\RemoteAgentDestination} the daemon forwards over
+ * turns the local {@see AgentDestination} into a
+ * {@see RemoteAgentDestination} the daemon forwards over
  * the peer channel. The router never owns or mutates placement; the truth of where each
  * agent runs is owned by the placement coordinator ({@see Placement\ClusterPlacement},
  * HIL-179), which implements this seam over its placement view. A test supplies a fake so

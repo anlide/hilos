@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use BackedEnum;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use TypeError;
 use ValueError;
 
@@ -34,7 +35,7 @@ final class PageRouteParams
     /**
      * Creates the collection from the raw subscribe params.
      *
-     * @param array<string, string> $raw Raw route params from {@see \Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO}
+     * @param array<string, string> $raw Raw route params from {@see WebSocketPageSubscribeSignalDTO}
      */
     public function __construct(private readonly array $raw) {}
 

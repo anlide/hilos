@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Cluster\Consensus\ConsensusMesh;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 
 /**
@@ -11,7 +12,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
  * advertised capabilities.
  *
  * This is the seam between the pure placement logic and the peer transport, mirroring
- * {@see \Hilos\Cluster\Consensus\ConsensusMesh}: the coordinator never touches sockets
+ * {@see ConsensusMesh}: the coordinator never touches sockets
  * or the registry directly, it asks the mesh for a node's capabilities and hands it
  * frames to deliver. Unlike the consensus mesh — which only reaches the master set —
  * placement targets any node (a data-plane slave hosts placed agents), so delivery is

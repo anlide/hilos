@@ -28,6 +28,7 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -787,7 +788,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * Reports a node coming online to the membership observer.
      *
      * The registry already merged the record; this only fans the transition out to
-     * the daemon's {@see \Hilos\Core\Daemon\DaemonManager::onNodeJoined} hook via
+     * the daemon's {@see DaemonManager::onNodeJoined} hook via
      * the cluster context. A no-op when the context is absent (non-daemon process).
      *
      * @param NodeIdentity $identity Node that came online
@@ -802,7 +803,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
      * Reports a node going offline to the membership observer.
      *
      * The registry already marked the node offline; this only fans the transition
-     * out to the daemon's {@see \Hilos\Core\Daemon\DaemonManager::onNodeLeft} hook
+     * out to the daemon's {@see DaemonManager::onNodeLeft} hook
      * via the cluster context. A no-op when the context is absent.
      *
      * @param NodeIdentity $identity Node that went offline
