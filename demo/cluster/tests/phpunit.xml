@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="../backend/Bootstrap/phpunit.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true">
+    <source>
+        <include>
+            <directory>../backend</directory>
+        </include>
+    </source>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>Unit</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="DB_HOST" value="cluster-mysql"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="hilos-demo-cluster-cli"/>
+        <env name="DB_USERNAME" value="hilos"/>
+        <env name="DB_PASSWORD" value="hilos_pass"/>
+    </php>
+</phpunit>

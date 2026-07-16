@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#
+# cluster - host-side controller for the multi-node daemon-cluster e2e harness
+# (HIL-185). Preview-style: a thin orchestrator over `docker compose` plus the two
+# fault switches the scenarios need — `docker kill -9` (node-down / failover) and
+# `docker network disconnect` (partition / split-brain). Assertions live in the
+# Python scenario driver (cluster_e2e.py), which reads each node's
+# `cluster:test:inspect` reply and compares against the expected invariants.
+#
+# Usage:
+#   cluster up                 build + start mysql, the 5 nodes, and the cli container
+#   cluster down [--volumes]   stop and remove the stack (add --volumes to wipe the DB)
+#   cluster status             docker ps for the stack + a one-line inspect per node
+#   cluster inspect <node>     print a node's cluster:test:inspect JSON (m1..m3,s1,s2)
+#   cluster kill <node>        docker kill -9 a node container (simulate node-down)
+#   cluster start <node>       (re)start a node container
+#   cluster partition <node>   disconnect a node from the cluster network
+#   cluster heal <node>        reconnect a node to the cluster network (static IP)
+#   cluster logs <node>        follow a node's container logs
+#   cluster scenarios          run the full 8-scenario matrix (drives cluster_e2e.py)
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+demo="$(cd "$here/.." && pwd)"
+compose_file="$here/docker-compose.cluster.yml"
+net="hilos-cluster-net"
+
+NODES=(m1 m2 m3 s1 s2)
+declare -A NODE_IP=(
+  [m1]=172.31.0.11 [m2]=172.31.0.12 [m3]=172.31.0.13
+  [s1]=172.31.0.14 [s2]=172.31.0.15
+)
+
+dc() { docker compose -f "$compose_file" "$@"; }
+die() { echo "cluster: $*" >&2; exit 1; }
+
+valid_node() {
+  local n="$1"
+  [[ -n "${NODE_IP[$n]:-}" ]] || die "unknown node '$n' (expected one of: ${NODES[*]})"
+}
+
+ensure_env() {
+  [ -f "$demo/.env" ] || cp "$demo/.env.example" "$demo/.env"
+  [ -f "$demo/tests/.env" ] || cp "$demo/tests/.env.example" "$demo/tests/.env"
+  mkdir -p "$demo/data/logs"
+}
+
+cmd_up() {
+  ensure_env
+  echo "cluster: building images..."
+  dc build
+  echo "cluster: starting mysql + 5 nodes..."
+  dc up -d cluster-mysql cluster-m1 cluster-m2 cluster-m3 cluster-s1 cluster-s2
+  echo "cluster: starting cli container..."
+  dc --profile cli up -d cluster-cli
+  echo "cluster: up. Give the mesh a few seconds to elect a leader, then:"
+  echo "  $0 status      # see roster + leader per node"
+  echo "  $0 scenarios   # run the assertion matrix"
+}
+
+cmd_down() {
+  local extra=()
+  [[ "${1:-}" == "--volumes" ]] && extra=(-v)
+  dc --profile "*" down "${extra[@]}"
+}
+
+cmd_inspect() {
+  local node="${1:-}"; valid_node "$node"
+  docker exec -e HILOS_DAEMON_HOST="${NODE_IP[$node]}" cluster-cli \
+    php backend/Bootstrap/cli.php cluster:test:inspect
+}
+
+# Inspect a node from INSIDE its own container over localhost. Needed when the node
+# is network-partitioned (unreachable from the shared cli container and from MySQL):
+# cluster:test:inspect is DB-free, so it still answers over the local command socket.
+cmd_inspect_local() {
+  local node="${1:-}"; valid_node "$node"
+  docker exec -e APP_ENV=test -e HILOS_DAEMON_HOST=127.0.0.1 "cluster-$node" \
+    php backend/Bootstrap/cli.php cluster:test:inspect
+}
+
+cmd_status() {
+  echo "== containers =="
+  docker ps --filter "label=com.docker.compose.project=hilos-cluster" \
+    --format 'table {{.Names}}\t{{.Status}}'
+  echo
+  echo "== per-node cluster view =="
+  local status_py
+  status_py='
+import json, sys
+node = sys.argv[1]
+raw = sys.stdin.read()
+i = raw.find("{")
+if i < 0:
+    print("  %-4s (unreachable)" % node); sys.exit(0)
+try:
+    d = json.loads(raw[i:])
+except Exception:
+    print("  %-4s (bad reply)" % node); sys.exit(0)
+if not d.get("enabled"):
+    print("  %-4s cluster disabled" % node); sys.exit(0)
+pl = ",".join("%s@%s:%s" % (p["agentId"], p["nodeId"], p["state"]) for p in d.get("placements", [])) or "-"
+print("  %-4s phase=%-26s leader=%-4s term=%s quorum=%s placements=%s" % (
+    node, d.get("lifecycleState"), str(d.get("leaderId")), d.get("term"), d.get("hasQuorum"), pl))
+'
+  for n in "${NODES[@]}"; do
+    cmd_inspect "$n" 2>/dev/null | python3 -c "$status_py" "$n" || printf '  %-4s (unreachable)\n' "$n"
+  done
+}
+
+cmd_kill() { local n="${1:-}"; valid_node "$n"; docker kill "cluster-$n" >/dev/null && echo "cluster: killed cluster-$n"; }
+# Force-recreate on restart so a killed node comes back as a pristine container with
+# no processes left over from before (a daemon that crashed internally can orphan
+# workers that keep holding its ports).
+cmd_start() { local n="${1:-}"; valid_node "$n"; dc up -d --force-recreate "cluster-$n" >/dev/null && echo "cluster: started cluster-$n"; }
+cmd_partition() { local n="${1:-}"; valid_node "$n"; docker network disconnect "$net" "cluster-$n" && echo "cluster: partitioned cluster-$n"; }
+cmd_heal() { local n="${1:-}"; valid_node "$n"; docker network connect --ip "${NODE_IP[$n]}" "$net" "cluster-$n" && echo "cluster: reconnected cluster-$n"; }
+cmd_logs() { local n="${1:-}"; valid_node "$n"; dc logs -f "cluster-$n"; }
+
+cmd_scenarios() {
+  # Ensure the stack is up (idempotent) before the driver perturbs it.
+  if ! docker inspect -f '{{.State.Running}}' cluster-cli >/dev/null 2>&1; then
+    cmd_up
+  fi
+  python3 "$here/cluster_e2e.py"
+}
+
+case "${1:-}" in
+  up)        shift; cmd_up "$@" ;;
+  down)      shift; cmd_down "$@" ;;
+  status)    shift; cmd_status ;;
+  inspect)   shift; cmd_inspect "$@" ;;
+  inspect-local) shift; cmd_inspect_local "$@" ;;
+  kill)      shift; cmd_kill "$@" ;;
+  start)     shift; cmd_start "$@" ;;
+  partition) shift; cmd_partition "$@" ;;
+  heal)      shift; cmd_heal "$@" ;;
+  logs)      shift; cmd_logs "$@" ;;
+  scenarios) shift; cmd_scenarios ;;
+  *)         die "usage: cluster {up|down|status|inspect|kill|start|partition|heal|logs|scenarios} [args]" ;;
+esac

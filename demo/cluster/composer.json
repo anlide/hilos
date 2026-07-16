@@ -1,0 +1,58 @@
+{
+    "name": "anlide/hilos-demo-cluster",
+    "description": "Backend-only multi-node daemon-cluster demo and e2e harness for the Hilos v2 framework",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Baranov",
+            "email": "alexander.baranov@anlide.online"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/hilos",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "anlide/hilos": "^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Demo\\Cluster\\": "backend/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\Cluster\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "setup-env": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli sh -c \"cd /app && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
+        "install-deps": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli composer install",
+        "test:up": "docker compose -f docker/docker-compose.cluster.yml up -d cluster-mysql",
+        "test:db-wait": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php backend/Bootstrap/cli.php db:wait",
+        "test:unit": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:phpunit": "docker compose -f docker/docker-compose.cluster.yml --profile cli run --rm cluster-cli php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:cluster:up": "docker/cluster up",
+        "test:cluster:down": "docker/cluster down",
+        "test:cluster:down-volumes": "docker/cluster down --volumes",
+        "test:cluster:status": "docker/cluster status",
+        "test:cluster:scenarios": "docker/cluster scenarios",
+        "test:cluster:all": [
+            "@test:unit",
+            "docker/cluster scenarios"
+        ]
+    },
+    "config": {
+        "process-timeout": 0
+    }
+}

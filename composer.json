@@ -63,6 +63,9 @@
         "test:framework:frontend:format-check": "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run format:check",
         "test:framework:frontend": "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check",
         "test:frontend:all": "composer run test:framework:frontend:install && composer run test:framework:frontend:build && composer run test:framework:frontend && composer -d demo/chat run test:check && composer -d demo/chat run test:e2e-full && composer -d demo/simple-todo run test:check && composer -d demo/simple-todo run test:e2e-full && composer -d demo/simple-poll run test:check && composer -d demo/simple-poll run test:e2e-full",
+        "test:cluster:unit": "composer -d demo/cluster run test:unit",
+        "test:cluster:scenarios": "composer -d demo/cluster run test:cluster:scenarios",
+        "test:cluster:all": "composer -d demo/cluster run test:cluster:all",
         "ai:install": "@php scripts/install-ai-tooling.php",
         "ai:install:check": "@php scripts/install-ai-tooling.php --check"
     }

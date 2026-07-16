@@ -1,0 +1,226 @@
+# Multi-node daemon-cluster e2e stack (HIL-185).
+#
+# One shared MariaDB (per-node schemas), five daemon nodes on a dedicated bridge
+# with static IPs — three masters (the consensus/master-set) and two data-plane
+# slaves (the placement targets) — and a long-lived CLI container the harness
+# `docker exec`s to run `cluster:test:inspect` against each node. Node role,
+# identity, capabilities, master set, and timeouts all come from CLUSTER_* env, so
+# the same image is a master or a data-plane node purely by configuration.
+
+name: hilos-cluster
+
+x-node-base: &node-base
+  build: .
+  restart: "no"
+  command: ["php", "backend/Bootstrap/docker.php"]
+  depends_on:
+    cluster-mysql:
+      condition: service_healthy
+
+x-node-env: &node-env
+  # No APP_ENV=test on the nodes on purpose: the daemon would then load tests/.env
+  # and its DB_DATABASE would override every node's per-schema value. The daemon
+  # needs no test mode — the cluster:test:inspect TestOnly gate is CLI-side, and
+  # only the cluster-cli container runs as APP_ENV=test.
+  DB_HOST: cluster-mysql
+  DB_PORT: "3306"
+  DB_USERNAME: hilos
+  DB_PASSWORD: hilos_pass
+  HTTP_STATUS_HOST: 0.0.0.0
+  HTTP_STATUS_PORT: "8090"
+  WORKER_COMM_HOST: 0.0.0.0
+  WORKER_COMM_PORT: "8091"
+  COMMAND_HOST: 0.0.0.0
+  COMMAND_PORT: "8094"
+  CLUSTER_ENABLED: "true"
+  CLUSTER_PEER_HOST: 0.0.0.0
+  CLUSTER_PEER_PORT: "8095"
+  CLUSTER_MASTER_SET: "m1,m2,m3"
+  # CLUSTER_SEEDS is set PER NODE below, each excluding the node's own advertise
+  # address: a node must never dial itself (the self-link collapse tears the daemon
+  # down). Gossip admits every other peer from any one live seed.
+  CLUSTER_ELECTION_TIMEOUT_MIN_MS: "1500"
+  CLUSTER_ELECTION_TIMEOUT_MAX_MS: "3000"
+  CLUSTER_HEARTBEAT_INTERVAL_MS: "500"
+  CLUSTER_LINK_KEEPALIVE_INTERVAL_MS: "1000"
+  CLUSTER_LINK_TIMEOUT_MS: "6000"
+  CLUSTER_FAILOVER_GRACE_MS: "6000"
+  CLUSTER_SLAVE_WORK_GRACE_MS: "4000"
+  WORKER_MIN_REGULAR: "1"
+  WORKER_MAX_REGULAR: "1"
+  WORKER_MIN_MONOPOLISTIC: "1"
+
+services:
+  cluster-mysql:
+    image: mariadb:11.4
+    container_name: cluster-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: hilos_root_pass
+      MYSQL_DATABASE: hilos-demo-cluster-cli
+      MYSQL_USER: hilos
+      MYSQL_PASSWORD: hilos_pass
+      TZ: UTC
+    volumes:
+      - mysql-cluster-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.10
+
+  cluster-m1:
+    <<: *node-base
+    container_name: cluster-m1
+    environment:
+      <<: *node-env
+      DB_DATABASE: hilos-demo-cluster-m1
+      CLUSTER_NODE_ID: m1
+      CLUSTER_NODE_ROLE: master
+      CLUSTER_NODE_CAPABILITIES: ""
+      CLUSTER_PEER_ADVERTISE: "172.31.0.11:8095"
+      CLUSTER_SEEDS: "172.31.0.12:8095,172.31.0.13:8095,172.31.0.14:8095,172.31.0.15:8095"
+      WORKER_MIN_MONOPOLISTIC: "0"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/m1:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.11
+
+  cluster-m2:
+    <<: *node-base
+    container_name: cluster-m2
+    environment:
+      <<: *node-env
+      DB_DATABASE: hilos-demo-cluster-m2
+      CLUSTER_NODE_ID: m2
+      CLUSTER_NODE_ROLE: master
+      CLUSTER_NODE_CAPABILITIES: ""
+      CLUSTER_PEER_ADVERTISE: "172.31.0.12:8095"
+      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.13:8095,172.31.0.14:8095,172.31.0.15:8095"
+      WORKER_MIN_MONOPOLISTIC: "0"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/m2:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.12
+
+  cluster-m3:
+    <<: *node-base
+    container_name: cluster-m3
+    environment:
+      <<: *node-env
+      DB_DATABASE: hilos-demo-cluster-m3
+      CLUSTER_NODE_ID: m3
+      CLUSTER_NODE_ROLE: master
+      CLUSTER_NODE_CAPABILITIES: ""
+      CLUSTER_PEER_ADVERTISE: "172.31.0.13:8095"
+      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.14:8095,172.31.0.15:8095"
+      WORKER_MIN_MONOPOLISTIC: "0"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/m3:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.13
+
+  cluster-s1:
+    <<: *node-base
+    container_name: cluster-s1
+    environment:
+      <<: *node-env
+      DB_DATABASE: hilos-demo-cluster-s1
+      CLUSTER_NODE_ID: s1
+      CLUSTER_NODE_ROLE: slave
+      CLUSTER_NODE_CAPABILITIES: "worker"
+      CLUSTER_PEER_ADVERTISE: "172.31.0.14:8095"
+      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.15:8095"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/s1:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.14
+
+  cluster-s2:
+    <<: *node-base
+    container_name: cluster-s2
+    environment:
+      <<: *node-env
+      DB_DATABASE: hilos-demo-cluster-s2
+      CLUSTER_NODE_ID: s2
+      CLUSTER_NODE_ROLE: slave
+      CLUSTER_NODE_CAPABILITIES: "worker"
+      CLUSTER_PEER_ADVERTISE: "172.31.0.15:8095"
+      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.14:8095"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs/s2:/var/log/hilos
+    networks:
+      cluster-net:
+        ipv4_address: 172.31.0.15
+
+  # Long-lived CLI container the harness `docker exec`s for cluster:test:inspect,
+  # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
+  # cluster bring-up implicitly).
+  cluster-cli:
+    build: .
+    container_name: cluster-cli
+    working_dir: /app
+    command: ["sleep", "infinity"]
+    environment:
+      APP_ENV: test
+      DB_HOST: cluster-mysql
+      DB_PORT: "3306"
+      DB_DATABASE: hilos-demo-cluster-cli
+      DB_USERNAME: hilos
+      DB_PASSWORD: hilos_pass
+      COMMAND_PORT: "8094"
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    depends_on:
+      cluster-mysql:
+        condition: service_healthy
+    profiles:
+      - cli
+    networks:
+      - cluster-net
+
+volumes:
+  mysql-cluster-data:
+    name: hilos-cluster-mysql-data
+
+networks:
+  cluster-net:
+    name: hilos-cluster-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16

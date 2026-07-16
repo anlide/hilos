@@ -43,6 +43,9 @@ use Hilos\Utils\Logger;
  */
 final class PeerLink extends AbstractClient
 {
+    /** @var int Outbound-buffer backpressure cap: a peer that stops draining is dropped, not buffered to OOM */
+    private const int MAX_WRITE_BUFFER_BYTES = 8 * 1024 * 1024;
+
     /** @var PeerServer Owning peer server, driven for membership fan-out */
     private PeerServer $server;
 
@@ -84,6 +87,7 @@ final class PeerLink extends AbstractClient
 
         $this->keepaliveIntervalSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS) / 1000.0;
         $this->linkTimeoutSec = Hilos::$env->int(EnvConstants::CLUSTER_LINK_TIMEOUT_MS) / 1000.0;
+        $this->maxWriteBufferBytes = self::MAX_WRITE_BUFFER_BYTES;
         $this->lastHeardAt = microtime(true);
     }
 

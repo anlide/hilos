@@ -29,6 +29,15 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /** @var string Buffer for outgoing data */
     protected string $writeBuffer = '';
 
+    /**
+     * Backpressure cap on the outbound buffer in bytes; 0 disables it (the default,
+     * so HTTP/WebSocket responses stay unbounded). A subclass that talks to a fixed
+     * peer set (the cluster peer link) sets a cap so a peer that stops draining
+     * (hung, overwhelmed) drops that one link instead of growing the buffer until
+     * the whole daemon hits the PHP memory limit and crash-loops.
+     */
+    protected int $maxWriteBufferBytes = 0;
+
     /** @var bool Flag indicating if client should be closed */
     protected bool $shouldClose = false;
 
@@ -63,7 +72,14 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
-        $data = socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
+        // Suppress the PHP warning a reset/broken peer raises (ECONNRESET, EPIPE,
+        // EAGAIN, ...): otherwise the global errorHandler converts it to a generic
+        // ErrorException that escapes AbstractServer::onTick()'s SocketException
+        // guard and tears the whole daemon down. Suppressed, socket_read returns
+        // false and handleSocketError() raises the proper SocketException the loop
+        // already closes the client on. Surfaced live by the peer mesh (HIL-185),
+        // whose duplicate-link collapse and node kills reset peer links routinely.
+        $data = @socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
 
         // Empty string means connection closed gracefully
         if ($data === '') {
@@ -96,8 +112,23 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
+        // Backpressure: a capped client whose peer has stopped draining is dropped
+        // rather than buffered to the process memory limit. Closing the one bad link
+        // is recoverable (the mesh re-dials); an OOM takes the whole daemon down.
+        if ($this->maxWriteBufferBytes > 0 && strlen($this->writeBuffer) > $this->maxWriteBufferBytes) {
+            Logger::warning(
+                "Outbound buffer exceeded {$this->maxWriteBufferBytes} bytes; dropping the link to shed backpressure",
+            );
+            $this->writeBuffer = '';
+            $this->markShouldClose();
+            return;
+        }
+
         $bufferLength = strlen($this->writeBuffer);
-        $written = socket_write($this->socket, $this->writeBuffer);
+        // Suppress the reset/broken-pipe warning for the same reason as read():
+        // let handleSocketError() raise the catchable SocketException instead of a
+        // fatal ErrorException.
+        $written = @socket_write($this->socket, $this->writeBuffer);
 
         if ($written === false) {
             $this->handleSocketError(SocketOperation::WRITE);
