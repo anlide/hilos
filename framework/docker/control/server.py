@@ -29,6 +29,7 @@ PORT = 8099
 REPO = os.environ.get("HILOS_REPO", "/home/cloud/hilos")
 COMPOSE = f"{REPO}/framework/docker/docker-compose.yml"
 PREVIEW = f"{REPO}/framework/docker/preview"
+CLUSTER = f"{REPO}/demo/cluster/docker/cluster"
 OLLAMA = "hilos-ollama-local"
 
 DEMOS = {"chat", "todo", "poll"}
@@ -54,6 +55,12 @@ def compose(*args, timeout=120):
 
 def preview(*args, timeout=600):
     return run(["bash", PREVIEW, *args], timeout=timeout)
+
+
+def cluster(*args, timeout=600):
+    # The backend-only multi-node cluster demo is driven by its own controller
+    # (build + N nodes + mysql), not a single compose stack like the web demos.
+    return run(["bash", CLUSTER, *args], timeout=timeout)
 
 
 def demo_compose(key, *op, timeout=600):
@@ -129,6 +136,12 @@ def resolve(parts):
         if op == "stop":
             return lambda: demo_compose(key, "stop")
         return lambda: demo_compose(key, "restart")
+    if parts == ["api", "cluster", "up"]:
+        return lambda: cluster("up")
+    if parts == ["api", "cluster", "down"]:
+        return lambda: cluster("down", timeout=300)
+    if parts == ["api", "cluster", "restart"]:
+        return lambda: cluster("restart")
     if parts == ["api", "ollama", "start"]:
         return lambda: compose("--profile", "ollama", "up", "-d")
     if parts == ["api", "ollama", "stop"]:
@@ -156,8 +169,16 @@ class Handler(BaseHTTPRequestHandler):
         return [p for p in self.path.split("?")[0].split("/") if p]
 
     def do_GET(self):
-        if self._parts() == ["api", "status"]:
+        parts = self._parts()
+        if parts == ["api", "status"]:
             self._send(200, collect_status())
+        elif parts == ["api", "cluster", "status"]:
+            _, out, err = cluster("status-json", timeout=60)
+            try:
+                payload = json.loads(out) if out.strip() else {"nodes": []}
+            except ValueError:
+                payload = {"nodes": [], "error": clean(err) or "status unavailable"}
+            self._send(200, payload)
         else:
             self._send(404, {"error": "not found"})
 

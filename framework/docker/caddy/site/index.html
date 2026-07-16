@@ -72,6 +72,23 @@
       </div></div></div>
     </div>
 
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <h2 class="h5 mb-0">Cluster</h2>
+            <p class="card-text text-secondary small mb-0">Backend-only 5-node daemon cluster (3 masters + 2 slaves) — no web page; the node containers appear under <code>hilos-cluster</code> in System above.</p>
+          </div>
+          <div class="btn-group btn-group-sm flex-shrink-0 ms-2">
+            <button class="btn btn-outline-success" data-act="/api/cluster/up">Start</button>
+            <button class="btn btn-outline-secondary" data-act="/api/cluster/restart" data-confirm="Recreate the whole cluster?">Restart</button>
+            <button class="btn btn-outline-danger" data-act="/api/cluster/down" data-confirm="Take the cluster down?">Stop</button>
+          </div>
+        </div>
+        <div id="cluster-body"><p class="text-secondary small mb-0">Loading cluster view…</p></div>
+      </div>
+    </div>
+
     <div class="alert alert-secondary small" role="alert">
       Seeing a certificate warning? Install the preview CA root once per device:
       <a href="http://ca.hilos/nova-lt.crt" class="alert-link">download the CA root</a> and trust it.
@@ -189,6 +206,44 @@
       return out;
     }
 
+    // The cluster demo has no single web page: its meaningful "status" is the
+    // cluster-wide consensus/placement view aggregated from every node, so it gets
+    // its own compact table rather than an Open/pma/status link.
+    function renderCluster(d) {
+      const ns = (d && d.nodes) || [];
+      if (!ns.some(n => n.reachable && n.enabled)) {
+        return '<p class="text-secondary small mb-0">Cluster is down — press Start to bring up the 5-node stand.</p>';
+      }
+      let out = '<table class="table table-sm mb-0 align-middle"><thead><tr>'
+        + '<th>node</th><th>role</th><th>phase</th><th>leader</th>'
+        + '<th class="text-center">quorum</th><th>placements</th></tr></thead><tbody>';
+      for (const n of ns) {
+        if (!n.reachable) {
+          out += '<tr class="text-secondary"><td>' + esc(n.node) + '</td><td colspan="5">unreachable</td></tr>';
+          continue;
+        }
+        const q = n.quorum === true ? "✓" : n.quorum === false ? "—" : "";
+        const leader = n.leader == null ? "—" : String(n.leader);
+        out += "<tr><td>" + esc(n.node) + "</td><td>" + esc(n.role || "")
+          + "</td><td>" + esc(n.phase || "") + "</td><td>" + esc(leader)
+          + '</td><td class="text-center">' + q + '</td><td class="small">'
+          + esc((n.placements || []).join(", ")) + "</td></tr>";
+      }
+      return out + "</tbody></table>";
+    }
+
+    async function loadCluster() {
+      const body = document.getElementById("cluster-body");
+      if (!body) return;
+      try {
+        const r = await fetch("/api/cluster/status", { cache: "no-store" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        body.innerHTML = renderCluster(await r.json());
+      } catch (e) {
+        body.innerHTML = '<p class="text-danger small mb-0">Cluster status unreachable (' + esc(e.message) + ").</p>";
+      }
+    }
+
     // Run a whitelisted control action, then refresh. One at a time.
     async function act(path, confirmMsg) {
       if (busy) return;
@@ -208,7 +263,7 @@
         note.textContent = "✗ " + path + " — " + e.message;
       } finally {
         busy = false;
-        setTimeout(load, 800);
+        setTimeout(() => { load(); loadCluster(); }, 800);
       }
     }
 
@@ -218,9 +273,10 @@
       ev.preventDefault();
       act(b.dataset.act, b.dataset.confirm);
     });
-    document.getElementById("refresh").addEventListener("click", load);
+    document.getElementById("refresh").addEventListener("click", () => { load(); loadCluster(); });
     load();
-    setInterval(load, 5000);
+    loadCluster();
+    setInterval(() => { load(); loadCluster(); }, 5000);
   </script>
 </body>
 </html>

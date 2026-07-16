@@ -109,6 +109,55 @@ print("  %-4s phase=%-26s leader=%-4s term=%s quorum=%s placements=%s" % (
   done
 }
 
+# Emits the per-node cluster view as JSON for the preview control panel:
+# {"nodes":[{node,reachable,enabled,role,phase,leader,term,quorum,placements}]}.
+# Empty {"nodes":[]} when the stand is down (one cheap check, no per-node execs).
+# A single Python process does the whole job (one json.dumps) so the output is
+# always valid JSON, not a fragile shell string-join.
+cmd_status_json() {
+  if ! docker inspect -f '{{.State.Running}}' cluster-cli >/dev/null 2>&1; then
+    printf '{"nodes":[]}\n'
+    return
+  fi
+
+  local map="" n
+  for n in "${NODES[@]}"; do map+="$n=${NODE_IP[$n]} "; done
+
+  CLUSTER_NODE_MAP="$map" python3 <<'PY'
+import json, os, subprocess
+
+nodes = [kv.split("=", 1) for kv in os.environ["CLUSTER_NODE_MAP"].split() if kv]
+out = []
+for node, ip in nodes:
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "-e", "HILOS_DAEMON_HOST=" + ip, "cluster-cli",
+             "php", "backend/Bootstrap/cli.php", "cluster:test:inspect"],
+            capture_output=True, text=True, timeout=15)
+        i = r.stdout.find("{")
+        d = json.loads(r.stdout[i:]) if i >= 0 else None
+    except Exception:
+        d = None
+    if d is None:
+        out.append({"node": node, "reachable": False})
+        continue
+    if not d.get("enabled"):
+        out.append({"node": node, "reachable": True, "enabled": False})
+        continue
+    out.append({
+        "node": node, "reachable": True, "enabled": True,
+        "role": next((x["role"] for x in d.get("nodes", []) if x["nodeId"] == node), None),
+        "phase": d.get("lifecycleState"), "leader": d.get("leaderId"),
+        "term": d.get("term"), "quorum": d.get("hasQuorum"),
+        "placements": ["%s@%s:%s" % (p["agentId"], p["nodeId"], p["state"])
+                       for p in d.get("placements", [])],
+    })
+print(json.dumps({"nodes": out}))
+PY
+}
+
+cmd_restart() { cmd_down; cmd_up; }
+
 cmd_kill() { local n="${1:-}"; valid_node "$n"; docker kill "cluster-$n" >/dev/null && echo "cluster: killed cluster-$n"; }
 # Force-recreate on restart so a killed node comes back as a pristine container with
 # no processes left over from before (a daemon that crashed internally can orphan
@@ -129,7 +178,9 @@ cmd_scenarios() {
 case "${1:-}" in
   up)        shift; cmd_up "$@" ;;
   down)      shift; cmd_down "$@" ;;
+  restart)   shift; cmd_restart ;;
   status)    shift; cmd_status ;;
+  status-json) shift; cmd_status_json ;;
   inspect)   shift; cmd_inspect "$@" ;;
   inspect-local) shift; cmd_inspect_local "$@" ;;
   kill)      shift; cmd_kill "$@" ;;
@@ -138,5 +189,5 @@ case "${1:-}" in
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|status|inspect|kill|start|partition|heal|logs|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|kill|start|partition|heal|logs|scenarios} [args]" ;;
 esac
