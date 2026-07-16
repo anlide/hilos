@@ -21,6 +21,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
@@ -192,6 +193,81 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     public function getAgentManagerDaemon(): AgentManagerDaemon
     {
         return $this->agentManagerDaemon;
+    }
+
+    /**
+     * Composes the daemon from its declarative hooks before the main loop runs.
+     *
+     * Called once by {@see DaemonApplication} after the facade is initialized: it
+     * registers the servers from {@see createServers()}, builds the HTTP router from
+     * {@see httpRoutes()}, and registers each active module from {@see modules()}. The
+     * order is fixed — core servers, then router, then opt-in modules — so a module can
+     * rely on the core servers already being present. A hook or module failure propagates
+     * to the entrypoint, which logs it and exits (the daemon refuses to start).
+     *
+     * @param DaemonContext $context Resolved path context passed to every hook
+     */
+    public function boot(DaemonContext $context): void
+    {
+        foreach ($this->createServers($context) as $server) {
+            $this->registerServer($server);
+        }
+
+        $router = new HttpRouter();
+        foreach ($this->httpRoutes($context) as [$method, $path, $handler]) {
+            $router->addRoute($method, $path, $handler);
+        }
+        $this->registerHttpRouter($router);
+
+        foreach ($this->modules($context) as $module) {
+            if ($module->isActive()) {
+                $module->register($this, $context);
+            }
+        }
+    }
+
+    /**
+     * The core servers this daemon binds (http-status, worker, websocket, command, ...).
+     *
+     * Built from env and the resolved {@see DaemonContext}. A manager stashes any server it
+     * needs later (e.g. the worker server for the status route) into a typed field while
+     * building. Default is empty; a daemon overrides to declare its server set.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<ServerInterface> Servers to register, in bind order
+     */
+    protected function createServers(DaemonContext $context): iterable
+    {
+        return [];
+    }
+
+    /**
+     * The HTTP routes this daemon serves, as [method, path, handler] triples.
+     *
+     * Handlers stay callable, so an invokable handler object is allowed. Default is empty;
+     * a daemon overrides to declare its routes.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
+     */
+    protected function httpRoutes(DaemonContext $context): iterable
+    {
+        return [];
+    }
+
+    /**
+     * The opt-in subsystem modules this daemon enables.
+     *
+     * Each module registers its own server(s) and reads its own env when active, so adding
+     * a subsystem is a new entry here rather than an edit to the composition. Default is
+     * empty; a daemon overrides to list its modules.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<DaemonModule> Modules to consider, checked via isActive() before register()
+     */
+    protected function modules(DaemonContext $context): iterable
+    {
+        return [];
     }
 
     /**

@@ -7,14 +7,22 @@ namespace Demo\Cluster\Core\Daemon;
 use Demo\Cluster\Constants\AgentType;
 use Demo\Cluster\Constants\ClusterCapability;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
+use Demo\Cluster\Core\Socket\Server\ClusterWorkerServer;
 use Demo\Cluster\Hilos;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\Module\DaemonModule;
+use Hilos\Core\Daemon\Module\PeerModule;
+use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Socket\Server\CommandServer;
+use Hilos\Socket\Server\HttpServer;
+use Hilos\Socket\Server\ServerInterface;
 use Hilos\Utils\Logger;
 
 /**
@@ -37,6 +45,9 @@ final class ClusterDaemonManager extends DaemonManager
     /** @var ?string Placement view has settled after this microtime; null while not leader or still settling */
     private ?float $placeSettleDeadline = null;
 
+    /** @var ClusterWorkerServer Worker server, stashed while composing so the status route can read its counts */
+    private ClusterWorkerServer $workerServer;
+
     /**
      * Create signal router instance.
      *
@@ -55,6 +66,65 @@ final class ClusterDaemonManager extends DaemonManager
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
         return new ClusterAgentManagerDaemon();
+    }
+
+    /**
+     * The cluster node server set: HTTP status, worker, and CLI command servers.
+     *
+     * Headless — no WebSocket, no frontend. The peer transport that forms the mesh is
+     * added by {@see PeerModule} when cluster mode is enabled.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<ServerInterface> Servers to register, in bind order
+     * @throws EnvException When a server host/port env value cannot be read
+     */
+    protected function createServers(DaemonContext $context): iterable
+    {
+        $this->workerServer = new ClusterWorkerServer(
+            Hilos::$env[EnvConstants::WORKER_COMM_HOST],
+            Hilos::$env->int(EnvConstants::WORKER_COMM_PORT),
+            $context->workerScript(),
+            $context->bootstrapDir,
+            $this->getAgentManagerDaemon(),
+        );
+
+        return [
+            new HttpServer(
+                Hilos::$env[EnvConstants::HTTP_STATUS_HOST],
+                Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT),
+            ),
+            $this->workerServer,
+            new CommandServer(
+                Hilos::$env[EnvConstants::COMMAND_HOST],
+                Hilos::$env->int(EnvConstants::COMMAND_PORT),
+            ),
+        ];
+    }
+
+    /**
+     * The cluster node HTTP routes: the shared readiness/health status endpoint.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<array{0: string, 1: string, 2: callable}> Route triples [method, path, handler]
+     */
+    protected function httpRoutes(DaemonContext $context): iterable
+    {
+        return [
+            ['GET', '/status', new StatusHandler($this->workerServer)],
+        ];
+    }
+
+    /**
+     * The cluster node modules: the peer transport that forms the mesh.
+     *
+     * @param DaemonContext $context Resolved path context
+     * @return iterable<DaemonModule> Modules to consider, checked via isActive() before register()
+     */
+    protected function modules(DaemonContext $context): iterable
+    {
+        return [
+            new PeerModule(),
+        ];
     }
 
     /**
