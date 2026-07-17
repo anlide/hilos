@@ -22,7 +22,6 @@ npm-debug.log*
 
 # Frontend build output
 /frontend/dist/
-/frontend/dist-prerender/
 /frontend/out-tsc/
 
 # Angular CLI cache

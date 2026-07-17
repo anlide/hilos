@@ -59,7 +59,8 @@
               "node_modules/bootstrap-icons/font/bootstrap-icons.css",
               "src/hilos-styles.scss"
             ],
-            "preserveSymlinks": true
+            "preserveSymlinks": true,
+            "allowedCommonJsDependencies": ["@vue/reactivity"]
           },
           "configurations": {
             "production": {
@@ -75,24 +76,16 @@
                   "maximumError": "8kB"
                 }
               ],
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "outputMode": "static",
+              "server": "src/prerender/main.server.ts",
+              "tsConfig": "tsconfig.server.json"
             },
             "development": {
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true,
               "tsConfig": "tsconfig.dev.json"
-            },
-            "prerender": {
-              "server": "src/prerender/main.server.ts",
-              "ssr": {
-                "entry": "src/prerender/server.ts"
-              },
-              "tsConfig": "tsconfig.server.json",
-              "outputPath": {
-                "base": "dist-prerender",
-                "browser": "browser"
-              }
             }
           },
           "defaultConfiguration": "production"

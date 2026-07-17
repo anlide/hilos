@@ -76,15 +76,52 @@ The build is **hybrid**. The authenticated, real-time area is a pure SPA shell
 (skeletons fill it as data streams — there is nothing for SSG to prerender behind
 auth). The public, SEO-relevant surface — the framework's footer pages (About,
 Terms, Privacy, License; `HILOS_FOOTER_LINKS`) — is **statically prerendered**:
-each is a framework-declared static page whose content needs no socket, so a
-post-build step renders it to a static `<route>.html` through the view
-framework's own server renderer (Vue and React via a Vite SSR build of a
-prerender entry; Angular via `@angular/platform-server`). The same step emits
-`robots.txt` and a `sitemap.xml` of those routes.
+each is a framework-declared static page whose content needs no socket, so it is
+prerendered to static HTML through the view framework's own server renderer. Vue
+and React run a Vite SSR build of a prerender entry that writes a flat
+`<route>.html` (and `robots.txt` + `sitemap.xml`). Angular uses its **native
+static output** (`@angular/build` `outputMode: static` + `@angular/ssr` route
+render modes): the client app routes through the framework's `HilosRouter` and
+never loads `@angular/router`, so a server-only bootstrap (`src/prerender/`)
+declares the public pages as an `@angular/router` config and marks them
+`RenderMode.Prerender`; the builder emits one `<route>/index.html` per page and
+`index.csr.html` as the client-render shell (there is no root `index.html`
+because `/` — the authed SPA — is not prerendered). `robots.txt` / `sitemap.xml`
+are static assets in the Angular demo's `public/`.
 
-nginx then serves `<route>.html` for a public path and falls back to the SPA
-shell (`index.html`) only for the app's own deep links, so the authed area is
-never forced through the prerender path
-([core-and-connection.md](core-and-connection.md)). SSG is low priority but part
-of v1; a project adds a public route by mapping a content component to its page
-key — the prerender step picks it up from `HILOS_FOOTER_LINKS`.
+nginx then serves the prerendered file for a public path
+(`try_files $uri $uri.html $uri/index.html`) and falls back to the SPA shell
+(`index.html` for the Vite demos, `index.csr.html` for the Angular static build)
+only for the app's own deep links, so the authed area is never forced through the
+prerender path ([core-and-connection.md](core-and-connection.md)). SSG is low
+priority but part of v1; a project adds a public route by mapping a content
+component to its page key — the prerender step picks it up from
+`HILOS_FOOTER_LINKS`.
+
+## Building a demo against the vendored SDK
+
+A demo vendors `@hilos/core` and its view layer via `file:` dependencies that npm
+symlinks into `framework/frontend/*`, whose `dist/` is a gitignored build
+artifact — **absent on a fresh clone**. A production build resolves the SDK to
+that `dist` (to build against the same artifact a real vendored consumer ships —
+"test what you ship"), so it fails until the SDK is built once. Each demo has a
+`prebuild` npm hook — `npm --prefix ../../../framework/frontend install && … run
+build` — so `npm run build` builds the SDK first automatically, the same
+lifecycle idiom the SDK already uses internally
+(`@hilos/angular`'s `prebuild` builds `@hilos/core`). Dev needs no hook: every
+demo resolves the SDK to `src` in dev (the Vite demos through the `development`
+export condition, the Angular demo through its `tsconfig.dev.json` paths), so a
+`dist` is never required to `npm run dev`.
+
+This `prebuild` is a **monorepo-dev convenience**, not part of the shipped
+consumer contract: a real project vendors the SDK as a prebuilt Composer tarball
+(`dist` baked in, `framework/frontend` absent), so it neither has nor needs this
+hook — see [sdk-packaging.md](sdk-packaging.md).
+
+The agnostic `@hilos/core` uses `@vue/reactivity` (the standalone reactive
+primitives, **not** Vue) as its signal engine, so it is a runtime dependency of
+the built SDK that every consumer — including the Angular demo — pulls in. `core`
+builds with plain `tsc` (no bundler; it stays npm-publishable), so resolving that
+dependency is the consumer's concern: the Angular demo lists `@vue/reactivity`
+under `allowedCommonJsDependencies` to accept its CommonJS entry without an
+optimization-bailout warning. The Vite demos handle it through their own bundler.

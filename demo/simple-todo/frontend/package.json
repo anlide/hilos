@@ -6,6 +6,7 @@
   "description": "Simple-todo demo — an end project that consumes the Hilos frontend SDK (@hilos/react); doubles as the React conformance demo.",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm --prefix ../../../framework/frontend install && npm --prefix ../../../framework/frontend run build",
     "build": "vite build && vite build --ssr scripts/prerenderEntry.tsx --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
     "preview": "vite preview",
     "check": "tsc --noEmit -p tsconfig.json"

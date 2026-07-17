@@ -66,15 +66,17 @@ http {
         }
 
         location = / {
-            try_files /index.html =404;
+            try_files /index.csr.html =404;
         }
 
-        # Hybrid SSG: a prerendered public page (Angular emits <route>/index.html)
-        # is served as static HTML; every other path cold-loads the SPA shell,
-        # which then takes over client-side. The authed area is never prerendered
+        # Hybrid SSG: a prerendered public page (Angular's static output mode emits
+        # <route>/index.html) is served as static HTML; every other path cold-loads
+        # the SPA shell (index.csr.html — the client-render fallback the static
+        # build emits since / itself is not prerendered), which then takes over
+        # client-side. The authed area is never prerendered
         # (docs/agents/frontend/build-and-docker.md).
         location / {
-            try_files $uri $uri.html $uri/index.html /index.html;
+            try_files $uri $uri.html $uri/index.html /index.csr.html;
         }
 
         # Security headers
