@@ -180,3 +180,30 @@ test('opening the edit dialog applies the pending change first', async ({
   await page.getByTestId('hilos-settings-edit-save').click()
   await tabB.close()
 })
+
+test('deletes an orphan setting through the confirm modal', async ({ page }) => {
+  // An uncataloged (orphan) row seeded before the app came up by the composer
+  // `test:e2e-seed-orphan` step (cli `test:orphan:create e2e_orphan_delete ...`);
+  // keep this key in sync with that step. The full e2e run always db-resets, so
+  // this test owns the row and needs no cleanup.
+  const orphanKey = 'e2e_orphan_delete'
+
+  await openSettings(page)
+  await isolate(page, orphanKey)
+
+  // The delete affordance is orphan-only: a catalog key never exposes it, this
+  // uncataloged row does.
+  const deleteButton = page.getByTestId(`hilos-settings-delete-${orphanKey}`)
+  await expect(deleteButton).toBeVisible()
+
+  // Confirm-modal delete removes the DB row. The initiating tab applies its own
+  // change at once (no pending Apply gate); a removed row collapses in place to a
+  // "Removed" placeholder rather than pulling the layout up, and its delete
+  // affordance is gone with the row slot.
+  await deleteButton.click()
+  await page.getByTestId('hilos-settings-delete-confirm').click()
+  const row = page.getByTestId(`hilos-table-row-${orphanKey}`)
+  await expect(row.getByTestId('hilos-table-placeholder')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+  await expect(page.getByTestId(`hilos-settings-delete-${orphanKey}`)).toHaveCount(0)
+})

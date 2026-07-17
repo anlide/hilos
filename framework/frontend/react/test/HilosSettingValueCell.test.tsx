@@ -81,4 +81,46 @@ describe('HilosSettingValueCell', () => {
     )
     expect(custom.container.textContent).toContain('custom')
   })
+
+  it('renders a disabled, unchecked box for a disabled boolean', () => {
+    const { container } = render(
+      <HilosSettingValueCell
+        value="0"
+        type="boolean"
+        valueSource="override"
+        defaultReferenceKey={null}
+      />,
+    )
+    const box = container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement
+    expect(box).not.toBeNull()
+    expect(box.checked).toBe(false)
+    expect(box.disabled).toBe(true)
+    expect(box.getAttribute('aria-label')).toBe('Disabled')
+  })
+
+  it('italicizes a float value', () => {
+    const { container } = render(
+      <HilosSettingValueCell
+        value="1.5"
+        type="float"
+        valueSource="default"
+        defaultReferenceKey={null}
+      />,
+    )
+    expect(container.querySelector('.fst-italic')?.textContent).toBe('1.5')
+  })
+
+  it('renders an em dash for a null value', () => {
+    const { container } = render(
+      <HilosSettingValueCell
+        value={null}
+        type="integer"
+        valueSource="override"
+        defaultReferenceKey={null}
+      />,
+    )
+    expect(container.querySelector('.fst-italic')?.textContent).toBe('—')
+  })
 })
