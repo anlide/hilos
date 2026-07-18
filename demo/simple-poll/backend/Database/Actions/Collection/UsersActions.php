@@ -51,6 +51,14 @@ final class UsersActions extends DbActions
         $user->lastActivity = TimeHelper::getSqlDateTime();
         $user->sync();
 
+        // A test db-reset can truncate the users table under the still-running
+        // monopolistic worker, so the auto-increment id this insert just minted
+        // may still be held by a stale in-memory object from the previous DB
+        // generation. The freshly inserted row is authoritative for this worker,
+        // so evict any stale remnant at that id before adding: letting the
+        // framework duplicate-id guard fire would crash the handshake worker and
+        // drop the connecting client's live presence.
+        unset($this->objectCollection[$user->getIdString()]);
         $this->addObjectToCollection($user);
 
         return $this->createDbItemFromObject($user);
