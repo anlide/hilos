@@ -13,6 +13,7 @@ use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -24,9 +25,10 @@ use Hilos\Runtime\View\Item\RtItem;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the ACCESS browser guard: a guest or a non-admin is denied a
- * guarded page with a 403; an admin passes. The current user behind the accept
- * key is resolved through the project hook (resolveCurrentUserId).
+ * Unit tests for the ACCESS browser guard: an anonymous session is denied a
+ * guarded page with a 401, a non-admin authenticated user with a 403, and an
+ * admin passes. The current user behind the accept key is resolved through the
+ * project hook (resolveCurrentUserId).
  */
 final class BrowserContextAccessGuardTest extends TestCase
 {
@@ -44,7 +46,7 @@ final class BrowserContextAccessGuardTest extends TestCase
         $this->seed();
         $context = new AccessGuardTestBrowserContext(null);
 
-        $this->expectException(PageForbiddenException::class);
+        $this->expectException(PageUnauthorizedException::class);
         $context->subscribeSnapshot(
             AccessGuardTestBrowserContext::PAGE,
             'ak-1',

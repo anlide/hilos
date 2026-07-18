@@ -30,6 +30,7 @@ use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
@@ -1890,19 +1891,22 @@ abstract class BrowserContext
     /**
      * Enforces an access browser guard: the connection's current user must exist
      * in the guard source and hold a truthy value in the named flag field (e.g.
-     * `admin`). A guest (no resolvable user) or a user missing the flag is denied
-     * with a 403, the same forbidden code an access-denied DB_EXISTS guard uses.
+     * `admin`). A guest (no resolvable authenticated user) is denied with a 401 —
+     * the session is anonymous and must authenticate — while an authenticated user
+     * missing the flag is denied with a 403, the same forbidden code an
+     * access-denied DB_EXISTS guard uses.
      *
      * @param array<string, mixed> $guard Browser guard config
      * @param string $acceptKey Subscriber accept key
-     * @throws PageForbiddenException When the subscriber is a guest or lacks the flag
+     * @throws PageUnauthorizedException When the subscriber is an anonymous session
+     * @throws PageForbiddenException When the authenticated user lacks the flag
      * @throws PageInternalErrorException When the guard config is malformed
      */
     private function assertAccessGuard(array $guard, string $acceptKey): void
     {
         $userId = $this->resolveCurrentUserId($acceptKey);
         if ($userId === null) {
-            throw new PageForbiddenException('Access denied for guests');
+            throw new PageUnauthorizedException('Authentication required');
         }
 
         $source = $guard[BrowserGuardKey::SOURCE] ?? [];
