@@ -60,6 +60,16 @@ abstract class Hilos
     /** @var ?class-string<LlmProfileOverrideSource> Optional runtime LLM profile override source (e.g. admin settings). */
     protected const ?string LLM_PROFILE_OVERRIDE = null;
 
+    /**
+     * Optional backup catalog provider class (schedule and reference registry).
+     *
+     * A project opts into the backup subsystem by pointing this at its own
+     * catalog; the framework provides no default. Null leaves backup unconfigured.
+     *
+     * @var ?class-string<CatalogProviderInterface>
+     */
+    protected const ?string BACKUP_CATALOG = null;
+
     /** Page classes keyed by page name. */
     public const array PAGES = [];
 

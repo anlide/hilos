@@ -24,4 +24,7 @@ final class HilosAgentType
 
     /** @var string Hilos logs overview agent (rotation metrics under daemon log archive) */
     public const string HILOS_LOGS = 'hilos_logs';
+
+    /** @var string Hilos backup agent (monopoly owner of the backup index and storage) */
+    public const string HILOS_BACKUP = 'hilos_backup';
 }

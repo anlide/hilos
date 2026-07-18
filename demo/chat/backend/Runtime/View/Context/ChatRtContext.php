@@ -32,6 +32,9 @@ use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
+use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -90,6 +93,9 @@ final class ChatRtContext extends RtContext
         $this->_stateItems[self::chatContext] = StateChatContext::create();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
+        // Framework-owned backup index; the browser view/representation lands in HIL-278.
+        $this->_stateCollections[StateBackupHistory::RT_COLLECTION] = StateBackupHistories::init();
+        $this->_stateItems[StateBackupRuntime::RT_ITEM] = StateBackupRuntime::create();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];

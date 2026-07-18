@@ -155,6 +155,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
+     * Log a warning message under this agent id.
+     *
+     * @param string $message Warning message to log
+     */
+    protected function logAgentWarning(string $message): void
+    {
+        Logger::logAgentWarning($this->getId(), $message);
+    }
+
+    /**
      * Log a debug message under this agent id when debug logging is enabled.
      *
      * @param string $message Debug message to log

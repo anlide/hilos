@@ -22,6 +22,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
+use Demo\Chat\Backup\BackupCatalog;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Data\BotStatusBrowserData;
@@ -126,6 +127,8 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
@@ -169,6 +172,8 @@ final class Hilos extends \Hilos\Hilos
     protected const string LLM_PROFILE_CATALOG = ChatLlmProfileCatalog::class;
 
     protected const ?string LLM_PROFILE_OVERRIDE = ChatLlmProfileOverrideSource::class;
+
+    protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
@@ -289,6 +294,10 @@ final class Hilos extends \Hilos\Hilos
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
+        BackupAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BackupAgent::class,
+            AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
         ],
     ];
 

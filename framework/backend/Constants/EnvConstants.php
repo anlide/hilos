@@ -237,6 +237,20 @@ enum EnvConstants
      */
     case HILOS_SESSION_COOKIE_MAX_AGE;
 
+    // ── Backup ───────────────────────────────────────────────────────────────
+
+    /**
+     * Root directory of the backup storage tree. Backups live under
+     * `<BACKUP_DIR>/<scope>/`. Empty disables the storage scan.
+     */
+    case BACKUP_DIR;
+
+    /**
+     * Whether the backup subsystem is active. Default false: a project opts in
+     * by setting it true and registering the backup agent.
+     */
+    case BACKUP_ENABLED;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**

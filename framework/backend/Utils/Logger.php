@@ -297,6 +297,17 @@ class Logger
     }
 
     /**
+     * Log agent warning message
+     *
+     * @param string $agentId Agent ID
+     * @param string $message Warning message
+     */
+    public static function logAgentWarning(string $agentId, string $message): void
+    {
+        self::logAgent($agentId, self::LEVEL_WARNING, $message);
+    }
+
+    /**
      * Log agent debug message
      *
      * Only logs if debug logging is enabled via setDebugEnabled(true).
