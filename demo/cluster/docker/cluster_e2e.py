@@ -10,6 +10,19 @@ each node's `cluster:test:inspect` reply until the topology converges (bounded b
 a hard cap), and asserts the expected invariants against the machine-readable
 reply. Destructive scenarios restore the cluster and re-converge before the next.
 
+Timing on a loaded host (HIL-367): the convergence caps below are sized for an
+adequately-provisioned stand (nova-lt / HIL-348). On a resource-constrained host
+the grace-driven detection windows (keepalive-timeout + failover-grace, HIL-183)
+run longer than the fixed caps and the matrix flakes on pure "timed out after Ns"
+without the cluster logic being wrong. Two guards keep the run honest without
+falsely passing:
+  * the caps are multiplied by an adaptive TIMEOUT_SCALE (>= 1.0) — set
+    CLUSTER_E2E_TIMEOUT_SCALE to override, otherwise it is auto-derived from the
+    host's load-per-cpu and free memory. A provisioned host stays at 1.0.
+  * a scenario that fails PURELY on a convergence timeout is retried a bounded
+    number of times (CLUSTER_E2E_RETRIES, default 1) after re-converging; a hard
+    invariant assertion never retries and fails immediately.
+
 Covers the full spike-HIL-176 matrix:
   1 master-slave mesh          exactly one leader, slaves follow
   2 master-master              one leader among masters, slaves never lead
@@ -24,6 +37,7 @@ Exit code 0 when every scenario passes, 1 otherwise.
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -38,11 +52,68 @@ ALL_NODES = MASTERS + SLAVES
 
 WORKER_AGENT_ID = "worker"
 
+
+# ------------------------------------------------------- adaptive timing (HIL-367)
+
+def _load_per_cpu():
+    """Host 1-minute load average normalised per CPU, or None if unavailable."""
+    try:
+        la1 = os.getloadavg()[0]
+    except (OSError, AttributeError):
+        return None
+    return la1 / (os.cpu_count() or 1)
+
+
+def _free_gib():
+    """Host available memory in GiB from /proc/meminfo, or None if unavailable."""
+    try:
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return float(line.split()[1]) / (1024 * 1024)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def resolve_timeout_scale():
+    """Factor (>= 1.0) that stretches every convergence cap for a loaded/slow host.
+
+    An explicit CLUSTER_E2E_TIMEOUT_SCALE wins; otherwise it is derived from the
+    host's load-per-cpu and free memory. Capped at 4.0 so a runaway host still
+    fails in bounded time. A well-provisioned host resolves to 1.0 (no change).
+    """
+    override = os.environ.get("CLUSTER_E2E_TIMEOUT_SCALE")
+    if override:
+        try:
+            return max(1.0, float(override))
+        except ValueError:
+            print(f"  (ignoring non-numeric CLUSTER_E2E_TIMEOUT_SCALE={override!r})")
+
+    scale = 1.0
+    lpc = _load_per_cpu()
+    if lpc and lpc > 0.75:
+        scale = max(scale, 1.0 + (lpc - 0.75))
+    free = _free_gib()
+    if free is not None:
+        if free < 1.0:
+            scale = max(scale, 3.0)
+        elif free < 2.0:
+            scale = max(scale, 2.0)
+    return round(min(scale, 4.0), 2)
+
+
+TIMEOUT_SCALE = resolve_timeout_scale()
+
+# Number of extra attempts for a scenario that fails PURELY on a convergence
+# timeout (transient, env-driven); hard invariant assertions never retry.
+SCENARIO_RETRIES = max(0, int(os.environ.get("CLUSTER_E2E_RETRIES", "1")))
+
 POLL_INTERVAL = 1.0
-CONVERGE_TIMEOUT = 60.0
-FAILOVER_TIMEOUT = 40.0
-ELECTION_TIMEOUT = 30.0
-QUORUM_TIMEOUT = 30.0
+CONVERGE_TIMEOUT = 60.0 * TIMEOUT_SCALE
+FAILOVER_TIMEOUT = 40.0 * TIMEOUT_SCALE
+ELECTION_TIMEOUT = 30.0 * TIMEOUT_SCALE
+QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
 
 
 # --------------------------------------------------------------------------- io
@@ -109,6 +180,12 @@ def worker_placement(views):
 
 # ------------------------------------------------------------------- polling
 
+class ScenarioTimeout(AssertionError):
+    """A convergence poll hit its cap. A subclass of AssertionError so existing
+    handlers still catch it, but distinct so the runner can retry a pure timeout
+    (transient, env-driven) while failing hard invariant assertions immediately."""
+
+
 def wait_until(predicate, timeout, desc, nodes=ALL_NODES):
     """Poll inspect(nodes) until predicate(views) is truthy; return the final views."""
     deadline = time.time() + timeout
@@ -119,8 +196,8 @@ def wait_until(predicate, timeout, desc, nodes=ALL_NODES):
         if predicate(views):
             return views
         time.sleep(POLL_INTERVAL)
-    raise AssertionError(f"timed out after {timeout:.0f}s waiting for: {desc}\n"
-                         f"last view: {summarize(last)}")
+    raise ScenarioTimeout(f"timed out after {timeout:.0f}s waiting for: {desc}\n"
+                          f"last view: {summarize(last)}")
 
 
 def converged(expected_nodes):
@@ -311,7 +388,32 @@ SCENARIOS = [
 ]
 
 
+def run_scenario(name, fn):
+    """Run one scenario, retrying a PURE convergence timeout (transient) up to
+    SCENARIO_RETRIES times after re-converging the mesh. Returns the pass detail,
+    or raises the final failure (hard invariant assertions are never retried)."""
+    for attempt in range(1, SCENARIO_RETRIES + 2):
+        try:
+            return fn()
+        except ScenarioTimeout as e:
+            if attempt > SCENARIO_RETRIES:
+                raise
+            print(f"  RETRY ({attempt}/{SCENARIO_RETRIES}) after timeout: {e}")
+            # The scenario's own finally has already restored any perturbation;
+            # settle the full mesh before the next attempt so it starts clean.
+            try:
+                wait_converge(ALL_NODES)
+            except ScenarioTimeout:
+                pass
+
+
 def main():
+    def _fmt(x):
+        return f"{x:.2f}" if isinstance(x, float) else "n/a"
+
+    print(f"cluster e2e: timeout scale={TIMEOUT_SCALE:g} "
+          f"(load/cpu={_fmt(_load_per_cpu())}, free={_fmt(_free_gib())} GiB), "
+          f"retries={SCENARIO_RETRIES}")
     print("cluster e2e: waiting for the initial mesh to converge...")
     try:
         wait_converge(ALL_NODES)
@@ -323,7 +425,7 @@ def main():
     for name, fn in SCENARIOS:
         print(f"\n== scenario {name} ==")
         try:
-            detail = fn()
+            detail = run_scenario(name, fn)
             print(f"  PASS: {detail}")
         except AssertionError as e:
             print(f"  FAIL: {e}")

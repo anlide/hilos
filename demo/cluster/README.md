@@ -46,3 +46,20 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 6. hot-join — a returning node is admitted; inspect shows the full roster
 7. quorum-loss — an isolated minority master stops leading; no new leader
 8. split-brain prevention — the majority keeps one leader; the minority steps down
+
+### Timing on a loaded host (HIL-367)
+
+The convergence caps are sized for an adequately-provisioned stand (nova-lt /
+HIL-348). On a resource-constrained host the grace-driven detection windows
+(keepalive-timeout + failover-grace, HIL-183) run longer than the fixed caps, so
+the timing-sensitive scenarios (failover, hot-join, quorum-loss) can flake on a
+pure "timed out after Ns" while the cluster logic is correct. The driver keeps
+the run honest without falsely passing:
+
+- Every cap is multiplied by an adaptive `TIMEOUT_SCALE` (>= 1.0), auto-derived
+  from the host's load-per-cpu and free memory (capped at 4.0). Override it with
+  `CLUSTER_E2E_TIMEOUT_SCALE=<float>`; a provisioned host resolves to 1.0.
+- A scenario that fails *purely* on a convergence timeout is retried a bounded
+  number of times (`CLUSTER_E2E_RETRIES`, default 1) after re-converging the
+  mesh. A hard invariant assertion (wrong leader, bad placement) never retries
+  and fails immediately.
