@@ -247,7 +247,10 @@ def scenario_1_master_slave_mesh():
 
 
 def scenario_2_master_master():
-    views = inspect_all(ALL_NODES)
+    # Converge first (like the other scenarios) so every node view is present: a
+    # transiently-unreachable node under load returns None, and reading its phase
+    # would crash the scenario instead of retrying as a timeout (HIL-367).
+    views = wait_converge(ALL_NODES)
     master_leaders = [m for m in MASTERS if is_leader(views.get(m))]
     assert len(master_leaders) == 1, f"expected one leader among masters, got {master_leaders}"
     for m in MASTERS:
