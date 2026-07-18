@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\BaseDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
@@ -68,12 +69,26 @@ interface AgentDaemonInterface
      * The cluster hard-constraint for placement: the leader refuses to place the agent on
      * a node whose advertised capabilities do not include every tag returned here (see
      * {@see ClusterPlacement::placeAgentOnNode()}). The default is
-     * an empty list — the agent runs anywhere. Soft preferences and choosing among several
-     * fit nodes are node-selection policy (HIL-182), not this binary gate.
+     * an empty list — the agent runs anywhere. This binary tag gate is the boolean half of
+     * placement; the numeric half (hard minimums and soft preferences) is
+     * {@see placementProfile()}.
      *
      * @return list<string> Required capability tags; empty when the agent runs anywhere
      */
     public function requiredCapabilities(): array;
+
+    /**
+     * The agent's numeric resource demand over a node's declared capacities (HIL-182).
+     *
+     * The soft-preference half of resource-aware placement layered on the boolean
+     * {@see requiredCapabilities()} gate: hard capacity minimums a node must meet and soft
+     * preference weights the best-fit policy ranks capable nodes by, so a heavy worker lands
+     * on a strong node. The default is {@see ResourceProfile::none()} — no minimums and no
+     * preferences — so an agent runs on the strongest capable node unless it declares more.
+     *
+     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     */
+    public function placementProfile(): ResourceProfile;
 
     /**
      * Set worker client connection

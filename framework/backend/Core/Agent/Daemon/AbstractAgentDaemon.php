@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\BaseDTO;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
@@ -73,6 +74,20 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     public function requiredCapabilities(): array
     {
         return [];
+    }
+
+    /**
+     * Default implementation - no numeric resource demand.
+     *
+     * Returns the empty profile so an agent declares no hard minimums and no soft
+     * preferences, and best-fit places it on the strongest capable node. An agent with a
+     * real resource shape (a heavy LLM worker) overrides this to steer placement.
+     *
+     * @return ResourceProfile Empty resource profile
+     */
+    public function placementProfile(): ResourceProfile
+    {
+        return ResourceProfile::none();
     }
 
     /**

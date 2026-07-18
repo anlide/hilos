@@ -34,6 +34,17 @@ interface PlacementExecutor
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array;
 
     /**
+     * Returns the agent type's numeric resource demand, so the best-fit policy can rank
+     * candidate nodes and the leader can hard-check capacity minimums before placing.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
+     */
+    public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile;
+
+    /**
      * Launches an agent of the given type on this node and returns its worker id.
      *
      * @param string $agentType Agent type

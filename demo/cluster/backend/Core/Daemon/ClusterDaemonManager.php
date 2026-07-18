@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Demo\Cluster\Core\Daemon;
 
 use Demo\Cluster\Constants\AgentType;
-use Demo\Cluster\Constants\ClusterCapability;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Core\Socket\Server\ClusterWorkerServer;
 use Demo\Cluster\Hilos;
-use Hilos\Cluster\Exception\ClusterConfigurationException;
-use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
@@ -29,13 +27,12 @@ use Hilos\Utils\Logger;
  * ClusterDaemonManager - Main daemon manager for the cluster demo.
  *
  * Beyond the standard factory wiring it drives placement of the demo's single
- * no-op agent. Automatic node-selection policy is a later cluster slice (HIL-182),
- * so the demo supplies the trigger the harness needs: once this node is leader and
- * the mesh has settled, it places the WORKER agent onto a capable data-plane node
- * via the HIL-179 placement primitive, and lets the framework's failover defaults
- * (HIL-183) re-place it when that node is lost. Placement is idempotent — a single
- * tracked record, in any state, suppresses re-placing — so the leader never
- * double-runs the agent, and a fresh leader re-derives placement from the mesh.
+ * no-op agent. Once this node is leader and the mesh has settled, it asks the
+ * framework's best-fit policy (HIL-182) to place the WORKER agent on the strongest
+ * capable data-plane node, and lets the framework's failover defaults (HIL-183)
+ * re-place it when that node is lost. Placement is idempotent — a single tracked
+ * record, in any state, suppresses re-placing — so the leader never double-runs the
+ * agent, and a fresh leader re-derives placement from the mesh.
  */
 final class ClusterDaemonManager extends DaemonManager
 {
@@ -173,11 +170,13 @@ final class ClusterDaemonManager extends DaemonManager
     }
 
     /**
-     * Places the WORKER agent on a capable data-plane node when it is not already tracked.
+     * Places the WORKER agent on the best-fit data-plane node when it is not already tracked.
      *
-     * A record in any state (including Unplaced, which the framework retries on the next
-     * capable join) suppresses placement, so this never fights failover or double-runs the
-     * agent. When no capable node is online yet, it silently retries on the next leader tick.
+     * Delegates node choice to the framework's best-fit policy (HIL-182) via
+     * {@see ClusterPlacement::placeAgentOnBestNode()}: it ranks the online capable nodes and
+     * places on the winner, or does nothing when none is a fit yet. A record in any state
+     * (including Unplaced, which the framework retries on the next capable join) suppresses
+     * placement, so this never fights failover or double-runs the agent.
      */
     private function ensureWorkerPlaced(): void
     {
@@ -189,42 +188,9 @@ final class ClusterDaemonManager extends DaemonManager
                 return;
             }
 
-            $target = $this->pickWorkerNode();
-            if ($target !== null) {
-                $placement->placeAgentOnNode(AgentType::WORKER, null, $target);
-            }
+            $placement->placeAgentOnBestNode(AgentType::WORKER, null);
         } catch (\Throwable $e) {
             Logger::warning("Cluster demo could not place WORKER agent: {$e->getMessage()}");
         }
-    }
-
-    /**
-     * Picks the first online node (in id order) that advertises the WORKER capability.
-     *
-     * Deterministic so re-elections converge on the same host; the leader's placement
-     * primitive hard-checks the capability again before sending the frame.
-     *
-     * @return ?string Chosen data-plane node id, or null when none is online yet
-     * @throws ClusterDisabledException When cluster mode is disabled
-     * @throws ClusterConfigurationException When enabled but node config is missing or invalid
-     * @throws EnvException When a cluster env value cannot be read
-     */
-    private function pickWorkerNode(): ?string
-    {
-        $registry = Hilos::$cluster?->registry();
-        if ($registry === null) {
-            return null;
-        }
-
-        $candidates = [];
-        foreach ($registry->snapshot() as $node) {
-            if ($node->online && in_array(ClusterCapability::WORKER, $node->capabilities, true)) {
-                $candidates[] = $node->nodeId;
-            }
-        }
-
-        sort($candidates);
-
-        return $candidates[0] ?? null;
     }
 }

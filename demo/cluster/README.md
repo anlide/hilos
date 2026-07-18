@@ -16,9 +16,9 @@ no-op the harness observes.
   and every timeout come from `CLUSTER_*` env in `docker/docker-compose.cluster.yml`.
 - **One agent:** `WorkerAgent` — monopolistic, **not** a cluster-singleton
   (`requiresClusterLeadership() = false`), gated to the `worker` capability. The
-  leader places it on a slave via the HIL-179 primitive and the framework
-  re-places it on failover (HIL-183). `ClusterDaemonManager` supplies the
-  placement *trigger* (node-selection policy is the still-open HIL-182).
+  leader places it on the best-fit slave via the framework's node-selection
+  policy (HIL-182) and re-places it on failover (HIL-183).
+  `ClusterDaemonManager` supplies only the placement *trigger*.
 - **Assertion surface:** the read-only `cluster:test:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
 

@@ -197,8 +197,8 @@ survivors keep working under the new leader.
 
 Detection and failover for a node that goes down — including a hung-but-connected node the
 ordinary socket close never catches — built on the registry (HIL-177), peer transport
-(HIL-178), placement primitive (HIL-179), and quorum-loss reaction (HIL-341). Node-selection
-*policy* is HIL-182; this slice picks any capable+online node.
+(HIL-178), placement primitive (HIL-179), and quorum-loss reaction (HIL-341). Re-placement
+picks the best-fit surviving node through the node-selection policy (HIL-182).
 
 - **Health detection — per-link keepalive.** Each `PeerLink` runs a keepalive in its
   `onTick`: any inbound frame refreshes "last heard"; after

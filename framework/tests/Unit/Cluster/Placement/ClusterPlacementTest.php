@@ -17,6 +17,7 @@ use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use PHPUnit\Framework\TestCase;
 
@@ -367,6 +368,90 @@ final class ClusterPlacementTest extends TestCase
         $placement->onPlacementReport('other', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ghost', null)]));
         $this->assertNull($placement->registry()->get('ghost'));
     }
+
+    public function testPlaceAgentOnBestNodePicksTheStrongestCapableNodeAndPlaces(): void
+    {
+        // Both data-plane nodes are capable; the stronger one (more cpu) should win the pick.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['worker', 'cpu=2'], 'node-c' => ['worker', 'cpu=8']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+
+        $target = $placement->placeAgentOnBestNode('render', null);
+
+        $this->assertSame('node-c', $target, 'Best-fit places on the strongest capable node');
+        [$nodeId, $frame] = $mesh->sent[0];
+        $this->assertSame('node-c', $nodeId);
+        $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame);
+        $this->assertSame('node-c', $placement->registry()->get('render')?->nodeId);
+    }
+
+    public function testPlaceAgentOnBestNodeReturnsNullWhenNoNodeIsAFit(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['worker']],
+            linked: ['node-b'],
+            online: [self::SELF, 'node-b'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
+
+        $this->assertNull($placement->placeAgentOnBestNode('render', null), 'No gpu node is online, so nothing is placed');
+        $this->assertSame([], $mesh->sent, 'Nothing is sent when no node clears the hard gate');
+        $this->assertSame(0, $placement->registry()->count());
+    }
+
+    public function testBestFitPrefersACapacityThePreferenceWeights(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['few-gpu' => ['worker', 'gpu=1'], 'many-gpu' => ['worker', 'gpu=4']],
+            linked: ['few-gpu', 'many-gpu'],
+            online: [self::SELF, 'few-gpu', 'many-gpu'],
+        );
+        $profile = ResourceProfile::create(preferences: ['gpu' => 1.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker'], profile: $profile));
+
+        $this->assertSame('many-gpu', $placement->placeAgentOnBestNode('render', null));
+    }
+
+    public function testNamedPlacementRejectsWhenACapacityMinimumIsUnmet(): void
+    {
+        $mesh = new FakePlacementMesh(['weak' => ['worker', 'ram=8']], linked: ['weak'], online: [self::SELF, 'weak']);
+        $profile = ResourceProfile::create(minimums: ['ram' => 32.0]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker'], profile: $profile));
+
+        try {
+            $placement->placeAgentOnNode('render', null, 'weak');
+            $this->fail('A placement onto a node below a required capacity minimum must be rejected');
+        } catch (PlacementCapabilityException) {
+            // expected
+        }
+
+        $this->assertSame([], $mesh->sent, 'Nothing is sent when the resource minimum is unmet');
+        $this->assertSame(0, $placement->registry()->count());
+    }
+
+    public function testFailoverReplacesOntoTheStrongestSurvivingCapableNode(): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['worker', 'cpu=1'], 'node-c' => ['worker', 'cpu=2'], 'node-d' => ['worker', 'cpu=9']],
+            linked: ['node-b', 'node-c', 'node-d'],
+            online: [self::SELF, 'node-b', 'node-c', 'node-d'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']), null, failoverGraceMs: 500);
+        $placement->onBecameLeader();
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $mesh->sent = [];
+
+        // node-b dies; two survivors are capable, so best-fit takes the stronger of them.
+        $mesh->online = [self::SELF, 'node-c', 'node-d'];
+        $placement->noteNodeOffline('node-b', 1000.0);
+        $placement->tick(1000.6);
+
+        $this->assertSame('node-d', $mesh->sent[0][0], 'Failover re-places onto the strongest surviving capable node');
+        $this->assertSame('node-d', $placement->registry()->get('render:9')?->nodeId);
+    }
 }
 
 /**
@@ -455,19 +540,30 @@ final class FakePlacementExecutor implements PlacementExecutor
     /** @var ?\Throwable Exception the next executePlacement() should throw, or null to succeed */
     public ?\Throwable $failWith = null;
 
+    /** @var ResourceProfile Resource profile every agent type reports */
+    private readonly ResourceProfile $profile;
+
     /**
      * @param list<string> $required Required capabilities every agent type reports
      * @param int $workerId Worker id a successful placement lands on
+     * @param ?ResourceProfile $profile Resource profile every agent type reports; empty when null
      */
     public function __construct(
         private readonly array $required = [],
         private readonly int $workerId = 1,
+        ?ResourceProfile $profile = null,
     ) {
+        $this->profile = $profile ?? ResourceProfile::none();
     }
 
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array
     {
         return $this->required;
+    }
+
+    public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile
+    {
+        return $this->profile;
     }
 
     public function executePlacement(string $agentType, ?string $agentIndex): int

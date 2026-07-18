@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
@@ -1104,6 +1105,23 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array
     {
         return $this->agentManager->instantiateAgentDaemon($agentType, $agentIndex)->requiredCapabilities();
+    }
+
+    /**
+     * Resolves the numeric resource demand an agent type declares, for the best-fit policy and
+     * the leader's capacity hard-check ({@see PlacementExecutor}).
+     *
+     * Builds a throwaway agent daemon to read its type-level profile without registering it or
+     * touching a worker, mirroring {@see requiredCapabilities()}.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
+     * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
+     */
+    public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile
+    {
+        return $this->agentManager->instantiateAgentDaemon($agentType, $agentIndex)->placementProfile();
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Placement\NodeCapacities;
 use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -16,9 +17,10 @@ use Hilos\Hilos;
  * Identity is "who am I", not "who else is in the cluster": it carries the node's
  * own id, role, declared capability tags, and the address peers dial to reach it.
  * Membership (the live set of peers) is a separate runtime registry built by
- * peer-join and is not modelled here. Capabilities are a flat tag list for now;
- * the hard/soft matching and coordinator-preference model is layered on top in
- * HIL-182.
+ * peer-join and is not modelled here. Capabilities stay a flat tag list on the
+ * wire; HIL-182 layers the hard/soft matching on top by reading numeric
+ * capacities out of the tags ({@see NodeCapacities}) without changing this
+ * contract. The coordinator-preference model remains a later slice.
  */
 final class NodeIdentity
 {

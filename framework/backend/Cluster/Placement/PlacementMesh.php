@@ -56,9 +56,9 @@ interface PlacementMesh
     /**
      * Returns the ids of every currently-online node, including the local node.
      *
-     * Backs failover node-selection: the leader scans the online set for a capable host to
-     * re-place an orphaned agent onto. Ordering is stable so the pick is deterministic; the
-     * soft-preference policy among capable nodes is HIL-182.
+     * Backs best-fit node-selection: the leader builds the candidate set from the online nodes
+     * so the {@see PlacementPolicy} can rank them, both for the automatic placement entry and
+     * for re-placing an orphaned agent onto a surviving node during failover.
      *
      * @return list<string> Online node ids
      */
