@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
@@ -217,16 +218,43 @@ class PageSignalRouter
         $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
 
         try {
+            $this->assertActionAuthorized($pageInstance, $data->action, $data->acceptKey);
             $pageInstance->onAction($data->acceptKey, $data->action, $dto);
             if ($data->requestId !== null) {
                 $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId);
             }
         } catch (Throwable $e) {
+            $errorCode = $e instanceof ActionUnauthorizedException ? $e->errorCode : null;
             if ($data->requestId !== null) {
-                $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage());
+                $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage(), $errorCode);
             } else {
                 $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
             }
+        }
+    }
+
+    /**
+     * Enforces the page's action-level auth guard before the handler runs.
+     *
+     * A page lists write actions that require an authenticated session in its
+     * AUTH_ACTIONS; an anonymous session (no resolvable user) invoking one is
+     * denied a 401 before onAction, for the anonymous-read + authenticated-write
+     * model. The connection→user resolution stays project-owned through the
+     * browser context seam.
+     *
+     * @param AbstractPage $page Resolved page handler
+     * @param string $action Dispatched action name
+     * @param string $acceptKey Acting connection accept key
+     * @throws ActionUnauthorizedException When a guarded action is invoked by an anonymous session
+     */
+    private function assertActionAuthorized(AbstractPage $page, string $action, string $acceptKey): void
+    {
+        if (!in_array($action, $page::AUTH_ACTIONS, true)) {
+            return;
+        }
+
+        if (Hilos::$browser?->resolveActionUserId($acceptKey) === null) {
+            throw new ActionUnauthorizedException();
         }
     }
 

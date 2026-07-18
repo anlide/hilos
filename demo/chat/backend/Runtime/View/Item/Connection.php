@@ -24,7 +24,8 @@ use Hilos\Runtime\View\Item\RtItem;
  * @extends RtItem<StateConnection>
  *
  * @property-read string $acceptKey WebSocket accept key
- * @property-read int $userId User ID for this connection
+ * @property-read string $sessionToken Session cookie token this connection belongs to
+ * @property-read ?int $userId Authenticated user id, or null while anonymous
  * @property-read int $connectedAt Unix timestamp when connected
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read string $outboundModerationMessage Submitted message text
@@ -75,6 +76,7 @@ final class Connection extends RtItem
     {
         return match ($name) {
             StateConnection::acceptKey => $this->_state->acceptKey,
+            StateConnection::sessionToken => $this->_state->sessionToken,
             StateConnection::userId => $this->_state->userId,
             StateConnection::connectedAt => $this->_state->connectedAt,
             StateConnection::outboundModerationPhase => $this->_state->outboundModerationPhase,
@@ -102,8 +104,10 @@ final class Connection extends RtItem
             StateConnection::fileProgressTotalBytes => $this->_state->fileProgressTotalBytes,
             StateConnection::uploadProgressLastSentAt => $this->_state->uploadProgressLastSentAt,
             RtItem::actions => $this->getItemActions(),
-            ChatDbContext::user => Hilos::$db->users[$this->_state->userId],
-            ConnectionRuntimeConstants::userState => Hilos::$rt->userStates[$this->_state->userId],
+            ChatDbContext::user => $this->_state->userId !== null ? Hilos::$db->users[$this->_state->userId] : null,
+            ConnectionRuntimeConstants::userState => $this->_state->userId !== null
+                ? Hilos::$rt->userStates[$this->_state->userId]
+                : null,
             ConnectionRuntimeConstants::attachmentDrafts => Hilos::$rt->attachmentDrafts->forAcceptKey(
                 $this->_state->acceptKey,
             ),

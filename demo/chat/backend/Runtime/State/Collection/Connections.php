@@ -64,4 +64,21 @@ final class Connections extends RtStates
             return $connection->userId === $userId;
         });
     }
+
+    /**
+     * Finds all connections belonging to a session token (indexed by accept key).
+     *
+     * @param string $sessionToken Session cookie token
+     * @return array<string, Connection> Accept key => Connection map
+     */
+    public function findAllBySessionToken(string $sessionToken): array
+    {
+        if ($sessionToken === '') {
+            return [];
+        }
+
+        return array_filter($this->states, function ($connection) use ($sessionToken) {
+            return $connection->sessionToken === $sessionToken;
+        });
+    }
 }

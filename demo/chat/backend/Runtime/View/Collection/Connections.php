@@ -206,7 +206,9 @@ final class Connections extends RtCollection implements HilosPresenceSource
     {
         $userIds = [];
         foreach ($this as $connection) {
-            $userIds[$connection->userId] = true;
+            if ($connection->userId !== null) {
+                $userIds[$connection->userId] = true;
+            }
         }
         foreach (Hilos::$db->events as $event) {
             $eventMessage = $event->eventMessage;

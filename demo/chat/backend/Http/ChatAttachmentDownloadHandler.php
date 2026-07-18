@@ -51,15 +51,14 @@ final class ChatAttachmentDownloadHandler
             return self::unauthorized();
         }
 
-        $user = Hilos::$db->users->findBySession($sessionToken);
-        if ($user === null) {
+        if (Hilos::$db->sessions->findByToken($sessionToken) === null) {
             return self::unauthorized();
         }
 
-        // Authorization: this demo chat is global — every signed-in user sees the
-        // same stream, so a valid session is sufficient. Per-object authz is
-        // intentionally omitted: there are no private messages or rooms to scope
-        // an attachment to.
+        // Authorization: this demo chat is global — every visitor with a session
+        // (anonymous or authenticated) sees the same stream, so a valid session is
+        // sufficient. Per-object authz is intentionally omitted: there are no
+        // private messages or rooms to scope an attachment to.
         $attachment = Hilos::$db->eventAttachments[$attachmentId] ?? null;
         if ($attachment === null) {
             return self::notFound();

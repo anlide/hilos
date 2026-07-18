@@ -31,5 +31,6 @@ final class ActionUnauthorizedExceptionTest extends TestCase
 
         $this->assertInstanceOf(PageException::class, $exception);
         $this->assertSame(401, $exception->getCode());
+        $this->assertSame('unauthorized', $exception->errorCode);
     }
 }

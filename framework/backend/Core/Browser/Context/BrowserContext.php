@@ -1941,6 +1941,22 @@ abstract class BrowserContext
     }
 
     /**
+     * Resolves the authenticated user behind an accept key for the action-auth guard.
+     *
+     * Public seam over {@see self::resolveCurrentUserId} so the action dispatcher
+     * ({@see \Hilos\Core\Page\PageSignalRouter::dispatchAction}) can gate a page's
+     * AUTH_ACTIONS without owning the connection→user mapping. Returns null for an
+     * anonymous session, which the dispatcher denies with a 401.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @return ?int Authenticated user id, or null when the session is anonymous
+     */
+    public function resolveActionUserId(string $acceptKey): ?int
+    {
+        return $this->resolveCurrentUserId($acceptKey);
+    }
+
+    /**
      * Adds or replaces one browser row in the tick-local signal accumulator.
      *
      * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Tick-local table accumulator

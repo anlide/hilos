@@ -231,6 +231,12 @@ enum EnvConstants
      */
     case HILOS_SESSION_COOKIE_SECURE;
 
+    /**
+     * Session lifetime in seconds. Drives a session row's expiry (and tracks the
+     * session cookie Max-Age). Default 30 days.
+     */
+    case HILOS_SESSION_COOKIE_MAX_AGE;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**

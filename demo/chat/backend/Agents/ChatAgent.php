@@ -54,6 +54,7 @@ final class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
         $this->registerDbTruthSource(ChatDbContext::eventAttachments);
         $this->registerDbTruthSource(ChatDbContext::users);
+        $this->registerDbTruthSource(ChatDbContext::sessions);
         $this->registerRtTruthSource(ChatRtContext::connections);
         $this->registerRtTruthSource(ChatRtContext::userStates);
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
@@ -111,13 +112,16 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the daemon-resolved session token, registers the connection, emits registration updates, and
-     * sends the handshake response with the current-user entity fragment.
+     * Resolves the daemon-carried session token to a session row (creating an
+     * anonymous one when the cookie is new), registers the connection under that
+     * session, and sends the handshake response — the current user for an
+     * authenticated session, or an anonymous response that leaves the frontend
+     * current user null.
      *
-     * Runtime presence is emitted after every successful connection register so
-     * pages that show online session counts update for additional tabs, not only
-     * first online transitions. Outbound moderation, draft, and file-upload session
-     * state are sent on main page subscribe only.
+     * A session is anonymous (no user) until login/register upgrades it through
+     * {@see self::authenticateSession}; no visitor is auto-registered as a user.
+     * Runtime presence and per-user state are ensured only for an authenticated
+     * session.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
@@ -143,31 +147,65 @@ final class ChatAgent extends AbstractAgent
             );
         }
 
-        $user = Hilos::$db->users->findBySession($sessionToken);
-        $wasRegisteredNow = false;
-        if ($user === null) {
-            $user = Hilos::$db->users->actions->register($sessionToken);
-            $wasRegisteredNow = true;
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            $session = Hilos::$db->sessions->actions->createAnonymous($sessionToken);
+        } else {
+            $session->actions->touch();
         }
-        $userId = (int)$user->id;
+        $userId = $session->userId;
 
-        Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
+        Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
 
-        Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
-        Hilos::$rt->userStates->actions->ensure($userId);
-
-        if ($wasRegisteredNow) {
-            Hilos::$db->events->actions->addUserRegistered($userId);
+        $user = null;
+        if ($userId !== null) {
+            Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
+            Hilos::$rt->userStates->actions->ensure($userId);
+            $user = Hilos::$db->users[$userId];
         }
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
-            new HandshakeResponseSignalData(
-                selfId: $userId,
-                selfName: $user->name,
-            ),
+            $user !== null
+                ? new HandshakeResponseSignalData(selfId: (int)$user->id, selfName: $user->name)
+                : new HandshakeResponseSignalData(),
         );
+    }
+
+    /**
+     * Authenticates a live session: binds it to a user, re-points the session's
+     * active connections to that user, and re-emits the handshake response so
+     * their frontends populate the current user.
+     *
+     * The upgrade seam login (HIL-162) and register (HIL-164) call to promote a
+     * session; the symmetric downgrade (logout) is HIL-163. A no-op when the token
+     * has no session row.
+     *
+     * @param string $sessionToken Session cookie token to authenticate
+     * @param int $userId Durable user id to bind the session to
+     * @throws HilosException On database or runtime failure
+     */
+    public function authenticateSession(string $sessionToken, int $userId): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            return;
+        }
+
+        $session->actions->bindUser($userId);
+        Hilos::$rt->userStates->actions->ensure($userId);
+        Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
+
+        $user = Hilos::$db->users[$userId];
+        $response = $user !== null
+            ? new HandshakeResponseSignalData(selfId: (int)$user->id, selfName: $user->name)
+            : new HandshakeResponseSignalData();
+
+        foreach (Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken) as $stateConnection) {
+            Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser($userId);
+            $this->sendToUser(ChatSignalConstants::HANDSHAKE_RESPONSE, $stateConnection->acceptKey, $response);
+        }
     }
 
     /**

@@ -30,7 +30,8 @@ final class ConnectionsActions extends RtActions
      * Add a connection row for a new socket.
      *
      * @param string $acceptKey WebSocket accept key (connection id)
-     * @param int $userId Chat user id for this socket
+     * @param ?int $userId Authenticated chat user id, or null for an anonymous session
+     * @param string $sessionToken Session cookie token this socket belongs to
      * @return RuntimeConnection View item for the new connection
      *
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
@@ -38,9 +39,9 @@ final class ConnectionsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function register(string $acceptKey, int $userId): RuntimeConnection
+    public function register(string $acceptKey, ?int $userId, string $sessionToken = ''): RuntimeConnection
     {
-        $state = StateConnection::create($acceptKey, $userId);
+        $state = StateConnection::create($acceptKey, $userId, $sessionToken);
         $this->addStateToCollection($state);
 
         return $this->createRtItemFromState($state);

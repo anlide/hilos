@@ -51,6 +51,9 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
         $sessionToken = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($sessionToken);
+        // Bind a session to the user so the handshake resolves an authenticated
+        // connection (a bare token would register an anonymous one).
+        Hilos::$db->sessions->actions->createAnonymous($sessionToken)->actions->bindUser((int) $user->id);
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());

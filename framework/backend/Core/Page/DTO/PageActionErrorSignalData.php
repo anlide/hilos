@@ -19,15 +19,20 @@ use Hilos\Core\Router\WebSocketEnvelopeAware;
  */
 class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, WebSocketEnvelopeAware
 {
+    /** Wire key for the machine-readable error code (mirrors subscription_page_error). */
+    public const string errorCode = 'errorCode';
+
     /**
      * @param string $action Action name that failed
      * @param string $reason Human-readable error message
      * @param ?string $requestId Client-minted request id to correlate the reply, or null for a legacy untracked error
+     * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null for an unclassified failure
      */
     public function __construct(
         public readonly string $action,
         public readonly string $reason,
         public readonly ?string $requestId = null,
+        public readonly ?string $errorCode = null,
     ) {
     }
 
@@ -45,6 +50,10 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
             $result[SignalPayloadConstants::FIELD_REQUEST_ID] = $this->requestId;
         }
 
+        if ($this->errorCode !== null) {
+            $result[self::errorCode] = $this->errorCode;
+        }
+
         return $result;
     }
 
@@ -58,6 +67,9 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
             reason: (string)($data['reason'] ?? ''),
             requestId: isset($data[SignalPayloadConstants::FIELD_REQUEST_ID]) && is_string($data[SignalPayloadConstants::FIELD_REQUEST_ID])
                 ? $data[SignalPayloadConstants::FIELD_REQUEST_ID]
+                : null,
+            errorCode: isset($data[self::errorCode]) && is_string($data[self::errorCode])
+                ? $data[self::errorCode]
                 : null,
         );
     }

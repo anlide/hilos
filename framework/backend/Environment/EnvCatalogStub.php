@@ -197,6 +197,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 false,
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                30 * 24 * 60 * 60,
+                emptyIsMissing: true,
+            ),
             EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

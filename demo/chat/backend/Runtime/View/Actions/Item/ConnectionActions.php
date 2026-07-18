@@ -45,6 +45,25 @@ final class ConnectionActions extends RtActions
     }
 
     /**
+     * Re-points this connection to an authenticated user, or back to anonymous.
+     *
+     * The RT side of the session upgrade/downgrade seam: authenticateSession binds
+     * the live connection to the logged-in user id, logout reverts it to null.
+     *
+     * @param ?int $userId Authenticated user id, or null for anonymous
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function bindUser(?int $userId): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->userId = $userId;
+
+        $this->sync();
+    }
+
+    /**
      * Start a connection-local outbound moderation state.
      *
      * @param string $message Submitted message text
@@ -375,7 +394,7 @@ final class ConnectionActions extends RtActions
         Hilos::$rt->attachmentDrafts->actions->create(
             draftId: (string)$this->state->fileSessionUploadId,
             acceptKey: $this->state->acceptKey,
-            userId: $this->state->userId,
+            userId: (int)$this->state->userId,
             quarantineBasename: $quarantineBasename,
             originalFilename: $this->state->fileSessionOriginalFilename,
             mimeType: $this->state->fileSessionMimeType,

@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\RtState;
 final class Connection extends RtState
 {
     public const string acceptKey = 'acceptKey';
+    public const string sessionToken = 'sessionToken';
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
 
@@ -54,8 +55,11 @@ final class Connection extends RtState
     /** WebSocket accept key (primary id). */
     private(set) string $acceptKey = '';
 
-    /** Owning database user id. */
-    private(set) int $userId = 0;
+    /** Session cookie token this connection belongs to. */
+    private(set) string $sessionToken = '';
+
+    /** Authenticated database user id, or null while the session is anonymous. */
+    public ?int $userId = null;
 
     /** Unix time when the socket was registered. */
     private(set) int $connectedAt = 0;
@@ -134,12 +138,14 @@ final class Connection extends RtState
 
     /**
      * @param string $acceptKey WebSocket accept key (unique identifier)
-     * @param int $userId User ID
+     * @param ?int $userId Authenticated user id, or null for an anonymous session
+     * @param string $sessionToken Session cookie token this connection belongs to
      */
-    public static function create(string $acceptKey, int $userId): static
+    public static function create(string $acceptKey, ?int $userId, string $sessionToken = ''): static
     {
         $instance = new static();
         $instance->acceptKey = $acceptKey;
+        $instance->sessionToken = $sessionToken;
         $instance->userId = $userId;
         $instance->connectedAt = time();
         $instance->outboundModerationPhase = '';
@@ -178,7 +184,8 @@ final class Connection extends RtState
     {
         $instance = new static();
         $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
-        $instance->userId = (int)($row[self::userId] ?? 0);
+        $instance->sessionToken = (string)($row[self::sessionToken] ?? '');
+        $instance->userId = isset($row[self::userId]) ? (int)$row[self::userId] : null;
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
@@ -233,8 +240,11 @@ final class Connection extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::userId])) {
-            $this->userId = (int)$diff[self::userId];
+        if (array_key_exists(self::sessionToken, $diff)) {
+            $this->sessionToken = (string)$diff[self::sessionToken];
+        }
+        if (array_key_exists(self::userId, $diff)) {
+            $this->userId = $diff[self::userId] === null ? null : (int)$diff[self::userId];
         }
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
@@ -333,6 +343,7 @@ final class Connection extends RtState
     {
         return [
             self::acceptKey => $this->acceptKey,
+            self::sessionToken => $this->sessionToken,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
             self::outboundModerationPhase => $this->outboundModerationPhase,

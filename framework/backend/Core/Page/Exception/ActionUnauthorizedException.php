@@ -22,14 +22,21 @@ use Throwable;
  */
 final class ActionUnauthorizedException extends PageException
 {
+    /** Machine-readable error code carried to the client action_error. */
+    public const string ERROR_CODE = 'unauthorized';
+
     /**
      * Creates the action authorization exception with 401 auth semantics.
      *
      * @param string $message Human-readable error message
+     * @param string $errorCode Machine-readable error code for the action_error
      * @param ?Throwable $previous Previous exception for chaining
      */
-    public function __construct(string $message = 'Authentication required', ?Throwable $previous = null)
-    {
+    public function __construct(
+        string $message = 'Authentication required',
+        public readonly string $errorCode = self::ERROR_CODE,
+        ?Throwable $previous = null,
+    ) {
         parent::__construct($message, 401, $previous);
     }
 

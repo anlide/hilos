@@ -27,12 +27,15 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * Creates handshake response signal data.
      *
-     * @param int $selfId Current authorized user id
-     * @param string $selfName Current authorized user display name
+     * Both fields are null for an anonymous session, which clears the frontend
+     * current user; an authenticated session carries the durable user id and name.
+     *
+     * @param ?int $selfId Authenticated user id, or null when the session is anonymous
+     * @param ?string $selfName Authenticated user display name, or null when anonymous
      */
     public function __construct(
-        public readonly int $selfId,
-        public readonly string $selfName,
+        public readonly ?int $selfId = null,
+        public readonly ?string $selfName = null,
     ) {
     }
 
@@ -45,10 +48,12 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     {
         return [
             self::entities => [
-                self::currentUser => [
-                    self::id => $this->selfId,
-                    self::name => $this->selfName,
-                ],
+                self::currentUser => $this->selfId === null
+                    ? null
+                    : [
+                        self::id => $this->selfId,
+                        self::name => $this->selfName,
+                    ],
             ],
         ];
     }
@@ -64,7 +69,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $entities = $data[self::entities] ?? null;
         $currentUser = is_array($entities) ? ($entities[self::currentUser] ?? null) : null;
         if (!is_array($currentUser)) {
-            $currentUser = [];
+            return new static();
         }
 
         return new static(

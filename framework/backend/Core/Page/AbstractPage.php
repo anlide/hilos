@@ -11,6 +11,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -39,6 +40,17 @@ abstract class AbstractPage
 
     /** WebSocket actions owned by this page, keyed by action name with payload DTO class values. */
     public const array ACTIONS = [];
+
+    /**
+     * Action names on this page that require an authenticated session.
+     *
+     * The action dispatcher denies a listed action invoked from an anonymous
+     * session with an ActionUnauthorizedException (401) before onAction runs, for
+     * the anonymous-read + authenticated-write model. A project that gates a write
+     * action declares it here; the connection→user resolution stays project-owned
+     * ({@see \Hilos\Core\Browser\Context\BrowserContext::resolveActionUserId}).
+     */
+    public const array AUTH_ACTIONS = [];
 
     /**
      * Non-action signal routes owned by this page, keyed by signal type.
@@ -222,7 +234,11 @@ abstract class AbstractPage
         $this->sendToUser(
             SignalConstants::ACTION_ERROR,
             $acceptKey,
-            new PageActionErrorSignalData($action, $e->getMessage()),
+            new PageActionErrorSignalData(
+                $action,
+                $e->getMessage(),
+                errorCode: $e instanceof ActionUnauthorizedException ? $e->errorCode : null,
+            ),
         );
     }
 
@@ -258,13 +274,19 @@ abstract class AbstractPage
      * @param string $action Action name that failed
      * @param string $requestId Client-minted request id to echo back for correlation
      * @param string $reason Human-readable error message exposed to the client
+     * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null when unclassified
      */
-    public function sendActionFail(string $acceptKey, string $action, string $requestId, string $reason): void
-    {
+    public function sendActionFail(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        string $reason,
+        ?string $errorCode = null,
+    ): void {
         $this->sendToUser(
             SignalConstants::ACTION_ERROR,
             $acceptKey,
-            new PageActionErrorSignalData($action, $reason, $requestId),
+            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode),
         );
     }
 

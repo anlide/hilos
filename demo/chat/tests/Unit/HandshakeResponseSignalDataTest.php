@@ -47,4 +47,20 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame('User 7', $restored->selfName);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
+
+    public function testAnonymousPayloadCarriesNullCurrentUser(): void
+    {
+        $data = new HandshakeResponseSignalData();
+
+        $this->assertNull($data->selfId);
+        $this->assertSame(['entities' => ['currentUser' => null]], $data->toArray());
+    }
+
+    public function testAnonymousRoundtripStaysAnonymous(): void
+    {
+        $restored = HandshakeResponseSignalData::fromArray((new HandshakeResponseSignalData())->toArray());
+
+        $this->assertNull($restored->selfId);
+        $this->assertNull($restored->selfName);
+    }
 }

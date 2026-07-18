@@ -55,4 +55,26 @@ final class PageActionErrorSignalDataTest extends TestCase
         $this->assertSame('req-7', $restored->getEnvelopeRequestId());
         $this->assertSame('fail', $restored->getEnvelopeOutcome());
     }
+
+    public function testUnclassifiedErrorOmitsErrorCode(): void
+    {
+        $this->assertArrayNotHasKey(
+            PageActionErrorSignalData::errorCode,
+            (new PageActionErrorSignalData('message', 'boom'))->toArray(),
+        );
+    }
+
+    public function testErrorCodeCarriesThroughRoundtrip(): void
+    {
+        $original = new PageActionErrorSignalData('message', 'Authentication required', 'req-7', 'unauthorized');
+
+        $this->assertSame([
+            'action' => 'message',
+            'reason' => 'Authentication required',
+            'requestId' => 'req-7',
+            'errorCode' => 'unauthorized',
+        ], $original->toArray());
+
+        $this->assertSame('unauthorized', PageActionErrorSignalData::fromArray($original->toArray())->errorCode);
+    }
 }

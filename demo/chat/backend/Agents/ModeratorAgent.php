@@ -225,7 +225,7 @@ final class ModeratorAgent extends AbstractAgent
     ): void {
         $this->currentAcceptKey = $connection->acceptKey;
         $this->currentRequestType = $requestType;
-        $this->currentUserId = $connection->userId;
+        $this->currentUserId = $connection->userId ?? 0;
         $this->currentModerationValue = $value;
         $this->currentModerationUpdatedAt = $updatedAt;
 
