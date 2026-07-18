@@ -8,6 +8,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -53,6 +54,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
 
     /** @var list<string> Agent signal names owned directly by this agent. */
     public const array AGENT_SIGNALS = [];
+
+    /**
+     * @var array<string, class-string<ActionPayloadDTO>> Client-action payload DTOs owned directly by this
+     *     agent, keyed by action name. The page-independent counterpart to Page::ACTIONS: an action listed
+     *     here is routed straight to {@see self::onAgentAction()} from any subscribed page (or none).
+     */
+    public const array AGENT_ACTIONS = [];
 
     /** @var ?string Agent index for multi-instance agents (null for singletons) */
     protected ?string $agentIndex = null;
@@ -448,6 +456,23 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $name Signal name
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Handle a client action this agent owns through AGENT_ACTIONS.
+     *
+     * The page-independent action seam: the worker parses the declared payload DTO
+     * and dispatches here instead of a page, so a shell-level control (e.g. logout)
+     * reaches the agent from any subscribed page or none. Default no-op; agents that
+     * declare AGENT_ACTIONS override this and route by action name.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Owned action name from AGENT_ACTIONS
+     * @param ActionPayloadDTO $dto Parsed action payload
+     */
+    public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         // Default: do nothing
     }

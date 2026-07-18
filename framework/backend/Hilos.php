@@ -15,6 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\Topology\AgentActionRouteRegistry;
 use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
@@ -357,6 +358,29 @@ abstract class Hilos
     public static function getAgentSignalIndexFields(): array
     {
         return AgentSignalRouteRegistry::indexFields(static::AGENTS);
+    }
+
+    /**
+     * Returns agent-owned client-action owner agent types keyed by action name.
+     *
+     * The page-independent action seam: actions declared in agent AGENT_ACTIONS route
+     * straight to the owning agent, alongside the page-owned {@see self::getPageActionRoutes()}.
+     *
+     * @return array<string, string> Agent type keyed by action name
+     */
+    public static function getAgentActionRoutes(): array
+    {
+        return AgentActionRouteRegistry::routes(static::AGENTS);
+    }
+
+    /**
+     * Returns agent-owned client-action payload DTO classes keyed by action name.
+     *
+     * @return array<string, class-string<ActionPayloadDTO>> DTO class keyed by action name
+     */
+    public static function getAgentActionDtoRoutes(): array
+    {
+        return AgentActionRouteRegistry::dtoRoutes(static::AGENTS);
     }
 
     /**

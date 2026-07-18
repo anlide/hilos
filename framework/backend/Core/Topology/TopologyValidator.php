@@ -57,6 +57,13 @@ final class TopologyValidator
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
+        $this->validateAgentActionRoutes(
+            $agents,
+            $hilosClass::getPageActionRoutes(),
+            $hilosClass::getAgentActionRoutes(),
+            $hilosClass::getAgentActionDtoRoutes(),
+            $errors,
+        );
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
         $this->validatePageSignalDtoRoutes($pages, $hilosClass::getPageSignalDtoRoutes(), $errors);
         $this->validateAgentSignalRoutes(
@@ -507,6 +514,79 @@ final class TopologyValidator
 
             if (!is_string($dtoClass) || $dtoClass === '' || !is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
                 $errors[] = "Computed action DTO route {$action} must reference a valid ActionPayloadDTO class";
+            }
+        }
+    }
+
+    /**
+     * Validates agent-owned client-action route declarations (AGENT_ACTIONS).
+     *
+     * Each action must carry a valid ActionPayloadDTO class, must not be declared by
+     * more than one agent, and must not collide with a page-owned action name — the
+     * client action registry must resolve every action name to a single owner.
+     *
+     * @param array $agents Agent registry
+     * @param array $pageActionRoutes Computed page action route registry
+     * @param array $agentActionRoutes Computed agent action route registry
+     * @param array $agentActionDtoRoutes Computed agent action DTO route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentActionRoutes(
+        array $agents,
+        array $pageActionRoutes,
+        array $agentActionRoutes,
+        array $agentActionDtoRoutes,
+        array &$errors,
+    ): void {
+        $declaredRoutes = [];
+        $declaredDtoRoutes = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_ACTIONS as $action => $dtoClass) {
+                if (!is_string($action) || $action === '') {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_ACTIONS must use non-empty action name keys";
+                    continue;
+                }
+
+                if (!$this->isExistingClassString(
+                    $dtoClass,
+                    "AGENTS[{$agentType}] class {$agentClass} AGENT_ACTIONS[{$action}]",
+                    $errors,
+                )) {
+                    continue;
+                }
+
+                if (!is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_ACTIONS[{$action}] class {$dtoClass} must extend "
+                        . ActionPayloadDTO::class;
+                    continue;
+                }
+
+                if (array_key_exists($action, $pageActionRoutes)) {
+                    $errors[] = "Action {$action} is declared by both agent {$agentType} and page {$pageActionRoutes[$action]}";
+                    continue;
+                }
+
+                if (isset($declaredRoutes[$action]) && $declaredRoutes[$action] !== $agentType) {
+                    $errors[] = "Action {$action} is declared by multiple agents: {$declaredRoutes[$action]} and {$agentType}";
+                    continue;
+                }
+
+                $declaredRoutes[$action] = $agentType;
+                $declaredDtoRoutes[$action] = $dtoClass;
+            }
+        }
+
+        foreach ($declaredRoutes as $action => $agentType) {
+            if (($agentActionRoutes[$action] ?? null) !== $agentType) {
+                $errors[] = "Agent action route {$action} is missing from computed agent action routes";
+            }
+            if (($agentActionDtoRoutes[$action] ?? null) !== $declaredDtoRoutes[$action]) {
+                $errors[] = "Agent action DTO route {$action} is missing from computed agent action DTO routes";
             }
         }
     }

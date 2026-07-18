@@ -24,7 +24,10 @@ final class ChatWebSocketClient extends WebSocketClient
      */
     protected function onActionValidated(string $actionName): void
     {
-        if (!array_key_exists($actionName, Hilos::getPageActionRoutes())) {
+        if (
+            !array_key_exists($actionName, Hilos::getPageActionRoutes())
+            && !array_key_exists($actionName, Hilos::getAgentActionRoutes())
+        ) {
             throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
         }
     }

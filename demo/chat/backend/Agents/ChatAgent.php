@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
+use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
@@ -14,11 +15,14 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -37,6 +41,10 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+    ];
+
+    public const array AGENT_ACTIONS = [
+        ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
     ];
 
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
@@ -206,6 +214,86 @@ final class ChatAgent extends AbstractAgent
             Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser($userId);
             $this->sendToUser(ChatSignalConstants::HANDSHAKE_RESPONSE, $stateConnection->acceptKey, $response);
         }
+    }
+
+    /**
+     * Reverts a live session to anonymous: nulls the session user, re-points the
+     * session's active connections to no user, and re-emits the anonymous handshake
+     * response so their frontends clear the current user. The inverse of
+     * {@see self::authenticateSession()}.
+     *
+     * The session ROW and token are kept — the session simply becomes anonymous
+     * again (per the HIL-161 model); token rotation and "log out all devices" are
+     * out of scope. A no-op when the token has no session row or is already
+     * anonymous (a guest invoking logout is ignored). Presence follows the
+     * connection re-point: a user with no other authenticated connection drops
+     * offline through the standard connection sync, so no per-user state is removed
+     * here. Analytics session→user identity is left as set; there is no de-identify
+     * seam and it is re-bound on the next login.
+     *
+     * @param string $sessionToken Session cookie token to revert to anonymous
+     * @throws HilosException On database or runtime failure
+     */
+    public function deauthenticateSession(string $sessionToken): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null || $session->userId === null) {
+            return;
+        }
+
+        $session->actions->unbindUser();
+
+        $response = new HandshakeResponseSignalData();
+        foreach (Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken) as $stateConnection) {
+            Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser(null);
+            $this->sendToUser(ChatSignalConstants::HANDSHAKE_RESPONSE, $stateConnection->acceptKey, $response);
+        }
+    }
+
+    /**
+     * Routes agent-owned client actions. Logout is page-independent (the control
+     * lives in the app shell), so it arrives here rather than through a page.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Owned action name from AGENT_ACTIONS
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @throws AgentUnknownActionException When action is not supported by this agent
+     * @throws InvalidActionPayloadException When action payload does not match the action name
+     * @throws HilosException When logout exposes database or runtime failure
+     */
+    public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    {
+        switch ($action) {
+            case ChatSignalConstants::LOGOUT:
+                if (!$dto instanceof LogoutActionDTO) {
+                    throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
+                }
+                $this->handleLogout($acceptKey);
+
+                return;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Reverts the acting connection's session to anonymous.
+     *
+     * Resolves the session from the acting connection; a stale accept key or a
+     * connection with no token is a no-op.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @throws HilosException When session teardown exposes database or runtime failure
+     */
+    private function handleLogout(string $acceptKey): void
+    {
+        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            return;
+        }
+
+        $this->deauthenticateSession($sessionToken);
     }
 
     /**

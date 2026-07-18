@@ -16,6 +16,7 @@ use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
@@ -698,7 +699,8 @@ class SignalRouter
     /**
      * Get agent destinations for user actions.
      *
-     * Uses page ACTIONS ownership through the active project topology.
+     * Uses page ACTIONS ownership through the active project topology, then falls
+     * back to agent-owned AGENT_ACTIONS ownership for page-independent actions.
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<AgentDestination> Single agent destination, or empty when no action route exists
@@ -718,7 +720,9 @@ class SignalRouter
             return [];
         }
 
-        $agentType = $this->hilosClass()::getActionAgentRoutes()[$actionName] ?? null;
+        $agentType = $this->hilosClass()::getActionAgentRoutes()[$actionName]
+            ?? $this->hilosClass()::getAgentActionRoutes()[$actionName]
+            ?? null;
         if (!is_string($agentType) || $agentType === '') {
             return [];
         }
@@ -1079,5 +1083,30 @@ class SignalRouter
         }
 
         return new AgentSignalData($parsed);
+    }
+
+    /**
+     * Creates the typed payload DTO for a client action owned by the given agent.
+     *
+     * Returns null when the action is not owned by that agent through AGENT_ACTIONS,
+     * so the worker keeps a page-owned action on the page-router dispatch path.
+     *
+     * @param string $action Action name from the WebSocket frame
+     * @param array<string, mixed> $data Raw action payload
+     * @param string $agentType Agent type the action was routed to
+     * @return ?ActionPayloadDTO Parsed payload, or null when the action is not agent-owned by this agent
+     */
+    public function createAgentActionPayloadDTO(string $action, array $data, string $agentType): ?ActionPayloadDTO
+    {
+        if (($this->hilosClass()::getAgentActionRoutes()[$action] ?? null) !== $agentType) {
+            return null;
+        }
+
+        $dtoClass = $this->hilosClass()::getAgentActionDtoRoutes()[$action] ?? null;
+        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
+            return null;
+        }
+
+        return $dtoClass::fromArray($data);
     }
 }

@@ -29,6 +29,9 @@ final class ChatSignalConstants
     /** @var string Client → server: email+password login (public, anonymous-reachable) */
     public const string LOGIN = 'login';
 
+    /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
+    public const string LOGOUT = 'logout';
+
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 

@@ -899,7 +899,22 @@ abstract class WorkerManager extends BaseManager
                     }
                     $this->onActionHandled($name, $signalData);
                     $agent->onSignalAction($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchAction($signalData, $source);
+                    $agentActionDto = Hilos::$sr?->createAgentActionPayloadDTO(
+                        $name,
+                        $signalData->data,
+                        $agent->getType(),
+                    );
+                    if ($agentActionDto !== null) {
+                        // Page-independent action owned by this agent through AGENT_ACTIONS:
+                        // dispatch straight to the agent, never the page router.
+                        try {
+                            $agent->onAgentAction($signalData->acceptKey, $name, $agentActionDto);
+                        } catch (Throwable $e) {
+                            Logger::logAgentError($agent->getId(), "Agent action handler failed: {$e->getMessage()}");
+                        }
+                    } else {
+                        $this->getPageSignalRouter($agentId, $agent)->dispatchAction($signalData, $source);
+                    }
                 } else {
                     Logger::error("onSignalAction - invalid signal data type: " . get_class($signalData));
                 }

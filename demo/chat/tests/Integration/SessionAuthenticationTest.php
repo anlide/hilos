@@ -19,7 +19,8 @@ use Hilos\Utils\Helpers\RandomHelper;
 /**
  * Integration tests for the session mechanism (HIL-161): a bare cookie token
  * yields an anonymous session and connection, and authenticateSession upgrades
- * the live connection to an authenticated user.
+ * the live connection to an authenticated user. deauthenticateSession (HIL-163)
+ * reverts that upgrade back to anonymous.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class SessionAuthenticationTest extends IntegrationTestCase
@@ -66,6 +67,58 @@ final class SessionAuthenticationTest extends IntegrationTestCase
 
             $this->assertSame($userId, Hilos::$db->sessions->findByToken($token)?->userId);
             $this->assertSame($userId, Hilos::$rt->connections['upgrade-ak']->userId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * deauthenticateSession reverts the session to anonymous, keeps the row, and
+     * re-points its connection back to no user (HIL-163, inverse of authenticate).
+     *
+     * @throws HilosException When setup or agent signal handling fails
+     */
+    public function testDeauthenticateSessionRevertsUserAndRepointsConnection(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = (int) Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+
+        $agent->onSignalHandshake($this->handshake('logout-ak', $token), '', '');
+        $agent->authenticateSession($token, $userId);
+        $this->assertSame($userId, Hilos::$rt->connections['logout-ak']->userId);
+
+        try {
+            $agent->deauthenticateSession($token);
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+            $this->assertNull(Hilos::$rt->connections['logout-ak']->userId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Logout on an already-anonymous session is ignored: no error, session stays
+     * anonymous, and its connection stays user-less (HIL-163 guest guard).
+     *
+     * @throws HilosException When setup or agent signal handling fails
+     */
+    public function testDeauthenticateAnonymousSessionIsNoop(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+
+        $agent->onSignalHandshake($this->handshake('guest-ak', $token), '', '');
+        $this->assertNull(Hilos::$rt->connections['guest-ak']->userId);
+
+        try {
+            $agent->deauthenticateSession($token);
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+            $this->assertNull(Hilos::$rt->connections['guest-ak']->userId);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }

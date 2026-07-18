@@ -11,6 +11,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
@@ -245,6 +246,30 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
+    }
+
+    public function testComputedAgentActionRoutesMatchChatAgentOwnership(): void
+    {
+        $this->assertSame([
+            ChatSignalConstants::LOGOUT => AgentType::CHAT,
+        ], Hilos::getAgentActionRoutes());
+    }
+
+    public function testAgentActionDtoRoutesCoverDeclaredAgentActions(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            $this->assertNotNull($agentClass);
+            foreach ($agentClass::AGENT_ACTIONS as $action => $dtoClass) {
+                $declaredRoutes[$action] = $dtoClass;
+            }
+        }
+
+        $this->assertSame([
+            ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
+        ], $declaredRoutes);
+        $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }
 
     public function testPageActionRoutesCoverDeclaredPageActions(): void

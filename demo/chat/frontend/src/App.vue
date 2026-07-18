@@ -75,6 +75,15 @@ const pages: Record<string, Component> = {
 // names the user.
 const userName = useSignal(currentUserName)
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
+
+// The shell logout control. Logout is page-independent, so it sends the
+// agent-owned `logout` action (PHP `ChatSignalConstants::LOGOUT`) rather than a
+// page action; the backend reverts the session to anonymous and the null
+// handshake response clears the current user through the session scope.
+const LOGOUT_ACTION = 'logout'
+const logout = (): void => {
+  connection.sendAction(LOGOUT_ACTION, {})
+}
 </script>
 
 <template>
@@ -90,6 +99,16 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
         <i class="bi bi-person-circle me-1" aria-hidden="true"></i
         >{{ userName }}
       </HilosLink>
+      <button
+        v-if="userName"
+        type="button"
+        class="btn btn-link nav-link d-inline-flex align-items-center p-0 ms-3"
+        data-id="nav-logout"
+        aria-label="Log out"
+        @click="logout"
+      >
+        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+      </button>
     </template>
     <HilosView :pages="pages" />
   </HilosLayout>
