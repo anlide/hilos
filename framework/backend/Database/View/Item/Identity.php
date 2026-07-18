@@ -57,4 +57,18 @@ final class Identity extends DbItem
     {
         return $this->_object->verifyPassword($plainPassword);
     }
+
+    /**
+     * Re-hashes the stored password when the current hash is outdated.
+     *
+     * Delegates to the object layer's rehash-on-login primitive; the hash never
+     * crosses the view boundary.
+     *
+     * @param string $plainPassword Plaintext secret that just verified against the stored hash
+     * @throws DatabaseException When the secret lookup or update query fails
+     */
+    public function rehashPasswordIfNeeded(string $plainPassword): void
+    {
+        $this->_object->rehashPasswordIfNeeded($plainPassword);
+    }
 }

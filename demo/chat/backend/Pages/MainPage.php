@@ -12,6 +12,7 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
+use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
@@ -27,6 +28,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -49,6 +51,7 @@ final class MainPage extends AbstractPage
 
     public const array ACTIONS = [
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
+        ChatSignalConstants::LOGIN => LoginActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
     ];
@@ -70,6 +73,12 @@ final class MainPage extends AbstractPage
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
     /**
+     * Generic login failure message shared by the unknown-email and wrong-password
+     * paths so the response never discloses which account exists.
+     */
+    private const string INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
+
+    /**
      * Routes main-page actions to message, upload init, and attachment draft handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
@@ -88,6 +97,14 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, MessageActionDTO::class, $dto);
                 }
                 $this->handleMessage($dto);
+
+                break;
+
+            case ChatSignalConstants::LOGIN:
+                if (!$dto instanceof LoginActionDTO) {
+                    throw new InvalidActionPayloadException($action, LoginActionDTO::class, $dto);
+                }
+                $this->handleLogin($dto);
 
                 break;
 
@@ -192,6 +209,54 @@ final class MainPage extends AbstractPage
 
         Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
         Hilos::$rt->selfConnection->actions->startOutboundModeration($dto->content);
+    }
+
+    /**
+     * Verifies email+password against a `password` identity and promotes the session.
+     *
+     * A missing identity and a wrong password both fail with the same generic
+     * message (no user enumeration); the unknown-email path still spends the
+     * hash-verify cost so response time stays constant. A verified login rehashes
+     * the stored hash when its parameters are outdated, then upgrades the live
+     * anonymous session to the matched user through
+     * {@see ChatAgent::authenticateSession()}.
+     *
+     * @param LoginActionDTO $dto Parsed login payload (email, password)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the credentials are invalid
+     * @throws HilosException When identity lookup, rehash, or session promotion fails
+     */
+    private function handleLogin(LoginActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $email = strtolower($dto->email);
+        $identity = $email !== ''
+            ? Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)
+            : null;
+
+        if ($identity === null) {
+            // No account for this email: still spend the verify cost so the
+            // response time does not disclose that the identifier is unknown.
+            Hilos::$db->identities->verifyDummyPassword($dto->password);
+
+            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+        }
+
+        if (!$identity->verifyPassword($dto->password)) {
+            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+        }
+
+        $identity->rehashPasswordIfNeeded($dto->password);
+
+        $userId = $identity->userId;
+        if ($userId === null) {
+            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+        }
+
+        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
     }
 
     /**

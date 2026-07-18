@@ -26,6 +26,9 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
+    /** @var string Client → server: email+password login (public, anonymous-reachable) */
+    public const string LOGIN = 'login';
+
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 

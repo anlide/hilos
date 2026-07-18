@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Identity;
 
 /**
@@ -72,5 +73,19 @@ final class Identities extends DbCollection
         }
 
         return $result;
+    }
+
+    /**
+     * Runs a throwaway password verification to equalize login response time.
+     *
+     * Anti-enumeration companion of {@see findByIdentity()}: when a login lookup
+     * misses, the handler still spends the bcrypt cost so response time does not
+     * disclose whether the identifier exists.
+     *
+     * @param string $plainPassword Submitted plaintext to verify against a dummy hash
+     */
+    public function verifyDummyPassword(string $plainPassword): void
+    {
+        ObjectIdentity::verifyDummyPassword($plainPassword);
     }
 }

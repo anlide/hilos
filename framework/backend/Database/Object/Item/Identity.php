@@ -39,6 +39,12 @@ final class Identity extends Object_
     public const string verified = 'verified';
 
     /**
+     * Fixed bcrypt hash used only to equalize login response time on an unknown
+     * identifier (see {@see verifyDummyPassword()}). Not a real credential.
+     */
+    private const string DUMMY_PASSWORD_HASH = '$2y$12$Dl.YAAr3YO3hR7hVxV56Gewg9CzLLWQqLQfTP0TdJj.o9lg9lhwiy';
+
+    /**
      * Returns the database collection key.
      *
      * @return string Collection key (HilosDbContext::identities)
@@ -125,6 +131,68 @@ final class Identity extends Object_
         $secret = $row[EntityIdentity::secret] ?? null;
 
         return is_string($secret) && $secret !== '' && password_verify($plainPassword, $secret);
+    }
+
+    /**
+     * Re-hashes the stored password when the current hash is outdated.
+     *
+     * Rehash-on-login primitive of the identity layer (HIL-162): after the
+     * plaintext has verified, the hash is read and, when
+     * {@see password_needs_rehash()} reports an algorithm/cost drift, rewritten
+     * with a targeted query so the hash never leaves the layer. A no-op for an
+     * unpersisted identity, one with no secret, or a hash already at the current
+     * parameters.
+     *
+     * @param string $plainPassword Plaintext secret that just verified against the stored hash
+     * @throws DatabaseException When the secret lookup or update query fails
+     */
+    public function rehashPasswordIfNeeded(string $plainPassword): void
+    {
+        if ($this->entity->id === null || $plainPassword === '') {
+            return;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $resultSet = Database::sql(
+            'SELECT `' . EntityIdentity::secret . '` FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::id . '` = ?',
+            $params,
+        )->first();
+        if ($resultSet === null) {
+            return;
+        }
+
+        $row = $resultSet->first();
+        if ($row === null) {
+            return;
+        }
+        $secret = $row[EntityIdentity::secret] ?? null;
+        if (!is_string($secret) || $secret === '' || !password_needs_rehash($secret, PASSWORD_DEFAULT)) {
+            return;
+        }
+
+        $updateParams = SqlParamCollection::empty();
+        $updateParams->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
+        $updateParams->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
+            $updateParams,
+        );
+    }
+
+    /**
+     * Runs a throwaway hash verification to equalize login response time.
+     *
+     * Anti-enumeration companion of {@see verifyPassword()}: on an unknown
+     * identifier the login handler has no stored hash to check, so it spends the
+     * same bcrypt cost against a fixed dummy hash. The boolean result is
+     * intentionally discarded — only the elapsed time matters.
+     *
+     * @param string $plainPassword Submitted plaintext to verify against the dummy hash
+     */
+    public static function verifyDummyPassword(string $plainPassword): void
+    {
+        password_verify($plainPassword, self::DUMMY_PASSWORD_HASH);
     }
 
     /**

@@ -136,6 +136,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
+            ChatSignalConstants::LOGIN => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
@@ -159,6 +160,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
+            ChatSignalConstants::LOGIN => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
