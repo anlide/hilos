@@ -1,0 +1,88 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Database\Object\Collection;
+
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
+use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Objects;
+
+/**
+ * Identities object collection.
+ *
+ * @extends Objects<ObjectIdentity>
+ * @method ObjectIdentity|null current()
+ * @method ObjectIdentity|null first()
+ * @method ObjectIdentity|null last()
+ * @method ObjectIdentity|null get(int|string $key)
+ * @method ObjectIdentity|null offsetGet(mixed $offset)
+ */
+final class Identities extends Objects
+{
+    public const string OBJECT_CLASS = ObjectIdentity::class;
+    public const string ENTITY_COLLECTION_CLASS = EntityIdentities::class;
+    public const string COLLECTION_KEY = HilosDbContext::identities;
+
+    /**
+     * Finds the identity for a (type, identifier) pair.
+     *
+     * Canonical login/link lookup: identifier is unique per type, so this
+     * returns at most one identity. Callers normalize identifier per type
+     * (lowercase email, E.164 phone, 'provider:subject') before lookup.
+     *
+     * @param string $type Identity type (see IdentityType)
+     * @param string $identifier Normalized identifier for the type
+     * @return ?ObjectIdentity Identity object or null if not found
+     * @throws DatabaseException If the database query fails
+     */
+    public function findByIdentity(string $type, string $identifier): ?ObjectIdentity
+    {
+        if ($type === '' || $identifier === '') {
+            return null;
+        }
+
+        $entityIdentity = EntityIdentity::get([
+            EntityIdentity::type => $type,
+            EntityIdentity::identifier => $identifier,
+        ])->first();
+
+        if ($entityIdentity === null) {
+            return null;
+        }
+
+        if (!isset($this->objects[$entityIdentity->id])) {
+            $this->objects[$entityIdentity->id] = ObjectIdentity::fromEntity($entityIdentity);
+        }
+
+        return $this->objects[$entityIdentity->id];
+    }
+
+    /**
+     * Lists all identities owned by a user.
+     *
+     * @param int $userId Owning user id
+     * @return list<ObjectIdentity> Identity objects for the user (empty when none)
+     * @throws DatabaseException If the database query fails
+     */
+    public function listByUser(int $userId): array
+    {
+        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+
+        $result = [];
+        foreach ($entityIdentities as $entityIdentity) {
+            if ($entityIdentity->id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$entityIdentity->id])) {
+                $this->objects[$entityIdentity->id] = ObjectIdentity::fromEntity($entityIdentity);
+            }
+            $result[] = $this->objects[$entityIdentity->id];
+        }
+
+        return $result;
+    }
+}
