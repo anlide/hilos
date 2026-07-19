@@ -6,9 +6,12 @@ namespace Hilos\Backup\Agent;
 
 use DateTimeImmutable;
 use DateTimeInterface;
+use DateTimeZone;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupHistoryScanner;
+use Hilos\Backup\BackupPruner;
+use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
 use Hilos\Backup\BackupScope;
 use Hilos\Constants\EnvConstants;
@@ -237,6 +240,11 @@ final class BackupAgent extends AbstractAgent
 
         // Rescan storage either way: success adds the new archive, failure adds the error sidecar.
         $this->refreshHistory();
+        if ($success) {
+            // Rotation runs only after a successful create (HIL-273 also crons it); a failed
+            // run added nothing prunable, so there is nothing to rotate.
+            $this->pruneHistory();
+        }
         $this->resetRun();
         $this->clearRuntime();
     }
@@ -332,6 +340,51 @@ final class BackupAgent extends AbstractAgent
             count($result->metadatas),
             count($result->anomalies),
         ));
+    }
+
+    /**
+     * Applies the retention policy to the runtime index: deletes pruned backups and their rows.
+     *
+     * Runs against the just-rebuilt index (files=truth, RT=index): {@see BackupPruner} plans the
+     * keep-set, then each pruned backup's archive and sidecar are deleted and its index row is
+     * dropped, so the runtime index stays the mirror of storage. Any failure is logged and
+     * swallowed - rotation must never take down the daemon loop.
+     */
+    private function pruneHistory(): void
+    {
+        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
+        if (!$histories instanceof BackupHistories) {
+            return;
+        }
+
+        try {
+            $rows = [];
+            foreach ($histories as $row) {
+                if ($row instanceof BackupHistory) {
+                    $rows[] = $row;
+                }
+            }
+
+            $pruner = new BackupPruner();
+            $doomed = $pruner->selectForDeletion(
+                $rows,
+                BackupRetentionPolicy::fromEnv(),
+                new DateTimeZone(date_default_timezone_get()),
+            );
+            if ($doomed === []) {
+                return;
+            }
+
+            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+            foreach ($doomed as $row) {
+                $pruner->deleteStored($row, $root);
+                $histories->remove($row->getId());
+            }
+
+            $this->logAgentInfo(sprintf('Backup rotation pruned %d entries', count($doomed)));
+        } catch (Throwable $e) {
+            $this->logAgentError('Backup rotation failed: ' . $e->getMessage());
+        }
     }
 
     /**

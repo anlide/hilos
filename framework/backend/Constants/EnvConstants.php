@@ -281,6 +281,27 @@ enum EnvConstants
      */
     case BACKUP_TIMEOUT;
 
+    /**
+     * Retention depth (number of buckets kept) of the daily rotation tier. One shared
+     * set of tier depths applies to every scope's grid. Default 45.
+     */
+    case BACKUP_RETENTION_DAILY;
+
+    /** Retention depth of the ISO-week rotation tier, shared across scopes. Default 45. */
+    case BACKUP_RETENTION_WEEKLY;
+
+    /** Retention depth of the calendar-month rotation tier, shared across scopes. Default 45. */
+    case BACKUP_RETENTION_MONTHLY;
+
+    /** Retention depth of the calendar-year rotation tier, shared across scopes. Default 45. */
+    case BACKUP_RETENTION_YEARLY;
+
+    /**
+     * How many of the newest error records rotation keeps; older ones are deleted. Error
+     * records never enter the restore grids, so they get their own count. Default 20.
+     */
+    case BACKUP_ERROR_RETENTION_COUNT;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**
