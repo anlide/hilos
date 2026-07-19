@@ -26,8 +26,11 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 3. Drive a submit button through its actionable states: scroll into view →
    assert visible → assert enabled → focus → click; then wait for the form to
    leave **or** the button to re-enable.
-4. Assert on **state that arrives over the socket**, not on fixed timeouts.
-5. e2e runs the **built artifact** with a booted daemon — rebuild after a
+4. After triggering an action, wait for it to **settle** — loading cleared, the
+   surface/dialog closed on success, or the inline error shown — before asserting
+   its result. Asserting through an in-flight action races the reply and flakes.
+5. Assert on **state that arrives over the socket**, not on fixed timeouts.
+6. e2e runs the **built artifact** with a booted daemon — rebuild after a
    frontend change before the spec exercises it, and reset before re-running a
    data-mutating spec.
 
@@ -36,4 +39,6 @@ chosen command use `$hilos-testing-cli`. This skill is how a spec is *written*.
 - Select by stable `data-id` only — never by text or position.
 - Never set an input value with `fill(value)` — clear with `fill('')`, then
   `pressSequentially`.
+- Never assert an action's result while the action is still in flight — wait for
+  it to settle (success or error) first.
 - Never run `git commit` or `git push`.

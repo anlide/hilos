@@ -61,6 +61,21 @@ into view, assert it visible and enabled, focus it, then click. After the click,
 wait for the form to leave **or** the button to re-enable — never assume a click
 that landed on a still-disabled control did anything.
 
+## Wait for the action to settle before asserting its result
+
+An action dispatched from the UI (a submit, a save) is **in flight** until its
+reply lands — the control shows loading meanwhile. Do not assert the post-action
+state while it is still loading: first wait for the action to **settle** — the
+loading cleared, the surface or dialog closed on success, **or** the inline error
+shown on rejection. Asserting through an in-flight action races the reply and is a
+classic flaky pattern — the gated sign-in specs flaked exactly this way: the
+helper clicked submit and asserted the profile before the session upgrade landed.
+Only after the settle does the follow-up assertion — the resumed page, the closed
+dialog, the error text — run against a resolved state. This is distinct from, and
+comes before, waiting on the **subscription** reply the result itself depends on
+(e.g. the profile snapshot that fills the card): settle the action first, then
+assert the data.
+
 ## Source vs build
 
 Unit tests run against **source**; e2e runs against the **built artifact** with a

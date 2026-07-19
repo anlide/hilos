@@ -55,6 +55,25 @@ async function clickSubmit(button: Locator): Promise<void> {
   await button.click()
 }
 
+/**
+ * Wait for an auth submit to SETTLE before the caller asserts its result. The
+ * dispatched login/register is in flight until its reply lands: on success the
+ * session upgrades and the surface closes (the gate/modal unmounts on the
+ * current-user signal); on rejection an inline error appears and the surface
+ * stays. Either outcome means the reply arrived — so the next assertion runs
+ * against a resolved state, never a still-loading one (that race is what made the
+ * gated-profile specs flaky).
+ *
+ * @param page The page whose auth surface is submitting.
+ */
+async function waitAuthSettled(page: Page): Promise<void> {
+  await expect(async () => {
+    const closed = (await page.getByTestId('auth-surface').count()) === 0
+    const failed = (await page.getByTestId('auth-error').count()) > 0
+    expect(closed || failed).toBeTruthy()
+  }).toPass()
+}
+
 /** Fill and submit the register form on the currently mounted auth surface. */
 export async function register(page: Page, email: string): Promise<void> {
   await page.getByTestId('auth-to-register').click()
@@ -63,6 +82,7 @@ export async function register(page: Page, email: string): Promise<void> {
   await typeInto(page.getByTestId('auth-password'), PASSWORD)
   await typeInto(page.getByTestId('auth-confirm'), PASSWORD)
   await clickSubmit(page.getByTestId('auth-submit'))
+  await waitAuthSettled(page)
 }
 
 /** Fill and submit the login form on the currently mounted surface (default mode). */
@@ -74,6 +94,7 @@ export async function login(
   await typeInto(page.getByTestId('auth-email'), email)
   await typeInto(page.getByTestId('auth-password'), password)
   await clickSubmit(page.getByTestId('auth-submit'))
+  await waitAuthSettled(page)
 }
 
 /** Log out through the shell control and wait for the anonymous state to settle
