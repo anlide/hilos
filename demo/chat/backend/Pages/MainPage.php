@@ -14,6 +14,7 @@ use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
+use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
@@ -22,7 +23,9 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
@@ -52,6 +55,7 @@ final class MainPage extends AbstractPage
     public const array ACTIONS = [
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
         ChatSignalConstants::LOGIN => LoginActionDTO::class,
+        ChatSignalConstants::REGISTER => RegisterActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
     ];
@@ -77,6 +81,12 @@ final class MainPage extends AbstractPage
      * paths so the response never discloses which account exists.
      */
     private const string INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
+
+    /**
+     * Minimum registration password length. Length-only policy (no complexity
+     * rule) — the shortest lever that keeps trivially weak passwords out.
+     */
+    private const int PASSWORD_MIN_LENGTH = 8;
 
     /**
      * Routes main-page actions to message, upload init, and attachment draft handlers.
@@ -105,6 +115,14 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, LoginActionDTO::class, $dto);
                 }
                 $this->handleLogin($dto);
+
+                break;
+
+            case ChatSignalConstants::REGISTER:
+                if (!$dto instanceof RegisterActionDTO) {
+                    throw new InvalidActionPayloadException($action, RegisterActionDTO::class, $dto);
+                }
+                $this->handleRegister($dto);
 
                 break;
 
@@ -257,6 +275,94 @@ final class MainPage extends AbstractPage
         }
 
         $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+    }
+
+    /**
+     * Registers a new email+password account and, by default, logs it in.
+     *
+     * Validates the submission (required fields, email format, password length,
+     * confirmation match), then creates a durable user whose display name defaults
+     * to the email local part and a `password` identity (identifier = lowercased
+     * email, secret = bcrypt hash, verified = false) through the identity layer.
+     * A taken email surfaces as {@see DuplicateValueException} ("email already
+     * used") on the existing single-message action-error channel — registration
+     * legitimately reveals a taken email, so there is no anti-enumeration concern
+     * here (that is a login concern). On success the live anonymous session is
+     * upgraded to the new user through {@see ChatAgent::authenticateSession()},
+     * unless {@see self::autoLoginAfterRegister()} is overridden to defer it.
+     *
+     * @param RegisterActionDTO $dto Parsed register payload (email, password, confirmPassword)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws EmptyValueException When email or password fields are empty
+     * @throws InvalidFormatException When the email is not a valid address
+     * @throws ValidationException When the password is too short or the confirmation does not match
+     * @throws DuplicateValueException When the email already has a password identity
+     * @throws HilosException When user creation, identity creation, or session promotion fails
+     */
+    private function handleRegister(RegisterActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $email = strtolower($dto->email);
+        if ($email === '' || $dto->password === '' || $dto->confirmPassword === '') {
+            throw new EmptyValueException('Email and password are required');
+        }
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw new InvalidFormatException('Enter a valid email address');
+        }
+        if (strlen($dto->password) < self::PASSWORD_MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . self::PASSWORD_MIN_LENGTH . ' characters');
+        }
+        if ($dto->password !== $dto->confirmPassword) {
+            throw new ValidationException('Passwords do not match');
+        }
+
+        // Reject a taken email before creating the user so a duplicate does not
+        // leave an orphan user row; the identity write also guards it uniquely.
+        if (Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email) !== null) {
+            throw new DuplicateValueException('email already used');
+        }
+
+        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
+        $userId = (int)$user->id;
+
+        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->password);
+
+        if ($this->autoLoginAfterRegister()) {
+            $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+        }
+    }
+
+    /**
+     * Whether a freshly registered user is logged in immediately.
+     *
+     * Default = auto-login: registration upgrades the current session to the new
+     * user right away. A concrete project overrides this to return false to hold
+     * for email verification (HIL-298) or route to an explicit login instead.
+     *
+     * @return bool True to auto-login the new user (default)
+     */
+    protected function autoLoginAfterRegister(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Derives the default display name from an email address.
+     *
+     * Uses the local part (everything before the first `@`); the name is not an
+     * identifier and stays editable later in Profile.
+     *
+     * @param string $email Lowercased account email
+     * @return string Display name (email local part, or the whole string when no `@`)
+     */
+    private function displayNameFromEmail(string $email): string
+    {
+        $atPosition = strpos($email, '@');
+
+        return $atPosition === false ? $email : substr($email, 0, $atPosition);
     }
 
     /**

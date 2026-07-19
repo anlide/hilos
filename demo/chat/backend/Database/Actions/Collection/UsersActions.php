@@ -55,4 +55,31 @@ final class UsersActions extends DbActions
 
         return $this->createDbItemFromObject($user);
     }
+
+    /**
+     * Creates a durable user with a display name (email+password registration).
+     *
+     * Registration path (HIL-164): the user is created up front with the given
+     * display name and no session token — the session→user binding is applied
+     * separately through the auth seam, not carried on the user row. The name is
+     * defaulted from the email local part by the caller and is editable later in
+     * Profile.
+     *
+     * @param string $name Display name for the new user
+     * @return User Created user
+     * @throws HilosException On database error
+     */
+    public function createWithName(string $name): User
+    {
+        $this->ensureCanWrite();
+
+        $user = ObjectUser::create();
+        $user->name = $name;
+        $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->sync();
+
+        $this->addObjectToCollection($user);
+
+        return $this->createDbItemFromObject($user);
+    }
 }
