@@ -125,6 +125,42 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     }
 
     /**
+     * A session with several open tabs re-points EVERY one of its connections on
+     * authenticate and again on logout (HIL-370, area 7): the SessionGroup fan-out
+     * reaches all connections sharing the token, not just the acting tab. Asserted
+     * at the integration level in place of a two-window e2e (hilos-selective-testing).
+     *
+     * @throws HilosException When setup or agent signal handling fails
+     */
+    public function testAuthenticateAndLogoutRepointEveryConnectionOfSession(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
+
+        $agent->onSignalHandshake($this->handshake('tab-a-ak', $token), '', '');
+        $agent->onSignalHandshake($this->handshake('tab-b-ak', $token), '', '');
+        $this->assertNull(Hilos::$rt->connections['tab-a-ak']->userId);
+        $this->assertNull(Hilos::$rt->connections['tab-b-ak']->userId);
+
+        try {
+            $agent->authenticateSession($token, $userId);
+
+            $this->assertSame($userId, Hilos::$rt->connections['tab-a-ak']->userId);
+            $this->assertSame($userId, Hilos::$rt->connections['tab-b-ak']->userId);
+
+            $agent->deauthenticateSession($token);
+
+            $this->assertNotNull(Hilos::$db->sessions->findByToken($token));
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+            $this->assertNull(Hilos::$rt->connections['tab-a-ak']->userId);
+            $this->assertNull(Hilos::$rt->connections['tab-b-ak']->userId);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * Registers the truth sources and signal router the handshake path needs.
      *
      * @return ChatAgent Agent under test
