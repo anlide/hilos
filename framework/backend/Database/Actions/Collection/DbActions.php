@@ -27,7 +27,7 @@ use Hilos\Database\View\Item\DbItem;
  * One-item update/delete operations belong to the loaded DbItem actions.
  *
  * Usage:
- *   $user = Hilos::$db->users->actions->register($sessionToken);
+ *   $user = Hilos::$db->users->actions->createWithName($name);
  *   $event = Hilos::$db->events->actions->add($type, $userId, $data);
  *
  * @template T of DbItem

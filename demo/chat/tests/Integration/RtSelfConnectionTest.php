@@ -9,7 +9,6 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for connection-local runtime access.
@@ -24,7 +23,7 @@ final class RtSelfConnectionTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('self-ak', $user->id);
             Hilos::$rt->connections->actions->register('other-ak', $user->id);
 

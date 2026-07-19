@@ -22,7 +22,6 @@ use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 use ReflectionProperty;
 
 /**
@@ -88,7 +87,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             );
             Hilos::$db->events->actions->addMessage(
                 'first message',
-                userId: Hilos::$db->users->actions->register(RandomHelper::hex(16))->id,
+                userId: Hilos::$db->users->actions->createWithName('User')->id,
             );
 
             $agent->onSignalDbSyncCreated(
@@ -128,7 +127,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             $agent->onStart();
             Hilos::$db->events->actions->addMessage(
                 'first message',
-                userId: Hilos::$db->users->actions->register(RandomHelper::hex(16))->id,
+                userId: Hilos::$db->users->actions->createWithName('User')->id,
             );
             $agent->onSignalDbSyncCreated(
                 $this->eventSignal(ChatEventType::MESSAGE_SENT),
@@ -139,7 +138,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
             Hilos::$db->events->actions->addMessage(
                 'second message',
-                userId: Hilos::$db->users->actions->register(RandomHelper::hex(16))->id,
+                userId: Hilos::$db->users->actions->createWithName('User')->id,
             );
             $agent->onSignalDbSyncCreated(
                 $this->eventSignal(ChatEventType::MESSAGE_SENT),

@@ -25,7 +25,6 @@ final class User extends Entity
     public const string admin = 'admin';
     public const string block = 'block';
     public const string last_activity = 'last_activity';
-    public const string session_token = 'session_token';
 
     // Table meta information
     public const string _table = 'user';
@@ -35,7 +34,6 @@ final class User extends Entity
         self::name,
         self::admin,
         self::block,
-        self::session_token,
         self::last_activity,
     ];
 
@@ -45,13 +43,11 @@ final class User extends Entity
         self::name => PhpType::STRING->value,
         self::admin => PhpType::BOOLEAN->value,
         self::block => PhpType::BOOLEAN->value,
-        self::session_token => PhpType::STRING->value,
         self::last_activity => PhpType::DATETIME->value,
     ];
 
     // Indexes
     public const array _indexes = [
-        'session_token' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_token]],
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
@@ -60,6 +56,5 @@ final class User extends Entity
     public string $name;
     public bool $admin = false;
     public bool $block = false;
-    public ?string $session_token = null;
     public ?string $last_activity = null;
 }

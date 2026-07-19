@@ -19,7 +19,6 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\LLM\Exception\LLMRequestException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 use ReflectionProperty;
 
 /**
@@ -36,7 +35,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
         Hilos::$rt->userStates->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('moderator-tick-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-tick-ak']?->actions->startOutboundModeration(
@@ -71,7 +70,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
         Hilos::$rt->userStates->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('moderator-rename-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-rename-ak']?->actions->startRenameModeration(
@@ -107,7 +106,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
         Hilos::$rt->userStates->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('moderator-invalid-output-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-invalid-output-ak']?->actions->startOutboundModeration(
@@ -164,7 +163,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
         Hilos::$rt->userStates->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('moderator-in-flight-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-in-flight-ak']?->actions->startOutboundModeration(

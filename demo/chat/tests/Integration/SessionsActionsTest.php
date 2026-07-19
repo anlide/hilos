@@ -82,7 +82,7 @@ final class SessionsActionsTest extends IntegrationTestCase
      */
     public function testBindAndUnbindUser(): void
     {
-        $userId = (int) Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
         $token = RandomHelper::hex(16);
         Hilos::$db->sessions->actions->createAnonymous($token);
 

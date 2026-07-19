@@ -7,6 +7,8 @@ namespace Hilos\Pages;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Page\AbstractPage;
 
 /**
@@ -19,6 +21,12 @@ use Hilos\Core\Page\AbstractPage;
  * the live connection and may run project-specific edit flows such as a
  * moderated rename), not the framework admin agent. The concrete subclass binds
  * the agent, its browser data, and any actions (e.g. Demo\Chat\Pages\Hilos\ProfilePage).
+ *
+ * The profile is a signed-in-only surface, so the framework guards its
+ * subscription with a flagless AUTHENTICATED guard: an anonymous session is
+ * denied a 401 and the in-place auth-gate slot mounts sign-in over the page,
+ * resuming the moment the session upgrades. The guard needs no project source or
+ * flag, so it lives on the base and applies to every Hilos project's profile.
  */
 abstract class AbstractHilosProfilePage extends AbstractPage
 {
@@ -26,5 +34,10 @@ abstract class AbstractHilosProfilePage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE,
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED,
+            ],
+        ],
     ];
 }

@@ -8,9 +8,10 @@ paste) via the useComposerUpload engine, shows each upload's progress and the
 pending attachment chips, and runs a re-send lockout timer before the next
 submit. Rendered by HilosView when the navigator's route is the main page. -->
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useConnectionState, useSignal } from '@hilos/vue'
 
+import { authGateKey } from '../../auth/authGateKey'
 import { connection } from '../../bootstrap/connection'
 import { currentUserId, currentUserName } from '../../bootstrap/session'
 import {
@@ -41,6 +42,17 @@ const error = useSignal(messageError)
 
 const connectionState = useConnectionState(connection)
 const isConnected = computed(() => connectionState.value === 'connected')
+
+// Anonymous read, authenticated write (HIL-360): a guest reads the chat but
+// cannot send, so the composer is disabled until the session names a user (the
+// handshake response turns the current-user id non-null). The banner's CTA opens
+// the in-place sign-in surface through the auth gate — no 401 round-trip.
+const authGate = inject(authGateKey)
+const isAuthenticated = computed(() => selfId.value !== null)
+
+function promptSignIn(): void {
+  authGate?.requireAuth()
+}
 
 // The event stream owns its own scroll (overflow-auto in the template), so a new
 // event would otherwise append below the fold. Keep it pinned to the newest
@@ -140,10 +152,12 @@ const removeDraft = (draftId: string): void => {
   deleteAttachmentDraft(draftId)
 }
 
-// Send is gated: a live connection, some content (text or an attachment), no
-// active re-send lockout, no in-flight moderation, and no in-flight upload.
+// Send is gated: an authenticated + live connection, some content (text or an
+// attachment), no active re-send lockout, no in-flight moderation, and no
+// in-flight upload.
 const canSend = computed(
   () =>
+    isAuthenticated.value &&
     isConnected.value &&
     hasContent.value &&
     cooldownSeconds.value === 0 &&
@@ -433,6 +447,23 @@ onUnmounted(() => {
       </div>
 
       <div
+        v-if="!isAuthenticated"
+        class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+        role="status"
+        data-id="register-banner"
+      >
+        <span>Sign in or create an account to send messages.</span>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary flex-shrink-0"
+          data-id="register-banner-cta"
+          @click="promptSignIn"
+        >
+          Sign in
+        </button>
+      </div>
+
+      <div
         v-if="moderationBanner"
         class="small mb-1 d-flex align-items-center gap-2"
         :class="moderationBanner.className"
@@ -529,7 +560,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-outline-secondary flex-shrink-0"
-          :disabled="!isConnected || isModerating"
+          :disabled="!isAuthenticated || !isConnected || isModerating"
           aria-label="Attach files"
           data-id="attach-button"
           @click="openFilePicker"
@@ -542,7 +573,7 @@ onUnmounted(() => {
           class="form-control"
           placeholder="Type your message..."
           maxlength="500"
-          :disabled="!isConnected || isModerating"
+          :disabled="!isAuthenticated || !isConnected || isModerating"
           data-id="message-input"
           @input="handleInput"
           @paste="onPaste"

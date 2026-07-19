@@ -8,6 +8,7 @@ import { hilosRouterKey } from '@hilos/vue'
 import { createApp } from 'vue'
 
 import App from '../App.vue'
+import { authGateKey } from '../auth/authGateKey'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
@@ -35,4 +36,8 @@ const authGate = createAuthGate({
 
 const app = createApp(App, { authGate })
 app.provide(hilosRouterKey, hilosRouter)
+// Also provide the gate app-wide so a live page (the main composer banner) can
+// inject it and open sign-in in place; App still receives it as a prop to wire
+// the HilosView outlet.
+app.provide(authGateKey, authGate)
 app.mount('#app')

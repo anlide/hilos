@@ -9,7 +9,6 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\HilosException;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for UserActions (item-level).
@@ -24,8 +23,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameSucceeds(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $userId = $user->id;
         $this->assertNotNull($userId);
 
@@ -43,8 +41,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameAcceptsSixtyFourCharacters(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $userId = $user->id;
         $this->assertNotNull($userId);
 
@@ -61,8 +58,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameEmptyThrows(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(EmptyValueException::class);
@@ -78,8 +74,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameTooShortThrows(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(ValueTooShortException::class);
@@ -95,8 +90,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameTooLongThrows(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $dbUser = Hilos::$db->users[$user->id];
 
         $this->expectException(ValueTooLongException::class);
@@ -112,8 +106,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testRenameSameNameNoOp(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $originalName = $user->name;
         $dbUser = Hilos::$db->users[$user->id];
 
@@ -130,8 +123,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testSetAdminGrantsThenRevokes(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $userId = $user->id;
         $this->assertNotNull($userId);
         $this->assertFalse($user->admin);
@@ -150,8 +142,7 @@ final class UserActionsTest extends IntegrationTestCase
      */
     public function testSetAdminSameValueNoOp(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('User');
         $userId = $user->id;
 
         Hilos::$db->users[$userId]->actions->setAdmin(false);

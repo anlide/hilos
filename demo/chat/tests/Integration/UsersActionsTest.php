@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
-use Hilos\Core\Exception\DuplicateValueException;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for UsersActions.
@@ -17,45 +14,18 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class UsersActionsTest extends IntegrationTestCase
 {
     /**
-     * Register with valid token creates user with auto-generated name.
+     * createWithName creates a durable user carrying the given display name; the
+     * session→user binding is applied separately through the auth seam (HIL-161),
+     * so the user row holds no session token (HIL-360 dropped the auto-guest
+     * register primitive). Broader session≠user coverage lands in HIL-167 / HIL-370.
      *
      * @throws HilosException On database error
      */
-    public function testRegisterCreatesUser(): void
+    public function testCreateWithNameCreatesUser(): void
     {
-        $token = RandomHelper::hex(16);
-        $user = Hilos::$db->users->actions->register($token);
+        $user = Hilos::$db->users->actions->createWithName('Alice');
 
         $this->assertNotNull($user->id);
-        $this->assertStringStartsWith('User', $user->name);
-        $this->assertSame($token, $user->sessionToken);
-    }
-
-    /**
-     * Register with invalid token format throws InvalidFormatException.
-     *
-     * @throws HilosException On database error
-     */
-    public function testRegisterInvalidTokenThrows(): void
-    {
-        $this->expectException(InvalidFormatException::class);
-        $this->expectExceptionMessage('Invalid session token');
-
-        Hilos::$db->users->actions->register('short');
-    }
-
-    /**
-     * Register with existing token throws DuplicateValueException.
-     *
-     * @throws HilosException On database error
-     */
-    public function testRegisterDuplicateTokenThrows(): void
-    {
-        $token = RandomHelper::hex(16);
-        Hilos::$db->users->actions->register($token);
-
-        $this->expectException(DuplicateValueException::class);
-        $this->expectExceptionMessage('already exists');
-        Hilos::$db->users->actions->register($token);
+        $this->assertSame('Alice', $user->name);
     }
 }

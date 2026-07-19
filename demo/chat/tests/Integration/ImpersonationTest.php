@@ -190,7 +190,7 @@ final class ImpersonationTest extends IntegrationTestCase
      */
     private function registerUser(): int
     {
-        return (int) Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+        return (int) Hilos::$db->users->actions->createWithName('User')->id;
     }
 
     /**

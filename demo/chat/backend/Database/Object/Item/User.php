@@ -20,7 +20,6 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $name
  * @property bool $admin
  * @property bool $block
- * @property ?string $sessionToken
  * @property ?string $lastActivity
  */
 final class User extends Object_
@@ -31,7 +30,6 @@ final class User extends Object_
     public const string name = 'name';
     public const string admin = 'admin';
     public const string block = 'block';
-    public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
 
     /**
@@ -47,7 +45,7 @@ final class User extends Object_
     /**
      * Returns the value of a user object property by name.
      *
-     * @param string $property Property name (id, name, admin, block, sessionToken, lastActivity)
+     * @param string $property Property name (id, name, admin, block, lastActivity)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access fails
      */
@@ -58,7 +56,6 @@ final class User extends Object_
             self::name => $this->entity->name,
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
-            self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
             default => parent::__get($property),
         };
@@ -77,7 +74,6 @@ final class User extends Object_
             self::name => $this->entity->name = (string)$value,
             self::admin => $this->entity->admin = (bool)$value,
             self::block => $this->entity->block = (bool)$value,
-            self::sessionToken => $this->entity->session_token = is_scalar($value) ? (string)$value : null,
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
@@ -95,7 +91,6 @@ final class User extends Object_
             self::name => $this->entity->name,
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
-            self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
         ];
     }

@@ -25,7 +25,6 @@ use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for user-initiated rename moderation.
@@ -41,7 +40,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
             Hilos::$rt->connections->actions->register('rename-start-ak', $user->id);
 
@@ -73,7 +72,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
             Hilos::$rt->connections->actions->register('rename-approve-ak', $user->id);
             Hilos::$rt->connections['rename-approve-ak']?->actions->startRenameModeration('Alice');
@@ -113,7 +112,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             $oldName = $user->name;
             Hilos::$rt->connections->actions->register('rename-reject-ak', $user->id);
             Hilos::$rt->connections['rename-reject-ak']?->actions->startRenameModeration('BlockedName');

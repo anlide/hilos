@@ -43,7 +43,7 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('draft-bridge-ak', $user->id);
             $draft = Hilos::$rt->attachmentDrafts->actions->create(
                 'draft-bridge',

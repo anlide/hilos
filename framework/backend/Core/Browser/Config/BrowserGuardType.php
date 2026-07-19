@@ -13,4 +13,7 @@ final class BrowserGuardType
 
     /** Access guard: the connection's current user must hold a truthy flag field (e.g. admin). */
     public const string ACCESS = 'access';
+
+    /** Authenticated guard: the connection must resolve to any user (flagless); a guest is denied. */
+    public const string AUTHENTICATED = 'authenticated';
 }

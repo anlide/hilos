@@ -211,7 +211,7 @@ final class MainPageLoginTest extends IntegrationTestCase
      */
     private function seedUserWithPassword(string $email, string $password, string $secretHash): int
     {
-        $userId = (int)Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+        $userId = (int)Hilos::$db->users->actions->createWithName('User')->id;
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($userId));

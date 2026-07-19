@@ -1827,6 +1827,7 @@ abstract class BrowserContext
             match ($guard[BrowserGuardKey::TYPE] ?? '') {
                 BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
                 BrowserGuardType::ACCESS => $this->assertAccessGuard($guard, $acceptKey),
+                BrowserGuardType::AUTHENTICATED => $this->assertAuthenticatedGuard($acceptKey),
                 default => throw new PageInternalErrorException('Unsupported browser guard type'),
             };
         }
@@ -1918,6 +1919,23 @@ abstract class BrowserContext
         $user = $this->sourceItemById($source, (string) $userId);
         if ($user === null || $this->fieldValue($user, $field) !== true) {
             throw new PageForbiddenException('Access forbidden');
+        }
+    }
+
+    /**
+     * Enforces an authenticated browser guard: the connection must resolve to any
+     * user. Unlike the ACCESS guard it carries no flag or source — a guest (no
+     * resolvable user) is denied with a 401, and any authenticated user passes.
+     * The page-level counterpart of the AUTH_ACTIONS action guard, for a page that
+     * is readable only once signed in (e.g. the profile page).
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @throws PageUnauthorizedException When the subscriber is an anonymous session
+     */
+    private function assertAuthenticatedGuard(string $acceptKey): void
+    {
+        if ($this->resolveCurrentUserId($acceptKey) === null) {
+            throw new PageUnauthorizedException('Authentication required');
         }
     }
 

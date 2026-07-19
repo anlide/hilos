@@ -60,6 +60,15 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
     ];
 
+    // Sending a message requires a signed-in session: an anonymous visitor reads
+    // the chat but is denied MESSAGE with a typed 401 (the frontend pre-disables
+    // the composer and opens sign-in). LOGIN/REGISTER stay open — a guest needs
+    // them to authenticate. Uploads ride the message it drafts, so the guard here
+    // is enough (the anonymous composer never reaches an upload).
+    public const array AUTH_ACTIONS = [
+        ChatSignalConstants::MESSAGE,
+    ];
+
     public const array SIGNALS = [
         SignalTypeConstants::FRAME_BINARY => [],
         SignalTypeConstants::AGENT_SIGNAL => [

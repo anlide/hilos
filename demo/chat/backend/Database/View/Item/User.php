@@ -28,7 +28,6 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  * @property-read string $name User name
  * @property-read bool $admin Whether the user is a panel admin operator
  * @property-read bool $block Whether the user is blocked from acting
- * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
  * @property-read int $onlineSessionCount Number of active online sessions for this user
@@ -55,7 +54,6 @@ final class User extends DbItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::admin => $this->_object->admin,
             ObjectUser::block => $this->_object->block,
-            ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
             ChatRtContext::connections => Hilos::$rt->connections->forUser($this->id),
             self::onlineSessionCount => count($this->connections),

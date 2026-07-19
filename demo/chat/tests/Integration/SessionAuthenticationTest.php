@@ -57,7 +57,7 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     {
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
-        $userId = (int) Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
         $agent->onSignalHandshake($this->handshake('upgrade-ak', $token), '', '');
         $this->assertNull(Hilos::$rt->connections['upgrade-ak']->userId);
@@ -82,7 +82,7 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     {
         $agent = $this->bootAgent();
         $token = RandomHelper::hex(16);
-        $userId = (int) Hilos::$db->users->actions->register(RandomHelper::hex(16))->id;
+        $userId = (int) Hilos::$db->users->actions->createWithName('User')->id;
 
         $agent->onSignalHandshake($this->handshake('logout-ak', $token), '', '');
         $agent->authenticateSession($token, $userId);

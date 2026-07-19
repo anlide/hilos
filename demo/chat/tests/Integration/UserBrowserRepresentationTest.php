@@ -11,7 +11,6 @@ use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for user browser representation.
@@ -25,7 +24,7 @@ final class UserBrowserRepresentationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->createWithName('User');
 
         try {
             Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);

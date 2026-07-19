@@ -28,7 +28,6 @@ use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for ChatAgent shutdown and moderation result cleanup.
@@ -46,7 +45,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['stop-ak']?->actions->startOutboundModeration(
@@ -76,7 +75,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->userStates->actions->ensure($user->id);
 
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -112,7 +111,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['live-ak']?->actions->startOutboundModeration(
@@ -151,7 +150,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('reject-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['reject-ak']?->actions->startOutboundModeration(
@@ -197,7 +196,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
 

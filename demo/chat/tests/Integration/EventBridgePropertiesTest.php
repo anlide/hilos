@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration coverage for normalized event DbItem bridge properties.
@@ -18,7 +17,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
         $bot = null;
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             $bot = Hilos::$db->bots->actions->create('Bridge Bot', active: false);
             $this->assertNotNull($user->id);
             $this->assertNotNull($bot->id);
@@ -52,7 +51,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             $this->assertNotNull($user->id);
             $event = Hilos::$db->events->actions->addUserRegistered($user->id);
 
@@ -72,8 +71,8 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $targetUser = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-            $actorUser = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $targetUser = Hilos::$db->users->actions->createWithName('User');
+            $actorUser = Hilos::$db->users->actions->createWithName('User');
             $this->assertNotNull($targetUser->id);
             $this->assertNotNull($actorUser->id);
             $event = Hilos::$db->events->actions->addUserRenamedByAdmin(

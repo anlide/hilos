@@ -8,7 +8,6 @@ use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 use ReflectionMethod;
 
 /**
@@ -29,7 +28,7 @@ final class ChatBrowserContextResolveUserTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
 
         try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            $user = Hilos::$db->users->actions->createWithName('User');
             Hilos::$rt->connections->actions->register('ak-1', $user->id);
 
             $this->assertSame($user->id, $this->resolveCurrentUserId('ak-1'));
