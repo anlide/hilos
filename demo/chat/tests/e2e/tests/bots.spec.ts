@@ -39,9 +39,15 @@ async function goToLastPage(page: Page): Promise<void> {
 /** Create a bot through the add dialog; the caller is already on the last page. */
 async function createBot(page: Page, name: string): Promise<void> {
   await page.getByTestId('admin-bots-add').click()
-  await page.getByTestId('admin-bots-name').fill(name)
+  const nameField = page.getByTestId('admin-bots-name')
+  await nameField.fill('')
+  await nameField.pressSequentially(name, { delay: 10 })
   await page.getByTestId('admin-bots-description').fill('made by e2e')
   await page.getByTestId('admin-bots-save').click()
+  // Settle before the caller asserts the new row: the save is in flight until the
+  // backend echo closes the dialog. Asserting the row through an open dialog races
+  // the reply (settle-before-assert).
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
 
 /** Delete a bot row by name and wait for it to leave the table. */
