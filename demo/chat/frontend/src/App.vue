@@ -98,20 +98,35 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 const LOGOUT_ACTION = 'logout'
 const LOGOUT_FALLBACK_MS = 5000
 const loggingOut = ref(false)
+// The fallback timer's handle, kept so it is cleared the moment the broadcast
+// ends loading. Without clearing it, a stale timer from one logout could fire
+// during a later one and drop its loading early.
+let fallbackTimer: ReturnType<typeof setTimeout> | undefined
 const logout = (): void => {
   if (loggingOut.value) {
     return
   }
   loggingOut.value = true
-  connection.sendAction(LOGOUT_ACTION, {})
-  window.setTimeout(() => {
+  if (!connection.sendAction(LOGOUT_ACTION, {})) {
+    // Not sent (the socket is down): the action never left, so do not show
+    // loading for a broadcast that will never come.
+    loggingOut.value = false
+
+    return
+  }
+  fallbackTimer = setTimeout(() => {
     loggingOut.value = false
   }, LOGOUT_FALLBACK_MS)
 }
-// React to the broadcast: the downgrade clears the name, which ends loading.
+// React to the broadcast: the downgrade clears the name, which ends loading and
+// cancels the now-unnecessary fallback timer.
 watch(userName, (name) => {
   if (!name) {
     loggingOut.value = false
+    if (fallbackTimer !== undefined) {
+      clearTimeout(fallbackTimer)
+      fallbackTimer = undefined
+    }
   }
 })
 </script>
