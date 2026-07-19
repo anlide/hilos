@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\CLI\Commands;
 
 use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
@@ -73,7 +74,7 @@ HELP;
             return ExitCode::ERROR;
         }
 
-        $scopeRaw = (string)($options['scope'] ?? self::DEFAULT_SCOPE);
+        $scopeRaw = (string)($options[BackupConstants::SCOPE_OPTION] ?? self::DEFAULT_SCOPE);
         $scope = BackupScope::fromString($scopeRaw);
         if ($scope === null) {
             fwrite(STDERR, "Unknown backup scope: {$scopeRaw}\n");

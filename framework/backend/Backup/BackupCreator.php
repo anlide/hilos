@@ -32,6 +32,11 @@ use Throwable;
  * per-connection dump is isolated in {@see dumpConnection()} as the seam a future
  * per-driver dumper abstraction would replace (deferred until a non-MySQL connection
  * appears).
+ *
+ * The engine also carries the failure bookkeeping the supervisor delegates to when a run
+ * ends badly ({@see recordFailure()}): a child killed on timeout cannot clean up or write
+ * its own sidecar, so the supervisor reuses this class's storage-layout knowledge to sweep
+ * the partial temp and publish an error sidecar in its place.
  */
 final class BackupCreator
 {
@@ -116,6 +121,44 @@ final class BackupCreator
             $this->cleanupTemp($workDir, $tmpArchive, $tmpSidecar);
             throw new BackupDumpFailedException('Backup create failed: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Records a failed run: sweeps any partial temp and publishes an error sidecar.
+     *
+     * Called by the supervisor, not the child. A child that fails gracefully already
+     * cleaned its own temp in {@see create()}, but a child killed on timeout could not,
+     * so this sweeps leftover temp artifacts by their id-scoped prefix. The published
+     * error sidecar (status=error, no archive) lets the read path index the failed attempt
+     * (files=truth), and its rotation is handled by HIL-272.
+     *
+     * @param string $id Backup id and sidecar base name (a filesystem-safe stem)
+     * @param BackupScope $scope Scope of the failed run; also its storage subdirectory
+     * @param int $durationSeconds Wall-clock time the run consumed before failing
+     * @throws BackupException When the id or backup directory is invalid
+     * @throws BackupDumpFailedException When the error sidecar cannot be written
+     */
+    public function recordFailure(string $id, BackupScope $scope, int $durationSeconds): void
+    {
+        if (preg_match(self::ID_PATTERN, $id) !== 1) {
+            throw new BackupException("Invalid backup id: {$id}");
+        }
+
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        if ($root === '') {
+            throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
+        }
+
+        $scopeDir = $root . '/' . $scope->value;
+        $this->ensureDirectory($scopeDir);
+
+        $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
+        $this->sweepPartialTemp($scopeDir, $base);
+
+        $metadata = $this->buildMetadata($id, $scope, [], 0, $durationSeconds, BackupStatus::ERROR);
+        $tmpSidecar = $scopeDir . '/.tmp-err-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
+        $this->writeJson($tmpSidecar, $metadata->toArray());
+        $this->publish($tmpSidecar, $scopeDir . '/' . $base . self::SIDECAR_EXTENSION);
     }
 
     /**
@@ -333,6 +376,7 @@ final class BackupCreator
      * @param list<BackupConnectionMeta> $connections Captured connections
      * @param int $sizeBytes Archive size in bytes (0 for the in-archive copy)
      * @param int $durationSeconds Wall-clock capture duration
+     * @param BackupStatus $status Terminal outcome recorded in the sidecar
      * @return BackupMetadata Assembled metadata
      */
     private function buildMetadata(
@@ -341,6 +385,7 @@ final class BackupCreator
         array $connections,
         int $sizeBytes,
         int $durationSeconds,
+        BackupStatus $status = BackupStatus::SUCCESS,
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
@@ -351,7 +396,7 @@ final class BackupCreator
             $sizeBytes,
             $durationSeconds,
             false,
-            BackupStatus::SUCCESS,
+            $status,
         );
     }
 
@@ -459,6 +504,22 @@ final class BackupCreator
         $this->removeDirectory($workDir);
         @unlink($tmpArchive);
         @unlink($tmpSidecar);
+    }
+
+    /**
+     * Removes any temp artifacts a killed child left behind for a base name (best effort).
+     *
+     * The child names its temp working dir and temp archive/sidecar `.tmp-<base>-<pid>*`;
+     * globbing that id-scoped prefix reclaims them without needing the dead child's pid.
+     *
+     * @param string $scopeDir Scope directory holding the temp artifacts
+     * @param string $base Archive/sidecar base name whose temp artifacts are swept
+     */
+    private function sweepPartialTemp(string $scopeDir, string $base): void
+    {
+        foreach (glob($scopeDir . '/.tmp-' . $base . '-*') ?: [] as $path) {
+            is_dir($path) ? $this->removeDirectory($path) : @unlink($path);
+        }
     }
 
     /**

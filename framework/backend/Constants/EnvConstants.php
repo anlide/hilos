@@ -268,6 +268,19 @@ enum EnvConstants
      */
     case BACKUP_ENABLED;
 
+    /**
+     * Absolute path to the CLI entry script (cli.php) the backup supervisor spawns as
+     * `php <BACKUP_CLI_ENTRY> backup:run <id> --scope=<scope>` to run one backup off the
+     * daemon loop. Empty disables create; the read path (history scan) still works.
+     */
+    case BACKUP_CLI_ENTRY;
+
+    /**
+     * Backup child timeout in seconds. The supervisor kills a run that exceeds it and
+     * records the attempt as an error. Default 1800 (30 min).
+     */
+    case BACKUP_TIMEOUT;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**

@@ -53,6 +53,11 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             EnvConstants::CHAT_BOT_LANGUAGE->name => self::stringEntry('ru', emptyIsMissing: true),
             EnvConstants::BACKUP_DIR->name => self::stringEntry(''),
             EnvConstants::BACKUP_ENABLED->name => self::boolEntry(true, emptyIsMissing: true),
+            EnvConstants::BACKUP_CLI_ENTRY->name => self::stringEntry(
+                '/app/backend/Bootstrap/cli.php',
+                emptyIsMissing: true,
+            ),
+            EnvConstants::BACKUP_TIMEOUT->name => self::intEntry(1800, emptyIsMissing: true),
             ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION => self::stringEntry(''),
@@ -83,6 +88,21 @@ final class ChatEnvCatalog implements CatalogProviderInterface
     {
         return [
             EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_BOOLEAN,
+            EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
+            EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
+            EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,
+        ];
+    }
+
+    /**
+     * @param int $default Default value
+     * @param bool $emptyIsMissing Whether empty values fall back to the default
+     * @return array<string, mixed> Catalog entry for an integer-typed variable
+     */
+    private static function intEntry(int $default, bool $emptyIsMissing = false): array
+    {
+        return [
+            EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_INTEGER,
             EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,

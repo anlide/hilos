@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Backup\BackupConstants;
+
 /**
  * ChatCliCommands - chat-specific CLI command names.
  *
@@ -42,6 +44,6 @@ final class ChatCliCommands
     /** @var string Stop impersonating on a session over the command channel */
     public const string IMPERSONATE_STOP = 'impersonate:stop';
 
-    /** @var string Create one backup archive of all database connections */
-    public const string BACKUP_RUN = 'backup:run';
+    /** @var string Create one backup archive of all database connections (framework-owned contract) */
+    public const string BACKUP_RUN = BackupConstants::RUN_COMMAND;
 }
