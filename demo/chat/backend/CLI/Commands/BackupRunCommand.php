@@ -90,6 +90,10 @@ HELP;
             return ExitCode::ERROR;
         }
 
+        foreach ($metadata->warnings as $warning) {
+            fwrite(STDERR, "Backup warning: {$warning}\n");
+        }
+
         echo "Backup created: {$metadata->id} ({$metadata->sizeBytes} bytes)\n";
 
         return ExitCode::SUCCESS;

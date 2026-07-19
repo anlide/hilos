@@ -24,6 +24,7 @@ final class BackupMetadata extends BaseDTO
     public const string durationSeconds = 'durationSeconds';
     public const string keep = 'keep';
     public const string status = 'status';
+    public const string warnings = 'warnings';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -35,6 +36,7 @@ final class BackupMetadata extends BaseDTO
      * @param int $durationSeconds Wall-clock capture duration in seconds
      * @param bool $keep Retention pin: true excludes the backup from rotation
      * @param BackupStatus $status Terminal outcome
+     * @param list<string> $warnings Non-fatal notes about the run (e.g. schema-seed found no reference tables)
      */
     public function __construct(
         public readonly string $id,
@@ -46,6 +48,7 @@ final class BackupMetadata extends BaseDTO
         public readonly int $durationSeconds,
         public readonly bool $keep,
         public readonly BackupStatus $status,
+        public readonly array $warnings = [],
     ) {
     }
 
@@ -62,6 +65,11 @@ final class BackupMetadata extends BaseDTO
             }
         }
 
+        $warnings = [];
+        foreach ((array)($data[self::warnings] ?? []) as $warning) {
+            $warnings[] = (string)$warning;
+        }
+
         return new self(
             (string)($data[self::id] ?? ''),
             (string)($data[self::createdAt] ?? ''),
@@ -72,6 +80,7 @@ final class BackupMetadata extends BaseDTO
             (int)($data[self::durationSeconds] ?? 0),
             (bool)($data[self::keep] ?? false),
             BackupStatus::fromString((string)($data[self::status] ?? '')) ?? BackupStatus::SUCCESS,
+            $warnings,
         );
     }
 
@@ -93,6 +102,7 @@ final class BackupMetadata extends BaseDTO
             self::durationSeconds => $this->durationSeconds,
             self::keep => $this->keep,
             self::status => $this->status->value,
+            self::warnings => $this->warnings,
         ];
     }
 }

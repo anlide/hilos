@@ -19,4 +19,13 @@ final class BackupConstants
 
     /** `--scope` option name shared by the supervisor's argv and the child command parser. */
     public const string SCOPE_OPTION = 'scope';
+
+    /**
+     * Backup catalog key under which a project declares its reference-object registry.
+     *
+     * The value at this key is `array<int, list<class-string>>`: reference/seed Entity or
+     * Object collection classes keyed by connection index. {@see BackupReferenceRegistry}
+     * reads it to keep those tables' rows under the schema-seed scope.
+     */
+    public const string CATALOG_REFERENCES = 'references';
 }

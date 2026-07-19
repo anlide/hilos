@@ -58,6 +58,10 @@ final class BackupCreator
     private const string ARCHIVE_EXTENSION = '.tar.gz';
     private const string SIDECAR_EXTENSION = '.json';
 
+    /** Recorded when schema-seed runs but the reference registry declares no tables for any connection. */
+    private const string WARNING_EMPTY_REFERENCE_REGISTRY =
+        'schema-seed found no reference tables: captured schema only, seed data is empty';
+
     /**
      * Creates one backup: dumps every configured connection, archives, and publishes atomically.
      *
@@ -89,20 +93,23 @@ final class BackupCreator
 
         $startedAt = microtime(true);
 
+        $references = BackupReferenceRegistry::fromCatalog();
+
         try {
             $this->ensureDirectory($workDir);
 
-            $connections = $this->dumpAllConnections($scope, $workDir);
+            $connections = $this->dumpAllConnections($scope, $workDir, $references);
+            $warnings = $this->collectWarnings($scope, $references);
 
             // In-archive metadata copy (size is only known after the archive exists).
-            $inArchiveMeta = $this->buildMetadata($id, $scope, $connections, 0, 0);
+            $inArchiveMeta = $this->buildMetadata($id, $scope, $connections, 0, 0, warnings: $warnings);
             $this->writeJson($workDir . '/' . self::METADATA_FILENAME, $inArchiveMeta->toArray());
 
             $this->archive($workDir, $tmpArchive);
 
             $sizeBytes = $this->fileSize($tmpArchive);
             $durationSeconds = (int)round(microtime(true) - $startedAt);
-            $metadata = $this->buildMetadata($id, $scope, $connections, $sizeBytes, $durationSeconds);
+            $metadata = $this->buildMetadata($id, $scope, $connections, $sizeBytes, $durationSeconds, warnings: $warnings);
 
             $this->writeJson($tmpSidecar, $metadata->toArray());
 
@@ -230,12 +237,17 @@ final class BackupCreator
     /**
      * Dumps every configured connection into `db-<index>.sql` files under the work dir.
      *
+     * Each connection's schema-seed data pass is restricted to the reference tables the
+     * registry declares for that connection index.
+     *
      * @param BackupScope $scope Backup scope
      * @param string $workDir Temp working directory receiving the sql files
+     * @param BackupReferenceRegistry $references Reference-table registry queried per connection
      * @return list<BackupConnectionMeta> Captured connection metadata
      * @throws BackupDumpFailedException When a connection cannot be dumped
+     * @throws BackupException When a declared reference class cannot be resolved to a table
      */
-    private function dumpAllConnections(BackupScope $scope, string $workDir): array
+    private function dumpAllConnections(BackupScope $scope, string $workDir, BackupReferenceRegistry $references): array
     {
         $connections = [];
         foreach (Database::getConfiguredIndices() as $index) {
@@ -247,12 +259,40 @@ final class BackupCreator
             $config = Database::getConnectionConfig($index);
             $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
 
-            $this->dumpConnection($scope, $config, $sqlPath);
+            $this->dumpConnection($scope, $config, $sqlPath, $references->tablesForConnection($index));
 
             $connections[] = new BackupConnectionMeta($index, $config->database, Migration::getCurrentIndex());
         }
 
         return $connections;
+    }
+
+    /**
+     * Records the non-fatal warnings a run produces.
+     *
+     * The one warning today: a schema-seed run whose reference registry declares no tables
+     * for any configured connection. The dump still succeeds as an effective schema-only
+     * capture, but silently losing seed data is unacceptable, so it is surfaced in the
+     * sidecar and the child's stderr rather than failing the run.
+     *
+     * @param BackupScope $scope Backup scope
+     * @param BackupReferenceRegistry $references Reference-table registry
+     * @return list<string> Warnings for the run
+     * @throws BackupException When a declared reference class cannot be resolved to a table
+     */
+    private function collectWarnings(BackupScope $scope, BackupReferenceRegistry $references): array
+    {
+        if ($scope !== BackupScope::SCHEMA_SEED) {
+            return [];
+        }
+
+        foreach (Database::getConfiguredIndices() as $index) {
+            if ($references->tablesForConnection($index) !== []) {
+                return [];
+            }
+        }
+
+        return [self::WARNING_EMPTY_REFERENCE_REGISTRY];
     }
 
     /**
@@ -264,14 +304,19 @@ final class BackupCreator
      * @param BackupScope $scope Backup scope
      * @param DatabaseConnectionConfig $config Connection settings
      * @param string $sqlPath Output sql file for this connection
+     * @param list<string> $referenceTables Reference tables this connection keeps under schema-seed
      * @throws BackupDumpFailedException When a mysqldump pass exits non-zero
      */
-    private function dumpConnection(BackupScope $scope, DatabaseConnectionConfig $config, string $sqlPath): void
-    {
+    private function dumpConnection(
+        BackupScope $scope,
+        DatabaseConnectionConfig $config,
+        string $sqlPath,
+        array $referenceTables,
+    ): void {
         $iniPath = $this->writeDefaultsIni($config);
 
         try {
-            foreach (self::scopeDumpPasses($scope, $this->referenceTables()) as $pass) {
+            foreach (self::scopeDumpPasses($scope, $referenceTables) as $pass) {
                 $params = array_merge(
                     ['--defaults-extra-file=' . $iniPath, '--single-transaction', '--no-tablespaces'],
                     $pass['flags'],
@@ -288,20 +333,6 @@ final class BackupCreator
         } finally {
             @unlink($iniPath);
         }
-    }
-
-    /**
-     * Reference/seed tables whose rows SCHEMA_SEED keeps.
-     *
-     * The reference registry is populated from the project backup catalog by HIL-271;
-     * until then this is empty and SCHEMA_SEED behaves like SCHEMA_ONLY.
-     *
-     * @return list<string> Reference table names
-     */
-    private function referenceTables(): array
-    {
-        // TODO(HIL-271): read the reference-table registry from the project backup catalog.
-        return [];
     }
 
     /**
@@ -377,6 +408,7 @@ final class BackupCreator
      * @param int $sizeBytes Archive size in bytes (0 for the in-archive copy)
      * @param int $durationSeconds Wall-clock capture duration
      * @param BackupStatus $status Terminal outcome recorded in the sidecar
+     * @param list<string> $warnings Non-fatal warnings recorded in the sidecar
      * @return BackupMetadata Assembled metadata
      */
     private function buildMetadata(
@@ -386,6 +418,7 @@ final class BackupCreator
         int $sizeBytes,
         int $durationSeconds,
         BackupStatus $status = BackupStatus::SUCCESS,
+        array $warnings = [],
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
@@ -397,6 +430,7 @@ final class BackupCreator
             $durationSeconds,
             false,
             $status,
+            $warnings,
         );
     }
 

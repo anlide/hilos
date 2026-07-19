@@ -70,6 +70,27 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame('db', $restored->connections[0]->database);
     }
 
+    public function testWarningsRoundTripAndDefaultEmpty(): void
+    {
+        $withWarning = new BackupMetadata(
+            id: 'w1',
+            createdAt: '2026-07-19T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::SCHEMA_SEED,
+            connections: [],
+            sizeBytes: 0,
+            durationSeconds: 0,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            warnings: ['schema-seed found no reference tables: captured schema only, seed data is empty'],
+        );
+
+        $restored = BackupMetadata::fromArray($withWarning->toArray());
+
+        $this->assertSame($withWarning->warnings, $restored->warnings);
+        $this->assertSame([], BackupMetadata::fromArray([BackupMetadata::id => 'x'])->warnings);
+    }
+
     public function testUnknownScopeAndStatusFallBackToDefaults(): void
     {
         $metadata = BackupMetadata::fromArray([

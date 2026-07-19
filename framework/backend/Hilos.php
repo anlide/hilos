@@ -141,6 +141,20 @@ abstract class Hilos
     public static ?ClusterContext $cluster = null;
 
     /**
+     * Returns the project's backup catalog provider class, or null when backup is unconfigured.
+     *
+     * The backup subsystem reads the reference-object registry through this class; the
+     * facade only exposes which catalog to read, leaving catalog interpretation to the
+     * backup layer's reference registry.
+     *
+     * @return ?class-string<CatalogProviderInterface> Backup catalog provider class
+     */
+    public static function getBackupCatalogClass(): ?string
+    {
+        return static::BACKUP_CATALOG;
+    }
+
+    /**
      * Returns page subscription owner agent types declared by registered page classes.
      *
      * Invalid page registry entries are skipped here and reported by topology validation.
