@@ -5,6 +5,7 @@ move between the main page and the framework dashboard with no refresh. The live
 connection state is the shell's own indicator (an extra status surface allowed
 by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import {
   HilosLayout,
   HilosLink,
@@ -85,12 +86,34 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 // The shell logout control. Logout is page-independent, so it sends the
 // agent-owned `logout` action (PHP `ChatSignalConstants::LOGOUT`) rather than a
-// page action; the backend reverts the session to anonymous and the null
-// handshake response clears the current user through the session scope.
+// page action; the backend reverts the session to anonymous and broadcasts the
+// null handshake response, which clears the current user through the session
+// scope for every tab.
+//
+// The clicker gets loading while it is in flight: the button enters `loggingOut`
+// on send and leaves it when the broadcast lands — the session downgrade drops
+// `userName`, which both un-loads and (through its own `v-if`) removes the
+// control, the visible confirmation. A fallback timer releases loading if the
+// signal never arrives, so the control can never wedge.
 const LOGOUT_ACTION = 'logout'
+const LOGOUT_FALLBACK_MS = 5000
+const loggingOut = ref(false)
 const logout = (): void => {
+  if (loggingOut.value) {
+    return
+  }
+  loggingOut.value = true
   connection.sendAction(LOGOUT_ACTION, {})
+  window.setTimeout(() => {
+    loggingOut.value = false
+  }, LOGOUT_FALLBACK_MS)
 }
+// React to the broadcast: the downgrade clears the name, which ends loading.
+watch(userName, (name) => {
+  if (!name) {
+    loggingOut.value = false
+  }
+})
 </script>
 
 <template>
@@ -112,9 +135,16 @@ const logout = (): void => {
         class="btn btn-link nav-link d-inline-flex align-items-center p-0 ms-3"
         data-id="nav-logout"
         aria-label="Log out"
+        :disabled="loggingOut"
         @click="logout"
       >
-        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+        <span
+          v-if="loggingOut"
+          class="spinner-border spinner-border-sm"
+          role="status"
+          aria-hidden="true"
+        ></span>
+        <i v-else class="bi bi-box-arrow-right" aria-hidden="true"></i>
       </button>
     </template>
     <HilosView
