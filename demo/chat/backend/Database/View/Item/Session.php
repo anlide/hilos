@@ -19,6 +19,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?int $id Session ID (primary key)
  * @property-read string $token Session cookie token
  * @property-read ?int $userId Bound user id, or null when the session is anonymous
+ * @property-read ?int $impersonatorUserId Admin behind an active impersonation, or null when acting as itself
  * @property-read ?string $createdAt Creation timestamp
  * @property-read ?string $lastSeenAt Last-seen timestamp
  * @property-read ?string $expiresAt Expiry timestamp, or null when open-ended
@@ -38,6 +39,7 @@ final class Session extends DbItem
             ObjectSession::id => $this->_object->id,
             ObjectSession::token => $this->_object->token,
             ObjectSession::userId => $this->_object->userId,
+            ObjectSession::impersonatorUserId => $this->_object->impersonatorUserId,
             ObjectSession::createdAt => $this->_object->createdAt,
             ObjectSession::lastSeenAt => $this->_object->lastSeenAt,
             ObjectSession::expiresAt => $this->_object->expiresAt,

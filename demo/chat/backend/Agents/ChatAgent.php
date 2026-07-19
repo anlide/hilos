@@ -74,9 +74,9 @@ final class ChatAgent extends AbstractAgent
      * Handle a CLI command routed to the chat agent.
      *
      * `echo` echoes the request payload back (the admin-grant transport probe).
-     * `setAdmin` flips the admin flag of the user named in the payload and replies
-     * with the resulting state, or an error when the user is unknown or the write
-     * fails. Any other command name yields an error reply.
+     * `setAdmin`, `impersonateStart`, and `impersonateStop` each dispatch to a
+     * dedicated handler that replies ok or with an error message. Any other
+     * command name yields an error reply.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
@@ -84,18 +84,43 @@ final class ChatAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if ($data->command === ChatCommandConstants::ECHO) {
-            $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $data->payload));
+        switch ($data->command) {
+            case ChatCommandConstants::ECHO:
+                $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $data->payload));
 
-            return;
+                return;
+
+            case ChatCommandConstants::SET_ADMIN:
+                $this->handleSetAdmin($data);
+
+                return;
+
+            case ChatCommandConstants::IMPERSONATE_START:
+                $this->handleImpersonateStart($data);
+
+                return;
+
+            case ChatCommandConstants::IMPERSONATE_STOP:
+                $this->handleImpersonateStop($data);
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+                return;
         }
+    }
 
-        if ($data->command !== ChatCommandConstants::SET_ADMIN) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
-
-            return;
-        }
-
+    /**
+     * Flips the admin flag of the user named in the payload and replies with the
+     * resulting state, or an error when the user is unknown or the write fails.
+     *
+     * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
+     * @throws HilosException On an unexpected database failure outside the caught write path
+     */
+    private function handleSetAdmin(CommandRequestDTO $data): void
+    {
         $userId = (int)($data->payload[ChatCommandConstants::FIELD_USER_ID] ?? 0);
         $admin = (bool)($data->payload[ChatCommandConstants::FIELD_ADMIN] ?? false);
         $user = Hilos::$db->users[$userId] ?? null;
@@ -116,6 +141,140 @@ final class ChatAgent extends AbstractAgent
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             ChatCommandConstants::FIELD_USER_ID => $userId,
             ChatCommandConstants::FIELD_ADMIN => $admin,
+        ]));
+    }
+
+    /**
+     * Starts impersonation: an admin session assumes another user's identity.
+     *
+     * Guards, in order: the session must exist; its current user must be an admin
+     * (an anonymous or non-admin session is rejected — which also blocks a second
+     * start once impersonating a non-admin target); it must not already be
+     * impersonating (no nesting); the target must exist and differ from the admin.
+     * The rebind reuses {@see self::authenticateSession()} (identical to a login,
+     * so every guard/ownership path sees the target), then the admin id is recorded
+     * on the session's impersonator marker. Replies ok with the effective user and
+     * the recorded admin, or an error message.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session token and target user id
+     * @throws HilosException On an unexpected database or runtime failure outside the caught rebind path
+     */
+    private function handleImpersonateStart(CommandRequestDTO $data): void
+    {
+        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+        $targetUserId = (int)($data->payload[ChatCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
+
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such session'));
+
+            return;
+        }
+
+        $adminId = $session->userId;
+        $admin = $adminId !== null ? (Hilos::$db->users[$adminId] ?? null) : null;
+        if ($admin === null || !$admin->admin) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Session is not an admin session'));
+
+            return;
+        }
+
+        if ($session->impersonatorUserId !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Already impersonating; stop impersonating first'));
+
+            return;
+        }
+
+        $target = Hilos::$db->users[$targetUserId] ?? null;
+        if ($target === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "No such user: {$targetUserId}"));
+
+            return;
+        }
+
+        if ($targetUserId === $adminId) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Cannot impersonate yourself'));
+
+            return;
+        }
+
+        try {
+            $this->authenticateSession($sessionToken, $targetUserId);
+            $session->actions->setImpersonator($adminId);
+        } catch (HilosException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->logAgentInfo('impersonate_start ' . json_encode([
+            'event' => 'impersonate_start',
+            'admin' => $adminId,
+            'target' => $targetUserId,
+            'session' => $session->id,
+        ]));
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $targetUserId,
+            ChatCommandConstants::FIELD_IMPERSONATOR => $adminId,
+        ]));
+    }
+
+    /**
+     * Stops impersonation: reverts an impersonating session back to its admin.
+     *
+     * Guards: the session must exist and must currently be impersonating (the
+     * marker is set). The rebind restores the recorded admin through
+     * {@see self::authenticateSession()} and the marker is cleared. Parameter-free
+     * beyond the session token — the admin to restore comes from the marker.
+     * Replies ok with the restored effective user, or an error message.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session token
+     * @throws HilosException On an unexpected database or runtime failure outside the caught rebind path
+     */
+    private function handleImpersonateStop(CommandRequestDTO $data): void
+    {
+        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such session'));
+
+            return;
+        }
+
+        $impersonatorId = $session->impersonatorUserId;
+        if ($impersonatorId === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Session is not impersonating'));
+
+            return;
+        }
+
+        // The target the session was acting as, captured before the rebind restores
+        // the admin — recorded on the audit line as the identity vacated.
+        $vacatedUserId = $session->userId;
+
+        try {
+            $this->authenticateSession($sessionToken, $impersonatorId);
+            $session->actions->setImpersonator(null);
+        } catch (HilosException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->logAgentInfo('impersonate_stop ' . json_encode([
+            'event' => 'impersonate_stop',
+            'admin' => $impersonatorId,
+            'restoredUser' => $impersonatorId,
+            'vacatedUser' => $vacatedUserId,
+            'session' => $session->id,
+        ]));
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $impersonatorId,
         ]));
     }
 

@@ -11,14 +11,16 @@ use Demo\Chat\CLI\Commands\CreateOrphanSettingCommand;
 use Demo\Chat\CLI\Commands\DeleteOrphanCommand;
 use Demo\Chat\CLI\Commands\DeleteOrphanSettingCommand;
 use Demo\Chat\CLI\Commands\EchoCommand;
+use Demo\Chat\CLI\Commands\ImpersonateStartCommand;
+use Demo\Chat\CLI\Commands\ImpersonateStopCommand;
 use Hilos\Core\CLI\CliManager;
 
 /**
  * Chat CLI manager — registers the chat's project commands on top of the framework set.
  *
  * The test-only state helpers (orphan-setting create/delete, the command-channel echo probe)
- * demonstrate the TestOnlyCommand mechanism; admin grant/revoke are real operator commands
- * that flip a user's admin flag over the daemon command channel.
+ * demonstrate the TestOnlyCommand mechanism; admin grant/revoke and impersonate start/stop are
+ * real operator commands that act on a user or session over the daemon command channel.
  */
 final class ChatCliManager extends CliManager
 {
@@ -31,5 +33,7 @@ final class ChatCliManager extends CliManager
         $this->addCommand(new EchoCommand());
         $this->addCommand(new AdminGrantCommand());
         $this->addCommand(new AdminRevokeCommand());
+        $this->addCommand(new ImpersonateStartCommand());
+        $this->addCommand(new ImpersonateStopCommand());
     }
 }

@@ -17,6 +17,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property-read ?int $id
  * @property string $token
  * @property ?int $userId
+ * @property ?int $impersonatorUserId
  * @property ?string $createdAt
  * @property ?string $lastSeenAt
  * @property ?string $expiresAt
@@ -28,6 +29,7 @@ final class Session extends Object_
     public const string id = 'id';
     public const string token = 'token';
     public const string userId = 'userId';
+    public const string impersonatorUserId = 'impersonatorUserId';
     public const string createdAt = 'createdAt';
     public const string lastSeenAt = 'lastSeenAt';
     public const string expiresAt = 'expiresAt';
@@ -55,6 +57,7 @@ final class Session extends Object_
             self::id => $this->entity->id,
             self::token => $this->entity->token,
             self::userId => $this->entity->user_id,
+            self::impersonatorUserId => $this->entity->impersonator_user_id,
             self::createdAt => $this->entity->created_at,
             self::lastSeenAt => $this->entity->last_seen_at,
             self::expiresAt => $this->entity->expires_at,
@@ -74,6 +77,7 @@ final class Session extends Object_
         match ($property) {
             self::token => $this->entity->token = (string)$value,
             self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
+            self::impersonatorUserId => $this->entity->impersonator_user_id = $value === null ? null : (int)$value,
             self::createdAt => $this->entity->created_at = is_scalar($value) ? (string)$value : null,
             self::lastSeenAt => $this->entity->last_seen_at = is_scalar($value) ? (string)$value : null,
             self::expiresAt => $this->entity->expires_at = is_scalar($value) ? (string)$value : null,
@@ -83,6 +87,11 @@ final class Session extends Object_
 
     /**
      * Converts the session object to an associative array with all fields.
+     *
+     * `impersonatorUserId` is intentionally excluded: the impersonation marker is
+     * read-legal server-side (the agent's guards read it via {@see __get}) but is
+     * kept off the browser-sync projection this leaf — the impersonating state is
+     * not surfaced to the frontend until the follow-up in-app UX leaf.
      *
      * @return array<string, mixed> Key => value array
      */

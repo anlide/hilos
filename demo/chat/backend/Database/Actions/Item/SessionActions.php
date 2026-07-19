@@ -61,6 +61,29 @@ final class SessionActions extends DbActions
     }
 
     /**
+     * Records or clears the impersonator marker on this session (HIL-166).
+     *
+     * The user rebind itself is done through the chat agent's authenticateSession
+     * seam; this writes only the marker that remembers the admin behind the takeover.
+     * Pass the admin id when starting an impersonation, or null when stopping.
+     *
+     * @param ?int $impersonatorUserId Admin id to record, or null to clear the marker
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function setImpersonator(?int $impersonatorUserId): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for setImpersonator (id is null)');
+        }
+
+        $this->object->impersonatorUserId = $impersonatorUserId;
+        $this->object->sync();
+    }
+
+    /**
      * Refreshes last-seen and expiry after activity on this session.
      *
      * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)

@@ -18,9 +18,27 @@ final class ChatCommandConstants
     /** @var string Set-admin command: routed to the chat agent, which flips a user's admin flag */
     public const string SET_ADMIN = 'setAdmin';
 
+    /** @var string Impersonate-start command: an admin session assumes another user's identity */
+    public const string IMPERSONATE_START = 'impersonateStart';
+
+    /** @var string Impersonate-stop command: reverts an impersonating session to its admin */
+    public const string IMPERSONATE_STOP = 'impersonateStop';
+
     /** @var string Payload key: target user id for the set-admin command */
     public const string FIELD_USER_ID = 'userId';
 
     /** @var string Payload key: new admin flag for the set-admin command */
     public const string FIELD_ADMIN = 'admin';
+
+    /** @var string Payload key: session cookie token the impersonation commands act on */
+    public const string FIELD_SESSION_TOKEN = 'sessionToken';
+
+    /** @var string Payload key: user id to impersonate for the impersonate-start command */
+    public const string FIELD_TARGET_USER_ID = 'targetUserId';
+
+    /** @var string Reply key: the user id the session now acts as after an impersonation command */
+    public const string FIELD_EFFECTIVE_USER_ID = 'effectiveUserId';
+
+    /** @var string Reply key: the admin behind an impersonation started by impersonate-start */
+    public const string FIELD_IMPERSONATOR = 'impersonator';
 }

@@ -458,7 +458,8 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Routes the chat command channel: the echo command goes to the chat agent.
+     * Routes the chat command channel: the echo probe, the admin-flag command,
+     * and the impersonation start/stop commands all go to the chat agent.
      *
      * @return array<string, string> Agent type keyed by command name
      */
@@ -467,6 +468,8 @@ final class Hilos extends \Hilos\Hilos
         return [
             ChatCommandConstants::ECHO => AgentType::CHAT,
             ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
+            ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
+            ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
         ];
     }
 

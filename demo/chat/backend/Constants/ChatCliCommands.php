@@ -10,7 +10,8 @@ namespace Demo\Chat\Constants;
  * The `test:` commands are test-only helpers demonstrating the TestOnlyCommand
  * mechanism (orphan-settings state, the command-channel echo probe). The
  * `admin:` commands are real operator commands that flip a user's admin flag
- * over the daemon command channel.
+ * over the daemon command channel; the `impersonate:` commands are real operator
+ * commands that make an admin session act as another user and revert it.
  */
 final class ChatCliCommands
 {
@@ -34,4 +35,10 @@ final class ChatCliCommands
 
     /** @var string Revoke a user's admin rights over the command channel */
     public const string ADMIN_REVOKE = 'admin:revoke';
+
+    /** @var string Start impersonating a user on a session over the command channel */
+    public const string IMPERSONATE_START = 'impersonate:start';
+
+    /** @var string Stop impersonating on a session over the command channel */
+    public const string IMPERSONATE_STOP = 'impersonate:stop';
 }
