@@ -178,6 +178,16 @@ field's value. As a recommendation (not a hard rule), avoid designing
 subscriptions that deliver divergent field-sets for the same `(entityType, id)`;
 the merge is a safety net, not a license for divergent projections.
 
+## Clearing an entity slot — a `null` slot value
+
+A slot value may be `null` (not a fragment, not an array of them): a payload
+delivers `entities: { currentUser: null }`. That is the **downgrade** signal —
+the entity left the slot, so the slot's reference is dropped and its selectors
+read empty (e.g. the session user on logout, the symmetric inverse of delivering
+a fragment). Keep the three cases distinct: an **absent** slot is untouched; a
+`null` on a *field* inside a fragment clears that one field (above); a `null` on
+the *slot* clears the whole reference.
+
 ## Tables, lists, and page data
 
 - **A table belongs to exactly one page (1:1); a page may host many tables (1:N);

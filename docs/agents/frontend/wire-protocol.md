@@ -179,6 +179,15 @@ late reply can reconcile — never silently dropped. A late reply that finally
 arrives surfaces as a toast (recommended; ultimately the project's discretion).
 Every action also produces a success/fail toast.
 
+A state-changing action is **always tracked**: the initiator dispatches it
+through this lifecycle and shows loading until it settles — it is **not**
+fire-and-forget (a bare send with no correlated reply). When the action changes
+shared or session state that other connections observe (a logout downgrading the
+session, a rename fanning out), the personal `::success` only releases the
+initiator's own loading; the **effect is broadcast as a signal** to every
+affected connection, and each frontend reacts to that signal. Do not have one
+connection mutate and assume the others discover it — send them the signal.
+
 ## Signals (BE→FE)
 
 Signals are backend-pushed messages: action replies (`::success` / `::fail`),

@@ -78,7 +78,7 @@ export interface ScopePayload {
    * Entity fragments by source slot. A slot's `sourceKey` is a binding-local
    * alias, not a type — see {@link NormalizerOptions.entityTypes}.
    */
-  entities?: Record<string, EntityFragment | EntityFragment[]>
+  entities?: Record<string, EntityFragment | EntityFragment[] | null>
 
   /** The scope's non-table, non-entity data: scalars and blobs by name. */
   data?: Record<string, unknown>
@@ -148,6 +148,14 @@ export function ingest(
   }
 
   for (const [sourceKey, fragments] of Object.entries(slots)) {
+    if (fragments === null) {
+      // A null slot is the downgrade signal: the entity left the slot (the
+      // session user on logout). Clear the reference so the slot's selectors
+      // read empty — the symmetric inverse of upserting a fragment.
+      scope.data.set(sourceKey, undefined)
+
+      continue
+    }
     const type = entityTypeFor(sourceKey, options)
     scope.data.set(
       sourceKey,

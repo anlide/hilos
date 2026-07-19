@@ -46,6 +46,21 @@ e2e interacts through **stable element ids** only: every interactive element
 carries an id, and tests never use text- or position-based selectors. This keeps
 e2e robust against copy and layout changes.
 
+## Filling inputs — keyboard, not `fill`
+
+Enter values the way a user does. **Do not set a value with `fill(value)`** — a
+bare `fill` sets `.value` and dispatches a single synthetic `input`, which can
+miss the reactivity a view relies on (watchers, debounced state, a form state
+machine's computed submittability), so a submit can ship a stale or empty
+payload. Clear with `fill('')`, then type with
+`pressSequentially(value, { delay: 10 })`, which emits real per-key events
+(keydown / keypress / input / keyup).
+
+Drive a submit button through its actionable states, not a bare click: scroll it
+into view, assert it visible and enabled, focus it, then click. After the click,
+wait for the form to leave **or** the button to re-enable — never assume a click
+that landed on a still-disabled control did anything.
+
 ## Source vs build
 
 Unit tests run against **source**; e2e runs against the **built artifact** with a

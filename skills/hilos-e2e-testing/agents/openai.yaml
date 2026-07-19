@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos E2E Testing"
+  short_description: "Author or edit a Playwright e2e spec: selectors, input, submit, waits"
+  default_prompt: "Use $hilos-e2e-testing when creating or editing an e2e spec or helper."

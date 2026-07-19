@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 // Shared sign-in helpers for the session≠user model (HIL-360). Since auto-guest
 // was dropped, a fresh browser context is anonymous: it reads the chat but has
@@ -25,14 +25,44 @@ export function nameFromEmail(email: string): string {
   return atPosition === -1 ? email : email.slice(0, atPosition)
 }
 
+/**
+ * Enter a value the way a user does: clear, then type key by key. Never fill(value)
+ * — a bare fill sets .value and dispatches a single synthetic `input`, which can
+ * miss the Vue reactivity the auth surface relies on (the machine's form field, the
+ * computed `submittable`), so a submit ships an empty payload. pressSequentially
+ * emits real per-key events (keydown/keypress/input/keyup) that drive the surface.
+ *
+ * @param field The input locator.
+ * @param value The value to type.
+ */
+async function typeInto(field: Locator, value: string): Promise<void> {
+  await field.fill('')
+  await field.pressSequentially(value, { delay: 10 })
+}
+
+/**
+ * Click a submit button once it is genuinely actionable: scrolled into view,
+ * visible, enabled, focused. Guards against clicking a still-disabled control and
+ * against a click that no-ops before the surface is ready.
+ *
+ * @param button The submit-button locator.
+ */
+async function clickSubmit(button: Locator): Promise<void> {
+  await button.scrollIntoViewIfNeeded()
+  await expect(button).toBeVisible()
+  await expect(button).toBeEnabled()
+  await button.focus()
+  await button.click()
+}
+
 /** Fill and submit the register form on the currently mounted auth surface. */
 export async function register(page: Page, email: string): Promise<void> {
   await page.getByTestId('auth-to-register').click()
   await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
-  await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(PASSWORD)
-  await page.getByTestId('auth-confirm').fill(PASSWORD)
-  await page.getByTestId('auth-submit').click()
+  await typeInto(page.getByTestId('auth-email'), email)
+  await typeInto(page.getByTestId('auth-password'), PASSWORD)
+  await typeInto(page.getByTestId('auth-confirm'), PASSWORD)
+  await clickSubmit(page.getByTestId('auth-submit'))
 }
 
 /** Fill and submit the login form on the currently mounted surface (default mode). */
@@ -41,9 +71,9 @@ export async function login(
   email: string,
   password: string = PASSWORD,
 ): Promise<void> {
-  await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(password)
-  await page.getByTestId('auth-submit').click()
+  await typeInto(page.getByTestId('auth-email'), email)
+  await typeInto(page.getByTestId('auth-password'), password)
+  await clickSubmit(page.getByTestId('auth-submit'))
 }
 
 /** Log out through the shell control and wait for the anonymous state to settle

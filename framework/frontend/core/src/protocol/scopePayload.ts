@@ -80,7 +80,10 @@ export const scopePayloadSchema = z.looseObject({
   entities: z
     .record(
       z.string(),
-      z.union([entityFragmentSchema, z.array(entityFragmentSchema)]),
+      // A `null` value clears the slot — the downgrade path (e.g. the session
+      // user leaving the `currentUser` slot on logout), symmetric to delivering
+      // a fragment. Without it the whole handshake response fails validation.
+      z.union([entityFragmentSchema, z.array(entityFragmentSchema), z.null()]),
     )
     .optional(),
   data: z.record(z.string(), z.unknown()).optional(),
