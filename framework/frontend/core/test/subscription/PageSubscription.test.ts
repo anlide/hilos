@@ -205,4 +205,24 @@ describe('PageSubscription', () => {
 
     expect(pages.pageError.get()).toBeNull()
   })
+
+  it('clears the page error in place without leaving the page', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.subscribe('user', { id: '9' })
+    pages.handleSubscriptionError({
+      page: 'user',
+      httpCode: 401,
+      errorCode: 'unauthorized',
+      message: 'Authentication required',
+    })
+    const sentBefore = connection.sent.length
+
+    pages.clearPageError()
+
+    expect(pages.pageError.get()).toBeNull()
+    // The page stays subscribed: no unsubscribe/subscribe frame goes out.
+    expect(pages.pageKey()).toBe('user')
+    expect(connection.sent.length).toBe(sentBefore)
+  })
 })

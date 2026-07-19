@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { createSignal } from '@hilos/core'
 import type {
+  AuthGate,
   HilosRouter,
   PageRouteMatch,
   PageSubscriptionError,
@@ -47,6 +48,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal<PageSubscriptionError | null>(pageError),
+    clearPageError: () => {},
     navigate: () => {},
     start: () => {},
     stop: () => {},
@@ -78,5 +80,86 @@ describe('HilosView page error', () => {
 
     expect(container.querySelector('[data-id="user-page"]')).not.toBeNull()
     expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+  })
+})
+
+const UNAUTHORIZED: PageSubscriptionError = {
+  page: 'user',
+  httpCode: 401,
+  errorCode: 'unauthorized',
+  message: 'Authentication required',
+}
+
+function AuthSurface() {
+  return <div data-id="auth-surface" />
+}
+
+function fakeAuthGate(open = false): AuthGate {
+  return {
+    modalOpen: createSignal(open),
+    requireAuth: () => {},
+    dismiss: () => {},
+  }
+}
+
+describe('HilosView auth gate', () => {
+  afterEach(cleanup)
+
+  it('mounts the auth surface in place of ErrorPage on an anonymous 401', () => {
+    const { container } = render(
+      <HilosRouterContext.Provider value={routerWith(UNAUTHORIZED)}>
+        <HilosView
+          pages={PAGES}
+          authSurface={AuthSurface}
+          authGate={fakeAuthGate()}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(container.querySelector('[data-id="auth-surface"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="page-error"]')).toBeNull()
+  })
+
+  it('still renders ErrorPage for a non-401 error', () => {
+    const { container } = render(
+      <HilosRouterContext.Provider value={routerWith(NOT_FOUND)}>
+        <HilosView
+          pages={PAGES}
+          authSurface={AuthSurface}
+          authGate={fakeAuthGate()}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(container.querySelector('[data-id="page-error"]')).not.toBeNull()
+    expect(container.querySelector('[data-id="auth-surface"]')).toBeNull()
+  })
+
+  it('falls back to ErrorPage on a 401 when no surface is registered', () => {
+    const { container } = render(
+      <HilosRouterContext.Provider value={routerWith(UNAUTHORIZED)}>
+        <HilosView pages={PAGES} />
+      </HilosRouterContext.Provider>,
+    )
+
+    expect(container.querySelector('[data-id="page-error"]')).not.toBeNull()
+  })
+
+  it('shows the auth surface in a modal when the gate opens', () => {
+    render(
+      <HilosRouterContext.Provider value={routerWith(null)}>
+        <HilosView
+          pages={PAGES}
+          authSurface={AuthSurface}
+          authGate={fakeAuthGate(true)}
+        />
+      </HilosRouterContext.Provider>,
+    )
+
+    // The modal portals to <body>; the live page still renders beneath it.
+    expect(document.body.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[data-id="auth-surface"]'),
+    ).not.toBeNull()
   })
 })

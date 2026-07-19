@@ -92,6 +92,13 @@ export {
 } from './session/sessionScope.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export {
+  createAuthGate,
+  type AuthGate,
+  type AuthGateOptions,
+  type AuthGateRouter,
+  type AuthGateActionErrorSource,
+} from './auth/authGate.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,

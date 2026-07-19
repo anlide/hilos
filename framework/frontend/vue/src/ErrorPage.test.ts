@@ -3,6 +3,7 @@ import { markRaw } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createSignal } from '@hilos/core'
 import type {
+  AuthGate,
   HilosRouter,
   PageRouteMatch,
   PageSubscriptionError,
@@ -44,6 +45,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
     pageError: createSignal<PageSubscriptionError | null>(pageError),
+    clearPageError: () => {},
     navigate: () => {},
     start: () => {},
     stop: () => {},
@@ -73,5 +75,89 @@ describe('HilosView page error', () => {
 
     expect(wrapper.find('[data-id="user-page"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+  })
+})
+
+const UNAUTHORIZED: PageSubscriptionError = {
+  page: 'user',
+  httpCode: 401,
+  errorCode: 'unauthorized',
+  message: 'Authentication required',
+}
+
+const AUTH_SURFACE = markRaw({
+  template: '<div data-id="auth-surface"></div>',
+})
+
+function fakeAuthGate(open = false): AuthGate {
+  return {
+    modalOpen: createSignal(open),
+    requireAuth: () => {},
+    dismiss: () => {},
+  }
+}
+
+describe('HilosView auth gate', () => {
+  it('mounts the auth surface in place of ErrorPage on an anonymous 401', () => {
+    const wrapper = mount(HilosView, {
+      props: {
+        pages: PAGES,
+        authSurface: AUTH_SURFACE,
+        authGate: fakeAuthGate(),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(UNAUTHORIZED) },
+      },
+    })
+
+    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(false)
+  })
+
+  it('still renders ErrorPage for a non-401 error', () => {
+    const wrapper = mount(HilosView, {
+      props: {
+        pages: PAGES,
+        authSurface: AUTH_SURFACE,
+        authGate: fakeAuthGate(),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(NOT_FOUND) },
+      },
+    })
+
+    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="auth-surface"]').exists()).toBe(false)
+  })
+
+  it('falls back to ErrorPage on a 401 when no surface is registered', () => {
+    const wrapper = mount(HilosView, {
+      props: { pages: PAGES },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(UNAUTHORIZED) },
+      },
+    })
+
+    expect(wrapper.find('[data-id="page-error"]').exists()).toBe(true)
+  })
+
+  it('shows the auth surface in a modal when the gate opens', () => {
+    mount(HilosView, {
+      props: {
+        pages: PAGES,
+        authSurface: AUTH_SURFACE,
+        authGate: fakeAuthGate(true),
+      },
+      global: {
+        provide: { [hilosRouterKey as symbol]: routerWith(null) },
+      },
+      attachTo: document.body,
+    })
+
+    // The modal teleports to <body>; the live page still renders beneath it.
+    expect(document.body.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[data-id="auth-surface"]'),
+    ).not.toBeNull()
   })
 })

@@ -27,6 +27,8 @@ export interface NavigablePages {
   subscribe(pageKey: string, params?: Record<string, string>): unknown
   /** The current page's subscription error, or null while it loads cleanly. */
   readonly pageError: ReadonlySignal<PageSubscriptionError | null>
+  /** Clear the current page's subscription error without leaving the page. */
+  clearPageError(): void
 }
 
 /**
@@ -67,6 +69,13 @@ export interface HilosRouter {
    * set; it is cleared the moment navigation changes the page.
    */
   readonly pageError: ReadonlySignal<PageSubscriptionError | null>
+  /**
+   * Clear the current page's subscription error without navigating. The auth
+   * gate calls it on a successful session upgrade so a 401'd page un-gates and
+   * its preserved subscription resumes in place (HIL-165); a no-op when no error
+   * is set.
+   */
+  clearPageError(): void
   /**
    * Navigate to `pathname` in place: push a history entry, swap the route
    * signal, and re-subscribe the page over the live socket.
@@ -125,6 +134,7 @@ export function createHilosRouter(
     currentPath,
     currentTitle,
     pageError: pages.pageError,
+    clearPageError: () => pages.clearPageError(),
     navigate: (pathname) => {
       env.pushState(pathname)
       apply(pathname)

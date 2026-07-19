@@ -17,6 +17,7 @@ import {
   sessionUserName,
   SESSION_SIGNAL_SCHEMAS,
   bootHilos,
+  createAuthGate,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '../src/index.js'
@@ -37,6 +38,7 @@ it('exports the @hilos/core public surface', () => {
   expect(sessionUserName).toBeTypeOf('function')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   expect(bootHilos).toBeTypeOf('function')
+  expect(createAuthGate).toBeTypeOf('function')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
 })

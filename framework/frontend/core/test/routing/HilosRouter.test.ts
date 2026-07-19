@@ -50,6 +50,7 @@ function fakeEnvironment(initial: string) {
 function fakePages() {
   const calls: Array<{ page: string; params: Record<string, string> }> = []
   const pageError = createSignal<PageSubscriptionError | null>(null)
+  let cleared = 0
   const pages: NavigablePages = {
     subscribe: (page, params = {}) => {
       calls.push({ page, params })
@@ -57,9 +58,13 @@ function fakePages() {
       return null
     },
     pageError,
+    clearPageError: () => {
+      cleared += 1
+      pageError.set(null)
+    },
   }
 
-  return { pages, calls, pageError }
+  return { pages, calls, pageError, clearedCount: () => cleared }
 }
 
 describe('createHilosRouter', () => {
@@ -168,5 +173,27 @@ describe('createHilosRouter', () => {
     })
 
     expect(navigator.pageError.get()?.httpCode).toBe(404)
+  })
+
+  it('clears the page error through the page subscription without navigating', () => {
+    const { env, isPopAttached } = fakeEnvironment('/')
+    const { pages, pageError, calls, clearedCount } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    pageError.set({
+      page: 'user',
+      httpCode: 401,
+      errorCode: 'unauthorized',
+      message: 'Authentication required',
+    })
+    const subscribesBefore = calls.length
+
+    navigator.clearPageError()
+
+    expect(clearedCount()).toBe(1)
+    expect(navigator.pageError.get()).toBeNull()
+    // Resume in place: no re-subscribe, and history tracking is untouched.
+    expect(calls.length).toBe(subscribesBefore)
+    expect(isPopAttached()).toBe(true)
   })
 })

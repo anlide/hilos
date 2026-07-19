@@ -50,12 +50,18 @@ class FakeSource implements ActionLifecycleSource {
     }
   }
 
-  fail(action: string, requestId: string | undefined, reason: string): void {
+  fail(
+    action: string,
+    requestId: string | undefined,
+    reason: string,
+    errorCode?: string,
+  ): void {
     for (const listener of this.listeners.actionError) {
       listener({
         kind: 'actionError',
         action,
         reason,
+        errorCode,
         requestId,
         envelope: { type: 'action_error', data: {} },
       })

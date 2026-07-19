@@ -87,6 +87,18 @@ export class PageSubscription {
     return scope
   }
 
+  /**
+   * Clear the current page's subscription error without leaving the page. The
+   * subscription is already live and the backend re-delivers the page payload
+   * the instant its guard passes (page-access-control.md live-promotion), so
+   * clearing a 401 the moment the session authenticates un-gates the page with
+   * no re-navigation — the resume half of the auth gate (HIL-165). A no-op when
+   * no error is set.
+   */
+  clearPageError(): void {
+    this.pageErrorSignal.set(null)
+  }
+
   /** Leave to no page: drops the page scope and tells the backend. */
   unsubscribe(): void {
     if (!this.current) {

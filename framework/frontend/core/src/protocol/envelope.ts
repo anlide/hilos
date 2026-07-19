@@ -33,16 +33,19 @@ export type HandshakeSignalData = z.infer<typeof handshakeSignalDataSchema>
 
 /**
  * Payload of the framework action-failure signal (`type: 'action_error'`, PHP
- * `PageActionErrorSignalData`): the failed action's name and a human-readable
- * reason. The `outcome: 'fail'` marker and the correlating `requestId` ride the
- * envelope, not this payload. Parsed natively by the core parse boundary
- * (action_error is a framework signal, not a project schema); the
- * request-correlated acknowledgement lifecycle (ActionLifecycle) consumes the
- * echoed requestId.
+ * `PageActionErrorSignalData`): the failed action's name, a human-readable
+ * reason, and an optional machine-readable `errorCode` (e.g. `'unauthorized'`
+ * for an anonymous write action). The `outcome: 'fail'` marker and the
+ * correlating `requestId` ride the envelope, not this payload. Parsed natively
+ * by the core parse boundary (action_error is a framework signal, not a project
+ * schema); the request-correlated acknowledgement lifecycle (ActionLifecycle)
+ * consumes the echoed requestId, and the auth gate reads `errorCode` to open the
+ * sign-in surface on an action-level 401.
  */
 export const actionErrorSignalDataSchema = z.looseObject({
   action: z.string(),
   reason: z.string(),
+  errorCode: z.string().optional(),
 })
 
 export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>

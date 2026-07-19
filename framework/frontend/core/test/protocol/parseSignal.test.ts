@@ -149,6 +149,19 @@ describe('parseSignal', () => {
         reason: 'Message rate limit is active',
       })
       expect(result.signal.envelope.outcome).toBe('fail')
+      if (result.signal.kind === 'actionError') {
+        expect(result.signal.errorCode).toBeUndefined()
+      }
+    }
+  })
+
+  it('surfaces the machine-readable errorCode on an action_error frame', () => {
+    const result = parseSignal(
+      '{"type":"action_error","data":{"action":"message","reason":"Authentication required","errorCode":"unauthorized"},"outcome":"fail"}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok && result.signal.kind === 'actionError') {
+      expect(result.signal.errorCode).toBe('unauthorized')
     }
   })
 

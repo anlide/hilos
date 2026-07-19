@@ -50,6 +50,7 @@ export type ParsedSignal =
       kind: 'actionError'
       action: string
       reason: string
+      errorCode: string | undefined
       requestId: string | undefined
       envelope: SignalEnvelope
     }
@@ -218,6 +219,7 @@ export function parseSignal(
           kind: 'actionError',
           action: data.data.action,
           reason: data.data.reason,
+          errorCode: data.data.errorCode,
           requestId: envelope.data.requestId,
           envelope: envelope.data,
         },
