@@ -13,8 +13,10 @@ import {
   useSignal,
 } from '@hilos/vue'
 import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
+import type { AuthGate } from '@hilos/core'
 import type { Component } from 'vue'
 
+import AuthSurface from './auth/AuthSurface.vue'
 import { connection } from './bootstrap/connection'
 import { currentUserName } from './bootstrap/session'
 import {
@@ -44,6 +46,11 @@ import User from './views/User/User.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
+
+// The auth gate is created in bootstrap (it needs the navigator, the current
+// user, and the connection) and passed in as a root prop; App wires it and the
+// project's AuthSurface to the outlet so a 401 shows sign-in in place.
+const props = defineProps<{ authGate: AuthGate }>()
 
 // The page-key → view map HilosView renders from. The app's own pages, then the
 // framework admin defaults (hilosAdminViews), then the demo's real admin pages
@@ -110,6 +117,10 @@ const logout = (): void => {
         <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
       </button>
     </template>
-    <HilosView :pages="pages" />
+    <HilosView
+      :pages="pages"
+      :auth-surface="AuthSurface"
+      :auth-gate="props.authGate"
+    />
   </HilosLayout>
 </template>

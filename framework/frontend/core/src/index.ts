@@ -99,6 +99,21 @@ export {
   type AuthGateActionErrorSource,
 } from './auth/authGate.js'
 export {
+  createAuthSurface,
+  isAuthSubmittable,
+  authEntries,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_AUTH_METHOD,
+  type AuthSurface,
+  type AuthSurfaceOptions,
+  type AuthMethodDescriptor,
+  type AuthFormState,
+  type AuthField,
+  type AuthEntry,
+  type AuthMode,
+  type AuthSubmitOutcome,
+} from './auth/authSurface.js'
+export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,

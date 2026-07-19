@@ -18,6 +18,8 @@ import {
   SESSION_SIGNAL_SCHEMAS,
   bootHilos,
   createAuthGate,
+  createAuthSurface,
+  PASSWORD_AUTH_METHOD,
   HILOS_PAGE_ROUTES,
   SIGNAL_TYPE_PAGE_RESPONSE,
 } from '../src/index.js'
@@ -39,6 +41,8 @@ it('exports the @hilos/core public surface', () => {
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
   expect(bootHilos).toBeTypeOf('function')
   expect(createAuthGate).toBeTypeOf('function')
+  expect(createAuthSurface).toBeTypeOf('function')
+  expect(PASSWORD_AUTH_METHOD.modes).toContain('login')
   expect(HILOS_PAGE_ROUTES).toBeTypeOf('object')
   expect(SIGNAL_TYPE_PAGE_RESPONSE).toBe('page_response')
 })
