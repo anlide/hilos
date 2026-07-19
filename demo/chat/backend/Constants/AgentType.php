@@ -43,4 +43,7 @@ final class AgentType
 
     /** @var string Hilos logs overview agent type */
     public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
+
+    /** @var string Hilos backup agent type (monopolistic) */
+    public const string HILOS_BACKUP = HilosAgentType::HILOS_BACKUP;
 }
