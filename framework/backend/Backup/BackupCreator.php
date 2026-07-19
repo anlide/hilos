@@ -1,0 +1,494 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Backup;
+
+use DateTimeImmutable;
+use DateTimeInterface;
+use Hilos\Backup\Exception\BackupDumpFailedException;
+use Hilos\Backup\Exception\BackupException;
+use Hilos\Constants\EnvConstants;
+use Hilos\Core\Process;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionConfig;
+use Hilos\Database\Migration;
+use Hilos\Hilos;
+use Throwable;
+
+/**
+ * BackupCreator - the backup create engine that runs inside the short-lived child.
+ *
+ * The monopoly {@see Agent\BackupAgent} supervisor spawns a `backup:run` CLI child
+ * (HIL-270 supervisor step) that delegates here. All blocking work — one mysqldump
+ * per configured connection, then the archive and sidecar write — happens here, off
+ * the daemon event loop. The run is all-or-nothing: any failing step aborts the whole
+ * backup, cleans the partial temp, and throws; no partial archive is ever published.
+ * On success it publishes `<root>/<scope>/<id>-<env>-<scope>.tar.gz` and its
+ * `.json` sidecar atomically (temp path in the same directory, then rename), so the
+ * read path never scans a half-written archive.
+ *
+ * The dumper is hardcoded to mysqldump inline (the project targets MySQL only); the
+ * per-connection dump is isolated in {@see dumpConnection()} as the seam a future
+ * per-driver dumper abstraction would replace (deferred until a non-MySQL connection
+ * appears).
+ */
+final class BackupCreator
+{
+    /** Dumper binary; inline hardcode is the documented seam for a future dumper abstraction. */
+    private const string MYSQLDUMP_BIN = 'mysqldump';
+
+    /** Archiver binary producing the gzip tarball. */
+    private const string TAR_BIN = 'tar';
+
+    /** Poll interval while blocking on a child dump/archive process, microseconds. */
+    private const int POLL_INTERVAL_US = 50_000;
+
+    /** Allowed backup id characters; the id is a filesystem base name, so no separators. */
+    private const string ID_PATTERN = '/^[A-Za-z0-9._-]+$/';
+
+    private const string SQL_FILE_PREFIX = 'db-';
+    private const string SQL_FILE_SUFFIX = '.sql';
+    private const string METADATA_FILENAME = 'metadata.json';
+    private const string ARCHIVE_EXTENSION = '.tar.gz';
+    private const string SIDECAR_EXTENSION = '.json';
+
+    /**
+     * Creates one backup: dumps every configured connection, archives, and publishes atomically.
+     *
+     * @param string $id Backup id and archive/sidecar base name (a filesystem-safe stem)
+     * @param BackupScope $scope What to capture; also the storage subdirectory
+     * @return BackupMetadata The published sidecar metadata
+     * @throws BackupException When the id or backup directory is invalid
+     * @throws BackupDumpFailedException When a dump, archive, or publish step fails
+     */
+    public function create(string $id, BackupScope $scope): BackupMetadata
+    {
+        if (preg_match(self::ID_PATTERN, $id) !== 1) {
+            throw new BackupException("Invalid backup id: {$id}");
+        }
+
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        if ($root === '') {
+            throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
+        }
+
+        $scopeDir = $root . '/' . $scope->value;
+        $this->ensureDirectory($scopeDir);
+
+        $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
+        $tmpStem = $scopeDir . '/.tmp-' . $base . '-' . getmypid();
+        $workDir = $tmpStem . '.work';
+        $tmpArchive = $tmpStem . self::ARCHIVE_EXTENSION;
+        $tmpSidecar = $tmpStem . self::SIDECAR_EXTENSION;
+
+        $startedAt = microtime(true);
+
+        try {
+            $this->ensureDirectory($workDir);
+
+            $connections = $this->dumpAllConnections($scope, $workDir);
+
+            // In-archive metadata copy (size is only known after the archive exists).
+            $inArchiveMeta = $this->buildMetadata($id, $scope, $connections, 0, 0);
+            $this->writeJson($workDir . '/' . self::METADATA_FILENAME, $inArchiveMeta->toArray());
+
+            $this->archive($workDir, $tmpArchive);
+
+            $sizeBytes = $this->fileSize($tmpArchive);
+            $durationSeconds = (int)round(microtime(true) - $startedAt);
+            $metadata = $this->buildMetadata($id, $scope, $connections, $sizeBytes, $durationSeconds);
+
+            $this->writeJson($tmpSidecar, $metadata->toArray());
+
+            // Publish archive before sidecar: the read path treats a sidecar without an
+            // archive as an anomaly, never the reverse, so this order is never half-valid.
+            $this->publish($tmpArchive, $scopeDir . '/' . $base . self::ARCHIVE_EXTENSION);
+            $this->publish($tmpSidecar, $scopeDir . '/' . $base . self::SIDECAR_EXTENSION);
+
+            $this->removeDirectory($workDir);
+
+            return $metadata;
+        } catch (BackupException $e) {
+            $this->cleanupTemp($workDir, $tmpArchive, $tmpSidecar);
+            throw $e;
+        } catch (Throwable $e) {
+            $this->cleanupTemp($workDir, $tmpArchive, $tmpSidecar);
+            throw new BackupDumpFailedException('Backup create failed: ' . $e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Builds the archive/sidecar base name `<id>-<env>-<scope>`.
+     *
+     * @param string $id Backup id
+     * @param string $env Application environment
+     * @param BackupScope $scope Backup scope
+     * @return string Base name without extension
+     */
+    public static function archiveBaseName(string $id, string $env, BackupScope $scope): string
+    {
+        return $id . '-' . $env . '-' . $scope->value;
+    }
+
+    /**
+     * Maps a scope to the ordered mysqldump passes for one connection.
+     *
+     * FULL is one pass with no restricting flags; SCHEMA_ONLY is one `--no-data` pass;
+     * SCHEMA_SEED is a `--no-data` schema pass followed by a `--no-create-info` data
+     * pass restricted to the reference tables (appended to the same file). The second
+     * pass is omitted when no reference tables are given, so an unpopulated reference
+     * registry makes SCHEMA_SEED equivalent to SCHEMA_ONLY.
+     *
+     * @param BackupScope $scope Backup scope
+     * @param list<string> $referenceTables Seed/reference tables whose rows SCHEMA_SEED keeps
+     * @return list<array{flags: list<string>, tables: list<string>, append: bool}> Ordered passes
+     */
+    public static function scopeDumpPasses(BackupScope $scope, array $referenceTables): array
+    {
+        return match ($scope) {
+            BackupScope::FULL => [
+                ['flags' => [], 'tables' => [], 'append' => false],
+            ],
+            BackupScope::SCHEMA_ONLY => [
+                ['flags' => ['--no-data'], 'tables' => [], 'append' => false],
+            ],
+            BackupScope::SCHEMA_SEED => $referenceTables === []
+                ? [['flags' => ['--no-data'], 'tables' => [], 'append' => false]]
+                : [
+                    ['flags' => ['--no-data'], 'tables' => [], 'append' => false],
+                    ['flags' => ['--no-create-info'], 'tables' => $referenceTables, 'append' => true],
+                ],
+        };
+    }
+
+    /**
+     * Renders a mysqldump defaults-extra-file so credentials never appear in argv.
+     *
+     * @param DatabaseConnectionConfig $config Connection settings
+     * @return string INI text for `--defaults-extra-file`
+     */
+    public static function renderDefaultsIni(DatabaseConnectionConfig $config): string
+    {
+        $lines = [
+            '[mysqldump]',
+            'host = ' . self::iniQuote($config->host),
+            'port = ' . $config->port,
+            'user = ' . self::iniQuote($config->user),
+            'password = ' . self::iniQuote($config->password),
+        ];
+        if ($config->socket !== null && $config->socket !== '') {
+            $lines[] = 'socket = ' . self::iniQuote($config->socket);
+        }
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * Dumps every configured connection into `db-<index>.sql` files under the work dir.
+     *
+     * @param BackupScope $scope Backup scope
+     * @param string $workDir Temp working directory receiving the sql files
+     * @return list<BackupConnectionMeta> Captured connection metadata
+     * @throws BackupDumpFailedException When a connection cannot be dumped
+     */
+    private function dumpAllConnections(BackupScope $scope, string $workDir): array
+    {
+        $connections = [];
+        foreach (Database::getConfiguredIndices() as $index) {
+            Database::useConnection($index);
+            if (!Database::isConnected($index)) {
+                Database::connect($index);
+            }
+
+            $config = Database::getConnectionConfig($index);
+            $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
+
+            $this->dumpConnection($scope, $config, $sqlPath);
+
+            $connections[] = new BackupConnectionMeta($index, $config->database, Migration::getCurrentIndex());
+        }
+
+        return $connections;
+    }
+
+    /**
+     * Runs the scope's mysqldump passes for one connection into a single sql file.
+     *
+     * This is the per-driver seam: a future dumper abstraction would replace the body
+     * while the caller contract (scope + config + target file) stays the same.
+     *
+     * @param BackupScope $scope Backup scope
+     * @param DatabaseConnectionConfig $config Connection settings
+     * @param string $sqlPath Output sql file for this connection
+     * @throws BackupDumpFailedException When a mysqldump pass exits non-zero
+     */
+    private function dumpConnection(BackupScope $scope, DatabaseConnectionConfig $config, string $sqlPath): void
+    {
+        $iniPath = $this->writeDefaultsIni($config);
+
+        try {
+            foreach (self::scopeDumpPasses($scope, $this->referenceTables()) as $pass) {
+                $params = array_merge(
+                    ['--defaults-extra-file=' . $iniPath, '--single-transaction', '--no-tablespaces'],
+                    $pass['flags'],
+                    [$config->database],
+                    $pass['tables'],
+                );
+                $this->runToFile(
+                    self::MYSQLDUMP_BIN,
+                    $params,
+                    $sqlPath,
+                    $pass['append'] ? Process::PIPE_APPEND : Process::PIPE_WRITE,
+                );
+            }
+        } finally {
+            @unlink($iniPath);
+        }
+    }
+
+    /**
+     * Reference/seed tables whose rows SCHEMA_SEED keeps.
+     *
+     * The reference registry is populated from the project backup catalog by HIL-271;
+     * until then this is empty and SCHEMA_SEED behaves like SCHEMA_ONLY.
+     *
+     * @return list<string> Reference table names
+     */
+    private function referenceTables(): array
+    {
+        // TODO(HIL-271): read the reference-table registry from the project backup catalog.
+        return [];
+    }
+
+    /**
+     * Archives the work directory contents into a gzip tarball.
+     *
+     * @param string $workDir Directory whose contents are archived
+     * @param string $tarPath Output archive path
+     * @throws BackupDumpFailedException When tar exits non-zero
+     */
+    private function archive(string $workDir, string $tarPath): void
+    {
+        // -C keeps the archive rooted at the backup contents, not the temp path.
+        $this->runToFile(self::TAR_BIN, ['-czf', $tarPath, '-C', $workDir, '.'], null, Process::PIPE_WRITE);
+    }
+
+    /**
+     * Runs a child process to completion, optionally redirecting stdout to a file.
+     *
+     * Blocking is intentional and safe: this runs in the short-lived backup child, not
+     * the daemon event loop.
+     *
+     * @param string $bin Executable
+     * @param list<string> $params argv passed verbatim (no shell)
+     * @param ?string $outPath File to receive stdout, or null to discard via a pipe
+     * @param string $outMode File open mode when $outPath is given
+     * @throws BackupDumpFailedException When the process cannot run or exits non-zero
+     */
+    private function runToFile(string $bin, array $params, ?string $outPath, string $outMode): void
+    {
+        $stdOut = $outPath === null
+            ? [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE]
+            : [Process::DESCRIPTOR_FILE, $outPath, $outMode];
+
+        try {
+            $process = new Process(
+                $bin,
+                $params,
+                null,
+                [Process::DESCRIPTOR_PIPE, Process::PIPE_READ],
+                $stdOut,
+                [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE],
+            );
+
+            do {
+                $process->tick();
+                if ($process->getStatus()[Process::STATUS_RUNNING]) {
+                    usleep(self::POLL_INTERVAL_US);
+                }
+            } while ($process->getStatus()[Process::STATUS_RUNNING]);
+
+            $process->halt();
+            $exitCode = $process->getExitCode();
+            $stderr = $process->getStdErr();
+        } catch (BackupDumpFailedException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new BackupDumpFailedException("Failed to run {$bin}: " . $e->getMessage(), 0, $e);
+        }
+
+        if ($exitCode !== 0) {
+            throw new BackupDumpFailedException(
+                sprintf('%s exited with code %s: %s', $bin, $exitCode ?? 'unknown', trim($stderr)),
+            );
+        }
+    }
+
+    /**
+     * Assembles the sidecar metadata for a run.
+     *
+     * @param string $id Backup id
+     * @param BackupScope $scope Backup scope
+     * @param list<BackupConnectionMeta> $connections Captured connections
+     * @param int $sizeBytes Archive size in bytes (0 for the in-archive copy)
+     * @param int $durationSeconds Wall-clock capture duration
+     * @return BackupMetadata Assembled metadata
+     */
+    private function buildMetadata(
+        string $id,
+        BackupScope $scope,
+        array $connections,
+        int $sizeBytes,
+        int $durationSeconds,
+    ): BackupMetadata {
+        return new BackupMetadata(
+            $id,
+            (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
+            Hilos::$env->string(EnvConstants::APP_ENV),
+            $scope,
+            $connections,
+            $sizeBytes,
+            $durationSeconds,
+            false,
+            BackupStatus::SUCCESS,
+        );
+    }
+
+    /**
+     * Writes a 0600 defaults-extra-file for mysqldump and returns its path.
+     *
+     * @param DatabaseConnectionConfig $config Connection settings
+     * @return string Path to the temporary INI file
+     * @throws BackupDumpFailedException When the temp file cannot be created or written
+     */
+    private function writeDefaultsIni(DatabaseConnectionConfig $config): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'hilos-backup-');
+        if ($path === false) {
+            throw new BackupDumpFailedException('Failed to create mysqldump defaults file');
+        }
+        if (!@chmod($path, 0600) || @file_put_contents($path, self::renderDefaultsIni($config)) === false) {
+            @unlink($path);
+            throw new BackupDumpFailedException('Failed to write mysqldump defaults file');
+        }
+
+        return $path;
+    }
+
+    /**
+     * Writes a JSON file (pretty-printed, unescaped) or fails.
+     *
+     * @param string $path Target file
+     * @param array<string, mixed> $data Payload
+     * @throws BackupDumpFailedException When encoding or writing fails
+     */
+    private function writeJson(string $path, array $data): void
+    {
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            throw new BackupDumpFailedException("Failed to encode JSON for {$path}");
+        }
+        if (@file_put_contents($path, $json) === false) {
+            throw new BackupDumpFailedException("Failed to write {$path}");
+        }
+    }
+
+    /**
+     * Fsyncs a finished file then renames it into place, so readers never see a partial write.
+     *
+     * @param string $tmpPath Source temp file on the same filesystem as the target
+     * @param string $finalPath Final path
+     * @throws BackupDumpFailedException When fsync or rename fails
+     */
+    private function publish(string $tmpPath, string $finalPath): void
+    {
+        $handle = @fopen($tmpPath, 'r');
+        if ($handle !== false) {
+            @fflush($handle);
+            @fsync($handle);
+            @fclose($handle);
+        }
+        if (!@rename($tmpPath, $finalPath)) {
+            throw new BackupDumpFailedException("Failed to publish {$finalPath}");
+        }
+    }
+
+    /**
+     * Returns a file size or fails.
+     *
+     * @param string $path File path
+     * @return int Size in bytes
+     * @throws BackupDumpFailedException When the size cannot be read
+     */
+    private function fileSize(string $path): int
+    {
+        $size = @filesize($path);
+        if ($size === false) {
+            throw new BackupDumpFailedException("Failed to stat archive {$path}");
+        }
+
+        return $size;
+    }
+
+    /**
+     * Creates a directory (recursively) if missing.
+     *
+     * @param string $path Directory path
+     * @throws BackupException When the directory cannot be created
+     */
+    private function ensureDirectory(string $path): void
+    {
+        if (is_dir($path)) {
+            return;
+        }
+        if (!@mkdir($path, 0755, true) && !is_dir($path)) {
+            throw new BackupException("Failed to create directory {$path}");
+        }
+    }
+
+    /**
+     * Removes any temp artifacts left by a failed or finished run (best effort).
+     *
+     * @param string $workDir Temp working directory
+     * @param string $tmpArchive Temp archive path
+     * @param string $tmpSidecar Temp sidecar path
+     */
+    private function cleanupTemp(string $workDir, string $tmpArchive, string $tmpSidecar): void
+    {
+        $this->removeDirectory($workDir);
+        @unlink($tmpArchive);
+        @unlink($tmpSidecar);
+    }
+
+    /**
+     * Recursively removes a directory (best effort).
+     *
+     * @param string $path Directory path
+     */
+    private function removeDirectory(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $child = $path . '/' . $entry;
+            is_dir($child) ? $this->removeDirectory($child) : @unlink($child);
+        }
+        @rmdir($path);
+    }
+
+    /**
+     * Double-quotes and escapes a value for a MySQL option file.
+     *
+     * @param string $value Raw value
+     * @return string Quoted value
+     */
+    private static function iniQuote(string $value): string
+    {
+        return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $value) . '"';
+    }
+}

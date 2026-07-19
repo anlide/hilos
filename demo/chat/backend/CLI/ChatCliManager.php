@@ -6,6 +6,7 @@ namespace Demo\Chat\CLI;
 
 use Demo\Chat\CLI\Commands\AdminGrantCommand;
 use Demo\Chat\CLI\Commands\AdminRevokeCommand;
+use Demo\Chat\CLI\Commands\BackupRunCommand;
 use Demo\Chat\CLI\Commands\CreateOrphanCommand;
 use Demo\Chat\CLI\Commands\CreateOrphanSettingCommand;
 use Demo\Chat\CLI\Commands\DeleteOrphanCommand;
@@ -20,7 +21,8 @@ use Hilos\Core\CLI\CliManager;
  *
  * The test-only state helpers (orphan-setting create/delete, the command-channel echo probe)
  * demonstrate the TestOnlyCommand mechanism; admin grant/revoke and impersonate start/stop are
- * real operator commands that act on a user or session over the daemon command channel.
+ * real operator commands that act on a user or session over the daemon command channel;
+ * backup:run is the short-lived child the backup agent spawns to create one backup archive.
  */
 final class ChatCliManager extends CliManager
 {
@@ -35,5 +37,6 @@ final class ChatCliManager extends CliManager
         $this->addCommand(new AdminRevokeCommand());
         $this->addCommand(new ImpersonateStartCommand());
         $this->addCommand(new ImpersonateStopCommand());
+        $this->addCommand(new BackupRunCommand());
     }
 }

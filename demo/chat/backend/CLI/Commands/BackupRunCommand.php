@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\CLI\Commands;
+
+use Demo\Chat\Constants\ChatCliCommands;
+use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupScope;
+use Hilos\Backup\Exception\BackupException;
+use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandInterface;
+
+/**
+ * BackupRunCommand - the short-lived child that creates one backup.
+ *
+ * The monopoly backup agent supervisor spawns this over {@see \Hilos\Core\Process}
+ * for each backup run; it delegates to the framework {@see BackupCreator} engine.
+ * It needs a full Hilos init (it dumps the configured database connections), so it is
+ * not among the init-skipping commands. It returns 0 on success and a non-zero exit
+ * code on any failure, which the supervisor reads to record the run's outcome.
+ */
+final class BackupRunCommand implements CommandInterface
+{
+    /** Default scope when `--scope` is omitted. */
+    private const string DEFAULT_SCOPE = BackupScope::FULL->value;
+
+    public function getName(): string
+    {
+        return ChatCliCommands::BACKUP_RUN;
+    }
+
+    public function getDescription(): string
+    {
+        return 'Create one backup archive of all database connections';
+    }
+
+    public function getHelp(): string
+    {
+        return <<<HELP
+Command: backup:run <id> [--scope=full|schema-seed|schema-only]
+
+Description:
+  Dumps every configured database connection with mysqldump, archives them into
+  <BACKUP_DIR>/<scope>/<id>-<env>-<scope>.tar.gz and writes its JSON sidecar. The
+  run is all-or-nothing: any failure leaves no archive behind and exits non-zero.
+
+  Spawned by the backup agent supervisor; run it directly only to create a backup
+  by hand or to debug the engine.
+
+Usage:
+  php cli.php backup:run <id> [--scope=full]
+
+Examples:
+  php cli.php backup:run 2026-07-19_10-30-00
+  php cli.php backup:run 2026-07-19_10-30-00 --scope=schema-only
+HELP;
+    }
+
+    /**
+     * Creates one backup and reports success or failure via the exit code.
+     *
+     * @param array<string, mixed> $options Parsed options; `--scope` selects the scope
+     * @param list<string> $args Positional args; $args[0] is the backup id
+     * @return int Exit code (0 on success, non-zero on failure)
+     */
+    public function execute(array $options, array $args): int
+    {
+        $id = $args[0] ?? '';
+        if ($id === '') {
+            fwrite(STDERR, "backup:run requires a backup id as the first argument\n");
+
+            return ExitCode::ERROR;
+        }
+
+        $scopeRaw = (string)($options['scope'] ?? self::DEFAULT_SCOPE);
+        $scope = BackupScope::fromString($scopeRaw);
+        if ($scope === null) {
+            fwrite(STDERR, "Unknown backup scope: {$scopeRaw}\n");
+
+            return ExitCode::ERROR;
+        }
+
+        try {
+            $metadata = (new BackupCreator())->create($id, $scope);
+        } catch (BackupException $e) {
+            fwrite(STDERR, 'Backup failed: ' . $e->getMessage() . "\n");
+
+            return ExitCode::ERROR;
+        }
+
+        echo "Backup created: {$metadata->id} ({$metadata->sizeBytes} bytes)\n";
+
+        return ExitCode::SUCCESS;
+    }
+}

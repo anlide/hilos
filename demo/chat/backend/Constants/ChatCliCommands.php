@@ -41,4 +41,7 @@ final class ChatCliCommands
 
     /** @var string Stop impersonating on a session over the command channel */
     public const string IMPERSONATE_STOP = 'impersonate:stop';
+
+    /** @var string Create one backup archive of all database connections */
+    public const string BACKUP_RUN = 'backup:run';
 }

@@ -113,6 +113,39 @@ class Database
     }
 
     /**
+     * Lists the configured connection indices in ascending order.
+     *
+     * Read-only view over the private configuration map, so a subsystem that must
+     * act on every connection (e.g. the backup dump path) can iterate them without
+     * reaching into internal state.
+     *
+     * @return list<int> Configured connection indices, ascending
+     */
+    public static function getConfiguredIndices(): array
+    {
+        $indices = array_keys(self::$configurations);
+        sort($indices);
+
+        return $indices;
+    }
+
+    /**
+     * Returns the immutable settings of a configured connection.
+     *
+     * Companion to {@see getConfiguredIndices()}: the backup dump path needs the
+     * host/credentials/database of each connection to spawn mysqldump against it.
+     *
+     * @param int $index Connection index
+     * @return DatabaseConnectionConfig Connection settings at the index
+     * @throws DatabaseException When the connection index is not configured
+     */
+    public static function getConnectionConfig(int $index): DatabaseConnectionConfig
+    {
+        return self::$configurations[$index]
+            ?? throw new DatabaseException("Connection {$index} is not configured");
+    }
+
+    /**
      * @param int $index Connection index to activate
      * @throws DatabaseException When connection index is not configured
      */
