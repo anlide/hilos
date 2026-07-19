@@ -71,4 +71,30 @@ final class Identity extends DbItem
     {
         $this->_object->rehashPasswordIfNeeded($plainPassword);
     }
+
+    /**
+     * Sets a new password on this identity (password-reset write path).
+     *
+     * Delegates to the object layer's secret-update primitive; the hash is minted
+     * and stored inside the layer and never crosses the view boundary.
+     *
+     * @param string $plainPassword New plaintext password to hash and store
+     * @throws DatabaseException When the secret update query fails
+     */
+    public function setPassword(string $plainPassword): void
+    {
+        $this->_object->setPassword($plainPassword);
+    }
+
+    /**
+     * Marks this identity verified (register-confirm write path).
+     *
+     * Delegates to the object layer's verify-flip primitive.
+     *
+     * @throws DatabaseException When the verified update query fails
+     */
+    public function markVerified(): void
+    {
+        $this->_object->markVerified();
+    }
 }

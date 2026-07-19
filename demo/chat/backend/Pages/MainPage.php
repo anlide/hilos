@@ -11,15 +11,21 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -32,6 +38,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Item\Identity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -56,17 +63,25 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
         ChatSignalConstants::LOGIN => LoginActionDTO::class,
         ChatSignalConstants::REGISTER => RegisterActionDTO::class,
+        ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
+        ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
+        ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
+        ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
     // the chat but is denied MESSAGE with a typed 401 (the frontend pre-disables
-    // the composer and opens sign-in). LOGIN/REGISTER stay open — a guest needs
-    // them to authenticate. Uploads ride the message it drafts, so the guard here
-    // is enough (the anonymous composer never reaches an upload).
+    // the composer and opens sign-in). LOGIN/REGISTER and the password-recovery
+    // pair stay open — a guest needs them to authenticate or recover. The
+    // register-confirm pair is authenticated: it verifies the signed-in user's
+    // own email, so it must never run for an anonymous session. Uploads ride the
+    // message they draft, so the guard here is enough.
     public const array AUTH_ACTIONS = [
         ChatSignalConstants::MESSAGE,
+        ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
+        ChatSignalConstants::CONFIRM_REGISTER,
     ];
 
     public const array SIGNALS = [
@@ -92,6 +107,12 @@ final class MainPage extends AbstractPage
     private const string INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
 
     /**
+     * Generic failure message for every verification-code path (unknown, expired,
+     * wrong, exhausted) so a response never discloses which case occurred.
+     */
+    private const string INVALID_CODE_MESSAGE = 'Invalid or expired code';
+
+    /**
      * Minimum registration password length. Length-only policy (no complexity
      * rule) — the shortest lever that keeps trivially weak passwords out.
      */
@@ -106,6 +127,7 @@ final class MainPage extends AbstractPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ValidationException When a routed handler rejects the action
+     * @throws \Random\RandomException When issuing a verification code cannot draw from the CSPRNG
      * @throws HilosException When a routed handler exposes storage, settings, database, or runtime failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
@@ -132,6 +154,38 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, RegisterActionDTO::class, $dto);
                 }
                 $this->handleRegister($dto);
+
+                break;
+
+            case ChatSignalConstants::REQUEST_PASSWORD_RESET:
+                if (!$dto instanceof RequestPasswordResetActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestPasswordResetActionDTO::class, $dto);
+                }
+                $this->handleRequestPasswordReset($dto);
+
+                break;
+
+            case ChatSignalConstants::CONFIRM_PASSWORD_RESET:
+                if (!$dto instanceof ConfirmPasswordResetActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmPasswordResetActionDTO::class, $dto);
+                }
+                $this->handleConfirmPasswordReset($dto);
+
+                break;
+
+            case ChatSignalConstants::REQUEST_REGISTER_CONFIRM:
+                if (!$dto instanceof RequestRegisterConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestRegisterConfirmActionDTO::class, $dto);
+                }
+                $this->handleRequestRegisterConfirm($dto);
+
+                break;
+
+            case ChatSignalConstants::CONFIRM_REGISTER:
+                if (!$dto instanceof ConfirmRegisterActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmRegisterActionDTO::class, $dto);
+                }
+                $this->handleConfirmRegister($dto);
 
                 break;
 
@@ -372,6 +426,149 @@ final class MainPage extends AbstractPage
         $atPosition = strpos($email, '@');
 
         return $atPosition === false ? $email : substr($email, 0, $atPosition);
+    }
+
+    /**
+     * Issues a password-reset code for an email, always answering generically.
+     *
+     * Anti-enumeration: whether or not a `password` identity exists for the
+     * email, the action returns the same generic success. A real account issues
+     * (throttled) a code through the verification service; an unknown one still
+     * spends a dummy hash cost so the response time does not disclose which
+     * emails have accounts.
+     *
+     * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
+     * @throws HilosException When identity lookup or code issuing fails
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     */
+    private function handleRequestPasswordReset(RequestPasswordResetActionDTO $dto): void
+    {
+        $email = strtolower($dto->email);
+        $identity = $email !== ''
+            ? Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)
+            : null;
+
+        if ($identity === null || $identity->userId === null) {
+            // No account for this email: still spend a hash cost so the response
+            // time does not disclose that the identifier is unknown.
+            Hilos::$db->identities->verifyDummyPassword($dto->email);
+
+            return;
+        }
+
+        (new VerificationService())->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
+    }
+
+    /**
+     * Verifies a password-reset code and sets the new password on the identity.
+     *
+     * The new password is length-checked before the code is verified so a weak
+     * password does not burn a valid code. A missing/expired/wrong code fails
+     * with the same generic message (no enumeration). On success the code is
+     * single-use consumed inside the service and the `password` identity's secret
+     * is rewritten through the identity layer; there is no auto-login (the user
+     * signs in afterwards).
+     *
+     * @param ConfirmPasswordResetActionDTO $dto Parsed confirm payload (email, code, newPassword)
+     * @throws ValidationException When the new password is too short or the code is invalid
+     * @throws HilosException When verification or the identity secret write fails
+     */
+    private function handleConfirmPasswordReset(ConfirmPasswordResetActionDTO $dto): void
+    {
+        if (strlen($dto->newPassword) < self::PASSWORD_MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . self::PASSWORD_MIN_LENGTH . ' characters');
+        }
+
+        $email = strtolower($dto->email);
+        $userId = (new VerificationService())->verify(VerificationType::PASSWORD_RESET, $email, $dto->code);
+        if ($userId === null) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
+        if ($identity === null) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        $identity->setPassword($dto->newPassword);
+    }
+
+    /**
+     * Issues an email-confirmation code for the signed-in user's own email.
+     *
+     * Authenticated (see AUTH_ACTIONS): the target email is the user's `password`
+     * identity identifier, resolved from the session — never from the client. A
+     * user with no email identity has nothing to confirm and the request is a
+     * silent no-op.
+     *
+     * @param RequestRegisterConfirmActionDTO $dto Parsed request payload (no fields)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws HilosException When identity lookup or code issuing fails
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     */
+    private function handleRequestRegisterConfirm(RequestRegisterConfirmActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $userId = Hilos::$rt->selfConnection->userId;
+        $identity = $this->passwordIdentityForUser($userId);
+        if ($identity === null || $identity->identifier === '') {
+            return;
+        }
+
+        (new VerificationService())->issue(VerificationType::REGISTER_CONFIRM, $identity->identifier, $userId);
+    }
+
+    /**
+     * Verifies an email-confirmation code and flips the identity to verified.
+     *
+     * Authenticated: the target email is resolved from the session user's
+     * `password` identity. A missing/expired/wrong code fails generically. On
+     * success the code is single-use consumed inside the service and the email
+     * identity's `verified` flag is set through the identity layer.
+     *
+     * @param ConfirmRegisterActionDTO $dto Parsed confirm payload (code)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the code is invalid or there is no email to confirm
+     * @throws HilosException When verification or the identity verify-flip fails
+     */
+    private function handleConfirmRegister(ConfirmRegisterActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $identity = $this->passwordIdentityForUser(Hilos::$rt->selfConnection->userId);
+        if ($identity === null || $identity->identifier === '') {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        $userId = (new VerificationService())->verify(VerificationType::REGISTER_CONFIRM, $identity->identifier, $dto->code);
+        if ($userId === null) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        $identity->markVerified();
+    }
+
+    /**
+     * Resolves a user's `password` identity (the one carrying their email).
+     *
+     * @param int $userId Owning user id
+     * @return ?Identity The user's password identity, or null when they have none
+     * @throws HilosException When the identity lookup fails
+     */
+    private function passwordIdentityForUser(int $userId): ?Identity
+    {
+        foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
+            if ($identity->type === IdentityType::PASSWORD) {
+                return $identity;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -32,6 +32,18 @@ final class ChatSignalConstants
     /** @var string Client → server: email+password registration (public, anonymous-reachable) */
     public const string REGISTER = 'register';
 
+    /** @var string Client → server: request a password-reset code (public, anonymous-reachable) */
+    public const string REQUEST_PASSWORD_RESET = 'request_password_reset';
+
+    /** @var string Client → server: submit a password-reset code + new password (public, anonymous-reachable) */
+    public const string CONFIRM_PASSWORD_RESET = 'confirm_password_reset';
+
+    /** @var string Client → server: request an email-confirmation code for the signed-in user */
+    public const string REQUEST_REGISTER_CONFIRM = 'request_register_confirm';
+
+    /** @var string Client → server: submit the email-confirmation code for the signed-in user */
+    public const string CONFIRM_REGISTER = 'confirm_register';
+
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 

@@ -237,6 +237,23 @@ enum EnvConstants
      */
     case HILOS_SESSION_COOKIE_MAX_AGE;
 
+    // ── User verification (email confirm / password recovery) ────────────────
+
+    /**
+     * Number of digits in a verification code (HIL-365). Default 6. Read as an
+     * upper bound on the random_int range the issuer draws.
+     */
+    case HILOS_VERIFICATION_CODE_LENGTH;
+
+    /** @var string Seconds a verification code stays valid before it expires. Default 900 (15m). */
+    case HILOS_VERIFICATION_TTL_SEC;
+
+    /** @var string Maximum verify attempts against one code before it is voided. Default 5. */
+    case HILOS_VERIFICATION_MAX_ATTEMPTS;
+
+    /** @var string Minimum seconds between two issued codes for one (type, identifier). Default 60. */
+    case HILOS_VERIFICATION_RESEND_COOLDOWN_SEC;
+
     // ── Backup ───────────────────────────────────────────────────────────────
 
     /**

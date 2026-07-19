@@ -181,6 +181,59 @@ final class Identity extends Object_
     }
 
     /**
+     * Sets a new password on this identity, hashing the plaintext at rest.
+     *
+     * Secret-update write path of the identity layer, opened by the password-reset
+     * leaf (HIL-365): the new plaintext is hashed here and written with a targeted
+     * UPDATE, the same split {@see rehashPasswordIfNeeded()} uses, so the hash is
+     * minted and stored entirely inside the layer and never reaches the ORM
+     * columns, the object/view surface, or the cross-worker sync bus. A no-op for
+     * an unpersisted identity or an empty plaintext.
+     *
+     * @param string $plainPassword New plaintext password to hash and store
+     * @throws DatabaseException When the secret update query fails
+     */
+    public function setPassword(string $plainPassword): void
+    {
+        if ($this->entity->id === null || $plainPassword === '') {
+            return;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
+            $params,
+        );
+    }
+
+    /**
+     * Marks this identity verified (idempotent), flipping the `verified` flag.
+     *
+     * Verify-flip write path of the identity layer, opened by the register-confirm
+     * leaf (HIL-365): a targeted UPDATE sets `verified = 1` and the loaded entity
+     * is mirrored so a re-read sees it. A no-op for an unpersisted identity.
+     *
+     * @throws DatabaseException When the verified update query fails
+     */
+    public function markVerified(): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::verified . '` = 1 WHERE `' . EntityIdentity::id . '` = ?',
+            $params,
+        );
+
+        $this->entity->verified = true;
+    }
+
+    /**
      * Runs a throwaway hash verification to equalize login response time.
      *
      * Anti-enumeration companion of {@see verifyPassword()}: on an unknown
