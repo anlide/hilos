@@ -12,6 +12,8 @@ frontend page, or when you place a frontend TypeScript type. Start with
 ## Read First
 
 - Page module structure (canonical rule): `docs/agents/frontend/page-module-structure.md`
+- The render-state rule — a page shows a placeholder until its subscription
+  answers, never page content early: `docs/agents/frontend/core-and-connection.md`
 - Frontend routing matrix and overview: `docs/agents/frontend/README.md`
 - Entity store, scopes, and the normalizer boundary the types describe: `docs/agents/frontend/data-model.md`
 - The agnostic core and per-framework view adapters: `docs/agents/frontend/multiframework-core.md`
@@ -34,7 +36,12 @@ frontend page, or when you place a frontend TypeScript type. Start with
    `types/`; keep domain entities and shared value types in `src/types/`.
 5. Do not add a barrel `index.ts` inside a page folder, an empty `…Error.ts`, or
    a `…View`-suffixed view file inside a same-named folder.
-6. A frontend FE↔BE contract change (signals, signal/action DTO payloads,
+6. Until the page subscription answers (a data snapshot or a guard result such
+   as an AUTHENTICATED 401), the view renders a placeholder, never page content
+   or a surface built on an assumed outcome — early content races the reply and a
+   second UI gets swapped mid-state. The auth-gate, not the page, owns the
+   sign-in form (`core-and-connection.md`).
+7. A frontend FE↔BE contract change (signals, signal/action DTO payloads,
    routes, DB/RT shapes) still passes the Contract approval gate in `agents.md`
    before implementation — this rule only governs file layout, not the wire.
 

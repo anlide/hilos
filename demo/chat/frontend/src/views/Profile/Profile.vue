@@ -18,7 +18,6 @@ import {
   useSignal,
 } from '@hilos/vue'
 
-import AuthSurface from '../../auth/AuthSurface.vue'
 import { currentUserId } from '../../bootstrap/session'
 import { clearRenameError, renameError, sendRename } from './profileActions'
 import { committedName, profileDetail } from './profilePage'
@@ -29,13 +28,14 @@ const NAME_MIN = 2
 const NAME_MAX = 64
 
 // The profile is a signed-in-only surface. The backend AUTHENTICATED page guard
-// 401s an anonymous subscribe, but the session user id is the authoritative,
-// subscription-independent signal for who is signed in — so the view mounts the
-// project sign-in surface in place (mirroring the framework auth-gate slot)
-// rather than sitting on "Loading profile…" waiting for a snapshot that the
-// guard will never deliver. Registering/logging in through the surface flips the
-// session user id, the guard starts passing, and the preserved subscription
-// resumes into the profile card with no navigation.
+// 401s an anonymous subscribe, and the framework auth-gate (HilosView) mounts the
+// project sign-in surface in place off that 401 — a single owner of the sign-in
+// form. This view must NOT render its own sign-in surface up front: that mounts a
+// second AuthSurface instance which the gate's 401 then swaps out, resetting any
+// in-progress input. Until the subscription answers (a snapshot or the 401), an
+// anonymous session shows only a placeholder, never page content; the gate draws
+// the form. Registering/logging in flips the session user id, the guard starts
+// passing, and the preserved subscription resumes into the profile card.
 const selfId = useSignal(currentUserId)
 const isAuthenticated = computed(() => selfId.value !== null)
 
@@ -126,8 +126,7 @@ function mergeBoth(): void {
 </script>
 
 <template>
-  <AuthSurface v-if="!isAuthenticated" />
-  <section v-else data-id="profile-view">
+  <section v-if="isAuthenticated" data-id="profile-view">
     <div class="d-flex flex-column gap-1 mb-4">
       <h1 class="h4 mb-0">Profile</h1>
       <p class="mb-0 text-body-secondary">Your account.</p>
@@ -218,4 +217,10 @@ function mergeBoth(): void {
       </template>
     </HilosModal>
   </section>
+  <!-- Anonymous, or the subscription reply hasn't landed yet: a placeholder, never
+  page content. The framework auth-gate (HilosView) mounts the sign-in surface in
+  place once the AUTHENTICATED guard answers 401 — the single owner of the form. -->
+  <p v-else class="text-body-secondary" data-id="profile-loading">
+    Loading profile…
+  </p>
 </template>

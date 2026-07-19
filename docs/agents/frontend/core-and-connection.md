@@ -71,6 +71,18 @@ to this state, not bolted on per component. `stale` is a real internal state
 (see Stale data), and the normalized entity store that holds loaded values is
 specified in [data-model.md](data-model.md).
 
+## A page shows a placeholder until its subscription answers
+
+A view never renders page content before its page subscription has replied. Until
+the reply lands — a data snapshot, or a guard result such as the AUTHENTICATED
+401 — the view shows a **placeholder** (a skeleton or a short loading line), never
+the real content and never a surface built on an assumed outcome. Rendering early
+races the reply: a second, throwaway UI mounts and is swapped the moment the
+answer arrives, discarding any state it gathered — the profile sign-in form that
+`reset()` mid-input when the 401 landed was exactly this. One reply, one owner of
+what shows: the placeholder gives way to content on a snapshot, or to the
+auth-gate surface on a 401 — the gate, not the page, owns the sign-in form.
+
 ## Authoritative backend — no optimistic updates
 
 This is the keystone rule of the runtime. Every user action does two things:
