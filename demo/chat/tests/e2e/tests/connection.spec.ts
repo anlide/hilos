@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+import { signUp } from '../helpers/session'
+
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
 // Connection machine reports `connected` on the page.
@@ -8,12 +10,13 @@ test('websocket transport reaches connected', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
-// Session bootstrap e2e: the client-minted cookie rides the handshake, the
-// backend registers the user and answers handshake_response, the normalizer
-// ingests it into the session scope, and the current user renders.
+// Session bootstrap e2e: the client-minted cookie rides the handshake and the
+// session scope tracks the current user. Under session≠user a fresh visitor is
+// anonymous, so the user is established by registering; the session upgrade rides
+// the same connection and the current user renders in place.
 test('session bootstrap resolves the current user', async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  const user = await signUp(page)
+  await expect(page.getByTestId('self-user')).toHaveText(user.name)
 })
 
 // Step-7.3.3 page-subscription infra e2e: on cold load the app subscribes the
@@ -54,29 +57,26 @@ test('subscribes the URL page on load', async ({ page }) => {
 test('renders the connected user in the participant roster', async ({
   page,
 }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
-  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+  const user = await signUp(page)
 
   await expect(
-    page.getByTestId('participant').filter({ hasText: selfName }),
+    page.getByTestId('participant').filter({ hasText: user.name }),
   ).toBeVisible()
 })
 
-// Main page event stream e2e: registering on connect appends a `user_registered`
-// event to the `mainEvents` list; the stream resolves the target user's name
-// against the entity store and renders the service notice for the self user.
+// Main page event stream e2e: registering appends a `user_registered` event to
+// the `mainEvents` list; the stream resolves the target user's name against the
+// entity store and renders the service notice for the self user. Registration is
+// now explicit (the auth surface), so the notice fires from the register action.
 test('renders the own registration notice in the event stream', async ({
   page,
 }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
-  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+  const user = await signUp(page)
 
   await expect(
     page
       .getByTestId('event')
-      .filter({ hasText: selfName })
+      .filter({ hasText: user.name })
       .filter({ hasText: 'registered in chat' }),
   ).toBeVisible()
 })
@@ -108,8 +108,9 @@ test('sends a message action and starts the re-send lockout', async ({
     })
   })
 
-  await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  // The composer is gated for anonymous, so sign in first; the send then rides
+  // the same live connection.
+  await signUp(page)
 
   await page.getByTestId('message-input').fill('hello hilos')
   await page.getByTestId('message-send').click()
@@ -148,8 +149,7 @@ test('sends a message action and starts the re-send lockout', async ({
 test('renders a sent message in the event stream after moderation', async ({
   page,
 }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
+  await signUp(page)
 
   await page.getByTestId('message-input').fill('hello from e2e')
   await page.getByTestId('message-send').click()

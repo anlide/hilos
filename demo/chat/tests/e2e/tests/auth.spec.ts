@@ -1,4 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
+
+import { login, logout, PASSWORD, register, uniqueEmail } from '../helpers/session'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
 // the live daemon and built frontend. It covers the surfaces that landed with the
@@ -15,41 +17,8 @@ import { test, expect, type Page } from '@playwright/test'
 // Recovery (HIL-365) has no reachable e2e leg yet — its surface entry renders a
 // placeholder — so it is left to the integration tests until the flow lands. The
 // backend of each action is already covered by the Integration suite; this file
-// is the UI-driven, cross-surface flow.
-
-/** A fresh, globally-unique email so parallel specs and retries never collide on
- * the shared test database (registration rejects a taken email). */
-function uniqueEmail(): string {
-  return `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.test`
-}
-
-/** A valid password (>= the 8-char minimum the surface and backend both enforce). */
-const PASSWORD = 'correct horse battery'
-
-/** Fill and submit the register form on the currently mounted surface. */
-async function register(page: Page, email: string): Promise<void> {
-  await page.getByTestId('auth-to-register').click()
-  await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
-  await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(PASSWORD)
-  await page.getByTestId('auth-confirm').fill(PASSWORD)
-  await page.getByTestId('auth-submit').click()
-}
-
-/** Fill and submit the login form on the currently mounted surface (default mode). */
-async function login(page: Page, email: string, password: string): Promise<void> {
-  await page.getByTestId('auth-email').fill(email)
-  await page.getByTestId('auth-password').fill(password)
-  await page.getByTestId('auth-submit').click()
-}
-
-/** Log out through the shell control and wait for the anonymous state to settle
- * (the navbar profile link is bound to a named user, so its removal confirms the
- * backend processed the logout before the next navigation reconnects). */
-async function logout(page: Page): Promise<void> {
-  await page.getByTestId('nav-logout').click()
-  await expect(page.getByTestId('nav-profile')).toHaveCount(0)
-}
+// is the UI-driven, cross-surface flow. The register/login/logout helpers are
+// shared with the other specs that establish a session (helpers/session.ts).
 
 test('registers through the gated profile surface, auto-logs-in, and resumes it in place', async ({
   page,

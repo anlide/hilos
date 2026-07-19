@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { signUp } from '../helpers/session'
+
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible
@@ -99,8 +101,9 @@ test('each page titles the tab and announces the page on navigation', async ({
 test('the home page exposes a heading and presence as text', async ({
   page,
 }) => {
-  await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  // Presence is a signed-in property, so establish a user; the register lands on
+  // '/' with the self user resolved and online.
+  const user = await signUp(page)
 
   // Exactly one top-level heading names the page (visually hidden here).
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
@@ -109,9 +112,8 @@ test('the home page exposes a heading and presence as text', async ({
 
   // A participant exposes presence as text for assistive tech, not the colored
   // dot alone — the connected self user is online.
-  await expect(page.getByTestId('self-user')).toHaveText(/^User\d{4}$/)
-  const selfName = (await page.getByTestId('self-user').textContent()) ?? ''
+  await expect(page.getByTestId('self-user')).toHaveText(user.name)
   await expect(
-    page.getByTestId('participant').filter({ hasText: selfName }),
+    page.getByTestId('participant').filter({ hasText: user.name }),
   ).toContainText('online')
 })

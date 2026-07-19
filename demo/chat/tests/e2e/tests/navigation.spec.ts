@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+import { signUp } from '../helpers/session'
+
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
 // and the brand moves back home through the core navigator (HilosRouter),
 // without reloading the document or dropping the WebSocket. A hard navigation
@@ -14,9 +16,10 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('self-user')).toBeVisible()
+  // Sign in so the navbar carries the self user across the transitions; the
+  // register runs in place, so the load count settles here.
+  const user = await signUp(page)
+  await expect(page.getByTestId('self-user')).toHaveText(user.name)
   const loadsAfterColdLoad = fullLoads
 
   // Gear -> dashboard.

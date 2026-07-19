@@ -1,10 +1,14 @@
 import { test, expect } from '@playwright/test'
 
+import { signUp } from '../helpers/session'
+
 // Profile e2e: the framework-owned profile page (hilos_profile) reached from the
-// navbar, and the edit-in-modal rename. Success is state-driven — the committed
-// name arrives over the self-connection data and closes the modal; the test
-// moderation client always approves, so a reject path is covered by the backend
-// integration test, not here.
+// navbar, and the edit-in-modal rename. The profile is a signed-in-only surface
+// (AUTHENTICATED page guard), so each test establishes a user first; an anonymous
+// visitor gets the sign-in surface in place instead (covered by auth.spec.ts).
+// Success is state-driven — the committed name arrives over the self-connection
+// data and closes the modal; the test moderation client always approves, so a
+// reject path is covered by the backend integration test, not here.
 
 test('the navbar links the current user to the profile page', async ({
   page,
@@ -14,8 +18,7 @@ test('the navbar links the current user to the profile page', async ({
     fullLoads += 1
   })
 
-  await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await signUp(page)
   const loadsAfterColdLoad = fullLoads
 
   await expect(page.getByTestId('nav-profile')).toBeVisible()
@@ -29,6 +32,7 @@ test('the navbar links the current user to the profile page', async ({
 })
 
 test('renames the current user through the edit modal', async ({ page }) => {
+  await signUp(page)
   await page.goto('/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -46,14 +50,18 @@ test('renames the current user through the edit modal', async ({ page }) => {
 test('surfaces a conflict when the name changes in another tab', async ({
   context,
 }) => {
-  // Two tabs of the same user share the session cookie within one context.
+  // Two tabs of the same user share the session cookie within one context, so
+  // registering in the first tab signs both in.
   const tabA = await context.newPage()
+  await signUp(tabA)
   await tabA.goto('/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabA.getByTestId('profile-name')).toBeVisible()
 
   const tabB = await context.newPage()
   await tabB.goto('/profile')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await expect(tabB.getByTestId('profile-name')).toBeVisible()
 
   // Tab B starts editing with a divergent draft, but does not submit.
   await tabB.getByTestId('profile-edit').click()

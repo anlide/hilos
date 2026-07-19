@@ -18,6 +18,8 @@ import {
   useSignal,
 } from '@hilos/vue'
 
+import AuthSurface from '../../auth/AuthSurface.vue'
+import { currentUserId } from '../../bootstrap/session'
 import { clearRenameError, renameError, sendRename } from './profileActions'
 import { committedName, profileDetail } from './profilePage'
 
@@ -25,6 +27,17 @@ defineOptions({ name: 'ProfilePage' })
 
 const NAME_MIN = 2
 const NAME_MAX = 64
+
+// The profile is a signed-in-only surface. The backend AUTHENTICATED page guard
+// 401s an anonymous subscribe, but the session user id is the authoritative,
+// subscription-independent signal for who is signed in — so the view mounts the
+// project sign-in surface in place (mirroring the framework auth-gate slot)
+// rather than sitting on "Loading profile…" waiting for a snapshot that the
+// guard will never deliver. Registering/logging in through the surface flips the
+// session user id, the guard starts passing, and the preserved subscription
+// resumes into the profile card with no navigation.
+const selfId = useSignal(currentUserId)
+const isAuthenticated = computed(() => selfId.value !== null)
 
 const detail = useSignal(profileDetail)
 const committed = useSignal(committedName)
@@ -113,7 +126,8 @@ function mergeBoth(): void {
 </script>
 
 <template>
-  <section data-id="profile-view">
+  <AuthSurface v-if="!isAuthenticated" />
+  <section v-else data-id="profile-view">
     <div class="d-flex flex-column gap-1 mb-4">
       <h1 class="h4 mb-0">Profile</h1>
       <p class="mb-0 text-body-secondary">Your account.</p>

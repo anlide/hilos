@@ -393,6 +393,12 @@ final class MainPage extends AbstractPage
 
         Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->password);
 
+        // Announce the new member in the chat event stream. Under the old
+        // auto-guest model connecting emitted this notice; with explicit
+        // registration the form is the real trigger, so the "registered in chat"
+        // event fans out from here to every reader.
+        Hilos::$db->events->actions->addUserRegistered($userId);
+
         if ($this->autoLoginAfterRegister()) {
             $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
         }

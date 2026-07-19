@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { setAdmin } from '../helpers/adminGrant'
+import { signUp } from '../helpers/session'
 
 // Admin-gating e2e: the ACCESS guard on /hilos/admin_users closes the page to a
 // guest with a 403, and a CLI-style grant over the daemon command channel (the
@@ -9,19 +10,12 @@ import { setAdmin } from '../helpers/adminGrant'
 // that owns the user and connection state, so the guard resolves identity
 // authoritatively (no cross-agent mirror race).
 
-/** Register over the live socket and return the current user's id. */
-async function registerAndGetUserId(page: Page): Promise<number> {
-  await page.goto('/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('self-user-id')).toHaveText(/^\d+$/)
-
-  return Number(await page.getByTestId('self-user-id').textContent())
-}
-
 test('gates the admin users page for a guest, then opens it after a grant', async ({
   page,
 }) => {
-  const userId = await registerAndGetUserId(page)
+  // Register a user (the durable id feeds the grant); the account is not admin
+  // yet, so the ACCESS guard still rejects the admin page until the grant lands.
+  const { userId } = await signUp(page)
 
   // Guest: the ACCESS guard rejects the subscription with a 403 error page in
   // place of the admin view.
