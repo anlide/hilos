@@ -13,8 +13,9 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
  *
  * Activates the framework backup subsystem via Hilos::BACKUP_CATALOG. It is the
  * project-owned container for the per-connection reference-object registry under
- * {@see BackupConstants::CATALOG_REFERENCES} (this ticket) and, later, the backup
- * schedule ({name, cron, scope} entries, populated in HIL-273).
+ * {@see BackupConstants::CATALOG_REFERENCES}. The chat demo declares no schedule, so it
+ * takes the framework default (one daily full backup at 03:00 on the agent mechanism); a
+ * project overrides it by adding {@see BackupConstants::CATALOG_SCHEDULE} entries here.
  *
  * The reference registry lists the reference/seed Entity or Object collection classes
  * per connection index; the framework derives their table names and keeps their rows

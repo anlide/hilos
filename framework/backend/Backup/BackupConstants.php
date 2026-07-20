@@ -28,4 +28,32 @@ final class BackupConstants
      * reads it to keep those tables' rows under the schema-seed scope.
      */
     public const string CATALOG_REFERENCES = 'references';
+
+    /**
+     * Backup catalog key under which a project declares its backup schedule.
+     *
+     * The value at this key is `list<array<string, mixed>>`: one entry per scheduled backup,
+     * each `{name, cron, scope, mechanism}`. {@see BackupSchedule} reads it; an absent or
+     * empty schedule falls back to the single default entry
+     * ({@see DEFAULT_SCHEDULE_NAME}/{@see DEFAULT_SCHEDULE_CRON}).
+     */
+    public const string CATALOG_SCHEDULE = 'schedule';
+
+    /** Schedule entry key: the unique job name (also the daemon-mechanism cron signal name). */
+    public const string SCHEDULE_NAME = 'name';
+
+    /** Schedule entry key: the five-field cron expression (server timezone). */
+    public const string SCHEDULE_CRON = 'cron';
+
+    /** Schedule entry key: the {@see BackupScope} value the run captures. */
+    public const string SCHEDULE_SCOPE = 'scope';
+
+    /** Schedule entry key: the {@see BackupScheduleMechanism} value; absent means agent. */
+    public const string SCHEDULE_MECHANISM = 'mechanism';
+
+    /** Default schedule entry name used when a project declares no schedule. */
+    public const string DEFAULT_SCHEDULE_NAME = 'daily-full';
+
+    /** Default schedule cron: a daily full backup at 03:00 server time. */
+    public const string DEFAULT_SCHEDULE_CRON = '0 3 * * *';
 }

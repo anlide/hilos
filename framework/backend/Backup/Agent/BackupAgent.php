@@ -13,11 +13,15 @@ use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
+use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Process;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
@@ -37,8 +41,13 @@ use Throwable;
  * over {@see Process} — never blocking the daemon loop — and {@see onTick()} polls it,
  * enforces the timeout, and finalizes the run. Being a singleton monopoly agent is the
  * concurrency lock itself: only one child runs at a time, and a second create request while
- * one is in flight is skipped. The create trigger (cron HIL-273, list action HIL-333) calls
- * {@see startBackup()}; this class only owns the launch path and the lock.
+ * one is in flight is skipped.
+ *
+ * It also owns backup scheduling (HIL-273). The schedule ({@see BackupSchedule}) is loaded on
+ * start; its agent-mechanism entries become cron rules this agent evaluates in {@see onTick()},
+ * and its daemon-mechanism entries fire named DAEMON/CRON signals handled by
+ * {@see onSignalCron()}. Both, plus the list action (HIL-333) and the manual CLI backup, funnel
+ * through the single guarded {@see startBackup()}; this class owns the launch path and the lock.
  */
 final class BackupAgent extends AbstractAgent
 {
@@ -63,7 +72,20 @@ final class BackupAgent extends AbstractAgent
     private float $timeoutSeconds = 0.0;
 
     /**
-     * Registers truth sources and rebuilds the runtime backup index, or no-ops when disabled.
+     * @var list<BackupCronJob> Agent-mechanism cron jobs (rule paired with scope); empty when
+     *     backups are disabled or no agent entries exist.
+     */
+    private array $agentSchedule = [];
+
+    /** The loaded backup schedule, used to map a fired daemon cron name to its scope. */
+    private ?BackupSchedule $schedule = null;
+
+    /**
+     * Registers truth sources, rebuilds the runtime backup index, and loads the schedule.
+     *
+     * No-ops entirely when disabled: no scan, and no cron rules, so scheduling is off.
+     *
+     * @throws BackupScheduleException When the project backup schedule is malformed
      */
     public function onStart(): void
     {
@@ -77,38 +99,21 @@ final class BackupAgent extends AbstractAgent
         $this->registerRtTruthSource(BackupRuntime::RT_ITEM);
 
         $this->refreshHistory();
+
+        $this->schedule = BackupSchedule::fromCatalog();
+        $this->buildAgentCronRules();
     }
 
     /**
-     * Polls the in-flight backup child: finalizes it on exit and kills it on timeout.
+     * Polls any in-flight backup child, then fires any due agent-mechanism schedule entry.
      *
-     * The work here stays tiny per the onTick rule — a status poll plus, only at the very
-     * end of a run, a storage rescan; the heavy dump lives in the spawned child.
+     * Polling runs first so a run that finished this tick frees the lock before the schedule
+     * is checked, letting a coincident scheduled fire start rather than be skipped as an overlap.
      */
     public function onTick(): void
     {
-        if ($this->childProcess === null) {
-            return;
-        }
-
-        $this->childProcess->tick();
-
-        if ($this->childProcess->getStatus()[Process::STATUS_RUNNING] === true) {
-            if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
-                $this->childProcess->stop();
-                $this->childProcess->halt();
-                $this->finishRun(false, "timed out after {$this->timeoutSeconds}s");
-            }
-
-            return;
-        }
-
-        $exitCode = $this->childProcess->getExitCode();
-        if ($exitCode === 0) {
-            $this->finishRun(true, null);
-        } else {
-            $this->finishRun(false, 'child exited with code ' . ($exitCode ?? 'unknown'));
-        }
+        $this->pollRunningBackup();
+        $this->checkSchedule();
     }
 
     /**
@@ -124,11 +129,37 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Runs the daemon-mechanism schedule: maps a fired cron name to its scope and starts a backup.
+     *
+     * The daemon owns the cron rules for daemon-mechanism entries (registered by the framework
+     * daemon from the same schedule); when one fires it routes a named DAEMON/CRON signal here.
+     * Backup cron names are project-configured schedule data, not fixed constants, so this
+     * handler dispatches by schedule lookup rather than a static switch: every backup cron name
+     * maps to the one guarded create path, differing only in the resolved scope. A name that is
+     * not a backup schedule entry is ignored, so a shared default-cron owner may forward
+     * unrelated names here harmlessly.
+     *
+     * @param SignalDataInterface $data Cron signal payload (unused; the name carries the routing)
+     * @param string $source Signal source (unused)
+     * @param string $name Fired cron name, matched against the backup schedule
+     */
+    public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
+    {
+        $scope = $this->schedule?->scopeForName($name);
+        if ($scope === null) {
+            return;
+        }
+
+        $this->startBackup($scope);
+    }
+
+    /**
      * Starts one backup unless one is already running (the single-flight lock).
      *
-     * Generates the id, marks the runtime running, and spawns the `backup:run` child. The
-     * create trigger (HIL-273 cron, HIL-333 action) calls this; there is no in-class caller
-     * yet. A second request while a backup runs is skipped and logged, never queued.
+     * Generates the id, marks the runtime running, and spawns the `backup:run` child. Every
+     * create trigger funnels here: the agent-mechanism schedule ({@see checkSchedule()}), the
+     * daemon-mechanism schedule ({@see onSignalCron()}), the list action (HIL-333), and the
+     * manual CLI backup. A second request while a backup runs is skipped and logged, never queued.
      *
      * @param BackupScope $scope What the backup should capture
      */
@@ -213,6 +244,71 @@ final class BackupAgent extends AbstractAgent
             $id,
             '--' . BackupConstants::SCOPE_OPTION . '=' . $scope->value,
         ];
+    }
+
+    /**
+     * Polls the in-flight backup child: finalizes it on exit and kills it on timeout.
+     *
+     * The work here stays tiny per the onTick rule — a status poll plus, only at the very
+     * end of a run, a storage rescan; the heavy dump lives in the spawned child.
+     */
+    private function pollRunningBackup(): void
+    {
+        if ($this->childProcess === null) {
+            return;
+        }
+
+        $this->childProcess->tick();
+
+        if ($this->childProcess->getStatus()[Process::STATUS_RUNNING] === true) {
+            if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
+                $this->childProcess->stop();
+                $this->childProcess->halt();
+                $this->finishRun(false, "timed out after {$this->timeoutSeconds}s");
+            }
+
+            return;
+        }
+
+        $exitCode = $this->childProcess->getExitCode();
+        if ($exitCode === 0) {
+            $this->finishRun(true, null);
+        } else {
+            $this->finishRun(false, 'child exited with code ' . ($exitCode ?? 'unknown'));
+        }
+    }
+
+    /**
+     * Fires each due agent-mechanism schedule entry into the guarded create path.
+     *
+     * Evaluated on the cluster leader (the agent is monopolistic). A due entry calls
+     * {@see startBackup()}, which is skipped when a backup is already running, so an overlap is
+     * dropped rather than queued. Each rule checks at most once per minute ({@see CronRule}).
+     */
+    private function checkSchedule(): void
+    {
+        foreach ($this->agentSchedule as $job) {
+            if ($job->rule->shouldRun()) {
+                $this->startBackup($job->scope);
+            }
+        }
+    }
+
+    /**
+     * Builds one cron rule per agent-mechanism schedule entry, paired with its scope.
+     *
+     * Each rule seeds its lastRun to the current minute on construction, so a (re)started or
+     * newly promoted leader never fires a missed slot as a catch-up burst.
+     */
+    private function buildAgentCronRules(): void
+    {
+        $this->agentSchedule = [];
+        foreach ($this->schedule?->agentEntries() ?? [] as $entry) {
+            $this->agentSchedule[] = new BackupCronJob(
+                new CronRule($entry->name, $entry->expression),
+                $entry->scope,
+            );
+        }
     }
 
     /**

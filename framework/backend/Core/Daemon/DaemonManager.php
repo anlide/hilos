@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\Backup\BackupSchedule;
+use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\BaseDTO;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClusterNode;
@@ -14,6 +16,7 @@ use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -202,10 +205,12 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * registers the servers from {@see createServers()}, builds the HTTP router from
      * {@see httpRoutes()}, and registers each active module from {@see modules()}. The
      * order is fixed — core servers, then router, then opt-in modules — so a module can
-     * rely on the core servers already being present. A hook or module failure propagates
-     * to the entrypoint, which logs it and exits (the daemon refuses to start).
+     * rely on the core servers already being present. Finally it registers the
+     * daemon-mechanism backup cron rules ({@see registerBackupCronRules()}). A hook or module
+     * failure propagates to the entrypoint, which logs it and exits (the daemon refuses to start).
      *
      * @param DaemonContext $context Resolved path context passed to every hook
+     * @throws BackupScheduleException When the project backup schedule is malformed
      */
     public function boot(DaemonContext $context): void
     {
@@ -224,6 +229,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 $module->register($this, $context);
             }
         }
+
+        $this->registerBackupCronRules();
     }
 
     /**
@@ -1626,6 +1633,31 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     public function getCronRules(): array
     {
         return $this->cronRules;
+    }
+
+    /**
+     * Registers a daemon cron rule for each daemon-mechanism backup schedule entry.
+     *
+     * The framework owns backup scheduling: the daemon-mechanism entries of the project backup
+     * schedule ({@see BackupSchedule}) become daemon cron rules here, so when one fires
+     * {@see onCron()} routes its named DAEMON/CRON signal to the backup agent. Gated on
+     * {@see EnvConstants::BACKUP_ENABLED} so a disabled subsystem registers nothing; the default
+     * schedule is entirely agent-mechanism, so a project that opts into no daemon entries also
+     * registers nothing. Delivering the named signal to the backup agent is the project's
+     * routing concern (schedule-name ownership via topology, or a forward from its default cron
+     * owner).
+     *
+     * @throws BackupScheduleException When the project backup schedule is malformed
+     */
+    private function registerBackupCronRules(): void
+    {
+        if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
+            return;
+        }
+
+        foreach (BackupSchedule::fromCatalog()->daemonEntries() as $entry) {
+            $this->addCronRule($entry->name, $entry->expression);
+        }
     }
 
     /**
