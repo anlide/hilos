@@ -47,6 +47,7 @@ import User from './views/User/User.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
+import HilosBackup from './views/Hilos/Backup/Backup.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -76,6 +77,7 @@ const pages: Record<string, Component> = {
   [HilosPages.SETTINGS]: HilosSettings,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
+  [HilosPages.BACKUP]: HilosBackup,
 }
 
 // The navbar profile entry: the current user's name links to the framework

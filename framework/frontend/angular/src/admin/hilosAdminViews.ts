@@ -5,8 +5,8 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings pages are intentionally absent: they are real
-// framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage) that
+// The users / user / settings / backup pages are intentionally absent: they are real
+// framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage) that
 // require a project-supplied context, so a project mounts them directly rather
 // than through this default map. The dashboard is the real HilosDashboardPage
 // (self-contained, no project context), reused here as its own default.
@@ -66,7 +66,6 @@ import { HilosLogsViewPage } from './logs/HilosLogsViewPage.js'
 import { HilosChangeLogPage } from './changeLog/HilosChangeLogPage.js'
 import { HilosChangeLogTablesPage } from './changeLog/HilosChangeLogTablesPage.js'
 import { HilosChangeLogTablePage } from './changeLog/HilosChangeLogTablePage.js'
-import { HilosBackupPage } from './backup/HilosBackupPage.js'
 import { HilosAnalyticsPage } from './analytics/HilosAnalyticsPage.js'
 import { HilosMcpSkillsPage } from './mcpSkills/HilosMcpSkillsPage.js'
 import { HilosMcpSkillsMcpPage } from './mcpSkills/HilosMcpSkillsMcpPage.js'
@@ -133,7 +132,6 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,
-    [HilosPages.BACKUP]: HilosBackupPage,
     [HilosPages.ANALYTICS]: HilosAnalyticsPage,
     [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,
     [HilosPages.MCP_SKILLS_MCP]: HilosMcpSkillsMcpPage,

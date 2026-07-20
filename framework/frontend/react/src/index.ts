@@ -53,6 +53,10 @@ export {
   type HilosSettingsPageProps,
 } from './admin/settings/HilosSettingsPage.js'
 export {
+  HilosBackupPage,
+  type HilosBackupPageProps,
+} from './admin/backup/HilosBackupPage.js'
+export {
   HilosUsersPage,
   type HilosUsersPageProps,
 } from './admin/users/HilosUsersPage.js'

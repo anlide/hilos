@@ -5,10 +5,10 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings pages are intentionally absent: they are real
-// framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage) that
-// require a project-supplied context, so a project mounts them directly rather
-// than through this default map.
+// The users / user / settings / backup pages are intentionally absent: they are
+// real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
+// HilosBackupPage) that require a project-supplied context, so a project mounts
+// them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -66,7 +66,6 @@ import HilosLogsViewPage from './logs/HilosLogsViewPage.vue'
 import HilosChangeLogPage from './changeLog/HilosChangeLogPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
-import HilosBackupPage from './backup/HilosBackupPage.vue'
 import HilosAnalyticsPage from './analytics/HilosAnalyticsPage.vue'
 import HilosMcpSkillsPage from './mcpSkills/HilosMcpSkillsPage.vue'
 import HilosMcpSkillsMcpPage from './mcpSkills/HilosMcpSkillsMcpPage.vue'
@@ -133,7 +132,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,
-    [HilosPages.BACKUP]: HilosBackupPage,
     [HilosPages.ANALYTICS]: HilosAnalyticsPage,
     [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,
     [HilosPages.MCP_SKILLS_MCP]: HilosMcpSkillsMcpPage,

@@ -1,13 +1,146 @@
-// HilosBackupPage — the Backup admin page (HilosPages.BACKUP). A framework default: a
-// thin binding of the page key to the shared admin shell HilosAdminPage, which
-// resolves the heading, lead, breadcrumb, and any sub-section cards from the
-// @hilos/core admin tree. Implement the page by replacing the shell's default
-// body through its children. Bootstrap classes only (styling-rules.md).
-import { HilosPages } from '@hilos/core'
+// HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
+// stored-backup list inside the admin shell. Read-only and live — the rows arrive
+// over the socket from the backup runtime index plus the single in-progress
+// backup, so an in-progress row shows an indeterminate progress bar until it
+// completes and merges into the index. All table logic and the row view-model are
+// the core headless's (createHilosBackupsTable / HilosBackupRow); this view owns
+// only the column set and the cell markup, so a project mounts it by passing its
+// HilosBackupsContext. Row actions (create / delete / keep) are a separate page
+// (HIL-333). Bootstrap classes only (styling-rules.md).
+import { useEffect, useMemo } from 'react'
+import { HilosPages, createHilosBackupsTable } from '@hilos/core'
+import type {
+  HilosBackupRow,
+  HilosBackupsContext,
+  HilosTableColumn,
+} from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosViewportTable } from '../../HilosViewportTable.js'
 
-/** The Backup admin page: the framework default shell for its key. */
-export function HilosBackupPage() {
-  return <HilosAdminPage page={HilosPages.BACKUP} />
+/** Props for {@link HilosBackupPage}. */
+export interface HilosBackupPageProps {
+  /** The project context: scope stores and the live connection. */
+  context: HilosBackupsContext
+}
+
+const COLUMNS: HilosTableColumn[] = [
+  { key: 'createdAt', label: 'Date', sortable: true },
+  { key: 'env', label: 'Environment', sortable: true },
+  { key: 'scope', label: 'Scope', sortable: true },
+  { key: 'sizeBytes', label: 'Size', sortable: true, headerClass: 'text-end' },
+  {
+    key: 'durationSeconds',
+    label: 'Duration',
+    sortable: true,
+    headerClass: 'text-end',
+  },
+  { key: 'status', label: 'Status', sortable: true },
+]
+
+/** Whether the backup is the single in-progress row (renders a live progress bar). */
+function isRunning(row: HilosBackupRow): boolean {
+  return row.finished === false
+}
+
+/** Human-readable archive size; an in-progress backup has no size yet. */
+function formatSize(row: HilosBackupRow): string {
+  if (isRunning(row) || row.sizeBytes <= 0) {
+    return '—'
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = row.sizeBytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+
+  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
+}
+
+/** Human-readable capture duration; an in-progress backup has no duration yet. */
+function formatDuration(row: HilosBackupRow): string {
+  if (isRunning(row) || row.durationSeconds <= 0) {
+    return '—'
+  }
+  const seconds = row.durationSeconds
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+/** The backup status cell: a live progress bar, a success badge, or a failure badge. */
+function statusCell(row: HilosBackupRow) {
+  if (isRunning(row)) {
+    return (
+      <div className="progress" role="status" style={{ minWidth: '10rem' }}>
+        <div
+          className="progress-bar progress-bar-striped progress-bar-animated"
+          style={{ width: '100%' }}
+        >
+          In progress
+        </div>
+      </div>
+    )
+  }
+  if (row.finished === true) {
+    return <span className="badge text-bg-success">{row.status || 'success'}</span>
+  }
+
+  return <span className="badge text-bg-danger">{row.status || 'error'}</span>
+}
+
+/**
+ * The framework backup admin page: the searchable, sortable backup list.
+ *
+ * @param props The project context.
+ */
+export function HilosBackupPage({ context }: HilosBackupPageProps) {
+  const backups = useMemo(() => createHilosBackupsTable(context), [context])
+
+  // Bind the server-windowed table to the connection on mount, request the first
+  // window, and unbind on unmount.
+  useEffect(() => {
+    backups.start()
+
+    return () => backups.dispose()
+  }, [backups])
+
+  return (
+    <HilosAdminPage page={HilosPages.BACKUP}>
+      <HilosViewportTable
+        label="Backups"
+        controller={backups.controller}
+        columns={COLUMNS}
+        searchable
+        searchPlaceholder="Search backups…"
+        emptyText="No backups yet."
+        row={(row) => (
+          <>
+            <td className="text-nowrap">
+              {row.createdAt || '—'}
+              {row.keep && (
+                <span
+                  className="badge text-bg-warning ms-1"
+                  title="Pinned out of rotation"
+                >
+                  keep
+                </span>
+              )}
+            </td>
+            <td>{row.env || '—'}</td>
+            <td>
+              <code>{row.scope || '—'}</code>
+            </td>
+            <td className="text-end">{formatSize(row)}</td>
+            <td className="text-end">{formatDuration(row)}</td>
+            <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
+          </>
+        )}
+      />
+    </HilosAdminPage>
+  )
 }

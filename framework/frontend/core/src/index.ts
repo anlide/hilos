@@ -255,3 +255,10 @@ export {
   type HilosSettingsTable,
   type HilosSettingsActions,
 } from './admin/settings/hilosSettings.js'
+export {
+  resolveHilosBackupRow,
+  createHilosBackupsTable,
+  type HilosBackupRow,
+  type HilosBackupsContext,
+  type HilosBackupsTable,
+} from './admin/backup/hilosBackups.js'

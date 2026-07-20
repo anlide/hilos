@@ -140,6 +140,7 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -307,6 +308,7 @@ final class Hilos extends \Hilos\Hilos
         ChatTableContext::bots => BotsTable::class,
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
+        ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -384,6 +386,9 @@ final class Hilos extends \Hilos\Hilos
         ],
         SettingsPage::PAGE => [
             ChatTableContext::settings => [],
+        ],
+        BackupPage::PAGE => [
+            ChatTableContext::hilosBackups => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],

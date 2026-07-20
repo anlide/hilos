@@ -10,12 +10,13 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
  * ChatTableContext - App-specific table context ($table layer).
  *
- * Registers admin users, Hilos users, bots, moderator prompt pieces, and settings tables.
+ * Registers admin users, Hilos users, bots, moderator prompt pieces, settings, and backup tables.
  * Accessed via Hilos::$table->adminUsers, Hilos::$table->hilosUsers, Hilos::$table->bots, etc.
  *
  * @property-read AdminUsersTable $adminUsers
@@ -23,6 +24,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read BotsTable $bots
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read HilosSettingsTable $settings
+ * @property-read HilosBackupHistoryTable $hilosBackups
  */
 final class ChatTableContext extends TableContext
 {
@@ -31,6 +33,7 @@ final class ChatTableContext extends TableContext
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosBackups = HilosBackupHistoryTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.
