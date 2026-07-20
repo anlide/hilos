@@ -31,8 +31,13 @@ A spec section and any skill wrapper must keep this fork explicit.
 
 ### Mode 1 — Framework-owned feature: activate, configure, use
 
-For features the framework owns end to end: `settings`, `hilos_users`, and later
-`roles`. The framework owns the browser table, the subscribe, and the actions.
+For features the framework owns end to end: `settings`, `hilos_users`, `backup`,
+and later `roles`. The framework owns the browser table, the subscribe, and the
+actions. `backup` is the same mode with a wider engine — the framework also owns
+its monopoly agent, cron schedule, `mysqldump` child command, and retention
+pruner, and the project supplies only a catalog (reference registry + optional
+schedule), the backup env values, and the registration/binding; see the backup
+recipe in [admin-feature-scaffold.md](admin-feature-scaffold.md).
 The project:
 
 - declares the content — a catalog (settings), or extra fields on the base

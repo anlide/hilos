@@ -107,6 +107,57 @@ requires, in dependency order (the table merges sources that must exist first):
    views, passing the thin typed context — the frontend twin of the backend
    collection binding.
 
+### backup — configure-only engine + monopoly agent
+
+The framework owns the whole backup engine: the monopoly `BackupAgent`
+(`AgentType::HILOS_BACKUP`) that runs the cron schedule and mutates storage, the
+`mysqldump` child driven by the `backup:run` command, the retention pruner, the
+runtime index, and `Hilos\Pages\Backup\AbstractHilosBackupPage` with the
+create / delete / set-keep action lifecycle. The project brings only
+configuration and binding — no engine, no action code. It is configure-only like
+settings, but the engine is a monopoly agent plus a CLI command, so activation
+also registers those. Generate, in any order:
+
+1. A backup catalog — `final class … implements
+   Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
+   `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default
+   is `null` = subsystem off). It carries two content keys: the per-connection
+   reference-table registry under `BackupConstants::CATALOG_REFERENCES` (a list of
+   Entity/Object collection class-strings per connection index — the framework
+   derives table names from the classes, so the registry survives table renames,
+   and keeps their rows under the schema-seed scope; an empty registry is valid —
+   schema-seed then captures schema only, with a warning), and an optional
+   schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
+   framework default: one daily full backup at 03:00 on the agent mechanism).
+2. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
+   `BACKUP_DIR`, the retention counters (`BACKUP_RETENTION_DAILY` / `WEEKLY` /
+   `MONTHLY` / `YEARLY`), and `BACKUP_ERROR_RETENTION_COUNT`. These are framework
+   `EnvConstants` keys the agent and pruner read from `Hilos::$env`; the project
+   supplies values, never new keys.
+3. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
+   `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
+   monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),
+   *Worker pool*) — and expose the `backup:run` child command
+   (`BackupConstants::RUN_COMMAND`) in the project CLI command registry. Both are
+   framework-owned; the project only lists them.
+4. Register the framework runtime index on the project `RtContext`: the
+   `BackupHistories` state collection (`BackupHistory::RT_COLLECTION`) and the
+   `BackupRuntime` state item (`BackupRuntime::RT_ITEM`). Files are truth; this RT
+   index is a rebuildable projection the agent rescans from `BACKUP_DIR` on start,
+   so the project persists no backup DB table.
+5. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
+   the project `TableContext`, add a thin subscription-owner page — `final class …
+   extends Hilos\Pages\Backup\AbstractHilosBackupPage` carrying only a
+   `SUBSCRIPTION_AGENT_TYPE` — to `PAGES`, and bind the table to the page in
+   `PAGE_TABLES`. Register the framework table; never subclass it. Add the page's
+   nav entry to the project page catalog if it should appear in the admin shell.
+6. Mount the SDK view: map `HilosPages.BACKUP` to the framework view from
+   `@hilos/{vue,react,angular}` `admin/backup/HilosBackupPage`, through a thin
+   project context (`HilosBackupsContext` = `{ connection, scopes, actions }` from
+   the project bootstrap). The table, the row view-model, the live-row behavior,
+   and the create / delete / keep round-trips are framework-owned — the context is
+   binding, not page logic.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +

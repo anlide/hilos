@@ -99,6 +99,12 @@ the canonical minimal set (~24 files); mirror it file by file:
    contract — relax these assertions as the project activates a feature (e.g.
    activating the framework settings page registers a table and its action routes).
 
+Beyond this base set, framework-owned admin features are activated — not
+re-authored — through the per-feature recipes in
+[../agents/architecture/admin-feature-scaffold.md](../agents/architecture/admin-feature-scaffold.md):
+settings (the first one, above), and `backup` (a catalog + env + agent/CLI/RT
+binding over the framework backup engine).
+
 Load-bearing boot order in `docker.php`: `Database::initialize(initHilos:
 false, retryConnection: true)` → `Migration::migrateUp()` → `Hilos::init()`.
 Calling `Hilos::init()` before migrations breaks first boot on an empty DB.

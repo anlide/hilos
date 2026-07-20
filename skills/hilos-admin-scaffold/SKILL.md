@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-scaffold
-description: Generate the activation of a framework-owned admin feature — settings, hilos-users, or a future one like roles — in a Hilos project. Use when wiring settings or hilos-users into a project, generating the project-side binding a framework admin feature requires (catalog, user entity, presence source, table subclass, thin page, SDK view mount), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
+description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, or backup into a project, generating the project-side binding a framework admin feature requires (catalog, user entity, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
 ---
 
 # Hilos Admin Scaffold
@@ -23,9 +23,10 @@ the recipe before generating code.
 ## Workflow
 
 1. Identify the framework feature and its contract shape: framework-owned data
-   source (settings — configure-only) or project-owned data behind a framework
-   contract (hilos-users — bound). Read the base class; generate what it leaves
-   abstract.
+   source (settings — configure-only), project-owned data behind a framework
+   contract (hilos-users — bound), or a configure-only engine with a monopoly
+   agent (backup — a catalog + env + agent/CLI/RT-index binding). Read the base
+   class; generate what it leaves abstract.
 2. Generate against the framework base classes and their extension points, never
    by copying another project. The engine — table merge, page subscribe, action
    lifecycle — stays in the framework base.
