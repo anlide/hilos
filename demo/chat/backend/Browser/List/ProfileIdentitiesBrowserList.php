@@ -51,7 +51,7 @@ final class ProfileIdentitiesBrowserList
             ],
             [
                 BrowserListFieldKey::SOURCE => ChatBrowserSource::DB_IDENTITIES,
-                BrowserListFieldKey::ITEM_KEY => Identity::id,
+                BrowserListFieldKey::ITEM_KEY => Identity::userId,
                 BrowserListFieldKey::MANY => true,
                 BrowserListFieldKey::VIA => [
                     Identity::userId => Connection::userId,

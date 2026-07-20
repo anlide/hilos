@@ -110,6 +110,15 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
         );
     }
 
+    public function testIdentitiesItemKeyIsTheOwnerForeignKey(): void
+    {
+        // BrowserContext matches each MANY source item by comparing its ITEM_KEY
+        // field against the anchor row key (the self-connection userId), so the
+        // key must be the owner FK (Identity::userId), not Identity::id — the
+        // latter only ever matches by coincidence and empties the list.
+        $this->assertSame(Identity::userId, $this->identitiesItem()[BrowserListFieldKey::ITEM_KEY]);
+    }
+
     public function testListRequiresTheAcceptKeyParam(): void
     {
         $param = ProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY];
