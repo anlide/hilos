@@ -258,7 +258,14 @@ export {
 export {
   resolveHilosBackupRow,
   createHilosBackupsTable,
+  createHilosBackupsActions,
+  isBackupInProgress,
+  isBackupDeletable,
+  isBackupKeepable,
+  HILOS_BACKUP_SCOPES,
   type HilosBackupRow,
   type HilosBackupsContext,
   type HilosBackupsTable,
+  type HilosBackupsActions,
+  type HilosBackupScopeOption,
 } from './admin/backup/hilosBackups.js'

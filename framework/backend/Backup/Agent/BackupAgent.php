@@ -7,6 +7,9 @@ namespace Hilos\Backup\Agent;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
+use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
+use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupHistoryScanner;
@@ -15,12 +18,16 @@ use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Process;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
@@ -53,6 +60,16 @@ final class BackupAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
+    /**
+     * Page → agent routes for the list-page actions (HIL-333). All three are singleton
+     * signals (the agent is monopolistic), so each maps straight to its payload DTO.
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
+    ];
+
     /** Child interpreter; matches the worker spine's binary ({@see \Hilos\Socket\Server\WorkerServer}). */
     private const string PHP_BINARY = 'php';
 
@@ -79,6 +96,14 @@ final class BackupAgent extends AbstractAgent
 
     /** The loaded backup schedule, used to map a fired daemon cron name to its scope. */
     private ?BackupSchedule $schedule = null;
+
+    /**
+     * Single in-memory pending slot for a manual create requested while a backup runs
+     * (HIL-333). Coalesced (the last manual scope wins) and drained when the current run
+     * finishes; ephemeral by design (a restart/failover drops it, like cron no-catch-up).
+     * Only the list action sets it — cron overlaps still skip, never queue.
+     */
+    private ?BackupScope $pendingScope = null;
 
     /**
      * Registers truth sources, rebuilds the runtime backup index, and loads the schedule.
@@ -151,6 +176,163 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->startBackup($scope);
+    }
+
+    /**
+     * Handles the list-page actions routed from the backup page (HIL-333).
+     *
+     * The page validates each request synchronously and acks the client; this owns the
+     * storage mutation: create funnels through the guarded {@see startBackup()} (with an
+     * in-memory pending slot when busy), delete through the shared delete path, and
+     * set-keep through an atomic sidecar rewrite plus an index re-mirror.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Signal source (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the signal name is not a backup list action
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::BACKUP_AGENT_CREATE:
+                if ($data->data instanceof BackupCreateSignalData) {
+                    $this->handleCreateRequest($data->data);
+                }
+
+                return;
+
+            case HilosSignalConstants::BACKUP_AGENT_DELETE:
+                if ($data->data instanceof BackupDeleteSignalData) {
+                    $this->handleDeleteRequest($data->data);
+                }
+
+                return;
+
+            case HilosSignalConstants::BACKUP_AGENT_SET_KEEP:
+                if ($data->data instanceof BackupSetKeepSignalData) {
+                    $this->handleSetKeepRequest($data->data);
+                }
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * Runs a manual create now, or coalesces it into the single pending slot when busy.
+     *
+     * @param BackupCreateSignalData $data Create request carrying the scope value
+     */
+    private function handleCreateRequest(BackupCreateSignalData $data): void
+    {
+        $scope = BackupScope::fromString($data->scope);
+        if ($scope === null) {
+            $this->logAgentWarning("Ignoring backup create for unknown scope: {$data->scope}");
+
+            return;
+        }
+
+        if ($this->childProcess !== null) {
+            // Coalesce: the newest manual request wins the single pending slot. The current
+            // run drains it in finishRun(); an intervening cron overlap still just skips.
+            $this->pendingScope = $scope;
+            $this->logAgentInfo("Backup busy; queued pending create (scope={$scope->value})");
+
+            return;
+        }
+
+        $this->startBackup($scope);
+    }
+
+    /**
+     * Deletes one stored backup through the shared delete path and drops its index row.
+     *
+     * Re-guards the in-progress backup (never delete the running row) and treats an
+     * already-removed backup as an idempotent no-op.
+     *
+     * @param BackupDeleteSignalData $data Delete request carrying the backup id
+     */
+    private function handleDeleteRequest(BackupDeleteSignalData $data): void
+    {
+        $id = $data->backupId;
+        if ($id === '') {
+            return;
+        }
+        if ($id === $this->currentBackupId) {
+            $this->logAgentWarning("Ignoring delete of in-progress backup {$id}");
+
+            return;
+        }
+
+        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
+        if (!$histories instanceof BackupHistories) {
+            return;
+        }
+
+        $row = $histories->get($id);
+        if ($row === null) {
+            $this->logAgentInfo("Backup {$id} already deleted; no-op");
+
+            return;
+        }
+
+        try {
+            (new BackupPruner())->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
+            $histories->remove($id);
+            $this->logAgentInfo("Backup deleted: {$id}");
+        } catch (Throwable $e) {
+            $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Sets a stored backup's keep pin: rewrites the sidecar (truth) and re-mirrors the index.
+     *
+     * Only a successful, completed backup can be pinned; the in-progress and non-success
+     * cases are re-guarded here as well as on the page.
+     *
+     * @param BackupSetKeepSignalData $data Set-keep request carrying the id and desired pin
+     */
+    private function handleSetKeepRequest(BackupSetKeepSignalData $data): void
+    {
+        $id = $data->backupId;
+        if ($id === '') {
+            return;
+        }
+        if ($id === $this->currentBackupId) {
+            $this->logAgentWarning("Ignoring keep toggle of in-progress backup {$id}");
+
+            return;
+        }
+
+        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
+        if (!$histories instanceof BackupHistories) {
+            return;
+        }
+
+        $row = $histories->get($id);
+        if ($row === null) {
+            $this->logAgentInfo("Backup {$id} not found; keep toggle no-op");
+
+            return;
+        }
+        if (BackupStatus::fromString($row->status) !== BackupStatus::SUCCESS) {
+            $this->logAgentWarning("Ignoring keep toggle of non-success backup {$id}");
+
+            return;
+        }
+
+        try {
+            (new BackupCreator())->setStoredKeep($row, Hilos::$env->string(EnvConstants::BACKUP_DIR), $data->keep);
+            // Re-mirror the index from the rewritten sidecar (files=truth): the cleared +
+            // recreated rows carry the new keep pin to every reader over RT sync.
+            $this->refreshHistory();
+            $this->logAgentInfo("Backup keep set: {$id} keep=" . ($data->keep ? 'true' : 'false'));
+        } catch (Throwable $e) {
+            $this->logAgentError("Failed to set keep on backup {$id}: " . $e->getMessage());
+        }
     }
 
     /**
@@ -343,6 +525,25 @@ final class BackupAgent extends AbstractAgent
         }
         $this->resetRun();
         $this->clearRuntime();
+        $this->drainPendingCreate();
+    }
+
+    /**
+     * Runs a manual create coalesced into the pending slot while the last run was busy.
+     *
+     * Called once the lock is released at the end of {@see finishRun()}: the slot holds at
+     * most one scope (last manual request wins), so it starts exactly one follow-up backup.
+     */
+    private function drainPendingCreate(): void
+    {
+        if ($this->pendingScope === null) {
+            return;
+        }
+
+        $scope = $this->pendingScope;
+        $this->pendingScope = null;
+        $this->logAgentInfo("Running pending backup create (scope={$scope->value})");
+        $this->startBackup($scope);
     }
 
     /**

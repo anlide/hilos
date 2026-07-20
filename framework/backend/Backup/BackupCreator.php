@@ -14,6 +14,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\Migration;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\BackupHistory;
 use Throwable;
 
 /**
@@ -166,6 +167,80 @@ final class BackupCreator
         $tmpSidecar = $scopeDir . '/.tmp-err-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
         $this->writeJson($tmpSidecar, $metadata->toArray());
         $this->publish($tmpSidecar, $scopeDir . '/' . $base . self::SIDECAR_EXTENSION);
+    }
+
+    /**
+     * Rewrites a stored backup's keep pin in place, atomically (HIL-333 toggle-keep).
+     *
+     * The sidecar is the source of truth for the keep flag (files=truth): this reads it,
+     * rewrites only its keep field (every other field is preserved), and republishes it
+     * over the same temp→fsync→rename idiom {@see create()} uses, so a reader never sees a
+     * partial write. A no-change target is a no-op. The caller (the monopoly agent) re-mirrors
+     * the runtime index from the rewritten sidecar afterwards.
+     *
+     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * @param string $root Backup storage root
+     * @param bool $keep Desired keep pin
+     * @throws BackupException When the scope, root, or stored sidecar is invalid or missing
+     * @throws BackupDumpFailedException When the rewritten sidecar cannot be published
+     */
+    public function setStoredKeep(BackupHistory $row, string $root, bool $keep): void
+    {
+        $scope = BackupScope::fromString($row->scope);
+        if ($scope === null) {
+            throw new BackupException("Invalid backup scope: {$row->scope}");
+        }
+        if ($root === '') {
+            throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
+        }
+
+        $scopeDir = $root . '/' . $scope->value;
+        $base = self::archiveBaseName($row->getId(), $row->env, $scope);
+        $sidecarPath = $scopeDir . '/' . $base . self::SIDECAR_EXTENSION;
+
+        $metadata = $this->readSidecar($sidecarPath);
+        if ($metadata->keep === $keep) {
+            return;
+        }
+
+        $rewritten = new BackupMetadata(
+            $metadata->id,
+            $metadata->createdAt,
+            $metadata->env,
+            $metadata->scope,
+            $metadata->connections,
+            $metadata->sizeBytes,
+            $metadata->durationSeconds,
+            $keep,
+            $metadata->status,
+            $metadata->warnings,
+        );
+
+        $tmpSidecar = $scopeDir . '/.tmp-keep-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
+        $this->writeJson($tmpSidecar, $rewritten->toArray());
+        $this->publish($tmpSidecar, $sidecarPath);
+    }
+
+    /**
+     * Reads and decodes one backup sidecar into its metadata.
+     *
+     * @param string $sidecarPath Absolute sidecar path
+     * @return BackupMetadata Decoded sidecar metadata
+     * @throws BackupException When the sidecar is missing or not valid JSON
+     */
+    private function readSidecar(string $sidecarPath): BackupMetadata
+    {
+        $raw = @file_get_contents($sidecarPath);
+        if ($raw === false) {
+            throw new BackupException("Backup sidecar not found: {$sidecarPath}");
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            throw new BackupException("Backup sidecar is not valid JSON: {$sidecarPath}");
+        }
+
+        return BackupMetadata::fromArray($decoded);
     }
 
     /**

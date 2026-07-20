@@ -11,6 +11,10 @@
 // connection — and the framework owns the rest. Row actions (create / delete /
 // keep) are a separate page (HIL-333) and are not part of this view.
 
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -49,10 +53,32 @@ export interface HilosBackupRow {
 }
 
 // Wire keys: the framework backup table and its single inline `backup` slot (the
-// merged runtime fields). A project binds its backend to these keys.
+// merged runtime fields) and the create / delete / set-keep action names. A
+// project binds its backend to these keys.
 const HILOS_BACKUPS_TABLE = 'hilosBackups'
 const BACKUP_SLOT = 'backup'
 const HILOS_BACKUPS_PAGE_SIZE = 10
+const BACKUP_CREATE_ACTION = 'backup_create'
+const BACKUP_DELETE_ACTION = 'backup_delete'
+const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
+
+/** A selectable backup scope: its wire value and a human-readable label. */
+export interface HilosBackupScopeOption {
+  /** The wire scope value sent to the backend. */
+  readonly value: string
+  /** The label shown in the create scope picker. */
+  readonly label: string
+}
+
+/**
+ * The backup scopes the create picker offers, in capture-breadth order. The
+ * values match the backend BackupScope enum (`full` | `schema-seed` | `schema-only`).
+ */
+export const HILOS_BACKUP_SCOPES: readonly HilosBackupScopeOption[] = [
+  { value: 'full', label: 'Full (schema + all data)' },
+  { value: 'schema-seed', label: 'Schema + seed data' },
+  { value: 'schema-only', label: 'Schema only' },
+]
 
 /**
  * The project-supplied context the backup admin reads from: the scope-partitioned
@@ -65,6 +91,35 @@ export interface HilosBackupsContext {
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
+  /** The action lifecycle the create / delete / set-keep tracked actions dispatch over. */
+  readonly actions: ActionLifecycle
+}
+
+/** The backup mutation surface a backup view binds to. */
+export interface HilosBackupsActions {
+  /**
+   * Start a backup in the chosen scope, as a tracked action. Acceptance is acked
+   * at once (started, or queued behind an in-progress run); the committed row
+   * arrives over the live table.
+   *
+   * @param scope The backup scope value to capture.
+   */
+  sendBackupCreate(scope: string): ActionHandle
+  /**
+   * Delete a stored backup, as a tracked action. The in-progress backup cannot be
+   * deleted; an already-removed one is a no-op.
+   *
+   * @param id The backup id (also the table row key).
+   */
+  sendBackupDelete(id: string): ActionHandle
+  /**
+   * Set a stored backup's rotation pin, as a tracked action. Only a successful,
+   * completed backup can be pinned.
+   *
+   * @param id The backup id (also the table row key).
+   * @param keep The desired pin (true excludes the backup from rotation).
+   */
+  sendBackupSetKeep(id: string, keep: boolean): ActionHandle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -106,6 +161,21 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     status: readString(slot, 'status'),
     finished: toFinished(slot['finished']),
   }
+}
+
+/** The single in-progress backup (renders the live progress row; not actionable). */
+export function isBackupInProgress(row: HilosBackupRow): boolean {
+  return row.finished === false
+}
+
+/** A completed backup, success or failure — the only kind that can be deleted. */
+export function isBackupDeletable(row: HilosBackupRow): boolean {
+  return row.finished !== false
+}
+
+/** A successfully completed backup — the only kind whose keep pin can be toggled. */
+export function isBackupKeepable(row: HilosBackupRow): boolean {
+  return row.finished === true
 }
 
 /** The backup table handle a backup view drives: the controller plus its mount lifecycle. */
@@ -170,6 +240,47 @@ export function createHilosBackupsTable(
       for (const off of teardown.splice(0)) {
         off()
       }
+    },
+  }
+}
+
+/**
+ * The backup mutation surface: create / delete / set-keep submit as tracked
+ * actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
+ * on the backend's `::success` ack and rejects on `::fail` — a view surfaces the
+ * failure (authoritative-backend). Delete and set-keep mark their row as an
+ * own-change on the table (table.expectOwnChange) so the echo applies at once in
+ * this tab while other tabs keep the pending gate; create makes a new row whose
+ * server-minted id is unknown up front, so it has no own-change to mark and simply
+ * surfaces over the live table.
+ *
+ * @param context The project context (the action lifecycle the actions dispatch over).
+ * @param table The backup table controller the own-change marks land on.
+ */
+export function createHilosBackupsActions(
+  context: HilosBackupsContext,
+  table: TableViewportController<HilosBackupRow>,
+): HilosBackupsActions {
+  return {
+    sendBackupCreate(scope) {
+      return context.actions.dispatch(BACKUP_CREATE_ACTION, { scope })
+    },
+    sendBackupDelete(id) {
+      const handle = context.actions.dispatch(BACKUP_DELETE_ACTION, {
+        backupId: id,
+      })
+      table.expectOwnChange(id, handle.done)
+
+      return handle
+    },
+    sendBackupSetKeep(id, keep) {
+      const handle = context.actions.dispatch(BACKUP_SET_KEEP_ACTION, {
+        backupId: id,
+        keep,
+      })
+      table.expectOwnChange(id, handle.done)
+
+      return handle
     },
   }
 }

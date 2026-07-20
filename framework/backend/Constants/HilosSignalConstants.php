@@ -220,4 +220,24 @@ final class HilosSignalConstants
 
     /** Client → server: delete an orphan setting on the HILOS_SETTINGS page. */
     public const string SETTING_DELETE = 'setting_delete';
+
+    // ── Hilos backup admin: list-page actions (client → server) ──
+    /** Client → server: start a backup with a chosen scope on the HILOS_BACKUP page. */
+    public const string BACKUP_CREATE = 'backup_create';
+
+    /** Client → server: delete a stored backup on the HILOS_BACKUP page. */
+    public const string BACKUP_DELETE = 'backup_delete';
+
+    /** Client → server: toggle a stored backup's rotation pin on the HILOS_BACKUP page. */
+    public const string BACKUP_SET_KEEP = 'backup_set_keep';
+
+    // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
+    /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */
+    public const string BACKUP_AGENT_CREATE = 'backup_agent_create';
+
+    /** Page → BackupAgent: delete the carried backup id (shared delete path). */
+    public const string BACKUP_AGENT_DELETE = 'backup_agent_delete';
+
+    /** Page → BackupAgent: set the carried backup id's keep pin (sidecar rewrite). */
+    public const string BACKUP_AGENT_SET_KEEP = 'backup_agent_set_keep';
 }
