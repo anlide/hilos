@@ -206,6 +206,37 @@ final class UserVerification extends Object_
     }
 
     /**
+     * Ages this challenge into the past so {@see isActive()} reads it as expired.
+     *
+     * Test-only expiry primitive backing the `verification:test:expire` CLI
+     * (HIL-317): rewrites `expires_at` to just before now with a targeted UPDATE
+     * and mirrors it on the loaded entity, so an e2e can drive the "invalid or
+     * expired code" verify path without waiting out the TTL. Symmetric with
+     * {@see consume()} — targeted write plus entity mirror, no sync and no
+     * TruthSourceRegistry. A no-op for an unpersisted challenge.
+     *
+     * @throws DatabaseException When the expiry update query fails
+     */
+    public function expire(): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        $pastExpiry = date('Y-m-d H:i:s', time() - 1);
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($pastExpiry));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::expires_at . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+            $params,
+        );
+
+        $this->entity->expires_at = $pastExpiry;
+    }
+
+    /**
      * Converts the challenge to an associative array (never includes the code hash).
      *
      * @return array<string, mixed> Verification data (id, userId, type, identifier, attempts, expiresAt, consumedAt)

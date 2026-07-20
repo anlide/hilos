@@ -31,4 +31,31 @@ final class VerificationType
     public const string EMAIL_CHANGE = 'email_change';
     public const string SMS_LOGIN = 'sms_login';
     public const string MAGIC_LINK = 'magic_link';
+
+    /**
+     * Returns the fixed set of verification type values in declaration order.
+     *
+     * @return list<string> Every known verification type
+     */
+    public static function values(): array
+    {
+        return [
+            self::REGISTER_CONFIRM,
+            self::PASSWORD_RESET,
+            self::EMAIL_CHANGE,
+            self::SMS_LOGIN,
+            self::MAGIC_LINK,
+        ];
+    }
+
+    /**
+     * Whether the given string is a known verification type.
+     *
+     * @param string $type Candidate type value (case-sensitive, matches the SQL ENUM)
+     * @return bool True when the value is one of the fixed set
+     */
+    public static function isValid(string $type): bool
+    {
+        return in_array($type, self::values(), true);
+    }
 }

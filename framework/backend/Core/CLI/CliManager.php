@@ -23,6 +23,7 @@ use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -86,6 +87,7 @@ class CliManager
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
+        $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
 
         $this->registerProjectCommands();
 

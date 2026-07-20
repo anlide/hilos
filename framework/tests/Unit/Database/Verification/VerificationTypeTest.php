@@ -36,4 +36,32 @@ final class VerificationTypeTest extends TestCase
 
         self::assertSame($values, array_values(array_unique($values)));
     }
+
+    public function testValuesReturnsTheFullSetInDeclarationOrder(): void
+    {
+        self::assertSame(
+            [
+                VerificationType::REGISTER_CONFIRM,
+                VerificationType::PASSWORD_RESET,
+                VerificationType::EMAIL_CHANGE,
+                VerificationType::SMS_LOGIN,
+                VerificationType::MAGIC_LINK,
+            ],
+            VerificationType::values(),
+        );
+    }
+
+    public function testIsValidAcceptsEveryKnownType(): void
+    {
+        foreach (VerificationType::values() as $type) {
+            self::assertTrue(VerificationType::isValid($type));
+        }
+    }
+
+    public function testIsValidRejectsUnknownEmptyOrMiscasedType(): void
+    {
+        self::assertFalse(VerificationType::isValid(''));
+        self::assertFalse(VerificationType::isValid('unknown'));
+        self::assertFalse(VerificationType::isValid('Password_Reset'));
+    }
 }

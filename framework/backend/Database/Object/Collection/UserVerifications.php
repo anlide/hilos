@@ -195,6 +195,28 @@ final class UserVerifications extends Objects
     }
 
     /**
+     * Ages the newest active challenge for a (type, identifier) into the past.
+     *
+     * Test-only support for the `verification:test:expire` CLI (HIL-317): resolves
+     * the single active challenge (attempts ignored, so an exhausted-but-unexpired
+     * challenge still resets) and expires it via
+     * {@see ObjectUserVerification::expire()}, so the next verify reads an expired
+     * code. Returns the expired challenge, or null when none is active.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (matched verbatim)
+     * @return ?ObjectUserVerification The expired challenge, or null when none active
+     * @throws DatabaseException If the lookup or expiry query fails
+     */
+    public function expireActive(string $type, string $identifier): ?ObjectUserVerification
+    {
+        $challenge = $this->findActive($type, $identifier, PHP_INT_MAX);
+        $challenge?->expire();
+
+        return $challenge;
+    }
+
+    /**
      * Loads and caches every challenge row for a (type, identifier) pair.
      *
      * @param string $type Verification type (see VerificationType)
