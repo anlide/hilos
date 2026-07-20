@@ -12,12 +12,14 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestSmsCodeActionDTO;
@@ -41,6 +43,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
@@ -70,6 +73,8 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
         ChatSignalConstants::REQUEST_SMS_CODE => RequestSmsCodeActionDTO::class,
         ChatSignalConstants::CONFIRM_SMS_CODE => ConfirmSmsCodeActionDTO::class,
+        ChatSignalConstants::REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
+        ChatSignalConstants::CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
@@ -198,6 +203,22 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, ConfirmSmsCodeActionDTO::class, $dto);
                 }
                 $this->handleConfirmSmsCode($dto);
+
+                break;
+
+            case ChatSignalConstants::REQUEST_MAGIC_LINK:
+                if (!$dto instanceof RequestMagicLinkActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestMagicLinkActionDTO::class, $dto);
+                }
+                $this->handleRequestMagicLink($dto);
+
+                break;
+
+            case ChatSignalConstants::CONFIRM_MAGIC_LINK:
+                if (!$dto instanceof ConfirmMagicLinkActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmMagicLinkActionDTO::class, $dto);
+                }
+                $this->handleConfirmMagicLink($dto);
 
                 break;
 
@@ -588,6 +609,68 @@ final class MainPage extends AbstractPage
             $userId = (int)$user->id;
             Hilos::$db->identities->createSmsIdentity($userId, $phone);
             Hilos::$db->events->actions->addUserRegistered($userId);
+        }
+
+        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+    }
+
+    /**
+     * Issues an email magic-link sign-in token, always answering generically.
+     *
+     * The passwordless login entry (HIL-283): login-only, so it resolves the
+     * account from a verified email identity (any type) through
+     * {@see Identities::findUserIdByVerifiedEmail()} and issues (throttled inside
+     * the service) a token bound to that user — no user or identity is ever
+     * created here. An unknown or unverified email is a silent no-op; either way
+     * the response is the same generic success, so this never discloses whether
+     * the address has an account. The token is delivered as a clickable URL by the
+     * deliverer seam (dev-stub logs it), which the /auth/magic route relays back.
+     *
+     * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
+     * @throws HilosException When identity lookup or token issuing fails
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a token
+     */
+    private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): void
+    {
+        $email = strtolower($dto->email);
+        $userId = $email !== ''
+            ? Hilos::$db->identities->findUserIdByVerifiedEmail($email)
+            : null;
+        if ($userId === null) {
+            return;
+        }
+
+        (new VerificationService())->issue(VerificationType::MAGIC_LINK, $email, $userId);
+    }
+
+    /**
+     * Verifies a magic-link token and signs the resolved user into the session.
+     *
+     * Login-only (HIL-283): the token was minted for a user resolved at request
+     * time, so {@see VerificationService::verify()} returns that user id on a
+     * match. A missing/expired/wrong/exhausted token — and an empty email — fail
+     * with the same generic message (no enumeration). On success the token is
+     * single-use consumed inside the service and the live anonymous session (the
+     * one that opened the /auth/magic route) is upgraded to that user through
+     * {@see ChatAgent::authenticateSession()}; no user or identity is created.
+     *
+     * @param ConfirmMagicLinkActionDTO $dto Parsed confirm payload (email, token)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the email or token is invalid
+     * @throws HilosException When verification or session promotion fails
+     */
+    private function handleConfirmMagicLink(ConfirmMagicLinkActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $email = strtolower($dto->email);
+        $userId = $email !== ''
+            ? (new VerificationService())->verify(VerificationType::MAGIC_LINK, $email, $dto->token)
+            : null;
+        if ($userId === null) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
         $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);

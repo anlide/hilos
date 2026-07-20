@@ -31,13 +31,15 @@ import {
  * capabilities the login↔register↔recovery switcher offers, distinct from the
  * finer {@link AuthMode} the surface is actually in at any moment.
  */
-export type AuthEntry = 'login' | 'register' | 'recovery' | 'sms'
+export type AuthEntry = 'login' | 'register' | 'recovery' | 'sms' | 'magic_link'
 
 /**
  * The surface's active mode. `login` / `register` are the two direct entries;
  * the recovery entry runs through its three steps; the sms entry runs through its
  * two (`sms_request` then `sms_confirm`, which succeeds by upgrading the session
- * like login); `done` is the terminal state a completed non-session flow (e.g. a
+ * like login); the magic-link entry has a single `magic_link_request` mode (its
+ * confirm is a clicked email link handled on a dedicated SPA route, not a form
+ * step here); `done` is the terminal state a completed non-session flow (e.g. a
  * recovery that drops to login) can land in.
  */
 export type AuthMode =
@@ -48,6 +50,7 @@ export type AuthMode =
   | 'recovery_set'
   | 'sms_request'
   | 'sms_confirm'
+  | 'magic_link_request'
   | 'done'
 
 /**
@@ -178,6 +181,20 @@ export const SMS_AUTH_METHOD: AuthMethodDescriptor = {
 }
 
 /**
+ * The email magic-link method descriptor (HIL-283). Enables the `magic_link`
+ * switcher entry; a project adds it to its registry alongside
+ * {@link PASSWORD_AUTH_METHOD} to offer passwordless email sign-in. The surface
+ * only owns the request step — the emailed link is confirmed on the project's
+ * dedicated `/auth/magic` route — so this method contributes no in-form confirm
+ * mode.
+ */
+export const MAGIC_LINK_AUTH_METHOD: AuthMethodDescriptor = {
+  key: 'magic_link',
+  label: 'Email me a sign-in link',
+  modes: ['magic_link'],
+}
+
+/**
  * Phone digit-count bounds mirroring the backend E.164 normalizer
  * ({@link \Hilos\Auth\PhoneNumber}); client-side gating only.
  */
@@ -233,6 +250,8 @@ export function isAuthSubmittable(
       ).test(form.phone.replace(/[\s\-().]/g, ''))
     case 'sms_confirm':
       return new RegExp(`^\\d{${SMS_CODE_LENGTH}}$`).test(form.code.trim())
+    case 'magic_link_request':
+      return form.email.trim() !== ''
     case 'done':
       return false
   }

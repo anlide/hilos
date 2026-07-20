@@ -29,6 +29,12 @@ const REQUEST_SMS_CODE_ACTION = 'request_sms_code'
 /** Backend action: submit an SMS login code (PHP `ChatSignalConstants::CONFIRM_SMS_CODE`). */
 const CONFIRM_SMS_CODE_ACTION = 'confirm_sms_code'
 
+/** Backend action: request an email magic-link (PHP `ChatSignalConstants::REQUEST_MAGIC_LINK`). */
+const REQUEST_MAGIC_LINK_ACTION = 'request_magic_link'
+
+/** Backend action: submit an email magic-link token (PHP `ChatSignalConstants::CONFIRM_MAGIC_LINK`). */
+const CONFIRM_MAGIC_LINK_ACTION = 'confirm_magic_link'
+
 /**
  * Dispatch the active mode's submit and resolve the surface outcome. Login and
  * register dispatch their action and resolve `ok` on the correlated `::success`;
@@ -65,6 +71,12 @@ export async function submitAuth(
         phone: form.phone,
         code: form.code,
       })
+    case 'magic_link_request':
+      // Success does not advance a mode: the confirm is a clicked email link
+      // handled on the /auth/magic route, not a form step. The backend always
+      // answers generically (login-only, anti-enumeration), so the view shows a
+      // "check your email" acknowledgement on the ok outcome.
+      return dispatch(REQUEST_MAGIC_LINK_ACTION, { email: form.email })
     case 'recovery_request':
     case 'recovery_confirm':
     case 'recovery_set':
@@ -94,6 +106,24 @@ async function dispatch(
   } catch (error) {
     return { ok: false, message: describeAuthError(error) }
   }
+}
+
+/**
+ * Relay a magic-link token over the live connection for the /auth/magic route.
+ *
+ * The email link opens the static route; this dispatches the confirm the surface
+ * itself never sends (its magic-link entry is request-only), resolving `ok` when
+ * the backend upgrades the session — the auth gate then closes any sign-in shown
+ * — and mapping the generic failure otherwise.
+ *
+ * @param email The account email carried in the link.
+ * @param token The one-time sign-in token carried in the link.
+ */
+export function confirmMagicLink(
+  email: string,
+  token: string,
+): Promise<AuthSubmitOutcome> {
+  return dispatch(CONFIRM_MAGIC_LINK_ACTION, { email, token })
 }
 
 /**

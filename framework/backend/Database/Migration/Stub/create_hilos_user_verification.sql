@@ -22,7 +22,7 @@
 CREATE TABLE `hilos_user_verification` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` INT UNSIGNED DEFAULT NULL,
-    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login') NOT NULL,
+    `type` ENUM('register_confirm', 'password_reset', 'email_change', 'sms_login', 'magic_link') NOT NULL,
     `identifier` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `code_hash` VARCHAR(255) DEFAULT NULL,
     `attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0,

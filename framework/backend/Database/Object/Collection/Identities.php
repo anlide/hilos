@@ -169,6 +169,38 @@ final class Identities extends Objects
     }
 
     /**
+     * Resolves the user id owning a verified identity for an email (HIL-283).
+     *
+     * The passwordless-login read accessor shared with the OAuth email-collision
+     * link flow (HIL-282): it answers "which existing account owns this verified
+     * email?" without disclosing anything to the caller beyond the id. Only email
+     * identifiers can match (`password`/`magic_link` store the lowercased email;
+     * `sms`/`oauth` identifiers are a phone / `provider:subject` and never equal an
+     * email), so the lookup is by identifier across every type and keeps only a
+     * verified, user-owning row. An unverified email or no account resolves to
+     * null, letting the caller answer generically (anti-enumeration).
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id of a verified email identity, or null when none
+     * @throws DatabaseException If the database query fails
+     */
+    public function findUserIdByVerifiedEmail(string $email): ?int
+    {
+        if ($email === '') {
+            return null;
+        }
+
+        $entityIdentities = EntityIdentity::get([EntityIdentity::identifier => $email]);
+        foreach ($entityIdentities as $entityIdentity) {
+            if ($entityIdentity->verified && $entityIdentity->user_id !== null) {
+                return $entityIdentity->user_id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

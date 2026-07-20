@@ -17,6 +17,11 @@ namespace Hilos\Database\Verification;
  * `identifier` is a normalized E.164 phone rather than an email, and the code is
  * verified with {@see VerificationService::verifyCode()} (no owning user is known
  * at issue time, so the challenge carries a null `user_id`).
+ * `magic_link` mints a long URL-safe token for passwordless email sign-in
+ * (HIL-283) — the owning user is resolved from a verified email identity at
+ * request time and carried on the challenge, so it verifies through the same
+ * {@see VerificationService::verify()} as the email code types (its stored value
+ * is a token rather than a numeric code — see {@see VerificationService::issue()}).
  * `identifier` is the target email (lowercased) for the email-based types.
  */
 final class VerificationType
@@ -25,4 +30,5 @@ final class VerificationType
     public const string PASSWORD_RESET = 'password_reset';
     public const string EMAIL_CHANGE = 'email_change';
     public const string SMS_LOGIN = 'sms_login';
+    public const string MAGIC_LINK = 'magic_link';
 }

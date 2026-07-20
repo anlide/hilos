@@ -11,6 +11,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Random\RandomException;
 
@@ -65,7 +66,7 @@ class VerificationService
 
         $collection->voidActive($type, $identifier, $maxAttempts);
 
-        $code = $this->generateCode();
+        $code = $this->generateSecret($type);
         $collection->createChallenge($type, $identifier, $userId, $code, $ttlSeconds);
 
         $this->createDeliverer()->deliver($identifier, $type, $code);
@@ -188,6 +189,32 @@ class VerificationService
     protected function createDeliverer(): VerificationDeliverer
     {
         return new LogVerificationDeliverer();
+    }
+
+    /**
+     * Generates the challenge secret for a type: a long URL-safe token for the
+     * link-delivered types, a short numeric code for the rest.
+     *
+     * Magic-link sign-in (HIL-283) is delivered as a clickable URL, not typed by a
+     * human, so its secret is a high-entropy `bin2hex(random_bytes(32))` token
+     * rather than a short numeric code — a 6-digit code that travels in a URL and
+     * verifies with the same attempt ceiling would be brute-forceable. Every other
+     * type stays a numeric code the recipient reads and types. Either way the value
+     * is hashed at rest by {@see ObjectUserVerifications::createChallenge()} and
+     * compared in constant time by {@see verify()}, so the storage/verify path is
+     * identical.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @return string The generated token or numeric code
+     * @throws RandomException When the platform CSPRNG cannot produce a value
+     */
+    private function generateSecret(string $type): string
+    {
+        if ($type === VerificationType::MAGIC_LINK) {
+            return bin2hex(random_bytes(32));
+        }
+
+        return $this->generateCode();
     }
 
     /**

@@ -13,9 +13,10 @@ correlation and surface the backend reason inline; recovery detail is deferred t
 HIL-365, so its entry renders a reachable placeholder. Bootstrap classes only, no
 CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   createAuthSurface,
+  MAGIC_LINK_AUTH_METHOD,
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
   SMS_AUTH_METHOD,
@@ -31,7 +32,7 @@ defineOptions({ name: 'AuthSurface' })
 // extension point. Only email+password ships now; an OAuth or passkey descriptor
 // is prepended/appended later without touching the surface or the machine.
 const surface = createAuthSurface({
-  methods: [PASSWORD_AUTH_METHOD, SMS_AUTH_METHOD],
+  methods: [PASSWORD_AUTH_METHOD, SMS_AUTH_METHOD, MAGIC_LINK_AUTH_METHOD],
   onSubmit: submitAuth,
 })
 
@@ -44,12 +45,22 @@ const submittable = useSignal(surface.submittable)
 const canRegister = surface.entries.includes('register')
 const canRecover = surface.entries.includes('recovery')
 const canSms = surface.entries.includes('sms')
+const canMagicLink = surface.entries.includes('magic_link')
 const isFormMode = computed(
   () => mode.value === 'login' || mode.value === 'register',
 )
 const isSmsMode = computed(
   () => mode.value === 'sms_request' || mode.value === 'sms_confirm',
 )
+
+// The magic-link request has no in-form confirm step (the emailed link is
+// confirmed on the /auth/magic route), so a successful request has no next mode
+// to advance to. This local flag turns the form into a generic "check your email"
+// acknowledgement; it resets whenever the mode changes.
+const magicSent = ref(false)
+watch(mode, () => {
+  magicSent.value = false
+})
 
 const heading = computed(() => {
   switch (mode.value) {
@@ -62,6 +73,8 @@ const heading = computed(() => {
     case 'sms_request':
     case 'sms_confirm':
       return 'Sign in with your phone'
+    case 'magic_link_request':
+      return 'Email me a sign-in link'
     default:
       return 'Sign in'
   }
@@ -72,6 +85,8 @@ const submitLabel = computed(() => {
       return 'Create account'
     case 'sms_request':
       return 'Send code'
+    case 'magic_link_request':
+      return 'Send link'
     default:
       return 'Sign in'
   }
@@ -92,6 +107,19 @@ function submit(): void {
     return
   }
   void surface.submit()
+}
+
+// Magic-link request: submit, then on a clean (ok, no error) outcome show the
+// generic sent acknowledgement — the backend always answers generically
+// (login-only, anti-enumeration), so this reveals nothing about the address.
+async function submitMagicRequest(): Promise<void> {
+  if (!submittable.value || pending.value) {
+    return
+  }
+  await surface.submit()
+  if (!error.value) {
+    magicSent.value = true
+  }
 }
 
 // Start each mount clean: the surface may be re-shown for a new gated action.
@@ -228,6 +256,57 @@ onMounted(() => {
       </LoadingButton>
     </form>
 
+    <!-- Email magic-link sign-in (HIL-283): request a passwordless link for an
+    email. Login-only — the response is always the same generic acknowledgement,
+    and the emailed link is confirmed on the /auth/magic route. -->
+    <template v-else-if="mode === 'magic_link_request'">
+      <div
+        v-if="magicSent"
+        class="alert alert-success"
+        role="status"
+        data-id="auth-magic-sent"
+      >
+        If an account exists for that email, we've sent it a sign-in link. Check
+        your inbox and open the link to continue.
+      </div>
+
+      <form v-else novalidate @submit.prevent="submitMagicRequest">
+        <div class="mb-3">
+          <label class="form-label" for="auth-magic-email">Email</label>
+          <input
+            id="auth-magic-email"
+            type="email"
+            class="form-control"
+            autocomplete="username"
+            data-autofocus
+            data-id="auth-magic-email"
+            :value="form.email"
+            @input="update('email', $event)"
+          />
+          <div class="form-text">We'll email you a one-time sign-in link.</div>
+        </div>
+
+        <div
+          v-if="error"
+          class="alert alert-danger py-2"
+          role="alert"
+          data-id="auth-error"
+        >
+          {{ error }}
+        </div>
+
+        <LoadingButton
+          type="submit"
+          class="btn-primary w-100"
+          :loading="pending"
+          :disabled="!submittable"
+          data-id="auth-submit"
+        >
+          {{ submitLabel }}
+        </LoadingButton>
+      </form>
+    </template>
+
     <!-- Recovery is reachable but its backend (HIL-365) is not landed yet. -->
     <div
       v-else
@@ -274,6 +353,15 @@ onMounted(() => {
         @click="surface.switchTo('sms_request')"
       >
         Sign in with phone
+      </button>
+      <button
+        v-if="mode === 'login' && canMagicLink"
+        type="button"
+        class="btn btn-link p-0"
+        data-id="auth-to-magic"
+        @click="surface.switchTo('magic_link_request')"
+      >
+        Email me a link
       </button>
     </div>
   </section>

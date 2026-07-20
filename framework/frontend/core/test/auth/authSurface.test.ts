@@ -7,6 +7,7 @@ import {
   authEntries,
   createAuthSurface,
   isAuthSubmittable,
+  MAGIC_LINK_AUTH_METHOD,
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
   type AuthFormState,
@@ -32,6 +33,15 @@ describe('authEntries', () => {
       'login',
       'register',
       'recovery',
+    ])
+  })
+
+  it('appends the magic-link entry from its descriptor', () => {
+    expect(authEntries([PASSWORD_AUTH_METHOD, MAGIC_LINK_AUTH_METHOD])).toEqual([
+      'login',
+      'register',
+      'recovery',
+      'magic_link',
     ])
   })
 
@@ -89,6 +99,13 @@ describe('isAuthSubmittable', () => {
         password: ok,
         confirmPassword: ok,
       }),
+    ).toBe(true)
+  })
+
+  it('requires a non-empty email for a magic-link request', () => {
+    expect(isAuthSubmittable('magic_link_request', base)).toBe(false)
+    expect(
+      isAuthSubmittable('magic_link_request', { ...base, email: 'a@b.c' }),
     ).toBe(true)
   })
 })

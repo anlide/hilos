@@ -5,12 +5,13 @@ move between the main page and the framework dashboard with no refresh. The live
 connection state is the shell's own indicator (an extra status surface allowed
 by docs/agents/frontend/core-and-connection.md). -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import {
   HilosLayout,
   HilosLink,
   HilosView,
   hilosAdminViews,
+  hilosRouterKey,
   useSignal,
 } from '@hilos/vue'
 import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
@@ -18,6 +19,7 @@ import type { AuthGate } from '@hilos/core'
 import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
+import MagicLink from './auth/MagicLink.vue'
 import { connection } from './bootstrap/connection'
 import { currentUserName } from './bootstrap/session'
 import {
@@ -79,6 +81,20 @@ const pages: Record<string, Component> = {
   [HilosPages.USER]: HilosUser,
   [HilosPages.BACKUP]: HilosBackup,
 }
+
+// The magic-link confirm route (HIL-283). It carries no page of its own — the
+// router falls it back to the main subscription so the confirm action routes —
+// so App swaps the relay view in for the routed outlet while the path matches,
+// then MagicLink navigates home once the session upgrades.
+const MAGIC_LINK_PATH = '/auth/magic'
+const router = inject(hilosRouterKey)
+if (!router) {
+  throw new Error(
+    'App requires a provided router: app.provide(hilosRouterKey, router).',
+  )
+}
+const currentPath = useSignal(router.currentPath)
+const isMagicRoute = computed(() => currentPath.value === MAGIC_LINK_PATH)
 
 // The navbar profile entry: the current user's name links to the framework
 // profile page (its route owned by the page catalog), shown once the handshake
@@ -164,7 +180,9 @@ watch(userName, (name) => {
         <i v-else class="bi bi-box-arrow-right" aria-hidden="true"></i>
       </button>
     </template>
+    <MagicLink v-if="isMagicRoute" />
     <HilosView
+      v-else
       :pages="pages"
       :auth-surface="AuthSurface"
       :auth-gate="props.authGate"

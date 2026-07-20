@@ -44,6 +44,12 @@ final class ChatSignalConstants
     /** @var string Client → server: submit an SMS one-time login code for a phone (public, anonymous-reachable) */
     public const string CONFIRM_SMS_CODE = 'confirm_sms_code';
 
+    /** @var string Client → server: request an email magic-link sign-in token (public, anonymous-reachable) */
+    public const string REQUEST_MAGIC_LINK = 'request_magic_link';
+
+    /** @var string Client → server: submit an email magic-link sign-in token (public, anonymous-reachable) */
+    public const string CONFIRM_MAGIC_LINK = 'confirm_magic_link';
+
     /** @var string Client → server: request an email-confirmation code for the signed-in user */
     public const string REQUEST_REGISTER_CONFIRM = 'request_register_confirm';
 
