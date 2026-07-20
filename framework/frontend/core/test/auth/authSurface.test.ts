@@ -37,12 +37,9 @@ describe('authEntries', () => {
   })
 
   it('appends the magic-link entry from its descriptor', () => {
-    expect(authEntries([PASSWORD_AUTH_METHOD, MAGIC_LINK_AUTH_METHOD])).toEqual([
-      'login',
-      'register',
-      'recovery',
-      'magic_link',
-    ])
+    expect(authEntries([PASSWORD_AUTH_METHOD, MAGIC_LINK_AUTH_METHOD])).toEqual(
+      ['login', 'register', 'recovery', 'magic_link'],
+    )
   })
 
   it('de-duplicates entries enabled by more than one method', () => {

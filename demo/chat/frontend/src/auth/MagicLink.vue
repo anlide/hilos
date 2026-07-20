@@ -14,12 +14,15 @@ import { confirmMagicLink } from './authActions'
 
 defineOptions({ name: 'MagicLink' })
 
-const router = inject(hilosRouterKey)
-if (!router) {
+const injectedRouter = inject(hilosRouterKey)
+if (!injectedRouter) {
   throw new Error(
     'MagicLink requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
+// Hoist the guarded router into a non-optional local so its non-undefined type
+// (not just a flow narrowing) carries into the nested `goToSignIn` closure below.
+const router = injectedRouter
 
 // The relay outcome: `verifying` while the token is in flight, `error` once it is
 // rejected or malformed. A success navigates away, so it needs no visible state.
