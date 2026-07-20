@@ -33,6 +33,9 @@ Use this skill for agent business logic and registration work. Start by reading 
    ignored shared-broadcast names and document the ignore contract in PHPDoc.
 6. Register and unregister truth sources in matching lifecycle hooks.
 7. Add focused tests through composer scripts when behavior changes.
+8. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
+   demo's `*TopologyRegistryTest` snapshot and run its `test:unit` — a shared
+   cross-ticket guard. See `docs/agents/app-topology.md` step 12.
 
 ## Hard Rules
 

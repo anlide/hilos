@@ -69,6 +69,7 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | What changed | Run | How often |
 |---|---|---|
 | PHP backend logic (framework or a demo) | the affected side's PHPUnit — `test:framework:phpunit`, or a demo's `test:phpunit` | every change |
+| A project topology registry — `Hilos::PAGES` / `GROUPS` / `AGENTS` / `TABLES` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS` | that demo's `test:unit` — the `*TopologyRegistryTest` snapshot guard stays red until the new page / agent / action / signal is added to it | every registry change |
 | FE core / SDK or a view (`@hilos/*`, TS) | `test:framework:frontend` (check + vitest + lint + format) | every change |
 | An Angular view's template | `test:framework:frontend:build` — templates type-check only in the ng-packagr AOT build, not plain tsc | every Angular template change |
 | Wire / signal / subscription **contract** (backend + FE together) | the above **plus** one affected demo's `test:e2e-full` — the cross-boundary path only e2e exercises | when the contract moves |
@@ -101,6 +102,22 @@ require re-running them. The normative AA requirements those specs guard are in
 
 Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
 the next section.
+
+---
+
+## Attributing a red snapshot guard
+
+The `*TopologyRegistryTest` snapshots are **shared** across every ticket that
+touches a topology registry, so a single red run can carry more than one
+ticket's missing entries at once. Before blaming a red snapshot on a foreign or
+pre-existing change, read the failure diff **per entry**: check every missing
+line against your own change. If any belongs to what you just registered — a
+page, an agent, an `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS` line — it is yours to
+add, even when the rest of the diff is another ticket's debt. Do not declare
+your change clean because the failure is "mostly" someone else's, and do not
+route the whole test to a human on that basis. Attribute at the granularity of
+the failing line, not the whole test: add your own lines, and reopen the culprit
+ticket for the entries that are genuinely foreign.
 
 ---
 

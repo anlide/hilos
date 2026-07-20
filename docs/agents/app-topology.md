@@ -112,7 +112,23 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
     and WebSocket clients read the project registry through their established
     hooks or factory methods instead of adding another local topology list.
     Use `HilosPageFactory` with the project facade class for page routing.
-12. Add or update a topology registry test when a project registry changes.
+12. **Update the topology registry test snapshot whenever a project registry
+    changes** — this is a shared, cross-ticket guard, not optional cleanup. Each
+    demo has a `*TopologyRegistryTest` (`ChatTopologyRegistryTest`,
+    `TodoTopologyRegistryTest`, `PollTopologyRegistryTest`,
+    `ClusterTopologyRegistryTest`) whose hardcoded snapshots — e.g.
+    `testComputedPageActionRoutesMatchChatActionOwnership`,
+    `testComputedActionAgentRoutesUseOwningPageSubscriptionAgents`,
+    `testComputedAgentSignalRoutesMatchChatAgentOwnership`,
+    `testAgentSignalDtoRoutesCoverDeclaredAgentSignals` — list every registered
+    page, group, agent, action, and signal. Registering a new one (a page, an
+    agent, an `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS` entry) leaves the snapshot
+    stale and the demo's `test:unit` red until you add the matching line. Run
+    `composer run test:unit` for that demo after the change. Because the snapshot
+    is shared, a red run may already carry another ticket's missing entries: add
+    only your own, and never assume a failing entry is foreign without checking
+    it against your own diff — see `docs/agents/testing.md`, "Attributing a red
+    snapshot guard".
 
 ## Preferred Shape
 

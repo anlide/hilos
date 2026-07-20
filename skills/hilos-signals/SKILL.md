@@ -35,6 +35,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
 6. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
 7. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
 8. If the signal reaches frontend code, add or update the TypeScript parser tests.
+9. After changing a topology registry (`ACTIONS`, `SIGNALS`, `AGENT_SIGNALS`,
+   `Hilos::AGENTS`, and peers), update the demo's `*TopologyRegistryTest`
+   snapshot and run its `test:unit` — the snapshot is a shared cross-ticket
+   guard. See `docs/agents/app-topology.md` step 12.
 
 ## Hard Rules
 

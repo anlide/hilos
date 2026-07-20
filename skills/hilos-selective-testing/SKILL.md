@@ -19,8 +19,9 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 ## Workflow
 
 1. Classify the change: PHP backend logic, FE core/SDK, an FE view, an Angular
-   template, a wire/signal/subscription contract, an e2e spec, or cross-connection
-   behavior.
+   template, a wire/signal/subscription contract, a topology registry change
+   (`Hilos::PAGES` / `AGENTS` / `ACTIONS` / `SIGNALS` / `AGENT_SIGNALS`), an e2e
+   spec, or cross-connection behavior.
 2. Run the narrowest set the map prescribes for that class.
 3. Reach for the heavy suites — `test:e2e-full` per demo, the two-window tests, and
    the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /

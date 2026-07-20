@@ -37,7 +37,10 @@ the recipe before generating code.
    thin page → topology + SDK view mount.
 5. Pass every DB-entity / RT-item change through the contract gate before writing.
 6. Validate with composer scripts via `$hilos-testing-cli`; keep the project's
-   admin e2e green.
+   admin e2e green. Registering the feature's page / agent / table in the
+   topology also means updating the demo's `*TopologyRegistryTest` snapshot and
+   running its `test:unit` — a shared cross-ticket guard
+   (`docs/agents/app-topology.md` step 12).
 
 ## Hard Rules
 
