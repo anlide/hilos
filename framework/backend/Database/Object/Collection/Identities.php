@@ -125,6 +125,50 @@ final class Identities extends Objects
     }
 
     /**
+     * Creates a verified `sms`-type identity for a user (HIL-280).
+     *
+     * The phone-login write path: unlike a password identity there is no secret —
+     * possession of the one-time SMS code already proved the phone, so the row is
+     * inserted with `secret = NULL` and `verified = true` and needs no follow-up
+     * hash write. The identifier is a normalized E.164 phone (the caller
+     * normalizes through {@see \Hilos\Auth\PhoneNumber::normalize()} before
+     * calling); uniqueness is per (sms, identifier).
+     *
+     * @param int $userId Owning user id
+     * @param string $identifier Normalized E.164 phone number
+     * @return ObjectIdentity The created identity object
+     * @throws EmptyValueException When identifier is empty
+     * @throws DuplicateValueException When an identity already exists for (sms, identifier)
+     * @throws DatabaseException If the insert query fails
+     */
+    public function createSmsIdentity(int $userId, string $identifier): ObjectIdentity
+    {
+        if ($identifier === '') {
+            throw new EmptyValueException('Identity identifier is required');
+        }
+
+        if ($this->findByIdentity(IdentityType::SMS, $identifier) !== null) {
+            throw new DuplicateValueException('phone already used');
+        }
+
+        $identity = ObjectIdentity::create();
+        $identity->userId = $userId;
+        $identity->type = IdentityType::SMS;
+        $identity->identifier = $identifier;
+        $identity->verified = true;
+        $identity->sync();
+
+        $id = $identity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        $this->objects[$id] = $identity;
+
+        return $identity;
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

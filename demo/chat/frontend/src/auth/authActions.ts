@@ -23,6 +23,12 @@ const LOGIN_ACTION = 'login'
 /** Backend action: email+password registration (PHP `ChatSignalConstants::REGISTER`). */
 const REGISTER_ACTION = 'register'
 
+/** Backend action: request an SMS login code (PHP `ChatSignalConstants::REQUEST_SMS_CODE`). */
+const REQUEST_SMS_CODE_ACTION = 'request_sms_code'
+
+/** Backend action: submit an SMS login code (PHP `ChatSignalConstants::CONFIRM_SMS_CODE`). */
+const CONFIRM_SMS_CODE_ACTION = 'confirm_sms_code'
+
 /**
  * Dispatch the active mode's submit and resolve the surface outcome. Login and
  * register dispatch their action and resolve `ok` on the correlated `::success`;
@@ -48,6 +54,17 @@ export async function submitAuth(
         password: form.password,
         confirmPassword: form.confirmPassword,
       })
+    case 'sms_request':
+      // Success advances to the code step; the backend always answers generically
+      // (a well-formed number issues a code whether or not it has an account).
+      return dispatch(REQUEST_SMS_CODE_ACTION, { phone: form.phone }, 'sms_confirm')
+    case 'sms_confirm':
+      // Success upgrades the session (find-or-create by phone) and the auth gate
+      // closes the surface off the current-user signal, so no next mode.
+      return dispatch(CONFIRM_SMS_CODE_ACTION, {
+        phone: form.phone,
+        code: form.code,
+      })
     case 'recovery_request':
     case 'recovery_confirm':
     case 'recovery_set':
@@ -63,15 +80,17 @@ export async function submitAuth(
  *
  * @param action The backend action name.
  * @param payload The action payload.
+ * @param next The mode to advance to on success (multi-step flows); omit to stay.
  */
 async function dispatch(
   action: string,
   payload: Record<string, string>,
+  next?: AuthMode,
 ): Promise<AuthSubmitOutcome> {
   try {
     await actions.dispatch(action, payload).done
 
-    return { ok: true }
+    return { ok: true, next }
   } catch (error) {
     return { ok: false, message: describeAuthError(error) }
   }

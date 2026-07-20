@@ -31,12 +31,14 @@ import {
  * capabilities the login↔register↔recovery switcher offers, distinct from the
  * finer {@link AuthMode} the surface is actually in at any moment.
  */
-export type AuthEntry = 'login' | 'register' | 'recovery'
+export type AuthEntry = 'login' | 'register' | 'recovery' | 'sms'
 
 /**
  * The surface's active mode. `login` / `register` are the two direct entries;
- * the recovery entry runs through its three steps; `done` is the terminal state
- * a completed non-session flow (e.g. a recovery that drops to login) can land in.
+ * the recovery entry runs through its three steps; the sms entry runs through its
+ * two (`sms_request` then `sms_confirm`, which succeeds by upgrading the session
+ * like login); `done` is the terminal state a completed non-session flow (e.g. a
+ * recovery that drops to login) can land in.
  */
 export type AuthMode =
   | 'login'
@@ -44,6 +46,8 @@ export type AuthMode =
   | 'recovery_request'
   | 'recovery_confirm'
   | 'recovery_set'
+  | 'sms_request'
+  | 'sms_confirm'
   | 'done'
 
 /**
@@ -73,10 +77,12 @@ export interface AuthFormState {
   readonly password: string
   /** Password confirmation — register. */
   readonly confirmPassword: string
-  /** Verification code — recovery_confirm. */
+  /** Verification code — recovery_confirm, sms_confirm. */
   readonly code: string
   /** New password — recovery_set. */
   readonly newPassword: string
+  /** Phone number — sms_request, sms_confirm. */
+  readonly phone: string
 }
 
 /** A form field name, for the view's per-field update calls. */
@@ -160,6 +166,27 @@ export const PASSWORD_AUTH_METHOD: AuthMethodDescriptor = {
   modes: ['login', 'register', 'recovery'],
 }
 
+/**
+ * The SMS one-time-code method descriptor (HIL-280). Enables the `sms` switcher
+ * entry; a project adds it to its registry alongside {@link PASSWORD_AUTH_METHOD}
+ * to offer phone sign-in without touching the surface core.
+ */
+export const SMS_AUTH_METHOD: AuthMethodDescriptor = {
+  key: 'sms',
+  label: 'Phone number',
+  modes: ['sms'],
+}
+
+/**
+ * Phone digit-count bounds mirroring the backend E.164 normalizer
+ * ({@link \Hilos\Auth\PhoneNumber}); client-side gating only.
+ */
+const PHONE_MIN_DIGITS = 8
+const PHONE_MAX_DIGITS = 15
+
+/** SMS one-time code length; the mirror of the backend code length. */
+const SMS_CODE_LENGTH = 6
+
 /** An empty form — the starting and switch-reset value. */
 const EMPTY_FORM: AuthFormState = {
   email: '',
@@ -167,6 +194,7 @@ const EMPTY_FORM: AuthFormState = {
   confirmPassword: '',
   code: '',
   newPassword: '',
+  phone: '',
 }
 
 /** The default generic failure message when the view reports none. */
@@ -199,6 +227,12 @@ export function isAuthSubmittable(
       return form.code.trim() !== ''
     case 'recovery_set':
       return form.newPassword.length >= PASSWORD_MIN_LENGTH
+    case 'sms_request':
+      return new RegExp(
+        `^\\+?\\d{${PHONE_MIN_DIGITS},${PHONE_MAX_DIGITS}}$`,
+      ).test(form.phone.replace(/[\s\-().]/g, ''))
+    case 'sms_confirm':
+      return new RegExp(`^\\d{${SMS_CODE_LENGTH}}$`).test(form.code.trim())
     case 'done':
       return false
   }

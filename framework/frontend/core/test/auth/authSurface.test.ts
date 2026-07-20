@@ -53,6 +53,7 @@ describe('isAuthSubmittable', () => {
     confirmPassword: '',
     code: '',
     newPassword: '',
+    phone: '',
   }
 
   it('requires email and password for login', () => {

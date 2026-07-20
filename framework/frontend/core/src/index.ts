@@ -104,6 +104,7 @@ export {
   authEntries,
   PASSWORD_MIN_LENGTH,
   PASSWORD_AUTH_METHOD,
+  SMS_AUTH_METHOD,
   type AuthSurface,
   type AuthSurfaceOptions,
   type AuthMethodDescriptor,

@@ -10,6 +10,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Hilos;
 use Random\RandomException;
 
@@ -109,6 +110,70 @@ class VerificationService
         $challenge->consume();
 
         return $challenge->userId;
+    }
+
+    /**
+     * Verifies a submitted code without resolving an owning user (HIL-280).
+     *
+     * The sibling of {@see verify()} for flows whose challenge carries no
+     * `user_id` — SMS login issues its code before any user is known
+     * ({@see VerificationType::SMS_LOGIN}), so a resolved-user return is
+     * meaningless and null could not distinguish success from failure. This
+     * answers the yes/no the caller actually needs; the find-or-create of the
+     * phone user is the calling flow's job.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (E.164 phone for SMS login)
+     * @param string $code Submitted plaintext code
+     * @return bool True when the code matched and was consumed, false on any failure
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     */
+    public function verifyCode(string $type, string $identifier, string $code): bool
+    {
+        return $this->consumeIfMatches($type, $identifier, $code) !== null;
+    }
+
+    /**
+     * Shared verify core: loads the single active challenge, records the attempt,
+     * compares the code in constant time, and single-use consumes it on a match.
+     *
+     * The generic primitive behind {@see verifyCode()} (and the shape {@see verify()}
+     * mirrors): a wrong code that reaches the attempt ceiling voids the challenge; a
+     * correct code consumes it; every failure returns null with no distinguishing
+     * signal. It returns the consumed challenge so a caller can read its `userId`
+     * when the flow needs it.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier
+     * @param string $code Submitted plaintext code
+     * @return ?ObjectUserVerification Consumed challenge on success, null on any failure
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     */
+    private function consumeIfMatches(string $type, string $identifier, string $code): ?ObjectUserVerification
+    {
+        $collection = $this->collection();
+        $maxAttempts = $this->maxAttempts();
+
+        $challenge = $collection->findActive($type, $identifier, $maxAttempts);
+        if ($challenge === null) {
+            return null;
+        }
+
+        $challenge->incrementAttempts();
+
+        if (!$challenge->verifyCode($code)) {
+            if ($challenge->attempts >= $maxAttempts) {
+                $challenge->consume();
+            }
+
+            return null;
+        }
+
+        $challenge->consume();
+
+        return $challenge;
     }
 
     /**

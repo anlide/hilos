@@ -13,16 +13,19 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestSmsCodeActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Database\Verification\VerificationType;
@@ -65,6 +68,8 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::REGISTER => RegisterActionDTO::class,
         ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
         ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
+        ChatSignalConstants::REQUEST_SMS_CODE => RequestSmsCodeActionDTO::class,
+        ChatSignalConstants::CONFIRM_SMS_CODE => ConfirmSmsCodeActionDTO::class,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
@@ -111,6 +116,13 @@ final class MainPage extends AbstractPage
      * wrong, exhausted) so a response never discloses which case occurred.
      */
     private const string INVALID_CODE_MESSAGE = 'Invalid or expired code';
+
+    /**
+     * Generic failure message for a malformed phone number. A format error is not
+     * an enumeration concern (it reveals nothing about who has an account), so the
+     * SMS-request path can surface it directly rather than answering generically.
+     */
+    private const string INVALID_PHONE_MESSAGE = 'Enter a valid phone number';
 
     /**
      * Minimum registration password length. Length-only policy (no complexity
@@ -170,6 +182,22 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, ConfirmPasswordResetActionDTO::class, $dto);
                 }
                 $this->handleConfirmPasswordReset($dto);
+
+                break;
+
+            case ChatSignalConstants::REQUEST_SMS_CODE:
+                if (!$dto instanceof RequestSmsCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestSmsCodeActionDTO::class, $dto);
+                }
+                $this->handleRequestSmsCode($dto);
+
+                break;
+
+            case ChatSignalConstants::CONFIRM_SMS_CODE:
+                if (!$dto instanceof ConfirmSmsCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmSmsCodeActionDTO::class, $dto);
+                }
+                $this->handleConfirmSmsCode($dto);
 
                 break;
 
@@ -497,6 +525,72 @@ final class MainPage extends AbstractPage
         }
 
         $identity->setPassword($dto->newPassword);
+    }
+
+    /**
+     * Issues an SMS one-time login code for a phone, always answering generically.
+     *
+     * The additive phone-login entry (HIL-280): a malformed number is rejected as
+     * a format error (no account is disclosed by that), but a well-formed number
+     * always issues (throttled inside the service) whether or not it already has
+     * an `sms` identity — the account is find-or-created on confirm, so issuing
+     * unconditionally reveals nothing about who has an account. The code is issued
+     * with a null owning user because the phone user may not exist yet.
+     *
+     * @param RequestSmsCodeActionDTO $dto Parsed request payload (phone)
+     * @throws ValidationException When the phone number is malformed
+     * @throws HilosException When code issuing fails
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     */
+    private function handleRequestSmsCode(RequestSmsCodeActionDTO $dto): void
+    {
+        $phone = PhoneNumber::normalize($dto->phone);
+        if ($phone === null) {
+            throw new ValidationException(self::INVALID_PHONE_MESSAGE);
+        }
+
+        (new VerificationService())->issue(VerificationType::SMS_LOGIN, $phone, null);
+    }
+
+    /**
+     * Verifies an SMS login code and signs the phone in, creating the user if new.
+     *
+     * Single login+register flow (HIL-280): a missing/expired/wrong code — and a
+     * malformed phone — fail with the same generic message (no enumeration). On a
+     * valid code the code is single-use consumed inside the service, then the `sms`
+     * identity is find-or-created: an existing one resolves its user, a new phone
+     * mints a user (display name = the E.164 number), a verified `sms` identity,
+     * and the "registered in chat" event. The live anonymous session is then
+     * upgraded to that user through {@see ChatAgent::authenticateSession()}.
+     *
+     * @param ConfirmSmsCodeActionDTO $dto Parsed confirm payload (phone, code)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the phone or code is invalid
+     * @throws HilosException When verification, user/identity creation, or session promotion fails
+     */
+    private function handleConfirmSmsCode(ConfirmSmsCodeActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        $phone = PhoneNumber::normalize($dto->phone);
+        if ($phone === null
+            || !(new VerificationService())->verifyCode(VerificationType::SMS_LOGIN, $phone, $dto->code)) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        $identity = Hilos::$db->identities->findByIdentity(IdentityType::SMS, $phone);
+        if ($identity !== null && $identity->userId !== null) {
+            $userId = $identity->userId;
+        } else {
+            $user = Hilos::$db->users->actions->createWithName($phone);
+            $userId = (int)$user->id;
+            Hilos::$db->identities->createSmsIdentity($userId, $phone);
+            Hilos::$db->events->actions->addUserRegistered($userId);
+        }
+
+        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
     }
 
     /**
