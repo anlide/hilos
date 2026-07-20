@@ -15,6 +15,9 @@ use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
+use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -141,6 +144,10 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::REGISTER => PageConstants::MAIN,
             ChatSignalConstants::REQUEST_PASSWORD_RESET => PageConstants::MAIN,
             ChatSignalConstants::CONFIRM_PASSWORD_RESET => PageConstants::MAIN,
+            ChatSignalConstants::REQUEST_SMS_CODE => PageConstants::MAIN,
+            ChatSignalConstants::CONFIRM_SMS_CODE => PageConstants::MAIN,
+            ChatSignalConstants::REQUEST_MAGIC_LINK => PageConstants::MAIN,
+            ChatSignalConstants::CONFIRM_MAGIC_LINK => PageConstants::MAIN,
             ChatSignalConstants::REQUEST_REGISTER_CONFIRM => PageConstants::MAIN,
             ChatSignalConstants::CONFIRM_REGISTER => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
@@ -158,6 +165,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
+            HilosSignalConstants::BACKUP_CREATE => PageConstants::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_DELETE => PageConstants::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
         ], Hilos::getPageActionRoutes());
     }
@@ -170,6 +180,10 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::REGISTER => AgentType::CHAT,
             ChatSignalConstants::REQUEST_PASSWORD_RESET => AgentType::CHAT,
             ChatSignalConstants::CONFIRM_PASSWORD_RESET => AgentType::CHAT,
+            ChatSignalConstants::REQUEST_SMS_CODE => AgentType::CHAT,
+            ChatSignalConstants::CONFIRM_SMS_CODE => AgentType::CHAT,
+            ChatSignalConstants::REQUEST_MAGIC_LINK => AgentType::CHAT,
+            ChatSignalConstants::CONFIRM_MAGIC_LINK => AgentType::CHAT,
             ChatSignalConstants::REQUEST_REGISTER_CONFIRM => AgentType::CHAT,
             ChatSignalConstants::CONFIRM_REGISTER => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
@@ -187,6 +201,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
+            HilosSignalConstants::BACKUP_CREATE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::BACKUP_DELETE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
@@ -218,6 +235,9 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
+            HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -254,6 +274,9 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }
