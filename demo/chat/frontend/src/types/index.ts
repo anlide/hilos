@@ -5,6 +5,12 @@
 // value type lives with the main page module that uses it, not here.
 export { type Presence, toPresence } from './Presence'
 export { type User, USER_TYPE, userFromFields, Users } from './User'
+export {
+  type Identity,
+  IDENTITY_TYPE,
+  identityFromFields,
+  Identities,
+} from './Identity'
 export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
 export {
   type ModeratorPiece,

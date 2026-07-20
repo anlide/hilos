@@ -54,6 +54,11 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::moderatorPromptPieces,
     ];
 
+    public const array DB_IDENTITIES = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => ChatDbContext::identities,
+    ];
+
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => ChatRtContext::connections,

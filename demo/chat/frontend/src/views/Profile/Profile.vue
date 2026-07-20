@@ -20,7 +20,11 @@ import {
 
 import { currentUserId } from '../../bootstrap/session'
 import { clearRenameError, renameError, sendRename } from './profileActions'
-import { committedName, profileDetail } from './profilePage'
+import {
+  committedName,
+  profileDetail,
+  profileIdentities,
+} from './profilePage'
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -41,6 +45,7 @@ const isAuthenticated = computed(() => selfId.value !== null)
 
 const detail = useSignal(profileDetail)
 const committed = useSignal(committedName)
+const identities = useSignal(profileIdentities)
 const error = useSignal(renameError)
 
 const editing = ref(false)
@@ -155,6 +160,55 @@ function mergeBoth(): void {
     <p v-else class="text-body-secondary" data-id="profile-loading">
       Loading profile…
     </p>
+
+    <!-- Read-only list of the user's linked login identities (HIL-297). Scoped to
+    the signed-in user by the backend; secrets never reach here. link/unlink
+    management arrives with HIL-377. -->
+    <div class="mt-4" data-id="profile-identities">
+      <h2 class="h6 mb-2">Login methods</h2>
+      <ul
+        v-if="identities.length"
+        class="list-group"
+        data-id="profile-identities-list"
+      >
+        <li
+          v-for="identity in identities"
+          :key="identity.key"
+          class="list-group-item d-flex align-items-center justify-content-between gap-2"
+          data-id="profile-identity-item"
+        >
+          <span class="d-flex flex-column">
+            <span class="fw-semibold text-capitalize" data-id="identity-type">
+              {{ identity.provider ? identity.provider : identity.type }}
+            </span>
+            <span class="text-body-secondary small" data-id="identity-identifier">
+              {{ identity.identifier }}
+            </span>
+          </span>
+          <span
+            v-if="identity.verified"
+            class="badge text-bg-success flex-shrink-0"
+            data-id="identity-verified"
+          >
+            Verified
+          </span>
+          <span
+            v-else
+            class="badge text-bg-secondary flex-shrink-0"
+            data-id="identity-unverified"
+          >
+            Unverified
+          </span>
+        </li>
+      </ul>
+      <p
+        v-else
+        class="text-body-secondary mb-0"
+        data-id="profile-identities-empty"
+      >
+        No linked login methods.
+      </p>
+    </div>
 
     <HilosModal v-model="editing" :confirm-on-close="dirty">
       <template #header>

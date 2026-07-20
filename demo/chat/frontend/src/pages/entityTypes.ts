@@ -10,6 +10,7 @@ import {
   BOT_TYPE,
   EVENT_ATTACHMENT_TYPE,
   EVENT_TYPE,
+  IDENTITY_TYPE,
   MODERATOR_PIECE_TYPE,
   USER_TYPE,
 } from '../types'
@@ -21,4 +22,5 @@ export const pageEntityTypes: Record<string, string> = {
   events: EVENT_TYPE,
   eventAttachments: EVENT_ATTACHMENT_TYPE,
   moderatorPromptPieces: MODERATOR_PIECE_TYPE,
+  identities: IDENTITY_TYPE,
 }

@@ -13,4 +13,5 @@ final class ChatBrowserList
     public const string MAIN_USERS = 'mainUsers';
     public const string MAIN_BOTS = 'mainBots';
     public const string ATTACHMENT_DRAFTS = 'attachmentDrafts';
+    public const string PROFILE_IDENTITIES = 'profileIdentities';
 }

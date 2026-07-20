@@ -32,6 +32,7 @@ use Demo\Chat\Browser\List\AttachmentDraftsBrowserList;
 use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
+use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
@@ -316,6 +317,7 @@ final class Hilos extends \Hilos\Hilos
         MainUsersBrowserList::LIST => MainUsersBrowserList::class,
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
         AttachmentDraftsBrowserList::LIST => AttachmentDraftsBrowserList::class,
+        ProfileIdentitiesBrowserList::LIST => ProfileIdentitiesBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -336,6 +338,13 @@ final class Hilos extends \Hilos\Hilos
             MainUsersBrowserList::LIST => [],
             MainBotsBrowserList::LIST => [],
             AttachmentDraftsBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfilePage::PAGE => [
+            ProfileIdentitiesBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
                 ],
