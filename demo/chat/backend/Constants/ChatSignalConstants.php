@@ -65,6 +65,18 @@ final class ChatSignalConstants
     /** @var string Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282) */
     public const string LINK_OAUTH_AFTER_REAUTH = 'link_oauth_after_reauth';
 
+    /** @var string Client → server: request WebAuthn registration options for the signed-in user (authenticated, HIL-284) */
+    public const string PASSKEY_REGISTER_OPTIONS = 'passkey_register_options';
+
+    /** @var string Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284) */
+    public const string PASSKEY_REGISTER_CONFIRM = 'passkey_register_confirm';
+
+    /** @var string Client → server: request WebAuthn login options for an email (public, anonymous-reachable, HIL-284) */
+    public const string PASSKEY_LOGIN_OPTIONS = 'passkey_login_options';
+
+    /** @var string Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284) */
+    public const string PASSKEY_LOGIN_CONFIRM = 'passkey_login_confirm';
+
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 
@@ -76,6 +88,9 @@ final class ChatSignalConstants
 
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
+
+    /** @var string Server → client: WebAuthn publicKey options + signed challenge for a passkey ceremony (HIL-284) */
+    public const string PASSKEY_OPTIONS = 'passkey_options';
 
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';

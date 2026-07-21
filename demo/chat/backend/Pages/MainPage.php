@@ -22,12 +22,17 @@ use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthCallbackActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthStartActionDTO;
+use Demo\Chat\Pages\DTO\Main\PasskeyLoginConfirmActionDTO;
+use Demo\Chat\Pages\DTO\Main\PasskeyLoginOptionsActionDTO;
+use Demo\Chat\Pages\DTO\Main\PasskeyRegisterConfirmActionDTO;
+use Demo\Chat\Pages\DTO\Main\PasskeyRegisterOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestSmsCodeActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
+use Demo\Chat\Core\Router\DTO\PasskeyOptionsSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
@@ -36,6 +41,13 @@ use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Auth\WebAuthn\AssertionVerifier;
+use Hilos\Auth\WebAuthn\AttestationVerifier;
+use Hilos\Auth\WebAuthn\Base64Url;
+use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
+use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
+use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
+use Hilos\Auth\WebAuthn\WebAuthnConfig;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
@@ -54,6 +66,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
+use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
@@ -92,6 +105,10 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::OAUTH_START => OAuthStartActionDTO::class,
         ChatSignalConstants::OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
         ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
+        ChatSignalConstants::PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
+        ChatSignalConstants::PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
+        ChatSignalConstants::PASSKEY_LOGIN_OPTIONS => PasskeyLoginOptionsActionDTO::class,
+        ChatSignalConstants::PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
@@ -99,13 +116,17 @@ final class MainPage extends AbstractPage
     // the composer and opens sign-in). LOGIN/REGISTER and the password-recovery
     // pair stay open — a guest needs them to authenticate or recover. The
     // register-confirm pair is authenticated: it verifies the signed-in user's
-    // own email, so it must never run for an anonymous session. Uploads ride the
-    // message they draft, so the guard here is enough.
+    // own email, so it must never run for an anonymous session. The passkey
+    // register pair is authenticated too: a passkey is added to an already
+    // signed-in account (passkey login stays open — that is how a guest signs in).
+    // Uploads ride the message they draft, so the guard here is enough.
     public const array AUTH_ACTIONS = [
         ChatSignalConstants::MESSAGE,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
         ChatSignalConstants::CONFIRM_REGISTER,
         ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH,
+        ChatSignalConstants::PASSKEY_REGISTER_OPTIONS,
+        ChatSignalConstants::PASSKEY_REGISTER_CONFIRM,
     ];
 
     public const array SIGNALS = [
@@ -155,6 +176,27 @@ final class MainPage extends AbstractPage
      * discloses nothing about the matched account beyond the collision it implies.
      */
     private const string INVALID_LINK_MESSAGE = 'This account link is invalid or has expired';
+
+    /**
+     * Generic failure message for the passkey login path (HIL-284). A bad
+     * challenge token, an unknown credential, a failed assertion, or a
+     * counter regression all answer the same way so the wire discloses nothing
+     * about which account exists or which check failed.
+     */
+    private const string INVALID_PASSKEY_MESSAGE = 'Passkey sign-in could not be completed';
+
+    /**
+     * ES256 (ECDSA over P-256, SHA-256) COSE algorithm identifier — the single
+     * passkey algorithm this demo requests and verifies.
+     */
+    private const int PASSKEY_ALG_ES256 = -7;
+
+    /**
+     * Domain-separation prefix for the derived WebAuthn user handle (HIL-284).
+     * See {@see self::passkeyUserHandle()} for why the handle is derived rather
+     * than random.
+     */
+    private const string PASSKEY_USER_HANDLE_PREFIX = 'passkey-user-handle:';
 
     /**
      * Routes main-page actions to message, upload init, and attachment draft handlers.
@@ -296,6 +338,38 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, LinkOAuthAfterReauthActionDTO::class, $dto);
                 }
                 $this->handleLinkOAuthAfterReauth($dto);
+
+                break;
+
+            case ChatSignalConstants::PASSKEY_REGISTER_OPTIONS:
+                if (!$dto instanceof PasskeyRegisterOptionsActionDTO) {
+                    throw new InvalidActionPayloadException($action, PasskeyRegisterOptionsActionDTO::class, $dto);
+                }
+                $this->handlePasskeyRegisterOptions($dto);
+
+                break;
+
+            case ChatSignalConstants::PASSKEY_REGISTER_CONFIRM:
+                if (!$dto instanceof PasskeyRegisterConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, PasskeyRegisterConfirmActionDTO::class, $dto);
+                }
+                $this->handlePasskeyRegisterConfirm($dto);
+
+                break;
+
+            case ChatSignalConstants::PASSKEY_LOGIN_OPTIONS:
+                if (!$dto instanceof PasskeyLoginOptionsActionDTO) {
+                    throw new InvalidActionPayloadException($action, PasskeyLoginOptionsActionDTO::class, $dto);
+                }
+                $this->handlePasskeyLoginOptions($dto);
+
+                break;
+
+            case ChatSignalConstants::PASSKEY_LOGIN_CONFIRM:
+                if (!$dto instanceof PasskeyLoginConfirmActionDTO) {
+                    throw new InvalidActionPayloadException($action, PasskeyLoginConfirmActionDTO::class, $dto);
+                }
+                $this->handlePasskeyLoginConfirm($dto);
 
                 break;
 
@@ -916,6 +990,349 @@ final class MainPage extends AbstractPage
         } catch (DuplicateValueException) {
             throw new ValidationException(self::INVALID_LINK_MESSAGE);
         }
+    }
+
+    /**
+     * Mints WebAuthn registration options for the signed-in user (HIL-284).
+     *
+     * The register-start entry, authenticated (see AUTH_ACTIONS): a passkey is
+     * added to an already signed-in account. It builds the publicKey creation
+     * options (ES256, resident key required, the user's existing passkeys excluded)
+     * and a stateless challenge token bound to the session and user synchronously
+     * (CPU-only, no I/O), then — the framework `action_success` carries no domain
+     * payload — hands them to the browser on the PASSKEY_OPTIONS signal for
+     * navigator.credentials.create().
+     *
+     * @param PasskeyRegisterOptionsActionDTO $dto Parsed options request payload (no fields)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing or anonymous
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge
+     * @throws HilosException When WebAuthn env config or credential lookup fails
+     */
+    private function handlePasskeyRegisterOptions(PasskeyRegisterOptionsActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+        $userId = $connection->userId;
+
+        $config = WebAuthnConfig::fromEnv();
+        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+            WebAuthnChallengeSigner::PURPOSE_REGISTER,
+            $connection->sessionToken,
+            $userId,
+            $config->challengeTtlSeconds,
+        );
+
+        $publicKeyOptions = $this->buildRegistrationOptions(
+            $config,
+            $userId,
+            $challenge->challenge,
+            Hilos::$db->passkeyCredentials->listByUser($userId),
+        );
+
+        $this->sendToUser(
+            ChatSignalConstants::PASSKEY_OPTIONS,
+            $connection->acceptKey,
+            new PasskeyOptionsSignalData(
+                $connection->acceptKey,
+                WebAuthnChallengeSigner::PURPOSE_REGISTER,
+                $publicKeyOptions,
+                $challenge->token,
+            ),
+        );
+    }
+
+    /**
+     * Verifies a WebAuthn attestation and stores a new passkey for the user (HIL-284).
+     *
+     * The register-confirm arm, authenticated: it re-derives the challenge from the
+     * signed token (a bad/expired/foreign token fails generically) and asserts the
+     * token was minted for this session's user, then verifies the attestation
+     * ceremony ({@see AttestationVerifier}) and persists the credential as a thin
+     * `passkey` identity anchor ({@see Identities::createPasskeyIdentity()}) plus the
+     * crypto sidecar row. A ceremony failure surfaces a (register-only) specific
+     * reason; a duplicate credential answers "already registered". No auto-login —
+     * the user is already signed in.
+     *
+     * @param PasskeyRegisterConfirmActionDTO $dto Parsed confirm payload (signed challenge, attestation object, client data, transports)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing or anonymous
+     * @throws ValidationException When the challenge, payload, or ceremony is invalid, or the passkey is already registered
+     * @throws HilosException When WebAuthn env config, identity creation, or credential storage fails
+     */
+    private function handlePasskeyRegisterConfirm(PasskeyRegisterConfirmActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+        $userId = $connection->userId;
+
+        $config = WebAuthnConfig::fromEnv();
+        try {
+            $claims = (new WebAuthnChallengeSigner($config->challengeSecret))->verify(
+                $dto->signedChallenge,
+                WebAuthnChallengeSigner::PURPOSE_REGISTER,
+                $connection->sessionToken,
+            );
+        } catch (WebAuthnChallengeException) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+        if ($claims->userId !== $userId) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        $attestationObject = Base64Url::decode($dto->attestationObject);
+        $clientDataJson = Base64Url::decode($dto->clientDataJson);
+        if ($attestationObject === null || $clientDataJson === null) {
+            throw new ValidationException('Malformed passkey registration payload');
+        }
+
+        try {
+            $result = (new AttestationVerifier($config))->verify($claims->challenge, $clientDataJson, $attestationObject);
+        } catch (WebAuthnVerificationException $e) {
+            throw new ValidationException('Passkey registration failed: ' . $e->getMessage());
+        }
+
+        $transports = $dto->transports === [] ? null : implode(',', $dto->transports);
+
+        try {
+            $identity = Hilos::$db->identities->createPasskeyIdentity($userId, $result->credentialId);
+            Hilos::$db->passkeyCredentials->createFromRegistration(
+                (int)$identity->id,
+                $userId,
+                $result->credentialId,
+                $result->publicKeyPem,
+                $result->signCount,
+                $transports,
+                $result->aaguid,
+                $this->passkeyUserHandle($config, $userId, Hilos::$db->passkeyCredentials->listByUser($userId)),
+            );
+        } catch (DuplicateValueException) {
+            throw new ValidationException('This passkey is already registered');
+        }
+    }
+
+    /**
+     * Mints WebAuthn login options for a username-first passkey sign-in (HIL-284).
+     *
+     * The login-start entry, public (anonymous-reachable): the client names the
+     * account email; a verified email resolves the user's passkey credentials into
+     * allowCredentials. An unknown email — or a known account with no passkey —
+     * answers with a single fabricated allowCredentials entry so the response never
+     * discloses which case it is (anti-enumeration). The stateless challenge is
+     * bound to the session (no user, resolved on confirm) and, since
+     * `action_success` carries no payload, delivered on the PASSKEY_OPTIONS signal
+     * for navigator.credentials.get().
+     *
+     * @param PasskeyLoginOptionsActionDTO $dto Parsed options request payload (email)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge or dummy id
+     * @throws HilosException When WebAuthn env config or credential lookup fails
+     */
+    private function handlePasskeyLoginOptions(PasskeyLoginOptionsActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $config = WebAuthnConfig::fromEnv();
+        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+            WebAuthnChallengeSigner::PURPOSE_LOGIN,
+            $connection->sessionToken,
+            null,
+            $config->challengeTtlSeconds,
+        );
+
+        $email = strtolower($dto->email);
+        $userId = $email !== '' ? Hilos::$db->identities->findUserIdByVerifiedEmail($email) : null;
+        $credentials = $userId !== null ? Hilos::$db->passkeyCredentials->listByUser($userId) : [];
+
+        $allowCredentials = $credentials === []
+            ? [$this->dummyCredentialDescriptor()]
+            : array_map(
+                fn(PasskeyCredential $credential): array => $this->credentialDescriptor($credential),
+                $credentials,
+            );
+
+        // WebAuthn PublicKeyCredentialRequestOptions wire shape (spec-defined keys,
+        // binary fields base64url); the client passkey wrapper translates it.
+        $publicKeyOptions = [
+            'challenge' => $challenge->challenge,
+            'rpId' => $config->rpId,
+            'allowCredentials' => $allowCredentials,
+            'userVerification' => $config->userVerification,
+            'timeout' => $config->timeoutMs,
+        ];
+
+        $this->sendToUser(
+            ChatSignalConstants::PASSKEY_OPTIONS,
+            $connection->acceptKey,
+            new PasskeyOptionsSignalData(
+                $connection->acceptKey,
+                WebAuthnChallengeSigner::PURPOSE_LOGIN,
+                $publicKeyOptions,
+                $challenge->token,
+            ),
+        );
+    }
+
+    /**
+     * Verifies a WebAuthn assertion and signs the resolved user into the session (HIL-284).
+     *
+     * The login-confirm arm, public: it re-derives the challenge from the signed
+     * token, resolves the asserted credential by its id, verifies the assertion
+     * against the credential's stored key and advances the clone-detection counter
+     * ({@see PasskeyCredential::verifyAssertion()}), then upgrades the live
+     * anonymous session to the credential's owner through
+     * {@see ChatAgent::authenticateSession()} (the session upgrade rides the
+     * existing handshake response). Every failure — bad token, unknown credential,
+     * malformed payload, failed assertion — collapses to one generic message.
+     *
+     * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id, authenticator data, client data, signature)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the challenge, credential, payload, or assertion is invalid
+     * @throws HilosException When WebAuthn env config, credential lookup, counter persistence, or session promotion fails
+     */
+    private function handlePasskeyLoginConfirm(PasskeyLoginConfirmActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $config = WebAuthnConfig::fromEnv();
+        try {
+            $claims = (new WebAuthnChallengeSigner($config->challengeSecret))->verify(
+                $dto->signedChallenge,
+                WebAuthnChallengeSigner::PURPOSE_LOGIN,
+                $connection->sessionToken,
+            );
+        } catch (WebAuthnChallengeException) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        $credential = Hilos::$db->passkeyCredentials->findByCredentialId($dto->credentialId);
+        if ($credential === null) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        $authenticatorData = Base64Url::decode($dto->authenticatorData);
+        $clientDataJson = Base64Url::decode($dto->clientDataJson);
+        $signature = Base64Url::decode($dto->signature);
+        if ($authenticatorData === null || $clientDataJson === null || $signature === null) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        try {
+            $credential->verifyAssertion(
+                new AssertionVerifier($config),
+                $claims->challenge,
+                $clientDataJson,
+                $authenticatorData,
+                $signature,
+            );
+        } catch (WebAuthnVerificationException) {
+            throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        $this->agent->authenticateSession($connection->sessionToken, $credential->userId);
+    }
+
+    /**
+     * Builds the WebAuthn creation-options wire shape for a register ceremony.
+     *
+     * @param WebAuthnConfig $config Resolved WebAuthn configuration
+     * @param int $userId Signed-in user the passkey is registered for
+     * @param string $challenge base64url challenge value for the client
+     * @param list<PasskeyCredential> $existing The user's existing passkeys (excluded from re-registration)
+     * @return array<string, mixed> WebAuthn PublicKeyCredentialCreationOptions wire shape (spec-defined keys)
+     * @throws HilosException When resolving the user record fails
+     */
+    private function buildRegistrationOptions(WebAuthnConfig $config, int $userId, string $challenge, array $existing): array
+    {
+        $user = Hilos::$db->users[$userId];
+        $displayName = $user !== null && $user->name !== '' ? $user->name : 'user';
+
+        return [
+            'challenge' => $challenge,
+            'rp' => ['id' => $config->rpId, 'name' => $config->rpName],
+            'user' => [
+                'id' => Base64Url::encode($this->passkeyUserHandle($config, $userId, $existing)),
+                'name' => $displayName,
+                'displayName' => $displayName,
+            ],
+            'pubKeyCredParams' => [['type' => 'public-key', 'alg' => self::PASSKEY_ALG_ES256]],
+            'authenticatorSelection' => [
+                'residentKey' => 'required',
+                'requireResidentKey' => true,
+                'userVerification' => $config->userVerification,
+            ],
+            'attestation' => 'none',
+            'excludeCredentials' => array_map(
+                fn(PasskeyCredential $credential): array => $this->credentialDescriptor($credential),
+                $existing,
+            ),
+            'timeout' => $config->timeoutMs,
+        ];
+    }
+
+    /**
+     * Maps a stored passkey credential to a WebAuthn credential descriptor.
+     *
+     * @param PasskeyCredential $credential Stored passkey credential
+     * @return array{type: string, id: string, transports: list<string>} WebAuthn PublicKeyCredentialDescriptor wire shape
+     */
+    private function credentialDescriptor(PasskeyCredential $credential): array
+    {
+        $transports = $credential->transports;
+
+        return [
+            'type' => 'public-key',
+            'id' => $credential->credentialId,
+            'transports' => $transports === null || $transports === '' ? [] : explode(',', $transports),
+        ];
+    }
+
+    /**
+     * Builds one fabricated credential descriptor for the login anti-enumeration path.
+     *
+     * @return array{type: string, id: string, transports: list<string>} WebAuthn descriptor with a random id
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce the dummy id
+     */
+    private function dummyCredentialDescriptor(): array
+    {
+        return [
+            'type' => 'public-key',
+            'id' => Base64Url::encode(random_bytes(32)),
+            'transports' => [],
+        ];
+    }
+
+    /**
+     * Resolves the WebAuthn user handle for a user (one per user, reused across passkeys).
+     *
+     * The handle is placed in the registration options `user.id` and stored on the
+     * credential; it must be stable across a user's passkeys and match on a later
+     * discoverable login (HIL-400). Because the challenge token is stateless it
+     * cannot carry a fresh random handle from options to confirm, so the handle is
+     * derived deterministically from the user id via HMAC over the challenge secret
+     * — opaque, non-PII, and identical at both steps — while any handle already
+     * stored for the user takes precedence.
+     *
+     * @param WebAuthnConfig $config Resolved WebAuthn configuration (challenge secret)
+     * @param int $userId Owning user id
+     * @param list<PasskeyCredential> $existing The user's existing passkeys
+     * @return string Raw WebAuthn user handle bytes
+     */
+    private function passkeyUserHandle(WebAuthnConfig $config, int $userId, array $existing): string
+    {
+        if ($existing !== []) {
+            return $existing[0]->userHandle;
+        }
+
+        return hash_hmac('sha256', self::PASSKEY_USER_HANDLE_PREFIX . $userId, $config->challengeSecret, true);
     }
 
     /**
