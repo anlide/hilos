@@ -16,6 +16,7 @@ import { ActionError } from '@hilos/core'
 import type { AuthFormState, AuthMode, AuthSubmitOutcome } from '@hilos/core'
 
 import { actions } from '../bootstrap/connection'
+import { runPasskeyLogin } from './passkeyCeremony'
 
 /** Backend action: email+password login (PHP `ChatSignalConstants::LOGIN`). */
 const LOGIN_ACTION = 'login'
@@ -63,7 +64,11 @@ export async function submitAuth(
     case 'sms_request':
       // Success advances to the code step; the backend always answers generically
       // (a well-formed number issues a code whether or not it has an account).
-      return dispatch(REQUEST_SMS_CODE_ACTION, { phone: form.phone }, 'sms_confirm')
+      return dispatch(
+        REQUEST_SMS_CODE_ACTION,
+        { phone: form.phone },
+        'sms_confirm',
+      )
     case 'sms_confirm':
       // Success upgrades the session (find-or-create by phone) and the auth gate
       // closes the surface off the current-user signal, so no next mode.
@@ -77,6 +82,11 @@ export async function submitAuth(
       // answers generically (login-only, anti-enumeration), so the view shows a
       // "check your email" acknowledgement on the ok outcome.
       return dispatch(REQUEST_MAGIC_LINK_ACTION, { email: form.email })
+    case 'passkey':
+      // Username-first passkey login: the whole options → assertion → confirm
+      // round-trip runs in the ceremony driver (passkeyCeremony); success upgrades
+      // the session (HIL-161) and the auth gate closes the surface, so no next mode.
+      return runPasskeyLogin(form.email)
     case 'recovery_request':
     case 'recovery_confirm':
     case 'recovery_set':

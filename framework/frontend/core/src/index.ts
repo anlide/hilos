@@ -109,6 +109,7 @@ export {
   SMS_AUTH_METHOD,
   MAGIC_LINK_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
+  PASSKEY_AUTH_METHOD,
   type AuthSurface,
   type AuthSurfaceOptions,
   type AuthMethodDescriptor,
@@ -118,6 +119,18 @@ export {
   type AuthMode,
   type AuthSubmitOutcome,
 } from './auth/authSurface.js'
+export {
+  createPasskey,
+  getPasskey,
+  isPasskeySupported,
+  base64UrlEncode,
+  base64UrlDecode,
+  type PasskeyDescriptor,
+  type PasskeyCreationOptions,
+  type PasskeyRequestOptions,
+  type PasskeyRegistrationResponse,
+  type PasskeyAssertionResponse,
+} from './auth/passkey.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,

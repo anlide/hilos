@@ -9,7 +9,7 @@ only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { threeWayMerge } from '@hilos/core'
+import { isPasskeySupported, threeWayMerge } from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
@@ -18,13 +18,10 @@ import {
   useSignal,
 } from '@hilos/vue'
 
+import { runPasskeyRegister } from '../../auth/passkeyCeremony'
 import { currentUserId } from '../../bootstrap/session'
 import { clearRenameError, renameError, sendRename } from './profileActions'
-import {
-  committedName,
-  profileDetail,
-  profileIdentities,
-} from './profilePage'
+import { committedName, profileDetail, profileIdentities } from './profilePage'
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -64,6 +61,31 @@ const valid = computed(() => {
 
   return trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
 })
+
+// Add-a-passkey (HIL-284): the register ceremony runs in the profile because a
+// passkey is enrolled for the already-signed-in user. The button blocks while the
+// WebAuthn round-trip runs; a clean outcome shows a success note (the credential
+// list refresh is HIL-404), a failure shows the specific reason inline.
+const passkeySupported = isPasskeySupported()
+const passkeyPending = ref(false)
+const passkeyError = ref<string | null>(null)
+const passkeyAdded = ref(false)
+
+async function addPasskey(): Promise<void> {
+  if (passkeyPending.value) {
+    return
+  }
+  passkeyPending.value = true
+  passkeyError.value = null
+  passkeyAdded.value = false
+  const outcome = await runPasskeyRegister()
+  passkeyPending.value = false
+  if (outcome.ok) {
+    passkeyAdded.value = true
+  } else {
+    passkeyError.value = outcome.message ?? null
+  }
+}
 
 function openEdit(): void {
   clearRenameError()
@@ -181,7 +203,10 @@ function mergeBoth(): void {
             <span class="fw-semibold text-capitalize" data-id="identity-type">
               {{ identity.provider ? identity.provider : identity.type }}
             </span>
-            <span class="text-body-secondary small" data-id="identity-identifier">
+            <span
+              class="text-body-secondary small"
+              data-id="identity-identifier"
+            >
               {{ identity.identifier }}
             </span>
           </span>
@@ -208,6 +233,36 @@ function mergeBoth(): void {
       >
         No linked login methods.
       </p>
+
+      <!-- Enroll a device passkey (HIL-284): runs the WebAuthn register ceremony
+      for the signed-in user. Hidden where the browser lacks WebAuthn. The new
+      credential appears in the list once list refresh lands (HIL-404). -->
+      <div v-if="passkeySupported" class="mt-3" data-id="profile-passkey">
+        <div
+          v-if="passkeyAdded"
+          class="alert alert-success py-2"
+          role="status"
+          data-id="profile-passkey-added"
+        >
+          Passkey added. You can now sign in with it.
+        </div>
+        <div
+          v-if="passkeyError"
+          class="alert alert-danger py-2"
+          role="alert"
+          data-id="profile-passkey-error"
+        >
+          {{ passkeyError }}
+        </div>
+        <LoadingButton
+          class="btn-outline-primary btn-sm"
+          :loading="passkeyPending"
+          data-id="profile-passkey-add"
+          @click="addPasskey"
+        >
+          Add a passkey
+        </LoadingButton>
+      </div>
     </div>
 
     <HilosModal v-model="editing" :confirm-on-close="dirty">

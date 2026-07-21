@@ -31,7 +31,13 @@ import {
  * capabilities the login↔register↔recovery switcher offers, distinct from the
  * finer {@link AuthMode} the surface is actually in at any moment.
  */
-export type AuthEntry = 'login' | 'register' | 'recovery' | 'sms' | 'magic_link'
+export type AuthEntry =
+  | 'login'
+  | 'register'
+  | 'recovery'
+  | 'sms'
+  | 'magic_link'
+  | 'passkey'
 
 /**
  * The surface's active mode. `login` / `register` are the two direct entries;
@@ -39,8 +45,10 @@ export type AuthEntry = 'login' | 'register' | 'recovery' | 'sms' | 'magic_link'
  * two (`sms_request` then `sms_confirm`, which succeeds by upgrading the session
  * like login); the magic-link entry has a single `magic_link_request` mode (its
  * confirm is a clicked email link handled on a dedicated SPA route, not a form
- * step here); `done` is the terminal state a completed non-session flow (e.g. a
- * recovery that drops to login) can land in.
+ * step here); the passkey entry has a single `passkey` mode (username-first: the
+ * user enters an email and the WebAuthn assertion round-trip runs on submit,
+ * succeeding by upgrading the session like login); `done` is the terminal state a
+ * completed non-session flow (e.g. a recovery that drops to login) can land in.
  */
 export type AuthMode =
   | 'login'
@@ -51,6 +59,7 @@ export type AuthMode =
   | 'sms_request'
   | 'sms_confirm'
   | 'magic_link_request'
+  | 'passkey'
   | 'done'
 
 /**
@@ -211,6 +220,21 @@ export const OAUTH_GITHUB_AUTH_METHOD: AuthMethodDescriptor = {
 }
 
 /**
+ * The passkey / WebAuthn method descriptor (HIL-284). Enables the `passkey`
+ * switcher entry; a project adds it to its registry alongside
+ * {@link PASSWORD_AUTH_METHOD} to offer passwordless sign-in with a device
+ * passkey. Login is username-first — the `passkey` mode takes an email, then the
+ * assertion round-trip (options → `navigator.credentials.get` → confirm) runs on
+ * submit and upgrades the session — so it contributes the single {@link AuthMode}
+ * `passkey`. Registering a passkey happens in the signed-in profile, not here.
+ */
+export const PASSKEY_AUTH_METHOD: AuthMethodDescriptor = {
+  key: 'passkey',
+  label: 'Sign in with a passkey',
+  modes: ['passkey'],
+}
+
+/**
  * Phone digit-count bounds mirroring the backend E.164 normalizer
  * ({@link \Hilos\Auth\PhoneNumber}); client-side gating only.
  */
@@ -267,6 +291,8 @@ export function isAuthSubmittable(
     case 'sms_confirm':
       return new RegExp(`^\\d{${SMS_CODE_LENGTH}}$`).test(form.code.trim())
     case 'magic_link_request':
+      return form.email.trim() !== ''
+    case 'passkey':
       return form.email.trim() !== ''
     case 'done':
       return false
