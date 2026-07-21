@@ -59,6 +59,9 @@ final class ChatSignalConstants
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 
+    /** @var string Client → agent (page-independent): impersonating session reverts to its admin (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP) */
+    public const string IMPERSONATE_STOP = 'impersonate_stop';
+
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
@@ -106,6 +109,9 @@ final class ChatSignalConstants
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
+
+    /** @var string Client → server (admin users page-action): admin starts impersonating a target user (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_START) */
+    public const string IMPERSONATE_START = 'impersonate_start';
 
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';

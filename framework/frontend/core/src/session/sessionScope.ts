@@ -24,6 +24,7 @@ const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
 const DEFAULT_CURRENT_USER_ENTITY_TYPE = 'user'
 const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
+const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'
 
 /**
  * The handshake-response payload keyed for a connection's `projectSchemas`, so
@@ -43,6 +44,12 @@ export interface SessionScopeOptions {
   currentUserEntityType?: string
   /** Entity field holding the display name. Default `name`. */
   currentUserNameField?: string
+  /**
+   * Session-scope slot the impersonating admin arrives under while the session is
+   * being impersonated (non-null ⇒ impersonating). Shares the current-user entity
+   * type and name field. Default `impersonatedBy`.
+   */
+  impersonatedBySlot?: string
 }
 
 /**
@@ -60,14 +67,18 @@ export function bindSessionScope(
   options: SessionScopeOptions = {},
 ): void {
   const slot = options.currentUserSlot ?? DEFAULT_CURRENT_USER_SLOT
+  const impersonatedBySlot =
+    options.impersonatedBySlot ?? DEFAULT_IMPERSONATED_BY_SLOT
   const entityType =
     options.currentUserEntityType ?? DEFAULT_CURRENT_USER_ENTITY_TYPE
   connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
       // Validated against scopePayloadSchema at the parse boundary; this cast is
-      // the declared typed selector for that schema's output.
+      // the declared typed selector for that schema's output. The impersonating
+      // admin shares the current-user entity type so it dedupes against the same
+      // user delivered elsewhere; a null slot clears it (no longer impersonated).
       ingest(scopes.session, signal.data as ScopePayloadWire, {
-        entityTypes: { [slot]: entityType },
+        entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
       })
     }
   })
@@ -128,5 +139,55 @@ export function sessionUserId(
     const id = Number(ref.id)
 
     return Number.isFinite(id) ? id : null
+  })
+}
+
+/**
+ * Whether the session is currently being impersonated: true while the
+ * impersonatedBy slot holds a reference (an admin acting as this user), false
+ * otherwise. The single source the shell derives its impersonation banner from,
+ * so a project never restates the flag; the slot clears when impersonation stops.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Impersonated-by slot override.
+ */
+export function sessionImpersonating(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<boolean> {
+  const slot = options.impersonatedBySlot ?? DEFAULT_IMPERSONATED_BY_SLOT
+  const impersonatedByRef = scopes.session.data.signal(slot) as ReadonlySignal<
+    EntityRef | undefined
+  >
+
+  return computedSignal(() => impersonatedByRef.get() != null)
+}
+
+/**
+ * The impersonating admin's display name; empty unless the session is being
+ * impersonated. Derived from the impersonatedBy slot the same way the current
+ * user's name is, so a project never restates the selector.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Impersonated-by slot and name-field overrides.
+ */
+export function sessionImpersonatedByName(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<string> {
+  const slot = options.impersonatedBySlot ?? DEFAULT_IMPERSONATED_BY_SLOT
+  const field = options.currentUserNameField ?? DEFAULT_CURRENT_USER_NAME_FIELD
+  const impersonatedByRef = scopes.session.data.signal(slot) as ReadonlySignal<
+    EntityRef | undefined
+  >
+
+  return computedSignal(() => {
+    const ref = impersonatedByRef.get()
+    if (!ref) {
+      return ''
+    }
+    const snapshot = scopes.entitySignal(ref).get()
+
+    return snapshot ? readString(snapshot.fields, field) : ''
   })
 }

@@ -21,7 +21,7 @@ import type { Component } from 'vue'
 import AuthSurface from './auth/AuthSurface.vue'
 import MagicLink from './auth/MagicLink.vue'
 import { connection } from './bootstrap/connection'
-import { currentUserName } from './bootstrap/session'
+import { currentUserName, impersonating } from './bootstrap/session'
 import {
   PAGE_ADMIN_BOTS,
   PAGE_ADMIN_MODERATOR,
@@ -147,11 +147,85 @@ watch(userName, (name) => {
     }
   }
 })
+
+// The impersonation banner and its Stop control. `impersonating` is the single
+// source (the handshake response's impersonatedBy slot); while true the shell
+// shows a full-width banner naming the impersonated user. Stop is page-independent
+// — while impersonating the effective user is the non-admin target, so no admin
+// page is guaranteed — so it sends the agent-owned `impersonate_stop` action
+// (PHP `ChatSignalConstants::IMPERSONATE_STOP`), a calque of logout: the backend
+// reverts the session to the admin and broadcasts the cleared handshake response,
+// which flips `impersonating` back to false for every tab.
+const isImpersonating = useSignal(impersonating)
+const IMPERSONATE_STOP_ACTION = 'impersonate_stop'
+const IMPERSONATE_STOP_FALLBACK_MS = 5000
+const stoppingImpersonation = ref(false)
+// The fallback timer's handle, cleared the moment the broadcast ends loading (as
+// with logout, so a stale timer from one stop cannot drop a later one early).
+let impersonateFallbackTimer: ReturnType<typeof setTimeout> | undefined
+const stopImpersonation = (): void => {
+  if (stoppingImpersonation.value) {
+    return
+  }
+  stoppingImpersonation.value = true
+  if (!connection.sendAction(IMPERSONATE_STOP_ACTION, {})) {
+    // Not sent (the socket is down): no broadcast will come, so do not show
+    // loading for it.
+    stoppingImpersonation.value = false
+
+    return
+  }
+  impersonateFallbackTimer = setTimeout(() => {
+    stoppingImpersonation.value = false
+  }, IMPERSONATE_STOP_FALLBACK_MS)
+}
+// React to the broadcast: clearing the impersonation ends loading (and removes the
+// banner through its own `v-if`) and cancels the now-unnecessary fallback timer.
+watch(isImpersonating, (value) => {
+  if (!value) {
+    stoppingImpersonation.value = false
+    if (impersonateFallbackTimer !== undefined) {
+      clearTimeout(impersonateFallbackTimer)
+      impersonateFallbackTimer = undefined
+    }
+  }
+})
 </script>
 
 <template>
   <HilosLayout :connection="connection">
     <template #brand>Hilos Chat</template>
+    <template #banner>
+      <div
+        v-if="isImpersonating"
+        class="alert alert-warning border-0 rounded-0 mb-0 py-2"
+        data-id="impersonation-banner"
+      >
+        <div
+          class="container d-flex flex-wrap align-items-center justify-content-center gap-3"
+        >
+          <span>
+            <i class="bi bi-person-badge me-1" aria-hidden="true"></i>
+            You are impersonating <strong>{{ userName }}</strong>
+          </span>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1"
+            data-id="impersonation-stop"
+            :disabled="stoppingImpersonation"
+            @click="stopImpersonation"
+          >
+            <span
+              v-if="stoppingImpersonation"
+              class="spinner-border spinner-border-sm"
+              role="status"
+              aria-hidden="true"
+            ></span>
+            Stop
+          </button>
+        </div>
+      </div>
+    </template>
     <template #user>
       <HilosLink
         v-if="userName"

@@ -11,6 +11,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
@@ -154,6 +155,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
+            ChatSignalConstants::IMPERSONATE_START => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
@@ -190,6 +192,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
             ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::LIBRARY,
@@ -285,6 +288,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::LOGOUT => AgentType::CHAT,
+            ChatSignalConstants::IMPERSONATE_STOP => AgentType::CHAT,
         ], Hilos::getAgentActionRoutes());
     }
 
@@ -301,6 +305,7 @@ final class ChatTopologyRegistryTest extends TestCase
 
         $this->assertSame([
             ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
+            ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());
     }

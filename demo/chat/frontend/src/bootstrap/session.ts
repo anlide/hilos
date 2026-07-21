@@ -3,7 +3,13 @@
 // httpOnly session cookie on the WebSocket handshake, so the client no longer
 // mints it; the handshake-response plumbing and the current-user selector come
 // from @hilos/core; this file holds only the project's session state.
-import { ScopeManager, sessionUserId, sessionUserName } from '@hilos/core'
+import {
+  ScopeManager,
+  sessionImpersonatedByName,
+  sessionImpersonating,
+  sessionUserId,
+  sessionUserName,
+} from '@hilos/core'
 
 /** The application's scope-partitioned stores. */
 export const scopes = new ScopeManager()
@@ -13,3 +19,9 @@ export const currentUserName = sessionUserName(scopes)
 
 /** The current user's id; null until the handshake response lands. */
 export const currentUserId = sessionUserId(scopes)
+
+/** Whether this session is currently being impersonated by an admin. */
+export const impersonating = sessionImpersonating(scopes)
+
+/** The impersonating admin's display name; empty unless impersonated. */
+export const impersonatedByName = sessionImpersonatedByName(scopes)

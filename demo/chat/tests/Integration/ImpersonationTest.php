@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Constants\ChatCommandConstants;
+use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\AdminUsersPage;
+use Demo\Chat\Pages\DTO\AdminUsers\ImpersonateStartActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -19,11 +25,14 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration tests for admin impersonation (HIL-166): the impersonateStart /
- * impersonateStop command handlers rebind a live admin session to a target user
- * and back, guarded by the admin flag, the no-nesting rule, and the self-target
- * rule. Asserts the observable DB session state (bound user + impersonator
- * marker) and the re-pointed live connection.
+ * Integration tests for admin impersonation. The CLI command handlers (HIL-166)
+ * and the in-app transports (HIL-371) — the admin users-table page-action start
+ * and the shell agent-action stop — rebind a live admin session to a target user
+ * and back over one shared core, guarded by the admin flag, the no-nesting rule,
+ * and the self-target rule. Asserts the observable DB session state (bound user +
+ * impersonator marker), the re-pointed live connection, and (for the in-app
+ * transports) the re-emitted handshake response whose impersonatedBy slot proves
+ * the marker-before-rebind ordering.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class ImpersonationTest extends IntegrationTestCase
@@ -180,6 +189,113 @@ final class ImpersonationTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
+    }
+
+    /**
+     * The admin users-table page-action start rebinds the session to the target,
+     * records the admin marker, and re-emits a handshake response whose
+     * impersonatedBy slot names the admin — the browser transport over the same
+     * shared core as the CLI command.
+     *
+     * @throws HilosException When setup or the page action fails
+     */
+    public function testPageActionStartRebindsAndEmitsImpersonatedBy(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'page-ak', $token);
+        $targetId = $this->registerUser();
+        $adminName = Hilos::$db->users[$adminId]?->name;
+        $this->drainSignals();
+
+        try {
+            (new AdminUsersPage($agent))->onAction(
+                'page-ak',
+                ChatSignalConstants::IMPERSONATE_START,
+                new ImpersonateStartActionDTO($targetId),
+            );
+
+            $session = Hilos::$db->sessions->findByToken($token);
+            $this->assertSame($targetId, $session?->userId);
+            $this->assertSame($adminId, $session?->impersonatorUserId);
+            $this->assertSame($targetId, Hilos::$rt->connections['page-ak']->userId);
+
+            $response = $this->lastHandshakeResponseFor('page-ak');
+            $this->assertNotNull($response);
+            $this->assertSame($targetId, $response->selfId);
+            $this->assertSame($adminId, $response->impersonatorId);
+            $this->assertSame($adminName, $response->impersonatorName);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * The shell agent-action stop reverts the impersonating session to its admin,
+     * clears the marker, and re-emits a handshake response with a null
+     * impersonatedBy slot — the browser transport over the same shared core as the
+     * CLI command.
+     *
+     * @throws HilosException When setup or the agent action fails
+     */
+    public function testAgentActionStopRevertsAndClearsImpersonatedBy(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'agent-ak', $token);
+        $targetId = $this->registerUser();
+        $agent->startImpersonation($token, $targetId);
+        $this->drainSignals();
+
+        try {
+            $agent->onAgentAction('agent-ak', ChatSignalConstants::IMPERSONATE_STOP, new ImpersonateStopActionDTO());
+
+            $session = Hilos::$db->sessions->findByToken($token);
+            $this->assertSame($adminId, $session?->userId);
+            $this->assertNull($session?->impersonatorUserId);
+            $this->assertSame($adminId, Hilos::$rt->connections['agent-ak']->userId);
+
+            $response = $this->lastHandshakeResponseFor('agent-ak');
+            $this->assertNotNull($response);
+            $this->assertSame($adminId, $response->selfId);
+            $this->assertNull($response->impersonatorId);
+            $this->assertNull($response->impersonatorName);
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Empties the signal-router queue so a later {@see self::lastHandshakeResponseFor()}
+     * observes only signals emitted after this point.
+     */
+    private function drainSignals(): void
+    {
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            // discard
+        }
+    }
+
+    /**
+     * Drains the signal-router queue and returns the last handshake response
+     * targeted at the given connection, or null when none was emitted.
+     *
+     * @param string $acceptKey Target connection accept key
+     * @return ?HandshakeResponseSignalData Last handshake response for the connection
+     */
+    private function lastHandshakeResponseFor(string $acceptKey): ?HandshakeResponseSignalData
+    {
+        $found = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($data instanceof WebSocketSignalData
+                && $data->targetAcceptKey === $acceptKey
+                && $data->data instanceof HandshakeResponseSignalData) {
+                $found = $data->data;
+            }
+        }
+
+        return $found;
     }
 
     /**

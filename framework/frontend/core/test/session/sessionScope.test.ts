@@ -3,6 +3,8 @@ import {
   bindSessionScope,
   sessionUserName,
   sessionUserId,
+  sessionImpersonating,
+  sessionImpersonatedByName,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -85,5 +87,49 @@ describe('sessionScope', () => {
     })
 
     expect(name.get()).toBe('ada')
+  })
+
+  it('derives impersonating and the admin name from the impersonatedBy slot', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const impersonating = sessionImpersonating(scopes)
+    const byName = sessionImpersonatedByName(scopes)
+
+    expect(impersonating.get()).toBe(false)
+    expect(byName.get()).toBe('')
+
+    connection.emitHandshakeResponse({
+      entities: {
+        currentUser: { id: 2, name: 'Bob' },
+        impersonatedBy: { id: 1, name: 'Ada' },
+      },
+    })
+
+    expect(impersonating.get()).toBe(true)
+    expect(byName.get()).toBe('Ada')
+  })
+
+  it('clears impersonating when the impersonatedBy slot goes null', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const impersonating = sessionImpersonating(scopes)
+    const byName = sessionImpersonatedByName(scopes)
+
+    connection.emitHandshakeResponse({
+      entities: {
+        currentUser: { id: 2, name: 'Bob' },
+        impersonatedBy: { id: 1, name: 'Ada' },
+      },
+    })
+    expect(impersonating.get()).toBe(true)
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' }, impersonatedBy: null },
+    })
+
+    expect(impersonating.get()).toBe(false)
+    expect(byName.get()).toBe('')
   })
 })

@@ -11,6 +11,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\AdminUsers\ImpersonateStartActionDTO;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -20,6 +21,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
@@ -38,6 +40,7 @@ final class AdminUsersPage extends AbstractPage
 
     public const array ACTIONS = [
         ChatSignalConstants::USER_UPDATE => AdminUserUpdateActionDTO::class,
+        ChatSignalConstants::IMPERSONATE_START => ImpersonateStartActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -59,7 +62,8 @@ final class AdminUsersPage extends AbstractPage
      * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws TableActionException When the target user is invalid or missing
+     * @throws TableActionException When the target user is invalid or missing, or the impersonation caller has no session
+     * @throws ValidationException When an impersonation guard rejects the request
      * @throws HilosException When user update or audit event persistence fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
@@ -70,6 +74,14 @@ final class AdminUsersPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, AdminUserUpdateActionDTO::class, $dto);
                 }
                 $this->handleUserUpdate($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::IMPERSONATE_START:
+                if (!$dto instanceof ImpersonateStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, ImpersonateStartActionDTO::class, $dto);
+                }
+                $this->handleImpersonateStart($acceptKey, $dto);
 
                 break;
 
@@ -120,5 +132,35 @@ final class AdminUsersPage extends AbstractPage
             newName: $dto->name,
             adminUserId: Hilos::$rt->selfConnection?->userId,
         );
+    }
+
+    /**
+     * Starts impersonation of the target user from the admin users table.
+     *
+     * Resolves the acting admin session from the initiating connection and delegates
+     * to the shared core on the owning chat agent (guards + marker-before-rebind).
+     * The page's ACCESS guard already restricts the table to admins, and the core
+     * re-checks the admin flag, so a non-admin caller is rejected there. Guard
+     * failures surface to the initiating client as an action failure.
+     *
+     * @param string $acceptKey Requesting WebSocket accept key
+     * @param ImpersonateStartActionDTO $dto Impersonate-start action payload
+     * @throws TableActionException When the connection has no session or the owning agent is not the chat agent
+     * @throws ValidationException When an impersonation guard rejects the request
+     * @throws HilosException When the rebind exposes database or runtime failure
+     */
+    private function handleImpersonateStart(string $acceptKey, ImpersonateStartActionDTO $dto): void
+    {
+        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            throw new TableActionException('No active session');
+        }
+
+        $agent = $this->getAgent();
+        if (!$agent instanceof ChatAgent) {
+            throw new TableActionException('Impersonation requires the chat agent');
+        }
+
+        $agent->startImpersonation($sessionToken, $dto->targetUserId);
     }
 }

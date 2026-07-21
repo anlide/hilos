@@ -87,6 +87,8 @@ export {
   bindSessionScope,
   sessionUserName,
   sessionUserId,
+  sessionImpersonating,
+  sessionImpersonatedByName,
   SESSION_SIGNAL_SCHEMAS,
   type SessionScopeOptions,
 } from './session/sessionScope.js'

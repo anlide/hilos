@@ -2,9 +2,11 @@
 app frame a project fills rather than re-implements. It renders the top
 navigation bar carrying the project's brand, nav, and user slots, the framework admin
 entry (the gear linking to the Hilos dashboard), the live connection indicator
-the SDK owns (core-and-connection.md), the routed page content in the default
+the SDK owns (core-and-connection.md), a full-width #banner region below the nav a
+project fills with an app-wide status strip (e.g. the impersonation banner) — empty
+and zero-height otherwise, the routed page content in the default
 slot, and a footer of the public framework pages (HILOS_FOOTER_LINKS). The shell
-is a fixed-height viewport column (vh-100): the nav and footer never scroll
+is a fixed-height viewport column (vh-100): the nav, banner, and footer never scroll
 (flex-shrink-0) and the main region grows and scrolls its own overflow
 (min-h-0 + overflow-auto), so a page either scrolls inside main or — like the
 chat page — fills it and scrolls an inner region rather than the whole document.
@@ -121,6 +123,14 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         </div>
       </div>
     </nav>
+    <div
+      class="flex-shrink-0"
+      role="status"
+      aria-live="polite"
+      data-id="app-banner"
+    >
+      <slot name="banner" />
+    </div>
     <main
       id="hilos-main-content"
       tabindex="-1"

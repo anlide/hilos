@@ -7,10 +7,12 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
+use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\View\Item\Session;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -20,6 +22,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -45,6 +48,7 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_ACTIONS = [
         ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
+        ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
 
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
@@ -145,67 +149,113 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Starts impersonation: an admin session assumes another user's identity.
-     *
-     * Guards, in order: the session must exist; its current user must be an admin
-     * (an anonymous or non-admin session is rejected — which also blocks a second
-     * start once impersonating a non-admin target); it must not already be
-     * impersonating (no nesting); the target must exist and differ from the admin.
-     * The rebind reuses {@see self::authenticateSession()} (identical to a login,
-     * so every guard/ownership path sees the target), then the admin id is recorded
-     * on the session's impersonator marker. Replies ok with the effective user and
-     * the recorded admin, or an error message.
+     * CLI command wrapper over {@see self::startImpersonation()}: parses the token
+     * and target from the command payload, runs the shared core, and replies ok
+     * with the effective user and the recorded admin, or an error message on a
+     * guard rejection.
      *
      * @param CommandRequestDTO $data Command request carrying the session token and target user id
-     * @throws HilosException On an unexpected database or runtime failure outside the caught rebind path
+     * @throws HilosException On an unexpected database or runtime failure outside the caught core path
      */
     private function handleImpersonateStart(CommandRequestDTO $data): void
     {
         $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
         $targetUserId = (int)($data->payload[ChatCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
 
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
-        if ($session === null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such session'));
+        try {
+            $this->startImpersonation($sessionToken, $targetUserId);
+        } catch (ValidationException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
             return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $targetUserId,
+            ChatCommandConstants::FIELD_IMPERSONATOR => Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId,
+        ]));
+    }
+
+    /**
+     * CLI command wrapper over {@see self::stopImpersonation()}: parses the token
+     * from the command payload, captures the admin to restore before the marker is
+     * cleared, runs the shared core, and replies ok with the restored effective
+     * user, or an error message on a guard rejection.
+     *
+     * @param CommandRequestDTO $data Command request carrying the session token
+     * @throws HilosException On an unexpected database or runtime failure outside the caught core path
+     */
+    private function handleImpersonateStop(CommandRequestDTO $data): void
+    {
+        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+
+        // Captured before the core clears the marker; the restored effective user.
+        $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
+
+        try {
+            $this->stopImpersonation($sessionToken);
+        } catch (ValidationException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
+            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $impersonatorId,
+        ]));
+    }
+
+    /**
+     * Starts impersonation: an admin session assumes another user's identity.
+     *
+     * Shared core behind both the CLI command (HIL-166) and the admin users-table
+     * page-action ({@see \Demo\Chat\Pages\AdminUsersPage}). Guards, in order: the
+     * session must exist; its current user must be an admin (an anonymous or
+     * non-admin session is rejected — which also blocks a second start once
+     * impersonating a non-admin target); it must not already be impersonating (no
+     * nesting); the target must exist and differ from the admin. The admin id is
+     * recorded on the impersonator marker BEFORE the rebind, so the handshake
+     * response {@see self::authenticateSession()} re-emits already reflects the
+     * impersonation (its `impersonatedBy` slot names the admin). The rebind reuses
+     * authenticateSession (identical to a login, so every guard/ownership path sees
+     * the target). An audit line records the transition.
+     *
+     * @param string $sessionToken Session cookie token of the acting admin session
+     * @param int $targetUserId User id to impersonate
+     * @throws ValidationException When a guard rejects the request
+     * @throws HilosException On database or runtime failure
+     */
+    public function startImpersonation(string $sessionToken, int $targetUserId): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            throw new ValidationException('No such session');
         }
 
         $adminId = $session->userId;
         $admin = $adminId !== null ? (Hilos::$db->users[$adminId] ?? null) : null;
         if ($admin === null || !$admin->admin) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Session is not an admin session'));
-
-            return;
+            throw new ValidationException('Session is not an admin session');
         }
 
         if ($session->impersonatorUserId !== null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Already impersonating; stop impersonating first'));
-
-            return;
+            throw new ValidationException('Already impersonating; stop impersonating first');
         }
 
-        $target = Hilos::$db->users[$targetUserId] ?? null;
-        if ($target === null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "No such user: {$targetUserId}"));
-
-            return;
+        if ((Hilos::$db->users[$targetUserId] ?? null) === null) {
+            throw new ValidationException("No such user: {$targetUserId}");
         }
 
         if ($targetUserId === $adminId) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Cannot impersonate yourself'));
-
-            return;
+            throw new ValidationException('Cannot impersonate yourself');
         }
 
-        try {
-            $this->authenticateSession($sessionToken, $targetUserId);
-            $session->actions->setImpersonator($adminId);
-        } catch (HilosException $e) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
-
-            return;
-        }
+        // Marker BEFORE rebind: authenticateSession re-emits the handshake response,
+        // which reads the marker to fill impersonatedBy — so it must already be set.
+        $session->actions->setImpersonator($adminId);
+        $this->authenticateSession($sessionToken, $targetUserId);
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
             'event' => 'impersonate_start',
@@ -213,56 +263,43 @@ final class ChatAgent extends AbstractAgent
             'target' => $targetUserId,
             'session' => $session->id,
         ]));
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
-            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $targetUserId,
-            ChatCommandConstants::FIELD_IMPERSONATOR => $adminId,
-        ]));
     }
 
     /**
      * Stops impersonation: reverts an impersonating session back to its admin.
      *
-     * Guards: the session must exist and must currently be impersonating (the
-     * marker is set). The rebind restores the recorded admin through
-     * {@see self::authenticateSession()} and the marker is cleared. Parameter-free
-     * beyond the session token — the admin to restore comes from the marker.
-     * Replies ok with the restored effective user, or an error message.
+     * Shared core behind both the CLI command (HIL-166) and the shell agent-action.
+     * The session must exist and must currently be impersonating. The marker is
+     * cleared BEFORE the rebind, so the handshake response
+     * {@see self::authenticateSession()} re-emits reflects the session as no longer
+     * impersonated (its `impersonatedBy` slot clears). The admin to restore comes
+     * from the marker. An audit line records the transition, capturing the vacated
+     * target before the rebind restores the admin.
      *
-     * @param CommandRequestDTO $data Command request carrying the session token
-     * @throws HilosException On an unexpected database or runtime failure outside the caught rebind path
+     * @param string $sessionToken Session cookie token of the impersonating session
+     * @throws ValidationException When the session is missing or not impersonating
+     * @throws HilosException On database or runtime failure
      */
-    private function handleImpersonateStop(CommandRequestDTO $data): void
+    public function stopImpersonation(string $sessionToken): void
     {
-        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
-
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'No such session'));
-
-            return;
+            throw new ValidationException('No such session');
         }
 
         $impersonatorId = $session->impersonatorUserId;
         if ($impersonatorId === null) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Session is not impersonating'));
-
-            return;
+            throw new ValidationException('Session is not impersonating');
         }
 
         // The target the session was acting as, captured before the rebind restores
         // the admin — recorded on the audit line as the identity vacated.
         $vacatedUserId = $session->userId;
 
-        try {
-            $this->authenticateSession($sessionToken, $impersonatorId);
-            $session->actions->setImpersonator(null);
-        } catch (HilosException $e) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
-
-            return;
-        }
+        // Marker cleared BEFORE rebind: the re-emitted handshake response then reads
+        // no marker and clears impersonatedBy — the inverse of startImpersonation.
+        $session->actions->setImpersonator(null);
+        $this->authenticateSession($sessionToken, $impersonatorId);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',
@@ -270,11 +307,6 @@ final class ChatAgent extends AbstractAgent
             'restoredUser' => $impersonatorId,
             'vacatedUser' => $vacatedUserId,
             'session' => $session->id,
-        ]));
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
-            ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $impersonatorId,
         ]));
     }
 
@@ -324,19 +356,50 @@ final class ChatAgent extends AbstractAgent
 
         Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
 
-        $user = null;
         if ($userId !== null) {
             Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
             Hilos::$rt->userStates->actions->ensure($userId);
-            $user = Hilos::$db->users[$userId];
         }
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
-            $user !== null
-                ? new HandshakeResponseSignalData(selfId: (int)$user->id, selfName: $user->name)
-                : new HandshakeResponseSignalData(),
+            $this->handshakeResponseFor($session),
+        );
+    }
+
+    /**
+     * Builds the handshake response describing a session's current identity,
+     * filling the impersonatedBy slot from the session's impersonator marker.
+     *
+     * An anonymous or missing session yields the anonymous response that clears the
+     * frontend current user. An impersonated session additionally carries the
+     * impersonating admin, so the shell shows its banner; a plain authenticated
+     * session leaves the impersonator fields null.
+     *
+     * @param ?Session $session Session to describe, or null for an anonymous response
+     * @return HandshakeResponseSignalData Handshake response for the session
+     */
+    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
+    {
+        $userId = $session?->userId;
+        if ($session === null || $userId === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $impersonatorId = $session->impersonatorUserId;
+        $impersonator = $impersonatorId !== null ? (Hilos::$db->users[$impersonatorId] ?? null) : null;
+
+        return new HandshakeResponseSignalData(
+            selfId: (int)$user->id,
+            selfName: $user->name,
+            impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
+            impersonatorName: $impersonator?->name,
         );
     }
 
@@ -364,10 +427,7 @@ final class ChatAgent extends AbstractAgent
         Hilos::$rt->userStates->actions->ensure($userId);
         Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
 
-        $user = Hilos::$db->users[$userId];
-        $response = $user !== null
-            ? new HandshakeResponseSignalData(selfId: (int)$user->id, selfName: $user->name)
-            : new HandshakeResponseSignalData();
+        $response = $this->handshakeResponseFor($session);
 
         foreach (Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken) as $stateConnection) {
             Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser($userId);
@@ -410,15 +470,18 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Routes agent-owned client actions. Logout is page-independent (the control
-     * lives in the app shell), so it arrives here rather than through a page.
+     * Routes agent-owned client actions. Logout and impersonation-stop are
+     * page-independent (their controls live in the app shell — and while
+     * impersonating the effective user is the non-admin target, so no admin page is
+     * guaranteed), so they arrive here rather than through a page.
      *
      * @param string $acceptKey Acting connection accept key
      * @param string $action Owned action name from AGENT_ACTIONS
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this agent
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException When logout exposes database or runtime failure
+     * @throws ValidationException When impersonation-stop is invoked on a non-impersonating session
+     * @throws HilosException When logout or impersonation-stop exposes database or runtime failure
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -428,6 +491,14 @@ final class ChatAgent extends AbstractAgent
                     throw new InvalidActionPayloadException($action, LogoutActionDTO::class, $dto);
                 }
                 $this->handleLogout($acceptKey);
+
+                return;
+
+            case ChatSignalConstants::IMPERSONATE_STOP:
+                if (!$dto instanceof ImpersonateStopActionDTO) {
+                    throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
+                }
+                $this->handleImpersonateStopAction($acceptKey);
 
                 return;
 
@@ -453,6 +524,29 @@ final class ChatAgent extends AbstractAgent
         }
 
         $this->deauthenticateSession($sessionToken);
+    }
+
+    /**
+     * Reverts the acting connection's impersonating session back to its admin.
+     *
+     * Resolves the session from the acting connection; a stale accept key or a
+     * connection with no token is a no-op. A guard rejection (the session is not
+     * impersonating) surfaces as a ValidationException the worker dispatcher logs —
+     * the banner control is shown only while impersonating, so this is unreachable
+     * from the shell.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @throws ValidationException When the resolved session is not impersonating
+     * @throws HilosException When impersonation teardown exposes database or runtime failure
+     */
+    private function handleImpersonateStopAction(string $acceptKey): void
+    {
+        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            return;
+        }
+
+        $this->stopImpersonation($sessionToken);
     }
 
     /**
