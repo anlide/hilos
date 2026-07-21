@@ -6,10 +6,12 @@ namespace Hilos\Database\Context;
 
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
+use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\Actions\Collection\SettingsActions;
@@ -26,6 +28,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionSettings $settings
  * @property-read DbCollectionIdentities $identities
  * @property-read DbCollectionUserVerifications $verifications
+ * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -35,14 +38,18 @@ abstract class HilosDbContext extends DbContext
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
+    public const string passkeyCredentials = 'passkeyCredentials';
+    public const string passkeyCredential = 'passkeyCredential';
 
     /**
-     * Configures Hilos-level collections (settings, identities, verifications).
+     * Configures Hilos-level collections (settings, identities, verifications,
+     * passkey credentials).
      *
-     * Identities and verifications load by key (per-user / per-(type,identifier)
-     * lookups), never as a full set, so registering the collections stays inert
-     * for projects that do not activate the hilos_identity /
-     * hilos_user_verification tables.
+     * Identities, verifications and passkey credentials load by key (per-user /
+     * per-(type,identifier) / per-credential lookups), never as a full set, so
+     * registering the collections stays inert for projects that do not activate
+     * the hilos_identity / hilos_user_verification / hilos_passkey_credential
+     * tables.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -56,5 +63,8 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::verifications] = ObjectUserVerifications::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::verifications, DbCollectionUserVerifications::class);
+
+        $this->_objectCollections[self::passkeyCredentials] = ObjectPasskeyCredentials::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::passkeyCredentials, DbCollectionPasskeyCredentials::class);
     }
 }

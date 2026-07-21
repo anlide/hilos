@@ -1,0 +1,50 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Database\View\Item;
+
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
+
+/**
+ * PasskeyCredential Db item - read-only wrapper around ObjectPasskeyCredential.
+ *
+ * The passkey ceremonies are backend-only; this wrapper exists so the collection
+ * has a DbItem representation. It surfaces only the display fields (HIL-404) — the
+ * public key and user handle stay internal to the object layer.
+ *
+ * @extends DbItem<ObjectPasskeyCredential>
+ * @property-read ?int $id
+ * @property-read int $userId
+ * @property-read string $credentialId
+ * @property-read ?string $transports
+ * @property-read ?string $aaguid
+ * @property-read ?string $label
+ * @property-read ?string $lastUsedAt
+ */
+final class PasskeyCredential extends DbItem
+{
+    /**
+     * Magic getter for credential properties.
+     *
+     * @param string $name Property name (id, userId, credentialId, transports, aaguid, label, lastUsedAt)
+     * @return mixed Property value
+     * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If item actions class is invalid or not configured
+     */
+    public function __get(string $name): mixed
+    {
+        return match ($name) {
+            ObjectPasskeyCredential::id => $this->_object->id,
+            ObjectPasskeyCredential::userId => $this->_object->userId,
+            ObjectPasskeyCredential::credentialId => $this->_object->credentialId,
+            ObjectPasskeyCredential::transports => $this->_object->transports,
+            ObjectPasskeyCredential::aaguid => $this->_object->aaguid,
+            ObjectPasskeyCredential::label => $this->_object->label,
+            ObjectPasskeyCredential::lastUsedAt => $this->_object->lastUsedAt,
+            default => parent::__get($name),
+        };
+    }
+}

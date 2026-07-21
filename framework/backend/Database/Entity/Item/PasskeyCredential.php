@@ -1,0 +1,89 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Database\Entity\Item;
+
+use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\PhpType;
+
+/**
+ * PasskeyCredential Entity - represents hilos_passkey_credential table row.
+ *
+ * WebAuthn/passkey credential sidecar (HIL-284): a passkey is a thin
+ * `hilos_identity` anchor row (type=passkey, identifier=credential_id) plus one
+ * crypto row here, linked by `identity_id`. Framework holds the contract; projects
+ * activate the table thinly (copy the migration stub) and the framework DbContext
+ * exposes the collection.
+ *
+ * Unlike the identity/verification tables there is no DB-only secret to hide: the
+ * `public_key` (PEM) is public material, so every column is ORM-mapped. The
+ * WebAuthn signature verification reads `public_key` and `sign_count` through the
+ * object layer ({@see \Hilos\Database\Object\Item\PasskeyCredential}).
+ *
+ * @method static EntityPasskeyCredentials get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityPasskeyCredentials getAll()
+ */
+final class PasskeyCredential extends Entity
+{
+    public const string id = 'id';
+    public const string identity_id = 'identity_id';
+    public const string user_id = 'user_id';
+    public const string credential_id = 'credential_id';
+    public const string public_key = 'public_key';
+    public const string sign_count = 'sign_count';
+    public const string transports = 'transports';
+    public const string aaguid = 'aaguid';
+    public const string user_handle = 'user_handle';
+    public const string label = 'label';
+    public const string last_used_at = 'last_used_at';
+
+    public const string _table = 'hilos_passkey_credential';
+    public const string _primary = self::id;
+    public const array _columns = [
+        self::id,
+        self::identity_id,
+        self::user_id,
+        self::credential_id,
+        self::public_key,
+        self::sign_count,
+        self::transports,
+        self::aaguid,
+        self::user_handle,
+        self::label,
+        self::last_used_at,
+    ];
+
+    public const array _types = [
+        self::id => PhpType::INTEGER->value,
+        self::identity_id => PhpType::INTEGER->value,
+        self::user_id => PhpType::INTEGER->value,
+        self::credential_id => PhpType::STRING->value,
+        self::public_key => PhpType::STRING->value,
+        self::sign_count => PhpType::INTEGER->value,
+        self::transports => PhpType::STRING->value,
+        self::aaguid => PhpType::STRING->value,
+        self::user_handle => PhpType::STRING->value,
+        self::label => PhpType::STRING->value,
+        self::last_used_at => PhpType::STRING->value,
+    ];
+
+    public const array _indexes = [
+        'uk_passkey_credential_id' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::credential_id]],
+        'idx_passkey_identity' => [Entity::INDEX_COLUMNS => [self::identity_id]],
+        'idx_passkey_user' => [Entity::INDEX_COLUMNS => [self::user_id]],
+    ];
+
+    public ?int $id = null;
+    public int $identity_id;
+    public int $user_id;
+    public string $credential_id;
+    public string $public_key;
+    public int $sign_count = 0;
+    public ?string $transports = null;
+    public ?string $aaguid = null;
+    public string $user_handle;
+    public ?string $label = null;
+    public ?string $last_used_at = null;
+}

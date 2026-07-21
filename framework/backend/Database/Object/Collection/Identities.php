@@ -218,6 +218,52 @@ final class Identities extends Objects
     }
 
     /**
+     * Creates a verified `passkey`-type identity anchor for a user (HIL-284).
+     *
+     * The WebAuthn write path: a passkey is a thin anchor row here plus a crypto
+     * row in `hilos_passkey_credential`
+     * ({@see \Hilos\Database\Object\Collection\PasskeyCredentials::createFromRegistration()}).
+     * Like the SMS/OAuth identities there is no secret — the attestation ceremony
+     * already proved possession of the authenticator — so the row is inserted with
+     * `secret = NULL` and `verified = true` and needs no follow-up write. The
+     * identifier is the authenticator's base64url credential id; uniqueness is per
+     * (passkey, identifier), which the credential id already guarantees.
+     *
+     * @param int $userId Owning user id
+     * @param string $credentialId Base64url credential id from the authenticator
+     * @return ObjectIdentity The created identity object
+     * @throws EmptyValueException When credential id is empty
+     * @throws DuplicateValueException When an identity already exists for (passkey, identifier)
+     * @throws DatabaseException If the insert query fails
+     */
+    public function createPasskeyIdentity(int $userId, string $credentialId): ObjectIdentity
+    {
+        if ($credentialId === '') {
+            throw new EmptyValueException('Identity identifier is required');
+        }
+
+        if ($this->findByIdentity(IdentityType::PASSKEY, $credentialId) !== null) {
+            throw new DuplicateValueException('passkey already registered');
+        }
+
+        $identity = ObjectIdentity::create();
+        $identity->userId = $userId;
+        $identity->type = IdentityType::PASSKEY;
+        $identity->identifier = $credentialId;
+        $identity->verified = true;
+        $identity->sync();
+
+        $id = $identity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        $this->objects[$id] = $identity;
+
+        return $identity;
+    }
+
+    /**
      * Resolves the user id owning a verified identity for an email (HIL-283).
      *
      * The passwordless-login read accessor shared with the OAuth email-collision
