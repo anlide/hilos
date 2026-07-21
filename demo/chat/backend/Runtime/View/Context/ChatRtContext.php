@@ -33,8 +33,10 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
+use Hilos\Runtime\State\Collection\OAuthPendingLogins as StateOAuthPendingLogins;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\OAuthPendingLogin as StateOAuthPendingLogin;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -96,6 +98,9 @@ final class ChatRtContext extends RtContext
         // Framework-owned backup index; the browser view/representation lands in HIL-278.
         $this->_stateCollections[StateBackupHistory::RT_COLLECTION] = StateBackupHistories::init();
         $this->_stateItems[StateBackupRuntime::RT_ITEM] = StateBackupRuntime::create();
+        // Framework-owned in-flight OAuth login ops: the callback handler writes them,
+        // the OAuth agent observes and drains them. Internal — no browser view (HIL-281).
+        $this->_stateCollections[StateOAuthPendingLogin::RT_COLLECTION] = StateOAuthPendingLogins::init();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];

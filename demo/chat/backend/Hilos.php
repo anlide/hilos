@@ -13,6 +13,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
+use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
@@ -22,6 +23,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Chat\Backup\BackupCatalog;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
@@ -300,6 +302,10 @@ final class Hilos extends \Hilos\Hilos
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,
             AgentRegistryKey::DAEMON => BackupAgentDaemon::class,
+        ],
+        OAuthAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => OAuthAgent::class,
+            AgentRegistryKey::DAEMON => OAuthAgentDaemon::class,
         ],
     ];
 

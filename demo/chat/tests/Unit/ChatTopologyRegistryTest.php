@@ -10,6 +10,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
@@ -153,6 +154,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::CONFIRM_REGISTER => PageConstants::MAIN,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
+            ChatSignalConstants::OAUTH_START => PageConstants::MAIN,
+            ChatSignalConstants::OAUTH_CALLBACK => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::IMPERSONATE_START => PageConstants::ADMIN_USERS,
@@ -190,6 +193,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::CONFIRM_REGISTER => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
+            ChatSignalConstants::OAUTH_START => AgentType::CHAT,
+            ChatSignalConstants::OAUTH_CALLBACK => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::IMPERSONATE_START => AgentType::CHAT,
@@ -237,6 +242,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
+            ChatSignalConstants::OAUTH_BIND_SESSION => AgentType::CHAT,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -276,6 +282,7 @@ final class ChatTopologyRegistryTest extends TestCase
 
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+            ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,

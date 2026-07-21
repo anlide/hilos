@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatFileUploadConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -18,6 +19,8 @@ use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
+use Demo\Chat\Pages\DTO\Main\OAuthCallbackActionDTO;
+use Demo\Chat\Pages\DTO\Main\OAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
@@ -27,8 +30,14 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
+use Hilos\Auth\OAuth\Exception\OAuthStateException;
+use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Runtime\State\Collection\OAuthPendingLogins;
+use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -79,6 +88,8 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
+        ChatSignalConstants::OAUTH_START => OAuthStartActionDTO::class,
+        ChatSignalConstants::OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
@@ -251,6 +262,22 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, AttachmentDraftDeleteActionDTO::class, $dto);
                 }
                 $this->handleAttachmentDraftDelete($dto);
+
+                break;
+
+            case ChatSignalConstants::OAUTH_START:
+                if (!$dto instanceof OAuthStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, OAuthStartActionDTO::class, $dto);
+                }
+                $this->handleOauthStart($dto);
+
+                break;
+
+            case ChatSignalConstants::OAUTH_CALLBACK:
+                if (!$dto instanceof OAuthCallbackActionDTO) {
+                    throw new InvalidActionPayloadException($action, OAuthCallbackActionDTO::class, $dto);
+                }
+                $this->handleOauthCallback($dto);
 
                 break;
 
@@ -752,6 +779,86 @@ final class MainPage extends AbstractPage
         }
 
         return null;
+    }
+
+    /**
+     * Begins an OAuth login: mints the authorize URL and hands it to the browser.
+     *
+     * The redirect-start entry (HIL-281). It does no outbound HTTP — it builds the
+     * provider authorize URL and a signed, session-bound `state` synchronously — but
+     * the framework `action_success` cannot carry a domain payload, so the URL is
+     * delivered on the OAUTH_AUTHORIZE signal (WS_USER) to the initiating connection;
+     * the SPA navigates there. An unknown provider is a synchronous rejection.
+     *
+     * @param OAuthStartActionDTO $dto Parsed start payload (provider)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the provider is not configured
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a state nonce
+     */
+    private function handleOauthStart(OAuthStartActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        try {
+            $authorizeUrl = ChatOAuthConfig::buildService()
+                ->beginAuthorization($dto->provider, $connection->sessionToken);
+        } catch (OAuthUnknownProviderException) {
+            throw new ValidationException('Unknown authentication provider');
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_AUTHORIZE,
+            $connection->acceptKey,
+            new OAuthAuthorizeSignalData($connection->acceptKey, $authorizeUrl),
+        );
+    }
+
+    /**
+     * Accepts an OAuth callback: verifies the state and records the exchange op.
+     *
+     * The callback arm of mechanism B (HIL-281). Provider resolution and state
+     * verification are I/O-free, so an unknown provider or a bad/expired/foreign
+     * state fails synchronously (CSRF guard) before anything is recorded. On a valid
+     * state it records a short-lived in-flight op keyed by the initiating accept key
+     * for the framework OAuth agent to exchange across ticks, then returns: the
+     * auto-sent `action_success` means only "accepted, working", not "logged in" —
+     * the FE keeps its spinner and resolves on the currentUser update (success) or
+     * the OAuthResult failure signal.
+     *
+     * @param OAuthCallbackActionDTO $dto Parsed callback payload (provider, code, state)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session or OAuth runtime is missing
+     * @throws ValidationException When the provider is unknown or the state is invalid
+     */
+    private function handleOauthCallback(OAuthCallbackActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $service = ChatOAuthConfig::buildService();
+        try {
+            $service->providerFor($dto->provider);
+            $service->verifyState($dto->state, $connection->sessionToken);
+        } catch (OAuthUnknownProviderException | OAuthStateException) {
+            throw new ValidationException('OAuth verification failed');
+        }
+
+        $pending = Hilos::$rt->getStateCollection(OAuthPendingLogin::RT_COLLECTION);
+        if (!$pending instanceof OAuthPendingLogins) {
+            throw new ItemNotFoundForUpdateException('OAuth login runtime is unavailable');
+        }
+
+        $pending->add(OAuthPendingLogin::create(
+            $connection->acceptKey,
+            $connection->sessionToken,
+            $dto->provider,
+            $dto->code,
+            microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
+        ));
     }
 
     /**

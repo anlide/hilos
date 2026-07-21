@@ -66,6 +66,16 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION => self::stringEntry(''),
+            ChatEnvConstants::OAUTH_STATE_SECRET => self::stringEntry(
+                'dev-oauth-state-secret-change-me',
+                emptyIsMissing: true,
+            ),
+            ChatEnvConstants::OAUTH_GITHUB_CLIENT_ID => self::stringEntry(''),
+            ChatEnvConstants::OAUTH_GITHUB_CLIENT_SECRET => self::stringEntry(''),
+            ChatEnvConstants::OAUTH_GITHUB_REDIRECT_URI => self::stringEntry(
+                '/auth/callback',
+                emptyIsMissing: true,
+            ),
         ]);
     }
 

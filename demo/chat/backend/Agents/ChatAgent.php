@@ -11,6 +11,7 @@ use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\Session;
 use Demo\Chat\Hilos;
@@ -44,6 +45,7 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+        ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
     ];
 
     public const array AGENT_ACTIONS = [
@@ -631,6 +633,14 @@ final class ChatAgent extends AbstractAgent
                     );
                 }
                 $this->handleBotMessage($data->data);
+                return;
+            case ChatSignalConstants::OAUTH_BIND_SESSION:
+                if (!$data->data instanceof OAuthBindSessionSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::OAUTH_BIND_SESSION . ' payload must be ' . OAuthBindSessionSignalData::class,
+                    );
+                }
+                $this->authenticateSession($data->data->sessionToken, $data->data->userId);
                 return;
             default:
                 throw new AgentUnknownSignalException($name);

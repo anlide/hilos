@@ -241,6 +241,16 @@ final class HilosSignalConstants
      */
     public const string HILOS_OAUTH_RESULT = 'hilos_oauth_result';
 
+    /**
+     * OAuth start action → initiating connection: the provider authorize URL to navigate to.
+     *
+     * The `oauthStart` page action does no outbound HTTP, but the framework's
+     * `action_success` carries no domain payload, so the authorize URL cannot ride
+     * the action ack. It is delivered on this WS_USER signal instead; the SPA
+     * navigates the browser to `authorizeUrl` on receipt (see HIL-281 mechanism B).
+     */
+    public const string HILOS_OAUTH_AUTHORIZE = 'hilos_oauth_authorize';
+
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */
     public const string BACKUP_AGENT_CREATE = 'backup_agent_create';

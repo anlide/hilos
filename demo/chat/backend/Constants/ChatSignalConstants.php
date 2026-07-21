@@ -56,6 +56,12 @@ final class ChatSignalConstants
     /** @var string Client → server: submit the email-confirmation code for the signed-in user */
     public const string CONFIRM_REGISTER = 'confirm_register';
 
+    /** @var string Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable) */
+    public const string OAUTH_START = 'oauth_start';
+
+    /** @var string Client → server: hand back the OAuth provider code+state after the redirect (public, anonymous-reachable) */
+    public const string OAUTH_CALLBACK = 'oauth_callback';
+
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 
@@ -105,6 +111,9 @@ final class ChatSignalConstants
 
     /** @var string BotAgent → ChatAgent: publish generated bot message */
     public const string BOT_MESSAGE = 'bot_message';
+
+    /** @var string OAuthAgent → ChatAgent: bind the resolved user to the initiating session (success login) */
+    public const string OAUTH_BIND_SESSION = 'oauth_bind_session';
 
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
