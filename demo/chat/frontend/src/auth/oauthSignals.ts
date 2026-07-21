@@ -21,6 +21,14 @@ export const OAUTH_AUTHORIZE_SIGNAL = 'hilos_oauth_authorize'
 export const OAUTH_RESULT_SIGNAL = 'hilos_oauth_result'
 
 /**
+ * `reason` value marking an email collision that needs re-auth before linking (PHP
+ * `OAuthResultSignalData::REASON_REAUTH_REQUIRED`). The provider email matched an
+ * existing verified account, so instead of failing, the callback arms a pending
+ * link (the payload's `email` + `linkToken`) and sends the user to re-authenticate.
+ */
+export const OAUTH_REASON_REAUTH_REQUIRED = 'reauth_required'
+
+/**
  * The authorize-reply payload: the absolute provider URL to navigate to. The
  * wire also carries the targeting `acceptKey`, kept here for validation fidelity
  * though the reaction ignores it (WS_USER already targets this connection).
@@ -31,13 +39,18 @@ export const oauthAuthorizeSignalSchema = z.object({
 })
 
 /**
- * The login-failure payload: the provider the attempt was for and a stable,
- * non-sensitive reason code (network/provider detail stays in the agent log).
+ * The login-failure / re-auth-to-link payload: the provider the attempt was for
+ * and a stable, non-sensitive reason code (network/provider detail stays in the
+ * agent log). On {@link OAUTH_REASON_REAUTH_REQUIRED} it also carries the colliding
+ * account `email` (to pre-fill the re-auth form) and the signed `linkToken` to
+ * redeem after; both default to empty on the plain failure arm.
  */
 export const oauthResultSignalSchema = z.object({
   acceptKey: z.string(),
   provider: z.string(),
   reason: z.string(),
+  email: z.string().default(''),
+  linkToken: z.string().default(''),
 })
 
 /** Typed authorize-reply payload (the schema's output). */

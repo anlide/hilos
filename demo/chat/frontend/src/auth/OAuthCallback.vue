@@ -18,11 +18,13 @@ import { hilosRouterKey, useSignal } from '@hilos/vue'
 
 import { currentUserId } from '../bootstrap/session'
 import {
+  armOAuthLink,
   describeOAuthError,
   dispatchOAuthCallback,
   subscribeOAuthFailure,
   takeOAuthProvider,
 } from './oauthLogin'
+import { OAUTH_REASON_REAUTH_REQUIRED } from './oauthSignals'
 
 defineOptions({ name: 'OAuthCallback' })
 
@@ -90,6 +92,21 @@ function succeed(): void {
   router.navigate(HOME_PATH)
 }
 
+// The provider email collided with an existing verified account (HIL-282): not a
+// failure — arm the pending link (module state, so it outlives this view and the
+// sign-in surface the gate later closes) and send the user home, where the auth
+// gate shows the sign-in surface pre-filled to re-authenticate. The token is
+// redeemed by the global replay watcher once that re-auth upgrades the session.
+function reauthToLink(email: string, linkToken: string): void {
+  if (settled) {
+    return
+  }
+  settled = true
+  cleanup()
+  armOAuthLink(email, linkToken)
+  router.navigate(HOME_PATH)
+}
+
 onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code') ?? ''
@@ -108,7 +125,12 @@ onMounted(async () => {
       succeed()
     }
   })
-  unsubscribeFailure = subscribeOAuthFailure(() => {
+  unsubscribeFailure = subscribeOAuthFailure((data) => {
+    if (data.reason === OAUTH_REASON_REAUTH_REQUIRED && data.linkToken !== '') {
+      reauthToLink(data.email, data.linkToken)
+
+      return
+    }
     fail('OAuth login failed. Please try again.')
   })
   timeoutTimer = setTimeout(() => {

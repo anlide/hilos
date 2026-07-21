@@ -27,7 +27,11 @@ import {
 import { LoadingButton, useSignal } from '@hilos/vue'
 
 import { submitAuth } from './authActions'
-import { describeOAuthError, startOAuthLogin } from './oauthLogin'
+import {
+  describeOAuthError,
+  peekOAuthLink,
+  startOAuthLogin,
+} from './oauthLogin'
 
 defineOptions({ name: 'AuthSurface' })
 
@@ -50,6 +54,12 @@ const surface = createAuthSurface({ methods, onSubmit: submitAuth })
 const oauthMethods = methods.filter((method) => method.key.startsWith('oauth:'))
 const oauthPending = ref<string | null>(null)
 const oauthError = ref<string | null>(null)
+
+// Set on mount when an OAuth email collision armed a pending link (HIL-282): the
+// account already exists, so the surface pre-fills its email and shows a "finish
+// linking" prompt asking the user to sign in with an existing method. The token
+// replay itself is the global watcher's job (oauthLogin), not this component's.
+const linkPrompt = ref(false)
 
 const mode = useSignal(surface.mode)
 const form = useSignal(surface.form)
@@ -162,16 +172,35 @@ async function continueWithOAuth(method: AuthMethodDescriptor): Promise<void> {
 }
 
 // Start each mount clean: the surface may be re-shown for a new gated action.
+// When an OAuth collision armed a pending link, pre-fill its email and raise the
+// "finish linking" prompt so the user re-authenticates the existing account.
 onMounted(() => {
   surface.reset()
   oauthPending.value = null
   oauthError.value = null
+  const pendingLink = peekOAuthLink()
+  linkPrompt.value = pendingLink !== null
+  if (pendingLink !== null) {
+    surface.setField('email', pendingLink.email)
+  }
 })
 </script>
 
 <template>
   <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
     <h1 class="h4 mb-3" data-id="auth-heading">{{ heading }}</h1>
+
+    <!-- OAuth email-collision re-auth prompt (HIL-282): the provider email already
+    has an account, so ask the user to sign in with an existing method to finish
+    linking. The pending link token is redeemed globally once the session upgrades. -->
+    <div
+      v-if="linkPrompt && mode === 'login'"
+      class="alert alert-info"
+      role="status"
+      data-id="auth-link-prompt"
+    >
+      That email already has an account. Sign in to finish linking it.
+    </div>
 
     <form v-if="isFormMode" novalidate @submit.prevent="submit">
       <div class="mb-3">

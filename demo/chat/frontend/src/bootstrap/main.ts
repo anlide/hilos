@@ -9,7 +9,10 @@ import { createApp } from 'vue'
 
 import App from '../App.vue'
 import { authGateKey } from '../auth/authGateKey'
-import { bindOAuthAuthorizeRedirect } from '../auth/oauthLogin'
+import {
+  bindOAuthAuthorizeRedirect,
+  bindOAuthLinkReplay,
+} from '../auth/oauthLogin'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
@@ -20,6 +23,13 @@ import { currentUserId, scopes } from './session'
 // authorize URL when the daemon answers `oauth_start` with the authorize signal.
 // Registered before bootHilos opens the socket so the reply always has a handler.
 bindOAuthAuthorizeRedirect()
+
+// The OAuth email-collision link replay (HIL-282): once a collision re-auth
+// upgrades the session (currentUserId turns non-null) with a pending link armed,
+// redeem the link token to bind the OAuth identity. Bound here, outside any
+// component, so it survives the sign-in surface unmounting when the gate closes on
+// the upgrade. Registered before bootHilos opens the socket.
+bindOAuthLinkReplay(currentUserId)
 
 const hilosRouter = bootHilos({
   connection,
