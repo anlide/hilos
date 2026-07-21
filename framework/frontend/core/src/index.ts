@@ -108,6 +108,7 @@ export {
   PASSWORD_AUTH_METHOD,
   SMS_AUTH_METHOD,
   MAGIC_LINK_AUTH_METHOD,
+  OAUTH_GITHUB_AUTH_METHOD,
   type AuthSurface,
   type AuthSurfaceOptions,
   type AuthMethodDescriptor,
@@ -198,6 +199,11 @@ export {
   type ParseFailure,
   type ParseResult,
 } from './protocol/parseSignal.js'
+// The schema builder projects declare their own signal ({@link ProjectSignalSchemas})
+// schemas with. Re-exported so a project uses the framework's zod instance rather
+// than pinning its own — two zod copies produce incompatible `ZodType` brands the
+// parse boundary would reject.
+export { z } from 'zod'
 export {
   ActionErrorStore,
   type ActionErrorSource,

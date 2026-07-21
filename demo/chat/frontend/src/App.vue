@@ -20,6 +20,7 @@ import type { Component } from 'vue'
 
 import AuthSurface from './auth/AuthSurface.vue'
 import MagicLink from './auth/MagicLink.vue'
+import OAuthCallback from './auth/OAuthCallback.vue'
 import { connection } from './bootstrap/connection'
 import { currentUserName, impersonating } from './bootstrap/session'
 import {
@@ -87,6 +88,11 @@ const pages: Record<string, Component> = {
 // so App swaps the relay view in for the routed outlet while the path matches,
 // then MagicLink navigates home once the session upgrades.
 const MAGIC_LINK_PATH = '/auth/magic'
+// The OAuth callback route (HIL-281): like the magic-link route it carries no
+// page of its own — the router falls it back to the main subscription so the
+// callback action routes — so App swaps the relay view in while the path matches,
+// then OAuthCallback navigates home once the session upgrades.
+const OAUTH_CALLBACK_PATH = '/auth/callback'
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -95,6 +101,9 @@ if (!router) {
 }
 const currentPath = useSignal(router.currentPath)
 const isMagicRoute = computed(() => currentPath.value === MAGIC_LINK_PATH)
+const isOAuthCallbackRoute = computed(
+  () => currentPath.value === OAUTH_CALLBACK_PATH,
+)
 
 // The navbar profile entry: the current user's name links to the framework
 // profile page (its route owned by the page catalog), shown once the handshake
@@ -255,6 +264,7 @@ watch(isImpersonating, (value) => {
       </button>
     </template>
     <MagicLink v-if="isMagicRoute" />
+    <OAuthCallback v-else-if="isOAuthCallbackRoute" />
     <HilosView
       v-else
       :pages="pages"

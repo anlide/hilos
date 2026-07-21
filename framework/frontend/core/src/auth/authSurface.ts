@@ -195,6 +195,22 @@ export const MAGIC_LINK_AUTH_METHOD: AuthMethodDescriptor = {
 }
 
 /**
+ * The GitHub OAuth method descriptor (HIL-281). Login-only — an external provider
+ * has no in-app register or recovery step — so it enables only the `login`
+ * switcher entry; a project adds it to its registry alongside
+ * {@link PASSWORD_AUTH_METHOD} to offer "Continue with GitHub". OAuth contributes
+ * no {@link AuthMode} of its own: the surface renders the descriptor as a redirect
+ * button (its `key` names the backend provider), and the browser leaves for the
+ * provider and returns on the project's dedicated `/auth/callback` route rather
+ * than stepping a form here.
+ */
+export const OAUTH_GITHUB_AUTH_METHOD: AuthMethodDescriptor = {
+  key: 'oauth:github',
+  label: 'Continue with GitHub',
+  modes: ['login'],
+}
+
+/**
  * Phone digit-count bounds mirroring the backend E.164 normalizer
  * ({@link \Hilos\Auth\PhoneNumber}); client-side gating only.
  */

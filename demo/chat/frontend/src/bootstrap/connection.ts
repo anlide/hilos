@@ -13,6 +13,11 @@
 // `actions.dispatch(...)` and closes on the returned handle's resolved `done`.
 import { createHilosConnection } from '@hilos/core'
 
+import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals'
+
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
+  // The project's own inbound signals: the OAuth login start-reply and
+  // failure/timeout the daemon delivers WS_USER (HIL-281).
+  projectSchemas: OAUTH_SIGNAL_SCHEMAS,
 })

@@ -17,24 +17,39 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   createAuthSurface,
   MAGIC_LINK_AUTH_METHOD,
+  OAUTH_GITHUB_AUTH_METHOD,
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
   SMS_AUTH_METHOD,
   type AuthField,
+  type AuthMethodDescriptor,
 } from '@hilos/core'
 import { LoadingButton, useSignal } from '@hilos/vue'
 
 import { submitAuth } from './authActions'
+import { describeOAuthError, startOAuthLogin } from './oauthLogin'
 
 defineOptions({ name: 'AuthSurface' })
 
 // The project declares its ORDERED enabled method registry here — the thin
 // extension point. Only email+password ships now; an OAuth or passkey descriptor
 // is prepended/appended later without touching the surface or the machine.
-const surface = createAuthSurface({
-  methods: [PASSWORD_AUTH_METHOD, SMS_AUTH_METHOD, MAGIC_LINK_AUTH_METHOD],
-  onSubmit: submitAuth,
-})
+const methods: AuthMethodDescriptor[] = [
+  PASSWORD_AUTH_METHOD,
+  SMS_AUTH_METHOD,
+  MAGIC_LINK_AUTH_METHOD,
+  OAUTH_GITHUB_AUTH_METHOD,
+]
+const surface = createAuthSurface({ methods, onSubmit: submitAuth })
+
+// The redirect methods (OAuth): rendered on the login surface as external
+// "Continue with …" buttons, not as machine modes — the surface owns no OAuth
+// mode. The button dispatches the start action; the browser leaves for the
+// provider off the authorize signal (oauthLogin), so a successful start keeps its
+// loading through the redirect and only a rejection clears it with an inline error.
+const oauthMethods = methods.filter((method) => method.key.startsWith('oauth:'))
+const oauthPending = ref<string | null>(null)
+const oauthError = ref<string | null>(null)
 
 const mode = useSignal(surface.mode)
 const form = useSignal(surface.form)
@@ -60,6 +75,7 @@ const isSmsMode = computed(
 const magicSent = ref(false)
 watch(mode, () => {
   magicSent.value = false
+  oauthError.value = null
 })
 
 const heading = computed(() => {
@@ -122,9 +138,34 @@ async function submitMagicRequest(): Promise<void> {
   }
 }
 
+/** The data-id slug for a method's redirect button, e.g. `auth-oauth-github`. */
+function oauthDataId(key: string): string {
+  return `auth-oauth-${key.replace(/^oauth:/, '')}`
+}
+
+// Begin a redirect login: dispatch the start action and, on the "accepted" ack,
+// keep the button loading while the authorize signal navigates the browser to the
+// provider (oauthLogin). A rejection — an unknown provider, a timeout, or a
+// dropped connection — clears loading and surfaces the reason inline.
+async function continueWithOAuth(method: AuthMethodDescriptor): Promise<void> {
+  if (oauthPending.value !== null) {
+    return
+  }
+  oauthPending.value = method.key
+  oauthError.value = null
+  try {
+    await startOAuthLogin(method.key)
+  } catch (error) {
+    oauthPending.value = null
+    oauthError.value = describeOAuthError(error)
+  }
+}
+
 // Start each mount clean: the surface may be re-shown for a new gated action.
 onMounted(() => {
   surface.reset()
+  oauthPending.value = null
+  oauthError.value = null
 })
 </script>
 
@@ -200,11 +241,7 @@ onMounted(() => {
 
     <!-- SMS one-time-code sign-in (HIL-280): request a code for a phone, then
     submit it. A valid code signs in an existing phone or creates one. -->
-    <form
-      v-else-if="isSmsMode"
-      novalidate
-      @submit.prevent="submit"
-    >
+    <form v-else-if="isSmsMode" novalidate @submit.prevent="submit">
       <div v-if="mode === 'sms_request'" class="mb-3">
         <label class="form-label" for="auth-phone">Phone number</label>
         <input
@@ -315,6 +352,49 @@ onMounted(() => {
       data-id="auth-recovery-placeholder"
     >
       Password recovery is coming soon.
+    </div>
+
+    <!-- Redirect sign-in (HIL-281): external "Continue with …" providers, shown
+    on the login surface only. Each button starts a redirect; the browser leaves
+    for the provider off the authorize signal, so a running button stays loading
+    through the navigation. -->
+    <div
+      v-if="mode === 'login' && oauthMethods.length > 0"
+      class="mt-3"
+      data-id="auth-oauth"
+    >
+      <div class="d-flex align-items-center text-muted small mb-3">
+        <hr class="flex-grow-1" />
+        <span class="px-2">or</span>
+        <hr class="flex-grow-1" />
+      </div>
+
+      <div
+        v-if="oauthError"
+        class="alert alert-danger py-2"
+        role="alert"
+        data-id="auth-oauth-error"
+      >
+        {{ oauthError }}
+      </div>
+
+      <button
+        v-for="method in oauthMethods"
+        :key="method.key"
+        type="button"
+        class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
+        :disabled="oauthPending !== null"
+        :data-id="oauthDataId(method.key)"
+        @click="continueWithOAuth(method)"
+      >
+        <span
+          v-if="oauthPending === method.key"
+          class="spinner-border spinner-border-sm"
+          role="status"
+          aria-hidden="true"
+        ></span>
+        {{ method.label }}
+      </button>
     </div>
 
     <div class="d-flex justify-content-between mt-3 small">

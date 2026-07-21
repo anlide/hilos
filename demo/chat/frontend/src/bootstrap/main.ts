@@ -9,11 +9,17 @@ import { createApp } from 'vue'
 
 import App from '../App.vue'
 import { authGateKey } from '../auth/authGateKey'
+import { bindOAuthAuthorizeRedirect } from '../auth/oauthLogin'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
 import { router } from '../pages/routes'
 import { connection } from './connection'
 import { currentUserId, scopes } from './session'
+
+// The OAuth start reply (HIL-281): navigate the browser to the provider's
+// authorize URL when the daemon answers `oauth_start` with the authorize signal.
+// Registered before bootHilos opens the socket so the reply always has a handler.
+bindOAuthAuthorizeRedirect()
 
 const hilosRouter = bootHilos({
   connection,
