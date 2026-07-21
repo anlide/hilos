@@ -116,6 +116,44 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Creates a verified `oauth`-type identity for a user (HIL-281).
+     *
+     * External-login write path of the identity layer: delegates the
+     * secret-less, verified insert to the object collection's
+     * {@see ObjectIdentities::createOauthIdentity()} primitive and returns the
+     * read-facing view item for the new row. The identifier is the canonical
+     * `provider:subject` pair; account resolution keys strictly on
+     * (provider, subject).
+     *
+     * @param int $userId Owning user id
+     * @param string $provider Provider key, e.g. 'oauth:github'
+     * @param string $subject Provider-immutable account subject id
+     * @return Identity The created identity's read-facing Db item
+     * @throws EmptyValueException When provider or subject is empty
+     * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
+     * @throws DatabaseException On database error while creating the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function createOauthIdentity(int $userId, string $provider, string $subject): Identity
+    {
+        $objectIdentity = $this->objectCollection->createOauthIdentity($userId, $provider, $subject);
+
+        $id = $objectIdentity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($id);
+        if ($identity === null) {
+            throw new DatabaseException('Created identity is not available on the read-facing collection');
+        }
+
+        return $identity;
+    }
+
+    /**
      * Runs a throwaway password verification to equalize login response time.
      *
      * Anti-enumeration companion of {@see findByIdentity()}: when a login lookup

@@ -169,6 +169,55 @@ final class Identities extends Objects
     }
 
     /**
+     * Creates a verified `oauth`-type identity for a user (HIL-281).
+     *
+     * The external-login write path: like the SMS identity there is no secret —
+     * the provider already vouched for the account — so the row is inserted with
+     * `secret = NULL` and `verified = true` and needs no follow-up write. The
+     * identifier is the canonical `provider:subject` pair and the `provider`
+     * column records the provider key on its own; uniqueness is per
+     * (oauth, identifier). Account resolution keys strictly on (provider, subject)
+     * — email is never consulted here (the collision/merge policy is HIL-282).
+     *
+     * @param int $userId Owning user id
+     * @param string $provider Provider key, e.g. 'oauth:github'
+     * @param string $subject Provider-immutable account subject id
+     * @return ObjectIdentity The created identity object
+     * @throws EmptyValueException When provider or subject is empty
+     * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
+     * @throws DatabaseException If the insert query fails
+     */
+    public function createOauthIdentity(int $userId, string $provider, string $subject): ObjectIdentity
+    {
+        if ($provider === '' || $subject === '') {
+            throw new EmptyValueException('Identity provider and subject are required');
+        }
+
+        $identifier = $provider . ':' . $subject;
+
+        if ($this->findByIdentity(IdentityType::OAUTH, $identifier) !== null) {
+            throw new DuplicateValueException('oauth account already linked');
+        }
+
+        $identity = ObjectIdentity::create();
+        $identity->userId = $userId;
+        $identity->type = IdentityType::OAUTH;
+        $identity->identifier = $identifier;
+        $identity->provider = $provider;
+        $identity->verified = true;
+        $identity->sync();
+
+        $id = $identity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        $this->objects[$id] = $identity;
+
+        return $identity;
+    }
+
+    /**
      * Resolves the user id owning a verified identity for an email (HIL-283).
      *
      * The passwordless-login read accessor shared with the OAuth email-collision
