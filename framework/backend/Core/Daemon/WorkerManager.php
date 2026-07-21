@@ -12,6 +12,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
@@ -31,6 +32,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -975,7 +977,15 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::COMMAND_REQUEST:
                 if ($signalData instanceof CommandRequestDTO) {
-                    $agent->onSignalCommand($signalData, $source, $name);
+                    try {
+                        $parsedCommandData = Hilos::$sr?->createCommandPayloadDTO($name, $signalData) ?? $signalData;
+                        $agent->onSignalCommand($parsedCommandData, $source, $name);
+                    } catch (InvalidCommandPayloadException $e) {
+                        Logger::logAgentError($agent->getId(), "Command payload validation failed: {$e->getMessage()}");
+                        $agent->replyToCommand(CommandReplyDTO::error($signalData->correlationId, $e->getMessage()));
+                    } catch (AgentException $e) {
+                        Logger::logAgentError($agent->getId(), "Command handler failed: {$e->getMessage()}");
+                    }
                 } else {
                     Logger::error("onSignalCommand - invalid signal data type: " . get_class($signalData));
                 }

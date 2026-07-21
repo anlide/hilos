@@ -48,6 +48,13 @@ final class ChatAgent extends AbstractAgent
         ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
     ];
 
+    public const array AGENT_COMMANDS = [
+        ChatCommandConstants::ECHO,
+        ChatCommandConstants::SET_ADMIN,
+        ChatCommandConstants::IMPERSONATE_START,
+        ChatCommandConstants::IMPERSONATE_STOP,
+    ];
+
     public const array AGENT_ACTIONS = [
         ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
         ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,

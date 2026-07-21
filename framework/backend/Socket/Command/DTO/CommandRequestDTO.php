@@ -24,11 +24,15 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
      * @param string $correlationId Correlation id echoed back on the reply
      * @param string $command Command name (e.g. CommandConstants::COMMAND_PING)
      * @param array<string, mixed> $payload Command arguments
+     * @param ?SignalDataInterface $parsedPayload Topology-hydrated inner payload DTO, set by
+     *     SignalRouter::createCommandPayloadDTO when the command declares a DTO; transient
+     *     (not serialized in toArray()/fromArray()), so the receiving agent reads it in-process
      */
     public function __construct(
         public readonly string $correlationId,
         public readonly string $command,
         public readonly array $payload = [],
+        public readonly ?SignalDataInterface $parsedPayload = null,
     ) {
     }
 

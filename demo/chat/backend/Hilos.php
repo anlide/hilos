@@ -38,8 +38,6 @@ use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
 use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
-use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Environment\ChatEnvCatalog;
@@ -475,22 +473,6 @@ final class Hilos extends \Hilos\Hilos
     protected static function createFs(): ?FsContext
     {
         return new ChatFsContext();
-    }
-
-    /**
-     * Routes the chat command channel: the echo probe, the admin-flag command,
-     * and the impersonation start/stop commands all go to the chat agent.
-     *
-     * @return array<string, string> Agent type keyed by command name
-     */
-    public static function getCommandAgentRoutes(): array
-    {
-        return [
-            ChatCommandConstants::ECHO => AgentType::CHAT,
-            ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
-            ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
-            ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
-        ];
     }
 
 }

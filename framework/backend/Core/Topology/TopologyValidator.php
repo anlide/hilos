@@ -7,6 +7,7 @@ namespace Hilos\Core\Topology;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentCommandConfigKey;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -73,6 +74,7 @@ final class TopologyValidator
             $errors,
         );
         $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
+        $this->validateAgentCommandRoutes($agents, $hilosClass::getCommandAgentRoutes(), $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageTables, 'PAGE_TABLES', $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageLists, 'PAGE_LISTS', $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageData, 'PAGE_DATA', $errors);
@@ -929,6 +931,112 @@ final class TopologyValidator
                 $errors[] = "Computed agent signal DTO route {$signalName} must reference a valid SignalDataInterface class";
             }
         }
+    }
+
+    /**
+     * Validates agent-owned CLI command route declarations.
+     *
+     * Checks AGENT_COMMANDS entry shape (list name, command => DTO class, or command
+     * => config array), duplicate command ownership (one command = exactly one agent),
+     * and that any declared DTO class implements SignalDataInterface. Also verifies each
+     * declared route appears in the computed command route map.
+     *
+     * @param array $agents Agent registry
+     * @param array $commandAgentRoutes Computed command route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentCommandRoutes(array $agents, array $commandAgentRoutes, array &$errors): void
+    {
+        $declaredRoutes = [];
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_COMMANDS as $key => $value) {
+                // List entry — int key + non-empty string command name.
+                if (is_int($key)) {
+                    if (!is_string($value) || $value === '') {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain only non-empty command names or valid command config entries";
+                        continue;
+                    }
+
+                    $this->recordDeclaredCommandRoute($value, $agentType, $declaredRoutes, $errors);
+                    continue;
+                }
+
+                if (!is_string($key) || $key === '') {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain only non-empty command names, command DTO map entries, or valid command config arrays";
+                    continue;
+                }
+
+                // Map entry — command name key + DTO class-string value.
+                if (is_string($value) && $value !== '') {
+                    if ($this->isExistingClassString(
+                        $value,
+                        "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}]",
+                        $errors,
+                    ) && !is_subclass_of($value, SignalDataInterface::class)) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] class {$value} must implement "
+                            . SignalDataInterface::class;
+                    }
+
+                    $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
+                    continue;
+                }
+
+                // Map entry — command name key + config array value.
+                if (!is_array($value)) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] must be a non-empty command name, a SignalDataInterface class, or a valid command config array";
+                    continue;
+                }
+
+                $unknownKeys = array_diff(array_keys($value), [AgentCommandConfigKey::DTO]);
+                if ($unknownKeys !== []) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] contains unknown config keys: " . implode(', ', $unknownKeys);
+                }
+
+                $dtoClass = $value[AgentCommandConfigKey::DTO] ?? null;
+                if ($dtoClass !== null) {
+                    if ($this->isExistingClassString(
+                        $dtoClass,
+                        "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}][" . AgentCommandConfigKey::DTO . ']',
+                        $errors,
+                    ) && !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}][" . AgentCommandConfigKey::DTO . "] class {$dtoClass} must implement "
+                            . SignalDataInterface::class;
+                    }
+                }
+
+                $this->recordDeclaredCommandRoute($key, $agentType, $declaredRoutes, $errors);
+            }
+        }
+
+        foreach ($declaredRoutes as $command => $agentType) {
+            if (($commandAgentRoutes[$command] ?? null) !== $agentType) {
+                $errors[] = "Agent command route {$command} is missing from computed command routes";
+            }
+        }
+    }
+
+    /**
+     * Records a declared command route, flagging duplicate command ownership.
+     *
+     * @param string $command Command name
+     * @param string $agentType Declaring agent type
+     * @param array<string, string> $declaredRoutes Command owner accumulator, keyed by command name
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function recordDeclaredCommandRoute(string $command, string $agentType, array &$declaredRoutes, array &$errors): void
+    {
+        if (isset($declaredRoutes[$command]) && $declaredRoutes[$command] !== $agentType) {
+            $errors[] = "Command {$command} is declared by multiple agents: {$declaredRoutes[$command]} and {$agentType}";
+
+            return;
+        }
+
+        $declaredRoutes[$command] = $agentType;
     }
 
     /**

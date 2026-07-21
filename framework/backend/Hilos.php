@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\Topology\AgentActionRouteRegistry;
+use Hilos\Core\Topology\AgentCommandRouteRegistry;
 use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
@@ -276,14 +277,29 @@ abstract class Hilos
     /**
      * Returns CLI command owner agent types keyed by command name.
      *
-     * A project overrides this to route a command received over the command socket
-     * channel to the agent that handles it. The framework declares none.
+     * Aggregated from AGENT_COMMANDS declared by registered agent classes: a
+     * command received over the command socket channel routes to the agent that
+     * declares it. A project may still override this to add non-agent routes.
      *
      * @return array<string, string> Agent type keyed by command name
      */
     public static function getCommandAgentRoutes(): array
     {
-        return [];
+        return AgentCommandRouteRegistry::routes(static::AGENTS);
+    }
+
+    /**
+     * Returns agent-owned command inner payload DTO classes.
+     *
+     * List-style command name entries declare routing only. Map-style entries with
+     * class-string values (or an AgentCommandConfigKey::DTO config array) declare
+     * both routing and the inner payload DTO class hydrated at dispatch time.
+     *
+     * @return array<string, class-string<SignalDataInterface>> DTO class keyed by command name
+     */
+    public static function getCommandDtoRoutes(): array
+    {
+        return AgentCommandRouteRegistry::dtoRoutes(static::AGENTS);
     }
 
     /**

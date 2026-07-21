@@ -12,6 +12,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -266,6 +267,49 @@ final class TopologyValidatorTest extends TestCase
         TopologyPageAgentSignalConflictHilos::validateTopology();
     }
 
+    public function testComputedCommandRoutesComeFromRegisteredAgentClasses(): void
+    {
+        $this->assertSame(
+            [
+                TopologyValidAgent::VALID_COMMAND => TopologyValidAgent::AGENT_TYPE,
+                TopologyValidAgent::VALID_DTO_COMMAND => TopologyValidAgent::AGENT_TYPE,
+            ],
+            TopologyValidHilos::getCommandAgentRoutes(),
+        );
+        $this->assertSame(
+            [TopologyValidAgent::VALID_DTO_COMMAND => CommandRequestDTO::class],
+            TopologyValidHilos::getCommandDtoRoutes(),
+        );
+    }
+
+    public function testAgentCommandsMustBeNonEmptyStrings(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENTS[invalid_agent_command_agent] class');
+        $this->expectExceptionMessage('AGENT_COMMANDS must contain only non-empty command names');
+
+        TopologyInvalidAgentCommandHilos::validateTopology();
+    }
+
+    public function testAgentCommandsMustHaveSingleOwner(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('Command shared_agent_command is declared by multiple agents');
+        $this->expectExceptionMessage(TopologyFirstAgentCommandAgent::AGENT_TYPE);
+        $this->expectExceptionMessage(TopologySecondAgentCommandAgent::AGENT_TYPE);
+
+        TopologyDuplicateAgentCommandHilos::validateTopology();
+    }
+
+    public function testAgentCommandDtoMustImplementSignalDataInterface(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENT_COMMANDS[bad_dto_command] class');
+        $this->expectExceptionMessage('must implement ' . SignalDataInterface::class);
+
+        TopologyBadCommandDtoHilos::validateTopology();
+    }
+
     public function testIndexedAgentSignalPassesValidation(): void
     {
         TopologyIndexedAgentSignalHilos::validateTopology();
@@ -453,8 +497,17 @@ final class TopologyValidAgent extends TopologyTestAgent
 
     public const string VALID_AGENT_SIGNAL = 'valid_agent_signal';
 
+    public const string VALID_COMMAND = 'valid_command';
+
+    public const string VALID_DTO_COMMAND = 'valid_dto_command';
+
     public const array AGENT_SIGNALS = [
         self::VALID_AGENT_SIGNAL,
+    ];
+
+    public const array AGENT_COMMANDS = [
+        self::VALID_COMMAND,
+        self::VALID_DTO_COMMAND => CommandRequestDTO::class,
     ];
 }
 
@@ -598,6 +651,43 @@ final class TopologyConflictingAgent extends TopologyTestAgent
 
     public const array AGENT_SIGNALS = [
         TopologyValidPage::VALID_PAGE_SIGNAL,
+    ];
+}
+
+final class TopologyInvalidAgentCommandAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'invalid_agent_command_agent';
+
+    public const array AGENT_COMMANDS = [
+        '',
+        42,
+    ];
+}
+
+final class TopologyFirstAgentCommandAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'first_agent_command_agent';
+
+    public const array AGENT_COMMANDS = [
+        'shared_agent_command',
+    ];
+}
+
+final class TopologySecondAgentCommandAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'second_agent_command_agent';
+
+    public const array AGENT_COMMANDS = [
+        'shared_agent_command',
+    ];
+}
+
+final class TopologyBadCommandDtoAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'bad_command_dto_agent';
+
+    public const array AGENT_COMMANDS = [
+        'bad_dto_command' => TopologyNotAgent::class,
     ];
 }
 
@@ -873,6 +963,70 @@ final class TopologyDuplicateAgentSignalHilos extends HilosFacade
         TopologySecondAgentSignalAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologySecondAgentSignalAgent::class,
             AgentRegistryKey::DAEMON => TopologySecondAgentSignalAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentCommandHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyInvalidAgentCommandAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyInvalidAgentCommandAgent::class,
+            AgentRegistryKey::DAEMON => TopologyInvalidAgentCommandAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicateAgentCommandHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFirstAgentCommandAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFirstAgentCommandAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFirstAgentCommandAgentDaemon::class,
+        ],
+        TopologySecondAgentCommandAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondAgentCommandAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondAgentCommandAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBadCommandDtoHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyBadCommandDtoAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyBadCommandDtoAgent::class,
+            AgentRegistryKey::DAEMON => TopologyBadCommandDtoAgentDaemon::class,
         ],
     ];
 

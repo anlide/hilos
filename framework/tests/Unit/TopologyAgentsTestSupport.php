@@ -102,6 +102,26 @@ final class TopologyConflictingAgentDaemon extends TopologyTestAgentDaemon
     public const string AGENT_TYPE = 'conflicting_agent';
 }
 
+final class TopologyInvalidAgentCommandAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'invalid_agent_command_agent';
+}
+
+final class TopologyFirstAgentCommandAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'first_agent_command_agent';
+}
+
+final class TopologySecondAgentCommandAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'second_agent_command_agent';
+}
+
+final class TopologyBadCommandDtoAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'bad_command_dto_agent';
+}
+
 final class TopologyIndexedAgentDaemon extends TopologyTestAgentDaemon
 {
     public const string AGENT_TYPE = 'indexed_agent';

@@ -55,6 +55,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     /** @var list<string> Agent signal names owned directly by this agent. */
     public const array AGENT_SIGNALS = [];
 
+    /** @var list<string> CLI command names owned directly by this agent. */
+    public const array AGENT_COMMANDS = [];
+
     /**
      * @var array<string, class-string<ActionPayloadDTO>> Client-action payload DTOs owned directly by this
      *     agent, keyed by action name. The page-independent counterpart to Page::ACTIONS: an action listed

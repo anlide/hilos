@@ -10,6 +10,7 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -1083,6 +1084,44 @@ class SignalRouter
         }
 
         return new AgentSignalData($parsed);
+    }
+
+    /**
+     * Creates the topology-hydrated command request from project topology.
+     *
+     * When the command declares an inner payload DTO through getCommandDtoRoutes(),
+     * hydrates it from the raw payload and returns a new CommandRequestDTO carrying
+     * the parsed DTO in its transient parsedPayload slot. When no DTO is declared,
+     * returns the request unchanged.
+     *
+     * @param string $command Command name
+     * @param CommandRequestDTO $data Incoming command request
+     * @return CommandRequestDTO Hydrated or passthrough command request
+     * @throws InvalidCommandPayloadException When topology declares a DTO and the payload does not match
+     */
+    public function createCommandPayloadDTO(string $command, CommandRequestDTO $data): CommandRequestDTO
+    {
+        $dtoClass = $this->hilosClass()::getCommandDtoRoutes()[$command] ?? null;
+        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+            return $data;
+        }
+
+        try {
+            $parsed = $dtoClass::fromArray($data->payload);
+        } catch (\Throwable) {
+            throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload);
+        }
+
+        if (!$parsed instanceof $dtoClass) {
+            throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload);
+        }
+
+        return new CommandRequestDTO(
+            correlationId: $data->correlationId,
+            command: $data->command,
+            payload: $data->payload,
+            parsedPayload: $parsed,
+        );
     }
 
     /**

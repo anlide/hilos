@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
@@ -248,6 +249,17 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
         ], Hilos::getAgentSignalRoutes());
+    }
+
+    public function testComputedCommandRoutesMatchChatAgentOwnership(): void
+    {
+        $this->assertSame([
+            ChatCommandConstants::ECHO => AgentType::CHAT,
+            ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
+            ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
+            ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
+        ], Hilos::getCommandAgentRoutes());
+        $this->assertSame([], Hilos::getCommandDtoRoutes());
     }
 
     public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void
