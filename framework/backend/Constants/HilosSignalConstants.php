@@ -231,6 +231,16 @@ final class HilosSignalConstants
     /** Client → server: toggle a stored backup's rotation pin on the HILOS_BACKUP page. */
     public const string BACKUP_SET_KEEP = 'backup_set_keep';
 
+    // ── Hilos OAuth login: async agent → initiating browser (WS_USER) ──
+    /**
+     * OAuth agent → initiating connection: the async login exchange failed or timed out.
+     *
+     * The only OAuth outcome that needs its own signal: success rides the existing
+     * session/currentUser fan-out (HIL-161), so the SPA callback surface resolves on
+     * EITHER currentUser (login) OR this failure signal (see HIL-281 mechanism B).
+     */
+    public const string HILOS_OAUTH_RESULT = 'hilos_oauth_result';
+
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */
     public const string BACKUP_AGENT_CREATE = 'backup_agent_create';

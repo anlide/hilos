@@ -27,4 +27,7 @@ final class HilosAgentType
 
     /** @var string Hilos backup agent (monopoly owner of the backup index and storage) */
     public const string HILOS_BACKUP = 'hilos_backup';
+
+    /** @var string Hilos OAuth agent (pre-auth async owner of in-flight OAuth login exchanges) */
+    public const string HILOS_OAUTH = 'hilos_oauth';
 }
