@@ -375,4 +375,39 @@ enum EnvConstants
      * Default 8000.
      */
     case CLUSTER_FAILOVER_GRACE_MS;
+
+    // ── WebAuthn / passkey (HIL-284) ─────────────────────────────────────────
+
+    /**
+     * @var string WebAuthn Relying Party id — the registrable domain the passkey is
+     * scoped to (no scheme/port), e.g. "example.com". The authenticator hashes it into
+     * authenticatorData; verification compares against SHA-256 of this value. Default
+     * "localhost" for the dev stack.
+     */
+    case HILOS_WEBAUTHN_RP_ID;
+
+    /** @var string Human-readable Relying Party name shown by the authenticator UI. Default "Hilos". */
+    case HILOS_WEBAUTHN_RP_NAME;
+
+    /**
+     * @var string Comma-separated list of allowed ceremony origins (scheme://host[:port]),
+     * e.g. "https://example.com,https://www.example.com". clientDataJSON.origin must match
+     * one entry exactly. Default "http://localhost" for the dev stack.
+     */
+    case HILOS_WEBAUTHN_ORIGIN;
+
+    /** @var string Seconds a WebAuthn challenge stays valid before it expires. Default 300 (5m). */
+    case HILOS_WEBAUTHN_CHALLENGE_TTL_SEC;
+
+    /** @var string Requested user-verification level: required | preferred | discouraged. Default "preferred". */
+    case HILOS_WEBAUTHN_USER_VERIFICATION;
+
+    /** @var string Client-side ceremony timeout in milliseconds carried in the publicKey options. Default 60000. */
+    case HILOS_WEBAUTHN_TIMEOUT_MS;
+
+    /**
+     * @var string HMAC secret for the stateless WebAuthn challenge token. Env-only; must be a
+     * long random value in any real deployment. Empty in dev (weak, dev-only signing).
+     */
+    case HILOS_WEBAUTHN_CHALLENGE_SECRET;
 }

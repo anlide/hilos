@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Auth\WebAuthn\AssertionVerifier;
+use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -19,9 +21,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Exposes the credential's fields and the two post-assertion write primitives:
  * {@see updateSignCount()} advances the stored signature counter after a
  * successful login (clone-detection), and {@see touchLastUsed()} stamps last use
- * for passkey management (HIL-404). The WebAuthn signature verification itself
- * (which reads {@see $publicKey} / {@see $signCount}) lands with the assertion
- * verifier subsystem (HIL-284 slice 2).
+ * for passkey management (HIL-404). {@see verifyAssertion()} drives the WebAuthn
+ * assertion check against this credential's stored key/counter and, on success,
+ * persists the advanced counter and last-used stamp.
  *
  * @extends Object_<EntityPasskeyCredential>
  *
@@ -170,6 +172,43 @@ final class PasskeyCredential extends Object_
         );
 
         $this->entity->last_used_at = $now;
+    }
+
+    /**
+     * Verifies a login assertion against this credential and records the successful use.
+     *
+     * Runs the WebAuthn assertion check with this credential's stored public key and
+     * signature counter; on success it advances the stored counter to the value the
+     * authenticator reported (clone-detection baseline) and stamps last use. Any
+     * verification failure throws before either write, leaving the credential
+     * untouched.
+     *
+     * @param AssertionVerifier $verifier Configured assertion verifier
+     * @param string $expectedChallenge base64url challenge recovered from the signed token
+     * @param string $clientDataJson Raw clientDataJSON bytes returned by the client
+     * @param string $authenticatorData Raw authenticatorData bytes returned by the client
+     * @param string $signature Raw ECDSA (DER) signature bytes returned by the client
+     * @throws WebAuthnVerificationException When the assertion fails any client-data, signature or counter check
+     * @throws DatabaseException When persisting the advanced counter or last-used stamp fails
+     */
+    public function verifyAssertion(
+        AssertionVerifier $verifier,
+        string $expectedChallenge,
+        string $clientDataJson,
+        string $authenticatorData,
+        string $signature,
+    ): void {
+        $newSignCount = $verifier->verify(
+            $this->entity->public_key,
+            $this->entity->sign_count,
+            $expectedChallenge,
+            $clientDataJson,
+            $authenticatorData,
+            $signature,
+        );
+
+        $this->updateSignCount($newSignCount);
+        $this->touchLastUsed();
     }
 
     /**

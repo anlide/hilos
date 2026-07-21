@@ -1,0 +1,129 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit\Auth\WebAuthn;
+
+use Hilos\Auth\WebAuthn\AttestationVerifier;
+use Hilos\Auth\WebAuthn\Base64Url;
+use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
+use Hilos\Auth\WebAuthn\WebAuthnConfig;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Unit tests for the registration (attestation) verifier (HIL-284).
+ *
+ * A genuine register ceremony yields the credential material to store; a ceremony
+ * whose challenge, origin, RP-id hash or user-present flag is wrong is rejected.
+ */
+final class AttestationVerifierTest extends TestCase
+{
+    private const string CHALLENGE = 'attestation-challenge-value';
+    private const string ORIGIN = 'http://localhost';
+
+    /**
+     * A valid registration returns the credential id, key, counter and AAGUID.
+     *
+     * @throws WebAuthnVerificationException Never in the success path
+     */
+    public function testValidRegistrationYieldsCredentialMaterial(): void
+    {
+        $vectors = new WebAuthnTestVectors();
+        $credentialId = random_bytes(20);
+        $aaguid = hex2bin('0102030405060708090a0b0c0d0e0f10');
+
+        $authData = $vectors->authenticatorData(
+            WebAuthnTestVectors::FLAG_USER_PRESENT | WebAuthnTestVectors::FLAG_USER_VERIFIED | WebAuthnTestVectors::FLAG_ATTESTED_CREDENTIAL_DATA,
+            7,
+            $vectors->attestedCredentialData($credentialId, $aaguid),
+        );
+        $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
+
+        $result = (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+
+        self::assertSame(Base64Url::encode($credentialId), $result->credentialId);
+        self::assertSame(7, $result->signCount);
+        self::assertSame('01020304-0506-0708-090a-0b0c0d0e0f10', $result->aaguid);
+        self::assertNotFalse(openssl_pkey_get_public($result->publicKeyPem));
+    }
+
+    /**
+     * A clientDataJSON echoing a different challenge is rejected.
+     */
+    public function testWrongChallengeIsRejected(): void
+    {
+        $vectors = new WebAuthnTestVectors();
+        $authData = $this->registrationAuthData($vectors);
+        $clientDataJson = $vectors->clientDataJson('a-different-challenge', self::ORIGIN);
+
+        $this->expectException(WebAuthnVerificationException::class);
+        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+    }
+
+    /**
+     * A ceremony from a non-allowed origin is rejected.
+     */
+    public function testDisallowedOriginIsRejected(): void
+    {
+        $vectors = new WebAuthnTestVectors();
+        $authData = $this->registrationAuthData($vectors);
+        $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, 'http://evil.example');
+
+        $this->expectException(WebAuthnVerificationException::class);
+        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+    }
+
+    /**
+     * authenticatorData scoped to a different RP id is rejected.
+     */
+    public function testWrongRpIdHashIsRejected(): void
+    {
+        $vectors = new WebAuthnTestVectors('localhost');
+        $authData = $this->registrationAuthData($vectors);
+        $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
+
+        $config = $this->config(rpId: 'other.example');
+
+        $this->expectException(WebAuthnVerificationException::class);
+        (new AttestationVerifier($config))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+    }
+
+    /**
+     * A ceremony without the user-present flag is rejected.
+     */
+    public function testMissingUserPresenceIsRejected(): void
+    {
+        $vectors = new WebAuthnTestVectors();
+        $authData = $vectors->authenticatorData(
+            WebAuthnTestVectors::FLAG_ATTESTED_CREDENTIAL_DATA,
+            1,
+            $vectors->attestedCredentialData(random_bytes(20), str_repeat("\0", 16)),
+        );
+        $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
+
+        $this->expectException(WebAuthnVerificationException::class);
+        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+    }
+
+    /**
+     * @param WebAuthnTestVectors $vectors Fixture
+     * @return string Raw registration authenticatorData with UP|UV|AT set
+     */
+    private function registrationAuthData(WebAuthnTestVectors $vectors): string
+    {
+        return $vectors->authenticatorData(
+            WebAuthnTestVectors::FLAG_USER_PRESENT | WebAuthnTestVectors::FLAG_USER_VERIFIED | WebAuthnTestVectors::FLAG_ATTESTED_CREDENTIAL_DATA,
+            1,
+            $vectors->attestedCredentialData(random_bytes(20), str_repeat("\0", 16)),
+        );
+    }
+
+    /**
+     * @param string $rpId RP id
+     * @return WebAuthnConfig Config under test
+     */
+    private function config(string $rpId = 'localhost'): WebAuthnConfig
+    {
+        return new WebAuthnConfig($rpId, 'Hilos', [self::ORIGIN], 300, WebAuthnConfig::USER_VERIFICATION_PREFERRED, 60000, 'secret');
+    }
+}

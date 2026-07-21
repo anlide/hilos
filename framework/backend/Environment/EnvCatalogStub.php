@@ -224,6 +224,13 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1000, emptyIsMissing: true),
             EnvConstants::CLUSTER_LINK_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 5000, emptyIsMissing: true),
             EnvConstants::CLUSTER_FAILOVER_GRACE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8000, emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_RP_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'localhost', emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_RP_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'Hilos', emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_ORIGIN->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'http://localhost', emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_CHALLENGE_TTL_SEC->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 300, emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'preferred', emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60000, emptyIsMissing: true),
+            EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
         ];
     }
 
