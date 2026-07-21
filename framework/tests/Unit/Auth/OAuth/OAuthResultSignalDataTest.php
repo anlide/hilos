@@ -34,9 +34,34 @@ final class OAuthResultSignalDataTest extends TestCase
                 'acceptKey' => 'accept-1',
                 'provider' => 'oauth:github',
                 'reason' => 'oauth_login_failed',
+                'email' => '',
+                'linkToken' => '',
             ],
             $data->toArray(),
         );
+    }
+
+    public function testReauthRequiredCarriesTheCollidingEmailAndLinkToken(): void
+    {
+        $data = new OAuthResultSignalData(
+            'accept-3',
+            'oauth:github',
+            OAuthResultSignalData::REASON_REAUTH_REQUIRED,
+            'user@example.com',
+            'link.token',
+        );
+
+        $this->assertSame(
+            [
+                'acceptKey' => 'accept-3',
+                'provider' => 'oauth:github',
+                'reason' => 'reauth_required',
+                'email' => 'user@example.com',
+                'linkToken' => 'link.token',
+            ],
+            $data->toArray(),
+        );
+        $this->assertSame($data->toArray(), OAuthResultSignalData::fromArray($data->toArray())->toArray());
     }
 
     public function testFromArrayRoundTripsToArray(): void

@@ -19,6 +19,11 @@ use Random\RandomException;
  * a provider through {@see providerFor()}. Keeping the exchange out of the
  * facade is what lets the callback action stay synchronous while the network
  * round-trips run off the master.
+ *
+ * It also mints and verifies the stateless account-link token (HIL-282): the
+ * email-collision branch issues one ({@see issueLinkToken()}) instead of creating
+ * a user, and the re-auth link action verifies it ({@see verifyLinkToken()})
+ * before binding the identity. Both delegate to the pure {@see OAuthLinkTokenSigner}.
  */
 final class OAuthService
 {
@@ -26,11 +31,15 @@ final class OAuthService
      * @param OAuthProviderRegistry $providers Configured provider registry
      * @param OAuthStateSigner $stateSigner Signer for the stateless state token
      * @param int $stateTtlSeconds Lifetime of a minted state token in seconds
+     * @param OAuthLinkTokenSigner $linkTokenSigner Signer for the stateless account-link token (HIL-282)
+     * @param int $linkTokenTtlSeconds Lifetime of a minted link token in seconds
      */
     public function __construct(
         private readonly OAuthProviderRegistry $providers,
         private readonly OAuthStateSigner $stateSigner,
         private readonly int $stateTtlSeconds,
+        private readonly OAuthLinkTokenSigner $linkTokenSigner,
+        private readonly int $linkTokenTtlSeconds,
     ) {
     }
 
@@ -63,6 +72,34 @@ final class OAuthService
     public function verifyState(string $state, string $sessionToken): void
     {
         $this->stateSigner->verify($state, $sessionToken);
+    }
+
+    /**
+     * Mints an account-link token for a pending `(provider, subject)` collision (HIL-282).
+     *
+     * Issued by the email-collision branch in place of creating a user: it points
+     * at the OAuth account waiting to be linked and the email that collided, and
+     * is redeemed by the re-auth link action after the owner proves themselves.
+     *
+     * @param string $providerKey Provider key the pending link belongs to
+     * @param string $subject Provider-immutable account id to link
+     * @param string $email Provider-reported email that collided with a verified identity
+     * @return string Signed link token
+     */
+    public function issueLinkToken(string $providerKey, string $subject, string $email): string
+    {
+        return $this->linkTokenSigner->issue($providerKey, $subject, $email, $this->linkTokenTtlSeconds);
+    }
+
+    /**
+     * Verifies an account-link token and returns its capability, or null when invalid (HIL-282).
+     *
+     * @param string $token Signed link token returned by the re-auth link action
+     * @return ?OAuthLinkTokenData Decoded capability, or null when the token is invalid or expired
+     */
+    public function verifyLinkToken(string $token): ?OAuthLinkTokenData
+    {
+        return $this->linkTokenSigner->verify($token);
     }
 
     /**

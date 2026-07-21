@@ -9,20 +9,26 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 
 /**
- * OAuthAgent - the chat demo's concrete OAuth login agent (HIL-281).
+ * OAuthAgent - the chat demo's concrete OAuth login agent (HIL-281 / HIL-282).
  *
  * Supplies the two project hooks the framework {@see AbstractOAuthAgent} leaves
  * open: {@see buildProviderRegistry()} from {@see ChatOAuthConfig}, and
  * {@see completeOAuthLogin()} which resolves the account by (oauth, provider:subject),
  * creating the user + oauth identity on first login, then signals the ChatAgent to
- * bind the session. Email is never consulted for resolution here — the
- * email-collision / account-merge branch is deferred to HIL-282.
+ * bind the session.
+ *
+ * Account resolution keys strictly on (provider, subject); the provider email is
+ * consulted only for the HIL-282 collision guard — before a first-login create, a
+ * verified email match against an existing identity does NOT silently sign in but
+ * pauses for re-authentication ({@see requireReauthToLink()}).
  */
 final class OAuthAgent extends AbstractOAuthAgent
 {
@@ -37,13 +43,16 @@ final class OAuthAgent extends AbstractOAuthAgent
     }
 
     /**
-     * Resolves or creates the account for a finished exchange and binds the session.
+     * Resolves, links, or creates the account for a finished exchange (HIL-281 / HIL-282).
      *
-     * Resolution is (provider, subject)-only: an existing oauth identity resolves its
-     * user; a new subject mints a user (display name from the email local part), a
-     * verified oauth identity, and the "registered in chat" event. Either way the
-     * session-owning ChatAgent is signalled to authenticate the live session, which
-     * fans the currentUser update (HIL-161).
+     * Resolution keys on (provider, subject): an existing oauth identity binds its
+     * user. Otherwise, before a first-login create, the provider email is checked
+     * against existing verified identities ({@see requireReauthToLink()}); a match
+     * pauses for re-authentication instead of signing in, so a shared email cannot
+     * silently seize an account. No match mints a user (display name from the email
+     * local part), a verified oauth identity, and the "registered in chat" event.
+     * A resolved or created account signals the session-owning ChatAgent to
+     * authenticate the live session, which fans the currentUser update (HIL-161).
      *
      * @param OAuthPendingLogin $op In-flight op carrying the initiating session token
      * @param OAuthUserInfo $info Resolved provider subject and email
@@ -56,17 +65,67 @@ final class OAuthAgent extends AbstractOAuthAgent
         );
 
         if ($identity !== null && $identity->userId !== null) {
-            $userId = $identity->userId;
-        } else {
-            $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($info->email));
-            $userId = (int)$user->id;
-            Hilos::$db->identities->createOauthIdentity($userId, $op->provider, $info->subject);
-            Hilos::$db->events->actions->addUserRegistered($userId);
+            $this->bindSession($op, $identity->userId);
+
+            return;
         }
 
+        $collisionUserId = $info->email === ''
+            ? null
+            : Hilos::$db->identities->findUserIdByVerifiedEmail($info->email);
+        if ($collisionUserId !== null) {
+            $this->requireReauthToLink($op, $info);
+
+            return;
+        }
+
+        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($info->email));
+        $userId = (int)$user->id;
+        Hilos::$db->identities->createOauthIdentity($userId, $op->provider, $info->subject);
+        Hilos::$db->events->actions->addUserRegistered($userId);
+        $this->bindSession($op, $userId);
+    }
+
+    /**
+     * Signals the session-owning ChatAgent to authenticate the live session to a user.
+     *
+     * @param OAuthPendingLogin $op In-flight op carrying the initiating session token
+     * @param int $userId Resolved user id to bind the session to
+     */
+    private function bindSession(OAuthPendingLogin $op, int $userId): void
+    {
         $this->sendToAgent(
             ChatSignalConstants::OAUTH_BIND_SESSION,
             new OAuthBindSessionSignalData($op->sessionToken, $userId),
+        );
+    }
+
+    /**
+     * Pauses a colliding first login for re-authentication instead of signing in (HIL-282).
+     *
+     * The provider email matches an existing verified identity, so no user is
+     * created and nobody is signed in: a stateless link token is minted and the
+     * re-auth-required result is delivered to the initiating connection. The
+     * surface re-authenticates the owner (email pre-filled) and redeems the token
+     * through the link action, which is where the identity is finally bound.
+     *
+     * @param OAuthPendingLogin $op In-flight op carrying the initiating accept key
+     * @param OAuthUserInfo $info Resolved provider subject and colliding email
+     */
+    private function requireReauthToLink(OAuthPendingLogin $op, OAuthUserInfo $info): void
+    {
+        $linkToken = ChatOAuthConfig::buildService()->issueLinkToken($op->provider, $info->subject, $info->email);
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_RESULT,
+            $op->acceptKey,
+            new OAuthResultSignalData(
+                $op->acceptKey,
+                $op->provider,
+                OAuthResultSignalData::REASON_REAUTH_REQUIRED,
+                $info->email,
+                $linkToken,
+            ),
         );
     }
 

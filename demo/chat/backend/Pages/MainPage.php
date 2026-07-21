@@ -17,6 +17,7 @@ use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
+use Demo\Chat\Pages\DTO\Main\LinkOAuthAfterReauthActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthCallbackActionDTO;
@@ -90,6 +91,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
         ChatSignalConstants::OAUTH_START => OAuthStartActionDTO::class,
         ChatSignalConstants::OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
+        ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
@@ -103,6 +105,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::MESSAGE,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
         ChatSignalConstants::CONFIRM_REGISTER,
+        ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH,
     ];
 
     public const array SIGNALS = [
@@ -145,6 +148,13 @@ final class MainPage extends AbstractPage
      * rule) — the shortest lever that keeps trivially weak passwords out.
      */
     private const int PASSWORD_MIN_LENGTH = 8;
+
+    /**
+     * Generic failure message for an OAuth account link (HIL-282). A bad, expired,
+     * foreign-owned, or already-linked token all answer the same way so the wire
+     * discloses nothing about the matched account beyond the collision it implies.
+     */
+    private const string INVALID_LINK_MESSAGE = 'This account link is invalid or has expired';
 
     /**
      * Routes main-page actions to message, upload init, and attachment draft handlers.
@@ -278,6 +288,14 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, OAuthCallbackActionDTO::class, $dto);
                 }
                 $this->handleOauthCallback($dto);
+
+                break;
+
+            case ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH:
+                if (!$dto instanceof LinkOAuthAfterReauthActionDTO) {
+                    throw new InvalidActionPayloadException($action, LinkOAuthAfterReauthActionDTO::class, $dto);
+                }
+                $this->handleLinkOAuthAfterReauth($dto);
 
                 break;
 
@@ -859,6 +877,45 @@ final class MainPage extends AbstractPage
             $dto->code,
             microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
         ));
+    }
+
+    /**
+     * Links an OAuth account to the re-authenticated user after an email collision (HIL-282).
+     *
+     * The redemption arm of the collision flow. Authenticated (see AUTH_ACTIONS):
+     * the signed link token minted by the collision branch is verified for HMAC and
+     * expiry, then its email must resolve to the now-signed-in user — this is the
+     * ownership proof that a full re-authentication provided, so a token minted for
+     * one account can never link into another. The verified oauth identity is then
+     * bound. A bad, expired, foreign-owned, or already-linked token all fail with
+     * the same generic message; nothing about the matched account crosses the wire.
+     *
+     * @param LinkOAuthAfterReauthActionDTO $dto Parsed link payload (signed token)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the token is invalid, foreign-owned, or already linked
+     * @throws HilosException When the identity lookup or bind fails
+     */
+    private function handleLinkOAuthAfterReauth(LinkOAuthAfterReauthActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        $link = ChatOAuthConfig::buildService()->verifyLinkToken($dto->token);
+        if ($link === null) {
+            throw new ValidationException(self::INVALID_LINK_MESSAGE);
+        }
+
+        if (Hilos::$db->identities->findUserIdByVerifiedEmail($link->email) !== $userId) {
+            throw new ValidationException(self::INVALID_LINK_MESSAGE);
+        }
+
+        try {
+            Hilos::$db->identities->createOauthIdentity($userId, $link->provider, $link->subject);
+        } catch (DuplicateValueException) {
+            throw new ValidationException(self::INVALID_LINK_MESSAGE);
+        }
     }
 
     /**

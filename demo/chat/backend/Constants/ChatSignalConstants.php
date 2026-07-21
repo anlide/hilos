@@ -62,6 +62,9 @@ final class ChatSignalConstants
     /** @var string Client → server: hand back the OAuth provider code+state after the redirect (public, anonymous-reachable) */
     public const string OAUTH_CALLBACK = 'oauth_callback';
 
+    /** @var string Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282) */
+    public const string LINK_OAUTH_AFTER_REAUTH = 'link_oauth_after_reauth';
+
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 

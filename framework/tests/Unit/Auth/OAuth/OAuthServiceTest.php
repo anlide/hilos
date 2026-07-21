@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
+use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
@@ -30,7 +31,13 @@ final class OAuthServiceTest extends TestCase
             new StubOAuthProvider(StubOAuthProvider::DEFAULT_KEY, 'https://app.example/auth/callback'),
         ]);
 
-        return new OAuthService($registry, new OAuthStateSigner('unit-secret'), 600);
+        return new OAuthService(
+            $registry,
+            new OAuthStateSigner('unit-secret'),
+            600,
+            new OAuthLinkTokenSigner('unit-secret'),
+            600,
+        );
     }
 
     /**
@@ -81,5 +88,34 @@ final class OAuthServiceTest extends TestCase
 
         $this->expectException(OAuthUnknownProviderException::class);
         $service->providerFor('oauth:nope');
+    }
+
+    /**
+     * issueLinkToken mints a link token the same service then verifies back to its
+     * provider, subject, and email (HIL-282).
+     */
+    public function testIssueLinkTokenMintsATokenThatVerifiesBack(): void
+    {
+        $service = $this->service();
+
+        $token = $service->issueLinkToken(StubOAuthProvider::DEFAULT_KEY, '4242', 'user@example.com');
+
+        $data = $service->verifyLinkToken($token);
+        self::assertNotNull($data);
+        self::assertSame(StubOAuthProvider::DEFAULT_KEY, $data->provider);
+        self::assertSame('4242', $data->subject);
+        self::assertSame('user@example.com', $data->email);
+    }
+
+    /**
+     * A tampered link token does not verify (HIL-282).
+     */
+    public function testVerifyLinkTokenRejectsATamperedToken(): void
+    {
+        $service = $this->service();
+
+        $token = $service->issueLinkToken(StubOAuthProvider::DEFAULT_KEY, '4242', 'user@example.com');
+
+        self::assertNull($service->verifyLinkToken($token . 'x'));
     }
 }

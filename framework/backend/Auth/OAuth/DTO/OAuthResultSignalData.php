@@ -9,33 +9,47 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
 /**
- * OAuthResultSignalData - the OAuth login failure/timeout signal (HIL-281).
+ * OAuthResultSignalData - the OAuth callback out-of-band result signal (HIL-281 / HIL-282).
  *
- * The one new signal mechanism B adds: it is delivered WS_USER to the initiating
- * connection's accept key when the async token/userinfo exchange fails, times out,
- * or resolves no subject. Success needs no signal of its own — it rides HIL-161's
- * existing session/currentUser fan-out — so this carries only the failure arm: the
- * SPA callback surface, which shows a spinner after `oauthCallback`, resolves on
- * EITHER a currentUser update (login) OR this signal ("OAuth login failed").
+ * Delivered WS_USER to the initiating connection's accept key when the async
+ * outcome cannot ride the login handshake. A plain success needs no signal of its
+ * own — it rides HIL-161's existing session/currentUser fan-out — so the SPA
+ * callback surface, which shows a spinner after `oauthCallback`, resolves on
+ * EITHER a currentUser update (login) OR this signal, branching on {@see reason}:
  *
- * The {@see reason} is a stable, non-sensitive code for the surface to render; the
- * network/provider detail stays in the agent log, never on the wire (HIL-281 keeps
- * post-I/O failures generic).
+ * - {@see REASON_LOGIN_FAILED} — the exchange failed, timed out, or resolved no
+ *   subject: a generic failure (HIL-281). {@see email} / {@see linkToken} are empty.
+ * - {@see REASON_REAUTH_REQUIRED} — the provider email collided with an existing
+ *   verified identity (HIL-282): the surface must re-authenticate the owner (with
+ *   {@see email} pre-filled) and then redeem {@see linkToken} through the link
+ *   action. No user was created and nobody was signed in.
+ *
+ * The {@see reason} is a stable, non-sensitive code; network/provider failure
+ * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
+ * self-contained capability (not a secret about the matched account): it discloses
+ * only that *some* account owns {@see email}, which the collision already implies.
  */
 final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     /** Generic failure reason surfaced to the client (provider/network detail is logged, not sent). */
     public const string REASON_LOGIN_FAILED = 'oauth_login_failed';
 
+    /** Re-auth-to-link reason: the provider email collided with an existing verified identity (HIL-282). */
+    public const string REASON_REAUTH_REQUIRED = 'reauth_required';
+
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets
      * @param string $provider Provider key the login was attempted against
-     * @param string $reason Stable, non-sensitive failure reason code
+     * @param string $reason Stable, non-sensitive result reason code
+     * @param string $email Colliding email to pre-fill for re-auth ('' for the failure arm)
+     * @param string $linkToken Signed link-capability token to redeem after re-auth ('' for the failure arm)
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $provider,
         public readonly string $reason = self::REASON_LOGIN_FAILED,
+        public readonly string $email = '',
+        public readonly string $linkToken = '',
     ) {
     }
 
@@ -56,6 +70,8 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             'acceptKey' => $this->acceptKey,
             'provider' => $this->provider,
             'reason' => $this->reason,
+            'email' => $this->email,
+            'linkToken' => $this->linkToken,
         ];
     }
 
@@ -69,6 +85,8 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             acceptKey: (string)($data['acceptKey'] ?? ''),
             provider: (string)($data['provider'] ?? ''),
             reason: (string)($data['reason'] ?? self::REASON_LOGIN_FAILED),
+            email: (string)($data['email'] ?? ''),
+            linkToken: (string)($data['linkToken'] ?? ''),
         );
     }
 }

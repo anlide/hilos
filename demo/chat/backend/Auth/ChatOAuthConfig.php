@@ -7,6 +7,7 @@ namespace Demo\Chat\Auth;
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
+use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
@@ -40,6 +41,12 @@ final class ChatOAuthConfig
     /** Lifetime of a minted `state` token: long enough for a human redirect, short enough to bound replay. */
     private const int STATE_TTL_SECONDS = 600;
 
+    /**
+     * Lifetime of a minted account-link token (HIL-282): the window to complete a
+     * full re-authentication and redeem the link, short enough to bound replay.
+     */
+    private const int LINK_TOKEN_TTL_SECONDS = 600;
+
     /** GitHub authorization endpoint. */
     private const string GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 
@@ -59,16 +66,24 @@ final class ChatOAuthConfig
     private const string GITHUB_EMAIL_KEY = 'email';
 
     /**
-     * Builds the synchronous OAuth service for the page actions.
+     * Builds the synchronous OAuth service for the page actions and the async agent.
      *
-     * @return OAuthService Service over the configured providers and state signer
+     * The state signer and the account-link signer (HIL-282) share the one OAuth
+     * app secret; {@see OAuthLinkTokenSigner} keeps them cryptographically distinct
+     * with its domain tag, so no separate secret is provisioned.
+     *
+     * @return OAuthService Service over the configured providers, state signer, and link signer
      */
     public static function buildService(): OAuthService
     {
+        $appSecret = Hilos::$env[ChatEnvConstants::OAUTH_STATE_SECRET];
+
         return new OAuthService(
             self::buildProviderRegistry(),
-            new OAuthStateSigner(Hilos::$env[ChatEnvConstants::OAUTH_STATE_SECRET]),
+            new OAuthStateSigner($appSecret),
             self::STATE_TTL_SECONDS,
+            new OAuthLinkTokenSigner($appSecret),
+            self::LINK_TOKEN_TTL_SECONDS,
         );
     }
 
