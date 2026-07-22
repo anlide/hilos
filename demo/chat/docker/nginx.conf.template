@@ -94,6 +94,14 @@ http {
             try_files /index.html =404;
         }
 
+        # OAuth + magic-link relay routes (HIL-281/HIL-401): the provider redirect
+        # and the emailed link land the browser on these client-side deep links,
+        # which resolve the exchange over the socket and are not prerendered, so
+        # they cold-load the SPA shell like the other deep links above.
+        location ~ ^/auth/(callback|magic)$ {
+            try_files /index.html =404;
+        }
+
         # Hilos admin deep links cold-load the SPA shell; access control is
         # backend-side at the WS subscription, never by hiding the HTML.
         location /hilos {
