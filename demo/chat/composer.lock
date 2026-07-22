@@ -12,17 +12,19 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "635a137435aaf2ff87c355ac45f79310bf3159c1"
+                "reference": "f2d753c6ad9b0955b17a430b2abd2dbaf79e47fb"
             },
             "require": {
                 "ext-ctype": "*",
                 "ext-fileinfo": "*",
                 "ext-mbstring": "*",
                 "ext-mysqli": "*",
+                "ext-openssl": "*",
                 "ext-pcntl": "*",
                 "ext-posix": "*",
                 "ext-sockets": "*",
-                "php": ">=8.4"
+                "php": ">=8.4",
+                "spomky-labs/cbor-php": "^3.3"
             },
             "require-dev": {
                 "phpunit/phpunit": "^11.0"
@@ -36,53 +38,103 @@
             "autoload-dev": {
                 "psr-4": {
                     "Hilos\\Tests\\": "framework/tests/"
-                }
+                },
+                "classmap": [
+                    "framework/tests/Unit/TopologyAgentsTestSupport.php"
+                ]
             },
             "scripts": {
                 "ollama:start": [
-                    "docker compose -f framework/docker/ollama-local.yml up -d"
+                    "docker compose -f framework/docker/docker-compose.yml --profile ollama up -d"
                 ],
                 "ollama:start-gpu-nvidia": [
-                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml up -d"
+                    "docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-nvidia up -d"
                 ],
                 "ollama:start-gpu-amd": [
-                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml up -d"
+                    "docker compose -f framework/docker/docker-compose.yml --profile ollama-gpu-amd up -d"
                 ],
                 "ollama:stop": [
-                    "docker compose -f framework/docker/ollama-local.yml down"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf ollama-local ollama-local-gpu-nvidia ollama-local-gpu-amd"
                 ],
                 "ollama:pull": [
-                    "docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                    "docker compose -f framework/docker/docker-compose.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local ollama pull qwen2.5:7b"
                 ],
                 "ollama:pull-gpu-nvidia": [
-                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                    "docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-nvidia ollama pull qwen2.5:0.5b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-nvidia ollama pull qwen2.5:3b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-nvidia ollama pull qwen2.5:7b"
                 ],
                 "ollama:pull-gpu-amd": [
-                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                    "docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-amd ollama pull qwen2.5:0.5b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-amd ollama pull qwen2.5:3b && docker compose -f framework/docker/docker-compose.yml exec -T ollama-local-gpu-amd ollama pull qwen2.5:7b"
                 ],
                 "test:framework:install-deps": [
-                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test composer install --no-interaction"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test composer install --no-interaction"
                 ],
                 "test:framework:up": [
-                    "docker compose -f framework/docker/docker-compose.test.yml up -d mysql-framework-test"
+                    "docker compose -f framework/docker/docker-compose.yml up -d mysql-framework-test"
                 ],
                 "test:framework:down": [
-                    "docker compose -f framework/docker/docker-compose.test.yml down"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test hilos-cli-test"
                 ],
                 "test:framework:down-volumes": [
-                    "docker compose -f framework/docker/docker-compose.test.yml down -v"
+                    "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test hilos-cli-test && docker volume rm -f hilos-framework-mysql-test-data"
                 ],
                 "test:framework:unit": [
-                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit"
                 ],
                 "test:framework:integration": [
-                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration"
                 ],
                 "test:framework:phpunit": [
-                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml"
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml"
                 ],
                 "test:framework:all": [
                     "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
+                ],
+                "test:framework:frontend:install": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm ci"
+                ],
+                "test:framework:frontend:build": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run build"
+                ],
+                "test:framework:frontend:check": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run check"
+                ],
+                "test:framework:frontend:unit": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run test"
+                ],
+                "test:framework:frontend:lint": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run lint"
+                ],
+                "test:framework:frontend:format-check": [
+                    "docker compose -f framework/docker/docker-compose.yml run --rm hilos-frontend-cli npm run format:check"
+                ],
+                "test:framework:frontend": [
+                    "composer run test:framework:frontend:check && composer run test:framework:frontend:unit && composer run test:framework:frontend:lint && composer run test:framework:frontend:format-check"
+                ],
+                "test:frontend:all": [
+                    "@test:framework:frontend:install",
+                    "@test:framework:frontend:build",
+                    "@test:framework:frontend",
+                    "cd demo/chat && composer run test:check",
+                    "cd demo/chat && composer run test:e2e-full",
+                    "cd demo/simple-todo && composer run test:check",
+                    "cd demo/simple-todo && composer run test:e2e-full",
+                    "cd demo/simple-poll && composer run test:check",
+                    "cd demo/simple-poll && composer run test:e2e-full"
+                ],
+                "test:cluster:unit": [
+                    "cd demo/cluster && composer run test:unit"
+                ],
+                "test:cluster:scenarios": [
+                    "cd demo/cluster && composer run test:cluster:scenarios"
+                ],
+                "test:cluster:all": [
+                    "cd demo/cluster && composer run test:cluster:all"
+                ],
+                "ai:install": [
+                    "@php scripts/install-ai-tooling.php"
+                ],
+                "ai:install:check": [
+                    "@php scripts/install-ai-tooling.php --check"
                 ]
             },
             "license": [
@@ -99,6 +151,136 @@
                 "symlink": true,
                 "relative": false
             }
+        },
+        {
+            "name": "brick/math",
+            "version": "0.18.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/brick/math.git",
+                "reference": "82944324d1c1bdb2c2618e89978d4e2ad78d69ad"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/brick/math/zipball/82944324d1c1bdb2c2618e89978d4e2ad78d69ad",
+                "reference": "82944324d1c1bdb2c2618e89978d4e2ad78d69ad",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "2.1.22",
+                "phpunit/phpunit": "^11.5"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Brick\\Math\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Arbitrary-precision arithmetic library",
+            "keywords": [
+                "Arbitrary-precision",
+                "BigInteger",
+                "BigRational",
+                "arithmetic",
+                "bigdecimal",
+                "bignum",
+                "bignumber",
+                "brick",
+                "decimal",
+                "integer",
+                "math",
+                "mathematics",
+                "rational"
+            ],
+            "support": {
+                "issues": "https://github.com/brick/math/issues",
+                "source": "https://github.com/brick/math/tree/0.18.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/BenMorel",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-06-14T18:21:03+00:00"
+        },
+        {
+            "name": "spomky-labs/cbor-php",
+            "version": "3.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Spomky-Labs/cbor-php.git",
+                "reference": "013d13da69cf28b1ae501887daceccc850ca1c76"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Spomky-Labs/cbor-php/zipball/013d13da69cf28b1ae501887daceccc850ca1c76",
+                "reference": "013d13da69cf28b1ae501887daceccc850ca1c76",
+                "shasum": ""
+            },
+            "require": {
+                "brick/math": "^0.9|^0.10|^0.11|^0.12|^0.13|^0.14|^0.15|^0.16|^0.17|^0.18",
+                "ext-mbstring": "*",
+                "php": ">=8.0"
+            },
+            "require-dev": {
+                "ext-json": "*",
+                "roave/security-advisories": "dev-latest",
+                "symfony/error-handler": "^6.4|^7.1|^8.0",
+                "symfony/var-dumper": "^6.4|^7.1|^8.0"
+            },
+            "suggest": {
+                "ext-bcmath": "GMP or BCMath extensions will drastically improve the library performance. BCMath extension needed to handle the Big Float and Decimal Fraction Tags",
+                "ext-gmp": "GMP or BCMath extensions will drastically improve the library performance"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "CBOR\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Florent Morselli",
+                    "homepage": "https://github.com/Spomky"
+                },
+                {
+                    "name": "All contributors",
+                    "homepage": "https://github.com/Spomky-Labs/cbor-php/contributors"
+                }
+            ],
+            "description": "CBOR Encoder/Decoder for PHP",
+            "keywords": [
+                "Concise Binary Object Representation",
+                "RFC7049",
+                "cbor"
+            ],
+            "support": {
+                "issues": "https://github.com/Spomky-Labs/cbor-php/issues",
+                "source": "https://github.com/Spomky-Labs/cbor-php/tree/3.3.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/Spomky",
+                    "type": "github"
+                },
+                {
+                    "url": "https://www.patreon.com/FlorentMorselli",
+                    "type": "patreon"
+                }
+            ],
+            "time": "2026-07-15T18:56:27+00:00"
         }
     ],
     "packages-dev": [
