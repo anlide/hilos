@@ -33,6 +33,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
@@ -359,9 +360,28 @@ final class ChatAgent extends AbstractAgent
         if ($session === null) {
             $session = Hilos::$db->sessions->actions->createAnonymous($sessionToken);
         } else {
-            $session->actions->touch();
+            $expiresAt = $session->expiresAt;
+            if ($session->userId !== null
+                && $expiresAt !== null
+                && $expiresAt <= TimeHelper::getSqlDateTime()
+            ) {
+                // The cookie resolved to an authenticated session that has outlived its
+                // expiry: drop it to anonymous before touching it, so a stale cookie can
+                // never resume an authenticated identity. Reuses the logout core (HIL-163)
+                // — unbind the user and re-point the session's live connections — then
+                // re-reads the now-anonymous row. A NULL expiry is open-ended (never here).
+                $this->logAgentInfo('session_expired ' . json_encode([
+                    'event' => 'session_expired',
+                    'session' => $session->id,
+                    'user' => $session->userId,
+                ]));
+                $this->deauthenticateSession($sessionToken);
+                $session = Hilos::$db->sessions->findByToken($sessionToken);
+            } else {
+                $session->actions->touch();
+            }
         }
-        $userId = $session->userId;
+        $userId = $session?->userId;
 
         Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
 
