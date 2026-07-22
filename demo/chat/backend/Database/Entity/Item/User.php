@@ -24,6 +24,7 @@ final class User extends Entity
     public const string name = 'name';
     public const string admin = 'admin';
     public const string block = 'block';
+    public const string merged_into = 'merged_into';
     public const string last_activity = 'last_activity';
 
     // Table meta information
@@ -34,6 +35,7 @@ final class User extends Entity
         self::name,
         self::admin,
         self::block,
+        self::merged_into,
         self::last_activity,
     ];
 
@@ -43,11 +45,13 @@ final class User extends Entity
         self::name => PhpType::STRING->value,
         self::admin => PhpType::BOOLEAN->value,
         self::block => PhpType::BOOLEAN->value,
+        self::merged_into => PhpType::INTEGER->value,
         self::last_activity => PhpType::DATETIME->value,
     ];
 
     // Indexes
     public const array _indexes = [
+        'merged_into' => [Entity::INDEX_COLUMNS => [self::merged_into]],
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
@@ -56,5 +60,6 @@ final class User extends Entity
     public string $name;
     public bool $admin = false;
     public bool $block = false;
+    public ?int $merged_into = null;
     public ?string $last_activity = null;
 }
