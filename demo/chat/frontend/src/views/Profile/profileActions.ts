@@ -5,8 +5,13 @@
 // comes back as a framework action_error (the page no longer sends a bespoke
 // ack), handled by the core ActionErrorStore; success is state-driven — the
 // committed name arrives over the self-connection data (profilePage.ts).
-import { type ReadonlySignal } from '@hilos/core'
+import { type ProjectSignal, type ReadonlySignal } from '@hilos/core'
 
+import {
+  PASSWORD_UPDATED_SIGNAL,
+  passwordUpdatedSignalSchema,
+  type PasswordUpdatedSignalData,
+} from '../../auth/passwordSignals'
 import { actionErrors, connection } from '../../bootstrap/connection'
 
 /** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::RENAME`). */
@@ -54,4 +59,62 @@ export function sendUnlinkIdentity(identityId: number): boolean {
   actionErrors.clear(UNLINK_IDENTITY_ACTION)
 
   return connection.sendAction(UNLINK_IDENTITY_ACTION, { identityId })
+}
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::SET_PASSWORD`). */
+const SET_PASSWORD_ACTION = 'set_password'
+
+/** The latest set-password error reason, or null when clear (framework action_error). */
+export const setPasswordError: ReadonlySignal<string | null> =
+  actionErrors.signal(SET_PASSWORD_ACTION)
+
+/**
+ * Submit an add or change of the current user's password: clear any prior error
+ * and send the `set_password` action. `currentPassword` is null on the add flow
+ * (nothing to re-verify — the proven email is the authority) and the current
+ * password on a change; the server decides add vs change from the user's
+ * identities, never from this argument. Success is not optimistic — it arrives as
+ * the {@link subscribePasswordUpdated} signal; a rejection is a framework
+ * action_error on {@link setPasswordError}. Returns false, sending nothing, when
+ * the connection is not `connected`.
+ *
+ * @param currentPassword The current password for a change, or null on the add flow.
+ * @param newPassword The new password to set.
+ */
+export function sendSetPassword(
+  currentPassword: string | null,
+  newPassword: string,
+): boolean {
+  actionErrors.clear(SET_PASSWORD_ACTION)
+
+  return connection.sendAction(SET_PASSWORD_ACTION, {
+    currentPassword: currentPassword ?? '',
+    newPassword,
+  })
+}
+
+/** Clear the set-password error — the view does this when a form re-opens. */
+export function clearSetPasswordError(): void {
+  actionErrors.clear(SET_PASSWORD_ACTION)
+}
+
+/**
+ * Subscribe to the set-password success signal (HIL-402). Invokes the handler
+ * once a `password_updated` lands (fanned WS_USER to all the user's connections),
+ * so the initiating tab clears its form and any tab can toast the change. Returns
+ * an unsubscribe the view calls on unmount so a late signal cannot fire into a
+ * torn-down component.
+ *
+ * @param handler Called with the success payload (its add/change mode).
+ * @returns Unsubscribe for the registered signal handler.
+ */
+export function subscribePasswordUpdated(
+  handler: (data: PasswordUpdatedSignalData) => void,
+): () => void {
+  return connection.on('projectSignal', (signal: ProjectSignal) => {
+    if (signal.type !== PASSWORD_UPDATED_SIGNAL) {
+      return
+    }
+    handler(signal.data as ReturnType<typeof passwordUpdatedSignalSchema.parse>)
+  })
 }

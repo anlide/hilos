@@ -7,7 +7,7 @@ until the backend lands the rename (the committed name reaches the draft) or
 rejects it (a framework action_error shown in the modal). Bootstrap classes
 only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { isPasskeySupported, threeWayMerge } from '@hilos/core'
 import {
@@ -23,17 +23,23 @@ import { runPasskeyRegister } from '../../auth/passkeyCeremony'
 import { currentUserId } from '../../bootstrap/session'
 import {
   clearRenameError,
+  clearSetPasswordError,
   renameError,
   sendRename,
+  sendSetPassword,
   sendUnlinkIdentity,
+  setPasswordError,
+  subscribePasswordUpdated,
   unlinkIdentityError,
 } from './profileActions'
 import {
   availableProviders,
   committedName,
+  passwordSection,
   profileDetail,
   profileIdentities,
 } from './profilePage'
+import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -167,6 +173,73 @@ async function addPasskey(): Promise<void> {
     passkeyError.value = outcome.message ?? null
   }
 }
+
+// Password (HIL-402): a signed-in user adds or changes their own password. The
+// form mode comes from the loaded identities — Change when a password exists, Add
+// when a proven email exists but no password, otherwise a disabled hint (confirm
+// an email first → HIL-406). Server-confirmed, not optimistic: a submit stays
+// loading until the password_updated signal lands (success) or an action_error
+// arrives (failure).
+const PASSWORD_MIN = 8
+
+const password = useSignal(passwordSection)
+const passwordError = useSignal(setPasswordError)
+
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const passwordLoading = ref(false)
+const passwordUpdated = ref<string | null>(null)
+
+const passwordValid = computed(() => {
+  if (newPassword.value.length < PASSWORD_MIN) {
+    return false
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    return false
+  }
+
+  return !password.value.hasPassword || currentPassword.value !== ''
+})
+
+function submitPassword(): void {
+  if (!passwordValid.value || passwordLoading.value) {
+    return
+  }
+  passwordUpdated.value = null
+  passwordLoading.value = sendSetPassword(
+    password.value.hasPassword ? currentPassword.value : null,
+    newPassword.value,
+  )
+}
+
+// A rejected set-password arrives as a framework action_error: release the button
+// and keep the fields so the user can correct and retry.
+watch(passwordError, (reason) => {
+  if (reason !== null) {
+    passwordLoading.value = false
+  }
+})
+
+// Success is signalled (a change moves nothing in the identity projection to
+// confirm it): clear the fields, release the button, and toast the outcome.
+// Registered once on mount so a reply to a submit lands; torn down on unmount so a
+// late signal cannot fire into a destroyed component.
+let unsubscribePasswordUpdated: (() => void) | null = null
+onMounted(() => {
+  clearSetPasswordError()
+  unsubscribePasswordUpdated = subscribePasswordUpdated((data) => {
+    currentPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+    passwordLoading.value = false
+    passwordUpdated.value =
+      data.mode === PASSWORD_MODE_ADDED ? 'Password added.' : 'Password changed.'
+  })
+})
+onUnmounted(() => {
+  unsubscribePasswordUpdated?.()
+})
 
 function openEdit(): void {
   clearRenameError()
@@ -426,6 +499,92 @@ function mergeBoth(): void {
           {{ linkError }}
         </div>
       </div>
+    </div>
+
+    <!-- Password (HIL-402): add or change the account password. The mode comes
+    from the loaded identities: Change when a password exists, Add when a proven
+    email exists but no password, otherwise a disabled hint (confirm an email
+    first → HIL-406). Server-confirmed — the form stays loading until the
+    password_updated signal lands, then clears and toasts. -->
+    <div class="mt-4" data-id="profile-password">
+      <h2 class="h6 mb-2">Password</h2>
+
+      <p
+        v-if="!password.hasPassword && !password.verifiedEmail"
+        class="text-body-secondary mb-0"
+        data-id="profile-password-hint"
+      >
+        Confirm an email address first to set a password.
+      </p>
+
+      <form v-else @submit.prevent="submitPassword">
+        <div v-if="password.hasPassword" class="mb-2">
+          <label class="form-label" for="profile-password-current">
+            Current password
+          </label>
+          <input
+            id="profile-password-current"
+            v-model="currentPassword"
+            type="password"
+            class="form-control"
+            autocomplete="current-password"
+            data-id="profile-password-current"
+          />
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="profile-password-new">
+            New password
+          </label>
+          <input
+            id="profile-password-new"
+            v-model="newPassword"
+            type="password"
+            class="form-control"
+            autocomplete="new-password"
+            :minlength="PASSWORD_MIN"
+            data-id="profile-password-new"
+          />
+          <div class="form-text">At least {{ PASSWORD_MIN }} characters.</div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="profile-password-confirm">
+            Confirm new password
+          </label>
+          <input
+            id="profile-password-confirm"
+            v-model="confirmPassword"
+            type="password"
+            class="form-control"
+            autocomplete="new-password"
+            data-id="profile-password-confirm"
+          />
+        </div>
+        <LoadingButton
+          class="btn-primary btn-sm"
+          :loading="passwordLoading"
+          :disabled="!passwordValid"
+          data-id="profile-password-save"
+          @click="submitPassword"
+        >
+          {{ password.hasPassword ? 'Change password' : 'Set password' }}
+        </LoadingButton>
+        <div
+          v-if="passwordUpdated"
+          class="alert alert-success mt-2 mb-0"
+          role="status"
+          data-id="profile-password-updated"
+        >
+          {{ passwordUpdated }}
+        </div>
+        <div
+          v-if="passwordError"
+          class="alert alert-danger mt-2 mb-0"
+          role="alert"
+          data-id="profile-set-password-error"
+        >
+          {{ passwordError }}
+        </div>
+      </form>
     </div>
 
     <HilosModal v-model="editing" :confirm-on-close="dirty">

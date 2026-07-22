@@ -11,6 +11,7 @@ use Demo\Chat\Constants\ChatFileUploadConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
@@ -164,12 +165,6 @@ final class MainPage extends AbstractPage
      * SMS-request path can surface it directly rather than answering generically.
      */
     private const string INVALID_PHONE_MESSAGE = 'Enter a valid phone number';
-
-    /**
-     * Minimum registration password length. Length-only policy (no complexity
-     * rule) — the shortest lever that keeps trivially weak passwords out.
-     */
-    private const int PASSWORD_MIN_LENGTH = 8;
 
     /**
      * Generic failure message for an OAuth account link (HIL-282). A bad, expired,
@@ -544,8 +539,8 @@ final class MainPage extends AbstractPage
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             throw new InvalidFormatException('Enter a valid email address');
         }
-        if (strlen($dto->password) < self::PASSWORD_MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . self::PASSWORD_MIN_LENGTH . ' characters');
+        if (strlen($dto->password) < PasswordPolicy::MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
         }
         if ($dto->password !== $dto->confirmPassword) {
             throw new ValidationException('Passwords do not match');
@@ -650,8 +645,8 @@ final class MainPage extends AbstractPage
      */
     private function handleConfirmPasswordReset(ConfirmPasswordResetActionDTO $dto): void
     {
-        if (strlen($dto->newPassword) < self::PASSWORD_MIN_LENGTH) {
-            throw new ValidationException('Password must be at least ' . self::PASSWORD_MIN_LENGTH . ' characters');
+        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
         }
 
         $email = strtolower($dto->email);

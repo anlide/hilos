@@ -15,11 +15,16 @@ import { createHilosConnection } from '@hilos/core'
 
 import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals'
 import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals'
+import { PASSWORD_SIGNAL_SCHEMAS } from '../auth/passwordSignals'
 
 export const { connection, actionErrors, actions } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
   // The project's own inbound signals: the OAuth login start-reply and
-  // failure/timeout (HIL-281) and the passkey ceremony options (HIL-284) the
-  // daemon delivers WS_USER.
-  projectSchemas: { ...OAUTH_SIGNAL_SCHEMAS, ...PASSKEY_SIGNAL_SCHEMAS },
+  // failure/timeout (HIL-281), the passkey ceremony options (HIL-284), and the
+  // profile set-password success (HIL-402) the daemon delivers WS_USER.
+  projectSchemas: {
+    ...OAUTH_SIGNAL_SCHEMAS,
+    ...PASSKEY_SIGNAL_SCHEMAS,
+    ...PASSWORD_SIGNAL_SCHEMAS,
+  },
 })

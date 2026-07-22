@@ -409,6 +409,36 @@ final class Identities extends Objects
     }
 
     /**
+     * Resolves the email of a user's first verified email-bearing identity (HIL-402).
+     *
+     * The inverse of {@see findUserIdByVerifiedEmail()}: given the session user, it
+     * answers "which proven email can a password attach to?" for the profile
+     * add-password flow (and, reusably, HIL-405). Only `password`/`magic_link`
+     * identifiers are an email; `sms`/`oauth`/`passkey` identifiers are a phone /
+     * `provider:subject` / credential id and are skipped. Returns the identifier of
+     * the first verified email-bearing identity, or null when the user has none
+     * (SMS-only or legacy OAuth, routed to the email-code branch in HIL-406).
+     *
+     * @param int $userId Owning user id
+     * @return ?string Lowercased email of a verified email-bearing identity, or null when none
+     * @throws DatabaseException If the database query fails
+     */
+    public function findVerifiedEmailByUser(int $userId): ?string
+    {
+        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+        foreach ($entityIdentities as $entityIdentity) {
+            if (
+                $entityIdentity->verified
+                && in_array($entityIdentity->type, [IdentityType::PASSWORD, IdentityType::MAGIC_LINK], true)
+            ) {
+                return $entityIdentity->identifier;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

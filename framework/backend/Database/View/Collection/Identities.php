@@ -53,6 +53,23 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Resolves the email of a user's first verified email-bearing identity (HIL-402).
+     *
+     * Add-password read accessor for the profile: delegates to the object collection's
+     * {@see ObjectIdentities::findVerifiedEmailByUser()} primitive, which answers "which
+     * proven email can a new password identity attach to?" for the session user. Null
+     * when the user has no verified email (SMS-only / legacy OAuth → HIL-406).
+     *
+     * @param int $userId Owning user id
+     * @return ?string Lowercased email of a verified email-bearing identity, or null when none
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findVerifiedEmailByUser(int $userId): ?string
+    {
+        return $this->objectCollection->findVerifiedEmailByUser($userId);
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

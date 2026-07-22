@@ -92,6 +92,12 @@ final class ChatSignalConstants
     /** @var string Profile unlink-identity action name (HIL-377) */
     public const string UNLINK_IDENTITY = 'unlink_identity';
 
+    /** @var string Client → server: add or change the current user's password from the profile (HIL-402) */
+    public const string SET_PASSWORD = 'set_password';
+
+    /** @var string Server → client: the current user's password was added/changed (HIL-402) */
+    public const string PASSWORD_UPDATED = 'password_updated';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 

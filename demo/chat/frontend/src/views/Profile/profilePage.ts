@@ -16,7 +16,14 @@ import {
 import { scopes } from '../../bootstrap/session'
 import { Identities } from '../../types'
 import { type IdentityItem } from './types/lists/IdentityItem'
+import { type PasswordSection } from './types/PasswordSection'
 import { type ProfileDetail } from './types/ProfileDetail'
+
+// The identity `type` values (backend `IdentityType`) the password section reasons
+// about: a password identity means the Change form, and an email-bearing identity
+// (password or magic_link) is a candidate proven email for the Add form.
+const PASSWORD_IDENTITY_TYPE = 'password'
+const MAGIC_LINK_IDENTITY_TYPE = 'magic_link'
 
 // The single-row data slot carrying this connection's own state
 // (backend ChatBrowserTable::SELF_CONNECTION), including the DB user name.
@@ -87,6 +94,33 @@ export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
       }
     })
   })
+
+/**
+ * The password section's form mode, derived reactively from the linked identities
+ * (HIL-402). `hasPassword` selects the Change form; with no password, a non-null
+ * `verifiedEmail` (the first verified email-bearing identity) selects the Add form,
+ * and null disables the section (confirm an email first → HIL-406). Both update
+ * live as identities land, so adding a password flips the section to Change the
+ * moment its new row arrives.
+ */
+export const passwordSection: ReadonlySignal<PasswordSection> = computedSignal(
+  () => {
+    const list = profileIdentities.get()
+    const verified = list.find(
+      (identity) =>
+        identity.verified &&
+        (identity.type === PASSWORD_IDENTITY_TYPE ||
+          identity.type === MAGIC_LINK_IDENTITY_TYPE),
+    )
+
+    return {
+      hasPassword: list.some(
+        (identity) => identity.type === PASSWORD_IDENTITY_TYPE,
+      ),
+      verifiedEmail: verified?.identifier ?? null,
+    }
+  },
+)
 
 /**
  * The OAuth providers this project offers to link from the profile (HIL-401).

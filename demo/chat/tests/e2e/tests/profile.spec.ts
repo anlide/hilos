@@ -1,6 +1,13 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator } from '@playwright/test'
 
-import { signUp } from '../helpers/session'
+import { PASSWORD, signUp } from '../helpers/session'
+
+// Type into a Vue input the way a user does — clear, then key by key — so the
+// reactivity a bare fill() can miss actually fires (see helpers/session).
+async function typeInto(field: Locator, value: string): Promise<void> {
+  await field.fill('')
+  await field.pressSequentially(value, { delay: 10 })
+}
 
 // Profile e2e: the framework-owned profile page (hilos_profile) reached from the
 // navbar, and the edit-in-modal rename. The profile is a signed-in-only surface
@@ -112,4 +119,33 @@ test('surfaces a conflict when the name changes in another tab', async ({
   // Taking theirs adopts Tab A's name and clears the conflict.
   await tabB.getByTestId('conflict-accept-theirs').click()
   await expect(tabB.getByTestId('conflict-badge')).toBeHidden()
+})
+
+test('changes the current user password from the profile (HIL-402)', async ({
+  page,
+}) => {
+  // A registered account already has a password, so the profile shows the Change
+  // form (current + new). The change re-auths the current password server-side.
+  await signUp(page)
+  await page.goto('/profile')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('profile-password-current')).toBeVisible()
+
+  const newPassword = 'a-fresh-passphrase'
+
+  // The wrong current password is refused with an inline error; no success toast.
+  await typeInto(page.getByTestId('profile-password-current'), 'not the password')
+  await typeInto(page.getByTestId('profile-password-new'), newPassword)
+  await typeInto(page.getByTestId('profile-password-confirm'), newPassword)
+  await page.getByTestId('profile-password-save').click()
+  await expect(page.getByTestId('profile-set-password-error')).toBeVisible()
+  await expect(page.getByTestId('profile-password-updated')).toHaveCount(0)
+
+  // The correct current password updates it: the success toast lands (over the
+  // password_updated signal, not a projection change) and the fields clear.
+  await typeInto(page.getByTestId('profile-password-current'), PASSWORD)
+  await page.getByTestId('profile-password-save').click()
+  await expect(page.getByTestId('profile-password-updated')).toBeVisible()
+  await expect(page.getByTestId('profile-set-password-error')).toHaveCount(0)
+  await expect(page.getByTestId('profile-password-new')).toHaveValue('')
 })

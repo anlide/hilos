@@ -9,10 +9,13 @@ use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
+use Demo\Chat\Constants\PasswordPolicy;
+use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\LinkOAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
@@ -30,6 +33,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Item\Identity;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosProfilePage;
 
@@ -55,6 +60,7 @@ final class ProfilePage extends AbstractHilosProfilePage
     public const array ACTIONS = [
         ChatSignalConstants::RENAME => RenameActionDTO::class,
         ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
+        ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
         ChatSignalConstants::LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
     ];
 
@@ -72,9 +78,9 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused (ownership or last-identity guard) or an OAuth link provider is unknown
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), or an OAuth link provider is unknown
      * @throws \Random\RandomException When minting an OAuth link state cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails or an identity delete query fails
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, or a password read/write query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -92,6 +98,14 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, UnlinkIdentityActionDTO::class, $dto);
                 }
                 $this->handleUnlinkIdentity($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::SET_PASSWORD:
+                if (!$dto instanceof SetPasswordActionDTO) {
+                    throw new InvalidActionPayloadException($action, SetPasswordActionDTO::class, $dto);
+                }
+                $this->handleSetPassword($acceptKey, $dto);
 
                 break;
 
@@ -200,6 +214,82 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         Hilos::$db->identities->deleteIdentity(Hilos::$rt->selfConnection->userId, $dto->identityId);
+    }
+
+    /**
+     * Adds or changes the signed-in user's password from the profile (HIL-402).
+     *
+     * Server-authoritative and self-only: the user id is read from the session, never
+     * the client. Two in-scope flows, chosen from the user's own identities (never from
+     * a client flag): a CHANGE (the user already has a `password` identity) re-auths the
+     * current password before rewriting the secret; an ADD (no password yet) attaches a
+     * `password` identity to the user's already-proven email — no email code, since the
+     * email is verified — and marks it verified. A user with no verified email (SMS-only
+     * or legacy OAuth) is out of scope here and refused (that path is the email+code
+     * branch, HIL-406). On success a {@see ChatSignalConstants::PASSWORD_UPDATED} signal
+     * is fanned to all the user's connections, because a change moves nothing in the
+     * identity projection that could confirm it; a refusal surfaces through the default
+     * framework action_error contract.
+     *
+     * @param string $acceptKey Accept key
+     * @param SetPasswordActionDTO $dto Set-password DTO (new password + optional current)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the new password is too weak, the current password is wrong, or the user has no verified email
+     * @throws DatabaseException When an identity read or secret write query fails
+     */
+    private function handleSetPassword(string $acceptKey, SetPasswordActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
+        }
+
+        $passwordIdentity = $this->findPasswordIdentity($userId);
+        if ($passwordIdentity !== null) {
+            if ($dto->currentPassword === '' || !$passwordIdentity->verifyPassword($dto->currentPassword)) {
+                throw new ValidationException('Current password is incorrect');
+            }
+            $passwordIdentity->setPassword($dto->newPassword);
+            $mode = PasswordUpdatedSignalData::MODE_CHANGED;
+        } else {
+            $email = Hilos::$db->identities->findVerifiedEmailByUser($userId);
+            if ($email === null) {
+                throw new ValidationException('Confirm an email address first');
+            }
+            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
+            $mode = PasswordUpdatedSignalData::MODE_ADDED;
+        }
+
+        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
+            $this->sendToUser(
+                ChatSignalConstants::PASSWORD_UPDATED,
+                $connection->acceptKey,
+                new PasswordUpdatedSignalData($mode),
+            );
+        }
+    }
+
+    /**
+     * Finds the signed-in user's `password` identity, if any.
+     *
+     * @param int $userId Owning user id
+     * @return ?Identity The user's password identity, or null when they have none
+     * @throws DatabaseException When the identity lookup query fails
+     */
+    private function findPasswordIdentity(int $userId): ?Identity
+    {
+        foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
+            if ($identity->type === IdentityType::PASSWORD) {
+                return $identity;
+            }
+        }
+
+        return null;
     }
 
     /**
