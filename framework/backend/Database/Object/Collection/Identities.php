@@ -375,6 +375,40 @@ final class Identities extends Objects
     }
 
     /**
+     * Resolves the user id owning any identity for an email, verified or not (HIL-284).
+     *
+     * The verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}, for
+     * callers where the credential itself is the proof of identity rather than the
+     * email — passkey username-first login, whose WebAuthn assertion authenticates
+     * the account and only needs the email to scope allowCredentials. Because email
+     * confirmation is not wired for password registration, those accounts stay
+     * `verified = false`, so the verified-only resolver would strand every passkey
+     * login. Do NOT use this for email-proof flows (magic-link, OAuth email
+     * collision) — those must keep {@see findUserIdByVerifiedEmail()}. Only email
+     * identifiers can match (`sms`/`oauth` identifiers are a phone / `provider:subject`
+     * and never equal an email); no account resolves to null.
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id of any email identity, or null when none
+     * @throws DatabaseException If the database query fails
+     */
+    public function findUserIdByEmail(string $email): ?int
+    {
+        if ($email === '') {
+            return null;
+        }
+
+        $entityIdentities = EntityIdentity::get([EntityIdentity::identifier => $email]);
+        foreach ($entityIdentities as $entityIdentity) {
+            if ($entityIdentity->user_id !== null) {
+                return $entityIdentity->user_id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

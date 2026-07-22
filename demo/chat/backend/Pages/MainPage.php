@@ -1117,8 +1117,10 @@ final class MainPage extends AbstractPage
      * Mints WebAuthn login options for a username-first passkey sign-in (HIL-284).
      *
      * The login-start entry, public (anonymous-reachable): the client names the
-     * account email; a verified email resolves the user's passkey credentials into
-     * allowCredentials. An unknown email — or a known account with no passkey —
+     * account email; the email resolves the user's passkey credentials into
+     * allowCredentials regardless of whether the email is verified — the WebAuthn
+     * assertion is the proof, so a passkey account whose email was never confirmed
+     * still signs in. An unknown email — or a known account with no passkey —
      * answers with a single fabricated allowCredentials entry so the response never
      * discloses which case it is (anti-enumeration). The stateless challenge is
      * bound to the session (no user, resolved on confirm) and, since
@@ -1146,7 +1148,7 @@ final class MainPage extends AbstractPage
         );
 
         $email = strtolower($dto->email);
-        $userId = $email !== '' ? Hilos::$db->identities->findUserIdByVerifiedEmail($email) : null;
+        $userId = $email !== '' ? Hilos::$db->identities->findUserIdByEmail($email) : null;
         $credentials = $userId !== null ? Hilos::$db->passkeyCredentials->listByUser($userId) : [];
 
         $allowCredentials = $credentials === []

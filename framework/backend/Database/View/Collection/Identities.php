@@ -98,6 +98,24 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Resolves the user id owning any identity for an email, verified or not (HIL-284).
+     *
+     * Verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}: delegates
+     * to the object collection's {@see ObjectIdentities::findUserIdByEmail()}
+     * primitive, for passkey username-first login where the WebAuthn assertion is
+     * the proof and the email only scopes allowCredentials. Not for email-proof
+     * flows (magic-link / OAuth) — those keep the verified resolver.
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id of any email identity, or null when none
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findUserIdByEmail(string $email): ?int
+    {
+        return $this->objectCollection->findUserIdByEmail($email);
+    }
+
+    /**
      * Creates a `password`-type identity for a user with a freshly hashed secret.
      *
      * Register write path of the identity layer (HIL-164): delegates the hash-at-rest

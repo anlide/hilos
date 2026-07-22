@@ -22,7 +22,7 @@ use Hilos\Database\SqlParamCollection;
  * @extends Object_<EntityIdentity>
  *
  * @property-read ?int $id
- * @property-read ?int $userId
+ * @property ?int $userId
  * @property string $type
  * @property string $identifier
  * @property ?string $provider

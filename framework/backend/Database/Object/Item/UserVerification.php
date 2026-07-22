@@ -25,11 +25,11 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @extends Object_<EntityUserVerification>
  *
  * @property-read ?int $id
- * @property-read ?int $userId
- * @property-read string $type
- * @property-read string $identifier
+ * @property ?int $userId
+ * @property string $type
+ * @property string $identifier
  * @property-read int $attempts
- * @property-read string $expiresAt
+ * @property string $expiresAt
  * @property-read ?string $consumedAt
  */
 final class UserVerification extends Object_
