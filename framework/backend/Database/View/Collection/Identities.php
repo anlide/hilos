@@ -80,6 +80,24 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Resolves the user id owning a verified identity for an email (HIL-283).
+     *
+     * Passwordless-login read accessor shared with the OAuth email-collision
+     * link flow (HIL-282): delegates to the object collection's
+     * {@see ObjectIdentities::findUserIdByVerifiedEmail()} primitive, which
+     * answers "which existing account owns this verified email?" without
+     * disclosing anything to the caller beyond the id (anti-enumeration).
+     *
+     * @param string $email Lowercased account email
+     * @return ?int Owning user id of a verified email identity, or null when none
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findUserIdByVerifiedEmail(string $email): ?int
+    {
+        return $this->objectCollection->findUserIdByVerifiedEmail($email);
+    }
+
+    /**
      * Creates a `password`-type identity for a user with a freshly hashed secret.
      *
      * Register write path of the identity layer (HIL-164): delegates the hash-at-rest
@@ -139,6 +157,81 @@ final class Identities extends DbCollection
     public function createOauthIdentity(int $userId, string $provider, string $subject): Identity
     {
         $objectIdentity = $this->objectCollection->createOauthIdentity($userId, $provider, $subject);
+
+        $id = $objectIdentity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($id);
+        if ($identity === null) {
+            throw new DatabaseException('Created identity is not available on the read-facing collection');
+        }
+
+        return $identity;
+    }
+
+    /**
+     * Creates a verified `sms`-type identity for a user (HIL-280).
+     *
+     * Phone-login write path of the identity layer: delegates the secret-less,
+     * verified insert to the object collection's
+     * {@see ObjectIdentities::createSmsIdentity()} primitive and returns the
+     * read-facing view item for the new row. The identifier is a normalized
+     * E.164 phone; uniqueness is per (sms, identifier), mirroring the delegation
+     * in {@see createPasswordIdentity()}.
+     *
+     * @param int $userId Owning user id
+     * @param string $identifier Normalized E.164 phone number
+     * @return Identity The created identity's read-facing Db item
+     * @throws EmptyValueException When identifier is empty
+     * @throws DuplicateValueException When an identity already exists for (sms, identifier)
+     * @throws DatabaseException On database error while creating the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function createSmsIdentity(int $userId, string $identifier): Identity
+    {
+        $objectIdentity = $this->objectCollection->createSmsIdentity($userId, $identifier);
+
+        $id = $objectIdentity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($id);
+        if ($identity === null) {
+            throw new DatabaseException('Created identity is not available on the read-facing collection');
+        }
+
+        return $identity;
+    }
+
+    /**
+     * Creates a verified `passkey`-type identity anchor for a user (HIL-284).
+     *
+     * WebAuthn write path of the identity layer: delegates the secret-less,
+     * verified insert to the object collection's
+     * {@see ObjectIdentities::createPasskeyIdentity()} primitive and returns the
+     * read-facing view item for the new row. The identifier is the
+     * authenticator's base64url credential id; uniqueness is per
+     * (passkey, identifier), mirroring the delegation in
+     * {@see createPasswordIdentity()}.
+     *
+     * @param int $userId Owning user id
+     * @param string $credentialId Base64url credential id from the authenticator
+     * @return Identity The created identity's read-facing Db item
+     * @throws EmptyValueException When credential id is empty
+     * @throws DuplicateValueException When an identity already exists for (passkey, identifier)
+     * @throws DatabaseException On database error while creating the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function createPasskeyIdentity(int $userId, string $credentialId): Identity
+    {
+        $objectIdentity = $this->objectCollection->createPasskeyIdentity($userId, $credentialId);
 
         $id = $objectIdentity->id;
         if ($id === null) {
