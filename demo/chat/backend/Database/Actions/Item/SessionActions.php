@@ -101,4 +101,27 @@ final class SessionActions extends DbActions
         $this->object->expiresAt = SessionsActions::expiryFromNow();
         $this->object->sync();
     }
+
+    /**
+     * Ages this session's expiry into the past so the next resolution reads it as expired.
+     *
+     * Test-only support for the `test:session:expire` CLI (HIL-397): rewrites
+     * `expires_at` to just before now through the same guarded write path as
+     * {@see touch()}/{@see bindUser()}, so an e2e can drive the session-expiry logout
+     * (enforcement is HIL-398) without waiting out the session TTL.
+     *
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function expire(): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for expire (id is null)');
+        }
+
+        $this->object->expiresAt = date('Y-m-d H:i:s', time() - 1);
+        $this->object->sync();
+    }
 }

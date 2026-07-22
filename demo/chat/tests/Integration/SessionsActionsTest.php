@@ -9,6 +9,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for the session model: anonymous creation, token lookup, and
@@ -91,5 +92,23 @@ final class SessionsActionsTest extends IntegrationTestCase
 
         Hilos::$db->sessions->findByToken($token)?->actions->unbindUser();
         $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+    }
+
+    /**
+     * expireByToken ages a stored session's expiry into the past and returns it; an
+     * unknown token yields null.
+     *
+     * @throws HilosException On database error
+     */
+    public function testExpireByTokenAgesExpiryIntoPast(): void
+    {
+        $token = RandomHelper::hex(16);
+        Hilos::$db->sessions->actions->createAnonymous($token);
+
+        $session = Hilos::$db->sessions->actions->expireByToken($token);
+
+        $this->assertNotNull($session);
+        $this->assertLessThan(TimeHelper::getSqlDateTime(), (string) $session->expiresAt);
+        $this->assertNull(Hilos::$db->sessions->actions->expireByToken(RandomHelper::hex(16)));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
+use Demo\Chat\Database\Actions\Item\SessionActions;
 use Demo\Chat\Database\Object\Collection\Sessions as ObjectSessions;
 use Demo\Chat\Database\Object\Item\Session as ObjectSession;
 use Demo\Chat\Database\View\Collection\Sessions as DbCollectionSessions;
@@ -58,6 +59,30 @@ final class SessionsActions extends DbActions
         $this->addObjectToCollection($session);
 
         return $this->createDbItemFromObject($session);
+    }
+
+    /**
+     * Ages the session holding the given cookie token into the past (test-only).
+     *
+     * Backs the `test:session:expire` CLI (HIL-397): resolves the session by its
+     * cookie token and expires it via {@see SessionActions::expire()}, then returns
+     * the expired session object (or null when no session holds the token) so the
+     * caller can report it. Mirrors the verification layer's expireActive.
+     *
+     * @param string $token Session cookie token
+     * @return ?ObjectSession The expired session, or null when the token is unknown
+     * @throws HilosException On database or write error
+     */
+    public function expireByToken(string $token): ?ObjectSession
+    {
+        $session = $this->objectCollection->findByToken($token);
+        if ($session === null) {
+            return null;
+        }
+
+        $this->createDbItemFromObject($session)->actions->expire();
+
+        return $session;
     }
 
     /**

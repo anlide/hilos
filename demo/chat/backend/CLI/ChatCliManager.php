@@ -14,6 +14,7 @@ use Demo\Chat\CLI\Commands\DeleteOrphanSettingCommand;
 use Demo\Chat\CLI\Commands\EchoCommand;
 use Demo\Chat\CLI\Commands\ImpersonateStartCommand;
 use Demo\Chat\CLI\Commands\ImpersonateStopCommand;
+use Demo\Chat\CLI\Commands\SessionExpireCommand;
 use Hilos\Core\CLI\CliManager;
 
 /**
@@ -37,6 +38,7 @@ final class ChatCliManager extends CliManager
         $this->addCommand(new AdminRevokeCommand());
         $this->addCommand(new ImpersonateStartCommand());
         $this->addCommand(new ImpersonateStopCommand());
+        $this->addCommand(new SessionExpireCommand());
         $this->addCommand(new BackupRunCommand());
     }
 }

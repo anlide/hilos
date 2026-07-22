@@ -32,6 +32,9 @@ final class ChatCliCommands
     /** @var string Test-only: echo a message through the command channel via an agent */
     public const string COMMAND_ECHO = 'test:command:echo';
 
+    /** @var string Test-only: expire a live session by its cookie token */
+    public const string SESSION_EXPIRE = 'test:session:expire';
+
     /** @var string Grant a user admin rights over the command channel */
     public const string ADMIN_GRANT = 'admin:grant';
 
