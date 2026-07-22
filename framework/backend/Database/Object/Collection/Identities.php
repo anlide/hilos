@@ -305,6 +305,44 @@ final class Identities extends Objects
     }
 
     /**
+     * Re-points every identity owned by a loser user to a survivor user (HIL-378).
+     *
+     * Account-merge write path: the survivor absorbs the loser's sign-in
+     * methods. Each identity keeps its (type, identifier) and only its owner
+     * changes, so a move is a targeted user_id write broadcast through the object
+     * (a DB_SYNC event re-emits the survivor's identities projection). A link is
+     * never moved onto a duplicate: (type, identifier) is globally unique, so
+     * should the survivor already own an identical pair the loser's row is
+     * hard-deleted rather than moved (HIL-282 "never move a link"). Returns the
+     * number of identities actually moved; dropped duplicates are not counted.
+     *
+     * @param int $fromUserId Loser user id whose identities are absorbed
+     * @param int $toUserId Survivor user id that receives the identities
+     * @return int Number of identities re-pointed to the survivor
+     * @throws DatabaseException If a lookup, move, or delete query fails
+     */
+    public function rePointToUser(int $fromUserId, int $toUserId): int
+    {
+        $moved = 0;
+        foreach ($this->listByUser($fromUserId) as $identity) {
+            $existing = $this->findByIdentity($identity->type, $identity->identifier);
+            if ($existing !== null && $existing->userId === $toUserId) {
+                $identity->delete();
+                if ($identity->id !== null) {
+                    unset($this->objects[$identity->id]);
+                }
+                continue;
+            }
+
+            $identity->userId = $toUserId;
+            $identity->sync();
+            $moved++;
+        }
+
+        return $moved;
+    }
+
+    /**
      * Resolves the user id owning a verified identity for an email (HIL-283).
      *
      * The passwordless-login read accessor shared with the OAuth email-collision

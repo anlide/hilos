@@ -172,6 +172,23 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Re-points every identity owned by a loser user to a survivor user (HIL-378).
+     *
+     * Account-merge write path: delegates to the object collection's
+     * {@see ObjectIdentities::rePointToUser()} primitive, which owns the
+     * duplicate-drop guard and the targeted user_id move.
+     *
+     * @param int $fromUserId Loser user id whose identities are absorbed
+     * @param int $toUserId Survivor user id that receives the identities
+     * @return int Number of identities re-pointed to the survivor
+     * @throws DatabaseException On database error while re-pointing the identities
+     */
+    public function rePointToUser(int $fromUserId, int $toUserId): int
+    {
+        return $this->objectCollection->rePointToUser($fromUserId, $toUserId);
+    }
+
+    /**
      * Runs a throwaway password verification to equalize login response time.
      *
      * Anti-enumeration companion of {@see findByIdentity()}: when a login lookup
