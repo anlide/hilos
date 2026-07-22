@@ -33,3 +33,25 @@ export function sendRename(newName: string): boolean {
 export function clearRenameError(): void {
   actionErrors.clear(RENAME_ACTION)
 }
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::UNLINK_IDENTITY`). */
+const UNLINK_IDENTITY_ACTION = 'unlink_identity'
+
+/** The latest unlink error reason, or null when clear (framework action_error). */
+export const unlinkIdentityError: ReadonlySignal<string | null> =
+  actionErrors.signal(UNLINK_IDENTITY_ACTION)
+
+/**
+ * Submit an unlink of one login identity: clear any prior error and send the
+ * `unlink_identity` action carrying the identity id. The row disappears only
+ * once the backend deletes it and the identities projection re-emits, never
+ * optimistically here. Returns false, sending nothing, when the connection is
+ * not `connected`.
+ *
+ * @param identityId The id of the identity to unlink.
+ */
+export function sendUnlinkIdentity(identityId: number): boolean {
+  actionErrors.clear(UNLINK_IDENTITY_ACTION)
+
+  return connection.sendAction(UNLINK_IDENTITY_ACTION, { identityId })
+}

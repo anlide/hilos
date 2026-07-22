@@ -15,4 +15,9 @@ export interface IdentityItem {
   readonly identifier: string
   /** Whether this identity has been verified. */
   readonly verified: boolean
+  /**
+   * Whether this identity may be unlinked — false for the user's only login
+   * method (a UX hint; the server re-enforces the last-identity guard).
+   */
+  readonly canUnlink: boolean
 }

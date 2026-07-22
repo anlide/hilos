@@ -20,7 +20,13 @@ import {
 
 import { runPasskeyRegister } from '../../auth/passkeyCeremony'
 import { currentUserId } from '../../bootstrap/session'
-import { clearRenameError, renameError, sendRename } from './profileActions'
+import {
+  clearRenameError,
+  renameError,
+  sendRename,
+  sendUnlinkIdentity,
+  unlinkIdentityError,
+} from './profileActions'
 import { committedName, profileDetail, profileIdentities } from './profilePage'
 
 defineOptions({ name: 'ProfilePage' })
@@ -44,6 +50,49 @@ const detail = useSignal(profileDetail)
 const committed = useSignal(committedName)
 const identities = useSignal(profileIdentities)
 const error = useSignal(renameError)
+const unlinkError = useSignal(unlinkIdentityError)
+
+// Unlink is server-confirmed, one row at a time: `unlinkConfirmKey` is the row
+// showing its inline "remove?" confirm, `unlinkLoadingKey` the row whose delete
+// is in flight. The row vanishes when the identities projection re-emits without
+// it (success); a rejection arrives as an action_error.
+const unlinkConfirmKey = ref<string | null>(null)
+const unlinkLoadingKey = ref<string | null>(null)
+
+function askUnlink(key: string): void {
+  unlinkConfirmKey.value = key
+}
+
+function cancelUnlink(): void {
+  unlinkConfirmKey.value = null
+}
+
+function confirmUnlink(key: string): void {
+  if (unlinkLoadingKey.value !== null) {
+    return
+  }
+  unlinkLoadingKey.value = sendUnlinkIdentity(Number(key)) ? key : null
+}
+
+// A rejected unlink arrives as a framework action_error: release the row spinner
+// and keep the confirm open so the user can retry.
+watch(unlinkError, (reason) => {
+  if (reason !== null) {
+    unlinkLoadingKey.value = null
+  }
+})
+
+// When the list changes (a successful unlink removed the row), drop confirm and
+// loading state that no longer maps to a present identity.
+watch(identities, (list) => {
+  const keys = new Set(list.map((identity) => identity.key))
+  if (unlinkConfirmKey.value !== null && !keys.has(unlinkConfirmKey.value)) {
+    unlinkConfirmKey.value = null
+  }
+  if (unlinkLoadingKey.value !== null && !keys.has(unlinkLoadingKey.value)) {
+    unlinkLoadingKey.value = null
+  }
+})
 
 const editing = ref(false)
 const draft = ref('')
@@ -183,9 +232,11 @@ function mergeBoth(): void {
       Loading profile…
     </p>
 
-    <!-- Read-only list of the user's linked login identities (HIL-297). Scoped to
-    the signed-in user by the backend; secrets never reach here. link/unlink
-    management arrives with HIL-377. -->
+    <!-- The user's linked login identities (HIL-297), each unlinkable (HIL-377).
+    Scoped to the signed-in user by the backend; secrets never reach here. Unlink
+    is server-confirmed: the row disappears when the projection re-emits without
+    it, and the sole remaining method's control is disabled (the server also
+    refuses removing a last identity). -->
     <div class="mt-4" data-id="profile-identities">
       <h2 class="h6 mb-2">Login methods</h2>
       <ul
@@ -210,19 +261,58 @@ function mergeBoth(): void {
               {{ identity.identifier }}
             </span>
           </span>
-          <span
-            v-if="identity.verified"
-            class="badge text-bg-success flex-shrink-0"
-            data-id="identity-verified"
-          >
-            Verified
-          </span>
-          <span
-            v-else
-            class="badge text-bg-secondary flex-shrink-0"
-            data-id="identity-unverified"
-          >
-            Unverified
+          <span class="d-flex align-items-center gap-2 flex-shrink-0">
+            <span
+              v-if="identity.verified"
+              class="badge text-bg-success"
+              data-id="identity-verified"
+            >
+              Verified
+            </span>
+            <span
+              v-else
+              class="badge text-bg-secondary"
+              data-id="identity-unverified"
+            >
+              Unverified
+            </span>
+            <template v-if="unlinkConfirmKey === identity.key">
+              <span class="text-body-secondary small" data-id="identity-unlink-confirm">
+                Remove?
+              </span>
+              <LoadingButton
+                class="btn-danger btn-sm"
+                :loading="unlinkLoadingKey === identity.key"
+                data-id="identity-unlink-yes"
+                @click="confirmUnlink(identity.key)"
+              >
+                Remove
+              </LoadingButton>
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm"
+                :disabled="unlinkLoadingKey === identity.key"
+                data-id="identity-unlink-cancel"
+                @click="cancelUnlink"
+              >
+                Cancel
+              </button>
+            </template>
+            <button
+              v-else
+              type="button"
+              class="btn btn-outline-danger btn-sm"
+              :disabled="!identity.canUnlink"
+              :title="
+                identity.canUnlink
+                  ? 'Remove this login method'
+                  : 'You cannot remove your only login method'
+              "
+              data-id="identity-unlink"
+              @click="askUnlink(identity.key)"
+            >
+              Unlink
+            </button>
           </span>
         </li>
       </ul>
@@ -233,6 +323,14 @@ function mergeBoth(): void {
       >
         No linked login methods.
       </p>
+      <div
+        v-if="unlinkError"
+        class="alert alert-danger mt-2 mb-0"
+        role="alert"
+        data-id="profile-unlink-error"
+      >
+        {{ unlinkError }}
+      </div>
 
       <!-- Enroll a device passkey (HIL-284): runs the WebAuthn register ceremony
       for the signed-in user. Hidden where the browser lacks WebAuthn. The new

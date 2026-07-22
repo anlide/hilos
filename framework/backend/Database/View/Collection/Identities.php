@@ -8,6 +8,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
@@ -151,6 +152,23 @@ final class Identities extends DbCollection
         }
 
         return $identity;
+    }
+
+    /**
+     * Hard-deletes one of a user's identities (HIL-377).
+     *
+     * Profile unlink write path: delegates to the object collection's
+     * {@see ObjectIdentities::deleteIdentity()} primitive, which owns the
+     * ownership and last-identity guards and the (id, user_id)-scoped delete.
+     *
+     * @param int $userId Owning user id (session user)
+     * @param int $identityId Identity id to unlink
+     * @throws ValidationException When the identity is not owned by the user, or is their last one
+     * @throws DatabaseException On database error while deleting the identity
+     */
+    public function deleteIdentity(int $userId, int $identityId): void
+    {
+        $this->objectCollection->deleteIdentity($userId, $identityId);
     }
 
     /**

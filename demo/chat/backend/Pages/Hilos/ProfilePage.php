@@ -11,6 +11,7 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -22,6 +23,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosProfilePage;
 
@@ -46,6 +48,7 @@ final class ProfilePage extends AbstractHilosProfilePage
 
     public const array ACTIONS = [
         ChatSignalConstants::RENAME => RenameActionDTO::class,
+        ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -62,7 +65,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException When rename moderation setup fails
+     * @throws ValidationException When an unlink is refused (ownership or last-identity guard)
+     * @throws HilosException When rename moderation setup fails or an identity delete query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -72,6 +76,14 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, RenameActionDTO::class, $dto);
                 }
                 $this->handleRename($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::UNLINK_IDENTITY:
+                if (!$dto instanceof UnlinkIdentityActionDTO) {
+                    throw new InvalidActionPayloadException($action, UnlinkIdentityActionDTO::class, $dto);
+                }
+                $this->handleUnlinkIdentity($acceptKey, $dto);
 
                 break;
 
@@ -141,6 +153,37 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         Hilos::$rt->selfConnection->actions->startRenameModeration($dto->newName);
+    }
+
+    /**
+     * Unlinks one of the signed-in user's login identities (HIL-377).
+     *
+     * The thin demo half of the unlink: it resolves the session user from the
+     * self-connection and delegates to the framework identity primitive, which
+     * owns the server-authoritative guards (ownership, last-identity refusal) and
+     * the delete. Success is state-driven — the delete broadcasts DB_SYNC_DELETED,
+     * re-emitting the owner's identities projection so the row disappears from
+     * every connection; a rejected unlink surfaces through the default framework
+     * action_error contract.
+     *
+     * @param string $acceptKey Accept key
+     * @param UnlinkIdentityActionDTO $dto Unlink DTO carrying the identity id
+     * @throws ValidationException When the id is missing, not owned by the user, or is their last identity
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws DatabaseException When the identity lookup or delete query fails
+     */
+    private function handleUnlinkIdentity(string $acceptKey, UnlinkIdentityActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            throw new ValidationException('Identity id is required');
+        }
+
+        if (Hilos::$rt->selfConnection === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        Hilos::$db->identities->deleteIdentity(Hilos::$rt->selfConnection->userId, $dto->identityId);
     }
 
     /**

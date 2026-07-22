@@ -86,6 +86,9 @@ final class ChatSignalConstants
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
+    /** @var string Profile unlink-identity action name (HIL-377) */
+    public const string UNLINK_IDENTITY = 'unlink_identity';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 

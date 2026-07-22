@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -261,6 +262,46 @@ final class Identities extends Objects
         $this->objects[$id] = $identity;
 
         return $identity;
+    }
+
+    /**
+     * Hard-deletes one of a user's identities (HIL-377).
+     *
+     * The profile unlink write path, symmetric with the create primitives:
+     * server-authoritative guards live here so the delete is safe regardless of
+     * caller. The lookup is by id; a missing row is an idempotent no-op (a
+     * concurrent unlink already removed it). Two guards protect the row: the
+     * caller may only unlink an identity they own, and the last remaining
+     * identity is refused so a user is never left with zero sign-in methods. The
+     * physical delete goes through the object so a DB_SYNC_DELETED broadcast
+     * re-emits the owner's identities projection to all of their connections.
+     *
+     * @param int $userId Owning user id (session user)
+     * @param int $identityId Identity id to unlink
+     * @throws ValidationException When the identity is not owned by the user, or is their last one
+     * @throws DatabaseException If the lookup or delete query fails
+     */
+    public function deleteIdentity(int $userId, int $identityId): void
+    {
+        $entityIdentity = EntityIdentity::get([EntityIdentity::id => $identityId])->first();
+        if ($entityIdentity === null) {
+            return;
+        }
+
+        if ($entityIdentity->user_id !== $userId) {
+            throw new ValidationException('cannot unlink an identity you do not own');
+        }
+
+        if (count($this->listByUser($userId)) <= 1) {
+            throw new ValidationException('cannot remove your only sign-in method');
+        }
+
+        if (!isset($this->objects[$identityId])) {
+            $this->objects[$identityId] = ObjectIdentity::fromEntity($entityIdentity);
+        }
+
+        $this->objects[$identityId]->delete();
+        unset($this->objects[$identityId]);
     }
 
     /**

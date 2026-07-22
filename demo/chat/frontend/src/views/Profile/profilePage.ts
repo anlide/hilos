@@ -60,26 +60,29 @@ const profileIdentityItems = scopes.pageListSignal(PROFILE_IDENTITIES_LIST)
  * The current user's linked login identities, resolved reactively by reference.
  * The scoped list carries a single anchor item (the self-connection) whose
  * `identities` slot references the owner's identities; a new identity (register
- * or oauth-link) appears live, a verified flip lands on the next subscription.
+ * or oauth-link) appears live, an unlink removes its row, a verified flip lands
+ * on the next subscription. `canUnlink` is false for the sole remaining identity
+ * so the view can disable its unlink control (the server re-enforces the guard).
  */
 export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
-  computedSignal(() =>
-    profileIdentityItems.get().flatMap((item) => {
-      const refs = item.slots[IDENTITIES_SLOT]
+  computedSignal(() => {
+    const refs = profileIdentityItems.get().flatMap((item) => {
+      const slot = item.slots[IDENTITIES_SLOT]
 
-      return Array.isArray(refs)
-        ? refs.map((ref) => {
-            const identityRef = ref as EntityRef
-            const identity = Identities.signal(identityRef).get()
+      return Array.isArray(slot) ? (slot as EntityRef[]) : []
+    })
+    const canUnlink = refs.length > 1
 
-            return {
-              key: String(identity?.id ?? identityRef.id),
-              type: identity?.type ?? '',
-              provider: identity?.provider ?? null,
-              identifier: identity?.identifier ?? '',
-              verified: identity?.verified ?? false,
-            }
-          })
-        : []
-    }),
-  )
+    return refs.map((identityRef) => {
+      const identity = Identities.signal(identityRef).get()
+
+      return {
+        key: String(identity?.id ?? identityRef.id),
+        type: identity?.type ?? '',
+        provider: identity?.provider ?? null,
+        identifier: identity?.identifier ?? '',
+        verified: identity?.verified ?? false,
+        canUnlink,
+      }
+    })
+  })
