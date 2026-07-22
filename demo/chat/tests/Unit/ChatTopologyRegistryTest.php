@@ -21,6 +21,7 @@ use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
+use Hilos\Backup\BackupConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -268,6 +269,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
+            BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
+            BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
     }

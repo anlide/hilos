@@ -33,6 +33,8 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Throwable;
 
 /**
@@ -68,6 +70,17 @@ final class BackupAgent extends AbstractAgent
         HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
+    ];
+
+    /**
+     * Command-channel commands the test-only CLI routes here (HIL-320): a forced retention
+     * prune and a forced scheduled backup, each driving the live agent so the runtime index
+     * stays the mirror of storage (files=truth). Both carry a plain payload, so neither
+     * declares an inner DTO.
+     */
+    public const array AGENT_COMMANDS = [
+        BackupConstants::PRUNE_COMMAND,
+        BackupConstants::RUN_SCHEDULE_COMMAND,
     ];
 
     /** Child interpreter; matches the worker spine's binary ({@see \Hilos\Socket\Server\WorkerServer}). */
@@ -176,6 +189,103 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->startBackup($scope);
+    }
+
+    /**
+     * Handles the test-only command-channel commands routed here (HIL-320).
+     *
+     * Both force a time-based path that would otherwise wait out the clock: prune forces a
+     * retention rotation, run-schedule forces a scheduled backup by name. Driving the live
+     * agent (rather than mutating storage from the CLI) keeps the runtime index consistent
+     * with truth. Every branch answers exactly once via {@see replyToCommand()}.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused; the routing is on $data->command)
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        switch ($data->command) {
+            case BackupConstants::PRUNE_COMMAND:
+                $this->handlePruneCommand($data);
+
+                return;
+
+            case BackupConstants::RUN_SCHEDULE_COMMAND:
+                $this->handleRunScheduleCommand($data);
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+                return;
+        }
+    }
+
+    /**
+     * Forces a retention rotation now and replies with the number of backups pruned.
+     *
+     * Rescans storage first so the prune runs against a fresh index (the same refresh+prune
+     * the create path performs after a successful run), then reports the pruned count.
+     *
+     * @param CommandRequestDTO $data Command request (no payload fields consumed)
+     */
+    private function handlePruneCommand(CommandRequestDTO $data): void
+    {
+        $this->refreshHistory();
+        $prunedCount = $this->pruneHistory();
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_PRUNED_COUNT => $prunedCount,
+        ]));
+    }
+
+    /**
+     * Forces the scheduled backup named in the payload and replies with its id and scope.
+     *
+     * Resolves the schedule entry name (defaulting to the fallback daily-full name when the
+     * payload omits it) to a scope and funnels through the guarded {@see startBackup()}. An
+     * unknown name, a busy single-flight lock, or a create that could not start each reply
+     * with an error; the reply is immediate (the backup runs asynchronously in the child).
+     *
+     * @param CommandRequestDTO $data Command request carrying the optional schedule name
+     */
+    private function handleRunScheduleCommand(CommandRequestDTO $data): void
+    {
+        $name = (string)($data->payload[BackupConstants::FIELD_SCHEDULE_NAME] ?? '');
+        if ($name === '') {
+            $name = BackupConstants::DEFAULT_SCHEDULE_NAME;
+        }
+
+        $scope = $this->schedule?->scopeForName($name);
+        if ($scope === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown backup schedule entry: {$name}"));
+
+            return;
+        }
+
+        if ($this->childProcess !== null) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                "Backup busy: {$this->currentBackupId}",
+            ));
+
+            return;
+        }
+
+        $this->startBackup($scope);
+        if ($this->currentBackupId === null) {
+            // startBackup skipped the launch (backups disabled or the child failed to spawn).
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Backup did not start'));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_BACKUP_ID => $this->currentBackupId,
+            BackupConstants::FIELD_SCOPE => $scope->value,
+        ]));
     }
 
     /**
@@ -646,12 +756,14 @@ final class BackupAgent extends AbstractAgent
      * keep-set, then each pruned backup's archive and sidecar are deleted and its index row is
      * dropped, so the runtime index stays the mirror of storage. Any failure is logged and
      * swallowed - rotation must never take down the daemon loop.
+     *
+     * @return int Number of backups pruned this pass (0 when nothing was rotated or on failure)
      */
-    private function pruneHistory(): void
+    private function pruneHistory(): int
     {
         $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
         if (!$histories instanceof BackupHistories) {
-            return;
+            return 0;
         }
 
         try {
@@ -669,7 +781,7 @@ final class BackupAgent extends AbstractAgent
                 new DateTimeZone(date_default_timezone_get()),
             );
             if ($doomed === []) {
-                return;
+                return 0;
             }
 
             $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
@@ -679,8 +791,12 @@ final class BackupAgent extends AbstractAgent
             }
 
             $this->logAgentInfo(sprintf('Backup rotation pruned %d entries', count($doomed)));
+
+            return count($doomed);
         } catch (Throwable $e) {
             $this->logAgentError('Backup rotation failed: ' . $e->getMessage());
+
+            return 0;
         }
     }
 

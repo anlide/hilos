@@ -62,4 +62,13 @@ final class CliCommands
 
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'verification:test:expire';
+
+    /** @var string Command: Age a stored backup's sidecar createdAt into the past (test-only) */
+    public const string BACKUP_TEST_AGE = 'test:backup:age';
+
+    /** @var string Command: Force a backup retention prune through the live agent (test-only) */
+    public const string BACKUP_TEST_PRUNE = 'test:backup:prune';
+
+    /** @var string Command: Force a scheduled backup through the live agent (test-only) */
+    public const string BACKUP_TEST_RUN_SCHEDULE = 'test:backup:run-schedule';
 }
