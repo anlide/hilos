@@ -13,18 +13,23 @@ use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\LinkOAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Auth\PhoneNumber;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
@@ -34,6 +39,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Identity;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosProfilePage;
@@ -62,6 +68,8 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
         ChatSignalConstants::SET_PASSWORD => SetPasswordActionDTO::class,
         ChatSignalConstants::LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
+        ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
+        ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -78,9 +86,9 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), or an OAuth link provider is unknown
-     * @throws \Random\RandomException When minting an OAuth link state cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails, an identity delete query fails, or a password read/write query fails
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, or an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use)
+     * @throws \Random\RandomException When minting an OAuth link state or an SMS-add code cannot draw from the CSPRNG
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, or an SMS-add verification/identity query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -114,6 +122,22 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, LinkOAuthStartActionDTO::class, $dto);
                 }
                 $this->handleLinkOAuthStart($dto);
+
+                break;
+
+            case ChatSignalConstants::ADD_SMS_REQUEST:
+                if (!$dto instanceof RequestSmsAddCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestSmsAddCodeActionDTO::class, $dto);
+                }
+                $this->handleRequestSmsAddCode($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::ADD_SMS_CONFIRM:
+                if (!$dto instanceof ConfirmSmsAddCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmSmsAddCodeActionDTO::class, $dto);
+                }
+                $this->handleConfirmSmsAddCode($acceptKey, $dto);
 
                 break;
 
@@ -330,6 +354,86 @@ final class ProfilePage extends AbstractHilosProfilePage
             $connection->acceptKey,
             new OAuthAuthorizeSignalData($connection->acceptKey, $authorizeUrl),
         );
+    }
+
+    /**
+     * Step 1 of adding a phone identity: issues an OTP to the submitted number (HIL-403).
+     *
+     * Server-authoritative and self-only: the owning user is read from the session,
+     * never the client, and carried on the challenge so step 2 can assert the code
+     * was minted for this user. The phone is normalized to E.164 (a malformed number
+     * is refused synchronously); the code is issued through the framework
+     * VerificationService, whose resend cooldown makes a repeat request a silent
+     * no-op — so the step always answers `action_success` and the wizard advances to
+     * the code step. No duplicate-phone check here: enumeration is avoided by only
+     * checking uniqueness on confirm, after the code proves possession.
+     *
+     * @param string $acceptKey Accept key
+     * @param RequestSmsAddCodeActionDTO $dto Add-phone request DTO (phone)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the phone is not a valid number
+     * @throws EmptyValueException When the normalized identifier is empty
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When the verification query fails
+     */
+    private function handleRequestSmsAddCode(string $acceptKey, RequestSmsAddCodeActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        $phone = PhoneNumber::normalize($dto->phone);
+        if ($phone === null) {
+            throw new ValidationException('Enter a valid phone number');
+        }
+
+        (new VerificationService())->issue(VerificationType::SMS_ADD, $phone, $userId);
+    }
+
+    /**
+     * Step 2 of adding a phone identity: verifies the OTP and attaches the identity (HIL-403).
+     *
+     * Server-authoritative and self-only: the owning user is read from the session.
+     * The submitted code is verified against the `sms_add` challenge; a
+     * missing/expired/wrong code — or a challenge minted for a different user than
+     * this session (defence in depth against a swapped phone) — is refused with the
+     * same generic message. On success a verified `sms` identity is attached to the
+     * session user; the new row reaches every connection through the identities
+     * projection re-emit (no bespoke success signal). A phone already used by any
+     * identity is refused ('phone already used') and the existing link is never
+     * moved.
+     *
+     * @param string $acceptKey Accept key
+     * @param ConfirmSmsAddCodeActionDTO $dto Add-phone confirm DTO (phone, code)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the phone/code is invalid or the phone is already in use
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function handleConfirmSmsAddCode(string $acceptKey, ConfirmSmsAddCodeActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        $phone = PhoneNumber::normalize($dto->phone);
+        $verifiedUserId = $phone === null
+            ? null
+            : (new VerificationService())->verify(VerificationType::SMS_ADD, $phone, $dto->code);
+        if ($phone === null || $verifiedUserId === null || $verifiedUserId !== $userId) {
+            throw new ValidationException('Invalid or expired code');
+        }
+
+        try {
+            Hilos::$db->identities->createSmsIdentity($userId, $phone);
+        } catch (DuplicateValueException) {
+            throw new ValidationException('That phone number is already in use');
+        } catch (EmptyValueException) {
+            throw new ValidationException('Enter a valid phone number');
+        }
     }
 
     /**

@@ -22,6 +22,7 @@ final class VerificationTypeTest extends TestCase
         self::assertSame('email_change', VerificationType::EMAIL_CHANGE);
         self::assertSame('sms_login', VerificationType::SMS_LOGIN);
         self::assertSame('magic_link', VerificationType::MAGIC_LINK);
+        self::assertSame('sms_add', VerificationType::SMS_ADD);
     }
 
     public function testValuesAreDistinct(): void
@@ -32,6 +33,7 @@ final class VerificationTypeTest extends TestCase
             VerificationType::EMAIL_CHANGE,
             VerificationType::SMS_LOGIN,
             VerificationType::MAGIC_LINK,
+            VerificationType::SMS_ADD,
         ];
 
         self::assertSame($values, array_values(array_unique($values)));
@@ -46,6 +48,7 @@ final class VerificationTypeTest extends TestCase
                 VerificationType::EMAIL_CHANGE,
                 VerificationType::SMS_LOGIN,
                 VerificationType::MAGIC_LINK,
+                VerificationType::SMS_ADD,
             ],
             VerificationType::values(),
         );

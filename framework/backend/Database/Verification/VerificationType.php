@@ -22,6 +22,11 @@ namespace Hilos\Database\Verification;
  * request time and carried on the challenge, so it verifies through the same
  * {@see VerificationService::verify()} as the email code types (its stored value
  * is a token rather than a numeric code — see {@see VerificationService::issue()}).
+ * `sms_add` mints a one-time code for attaching an `sms` identity to a signed-in
+ * user from the profile (HIL-403) — its `identifier` is a normalized E.164 phone,
+ * and unlike `sms_login` the owning user IS known at issue time, so the challenge
+ * carries that `user_id` and it verifies through {@see VerificationService::verify()}
+ * (the handler asserts the resolved user matches the session user).
  * `identifier` is the target email (lowercased) for the email-based types.
  */
 final class VerificationType
@@ -31,6 +36,7 @@ final class VerificationType
     public const string EMAIL_CHANGE = 'email_change';
     public const string SMS_LOGIN = 'sms_login';
     public const string MAGIC_LINK = 'magic_link';
+    public const string SMS_ADD = 'sms_add';
 
     /**
      * Returns the fixed set of verification type values in declaration order.
@@ -45,6 +51,7 @@ final class VerificationType
             self::EMAIL_CHANGE,
             self::SMS_LOGIN,
             self::MAGIC_LINK,
+            self::SMS_ADD,
         ];
     }
 

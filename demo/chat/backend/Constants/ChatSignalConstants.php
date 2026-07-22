@@ -98,6 +98,12 @@ final class ChatSignalConstants
     /** @var string Server → client: the current user's password was added/changed (HIL-402) */
     public const string PASSWORD_UPDATED = 'password_updated';
 
+    /** @var string Client → server: request an SMS code to add a phone identity to the signed-in user (authenticated, HIL-403) */
+    public const string ADD_SMS_REQUEST = 'profile_add_sms_request';
+
+    /** @var string Client → server: submit the SMS code to add the phone identity to the signed-in user (authenticated, HIL-403) */
+    public const string ADD_SMS_CONFIRM = 'profile_add_sms_confirm';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 

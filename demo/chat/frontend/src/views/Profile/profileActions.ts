@@ -5,14 +5,22 @@
 // comes back as a framework action_error (the page no longer sends a bespoke
 // ack), handled by the core ActionErrorStore; success is state-driven — the
 // committed name arrives over the self-connection data (profilePage.ts).
-import { type ProjectSignal, type ReadonlySignal } from '@hilos/core'
+import { ActionError, type ProjectSignal, type ReadonlySignal } from '@hilos/core'
 
 import {
   PASSWORD_UPDATED_SIGNAL,
   passwordUpdatedSignalSchema,
   type PasswordUpdatedSignalData,
 } from '../../auth/passwordSignals'
-import { actionErrors, connection } from '../../bootstrap/connection'
+import { actionErrors, actions, connection } from '../../bootstrap/connection'
+
+/** The outcome of an add-phone wizard step: ok, plus the inline reason on failure. */
+export interface AddSmsOutcome {
+  /** True on the backend `::success`; false on any rejection. */
+  readonly ok: boolean
+  /** The inline error to show on failure, or null on success. */
+  readonly message: string | null
+}
 
 /** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::RENAME`). */
 const RENAME_ACTION = 'rename'
@@ -96,6 +104,72 @@ export function sendSetPassword(
 /** Clear the set-password error — the view does this when a form re-opens. */
 export function clearSetPasswordError(): void {
   actionErrors.clear(SET_PASSWORD_ACTION)
+}
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::ADD_SMS_REQUEST`). */
+const ADD_SMS_REQUEST_ACTION = 'profile_add_sms_request'
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::ADD_SMS_CONFIRM`). */
+const ADD_SMS_CONFIRM_ACTION = 'profile_add_sms_confirm'
+
+/**
+ * Step 1 of adding a phone identity: dispatch the `profile_add_sms_request` action
+ * over the request-correlated action lifecycle and resolve its outcome. Unlike the
+ * fire-and-forget profile actions, the add-phone wizard advances a step on the
+ * backend `::success` (there is no bespoke success signal and nothing changes in
+ * the identity projection yet), so it needs the correlated ack — the same
+ * mechanism the auth SMS-login wizard uses. The backend always answers generically
+ * (a well-formed number issues a code whether or not the resend cooldown suppresses
+ * a duplicate), so `ok` means "advance to the code step". A malformed number
+ * rejects with its inline reason.
+ *
+ * @param phone The phone number to attach.
+ */
+export async function sendAddSmsRequest(phone: string): Promise<AddSmsOutcome> {
+  return dispatchAddSms(ADD_SMS_REQUEST_ACTION, { phone })
+}
+
+/**
+ * Step 2 of adding a phone identity: dispatch the `profile_add_sms_confirm` action
+ * and resolve its outcome. On `::success` the verified `sms` identity is attached
+ * server-side and arrives over the identities projection re-emit (no optimistic
+ * row here); a wrong/expired code or a phone already in use rejects with its inline
+ * reason.
+ *
+ * @param phone The phone number to attach.
+ * @param code The delivered verification code.
+ */
+export async function sendAddSmsConfirm(
+  phone: string,
+  code: string,
+): Promise<AddSmsOutcome> {
+  return dispatchAddSms(ADD_SMS_CONFIRM_ACTION, { phone, code })
+}
+
+/**
+ * Dispatch one add-phone action and reduce its reply to an {@link AddSmsOutcome}:
+ * ok on `::success`, else the backend reason for a real rejection and a generic
+ * phrasing for a timeout or dropped connection.
+ *
+ * @param action The backend action name.
+ * @param payload The action payload.
+ */
+async function dispatchAddSms(
+  action: string,
+  payload: Record<string, string>,
+): Promise<AddSmsOutcome> {
+  try {
+    await actions.dispatch(action, payload).done
+
+    return { ok: true, message: null }
+  } catch (error) {
+    const message =
+      error instanceof ActionError && error.outcome === 'fail'
+        ? error.message
+        : 'Could not reach the server. Please try again.'
+
+    return { ok: false, message }
+  }
 }
 
 /**

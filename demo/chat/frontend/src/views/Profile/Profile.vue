@@ -25,6 +25,8 @@ import {
   clearRenameError,
   clearSetPasswordError,
   renameError,
+  sendAddSmsConfirm,
+  sendAddSmsRequest,
   sendRename,
   sendSetPassword,
   sendUnlinkIdentity,
@@ -171,6 +173,59 @@ async function addPasskey(): Promise<void> {
     passkeyAdded.value = true
   } else {
     passkeyError.value = outcome.message ?? null
+  }
+}
+
+// Add a phone (HIL-403): a two-step modal wizard (phone → OTP code) that attaches
+// a verified `sms` identity to the signed-in user. Server-confirmed, not
+// optimistic: step 1 advances to the code step only on the backend `::success`
+// (the resend cooldown makes a repeat a silent success); step 2 closes the modal
+// on success and the new identity arrives over the identities projection. A
+// malformed phone, a wrong/expired code, or a phone already in use surfaces as an
+// inline error and stays on the step for a retry.
+const addingSms = ref(false)
+const smsStep = ref<1 | 2>(1)
+const smsPhone = ref('')
+const smsCode = ref('')
+const smsLoading = ref(false)
+const smsError = ref<string | null>(null)
+
+function openAddSms(): void {
+  smsStep.value = 1
+  smsPhone.value = ''
+  smsCode.value = ''
+  smsError.value = null
+  smsLoading.value = false
+  addingSms.value = true
+}
+
+async function submitSmsRequest(): Promise<void> {
+  if (smsPhone.value.trim() === '' || smsLoading.value) {
+    return
+  }
+  smsLoading.value = true
+  smsError.value = null
+  const outcome = await sendAddSmsRequest(smsPhone.value.trim())
+  smsLoading.value = false
+  if (outcome.ok) {
+    smsStep.value = 2
+  } else {
+    smsError.value = outcome.message
+  }
+}
+
+async function submitSmsConfirm(): Promise<void> {
+  if (smsCode.value.trim() === '' || smsLoading.value) {
+    return
+  }
+  smsLoading.value = true
+  smsError.value = null
+  const outcome = await sendAddSmsConfirm(smsPhone.value.trim(), smsCode.value.trim())
+  smsLoading.value = false
+  if (outcome.ok) {
+    addingSms.value = false
+  } else {
+    smsError.value = outcome.message
   }
 }
 
@@ -467,6 +522,20 @@ function mergeBoth(): void {
         </LoadingButton>
       </div>
 
+      <!-- Add a phone (HIL-403): opens the two-step OTP wizard that attaches a
+      verified `sms` identity to this account. The new identity appears in the list
+      above once the confirm lands and the identities projection re-emits. -->
+      <div class="mt-3" data-id="profile-add-sms">
+        <button
+          type="button"
+          class="btn btn-outline-primary btn-sm"
+          data-id="profile-add-sms-open"
+          @click="openAddSms"
+        >
+          Add a phone
+        </button>
+      </div>
+
       <!-- Link an account (HIL-401): attach a new OAuth provider to this account.
       Only providers not already linked are offered; each button starts the redirect
       (staying loading through it) and the row vanishes once the link lands and the
@@ -645,6 +714,84 @@ function mergeBoth(): void {
             </LoadingButton>
           </template>
         </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <!-- Add-a-phone wizard (HIL-403): step 1 collects the number, step 2 the code.
+    A CREATE wizard, not a merge edit — no version/conflict. Submit blocks its
+    button until the backend acks; a rejection stays on the step with an inline
+    reason. -->
+    <HilosModal v-model="addingSms">
+      <template #header>
+        <h2 class="modal-title h5 mb-0">Add a phone</h2>
+      </template>
+
+      <form v-if="smsStep === 1" @submit.prevent="submitSmsRequest">
+        <label class="form-label" for="profile-add-sms-phone">Phone number</label>
+        <input
+          id="profile-add-sms-phone"
+          v-model="smsPhone"
+          type="tel"
+          class="form-control"
+          autocomplete="tel"
+          data-autofocus
+          data-id="profile-add-sms-phone"
+        />
+        <div class="form-text">We'll text you a one-time code.</div>
+        <div
+          v-if="smsError"
+          class="alert alert-danger mt-2 mb-0"
+          role="alert"
+          data-id="profile-add-sms-error"
+        >
+          {{ smsError }}
+        </div>
+      </form>
+
+      <form v-else @submit.prevent="submitSmsConfirm">
+        <label class="form-label" for="profile-add-sms-code">Verification code</label>
+        <input
+          id="profile-add-sms-code"
+          v-model="smsCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          class="form-control"
+          data-autofocus
+          data-id="profile-add-sms-code"
+        />
+        <div class="form-text">Enter the code sent to {{ smsPhone }}.</div>
+        <div
+          v-if="smsError"
+          class="alert alert-danger mt-2 mb-0"
+          role="alert"
+          data-id="profile-add-sms-error"
+        >
+          {{ smsError }}
+        </div>
+      </form>
+
+      <template #actions>
+        <LoadingButton
+          v-if="smsStep === 1"
+          class="btn-primary"
+          :loading="smsLoading"
+          :disabled="smsPhone.trim() === ''"
+          data-id="profile-add-sms-request"
+          @click="submitSmsRequest"
+        >
+          Send code
+        </LoadingButton>
+        <LoadingButton
+          v-else
+          class="btn-primary"
+          :loading="smsLoading"
+          :disabled="smsCode.trim() === ''"
+          data-id="profile-add-sms-confirm"
+          @click="submitSmsConfirm"
+        >
+          Add phone
+        </LoadingButton>
       </template>
     </HilosModal>
   </section>
