@@ -39,6 +39,7 @@ use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
+use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
@@ -934,9 +935,21 @@ final class MainPage extends AbstractPage
         $service = ChatOAuthConfig::buildService();
         try {
             $service->providerFor($dto->provider);
-            $service->verifyState($dto->state, $connection->sessionToken);
+            $mode = $service->verifyState($dto->state, $connection->sessionToken);
         } catch (OAuthUnknownProviderException | OAuthStateException) {
             throw new ValidationException('OAuth verification failed');
+        }
+
+        // The linked-to user is taken server-side from the live session, never from
+        // the client: a link-mode callback can only ever bind into its own account.
+        // A link state on an anonymous session is impossible (the start action is on
+        // the authenticated profile page) and is refused as a verification failure.
+        $linkUserId = 0;
+        if ($mode === OAuthStateSigner::MODE_LINK) {
+            if ($connection->userId === null) {
+                throw new ValidationException('OAuth verification failed');
+            }
+            $linkUserId = $connection->userId;
         }
 
         $pending = Hilos::$rt->getStateCollection(OAuthPendingLogin::RT_COLLECTION);
@@ -950,6 +963,8 @@ final class MainPage extends AbstractPage
             $dto->provider,
             $dto->code,
             microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
+            $mode,
+            $linkUserId,
         ));
     }
 

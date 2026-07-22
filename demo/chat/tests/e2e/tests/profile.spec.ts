@@ -47,6 +47,39 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await expect(page.getByTestId('profile-name')).toHaveText('Renamed Person')
 })
 
+test('links a GitHub account to the current profile (HIL-401)', async ({
+  page,
+}) => {
+  // Link mode reuses the whole OAuth flow but attaches the identity to the
+  // already-signed-in account instead of resolving one. With no real GitHub app
+  // configured the offline stub answers under `oauth:github`: its authorize URL
+  // bounces straight back to /auth/callback, the framework agent binds the
+  // identity, and the explicit link-ok result returns the user to their profile.
+  await signUp(page)
+  await page.goto('/profile')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  // A fresh password account offers GitHub to link and has no oauth identity yet.
+  const linkButton = page.getByTestId('profile-oauth-link-oauth:github')
+  await expect(linkButton).toBeVisible()
+  await expect(page.getByTestId('profile-identities-list')).not.toContainText(
+    'oauth:github',
+  )
+
+  await linkButton.click()
+
+  // The link resolves out of band (link-ok signal) and navigates back to /profile;
+  // the new method now shows and GitHub is no longer offered to link.
+  await expect(page).toHaveURL(/\/profile$/)
+  await expect(page.getByTestId('profile-identities-list')).toContainText(
+    'oauth:github',
+  )
+  await expect(
+    page.getByTestId('profile-oauth-link-oauth:github'),
+  ).toHaveCount(0)
+})
+
 test('surfaces a conflict when the name changes in another tab', async ({
   context,
 }) => {

@@ -36,6 +36,9 @@ const OAUTH_CALLBACK_ACTION = 'oauth_callback'
 /** Backend action: redeem an email-collision link token after re-auth (PHP `ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH`). */
 const LINK_OAUTH_AFTER_REAUTH_ACTION = 'link_oauth_after_reauth'
 
+/** Backend action: begin linking a provider to the signed-in account (PHP `ChatSignalConstants::LINK_OAUTH_START`). */
+const LINK_OAUTH_START_ACTION = 'link_oauth_start'
+
 /**
  * Session-storage key holding the provider a redirect was started for, so the
  * callback route knows which provider the bounced `code`/`state` belong to. Session
@@ -59,6 +62,24 @@ export function startOAuthLogin(provider: string): Promise<void> {
   sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
 
   return actions.dispatch(OAUTH_START_ACTION, { provider }).done
+}
+
+/**
+ * Begin linking a provider to the signed-in account from the profile (HIL-401):
+ * the link-mode analog of {@link startOAuthLogin}. It stashes the provider for the
+ * return leg and dispatches `link_oauth_start`; the resolved `done` is the
+ * "accepted" ack (the browser is then navigated by {@link bindOAuthAuthorizeRedirect}
+ * off the authorize signal, so the caller keeps its loading through the redirect),
+ * while a rejection (unknown provider, timeout, disconnect) surfaces inline. The
+ * callback returns on the same `/auth/callback` route, where a link outcome arrives
+ * as an explicit result signal rather than a current-user update.
+ *
+ * @param provider The provider key to link, e.g. `oauth:github`.
+ */
+export function startOAuthLink(provider: string): Promise<void> {
+  sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
+
+  return actions.dispatch(LINK_OAUTH_START_ACTION, { provider }).done
 }
 
 /**

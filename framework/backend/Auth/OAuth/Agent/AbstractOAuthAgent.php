@@ -16,6 +16,8 @@ use Hilos\Auth\OAuth\OfflineOAuthProvider;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
@@ -324,13 +326,25 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Completes a resolved login and clears the op; a thrown completion is reported as a failure.
+     * Completes a resolved exchange and clears the op, branching on the op's flow mode.
+     *
+     * A {@see OAuthPendingLogin::MODE_LINK} op binds the resolved identity to the
+     * already-signed-in initiator ({@see completeOAuthLink}), a framework-owned
+     * branch that touches only the framework identity table; a login op hands off
+     * to the project's {@see completeOAuthLogin}, which owns the users/sessions
+     * account resolution. A thrown login completion is reported as a generic failure.
      *
      * @param OAuthPendingLogin $op Op being completed
      * @param OAuthUserInfo $info Resolved provider identity
      */
     private function succeedOp(OAuthPendingLogin $op, OAuthUserInfo $info): void
     {
+        if ($op->mode === OAuthPendingLogin::MODE_LINK) {
+            $this->completeOAuthLink($op, $info);
+
+            return;
+        }
+
         try {
             $this->completeOAuthLogin($op, $info);
         } catch (Throwable $e) {
@@ -345,21 +359,88 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
+     * Binds a resolved identity to the initiating account in link mode, then clears the op (HIL-401).
+     *
+     * The framework-owned success path: the initiator is already signed in (their
+     * user id rode the signed state and was recorded on the op server-side), so no
+     * account is resolved or created and the session is never touched — the identity
+     * is written straight through the framework identity primitive. Every terminal
+     * outcome is signalled explicitly to the initiating connection, since a link
+     * has no session change to ride: success ({@see OAuthResultSignalData::REASON_LINK_OK}),
+     * an identity already linked to some account
+     * ({@see OAuthResultSignalData::REASON_LINK_DUPLICATE}), or any other write
+     * failure ({@see OAuthResultSignalData::REASON_LINK_FAILED}).
+     *
+     * @param OAuthPendingLogin $op Op being completed (carries the target user and accept key)
+     * @param OAuthUserInfo $info Resolved provider identity
+     */
+    private function completeOAuthLink(OAuthPendingLogin $op, OAuthUserInfo $info): void
+    {
+        $db = Hilos::$db;
+        if (!$db instanceof HilosDbContext) {
+            $this->logAgentError("OAuth link failed for {$op->getId()}: identity context is unavailable");
+            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_FAILED);
+            $this->clearOp($op->getId());
+
+            return;
+        }
+
+        try {
+            $db->identities->createOauthIdentity($op->linkUserId, $op->provider, $info->subject);
+        } catch (DuplicateValueException) {
+            $this->logAgentWarning("OAuth link refused for {$op->getId()} (provider={$op->provider}): already linked");
+            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_DUPLICATE);
+            $this->clearOp($op->getId());
+
+            return;
+        } catch (Throwable $e) {
+            $this->logAgentError("OAuth link write failed for {$op->getId()}: " . $e->getMessage());
+            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_FAILED);
+            $this->clearOp($op->getId());
+
+            return;
+        }
+
+        $this->logAgentInfo("OAuth link resolved for {$op->getId()} (provider={$op->provider}, user={$op->linkUserId})");
+        $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_OK);
+        $this->clearOp($op->getId());
+    }
+
+    /**
+     * Delivers a terminal link-result signal to the initiating connection (HIL-401).
+     *
+     * @param OAuthPendingLogin $op Op whose accept key the signal targets
+     * @param string $reason Terminal link reason ({@see OAuthResultSignalData} REASON_LINK_*)
+     */
+    private function sendLinkResult(OAuthPendingLogin $op, string $reason): void
+    {
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_RESULT,
+            $op->acceptKey,
+            new OAuthResultSignalData($op->acceptKey, $op->provider, $reason),
+        );
+    }
+
+    /**
      * Reports a login failure to the initiating connection and clears the op.
      *
      * The client sees a generic failure ({@see OAuthResultSignalData}); the specific cause
-     * stays in the agent log so no provider/network detail crosses the wire.
+     * stays in the agent log so no provider/network detail crosses the wire. The generic
+     * reason follows the op's flow mode so a link exchange fails as a link, not a login.
      *
      * @param OAuthPendingLogin $op Op being failed
      * @param string $detail Cause detail for the log only
      */
     private function failOp(OAuthPendingLogin $op, string $detail): void
     {
-        $this->logAgentWarning("OAuth login failed for {$op->getId()} (provider={$op->provider}): {$detail}");
+        $this->logAgentWarning("OAuth {$op->mode} failed for {$op->getId()} (provider={$op->provider}): {$detail}");
+        $reason = $op->mode === OAuthPendingLogin::MODE_LINK
+            ? OAuthResultSignalData::REASON_LINK_FAILED
+            : OAuthResultSignalData::REASON_LOGIN_FAILED;
         $this->sendToUser(
             HilosSignalConstants::HILOS_OAUTH_RESULT,
             $op->acceptKey,
-            new OAuthResultSignalData($op->acceptKey, $op->provider),
+            new OAuthResultSignalData($op->acceptKey, $op->provider, $reason),
         );
         $this->clearOp($op->getId());
     }

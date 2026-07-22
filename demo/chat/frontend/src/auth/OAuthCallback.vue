@@ -24,7 +24,12 @@ import {
   subscribeOAuthFailure,
   takeOAuthProvider,
 } from './oauthLogin'
-import { OAUTH_REASON_REAUTH_REQUIRED } from './oauthSignals'
+import {
+  OAUTH_REASON_LINK_DUPLICATE,
+  OAUTH_REASON_LINK_FAILED,
+  OAUTH_REASON_LINK_OK,
+  OAUTH_REASON_REAUTH_REQUIRED,
+} from './oauthSignals'
 
 defineOptions({ name: 'OAuthCallback' })
 
@@ -47,6 +52,17 @@ const message = ref('')
 // The home path a successful sign-in lands on; also the "back to sign-in" target,
 // where the auth surface shows for the still-anonymous session.
 const HOME_PATH = '/'
+
+// The profile path a successful account link (HIL-401) returns to: the link was
+// started there, the session is unchanged, and the new method now shows in the list.
+const PROFILE_PATH = '/profile'
+
+// The messages shown when a profile link (HIL-401) does not succeed. A duplicate is
+// a distinct, non-sensitive outcome (the provider is tied to another account); any
+// other link failure is generic (no provider/network detail on the wire).
+const LINK_DUPLICATE_MESSAGE =
+  'That account is already linked to another user.'
+const LINK_FAILED_MESSAGE = 'Could not link the account. Please try again.'
 
 // Client-side backstop past the backend exchange deadline (EXCHANGE_TTL_MS = 15s):
 // if neither the current-user update nor the failure signal arrives, resolve the
@@ -92,6 +108,18 @@ function succeed(): void {
   router.navigate(HOME_PATH)
 }
 
+// A profile account link (HIL-401) resolved successfully: the session never
+// changed, so success arrives as an explicit result signal (not a current-user
+// update) and the user is sent back to their profile where the new method shows.
+function linkDone(): void {
+  if (settled) {
+    return
+  }
+  settled = true
+  cleanup()
+  router.navigate(PROFILE_PATH)
+}
+
 // The provider email collided with an existing verified account (HIL-282): not a
 // failure — arm the pending link (module state, so it outlives this view and the
 // sign-in surface the gate later closes) and send the user home, where the auth
@@ -128,6 +156,21 @@ onMounted(async () => {
   unsubscribeFailure = subscribeOAuthFailure((data) => {
     if (data.reason === OAUTH_REASON_REAUTH_REQUIRED && data.linkToken !== '') {
       reauthToLink(data.email, data.linkToken)
+
+      return
+    }
+    if (data.reason === OAUTH_REASON_LINK_OK) {
+      linkDone()
+
+      return
+    }
+    if (data.reason === OAUTH_REASON_LINK_DUPLICATE) {
+      fail(LINK_DUPLICATE_MESSAGE)
+
+      return
+    }
+    if (data.reason === OAUTH_REASON_LINK_FAILED) {
+      fail(LINK_FAILED_MESSAGE)
 
       return
     }

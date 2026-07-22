@@ -49,29 +49,34 @@ final class OAuthService
      *
      * @param string $providerKey Provider key, e.g. 'oauth:github'
      * @param string $sessionToken Initiating session token to bind into the state
+     * @param string $mode Flow mode to bind ({@see OAuthStateSigner::MODE_LOGIN} default, {@see OAuthStateSigner::MODE_LINK})
      * @return string Absolute authorization URL the browser is sent to
      * @throws OAuthUnknownProviderException When the provider is not configured
      * @throws RandomException When the platform CSPRNG cannot produce a nonce
      */
-    public function beginAuthorization(string $providerKey, string $sessionToken): string
-    {
+    public function beginAuthorization(
+        string $providerKey,
+        string $sessionToken,
+        string $mode = OAuthStateSigner::MODE_LOGIN,
+    ): string {
         $provider = $this->providerFor($providerKey);
-        $state = $this->stateSigner->issue($sessionToken, $this->stateTtlSeconds);
+        $state = $this->stateSigner->issue($sessionToken, $this->stateTtlSeconds, $mode);
 
         return $provider->buildAuthorizeUrl($state);
     }
 
     /**
-     * Verifies a callback state against the initiating session (CSRF gate).
+     * Verifies a callback state against the initiating session (CSRF gate), returning its bound mode.
      *
      * @param string $state State token returned to the callback
      * @param string $sessionToken Session token the callback arrived on
+     * @return string Bound flow mode ({@see OAuthStateSigner::MODE_LOGIN} or {@see OAuthStateSigner::MODE_LINK})
      * @throws OAuthStateException When the state is malformed, has a bad
-     *   signature, is bound to a different session, or has expired
+     *   signature, is bound to a different session, has an unknown mode, or has expired
      */
-    public function verifyState(string $state, string $sessionToken): void
+    public function verifyState(string $state, string $sessionToken): string
     {
-        $this->stateSigner->verify($state, $sessionToken);
+        return $this->stateSigner->verify($state, $sessionToken);
     }
 
     /**

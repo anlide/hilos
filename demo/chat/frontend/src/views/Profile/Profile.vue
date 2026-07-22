@@ -18,6 +18,7 @@ import {
   useSignal,
 } from '@hilos/vue'
 
+import { describeOAuthError, startOAuthLink } from '../../auth/oauthLogin'
 import { runPasskeyRegister } from '../../auth/passkeyCeremony'
 import { currentUserId } from '../../bootstrap/session'
 import {
@@ -27,7 +28,12 @@ import {
   sendUnlinkIdentity,
   unlinkIdentityError,
 } from './profileActions'
-import { committedName, profileDetail, profileIdentities } from './profilePage'
+import {
+  availableProviders,
+  committedName,
+  profileDetail,
+  profileIdentities,
+} from './profilePage'
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -51,6 +57,32 @@ const committed = useSignal(committedName)
 const identities = useSignal(profileIdentities)
 const error = useSignal(renameError)
 const unlinkError = useSignal(unlinkIdentityError)
+
+// Link an account (HIL-401): the configured OAuth providers not yet attached to
+// this account. Linking is the redirect start pattern — the button dispatches
+// `link_oauth_start` and the browser leaves for the provider off the authorize
+// signal — so a started button stays loading through the redirect and only a
+// rejection clears it with an inline error. The provider drops off `providers`
+// (and its button vanishes) once the link lands and the identity list re-emits.
+const providers = useSignal(availableProviders)
+const linkPendingKey = ref<string | null>(null)
+const linkError = ref<string | null>(null)
+
+async function linkProvider(key: string): Promise<void> {
+  if (linkPendingKey.value !== null) {
+    return
+  }
+  linkPendingKey.value = key
+  linkError.value = null
+  try {
+    await startOAuthLink(key)
+    // Accepted, working: the browser is navigated to the provider off the
+    // authorize signal, so the button intentionally stays loading through it.
+  } catch (caught) {
+    linkPendingKey.value = null
+    linkError.value = describeOAuthError(caught)
+  }
+}
 
 // Unlink is server-confirmed, one row at a time: `unlinkConfirmKey` is the row
 // showing its inline "remove?" confirm, `unlinkLoadingKey` the row whose delete
@@ -360,6 +392,39 @@ function mergeBoth(): void {
         >
           Add a passkey
         </LoadingButton>
+      </div>
+
+      <!-- Link an account (HIL-401): attach a new OAuth provider to this account.
+      Only providers not already linked are offered; each button starts the redirect
+      (staying loading through it) and the row vanishes once the link lands and the
+      identity list re-emits. A rejected start shows an inline error. -->
+      <div
+        v-if="providers.length"
+        class="mt-3"
+        data-id="profile-oauth-link"
+      >
+        <h3 class="h6 mb-2">Link an account</h3>
+        <div class="d-flex flex-wrap gap-2">
+          <LoadingButton
+            v-for="provider in providers"
+            :key="provider.key"
+            class="btn-outline-primary btn-sm"
+            :loading="linkPendingKey === provider.key"
+            :disabled="linkPendingKey !== null && linkPendingKey !== provider.key"
+            :data-id="`profile-oauth-link-${provider.key}`"
+            @click="linkProvider(provider.key)"
+          >
+            {{ provider.label }}
+          </LoadingButton>
+        </div>
+        <div
+          v-if="linkError"
+          class="alert alert-danger mt-2 mb-0"
+          role="alert"
+          data-id="profile-oauth-link-error"
+        >
+          {{ linkError }}
+        </div>
       </div>
     </div>
 

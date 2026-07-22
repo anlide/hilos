@@ -23,6 +23,12 @@ use Random\RandomException;
  */
 final class OAuthStateSigner
 {
+    /** Flow mode carried in the state: a plain sign-in (the default, backward-compatible value). */
+    public const string MODE_LOGIN = 'login';
+
+    /** Flow mode carried in the state: linking a provider to the already signed-in initiator (HIL-401). */
+    public const string MODE_LINK = 'link';
+
     private const int NONCE_BYTES = 16;
     private const string FIELD_SEPARATOR = '|';
     private const string PART_SEPARATOR = '.';
@@ -36,33 +42,42 @@ final class OAuthStateSigner
     }
 
     /**
-     * Mints a signed state token bound to a session, valid for `ttlSeconds`.
+     * Mints a signed state token bound to a session and flow mode, valid for `ttlSeconds`.
      *
      * @param string $sessionToken Initiating session token to bind
      * @param int $ttlSeconds Lifetime in seconds from now
+     * @param string $mode Flow mode to bind ({@see MODE_LOGIN} default, {@see MODE_LINK})
      * @return string Signed state token
      * @throws RandomException When the platform CSPRNG cannot produce a nonce
      */
-    public function issue(string $sessionToken, int $ttlSeconds): string
+    public function issue(string $sessionToken, int $ttlSeconds, string $mode = self::MODE_LOGIN): string
     {
         $nonce = bin2hex(random_bytes(self::NONCE_BYTES));
         $expiry = time() + $ttlSeconds;
 
-        $payload = $sessionToken . self::FIELD_SEPARATOR . $nonce . self::FIELD_SEPARATOR . $expiry;
+        $payload = $sessionToken
+            . self::FIELD_SEPARATOR . $nonce
+            . self::FIELD_SEPARATOR . $expiry
+            . self::FIELD_SEPARATOR . $mode;
         $encodedPayload = $this->base64UrlEncode($payload);
 
         return $encodedPayload . self::PART_SEPARATOR . $this->sign($encodedPayload);
     }
 
     /**
-     * Verifies a state token against the initiating session and the clock.
+     * Verifies a state token against the initiating session and the clock, returning its bound mode.
+     *
+     * A token minted before the mode field existed (three fields) verifies as
+     * {@see MODE_LOGIN}, so pre-HIL-401 states stay valid; a four-field token
+     * carries its mode, which must be a known value.
      *
      * @param string $state State token returned to the callback
      * @param string $sessionToken Session token the callback arrived on
+     * @return string Bound flow mode ({@see MODE_LOGIN} or {@see MODE_LINK})
      * @throws OAuthStateException When the token is malformed, has a bad
-     *   signature, is bound to a different session, or has expired
+     *   signature, is bound to a different session, has an unknown mode, or has expired
      */
-    public function verify(string $state, string $sessionToken): void
+    public function verify(string $state, string $sessionToken): string
     {
         $parts = explode(self::PART_SEPARATOR, $state, 2);
         if (count($parts) !== 2) {
@@ -80,7 +95,7 @@ final class OAuthStateSigner
         }
 
         $fields = explode(self::FIELD_SEPARATOR, $payload);
-        if (count($fields) !== 3) {
+        if (count($fields) !== 3 && count($fields) !== 4) {
             throw new OAuthStateException('OAuth state payload is malformed');
         }
 
@@ -92,6 +107,13 @@ final class OAuthStateSigner
         if (time() > (int)$expiry) {
             throw new OAuthStateException('OAuth state has expired');
         }
+
+        $mode = $fields[3] ?? self::MODE_LOGIN;
+        if ($mode !== self::MODE_LOGIN && $mode !== self::MODE_LINK) {
+            throw new OAuthStateException('OAuth state carries an unknown mode');
+        }
+
+        return $mode;
     }
 
     /**

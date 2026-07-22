@@ -22,7 +22,7 @@ final class OAuthStateSignerTest extends TestCase
     private const string SESSION = 'session-token-abc123';
 
     /**
-     * A state minted for a session verifies for that same session.
+     * A state minted for a session verifies for that same session and defaults to login mode.
      *
      * @throws RandomException When the CSPRNG cannot produce a nonce
      * @throws OAuthStateException Never in the success path
@@ -32,9 +32,40 @@ final class OAuthStateSignerTest extends TestCase
         $signer = new OAuthStateSigner(self::SECRET);
 
         $state = $signer->issue(self::SESSION, 600);
-        $signer->verify($state, self::SESSION);
+        $mode = $signer->verify($state, self::SESSION);
 
         self::assertStringContainsString('.', $state);
+        self::assertSame(OAuthStateSigner::MODE_LOGIN, $mode);
+    }
+
+    /**
+     * A link-mode state round-trips and verify returns the bound link mode (HIL-401).
+     *
+     * @throws RandomException When the CSPRNG cannot produce a nonce
+     * @throws OAuthStateException Never in the success path
+     */
+    public function testLinkModeStateRoundTripsAndReturnsMode(): void
+    {
+        $signer = new OAuthStateSigner(self::SECRET);
+
+        $state = $signer->issue(self::SESSION, 600, OAuthStateSigner::MODE_LINK);
+        $mode = $signer->verify($state, self::SESSION);
+
+        self::assertSame(OAuthStateSigner::MODE_LINK, $mode);
+    }
+
+    /**
+     * A state carrying an unknown mode is rejected even when otherwise well-formed (HIL-401).
+     *
+     * @throws RandomException When the CSPRNG cannot produce a nonce
+     */
+    public function testUnknownModeIsRejected(): void
+    {
+        $signer = new OAuthStateSigner(self::SECRET);
+        $state = $signer->issue(self::SESSION, 600, 'not-a-real-mode');
+
+        $this->expectException(OAuthStateException::class);
+        $signer->verify($state, self::SESSION);
     }
 
     /**

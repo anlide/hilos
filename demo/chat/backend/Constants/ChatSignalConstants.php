@@ -65,6 +65,9 @@ final class ChatSignalConstants
     /** @var string Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282) */
     public const string LINK_OAUTH_AFTER_REAUTH = 'link_oauth_after_reauth';
 
+    /** @var string Client → server: begin linking an OAuth provider to the signed-in account (authenticated, HIL-401) */
+    public const string LINK_OAUTH_START = 'link_oauth_start';
+
     /** @var string Client → server: request WebAuthn registration options for the signed-in user (authenticated, HIL-284) */
     public const string PASSKEY_REGISTER_OPTIONS = 'passkey_register_options';
 

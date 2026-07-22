@@ -7,6 +7,7 @@
 // signals and never touches a raw store.
 import {
   computedSignal,
+  OAUTH_GITHUB_AUTH_METHOD,
   readString,
   type EntityRef,
   type ReadonlySignal,
@@ -85,4 +86,37 @@ export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
         canUnlink,
       }
     })
+  })
+
+/**
+ * The OAuth providers this project offers to link from the profile (HIL-401).
+ * Mirrors the redirect methods the sign-in surface exposes (AuthSurface), narrowed
+ * to the ones a signed-in user can attach to their account; only GitHub ships now.
+ */
+const LINKABLE_OAUTH_METHODS = [OAUTH_GITHUB_AUTH_METHOD]
+
+/** A provider that can still be linked to the current account: its key and button label. */
+export interface AvailableProvider {
+  readonly key: string
+  readonly label: string
+}
+
+/**
+ * The configured OAuth providers not yet linked to the current account, resolved
+ * reactively (HIL-401). A provider drops off the moment its identity appears in
+ * {@link profileIdentities} (a link landing), so the Profile "Link an account"
+ * buttons reflect the live identity list without a bespoke ack.
+ */
+export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
+  computedSignal(() => {
+    const linked = new Set(
+      profileIdentities
+        .get()
+        .map((identity) => identity.provider)
+        .filter((provider): provider is string => provider !== null && provider !== ''),
+    )
+
+    return LINKABLE_OAUTH_METHODS.filter(
+      (method) => !linked.has(method.key),
+    ).map((method) => ({ key: method.key, label: method.label }))
   })

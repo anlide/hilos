@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Hilos;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Profile\LinkOAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
+use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
+use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
+use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -49,6 +55,7 @@ final class ProfilePage extends AbstractHilosProfilePage
     public const array ACTIONS = [
         ChatSignalConstants::RENAME => RenameActionDTO::class,
         ChatSignalConstants::UNLINK_IDENTITY => UnlinkIdentityActionDTO::class,
+        ChatSignalConstants::LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -65,7 +72,8 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused (ownership or last-identity guard)
+     * @throws ValidationException When an unlink is refused (ownership or last-identity guard) or an OAuth link provider is unknown
+     * @throws \Random\RandomException When minting an OAuth link state cannot draw from the CSPRNG
      * @throws HilosException When rename moderation setup fails or an identity delete query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
@@ -84,6 +92,14 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, UnlinkIdentityActionDTO::class, $dto);
                 }
                 $this->handleUnlinkIdentity($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::LINK_OAUTH_START:
+                if (!$dto instanceof LinkOAuthStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, LinkOAuthStartActionDTO::class, $dto);
+                }
+                $this->handleLinkOAuthStart($dto);
 
                 break;
 
@@ -184,6 +200,46 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         Hilos::$db->identities->deleteIdentity(Hilos::$rt->selfConnection->userId, $dto->identityId);
+    }
+
+    /**
+     * Begins linking an OAuth provider to the signed-in account (HIL-401).
+     *
+     * The link-mode analog of the login start action: authenticated (the whole
+     * profile page is an AUTHENTICATED surface), it mints a link-mode authorize URL
+     * whose signed `state` carries mode=link so the callback binds the identity to
+     * this session's user instead of resolving an account. The initiator's user id
+     * is not carried here — it is read server-side from the session at callback time
+     * ({@see \Demo\Chat\Pages\MainPage::handleOauthCallback()}), so a client can
+     * never link into another account. The URL rides the OAUTH_AUTHORIZE signal
+     * (the framework `action_success` carries no domain payload); the SPA navigates
+     * there. An unknown provider is a synchronous rejection.
+     *
+     * @param LinkOAuthStartActionDTO $dto Parsed link-start payload (provider)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the provider is not configured
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a state nonce
+     */
+    private function handleLinkOAuthStart(LinkOAuthStartActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            $this->logAgentError('User not found for OAuth link start');
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        try {
+            $authorizeUrl = ChatOAuthConfig::buildService()
+                ->beginAuthorization($dto->provider, $connection->sessionToken, OAuthStateSigner::MODE_LINK);
+        } catch (OAuthUnknownProviderException) {
+            throw new ValidationException('Unknown authentication provider');
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_OAUTH_AUTHORIZE,
+            $connection->acceptKey,
+            new OAuthAuthorizeSignalData($connection->acceptKey, $authorizeUrl),
+        );
     }
 
     /**

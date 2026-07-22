@@ -59,8 +59,33 @@ final class OAuthServiceTest extends TestCase
         self::assertArrayHasKey('state', $params);
         self::assertIsString($params['state']);
 
-        $service->verifyState($params['state'], self::SESSION);
+        $mode = $service->verifyState($params['state'], self::SESSION);
+        self::assertSame(OAuthStateSigner::MODE_LOGIN, $mode);
         self::assertStringStartsWith('https://app.example/auth/callback?', $url);
+    }
+
+    /**
+     * A link-mode start binds link mode into the state, which the facade verifies back (HIL-401).
+     *
+     * @throws RandomException When the CSPRNG cannot produce a nonce
+     * @throws OAuthStateException Never in the success path
+     */
+    public function testBeginAuthorizationBindsLinkModeThatVerifiesBack(): void
+    {
+        $service = $this->service();
+
+        $url = $service->beginAuthorization(
+            StubOAuthProvider::DEFAULT_KEY,
+            self::SESSION,
+            OAuthStateSigner::MODE_LINK,
+        );
+
+        $query = parse_url($url, PHP_URL_QUERY);
+        self::assertIsString($query);
+        parse_str($query, $params);
+        self::assertIsString($params['state']);
+
+        self::assertSame(OAuthStateSigner::MODE_LINK, $service->verifyState($params['state'], self::SESSION));
     }
 
     /**

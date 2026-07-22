@@ -21,6 +21,8 @@ final class OAuthPendingLoginTest extends TestCase
 
         $this->assertSame('accept-1', $op->getId());
         $this->assertSame('accept-1', $op->acceptKey);
+        $this->assertSame(OAuthPendingLogin::MODE_LOGIN, $op->mode);
+        $this->assertSame(0, $op->linkUserId);
     }
 
     public function testToArrayCarriesEveryField(): void
@@ -34,9 +36,30 @@ final class OAuthPendingLoginTest extends TestCase
                 OAuthPendingLogin::provider => 'oauth:github',
                 OAuthPendingLogin::code => 'code-xyz',
                 OAuthPendingLogin::deadlineMs => 1234.5,
+                OAuthPendingLogin::mode => OAuthPendingLogin::MODE_LOGIN,
+                OAuthPendingLogin::linkUserId => 0,
             ],
             $op->toArray(),
         );
+    }
+
+    public function testCreateWithLinkModeCarriesModeAndTargetUser(): void
+    {
+        $op = OAuthPendingLogin::create(
+            'accept-9',
+            'session-ghi',
+            'oauth:github',
+            'code-link',
+            5000.0,
+            OAuthPendingLogin::MODE_LINK,
+            77,
+        );
+
+        $this->assertSame(OAuthPendingLogin::MODE_LINK, $op->mode);
+        $this->assertSame(77, $op->linkUserId);
+        $this->assertSame(OAuthPendingLogin::MODE_LINK, $op->toArray()[OAuthPendingLogin::mode]);
+        $this->assertSame(77, $op->toArray()[OAuthPendingLogin::linkUserId]);
+        $this->assertSame($op->toArray(), OAuthPendingLogin::fromRow($op->toArray())->toArray());
     }
 
     public function testFromRowRoundTripsToArray(): void
@@ -53,6 +76,8 @@ final class OAuthPendingLoginTest extends TestCase
         $this->assertSame('', $op->getId());
         $this->assertSame('', $op->provider);
         $this->assertSame(0.0, $op->deadlineMs);
+        $this->assertSame(OAuthPendingLogin::MODE_LOGIN, $op->mode);
+        $this->assertSame(0, $op->linkUserId);
     }
 
     public function testRtCollectionKeyIsStable(): void

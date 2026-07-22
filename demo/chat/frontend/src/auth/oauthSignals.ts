@@ -29,6 +29,28 @@ export const OAUTH_RESULT_SIGNAL = 'hilos_oauth_result'
 export const OAUTH_REASON_REAUTH_REQUIRED = 'reauth_required'
 
 /**
+ * `reason` marking a successful profile account link (PHP
+ * `OAuthResultSignalData::REASON_LINK_OK`, HIL-401). A link-mode exchange never
+ * touches the session, so success is signalled explicitly rather than riding a
+ * current-user update; the callback route returns the user to their profile.
+ */
+export const OAUTH_REASON_LINK_OK = 'oauth_link_ok'
+
+/**
+ * `reason` marking a refused profile link because the provider identity already
+ * belongs to some account (PHP `OAuthResultSignalData::REASON_LINK_DUPLICATE`,
+ * HIL-401). The link is never transferred; the callback route shows a message.
+ */
+export const OAUTH_REASON_LINK_DUPLICATE = 'oauth_link_duplicate'
+
+/**
+ * `reason` marking a failed profile link (the exchange or the identity write did
+ * not complete; PHP `OAuthResultSignalData::REASON_LINK_FAILED`, HIL-401). The
+ * callback route shows a generic message.
+ */
+export const OAUTH_REASON_LINK_FAILED = 'oauth_link_failed'
+
+/**
  * The authorize-reply payload: the absolute provider URL to navigate to. The
  * wire also carries the targeting `acceptKey`, kept here for validation fidelity
  * though the reaction ignores it (WS_USER already targets this connection).

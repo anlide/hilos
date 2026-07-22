@@ -23,6 +23,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  *   verified identity (HIL-282): the surface must re-authenticate the owner (with
  *   {@see email} pre-filled) and then redeem {@see linkToken} through the link
  *   action. No user was created and nobody was signed in.
+ * - {@see REASON_LINK_OK} / {@see REASON_LINK_DUPLICATE} / {@see REASON_LINK_FAILED} —
+ *   the terminal outcomes of a profile link-mode exchange (HIL-401), where the
+ *   initiator is already signed in and the session is never touched, so every
+ *   outcome (including success) must be signalled explicitly. {@see email} /
+ *   {@see linkToken} are empty.
  *
  * The {@see reason} is a stable, non-sensitive code; network/provider failure
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
@@ -36,6 +41,15 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
 
     /** Re-auth-to-link reason: the provider email collided with an existing verified identity (HIL-282). */
     public const string REASON_REAUTH_REQUIRED = 'reauth_required';
+
+    /** Profile link succeeded: the provider identity was bound to the initiating account (HIL-401). */
+    public const string REASON_LINK_OK = 'oauth_link_ok';
+
+    /** Profile link refused: the provider identity is already linked to some account (HIL-401). */
+    public const string REASON_LINK_DUPLICATE = 'oauth_link_duplicate';
+
+    /** Profile link failed: the exchange or the identity write did not complete (HIL-401). */
+    public const string REASON_LINK_FAILED = 'oauth_link_failed';
 
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets

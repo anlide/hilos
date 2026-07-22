@@ -24,11 +24,19 @@ final class OAuthPendingLogin extends RtState
     /** Runtime collection key registered by the project and used for RT sync. */
     public const string RT_COLLECTION = 'hilosOAuthPendingLogins';
 
+    /** Flow mode: a plain sign-in exchange (the default). */
+    public const string MODE_LOGIN = 'login';
+
+    /** Flow mode: linking the resolved identity to {@see linkUserId} (HIL-401). */
+    public const string MODE_LINK = 'link';
+
     public const string acceptKey = 'acceptKey';
     public const string sessionToken = 'sessionToken';
     public const string provider = 'provider';
     public const string code = 'code';
     public const string deadlineMs = 'deadlineMs';
+    public const string mode = 'mode';
+    public const string linkUserId = 'linkUserId';
 
     /** Accept key of the initiating connection; also this op's id and the failure target. */
     private(set) string $acceptKey = '';
@@ -45,6 +53,12 @@ final class OAuthPendingLogin extends RtState
     /** Absolute deadline in milliseconds after which the exchange is abandoned. */
     public float $deadlineMs = 0.0;
 
+    /** Flow mode this op resolves under ({@see MODE_LOGIN} or {@see MODE_LINK}, HIL-401). */
+    public string $mode = self::MODE_LOGIN;
+
+    /** User the resolved identity is linked to under {@see MODE_LINK}; 0 for a login exchange. */
+    public int $linkUserId = 0;
+
     /**
      * Builds a pending-login op for a verified callback.
      *
@@ -53,6 +67,8 @@ final class OAuthPendingLogin extends RtState
      * @param string $provider Provider key, e.g. 'oauth:github'
      * @param string $code Authorization code to exchange
      * @param float $deadlineMs Absolute deadline in milliseconds
+     * @param string $mode Flow mode ({@see MODE_LOGIN} default, {@see MODE_LINK})
+     * @param int $linkUserId User the identity links to under {@see MODE_LINK}; 0 for login
      * @return static Fresh pending-login op
      */
     public static function create(
@@ -61,6 +77,8 @@ final class OAuthPendingLogin extends RtState
         string $provider,
         string $code,
         float $deadlineMs,
+        string $mode = self::MODE_LOGIN,
+        int $linkUserId = 0,
     ): static {
         $instance = new static();
         $instance->acceptKey = $acceptKey;
@@ -68,6 +86,8 @@ final class OAuthPendingLogin extends RtState
         $instance->provider = $provider;
         $instance->code = $code;
         $instance->deadlineMs = $deadlineMs;
+        $instance->mode = $mode;
+        $instance->linkUserId = $linkUserId;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -84,6 +104,8 @@ final class OAuthPendingLogin extends RtState
         $instance->provider = (string)($row[self::provider] ?? '');
         $instance->code = (string)($row[self::code] ?? '');
         $instance->deadlineMs = (float)($row[self::deadlineMs] ?? 0.0);
+        $instance->mode = (string)($row[self::mode] ?? self::MODE_LOGIN);
+        $instance->linkUserId = (int)($row[self::linkUserId] ?? 0);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -116,6 +138,8 @@ final class OAuthPendingLogin extends RtState
             self::provider => $this->provider,
             self::code => $this->code,
             self::deadlineMs => $this->deadlineMs,
+            self::mode => $this->mode,
+            self::linkUserId => $this->linkUserId,
         ];
     }
 }
