@@ -66,6 +66,14 @@ services:
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=/app/frontend/dist
       - CHAT_FILES_XACCEL_LOCATION=/__chat_published
+      # WebAuthn / passkey (HIL-284): pin the Relying Party to the in-network e2e
+      # host so passkey.spec.ts's round-trip verifies. The runner reaches the app
+      # as https://chat-nginx-test, so the browser scopes the credential to that RP
+      # id and sends that origin in clientDataJSON; the daemon matches rpId hash and
+      # origin exactly, and the defaults (localhost / http://localhost) reject it.
+      - HILOS_WEBAUTHN_RP_ID=chat-nginx-test
+      - HILOS_WEBAUTHN_ORIGIN=https://chat-nginx-test
+      - HILOS_WEBAUTHN_CHALLENGE_SECRET=e2e-webauthn-challenge-secret
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       mysql-test:
