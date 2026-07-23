@@ -160,7 +160,9 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
                 EntityIdentity::identifier => $email,
             ]);
             $this->assertCount(1, $owners);
-            $this->assertSame($ownerId, $owners[0]->user_id);
+            $owner = $owners->first();
+            $this->assertNotNull($owner);
+            $this->assertSame($ownerId, $owner->user_id);
         } finally {
             $this->drainSignals();
         }
