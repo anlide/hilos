@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Hilos\Tests\Unit;
 
-use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**

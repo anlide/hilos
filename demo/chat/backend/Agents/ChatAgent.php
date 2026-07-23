@@ -15,10 +15,11 @@ use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
@@ -29,11 +30,12 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
@@ -42,6 +44,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class ChatAgent extends AbstractAgent
 {
+    use HilosSessionHost;
+
     public const string AGENT_TYPE = AgentType::CHAT;
 
     public const array AGENT_SIGNALS = [
@@ -328,15 +332,17 @@ final class ChatAgent extends AbstractAgent
      * current user null.
      *
      * A session is anonymous (no user) until login/register upgrades it through
-     * {@see self::authenticateSession}; no visitor is auto-registered as a user.
-     * Runtime presence and per-user state are ensured only for an authenticated
-     * session.
+     * {@see HilosSessionHost::authenticateSession()}; no visitor is auto-registered
+     * as a user. Runtime presence and per-user state are ensured only for an
+     * authenticated session. Token-to-session resolution (including the HIL-398
+     * expiry drop) is delegated to {@see HilosSessionHost::resolveHandshakeSession()}.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws EmptyValueException When the session token is empty
      * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
+     * @throws DuplicateValueException When a concurrent create already claimed a new token
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
@@ -356,32 +362,8 @@ final class ChatAgent extends AbstractAgent
             );
         }
 
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
-        if ($session === null) {
-            $session = Hilos::$db->sessions->actions->createAnonymous($sessionToken);
-        } else {
-            $expiresAt = $session->expiresAt;
-            if ($session->userId !== null
-                && $expiresAt !== null
-                && $expiresAt <= TimeHelper::getSqlDateTime()
-            ) {
-                // The cookie resolved to an authenticated session that has outlived its
-                // expiry: drop it to anonymous before touching it, so a stale cookie can
-                // never resume an authenticated identity. Reuses the logout core (HIL-163)
-                // — unbind the user and re-point the session's live connections — then
-                // re-reads the now-anonymous row. A NULL expiry is open-ended (never here).
-                $this->logAgentInfo('session_expired ' . json_encode([
-                    'event' => 'session_expired',
-                    'session' => $session->id,
-                    'user' => $session->userId,
-                ]));
-                $this->deauthenticateSession($sessionToken);
-                $session = Hilos::$db->sessions->findByToken($sessionToken);
-            } else {
-                $session->actions->touch();
-            }
-        }
-        $userId = $session?->userId;
+        $session = $this->resolveHandshakeSession($sessionToken);
+        $userId = $session->userId;
 
         Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
 
@@ -401,15 +383,17 @@ final class ChatAgent extends AbstractAgent
      * Builds the handshake response describing a session's current identity,
      * filling the impersonatedBy slot from the session's impersonator marker.
      *
-     * An anonymous or missing session yields the anonymous response that clears the
-     * frontend current user. An impersonated session additionally carries the
-     * impersonating admin, so the shell shows its banner; a plain authenticated
-     * session leaves the impersonator fields null.
+     * The chat implementation of the {@see HilosSessionHost} hook: it reads the
+     * display names from the chat user store and, while impersonating, the admin
+     * behind the takeover. An anonymous or missing session yields the anonymous
+     * response that clears the frontend current user; an impersonated session
+     * additionally carries the impersonating admin, so the shell shows its banner,
+     * while a plain authenticated session leaves the impersonator fields null.
      *
      * @param ?Session $session Session to describe, or null for an anonymous response
      * @return HandshakeResponseSignalData Handshake response for the session
      */
-    private function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
+    protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
     {
         $userId = $session?->userId;
         if ($session === null || $userId === null) {
@@ -433,69 +417,51 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates a live session: binds it to a user, re-points the session's
-     * active connections to that user, and re-emits the handshake response so
-     * their frontends populate the current user.
+     * Returns the live chat connections bound to a session token, resolved through
+     * the chat runtime connection registry — the {@see HilosSessionHost} hook the
+     * authenticate/deauthenticate seam iterates to re-point and re-notify.
      *
-     * The upgrade seam login (HIL-162) and register (HIL-164) call to promote a
-     * session; the symmetric downgrade (logout) is HIL-163. A no-op when the token
-     * has no session row.
-     *
-     * @param string $sessionToken Session cookie token to authenticate
-     * @param int $userId Durable user id to bind the session to
-     * @throws HilosException On database or runtime failure
+     * @param string $sessionToken Session cookie token
+     * @return array<string, HilosConnection> Accept key => connection map (empty for an unknown token)
      */
-    public function authenticateSession(string $sessionToken, int $userId): void
+    protected function sessionConnections(string $sessionToken): array
     {
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
-        if ($session === null) {
-            return;
-        }
-
-        $session->actions->bindUser($userId);
-        Hilos::$rt->userStates->actions->ensure($userId);
-        Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
-
-        $response = $this->handshakeResponseFor($session);
-
-        foreach (Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken) as $stateConnection) {
-            Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser($userId);
-            $this->sendToUser(ChatSignalConstants::HANDSHAKE_RESPONSE, $stateConnection->acceptKey, $response);
-        }
+        return Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken);
     }
 
     /**
-     * Reverts a live session to anonymous: nulls the session user, re-points the
-     * session's active connections to no user, and re-emits the anonymous handshake
-     * response so their frontends clear the current user. The inverse of
-     * {@see self::authenticateSession()}.
+     * Re-points one live chat connection's bound user through its runtime actions —
+     * the {@see HilosSessionHost} hook. A missing connection is a no-op.
      *
-     * The session ROW and token are kept — the session simply becomes anonymous
-     * again (per the HIL-161 model); token rotation and "log out all devices" are
-     * out of scope. A no-op when the token has no session row or is already
-     * anonymous (a guest invoking logout is ignored). Presence follows the
-     * connection re-point: a user with no other authenticated connection drops
-     * offline through the standard connection sync, so no per-user state is removed
-     * here. Analytics session→user identity is left as set; there is no de-identify
-     * seam and it is re-bound on the next login.
-     *
-     * @param string $sessionToken Session cookie token to revert to anonymous
-     * @throws HilosException On database or runtime failure
+     * @param string $acceptKey Connection accept key to re-point
+     * @param ?int $userId User id to bind the connection to, or null for anonymous
      */
-    public function deauthenticateSession(string $sessionToken): void
+    protected function bindConnectionUser(string $acceptKey, ?int $userId): void
     {
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
-        if ($session === null || $session->userId === null) {
-            return;
-        }
+        Hilos::$rt->connections[$acceptKey]?->actions->bindUser($userId);
+    }
 
-        $session->actions->unbindUser();
+    /**
+     * Returns the chat handshake-response signal name the {@see HilosSessionHost}
+     * seam emits under; the frontend routes on this project constant.
+     *
+     * @return string Chat handshake-response signal name
+     */
+    protected function handshakeResponseSignalName(): string
+    {
+        return ChatSignalConstants::HANDSHAKE_RESPONSE;
+    }
 
-        $response = new HandshakeResponseSignalData();
-        foreach (Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken) as $stateConnection) {
-            Hilos::$rt->connections[$stateConnection->acceptKey]?->actions->bindUser(null);
-            $this->sendToUser(ChatSignalConstants::HANDSHAKE_RESPONSE, $stateConnection->acceptKey, $response);
-        }
+    /**
+     * Ensures the newly authenticated user's runtime presence state — the chat
+     * override of the {@see HilosSessionHost} post-authenticate hook.
+     *
+     * @param int $userId Durable user id the session was bound to
+     * @throws HilosException On runtime failure
+     */
+    protected function afterAuthenticate(int $userId): void
+    {
+        Hilos::$rt->userStates->actions->ensure($userId);
     }
 
     /**
