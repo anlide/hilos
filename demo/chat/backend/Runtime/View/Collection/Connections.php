@@ -55,7 +55,7 @@ final class Connections extends RtCollection implements HilosPresenceSource
     {
         $stateConnections = $this->getStateCollection();
         $filteredState = StateConnections::init();
-        foreach ($stateConnections->findAllByUserId($userId) as $stateConnection) {
+        foreach ($stateConnections->findByUser($userId) as $stateConnection) {
             $filteredState->add($stateConnection);
         }
 

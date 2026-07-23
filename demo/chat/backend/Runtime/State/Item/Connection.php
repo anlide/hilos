@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
-use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\State\Item\HilosConnection;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Holds transport metadata plus in-memory moderation, file upload session, and progress UI for this socket only.
- * Inbound RT updates use `applyDiff()`; local writes from item actions use typed properties and `sync()`.
- * Public string constants name row keys.
+ * Extends the framework {@see HilosConnection} base, which owns the session
+ * triple (acceptKey / sessionToken / userId) and its hydrate/diff helpers; this
+ * subclass adds chat's own in-memory moderation, file upload session, and
+ * progress UI state for this socket only, delegating the triple to the base
+ * {@see HilosConnection::initBase()} / {@see HilosConnection::hydrateBase()} /
+ * {@see HilosConnection::baseToArray()} / {@see HilosConnection::applyBaseDiff()}.
+ * Inbound RT updates use `applyDiff()`; local writes from item actions use typed
+ * properties and `sync()`. Public string constants name row keys.
  */
-final class Connection extends RtState
+final class Connection extends HilosConnection
 {
-    public const string acceptKey = 'acceptKey';
-    public const string sessionToken = 'sessionToken';
-    public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
 
     public const string outboundModerationPhase = 'outboundModerationPhase';
@@ -51,15 +52,6 @@ final class Connection extends RtState
     public const string fileProgressTotalBytes = 'fileProgressTotalBytes';
 
     public const string uploadProgressLastSentAt = 'uploadProgressLastSentAt';
-
-    /** WebSocket accept key (primary id). */
-    private(set) string $acceptKey = '';
-
-    /** Session cookie token this connection belongs to. */
-    private(set) string $sessionToken = '';
-
-    /** Authenticated database user id, or null while the session is anonymous. */
-    public ?int $userId = null;
 
     /** Unix time when the socket was registered. */
     private(set) int $connectedAt = 0;
@@ -144,9 +136,7 @@ final class Connection extends RtState
     public static function create(string $acceptKey, ?int $userId, string $sessionToken = ''): static
     {
         $instance = new static();
-        $instance->acceptKey = $acceptKey;
-        $instance->sessionToken = $sessionToken;
-        $instance->userId = $userId;
+        $instance->initBase($acceptKey, $userId, $sessionToken);
         $instance->connectedAt = time();
         $instance->outboundModerationPhase = '';
         $instance->outboundModerationMessage = '';
@@ -183,9 +173,7 @@ final class Connection extends RtState
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
-        $instance->sessionToken = (string)($row[self::sessionToken] ?? '');
-        $instance->userId = isset($row[self::userId]) ? (int)$row[self::userId] : null;
+        $instance->hydrateBase($row);
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
@@ -240,12 +228,7 @@ final class Connection extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::sessionToken, $diff)) {
-            $this->sessionToken = (string)$diff[self::sessionToken];
-        }
-        if (array_key_exists(self::userId, $diff)) {
-            $this->userId = $diff[self::userId] === null ? null : (int)$diff[self::userId];
-        }
+        $this->applyBaseDiff($diff);
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
         }
@@ -329,22 +312,11 @@ final class Connection extends RtState
     }
 
     /**
-     * @return string Runtime collection key (same as acceptKey)
-     */
-    public function getId(): string
-    {
-        return $this->acceptKey;
-    }
-
-    /**
      * @return array<string, mixed> Row for persistence / truth-source sync
      */
     public function toArray(): array
     {
-        return [
-            self::acceptKey => $this->acceptKey,
-            self::sessionToken => $this->sessionToken,
-            self::userId => $this->userId,
+        return array_merge($this->baseToArray(), [
             self::connectedAt => $this->connectedAt,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,
@@ -370,6 +342,6 @@ final class Connection extends RtState
             self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
             self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
-        ];
+        ]);
     }
 }

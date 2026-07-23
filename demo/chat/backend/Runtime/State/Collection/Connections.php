@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Collection;
 
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Collection\HilosConnections;
 use OutOfBoundsException;
 
 /**
  * Connections - Stores all active WebSocket connections.
  *
  * This is the single source of truth for connection data.
- * RtCollection wrappers provide read-only access.
+ * RtCollection wrappers provide read-only access. Extends the framework
+ * {@see HilosConnections} base, which provides the session-scoped lookups
+ * (findAllBySessionToken / findByUser) the authenticate/deauthenticate seam needs.
  *
- * @extends RtStates<Connection>
+ * @extends HilosConnections<Connection>
  */
-final class Connections extends RtStates
+final class Connections extends HilosConnections
 {
     public const string STATE_CLASS = Connection::class;
 
@@ -46,39 +48,5 @@ final class Connections extends RtStates
 
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Connection runtime state not found: {$offset}");
-    }
-
-    /**
-     * Finds all connections for given user (indexed by accept key).
-     *
-     * @param ?int $userId User ID, or null for no connections
-     * @return array<string, Connection> Accept key => Connection map
-     */
-    public function findAllByUserId(?int $userId): array
-    {
-        if ($userId === null) {
-            return [];
-        }
-
-        return array_filter($this->states, function ($connection) use ($userId) {
-            return $connection->userId === $userId;
-        });
-    }
-
-    /**
-     * Finds all connections belonging to a session token (indexed by accept key).
-     *
-     * @param string $sessionToken Session cookie token
-     * @return array<string, Connection> Accept key => Connection map
-     */
-    public function findAllBySessionToken(string $sessionToken): array
-    {
-        if ($sessionToken === '') {
-            return [];
-        }
-
-        return array_filter($this->states, function ($connection) use ($sessionToken) {
-            return $connection->sessionToken === $sessionToken;
-        });
     }
 }
