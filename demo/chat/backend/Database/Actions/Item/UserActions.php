@@ -85,4 +85,31 @@ final class UserActions extends DbActions
         $this->object->admin = $admin;
         $this->object->sync();
     }
+
+    /**
+     * Tombstones this user as the loser of an account merge (HIL-378).
+     *
+     * A merged loser is soft-deleted, never dropped: the row stays for audit and
+     * partial reversibility, with `merged_into` recording the survivor it folded
+     * into and `block` closing its login. Both columns are written in one sync so
+     * the tombstone is atomic within the surrounding merge transaction. The caller
+     * ({@see \Demo\Chat\Agents\ChatAgent::handleAccountMerge()}) has already
+     * validated that this user is not itself already merged.
+     *
+     * @param int $survivorId Survivor user id this account is folded into
+     * @throws ItemNotFoundForUpdateException When the user is not found (id is null)
+     * @throws HilosException On database error or other failure
+     */
+    public function tombstone(int $survivorId): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for tombstone (id is null)');
+        }
+
+        $this->object->mergedInto = $survivorId;
+        $this->object->block = true;
+        $this->object->sync();
+    }
 }

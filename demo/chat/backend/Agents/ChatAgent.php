@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
+use Demo\Chat\Agents\DTO\AccountMergeSummary;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -28,6 +29,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -322,6 +324,82 @@ final class ChatAgent extends AbstractAgent
             'vacatedUser' => $vacatedUserId,
             'session' => $session->id,
         ]));
+    }
+
+    /**
+     * Merges a loser account into a survivor and returns what moved (HIL-378).
+     *
+     * The one orchestration core behind both merge entry points (the CLI
+     * `account:merge` command and the admin-UI table action, wired in later
+     * slices): the survivor absorbs the loser's sign-in identities and chat
+     * messages, then the loser is tombstoned. It runs on the leader, which owns
+     * every table the merge touches (identities re-point is a plain framework
+     * primitive; messages and the user row are chat truth sources).
+     *
+     * Validation happens before any write: the two ids must differ, both users
+     * must exist, and neither may already be a merge loser (`mergedInto` set) —
+     * any failure throws before a transaction opens, so a caller reports a
+     * generic error with nothing half-written. Authorizing the caller as an admin
+     * is the entry point's job (the CLI channel is admin-only; the table action is
+     * admin-gated), matching how the raw ids arrive here already trusted.
+     *
+     * The transfer is one explicit transaction so a half-merged account can never
+     * survive a mid-way failure: identity re-point, message re-point, and the
+     * loser tombstone either all commit or all roll back. Ordering is free — the
+     * loser is tombstoned (row kept), never deleted, so no foreign-key cascade can
+     * fire. Forcing the loser's live sessions to log out and refreshing the
+     * survivor happen after commit and are added with the session-kill primitive
+     * in the next slice.
+     *
+     * @param int $survivorId Survivor user id that absorbs the loser
+     * @param int $loserId Loser user id folded into the survivor
+     * @return AccountMergeSummary Counts of identities and messages moved
+     * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
+     * @throws HilosException On database or truth-source failure (transaction rolled back)
+     */
+    public function handleAccountMerge(int $survivorId, int $loserId): AccountMergeSummary
+    {
+        if ($survivorId === $loserId) {
+            throw new ValidationException('Cannot merge a user into itself');
+        }
+
+        $survivor = Hilos::$db->users[$survivorId] ?? null;
+        if ($survivor === null) {
+            throw new ValidationException("No such user: {$survivorId}");
+        }
+        if ($survivor->mergedInto !== null) {
+            throw new ValidationException("Survivor {$survivorId} is itself a merged account");
+        }
+
+        $loser = Hilos::$db->users[$loserId] ?? null;
+        if ($loser === null) {
+            throw new ValidationException("No such user: {$loserId}");
+        }
+        if ($loser->mergedInto !== null) {
+            throw new ValidationException("Loser {$loserId} is already merged");
+        }
+
+        Database::transactionStart();
+        try {
+            $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId);
+            $messagesMoved = Hilos::$db->eventMessages->actions->rePointAuthor($loserId, $survivorId);
+            $loser->actions->tombstone($survivorId);
+            Database::transactionCommit();
+        } catch (HilosException $e) {
+            Database::transactionRollback();
+
+            throw $e;
+        }
+
+        $this->logAgentInfo('account_merge ' . json_encode([
+            'event' => 'account_merge',
+            'survivor' => $survivorId,
+            'loser' => $loserId,
+            'identitiesMoved' => $identitiesMoved,
+            'messagesMoved' => $messagesMoved,
+        ]));
+
+        return new AccountMergeSummary($identitiesMoved, $messagesMoved);
     }
 
     /**
