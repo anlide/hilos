@@ -125,16 +125,49 @@ export function takeOAuthProvider(): string {
  * update (success) or {@link subscribeOAuthFailure}. A rejection is the
  * synchronous CSRF/state gate (a bad, expired, or foreign state), shown at once.
  *
+ * The callback route loads cold from the provider's full-page redirect, so its
+ * socket is still opening when this fires; {@link whenConnected} holds the
+ * dispatch until the connection is up, because a client action frame is dropped
+ * (not queued) while the socket is not yet `connected` — dispatching straight
+ * from `onMounted` would otherwise fail every login with a spurious "disconnected"
+ * before the frame ever left the browser.
+ *
  * @param provider The provider key the callback belongs to.
  * @param code The authorization code the provider returned.
  * @param state The signed state the provider returned.
  */
-export function dispatchOAuthCallback(
+export async function dispatchOAuthCallback(
   provider: string,
   code: string,
   state: string,
 ): Promise<void> {
+  await whenConnected()
+
   return actions.dispatch(OAUTH_CALLBACK_ACTION, { provider, code, state }).done
+}
+
+/**
+ * Resolve once the connection is `connected`, so an action dispatched straight
+ * from a cold-loaded relay route is not lost to the connected-only send gate.
+ * Resolves immediately when already connected; otherwise waits for the next
+ * `connected` transition. A never-connecting socket leaves this pending, which
+ * the callback route's own timeout backstop resolves so the spinner cannot wedge.
+ *
+ * @returns A promise that settles when the connection first reaches `connected`.
+ */
+function whenConnected(): Promise<void> {
+  if (connection.state === 'connected') {
+    return Promise.resolve()
+  }
+
+  return new Promise<void>((resolve) => {
+    const unsubscribe = connection.on('state', (state) => {
+      if (state === 'connected') {
+        unsubscribe()
+        resolve()
+      }
+    })
+  })
 }
 
 /**
