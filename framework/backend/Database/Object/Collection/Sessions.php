@@ -52,4 +52,34 @@ final class Sessions extends Objects
 
         return $this->objects[$entitySession->id];
     }
+
+    /**
+     * Lists every session bound to a user (HIL-378).
+     *
+     * The account-merge force-logout read path: the merge orchestrator resolves
+     * a loser's live sessions to revert each to anonymous. A user may hold several
+     * sessions (distinct devices/tabs), so this returns all of them; an anonymous
+     * or unused account yields an empty list.
+     *
+     * @param int $userId Owning user id
+     * @return list<ObjectSession> Session objects bound to the user (empty when none)
+     * @throws DatabaseException If the database query fails
+     */
+    public function findByUserId(int $userId): array
+    {
+        $entitySessions = EntitySession::get([EntitySession::user_id => $userId]);
+
+        $result = [];
+        foreach ($entitySessions as $entitySession) {
+            if ($entitySession->id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$entitySession->id])) {
+                $this->objects[$entitySession->id] = ObjectSession::fromEntity($entitySession);
+            }
+            $result[] = $this->objects[$entitySession->id];
+        }
+
+        return $result;
+    }
 }

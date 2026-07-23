@@ -347,9 +347,10 @@ final class ChatAgent extends AbstractAgent
      * survive a mid-way failure: identity re-point, message re-point, and the
      * loser tombstone either all commit or all roll back. Ordering is free — the
      * loser is tombstoned (row kept), never deleted, so no foreign-key cascade can
-     * fire. Forcing the loser's live sessions to log out and refreshing the
-     * survivor happen after commit and are added with the session-kill primitive
-     * in the next slice.
+     * fire. After commit (outside the transaction) the loser's live sessions are
+     * forced to log out through {@see self::killUserSessions()} so a moved account
+     * cannot keep acting; making the transferred messages visible to viewers (the
+     * survivor refresh) is added in the next slice.
      *
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
@@ -399,7 +400,32 @@ final class ChatAgent extends AbstractAgent
             'messagesMoved' => $messagesMoved,
         ]));
 
+        $this->killUserSessions($loserId);
+
         return new AccountMergeSummary($identitiesMoved, $messagesMoved);
+    }
+
+    /**
+     * Forces every live session of a merged loser to log out (HIL-378).
+     *
+     * The post-commit force-logout of account merge: a tombstoned loser must not
+     * keep acting through an open session. Each of the loser's sessions is reverted
+     * to anonymous through {@see HilosSessionHost::deauthenticateSession()} — the
+     * same seam the logout control uses — which unbinds the session user, re-points
+     * its live connections to no user, and re-emits the anonymous handshake so their
+     * frontends clear the current user. The loser is deactivated (`block = 1` from
+     * the tombstone), so re-authentication is impossible. Runs outside the merge
+     * transaction: the transfer is already durable, and reverting sessions touches
+     * runtime connections that must not participate in the DB rollback path.
+     *
+     * @param int $loserId Merged loser user id whose sessions are closed
+     * @throws HilosException When session teardown exposes database or runtime failure
+     */
+    private function killUserSessions(int $loserId): void
+    {
+        foreach (Hilos::$db->sessions->findByUserId($loserId) as $session) {
+            $this->deauthenticateSession($session->token);
+        }
     }
 
     /**

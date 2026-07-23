@@ -50,4 +50,32 @@ final class Sessions extends DbCollection
 
         return $this->getItemForKey($objectSession->id);
     }
+
+    /**
+     * Lists every session bound to a user (HIL-378).
+     *
+     * The read half of account-merge force-logout: the merge orchestrator resolves
+     * a loser's live sessions to revert each to anonymous. Delegates to the object
+     * collection and wraps each row as a Db item; an anonymous or unused account
+     * yields an empty list.
+     *
+     * @param int $userId Owning user id
+     * @return list<Session> Session Db items bound to the user (empty when none)
+     * @throws LogicException When the collection class constants are not configured
+     * @throws InvalidArgumentException When the loaded object type does not match the collection
+     * @throws DatabaseException When the user lookup or lazy session load fails
+     */
+    public function findByUserId(int $userId): array
+    {
+        $result = [];
+        foreach ($this->objectCollection->findByUserId($userId) as $objectSession) {
+            $item = $objectSession->id !== null ? $this->getItemForKey($objectSession->id) : null;
+            if ($item === null) {
+                continue;
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
 }
