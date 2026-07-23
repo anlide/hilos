@@ -251,6 +251,17 @@ final class HilosSignalConstants
      */
     public const string HILOS_OAUTH_AUTHORIZE = 'hilos_oauth_authorize';
 
+    /**
+     * OAuth callback action → the monopoly OAuth agent: hand off one verified pending login.
+     *
+     * The callback runs on a worker page while the OAuth agent is a leader-pinned
+     * monopolistic singleton in another process (see HIL-281 mechanism B), so the
+     * verified pending op is handed to it point-to-point over this agent signal — a
+     * synced route with exactly one consumer — rather than through a cross-process
+     * runtime collection. The single agent owns the in-flight-login pool it drains.
+     */
+    public const string HILOS_OAUTH_PENDING = 'hilos_oauth_pending';
+
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */
     public const string BACKUP_AGENT_CREATE = 'backup_agent_create';

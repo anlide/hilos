@@ -18,6 +18,7 @@ use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
@@ -269,6 +270,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -322,6 +324,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }

@@ -80,6 +80,34 @@ test('signs in through the gated profile surface and resumes the preserved subsc
   expect(new URL(page.url()).pathname).toBe('/profile')
 })
 
+test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
+  page,
+}) => {
+  // OAuth login drives mechanism B end to end offline: the stub provider under
+  // `oauth:github` bounces its authorize URL straight back to /auth/callback, the
+  // monopolistic OAuth agent (a separate, leader-pinned process) resolves the
+  // (provider, subject) to a fresh account, and the bound session rides the
+  // current-user fan-out (HIL-161) that signs the visitor in. This is the login-path
+  // e2e that was missing while the callback handed the pending op to the agent
+  // through a never-synced runtime collection — the copy the agent read stayed empty.
+  await page.goto('/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  // Redirect out to the provider (offline stub) and back through the callback; a
+  // successful sign-in lands on the home path with the live session upgraded.
+  await page.getByTestId('auth-oauth-github').click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByTestId('message-input')).toBeEnabled()
+  await expect(page.getByTestId('register-banner')).toHaveCount(0)
+
+  // The upgraded session persists: the gated profile now resolves in place, with the
+  // OAuth identity bound to the freshly created account.
+  await page.goto('/profile')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+})
+
 test('rejects a wrong password and an unknown email with the same generic message', async ({
   page,
 }) => {

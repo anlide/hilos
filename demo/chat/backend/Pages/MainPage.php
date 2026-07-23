@@ -38,6 +38,7 @@ use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthStateSigner;
@@ -51,8 +52,6 @@ use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Runtime\State\Collection\OAuthPendingLogins;
-use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -947,20 +946,21 @@ final class MainPage extends AbstractPage
             $linkUserId = $connection->userId;
         }
 
-        $pending = Hilos::$rt->getStateCollection(OAuthPendingLogin::RT_COLLECTION);
-        if (!$pending instanceof OAuthPendingLogins) {
-            throw new ItemNotFoundForUpdateException('OAuth login runtime is unavailable');
-        }
-
-        $pending->add(OAuthPendingLogin::create(
-            $connection->acceptKey,
-            $connection->sessionToken,
-            $dto->provider,
-            $dto->code,
-            microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
-            $mode,
-            $linkUserId,
-        ));
+        // Hand the verified op to the monopolistic OAuth agent point-to-point; the op has
+        // exactly one consumer, so a synced agent signal — not a cross-process runtime
+        // collection — is what carries it across the worker→agent process boundary (HIL-281).
+        $this->agent->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_PENDING,
+            new OAuthPendingLoginSignalData(
+                $connection->acceptKey,
+                $connection->sessionToken,
+                $dto->provider,
+                $dto->code,
+                microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
+                $mode,
+                $linkUserId,
+            ),
+        );
     }
 
     /**

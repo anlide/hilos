@@ -6,6 +6,7 @@ namespace Hilos\Auth\OAuth\Agent;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthException;
 use Hilos\Auth\OAuth\HttpOAuthProvider;
@@ -16,7 +17,9 @@ use Hilos\Auth\OAuth\OfflineOAuthProvider;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
@@ -28,12 +31,14 @@ use Throwable;
  * AbstractOAuthAgent - the framework-owned async owner of in-flight OAuth logins (HIL-281).
  *
  * The tick-loop half of OAuth login mechanism B. The `oauthCallback` action verifies
- * the signed state synchronously (no I/O) and records an {@see OAuthPendingLogin} op
- * keyed by the initiating accept key; this agent observes that collection (mirroring
- * how {@see \Demo\Chat\Agents\ModeratorAgent} observes runtime connections) and drives
- * the token/userinfo round-trips off the master. Keeping the exchange in a tick-driven
- * agent — never inside the one-shot page action — is what lets the callback stay
- * non-blocking while the network round-trips run.
+ * the signed state synchronously (no I/O) and hands the resulting {@see OAuthPendingLogin}
+ * op to this agent point-to-point over the {@see HilosSignalConstants::HILOS_OAUTH_PENDING}
+ * agent signal ({@see onSignalAgent()}); the op has exactly one consumer — this
+ * monopolistic singleton — so a synced signal carries it across the worker→agent process
+ * boundary, and the pending-op pool is this agent's own runtime state, not a cross-process
+ * collection. This agent drives the token/userinfo round-trips off the master; keeping the
+ * exchange in a tick-driven agent — never inside the one-shot page action — is what lets the
+ * callback stay non-blocking while the network round-trips run.
  *
  * It PIPELINES: it holds a pool of independent {@see OAuthExchange} state machines and
  * pumps up to {@see maxConcurrentExchanges()} at once, so a burst of logins does not
@@ -53,6 +58,14 @@ abstract class AbstractOAuthAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_OAUTH;
 
+    /**
+     * Callback → agent route for the pending-login handoff (HIL-281). A singleton signal
+     * (this agent is monopolistic), so it maps straight to its payload DTO.
+     */
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
+    ];
+
     /** Default ceiling on concurrently pumped exchanges (outbound sockets, not CPU). */
     private const int DEFAULT_MAX_CONCURRENT = 16;
 
@@ -62,30 +75,64 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     /** Providers configured by the project, resolved once on start. */
     private OAuthProviderRegistry $providers;
 
+    /**
+     * In-flight pending ops delivered by the callback, this agent's own runtime state.
+     *
+     * Not a cross-process runtime collection: it is written only by {@see onSignalAgent()}
+     * on the tick the callback's handoff arrives and drained by the tick loop, so a raw
+     * in-memory collection with no RT sync is exactly right.
+     */
+    private OAuthPendingLogins $pending;
+
     /** @var array<string, OAuthExchange> In-flight HTTP exchanges keyed by accept key. */
     private array $exchanges = [];
 
     /**
-     * Resolves the project's configured OAuth providers.
+     * Resolves the project's configured OAuth providers and initializes the pending-op store.
      */
     public function onStart(): void
     {
         $this->providers = $this->buildProviderRegistry();
+        $this->pending = OAuthPendingLogins::init();
     }
 
     /**
-     * Adopts newly recorded pending ops and pumps every in-flight exchange one step.
+     * Adopts a callback's handed-off pending login, keyed by its accept key (HIL-281).
+     *
+     * The single intake for the in-flight pool: the verified op is rebuilt from the
+     * delivered payload and stored in this agent's own runtime state, then the tick loop
+     * drives the exchange. A malformed payload (wrong type) or an unknown signal name is
+     * refused loudly so a routing mistake surfaces instead of silently dropping a login.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $source Signal source (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the signal name is not the pending-login handoff
      */
-    public function onTick(): void
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        $collection = $this->pendingLogins();
-        if ($collection === null) {
+        if ($name !== HilosSignalConstants::HILOS_OAUTH_PENDING) {
+            throw new AgentUnknownSignalException($name);
+        }
+        if (!$data->data instanceof OAuthPendingLoginSignalData) {
+            $this->logAgentWarning(
+                HilosSignalConstants::HILOS_OAUTH_PENDING . ' payload must be ' . OAuthPendingLoginSignalData::class,
+            );
+
             return;
         }
 
+        $this->pending->add($data->data->toPendingLogin());
+    }
+
+    /**
+     * Pumps every in-flight exchange one step and starts any freshly delivered op.
+     */
+    public function onTick(): void
+    {
         $nowMs = microtime(true) * 1000;
-        $this->adoptPendingOps($collection, $nowMs);
-        $this->pumpExchanges($collection, $nowMs);
+        $this->adoptPendingOps($this->pending, $nowMs);
+        $this->pumpExchanges($this->pending, $nowMs);
     }
 
     /**
@@ -97,6 +144,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
             $exchange->reset();
         }
         $this->exchanges = [];
+        $this->pending->clear();
     }
 
     /**
@@ -144,7 +192,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * collection) is safe. An op past its deadline is failed regardless of capacity; a fresh
      * op is only started while there is a free pool slot, otherwise it waits for a later tick.
      *
-     * @param OAuthPendingLogins $collection Observed pending-login collection
+     * @param OAuthPendingLogins $collection Agent-local pending-login pool
      * @param float $nowMs Current time in milliseconds
      */
     private function adoptPendingOps(OAuthPendingLogins $collection, float $nowMs): void
@@ -230,7 +278,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * pool) is safe. An op that vanished from the collection (expired elsewhere) drops its
      * exchange; a deadline overrun fails it; any transport or parse error fails it generically.
      *
-     * @param OAuthPendingLogins $collection Observed pending-login collection
+     * @param OAuthPendingLogins $collection Agent-local pending-login pool
      * @param float $nowMs Current time in milliseconds
      */
     private function pumpExchanges(OAuthPendingLogins $collection, float $nowMs): void
@@ -446,17 +494,14 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Clears an op: closes its exchange and removes the record (best-effort, deadline-bounded).
-     *
-     * The removal is a local drop, not a truth-source delete — the collection is written by
-     * the callback side, and any copy that outlives this drop is reaped by its own deadline.
+     * Clears an op: closes its exchange and removes the record from the pending pool.
      *
      * @param string $acceptKey Op accept key to clear
      */
     private function clearOp(string $acceptKey): void
     {
         $this->dropExchange($acceptKey);
-        $this->pendingLogins()?->remove($acceptKey);
+        $this->pending->remove($acceptKey);
     }
 
     /**
@@ -469,17 +514,5 @@ abstract class AbstractOAuthAgent extends AbstractAgent
         $exchange = $this->exchanges[$acceptKey] ?? null;
         $exchange?->reset();
         unset($this->exchanges[$acceptKey]);
-    }
-
-    /**
-     * Resolves the observed pending-login collection, or null when it is unavailable.
-     *
-     * @return ?OAuthPendingLogins Pending-login collection or null
-     */
-    private function pendingLogins(): ?OAuthPendingLogins
-    {
-        $collection = Hilos::$rt?->getStateCollection(OAuthPendingLogin::RT_COLLECTION);
-
-        return $collection instanceof OAuthPendingLogins ? $collection : null;
     }
 }
