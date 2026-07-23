@@ -12,6 +12,7 @@ import { authGateKey } from '../auth/authGateKey'
 import {
   bindOAuthAuthorizeRedirect,
   bindOAuthLinkReplay,
+  bindSessionReady,
 } from '../auth/oauthLogin'
 import { pageEntityTypes } from '../pages/entityTypes'
 import { appName, pageTitles } from '../pages/pageTitles'
@@ -23,6 +24,12 @@ import { currentUserId, scopes } from './session'
 // authorize URL when the daemon answers `oauth_start` with the authorize signal.
 // Registered before bootHilos opens the socket so the reply always has a handler.
 bindOAuthAuthorizeRedirect()
+
+// The OAuth callback's session-ready gate (HIL-281): latch the session handshake
+// so the /auth/callback relay holds its `oauth_callback` dispatch until the daemon
+// has registered this cold-loaded connection against its session. Registered
+// before bootHilos opens the socket so the first handshake response is never missed.
+bindSessionReady()
 
 // The OAuth email-collision link replay (HIL-282): once a collision re-auth
 // upgrades the session (currentUserId turns non-null) with a pending link armed,

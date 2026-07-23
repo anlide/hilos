@@ -122,7 +122,9 @@ abstract class AbstractOAuthAgent extends AbstractAgent
             return;
         }
 
-        $this->pending->add($data->data->toPendingLogin());
+        $op = $data->data->toPendingLogin();
+        $this->pending->add($op);
+        $this->logAgentInfo("adopted OAuth {$op->mode} handoff {$op->getId()} (provider={$op->provider})");
     }
 
     /**

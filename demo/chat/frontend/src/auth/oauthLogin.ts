@@ -40,6 +40,14 @@ const LINK_OAUTH_AFTER_REAUTH_ACTION = 'link_oauth_after_reauth'
 const LINK_OAUTH_START_ACTION = 'link_oauth_start'
 
 /**
+ * Backend signal: the session handshake response (PHP
+ * `ChatSignalConstants::HANDSHAKE_RESPONSE`). Its arrival marks the point the
+ * daemon has registered this connection against its session — the state the OAuth
+ * callback op is built from server-side.
+ */
+const HANDSHAKE_RESPONSE_SIGNAL = 'handshake_response'
+
+/**
  * Session-storage key holding the provider a redirect was started for, so the
  * callback route knows which provider the bounced `code`/`state` belong to. Session
  * storage (not local) so it is scoped to the tab and cleared when it closes.
@@ -125,12 +133,16 @@ export function takeOAuthProvider(): string {
  * update (success) or {@link subscribeOAuthFailure}. A rejection is the
  * synchronous CSRF/state gate (a bad, expired, or foreign state), shown at once.
  *
- * The callback route loads cold from the provider's full-page redirect, so its
- * socket is still opening when this fires; {@link whenConnected} holds the
- * dispatch until the connection is up, because a client action frame is dropped
- * (not queued) while the socket is not yet `connected` — dispatching straight
- * from `onMounted` would otherwise fail every login with a spurious "disconnected"
- * before the frame ever left the browser.
+ * The callback route loads cold from the provider's full-page redirect, so the
+ * connection is still opening — and unregistered — when this fires;
+ * {@link whenSessionReady} holds the dispatch until the daemon has registered the
+ * connection against its session (the handshake response has landed). Transport
+ * `connected` alone is not enough: a frame is dropped (not queued) before the
+ * socket connects, and — the subtler race — a callback dispatched after `connected`
+ * but before the handshake builds its op from a connection with no session yet, so
+ * the completed login binds nothing back to this browser and the spinner hangs.
+ * Gating on session-ready closes both; a session that never establishes leaves this
+ * pending, which the callback route's own timeout backstops.
  *
  * @param provider The provider key the callback belongs to.
  * @param code The authorization code the provider returned.
@@ -141,32 +153,59 @@ export async function dispatchOAuthCallback(
   code: string,
   state: string,
 ): Promise<void> {
-  await whenConnected()
+  await whenSessionReady()
 
   return actions.dispatch(OAUTH_CALLBACK_ACTION, { provider, code, state }).done
 }
 
 /**
- * Resolve once the connection is `connected`, so an action dispatched straight
- * from a cold-loaded relay route is not lost to the connected-only send gate.
- * Resolves immediately when already connected; otherwise waits for the next
- * `connected` transition. A never-connecting socket leaves this pending, which
- * the callback route's own timeout backstop resolves so the spinner cannot wedge.
- *
- * @returns A promise that settles when the connection first reaches `connected`.
+ * Whether the session handshake response has landed on this connection, i.e. the
+ * daemon has registered it against its session. Latched by {@link bindSessionReady}
+ * and read by {@link whenSessionReady}.
  */
-function whenConnected(): Promise<void> {
-  if (connection.state === 'connected') {
+let sessionReady = false
+
+/** Resolvers parked by {@link whenSessionReady} before the handshake landed. */
+const sessionReadyWaiters: Array<() => void> = []
+
+/**
+ * Latch the session-ready state from the handshake-response signal, so the OAuth
+ * callback can hold its dispatch until the daemon has registered this connection
+ * against its session (HIL-281). Register once at boot, before the socket opens,
+ * so the first handshake response is never missed; the latch stays set across a
+ * later reconnect (the connection is re-registered before any re-handshake). A
+ * no-op for every other signal. Returns an unsubscribe.
+ *
+ * @returns Unsubscribe for the registered signal handler.
+ */
+export function bindSessionReady(): () => void {
+  return connection.on('projectSignal', (signal: ProjectSignal) => {
+    if (signal.type !== HANDSHAKE_RESPONSE_SIGNAL) {
+      return
+    }
+    sessionReady = true
+    while (sessionReadyWaiters.length > 0) {
+      sessionReadyWaiters.shift()?.()
+    }
+  })
+}
+
+/**
+ * Resolve once the session handshake has landed (the daemon has registered this
+ * connection against its session). Resolves immediately when it already has;
+ * otherwise parks until {@link bindSessionReady} latches the next handshake
+ * response. A session that never establishes leaves this pending, which the
+ * callback route's own timeout backstop resolves so the spinner cannot wedge.
+ *
+ * @returns A promise that settles when the session is first established.
+ */
+function whenSessionReady(): Promise<void> {
+  if (sessionReady) {
     return Promise.resolve()
   }
 
   return new Promise<void>((resolve) => {
-    const unsubscribe = connection.on('state', (state) => {
-      if (state === 'connected') {
-        unsubscribe()
-        resolve()
-      }
-    })
+    sessionReadyWaiters.push(resolve)
   })
 }
 
