@@ -12,9 +12,6 @@ use Demo\Chat\Database\View\Collection\EventMessages as DbCollectionEventMessage
 use Demo\Chat\Database\View\Item\EventMessage as DbEventMessage;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
-use Hilos\Database\Database;
-use Hilos\Database\SqlParam;
-use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
 
 /**
@@ -68,14 +65,15 @@ final class EventMessagesActions extends DbActions
      *
      * The demo content-transfer half of account merge, symmetric with the
      * framework identity re-point ({@see \Hilos\Database\Object\Collection\Identities::rePointToUser()}):
-     * the survivor absorbs the loser's chat messages. Only the authoring column
-     * changes and there is no per-user projection to re-emit here (transferred
-     * messages become visible through the post-merge survivor refresh), so the
-     * move is a single targeted UPDATE rather than a per-object sync — the same
-     * targeted-write shape the framework identity primitives use. Returns the
-     * number of messages re-pointed (the merge summary's "messages moved") and
-     * clears the now-stale object cache. Runs inside the merge transaction, so a
-     * failure rolls the whole merge back.
+     * the survivor absorbs the loser's chat messages. Each message is moved
+     * through its object's {@see ObjectEventMessage::sync()} rather than a single
+     * bulk UPDATE, exactly like the identity re-point, so every moved row emits a
+     * DB_SYNC_UPDATED broadcast — the workers apply the authorship diff and
+     * re-render the messages for viewers. A raw bulk UPDATE would emit no DB_SYNC,
+     * leaving the transferred authorship invisible until a full reload (the merge
+     * is a rare admin op, so the per-message sync cost is irrelevant). Returns the
+     * number of messages re-pointed (the merge summary's "messages moved"). Runs
+     * inside the merge transaction, so a failure rolls the whole merge back.
      *
      * @param int $fromUserId Loser user id whose messages are absorbed
      * @param int $toUserId Survivor user id that receives the messages
@@ -87,17 +85,20 @@ final class EventMessagesActions extends DbActions
         TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
         $this->ensureCanWrite();
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($toUserId));
-        $params->add(SqlParam::int($fromUserId));
-        Database::sql(
-            'UPDATE `' . EventMessage::_table . '` SET `' . EventMessage::author_user_id . '` = ? WHERE `' . EventMessage::author_user_id . '` = ?',
-            $params,
-        );
+        $moved = 0;
+        foreach (EventMessage::get([EventMessage::author_user_id => $fromUserId]) as $entityMessage) {
+            $eventId = $entityMessage->event_id;
 
-        $moved = Database::affectedRows();
+            $message = $this->objectCollection[$eventId];
+            if ($message === null) {
+                $message = ObjectEventMessage::fromEntity($entityMessage);
+                $this->objectCollection[$eventId] = $message;
+            }
 
-        $this->clearCollectionCache();
+            $message->authorUserId = $toUserId;
+            $message->sync();
+            $moved++;
+        }
 
         return $moved;
     }

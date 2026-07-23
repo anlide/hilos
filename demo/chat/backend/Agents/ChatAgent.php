@@ -347,10 +347,11 @@ final class ChatAgent extends AbstractAgent
      * survive a mid-way failure: identity re-point, message re-point, and the
      * loser tombstone either all commit or all roll back. Ordering is free — the
      * loser is tombstoned (row kept), never deleted, so no foreign-key cascade can
-     * fire. After commit (outside the transaction) the loser's live sessions are
-     * forced to log out through {@see self::killUserSessions()} so a moved account
-     * cannot keep acting; making the transferred messages visible to viewers (the
-     * survivor refresh) is added in the next slice.
+     * fire. The transferred messages become visible to viewers on their own: the
+     * message re-point moves each row through its object's sync, which broadcasts a
+     * DB_SYNC_UPDATED that re-renders the authorship for every viewer. After commit
+     * (outside the transaction) the loser's live sessions are forced to log out
+     * through {@see self::killUserSessions()} so a moved account cannot keep acting.
      *
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
