@@ -13,6 +13,7 @@ use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 
@@ -51,8 +52,13 @@ final class OAuthAgent extends AbstractOAuthAgent
      * pauses for re-authentication instead of signing in, so a shared email cannot
      * silently seize an account. No match mints a user (display name from the email
      * local part), a verified oauth identity, and the "registered in chat" event.
-     * A resolved or created account signals the session-owning ChatAgent to
-     * authenticate the live session, which fans the currentUser update (HIL-161).
+     * When the provider email is non-empty it is ALSO persisted as a verified
+     * magic_link identity (HIL-405) so the proven email resolves for the profile
+     * add-password flow; that best-effort write soft-degrades on a check-vs-insert
+     * race (a completed sign-in must not abort). The email is lowercased once and
+     * reused for the collision check, display name, and this write. A resolved or
+     * created account signals the session-owning ChatAgent to authenticate the live
+     * session, which fans the currentUser update (HIL-161).
      *
      * @param OAuthPendingLogin $op In-flight op carrying the initiating session token
      * @param OAuthUserInfo $info Resolved provider subject and email
@@ -70,18 +76,29 @@ final class OAuthAgent extends AbstractOAuthAgent
             return;
         }
 
-        $collisionUserId = $info->email === ''
+        $email = mb_strtolower(trim($info->email));
+
+        $collisionUserId = $email === ''
             ? null
-            : Hilos::$db->identities->findUserIdByVerifiedEmail($info->email);
+            : Hilos::$db->identities->findUserIdByVerifiedEmail($email);
         if ($collisionUserId !== null) {
             $this->requireReauthToLink($op, $info);
 
             return;
         }
 
-        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($info->email));
+        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
         $userId = (int)$user->id;
         Hilos::$db->identities->createOauthIdentity($userId, $op->provider, $info->subject);
+        if ($email !== '') {
+            try {
+                Hilos::$db->identities->createMagicLinkIdentity($userId, $email);
+            } catch (DuplicateValueException $e) {
+                $this->logAgentWarning(
+                    "OAuth email identity skipped for {$op->getId()} (race on {$email}): " . $e->getMessage(),
+                );
+            }
+        }
         Hilos::$db->events->actions->addUserRegistered($userId);
         $this->bindSession($op, $userId);
     }

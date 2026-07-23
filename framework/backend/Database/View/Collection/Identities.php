@@ -245,6 +245,44 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Creates a verified `magic_link`-type identity for a user (HIL-405).
+     *
+     * OAuth email-persist write path of the identity layer: delegates the
+     * secret-less, verified insert to the object collection's
+     * {@see ObjectIdentities::createMagicLinkIdentity()} primitive and returns the
+     * read-facing view item for the new row. The identifier is the provider's
+     * verified email (lowercased and trimmed in the primitive); uniqueness is per
+     * (magic_link, identifier), mirroring the delegation in
+     * {@see createPasswordIdentity()}.
+     *
+     * @param int $userId Owning user id
+     * @param string $email Provider-supplied verified email (normalized in the primitive)
+     * @return Identity The created identity's read-facing Db item
+     * @throws EmptyValueException When the normalized email is empty
+     * @throws DuplicateValueException When an identity already exists for (magic_link, identifier)
+     * @throws DatabaseException On database error while creating the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function createMagicLinkIdentity(int $userId, string $email): Identity
+    {
+        $objectIdentity = $this->objectCollection->createMagicLinkIdentity($userId, $email);
+
+        $id = $objectIdentity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($id);
+        if ($identity === null) {
+            throw new DatabaseException('Created identity is not available on the read-facing collection');
+        }
+
+        return $identity;
+    }
+
+    /**
      * Creates a verified `passkey`-type identity anchor for a user (HIL-284).
      *
      * WebAuthn write path of the identity layer: delegates the secret-less,

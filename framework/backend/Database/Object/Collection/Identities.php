@@ -265,6 +265,53 @@ final class Identities extends Objects
     }
 
     /**
+     * Creates a verified `magic_link`-type identity for a user (HIL-405).
+     *
+     * The OAuth sign-up email-persist path: when an identity provider vouches for a
+     * verified email, that email is also recorded as a proven email identity so
+     * {@see findVerifiedEmailByUser()} resolves it (and, as an accepted consequence,
+     * magic-link login on that email becomes available). Like the SMS/OAuth
+     * identities there is no secret — the provider already proved the email — so the
+     * row is inserted with `secret = NULL` and `verified = true`. The identifier is
+     * the lowercased, trimmed email normalized here so the stored value is canonical
+     * regardless of caller; uniqueness is per (magic_link, identifier).
+     *
+     * @param int $userId Owning user id
+     * @param string $email Provider-supplied verified email (normalized here)
+     * @return ObjectIdentity The created identity object
+     * @throws EmptyValueException When the normalized email is empty
+     * @throws DuplicateValueException When an identity already exists for (magic_link, identifier)
+     * @throws DatabaseException If the insert query fails
+     */
+    public function createMagicLinkIdentity(int $userId, string $email): ObjectIdentity
+    {
+        $identifier = mb_strtolower(trim($email));
+        if ($identifier === '') {
+            throw new EmptyValueException('Identity identifier is required');
+        }
+
+        if ($this->findByIdentity(IdentityType::MAGIC_LINK, $identifier) !== null) {
+            throw new DuplicateValueException('email already used');
+        }
+
+        $identity = ObjectIdentity::create();
+        $identity->userId = $userId;
+        $identity->type = IdentityType::MAGIC_LINK;
+        $identity->identifier = $identifier;
+        $identity->verified = true;
+        $identity->sync();
+
+        $id = $identity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        $this->objects[$id] = $identity;
+
+        return $identity;
+    }
+
+    /**
      * Hard-deletes one of a user's identities (HIL-377).
      *
      * The profile unlink write path, symmetric with the create primitives:
