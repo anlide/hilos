@@ -11,11 +11,9 @@ use Demo\Chat\Database\Actions\Collection\EventUserRegistrationsActions;
 use Demo\Chat\Database\Actions\Collection\EventUserRenamesActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
-use Demo\Chat\Database\Actions\Collection\SessionsActions;
 use Demo\Chat\Database\Actions\Collection\UsersActions;
 use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
-use Demo\Chat\Database\Actions\Item\SessionActions;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
@@ -24,7 +22,6 @@ use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUs
 use Demo\Chat\Database\Object\Collection\EventUserRenames as ObjectEventUserRenames;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
-use Demo\Chat\Database\Object\Collection\Sessions as ObjectSessions;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\EventAttachments;
@@ -33,7 +30,6 @@ use Demo\Chat\Database\View\Collection\EventUserRegistrations;
 use Demo\Chat\Database\View\Collection\EventUserRenames;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
-use Demo\Chat\Database\View\Collection\Sessions;
 use Demo\Chat\Database\View\Collection\Users;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
@@ -44,7 +40,6 @@ use Hilos\Database\Object\Objects;
  *
  * @extends HilosDbContext
  * @property-read Users $users
- * @property-read Sessions $sessions
  * @property-read Events $events
  * @property-read EventMessages $eventMessages
  * @property-read EventUserRegistrations $eventUserRegistrations
@@ -56,7 +51,6 @@ use Hilos\Database\Object\Objects;
 final class ChatDbContext extends HilosDbContext
 {
     public const string users = 'users';
-    public const string sessions = 'sessions';
     public const string events = 'events';
     public const string eventMessages = 'eventMessages';
     public const string eventUserRegistrations = 'eventUserRegistrations';
@@ -66,7 +60,6 @@ final class ChatDbContext extends HilosDbContext
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
 
     public const string user = 'user';
-    public const string session = 'session';
     public const string event = 'event';
     public const string eventMessage = 'eventMessage';
     public const string eventUserRegistration = 'eventUserRegistration';
@@ -85,7 +78,6 @@ final class ChatDbContext extends HilosDbContext
         parent::configure();
 
         $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->_objectCollections[self::sessions] = ObjectSessions::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::eventMessages] = ObjectEventMessages::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::eventUserRegistrations] = ObjectEventUserRegistrations::initDB(Objects::LAZY_STRATEGY_KEY);
@@ -95,7 +87,6 @@ final class ChatDbContext extends HilosDbContext
         $this->_objectCollections[self::moderatorPromptPieces] = ObjectModeratorPromptPieces::initDB(Objects::LAZY_STRATEGY_NONE);
 
         $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
-        $this->setRepresent(self::sessions, Sessions::class, SessionsActions::class, SessionActions::class);
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::eventMessages, EventMessages::class, EventMessagesActions::class);
         $this->setRepresent(self::eventUserRegistrations, EventUserRegistrations::class, EventUserRegistrationsActions::class);
