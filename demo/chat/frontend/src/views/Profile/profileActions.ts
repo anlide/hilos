@@ -14,8 +14,8 @@ import {
 } from '../../auth/passwordSignals'
 import { actionErrors, actions, connection } from '../../bootstrap/connection'
 
-/** The outcome of an add-phone wizard step: ok, plus the inline reason on failure. */
-export interface AddSmsOutcome {
+/** The outcome of a profile two-step wizard step: ok, plus the inline reason on failure. */
+export interface WizardStepOutcome {
   /** True on the backend `::success`; false on any rejection. */
   readonly ok: boolean
   /** The inline error to show on failure, or null on success. */
@@ -125,8 +125,8 @@ const ADD_SMS_CONFIRM_ACTION = 'profile_add_sms_confirm'
  *
  * @param phone The phone number to attach.
  */
-export async function sendAddSmsRequest(phone: string): Promise<AddSmsOutcome> {
-  return dispatchAddSms(ADD_SMS_REQUEST_ACTION, { phone })
+export async function sendAddSmsRequest(phone: string): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(ADD_SMS_REQUEST_ACTION, { phone })
 }
 
 /**
@@ -142,22 +142,65 @@ export async function sendAddSmsRequest(phone: string): Promise<AddSmsOutcome> {
 export async function sendAddSmsConfirm(
   phone: string,
   code: string,
-): Promise<AddSmsOutcome> {
-  return dispatchAddSms(ADD_SMS_CONFIRM_ACTION, { phone, code })
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(ADD_SMS_CONFIRM_ACTION, { phone, code })
+}
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::ADD_PASSWORD_REQUEST`). */
+const ADD_PASSWORD_REQUEST_ACTION = 'profile_add_password_request'
+
+/** Backend action name routed by ProfilePage (PHP `ChatSignalConstants::ADD_PASSWORD_CONFIRM`). */
+const ADD_PASSWORD_CONFIRM_ACTION = 'profile_add_password_confirm'
+
+/**
+ * Step 1 of adding a password to a signed-in user with no verified email: dispatch
+ * the `profile_add_password_request` action over the request-correlated action
+ * lifecycle and resolve its outcome (HIL-406). Like the add-phone step it needs the
+ * correlated ack — there is no bespoke success signal and nothing changes in the
+ * identity projection yet, so `ok` means "advance to the code step". Unlike the
+ * add-phone step the backend can reject here: a malformed email, or an email already
+ * verified by another account, comes back with its inline reason.
+ *
+ * @param email The email to prove and key the new password on.
+ */
+export async function sendAddPasswordRequest(
+  email: string,
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(ADD_PASSWORD_REQUEST_ACTION, { email })
 }
 
 /**
- * Dispatch one add-phone action and reduce its reply to an {@link AddSmsOutcome}:
- * ok on `::success`, else the backend reason for a real rejection and a generic
- * phrasing for a timeout or dropped connection.
+ * Step 2 of adding a password: dispatch the `profile_add_password_confirm` action
+ * and resolve its outcome (HIL-406). On `::success` the verified `password` identity
+ * is written server-side and the reused {@link subscribePasswordUpdated} signal
+ * fires (clearing the form and flipping the section to change-mode); a weak password,
+ * a wrong/expired code, or an email that raced into use rejects with its inline
+ * reason.
+ *
+ * @param email The email being proven.
+ * @param code The delivered verification code.
+ * @param newPassword The new password to set.
+ */
+export async function sendAddPasswordConfirm(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<WizardStepOutcome> {
+  return dispatchWizardStep(ADD_PASSWORD_CONFIRM_ACTION, { email, code, newPassword })
+}
+
+/**
+ * Dispatch one two-step wizard action and reduce its reply to a
+ * {@link WizardStepOutcome}: ok on `::success`, else the backend reason for a real
+ * rejection and a generic phrasing for a timeout or dropped connection.
  *
  * @param action The backend action name.
  * @param payload The action payload.
  */
-async function dispatchAddSms(
+async function dispatchWizardStep(
   action: string,
   payload: Record<string, string>,
-): Promise<AddSmsOutcome> {
+): Promise<WizardStepOutcome> {
   try {
     await actions.dispatch(action, payload).done
 

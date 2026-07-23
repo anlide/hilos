@@ -13,9 +13,11 @@ use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Profile\ConfirmAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\LinkOAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
@@ -70,6 +72,8 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatSignalConstants::LINK_OAUTH_START => LinkOAuthStartActionDTO::class,
         ChatSignalConstants::ADD_SMS_REQUEST => RequestSmsAddCodeActionDTO::class,
         ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
+        ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
+        ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -86,9 +90,9 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, or an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use)
-     * @throws \Random\RandomException When minting an OAuth link state or an SMS-add code cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, or an SMS-add verification/identity query fails
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), or an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code)
+     * @throws \Random\RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, or an SMS-add or add-password verification/identity query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -138,6 +142,22 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, ConfirmSmsAddCodeActionDTO::class, $dto);
                 }
                 $this->handleConfirmSmsAddCode($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::ADD_PASSWORD_REQUEST:
+                if (!$dto instanceof RequestAddPasswordActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestAddPasswordActionDTO::class, $dto);
+                }
+                $this->handleRequestAddPassword($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::ADD_PASSWORD_CONFIRM:
+                if (!$dto instanceof ConfirmAddPasswordActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmAddPasswordActionDTO::class, $dto);
+                }
+                $this->handleConfirmAddPassword($acceptKey, $dto);
 
                 break;
 
@@ -433,6 +453,112 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('That phone number is already in use');
         } catch (EmptyValueException) {
             throw new ValidationException('Enter a valid phone number');
+        }
+    }
+
+    /**
+     * Step 1 of adding a password to a user with no verified email: issues an email code (HIL-406).
+     *
+     * Server-authoritative and self-only: the owning user is read from the session,
+     * never the client, and carried on the challenge so step 2 can assert the code
+     * was minted for this user. The email is lowercased and format-checked (a
+     * malformed address is refused synchronously). Unlike the SMS-add step, uniqueness
+     * IS checked here: because the code is mailed to the entered address, an email
+     * already verified by ANOTHER account is refused without sending anything (never
+     * mail a stranger's verified address); a free email — or one already the user's
+     * own — issues a code through the framework VerificationService, whose resend
+     * cooldown makes a repeat request a silent no-op, so the step always answers
+     * `action_success` and the wizard advances to the code step.
+     *
+     * @param string $acceptKey Accept key
+     * @param RequestAddPasswordActionDTO $dto Add-password request DTO (email)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the email is malformed or already verified by another account
+     * @throws EmptyValueException When the normalized identifier is empty
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function handleRequestAddPassword(string $acceptKey, RequestAddPasswordActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        $email = strtolower($dto->email);
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw new ValidationException('Enter a valid email address');
+        }
+
+        $ownerId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
+        if ($ownerId !== null && $ownerId !== $userId) {
+            throw new ValidationException('That email is already in use');
+        }
+
+        (new VerificationService())->issue(VerificationType::EMAIL_ADD, $email, $userId);
+    }
+
+    /**
+     * Step 2 of adding a password: verifies the email code and writes the identity (HIL-406).
+     *
+     * Server-authoritative and self-only: the owning user is read from the session.
+     * The new password is length-checked FIRST so a weak password never burns the
+     * code. The submitted code is verified against the `email_add` challenge; a
+     * missing/expired/wrong code — or a challenge minted for a different user than
+     * this session — is refused with the same generic message. Uniqueness is
+     * re-checked after verify (a magic_link-verified collision on the same email
+     * would slip past createPasswordIdentity's password-scoped duplicate guard)
+     * before the write. On success a verified `password` identity is attached to the
+     * session user on the now-proven email and a
+     * {@see ChatSignalConstants::PASSWORD_UPDATED} signal (MODE_ADDED, reusing the
+     * HIL-402 success signal) is fanned to all the user's connections, which clears
+     * the form and flips the section to change-mode; the new identity also arrives
+     * over the identities projection re-emit.
+     *
+     * @param string $acceptKey Accept key
+     * @param ConfirmAddPasswordActionDTO $dto Add-password confirm DTO (email, code, new password)
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws ValidationException When the password is too weak, the code is invalid/expired, or the email is already in use
+     * @throws HilosException When a verification or identity query fails
+     */
+    private function handleConfirmAddPassword(string $acceptKey, ConfirmAddPasswordActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
+            throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
+        }
+
+        $email = strtolower($dto->email);
+        $verifiedUserId = (new VerificationService())->verify(VerificationType::EMAIL_ADD, $email, $dto->code);
+        if ($verifiedUserId === null || $verifiedUserId !== $userId) {
+            throw new ValidationException('Invalid or expired code');
+        }
+
+        $ownerId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
+        if ($ownerId !== null && $ownerId !== $userId) {
+            throw new ValidationException('That email is already in use');
+        }
+
+        try {
+            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
+        } catch (DuplicateValueException) {
+            throw new ValidationException('That email is already in use');
+        } catch (EmptyValueException) {
+            throw new ValidationException('Enter a valid email address');
+        }
+
+        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
+            $this->sendToUser(
+                ChatSignalConstants::PASSWORD_UPDATED,
+                $connection->acceptKey,
+                new PasswordUpdatedSignalData(PasswordUpdatedSignalData::MODE_ADDED),
+            );
         }
     }
 

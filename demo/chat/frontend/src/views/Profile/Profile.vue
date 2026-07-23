@@ -25,6 +25,8 @@ import {
   clearRenameError,
   clearSetPasswordError,
   renameError,
+  sendAddPasswordConfirm,
+  sendAddPasswordRequest,
   sendAddSmsConfirm,
   sendAddSmsRequest,
   sendRename,
@@ -276,6 +278,64 @@ watch(passwordError, (reason) => {
   }
 })
 
+// Add a password via email (HIL-406): shown when the user has neither a password
+// nor a verified email (SMS-only or legacy OAuth). A two-step inline wizard proves
+// an email (enter email → code) then sets the password on it. Server-confirmed:
+// step 1 advances only on the backend `::success` (email issued whether or not the
+// resend cooldown suppresses a duplicate); step 2 succeeds through the reused
+// password_updated signal, which resets the wizard and flips the section to Change
+// as the new identity lands. A malformed/in-use email, a wrong/expired code, or a
+// weak password stays on the step with an inline error.
+const addPwStep = ref<1 | 2>(1)
+const addPwEmail = ref('')
+const addPwCode = ref('')
+const addPwPassword = ref('')
+const addPwConfirm = ref('')
+const addPwLoading = ref(false)
+const addPwError = ref<string | null>(null)
+
+const addPwValid = computed(
+  () =>
+    addPwCode.value.trim() !== '' &&
+    addPwPassword.value.length >= PASSWORD_MIN &&
+    addPwPassword.value === addPwConfirm.value,
+)
+
+async function submitAddPasswordRequest(): Promise<void> {
+  if (addPwEmail.value.trim() === '' || addPwLoading.value) {
+    return
+  }
+  addPwLoading.value = true
+  addPwError.value = null
+  const outcome = await sendAddPasswordRequest(addPwEmail.value.trim())
+  addPwLoading.value = false
+  if (outcome.ok) {
+    addPwStep.value = 2
+  } else {
+    addPwError.value = outcome.message
+  }
+}
+
+async function submitAddPasswordConfirm(): Promise<void> {
+  if (!addPwValid.value || addPwLoading.value) {
+    return
+  }
+  addPwLoading.value = true
+  addPwError.value = null
+  const outcome = await sendAddPasswordConfirm(
+    addPwEmail.value.trim(),
+    addPwCode.value.trim(),
+    addPwPassword.value,
+  )
+  // Success is signalled (password_updated): the subscription resets this wizard
+  // and the section flips to Change. Only reflect a rejection here.
+  if (outcome.ok) {
+    return
+  }
+  addPwLoading.value = false
+  addPwError.value = outcome.message
+}
+
 // Success is signalled (a change moves nothing in the identity projection to
 // confirm it): clear the fields, release the button, and toast the outcome.
 // Registered once on mount so a reply to a submit lands; torn down on unmount so a
@@ -288,6 +348,15 @@ onMounted(() => {
     newPassword.value = ''
     confirmPassword.value = ''
     passwordLoading.value = false
+    // Reset the add-via-email wizard too: an add lands here, and the section flips
+    // to Change, so leave it on a clean step for any later re-entry.
+    addPwStep.value = 1
+    addPwEmail.value = ''
+    addPwCode.value = ''
+    addPwPassword.value = ''
+    addPwConfirm.value = ''
+    addPwLoading.value = false
+    addPwError.value = null
     passwordUpdated.value =
       data.mode === PASSWORD_MODE_ADDED ? 'Password added.' : 'Password changed.'
   })
@@ -578,13 +647,109 @@ function mergeBoth(): void {
     <div class="mt-4" data-id="profile-password">
       <h2 class="h6 mb-2">Password</h2>
 
-      <p
-        v-if="!password.hasPassword && !password.verifiedEmail"
-        class="text-body-secondary mb-0"
-        data-id="profile-password-hint"
-      >
-        Confirm an email address first to set a password.
-      </p>
+      <!-- No password and no verified email (HIL-406): a two-step inline wizard —
+      prove an email (enter email → code), then set the password on it. Replaces the
+      old disabled hint. Server-confirmed; step 2 succeeds via password_updated,
+      which flips this section to Change. -->
+      <template v-if="!password.hasPassword && !password.verifiedEmail">
+        <form v-if="addPwStep === 1" @submit.prevent="submitAddPasswordRequest">
+          <p class="text-body-secondary" data-id="profile-add-password-hint">
+            Confirm an email address to set a password.
+          </p>
+          <div class="mb-2">
+            <label class="form-label" for="profile-add-password-email">Email</label>
+            <input
+              id="profile-add-password-email"
+              v-model="addPwEmail"
+              type="email"
+              class="form-control"
+              autocomplete="email"
+              data-id="profile-add-password-email"
+            />
+            <div class="form-text">We'll email you a one-time code.</div>
+          </div>
+          <LoadingButton
+            class="btn-primary btn-sm"
+            :loading="addPwLoading"
+            :disabled="addPwEmail.trim() === ''"
+            data-id="profile-add-password-request"
+            @click="submitAddPasswordRequest"
+          >
+            Send code
+          </LoadingButton>
+          <div
+            v-if="addPwError"
+            class="alert alert-danger mt-2 mb-0"
+            role="alert"
+            data-id="profile-add-password-error"
+          >
+            {{ addPwError }}
+          </div>
+        </form>
+
+        <form v-else @submit.prevent="submitAddPasswordConfirm">
+          <div class="mb-2">
+            <label class="form-label" for="profile-add-password-code">
+              Verification code
+            </label>
+            <input
+              id="profile-add-password-code"
+              v-model="addPwCode"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              class="form-control"
+              data-id="profile-add-password-code"
+            />
+            <div class="form-text">Enter the code sent to {{ addPwEmail }}.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="profile-add-password-new">
+              New password
+            </label>
+            <input
+              id="profile-add-password-new"
+              v-model="addPwPassword"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              :minlength="PASSWORD_MIN"
+              data-id="profile-add-password-new"
+            />
+            <div class="form-text">At least {{ PASSWORD_MIN }} characters.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="profile-add-password-confirm">
+              Confirm new password
+            </label>
+            <input
+              id="profile-add-password-confirm"
+              v-model="addPwConfirm"
+              type="password"
+              class="form-control"
+              autocomplete="new-password"
+              data-id="profile-add-password-confirm"
+            />
+          </div>
+          <LoadingButton
+            class="btn-primary btn-sm"
+            :loading="addPwLoading"
+            :disabled="!addPwValid"
+            data-id="profile-add-password-save"
+            @click="submitAddPasswordConfirm"
+          >
+            Set password
+          </LoadingButton>
+          <div
+            v-if="addPwError"
+            class="alert alert-danger mt-2 mb-0"
+            role="alert"
+            data-id="profile-add-password-error"
+          >
+            {{ addPwError }}
+          </div>
+        </form>
+      </template>
 
       <form v-else @submit.prevent="submitPassword">
         <div v-if="password.hasPassword" class="mb-2">

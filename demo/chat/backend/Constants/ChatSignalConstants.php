@@ -107,6 +107,12 @@ final class ChatSignalConstants
     /** @var string Client → server: submit the SMS code to add the phone identity to the signed-in user (authenticated, HIL-403) */
     public const string ADD_SMS_CONFIRM = 'profile_add_sms_confirm';
 
+    /** @var string Client → server: request an email code to add a password to a signed-in user with no verified email (authenticated, HIL-406) */
+    public const string ADD_PASSWORD_REQUEST = 'profile_add_password_request';
+
+    /** @var string Client → server: submit the email code and new password to add a password to the signed-in user (authenticated, HIL-406) */
+    public const string ADD_PASSWORD_CONFIRM = 'profile_add_password_confirm';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 

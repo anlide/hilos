@@ -27,6 +27,12 @@ namespace Hilos\Database\Verification;
  * and unlike `sms_login` the owning user IS known at issue time, so the challenge
  * carries that `user_id` and it verifies through {@see VerificationService::verify()}
  * (the handler asserts the resolved user matches the session user).
+ * `email_add` mints a one-time code for adding a password to a signed-in user with
+ * no verified email (HIL-406) — its `identifier` is the target email (lowercased),
+ * and like `sms_add` the owning user IS known at issue time, so the challenge carries
+ * that `user_id` and it verifies through {@see VerificationService::verify()} (the
+ * handler asserts the resolved user matches the session user, then writes the
+ * password identity on the now-proven email).
  * `identifier` is the target email (lowercased) for the email-based types.
  */
 final class VerificationType
@@ -37,6 +43,7 @@ final class VerificationType
     public const string SMS_LOGIN = 'sms_login';
     public const string MAGIC_LINK = 'magic_link';
     public const string SMS_ADD = 'sms_add';
+    public const string EMAIL_ADD = 'email_add';
 
     /**
      * Returns the fixed set of verification type values in declaration order.
@@ -52,6 +59,7 @@ final class VerificationType
             self::SMS_LOGIN,
             self::MAGIC_LINK,
             self::SMS_ADD,
+            self::EMAIL_ADD,
         ];
     }
 
