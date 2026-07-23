@@ -12,6 +12,9 @@ use Demo\Chat\Database\View\Collection\EventMessages as DbCollectionEventMessage
 use Demo\Chat\Database\View\Item\EventMessage as DbEventMessage;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Database;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
 
 /**
@@ -58,6 +61,45 @@ final class EventMessagesActions extends DbActions
         $this->addObjectToCollection($detail);
 
         return $this->createDbItemFromObject($detail);
+    }
+
+    /**
+     * Re-points every message authored by a loser user to a survivor user (HIL-378).
+     *
+     * The demo content-transfer half of account merge, symmetric with the
+     * framework identity re-point ({@see \Hilos\Database\Object\Collection\Identities::rePointToUser()}):
+     * the survivor absorbs the loser's chat messages. Only the authoring column
+     * changes and there is no per-user projection to re-emit here (transferred
+     * messages become visible through the post-merge survivor refresh), so the
+     * move is a single targeted UPDATE rather than a per-object sync — the same
+     * targeted-write shape the framework identity primitives use. Returns the
+     * number of messages re-pointed (the merge summary's "messages moved") and
+     * clears the now-stale object cache. Runs inside the merge transaction, so a
+     * failure rolls the whole merge back.
+     *
+     * @param int $fromUserId Loser user id whose messages are absorbed
+     * @param int $toUserId Survivor user id that receives the messages
+     * @return int Number of messages re-pointed to the survivor
+     * @throws HilosException On database or truth-source failure
+     */
+    public function rePointAuthor(int $fromUserId, int $toUserId): int
+    {
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
+        $this->ensureCanWrite();
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($toUserId));
+        $params->add(SqlParam::int($fromUserId));
+        Database::sql(
+            'UPDATE `' . EventMessage::_table . '` SET `' . EventMessage::author_user_id . '` = ? WHERE `' . EventMessage::author_user_id . '` = ?',
+            $params,
+        );
+
+        $moved = Database::affectedRows();
+
+        $this->clearCollectionCache();
+
+        return $moved;
     }
 
     /**
