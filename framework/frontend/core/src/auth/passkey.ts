@@ -100,6 +100,12 @@ export interface PasskeyAssertionResponse {
   readonly clientDataJson: string
   /** base64url assertion signature. */
   readonly signature: string
+  /**
+   * base64url WebAuthn user handle a discoverable (resident-key) assertion
+   * carries, or null for a non-discoverable one (HIL-400). It resolves the
+   * account server-side when the login named none.
+   */
+  readonly userHandle: string | null
 }
 
 /**
@@ -239,5 +245,9 @@ export async function getPasskey(
     authenticatorData: base64UrlEncode(response.authenticatorData),
     clientDataJson: base64UrlEncode(response.clientDataJSON),
     signature: base64UrlEncode(response.signature),
+    userHandle:
+      response.userHandle !== null
+        ? base64UrlEncode(response.userHandle)
+        : null,
   }
 }

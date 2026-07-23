@@ -16,6 +16,12 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
  * authenticatorData, clientDataJSON and (DER) signature it returned. The binary
  * fields stay base64url on the wire and are decoded by the handler; every failure
  * collapses to one generic message so nothing about the account leaks.
+ *
+ * The optional `userHandle` is the base64url WebAuthn user handle a discoverable
+ * (usernameless) assertion carries (HIL-400) — the username-first path (HIL-284)
+ * sends none, so it defaults to empty. When present the handler cross-checks it
+ * against the credential owner as defense-in-depth; the credential id stays
+ * authoritative.
  */
 final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
 {
@@ -27,6 +33,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
      * @param string $authenticatorData base64url authenticatorData bytes
      * @param string $clientDataJson base64url clientDataJSON bytes
      * @param string $signature base64url ECDSA (DER) signature bytes
+     * @param string $userHandle base64url WebAuthn user handle from a discoverable assertion, or '' for username-first (HIL-400)
      */
     public function __construct(
         public readonly string $signedChallenge,
@@ -34,6 +41,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
         public readonly string $authenticatorData,
         public readonly string $clientDataJson,
         public readonly string $signature,
+        public readonly string $userHandle = '',
     ) {
     }
 
@@ -60,6 +68,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
         $authenticatorData = $data['authenticatorData'] ?? null;
         $clientDataJson = $data['clientDataJson'] ?? null;
         $signature = $data['signature'] ?? null;
+        $userHandle = $data['userHandle'] ?? null;
 
         return new static(
             signedChallenge: is_string($signedChallenge) ? $signedChallenge : '',
@@ -67,13 +76,14 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
             authenticatorData: is_string($authenticatorData) ? $authenticatorData : '',
             clientDataJson: is_string($clientDataJson) ? $clientDataJson : '',
             signature: is_string($signature) ? $signature : '',
+            userHandle: is_string($userHandle) ? $userHandle : '',
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string, clientDataJson: string, signature: string} Confirm payload
+     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string, clientDataJson: string, signature: string, userHandle: string} Confirm payload
      */
     public function toArray(): array
     {
@@ -83,6 +93,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
             'authenticatorData' => $this->authenticatorData,
             'clientDataJson' => $this->clientDataJson,
             'signature' => $this->signature,
+            'userHandle' => $this->userHandle,
         ];
     }
 }

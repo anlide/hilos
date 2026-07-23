@@ -110,6 +110,7 @@ export {
   MAGIC_LINK_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
   PASSKEY_AUTH_METHOD,
+  PASSKEY_DISCOVERABLE_AUTH_METHOD,
   type AuthSurface,
   type AuthSurfaceOptions,
   type AuthMethodDescriptor,

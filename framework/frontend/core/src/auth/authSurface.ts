@@ -235,6 +235,22 @@ export const PASSKEY_AUTH_METHOD: AuthMethodDescriptor = {
 }
 
 /**
+ * The usernameless / discoverable passkey method descriptor (HIL-400). Unlike the
+ * username-first {@link PASSKEY_AUTH_METHOD} it takes no email and contributes no
+ * {@link AuthMode} of its own: like OAuth, the surface renders it as an action
+ * button on the `login` entry, and a click runs the whole discoverable round-trip
+ * (empty-allowCredentials options → `navigator.credentials.get` with the OS picker
+ * → confirm) which upgrades the session. A project adds it alongside
+ * {@link PASSWORD_AUTH_METHOD} to offer one-tap passkey sign-in; the two passkey
+ * methods coexist.
+ */
+export const PASSKEY_DISCOVERABLE_AUTH_METHOD: AuthMethodDescriptor = {
+  key: 'passkey:discoverable',
+  label: 'Sign in with a passkey',
+  modes: ['login'],
+}
+
+/**
  * Phone digit-count bounds mirroring the backend E.164 normalizer
  * ({@link \Hilos\Auth\PhoneNumber}); client-side gating only.
  */

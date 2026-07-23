@@ -23,6 +23,7 @@ use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthCallbackActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthStartActionDTO;
+use Demo\Chat\Pages\DTO\Main\PasskeyDiscoverableLoginOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyLoginConfirmActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyLoginOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyRegisterConfirmActionDTO;
@@ -110,6 +111,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
         ChatSignalConstants::PASSKEY_LOGIN_OPTIONS => PasskeyLoginOptionsActionDTO::class,
         ChatSignalConstants::PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
+        ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
     ];
 
     // Sending a message requires a signed-in session: an anonymous visitor reads
@@ -365,6 +367,14 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, PasskeyLoginConfirmActionDTO::class, $dto);
                 }
                 $this->handlePasskeyLoginConfirm($dto);
+
+                break;
+
+            case ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS:
+                if (!$dto instanceof PasskeyDiscoverableLoginOptionsActionDTO) {
+                    throw new InvalidActionPayloadException($action, PasskeyDiscoverableLoginOptionsActionDTO::class, $dto);
+                }
+                $this->handlePasskeyDiscoverableLoginOptions($dto);
 
                 break;
 
@@ -1191,6 +1201,62 @@ final class MainPage extends AbstractPage
     }
 
     /**
+     * Mints usernameless (discoverable) WebAuthn login options (HIL-400).
+     *
+     * The discoverable login-start entry, public (anonymous-reachable): unlike the
+     * username-first path ({@see self::handlePasskeyLoginOptions()}) it names no
+     * account, so it resolves no user and builds an EMPTY allowCredentials — the
+     * resident credential the OS picker returns identifies the account on confirm.
+     * An empty allowCredentials is identical for everyone, so there is nothing to
+     * enumerate and no dummy descriptor. The stateless challenge is bound to the
+     * session (no user, resolved on confirm) and, since `action_success` carries no
+     * payload, delivered on the PASSKEY_OPTIONS signal (ceremony LOGIN) for
+     * navigator.credentials.get().
+     *
+     * @param PasskeyDiscoverableLoginOptionsActionDTO $dto Parsed options request payload (no fields)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge
+     * @throws HilosException When WebAuthn env config fails
+     */
+    private function handlePasskeyDiscoverableLoginOptions(PasskeyDiscoverableLoginOptionsActionDTO $dto): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $config = WebAuthnConfig::fromEnv();
+        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+            WebAuthnChallengeSigner::PURPOSE_LOGIN,
+            $connection->sessionToken,
+            null,
+            $config->challengeTtlSeconds,
+        );
+
+        // Discoverable: no email, no user resolution, and an EMPTY allowCredentials
+        // — the resident credential the OS picker returns identifies the account on
+        // confirm; an empty list is identical for everyone (nothing to enumerate).
+        $publicKeyOptions = [
+            'challenge' => $challenge->challenge,
+            'rpId' => $config->rpId,
+            'allowCredentials' => [],
+            'userVerification' => $config->userVerification,
+            'timeout' => $config->timeoutMs,
+        ];
+
+        $this->sendToUser(
+            ChatSignalConstants::PASSKEY_OPTIONS,
+            $connection->acceptKey,
+            new PasskeyOptionsSignalData(
+                $connection->acceptKey,
+                WebAuthnChallengeSigner::PURPOSE_LOGIN,
+                $publicKeyOptions,
+                $challenge->token,
+            ),
+        );
+    }
+
+    /**
      * Verifies a WebAuthn assertion and signs the resolved user into the session (HIL-284).
      *
      * The login-confirm arm, public: it re-derives the challenge from the signed
@@ -1202,9 +1268,14 @@ final class MainPage extends AbstractPage
      * existing handshake response). Every failure — bad token, unknown credential,
      * malformed payload, failed assertion — collapses to one generic message.
      *
-     * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id, authenticator data, client data, signature)
+     * A discoverable-login assertion (HIL-400) additionally carries the WebAuthn
+     * user handle; when present it is cross-checked against the credential owner as
+     * defense-in-depth (the credential id stays authoritative). The username-first
+     * path sends none, so the check is skipped when the handle is empty.
+     *
+     * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id, authenticator data, client data, signature, optional user handle)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws ValidationException When the challenge, credential, payload, or assertion is invalid
+     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
      * @throws HilosException When WebAuthn env config, credential lookup, counter persistence, or session promotion fails
      */
     private function handlePasskeyLoginConfirm(PasskeyLoginConfirmActionDTO $dto): void
@@ -1228,6 +1299,21 @@ final class MainPage extends AbstractPage
         $credential = Hilos::$db->passkeyCredentials->findByCredentialId($dto->credentialId);
         if ($credential === null) {
             throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+        }
+
+        // Discoverable login (HIL-400) carries the WebAuthn user handle; cross-check
+        // it resolves to the asserted credential's owner (defense-in-depth — the
+        // credential id stays authoritative). The username-first path (HIL-284)
+        // sends no handle, so validate only when present.
+        if ($dto->userHandle !== '') {
+            $userHandle = Base64Url::decode($dto->userHandle);
+            if ($userHandle === null) {
+                throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+            }
+            $handleUserId = Hilos::$db->passkeyCredentials->findUserByUserHandle($userHandle);
+            if ($handleUserId === null || $handleUserId !== $credential->userId) {
+                throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
+            }
         }
 
         $authenticatorData = Base64Url::decode($dto->authenticatorData);

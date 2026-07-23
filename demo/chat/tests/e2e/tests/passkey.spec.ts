@@ -97,3 +97,36 @@ test('enrolls a passkey in the profile and signs back in with it username-first'
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/profile')
 })
+
+test('signs in usernameless with a discoverable passkey — no email', async ({
+  page,
+}) => {
+  // A resident credential must exist for a discoverable login; the register
+  // ceremony (HIL-284) mints one, so enroll a passkey first, then sign out.
+  await addVirtualAuthenticator(page)
+  await signUp(page)
+  await page.goto('/profile')
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await page.getByTestId('profile-passkey-add').click()
+  await expect(page.getByTestId('profile-passkey-added')).toBeVisible()
+
+  await logout(page)
+  await page.goto('/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"
+  // action — no email is entered. The server returns empty allowCredentials, the
+  // authenticator returns its resident credential, and confirm resolves the
+  // account (user handle + credential id) and upgrades the session in place.
+  const discoverable = page.getByTestId('auth-passkey-discoverable')
+  await discoverable.scrollIntoViewIfNeeded()
+  await expect(discoverable).toBeEnabled()
+  await discoverable.click()
+
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+
+  // The preserved profile subscription resumes off the session upgrade — the
+  // user's name renders with no navigation.
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe('/profile')
+})

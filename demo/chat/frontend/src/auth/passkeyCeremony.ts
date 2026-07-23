@@ -47,6 +47,10 @@ const PASSKEY_LOGIN_OPTIONS_ACTION = 'passkey_login_options'
 /** Backend action: verify a login assertion (PHP `ChatSignalConstants::PASSKEY_LOGIN_CONFIRM`). */
 const PASSKEY_LOGIN_CONFIRM_ACTION = 'passkey_login_confirm'
 
+/** Backend action: mint usernameless (discoverable) login-ceremony options (PHP `ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS`). */
+const PASSKEY_DISCOVERABLE_LOGIN_OPTIONS_ACTION =
+  'passkey_discoverable_login_options'
+
 /** Shown when the browser has no WebAuthn support. */
 const PASSKEY_UNSUPPORTED_MESSAGE = 'This browser does not support passkeys.'
 
@@ -129,6 +133,43 @@ export async function runPasskeyLogin(
       authenticatorData: assertion.authenticatorData,
       clientDataJson: assertion.clientDataJson,
       signature: assertion.signature,
+    }).done
+
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: describePasskeyError(error) }
+  }
+}
+
+/**
+ * Run the usernameless (discoverable) login ceremony (HIL-400): request options
+ * with no email, run the WebAuthn assertion whose empty allowCredentials makes the
+ * browser show the OS discoverable-passkey picker, and confirm — handing back the
+ * assertion's user handle so the server resolves the account (the login named
+ * none). Resolves `ok` on the confirm ack; the session upgrade (HIL-161) then
+ * closes the surface through the auth gate, so no next mode. A cancelled picker
+ * makes no server call (getPasskey rejects before confirm).
+ */
+export async function runPasskeyDiscoverableLogin(): Promise<AuthSubmitOutcome> {
+  if (!isPasskeySupported()) {
+    return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
+  }
+  try {
+    const options = await requestOptions(
+      PASSKEY_DISCOVERABLE_LOGIN_OPTIONS_ACTION,
+      {},
+      PASSKEY_CEREMONY_LOGIN,
+    )
+    const assertion = await getPasskey(
+      options.publicKeyOptions as unknown as PasskeyRequestOptions,
+    )
+    await actions.dispatch(PASSKEY_LOGIN_CONFIRM_ACTION, {
+      signedChallenge: options.signedChallenge,
+      credentialId: assertion.credentialId,
+      authenticatorData: assertion.authenticatorData,
+      clientDataJson: assertion.clientDataJson,
+      signature: assertion.signature,
+      userHandle: assertion.userHandle ?? '',
     }).done
 
     return { ok: true }

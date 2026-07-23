@@ -80,6 +80,9 @@ final class ChatSignalConstants
     /** @var string Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284) */
     public const string PASSKEY_LOGIN_CONFIRM = 'passkey_login_confirm';
 
+    /** @var string Client → server: request WebAuthn discoverable (usernameless) login options — no email, empty allowCredentials (public, anonymous-reachable, HIL-400) */
+    public const string PASSKEY_DISCOVERABLE_LOGIN_OPTIONS = 'passkey_discoverable_login_options';
+
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 

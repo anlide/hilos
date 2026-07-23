@@ -19,6 +19,7 @@ import {
   MAGIC_LINK_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
   PASSKEY_AUTH_METHOD,
+  PASSKEY_DISCOVERABLE_AUTH_METHOD,
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
   SMS_AUTH_METHOD,
@@ -33,6 +34,7 @@ import {
   peekOAuthLink,
   startOAuthLogin,
 } from './oauthLogin'
+import { runPasskeyDiscoverableLogin } from './passkeyCeremony'
 
 defineOptions({ name: 'AuthSurface' })
 
@@ -44,6 +46,7 @@ const methods: AuthMethodDescriptor[] = [
   SMS_AUTH_METHOD,
   MAGIC_LINK_AUTH_METHOD,
   PASSKEY_AUTH_METHOD,
+  PASSKEY_DISCOVERABLE_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
 ]
 const surface = createAuthSurface({ methods, onSubmit: submitAuth })
@@ -56,6 +59,17 @@ const surface = createAuthSurface({ methods, onSubmit: submitAuth })
 const oauthMethods = methods.filter((method) => method.key.startsWith('oauth:'))
 const oauthPending = ref<string | null>(null)
 const oauthError = ref<string | null>(null)
+
+// The usernameless / discoverable passkey method (HIL-400): an action button on
+// the login entry (no email, no machine mode) whose click runs the whole
+// discoverable round-trip; the session upgrade closes the surface, so a running
+// click stays loading until success and only a failure clears it with an inline
+// error. Absent-safe: null when the project did not enable the method.
+const discoverablePasskeyMethod =
+  methods.find((method) => method.key === PASSKEY_DISCOVERABLE_AUTH_METHOD.key) ??
+  null
+const discoverablePending = ref(false)
+const discoverableError = ref<string | null>(null)
 
 // Set on mount when an OAuth email collision armed a pending link (HIL-282): the
 // account already exists, so the surface pre-fills its email and shows a "finish
@@ -89,6 +103,7 @@ const magicSent = ref(false)
 watch(mode, () => {
   magicSent.value = false
   oauthError.value = null
+  discoverableError.value = null
 })
 
 const heading = computed(() => {
@@ -178,6 +193,23 @@ async function continueWithOAuth(method: AuthMethodDescriptor): Promise<void> {
   }
 }
 
+// Begin a usernameless passkey sign-in (HIL-400): run the discoverable ceremony
+// (empty allowCredentials → OS picker → confirm). On success the session upgrade
+// closes the surface via the auth gate, so keep loading; a cancelled picker or a
+// rejected assertion clears loading and surfaces the reason inline.
+async function continueWithDiscoverablePasskey(): Promise<void> {
+  if (discoverablePending.value) {
+    return
+  }
+  discoverablePending.value = true
+  discoverableError.value = null
+  const outcome = await runPasskeyDiscoverableLogin()
+  if (!outcome.ok) {
+    discoverablePending.value = false
+    discoverableError.value = outcome.message ?? null
+  }
+}
+
 // Start each mount clean: the surface may be re-shown for a new gated action.
 // When an OAuth collision armed a pending link, pre-fill its email and raise the
 // "finish linking" prompt so the user re-authenticates the existing account.
@@ -185,6 +217,8 @@ onMounted(() => {
   surface.reset()
   oauthPending.value = null
   oauthError.value = null
+  discoverablePending.value = false
+  discoverableError.value = null
   const pendingLink = peekOAuthLink()
   linkPrompt.value = pendingLink !== null
   if (pendingLink !== null) {
@@ -471,6 +505,41 @@ onMounted(() => {
           aria-hidden="true"
         ></span>
         {{ method.label }}
+      </button>
+    </div>
+
+    <!-- Usernameless / discoverable passkey (HIL-400): a one-tap sign-in action on
+    the login entry — no email. Like OAuth it is an action button, not a machine
+    mode: the click runs the whole discoverable round-trip (empty allowCredentials
+    → OS picker → confirm) and the session upgrade closes the surface. -->
+    <div
+      v-if="mode === 'login' && discoverablePasskeyMethod !== null"
+      class="mt-3"
+      data-id="auth-passkey-discoverable-block"
+    >
+      <div
+        v-if="discoverableError"
+        class="alert alert-danger py-2"
+        role="alert"
+        data-id="auth-passkey-discoverable-error"
+      >
+        {{ discoverableError }}
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
+        :disabled="discoverablePending"
+        data-id="auth-passkey-discoverable"
+        @click="continueWithDiscoverablePasskey()"
+      >
+        <span
+          v-if="discoverablePending"
+          class="spinner-border spinner-border-sm"
+          role="status"
+          aria-hidden="true"
+        ></span>
+        {{ discoverablePasskeyMethod.label }}
       </button>
     </div>
 
