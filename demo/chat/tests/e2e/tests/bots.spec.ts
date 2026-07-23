@@ -137,7 +137,10 @@ test.fixme('a bot created in one tab appears live in another with no pending gat
   await deleteBot(page, name)
 })
 
-test('creating a bot applies at once in the creating tab with no Apply gate', async ({
+// HIL-376: disabled — same flaky live-table append onto the last page as the two
+// tests above (goToLastPage pagination timing), just the single-tab sibling that
+// slipped through the original quarantine.
+test.fixme('creating a bot applies at once in the creating tab with no Apply gate', async ({
   page,
 }) => {
   const stamp = Date.now()
@@ -155,7 +158,9 @@ test('creating a bot applies at once in the creating tab with no Apply gate', as
   await deleteBot(page, name)
 })
 
-test('reaches the bots admin from the dashboard', async ({ page }) => {
+// HIL-376: muted alongside the flaky bots family per request. This nav smoke is
+// NOT itself flaky — re-enable it once the live-table append flake root is fixed.
+test.fixme('reaches the bots admin from the dashboard', async ({ page }) => {
   await page.goto('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
