@@ -11,6 +11,9 @@ use Demo\Chat\Agents\DTO\AccountMergeSummary;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
+use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
+use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Database\ChatDbContext;
@@ -53,6 +56,7 @@ final class ChatAgent extends AbstractAgent
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
+        ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
     ];
 
     public const array AGENT_COMMANDS = [
@@ -359,6 +363,40 @@ final class ChatAgent extends AbstractAgent
      * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
+    /**
+     * Runs an admin-requested account merge and acks the initiating connection (HIL-378).
+     *
+     * The merge executes here, not on the requesting Hilos user page agent,
+     * because this agent owns the users, messages, and sessions truth sources
+     * plus the force-logout mechanics. A guard rejection or a database /
+     * truth-source failure — after {@see self::handleAccountMerge()} has rolled
+     * back any partial write — becomes a one-to-one ACCOUNT_MERGE_FAIL ack
+     * carrying the error text; success acks with ACCOUNT_MERGE_SUCCESS and the
+     * transfer counts.
+     *
+     * @param AccountMergeSignalData $request Survivor, loser, and initiator accept key
+     */
+    private function handleAccountMergeRequest(AccountMergeSignalData $request): void
+    {
+        try {
+            $summary = $this->handleAccountMerge($request->survivorUserId, $request->loserUserId);
+        } catch (HilosException $e) {
+            $this->sendToUser(
+                ChatSignalConstants::ACCOUNT_MERGE_FAIL,
+                $request->acceptKey,
+                new ActionFailSignalData($e->getMessage()),
+            );
+
+            return;
+        }
+
+        $this->sendToUser(
+            ChatSignalConstants::ACCOUNT_MERGE_SUCCESS,
+            $request->acceptKey,
+            new ActionSuccessSignalData($summary->toArray()),
+        );
+    }
+
     public function handleAccountMerge(int $survivorId, int $loserId): AccountMergeSummary
     {
         if ($survivorId === $loserId) {
@@ -739,6 +777,14 @@ final class ChatAgent extends AbstractAgent
                     );
                 }
                 $this->authenticateSession($data->data->sessionToken, $data->data->userId);
+                return;
+            case ChatSignalConstants::ACCOUNT_MERGE_REQUEST:
+                if (!$data->data instanceof AccountMergeSignalData) {
+                    throw new LogicException(
+                        ChatSignalConstants::ACCOUNT_MERGE_REQUEST . ' payload must be ' . AccountMergeSignalData::class,
+                    );
+                }
+                $this->handleAccountMergeRequest($data->data);
                 return;
             default:
                 throw new AgentUnknownSignalException($name);

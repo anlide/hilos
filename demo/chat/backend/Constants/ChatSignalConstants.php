@@ -160,9 +160,21 @@ final class ChatSignalConstants
     /** @var string OAuthAgent → ChatAgent: bind the resolved user to the initiating session (success login) */
     public const string OAUTH_BIND_SESSION = 'oauth_bind_session';
 
+    /** @var string Hilos user page (HILOS_INDEX agent) → ChatAgent: run an admin account merge on the session-owning agent (HIL-378) */
+    public const string ACCOUNT_MERGE_REQUEST = 'account_merge_request';
+
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
+
+    /** @var string Client → server (Hilos user page-action): admin merges the loser account into this survivor (HIL-378) */
+    public const string ACCOUNT_MERGE = 'account_merge';
+
+    /** @var string ChatAgent → initiator: account merge succeeded (ack for ACCOUNT_MERGE) */
+    public const string ACCOUNT_MERGE_SUCCESS = 'account_merge_success';
+
+    /** @var string ChatAgent → initiator: account merge failed (ack for ACCOUNT_MERGE) */
+    public const string ACCOUNT_MERGE_FAIL = 'account_merge_fail';
 
     /** @var string Client → server (admin users page-action): admin starts impersonating a target user (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_START) */
     public const string IMPERSONATE_START = 'impersonate_start';

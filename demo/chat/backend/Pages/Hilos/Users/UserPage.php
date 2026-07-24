@@ -9,7 +9,10 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
+use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\HilosUser\DTO\HilosUserMergeActionDTO;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Constants\HilosPageRouteParams;
@@ -39,6 +42,7 @@ final class UserPage extends AbstractHilosUserPage
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
+        ChatSignalConstants::ACCOUNT_MERGE => HilosUserMergeActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -78,6 +82,14 @@ final class UserPage extends AbstractHilosUserPage
                     throw new InvalidActionPayloadException($action, HilosUserUpdateActionDTO::class, $dto);
                 }
                 $this->handleHilosUserUpdate($acceptKey, $dto);
+
+                break;
+
+            case ChatSignalConstants::ACCOUNT_MERGE:
+                if (!$dto instanceof HilosUserMergeActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosUserMergeActionDTO::class, $dto);
+                }
+                $this->handleAccountMerge($acceptKey, $dto);
 
                 break;
 
@@ -140,6 +152,25 @@ final class UserPage extends AbstractHilosUserPage
             HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
             $acceptKey,
             new ActionSuccessSignalData(),
+        );
+    }
+
+    /**
+     * Forwards an admin account-merge request to the session-owning ChatAgent (HIL-378).
+     *
+     * The tracked client action fires-and-forwards: the merge transaction,
+     * force-logout, and result ack all run on the agent, which owns the users,
+     * messages, and sessions truth sources. The agent later acks the initiator
+     * with ACCOUNT_MERGE_SUCCESS or ACCOUNT_MERGE_FAIL (this page sends neither).
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param HilosUserMergeActionDTO $dto Merge action payload (survivor row + picked loser)
+     */
+    private function handleAccountMerge(string $acceptKey, HilosUserMergeActionDTO $dto): void
+    {
+        $this->agent->sendToAgent(
+            ChatSignalConstants::ACCOUNT_MERGE_REQUEST,
+            new AccountMergeSignalData($dto->survivorUserId, $dto->loserUserId, $acceptKey),
         );
     }
 }

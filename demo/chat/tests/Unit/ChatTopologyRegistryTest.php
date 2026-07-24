@@ -9,6 +9,7 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\DTO\AccountMergeSignalData;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
@@ -190,6 +191,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_DELETE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
+            ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -242,6 +244,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
+            ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 
@@ -272,6 +275,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             ChatSignalConstants::OAUTH_BIND_SESSION => AgentType::CHAT,
+            ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AgentType::CHAT,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -326,6 +330,7 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
+            ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
