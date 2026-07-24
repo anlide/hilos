@@ -42,7 +42,7 @@
         "setup-env": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm todo-frontend-cli-local sh -c \"cd /hilos/demo/simple-todo && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
         "install-deps": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm todo-cli-local composer install",
         "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
-        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d",
+        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d --build",
         "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
         "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart todo-daemon-local",
         "daemon-status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm todo-cli-local php backend/Bootstrap/cli.php daemon:status",
