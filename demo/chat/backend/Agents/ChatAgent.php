@@ -337,39 +337,6 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Merges a loser account into a survivor and returns what moved (HIL-378).
-     *
-     * The one orchestration core behind both merge entry points (the CLI
-     * `account:merge` command and the admin-UI table action, wired in later
-     * slices): the survivor absorbs the loser's sign-in identities and chat
-     * messages, then the loser is tombstoned. It runs on the leader, which owns
-     * every table the merge touches (identities re-point is a plain framework
-     * primitive; messages and the user row are chat truth sources).
-     *
-     * Validation happens before any write: the two ids must differ, both users
-     * must exist, and neither may already be a merge loser (`mergedInto` set) —
-     * any failure throws before a transaction opens, so a caller reports a
-     * generic error with nothing half-written. Authorizing the caller as an admin
-     * is the entry point's job (the CLI channel is admin-only; the table action is
-     * admin-gated), matching how the raw ids arrive here already trusted.
-     *
-     * The transfer is one explicit transaction so a half-merged account can never
-     * survive a mid-way failure: identity re-point, message re-point, and the
-     * loser tombstone either all commit or all roll back. Ordering is free — the
-     * loser is tombstoned (row kept), never deleted, so no foreign-key cascade can
-     * fire. The transferred messages become visible to viewers on their own: the
-     * message re-point moves each row through its object's sync, which broadcasts a
-     * DB_SYNC_UPDATED that re-renders the authorship for every viewer. After commit
-     * (outside the transaction) the loser's live sessions are forced to log out
-     * through {@see self::killUserSessions()} so a moved account cannot keep acting.
-     *
-     * @param int $survivorId Survivor user id that absorbs the loser
-     * @param int $loserId Loser user id folded into the survivor
-     * @return AccountMergeSummary Counts of identities and messages moved
-     * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
-     * @throws HilosException On database or truth-source failure (transaction rolled back)
-     */
-    /**
      * CLI command wrapper over {@see self::handleAccountMerge()}: parses the
      * survivor and loser ids from the command payload, runs the merge, and replies
      * ok with the transfer counts, or an error message on a guard rejection or a
@@ -433,6 +400,39 @@ final class ChatAgent extends AbstractAgent
         );
     }
 
+    /**
+     * Merges a loser account into a survivor and returns what moved (HIL-378).
+     *
+     * The one orchestration core behind both merge entry points (the CLI
+     * `account:merge` command and the admin-UI table action, wired in later
+     * slices): the survivor absorbs the loser's sign-in identities and chat
+     * messages, then the loser is tombstoned. It runs on the leader, which owns
+     * every table the merge touches (identities re-point is a plain framework
+     * primitive; messages and the user row are chat truth sources).
+     *
+     * Validation happens before any write: the two ids must differ, both users
+     * must exist, and neither may already be a merge loser (`mergedInto` set) —
+     * any failure throws before a transaction opens, so a caller reports a
+     * generic error with nothing half-written. Authorizing the caller as an admin
+     * is the entry point's job (the CLI channel is admin-only; the table action is
+     * admin-gated), matching how the raw ids arrive here already trusted.
+     *
+     * The transfer is one explicit transaction so a half-merged account can never
+     * survive a mid-way failure: identity re-point, message re-point, and the
+     * loser tombstone either all commit or all roll back. Ordering is free — the
+     * loser is tombstoned (row kept), never deleted, so no foreign-key cascade can
+     * fire. The transferred messages become visible to viewers on their own: the
+     * message re-point moves each row through its object's sync, which broadcasts a
+     * DB_SYNC_UPDATED that re-renders the authorship for every viewer. After commit
+     * (outside the transaction) the loser's live sessions are forced to log out
+     * through {@see self::killUserSessions()} so a moved account cannot keep acting.
+     *
+     * @param int $survivorId Survivor user id that absorbs the loser
+     * @param int $loserId Loser user id folded into the survivor
+     * @return AccountMergeSummary Counts of identities and messages moved
+     * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
+     * @throws HilosException On database or truth-source failure (transaction rolled back)
+     */
     public function handleAccountMerge(int $survivorId, int $loserId): AccountMergeSummary
     {
         if ($survivorId === $loserId) {
