@@ -291,6 +291,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::SET_ADMIN => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
+            ChatCommandConstants::ACCOUNT_MERGE => AgentType::CHAT,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
         ], Hilos::getCommandAgentRoutes());

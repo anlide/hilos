@@ -64,6 +64,7 @@ final class ChatAgent extends AbstractAgent
         ChatCommandConstants::SET_ADMIN,
         ChatCommandConstants::IMPERSONATE_START,
         ChatCommandConstants::IMPERSONATE_STOP,
+        ChatCommandConstants::ACCOUNT_MERGE,
     ];
 
     public const array AGENT_ACTIONS = [
@@ -98,9 +99,9 @@ final class ChatAgent extends AbstractAgent
      * Handle a CLI command routed to the chat agent.
      *
      * `echo` echoes the request payload back (the admin-grant transport probe).
-     * `setAdmin`, `impersonateStart`, and `impersonateStop` each dispatch to a
-     * dedicated handler that replies ok or with an error message. Any other
-     * command name yields an error reply.
+     * `setAdmin`, `impersonateStart`, `impersonateStop`, and `accountMerge` each
+     * dispatch to a dedicated handler that replies ok or with an error message.
+     * Any other command name yields an error reply.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
@@ -126,6 +127,11 @@ final class ChatAgent extends AbstractAgent
 
             case ChatCommandConstants::IMPERSONATE_STOP:
                 $this->handleImpersonateStop($data);
+
+                return;
+
+            case ChatCommandConstants::ACCOUNT_MERGE:
+                $this->handleAccountMergeCommand($data);
 
                 return;
 
@@ -363,6 +369,36 @@ final class ChatAgent extends AbstractAgent
      * @throws ValidationException When a guard rejects the merge (bad ids, missing or already-merged user)
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
+    /**
+     * CLI command wrapper over {@see self::handleAccountMerge()}: parses the
+     * survivor and loser ids from the command payload, runs the merge, and replies
+     * ok with the transfer counts, or an error message on a guard rejection or a
+     * database / truth-source failure (the merge has already rolled back any
+     * partial write). Reached from the `account:merge` CLI command over the daemon
+     * command channel; authorization is the channel's (operator-only) job.
+     *
+     * @param CommandRequestDTO $data Command request carrying the survivor and loser user ids
+     * @throws HilosException On an unexpected failure outside the caught merge path
+     */
+    private function handleAccountMergeCommand(CommandRequestDTO $data): void
+    {
+        $survivorId = (int)($data->payload[ChatCommandConstants::FIELD_SURVIVOR_USER_ID] ?? 0);
+        $loserId = (int)($data->payload[ChatCommandConstants::FIELD_LOSER_USER_ID] ?? 0);
+
+        try {
+            $summary = $this->handleAccountMerge($survivorId, $loserId);
+        } catch (HilosException $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            ChatCommandConstants::FIELD_IDENTITIES_MOVED => $summary->identitiesMoved,
+            ChatCommandConstants::FIELD_MESSAGES_MOVED => $summary->messagesMoved,
+        ]));
+    }
+
     /**
      * Runs an admin-requested account merge and acks the initiating connection (HIL-378).
      *
