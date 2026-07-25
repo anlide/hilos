@@ -25,6 +25,7 @@ import {
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
+  subscribeSignal,
 } from '@hilos/core'
 import type {
   HilosBackupRow,
@@ -91,6 +92,22 @@ const COLUMNS: HilosTableColumn[] = [
         </button>
       </div>
 
+      @if (runFailure()) {
+        <div
+          class="alert alert-danger alert-dismissible"
+          role="alert"
+          data-id="hilos-backup-run-failure"
+        >
+          {{ runFailure() }}
+          <button
+            type="button"
+            class="btn-close"
+            aria-label="Dismiss"
+            data-id="hilos-backup-run-failure-dismiss"
+            (click)="dismissRunFailure()"
+          ></button>
+        </div>
+      }
       @if (create.error()) {
         <div
           class="alert alert-danger"
@@ -251,6 +268,11 @@ export class HilosBackupPage {
     createHilosBackupsActions(this.context(), this.backups().controller),
   )
 
+  // How a run this tab started ended. The create action is acked at acceptance, so a
+  // failure minutes later arrives on its own; mirrored from the core signal in the
+  // constructor effect (the context input is not readable before it is bound).
+  protected readonly runFailure = signal<string | null>(null)
+
   // Create toolbar: pick a scope and start a backup as a tracked action.
   protected readonly createScope = signal(HILOS_BACKUP_SCOPES[0].value)
   protected readonly create = createHilosTrackedAction()
@@ -277,8 +299,21 @@ export class HilosBackupPage {
     effect((onCleanup) => {
       const backups = this.backups()
       backups.start()
-      onCleanup(() => backups.dispose())
+      const releaseRunFailure = subscribeSignal(
+        backups.runFailure,
+        (reason) => {
+          this.runFailure.set(reason)
+        },
+      )
+      onCleanup(() => {
+        releaseRunFailure()
+        backups.dispose()
+      })
     })
+  }
+
+  protected dismissRunFailure(): void {
+    this.backups().dismissRunFailure()
   }
 
   protected onScope(event: Event): void {

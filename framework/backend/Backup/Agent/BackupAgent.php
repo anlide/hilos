@@ -23,9 +23,11 @@ use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -86,6 +88,9 @@ final class BackupAgent extends AbstractAgent
     /** Child interpreter; matches the worker spine's binary ({@see \Hilos\Socket\Server\WorkerServer}). */
     private const string PHP_BINARY = 'php';
 
+    /** Longest failure detail kept in a user-facing notice ({@see failureNotice()}). */
+    private const int NOTICE_DETAIL_LIMIT = 200;
+
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
 
@@ -100,6 +105,14 @@ final class BackupAgent extends AbstractAgent
 
     /** Timeout budget (seconds) of the in-flight backup, captured at spawn time. */
     private float $timeoutSeconds = 0.0;
+
+    /**
+     * Accept key of the connection that asked for the in-flight backup, or null when it
+     * started unattended (schedule or CLI). Only a run with an initiator reports its failure
+     * to anyone: an unattended run that fails is recorded in storage and the log, and nobody
+     * is interrupted over it.
+     */
+    private ?string $currentInitiator = null;
 
     /**
      * @var list<BackupCronJob> Agent-mechanism cron jobs (rule paired with scope); empty when
@@ -117,6 +130,9 @@ final class BackupAgent extends AbstractAgent
      * Only the list action sets it — cron overlaps still skip, never queue.
      */
     private ?BackupScope $pendingScope = null;
+
+    /** Accept key of the connection whose create is parked in {@see $pendingScope}. */
+    private ?string $pendingInitiator = null;
 
     /**
      * Registers truth sources, rebuilds the runtime backup index, and loads the schedule.
@@ -358,12 +374,13 @@ final class BackupAgent extends AbstractAgent
             // Coalesce: the newest manual request wins the single pending slot. The current
             // run drains it in finishRun(); an intervening cron overlap still just skips.
             $this->pendingScope = $scope;
+            $this->pendingInitiator = $data->initiatorAcceptKey;
             $this->logAgentInfo("Backup busy; queued pending create (scope={$scope->value})");
 
             return;
         }
 
-        $this->startBackup($scope);
+        $this->startBackup($scope, $data->initiatorAcceptKey);
     }
 
     /**
@@ -468,8 +485,9 @@ final class BackupAgent extends AbstractAgent
      * running row for a child that cannot work.
      *
      * @param BackupScope $scope What the backup should capture
+     * @param ?string $initiatorAcceptKey Connection to tell when the run fails, or null when unattended
      */
-    public function startBackup(BackupScope $scope): void
+    public function startBackup(BackupScope $scope, ?string $initiatorAcceptKey = null): void
     {
         if (!Hilos::$env->bool(EnvConstants::BACKUP_ENABLED)) {
             $this->logAgentWarning('Backup is disabled; ignoring create request');
@@ -496,6 +514,7 @@ final class BackupAgent extends AbstractAgent
         $id = self::generateBackupId(new DateTimeImmutable());
         $this->currentBackupId = $id;
         $this->currentScope = $scope;
+        $this->currentInitiator = $initiatorAcceptKey;
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
         $this->markRuntimeRunning($id, $scope);
@@ -665,6 +684,7 @@ final class BackupAgent extends AbstractAgent
         } else {
             $detail = $stderr !== '' ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Backup {$id} failed: {$detail}");
+            $this->notifyInitiatorOfFailure($id, $detail);
             if ($scope !== null) {
                 $this->recordFailure($id, $scope, $durationSeconds);
             }
@@ -687,6 +707,7 @@ final class BackupAgent extends AbstractAgent
      *
      * Called once the lock is released at the end of {@see finishRun()}: the slot holds at
      * most one scope (last manual request wins), so it starts exactly one follow-up backup.
+     * Its requester travels with it, so a queued create still reports its own failure.
      */
     private function drainPendingCreate(): void
     {
@@ -695,9 +716,62 @@ final class BackupAgent extends AbstractAgent
         }
 
         $scope = $this->pendingScope;
+        $initiator = $this->pendingInitiator;
         $this->pendingScope = null;
+        $this->pendingInitiator = null;
         $this->logAgentInfo("Running pending backup create (scope={$scope->value})");
-        $this->startBackup($scope);
+        $this->startBackup($scope, $initiator);
+    }
+
+    /**
+     * Tells the connection that asked for this run that it failed.
+     *
+     * This is not the create action's reply — that was sent at acceptance, because a dump
+     * outlives any request timeout. It is an addressed, uncorrelated action_error the client
+     * keeps as that action's latest failure, so the requester learns the reason instead of
+     * watching a table that never grows a row.
+     *
+     * An unattended run (schedule, CLI) has no initiator and tells nobody: a nightly backup
+     * failing is a record in the backup list, not an interruption for whoever is online.
+     *
+     * @param string $id Backup id that failed
+     * @param string $detail Failure detail, already carrying the child's stderr when it had any
+     */
+    private function notifyInitiatorOfFailure(string $id, string $detail): void
+    {
+        if ($this->currentInitiator === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $this->currentInitiator,
+            new PageActionErrorSignalData(
+                HilosSignalConstants::BACKUP_CREATE,
+                self::failureNotice($id, $detail),
+            ),
+        );
+    }
+
+    /**
+     * Builds the one-line failure notice the requester is shown.
+     *
+     * A child's stderr can be a wall of text while a notice is one sentence, so only its first
+     * line survives, capped; the whole detail stays in the agent error log for diagnosis. Pure
+     * so the wording and the cap are unit-testable.
+     *
+     * @param string $id Backup id that failed
+     * @param string $detail Raw failure detail
+     * @return string Human-readable one-line notice
+     */
+    public static function failureNotice(string $id, string $detail): string
+    {
+        $firstLine = trim(explode("\n", $detail, 2)[0]);
+        if (mb_strlen($firstLine) > self::NOTICE_DETAIL_LIMIT) {
+            $firstLine = mb_substr($firstLine, 0, self::NOTICE_DETAIL_LIMIT - 1) . '…';
+        }
+
+        return $firstLine === '' ? "Backup {$id} failed" : "Backup {$id} failed: {$firstLine}";
     }
 
     /**
@@ -724,6 +798,7 @@ final class BackupAgent extends AbstractAgent
         $this->childProcess = null;
         $this->currentBackupId = null;
         $this->currentScope = null;
+        $this->currentInitiator = null;
         $this->startedAt = 0.0;
         $this->timeoutSeconds = 0.0;
     }

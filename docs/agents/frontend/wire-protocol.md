@@ -188,6 +188,25 @@ initiator's own loading; the **effect is broadcast as a signal** to every
 affected connection, and each frontend reacts to that signal. Do not have one
 connection mutate and assume the others discover it — send them the signal.
 
+### When the work outlives the reply
+
+Some actions start work that cannot possibly finish inside the reply window: a
+database dump, an import, a long report. Do not hold the action open for it — the
+timeout is ~30s and the client would give up on work that is progressing fine.
+Split the two:
+
+- the tracked reply answers **acceptance** ("started", or "queued behind a running
+  one") and releases loading at once;
+- the **outcome** arrives later as its own addressed message to the connection that
+  asked, carrying the reason on failure. The requester's accept key travels with the
+  work — the agent keeps it alongside the run — and the agent addresses the notice
+  back to that one connection when the run ends.
+
+Unattended work — a schedule, a CLI run — has no requester and tells nobody. Its
+outcome belongs in the feature's own durable record (a history row, a status field),
+which is also where a human who arrives later reads it. Do not broadcast an
+unattended failure to whoever happens to be connected.
+
 ## Signals (BE→FE)
 
 Signals are backend-pushed messages: action replies (`::success` / `::fail`),

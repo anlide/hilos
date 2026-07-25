@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
@@ -11,10 +12,12 @@ use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the backup list-page action DTOs (HIL-333).
+ * Unit tests for the backup list-page action DTOs (HIL-333) and the create signal the page
+ * hands the agent.
  *
- * Each parses from the raw WebSocket envelope — tolerating the optional FIELD_DATA
- * wrapper — and round-trips its typed fields.
+ * Each action DTO parses from the raw WebSocket envelope — tolerating the optional FIELD_DATA
+ * wrapper — and round-trips its typed fields. The create signal additionally carries who asked,
+ * which is what lets the agent address the run's outcome back to that one connection.
  */
 final class BackupActionDtoTest extends TestCase
 {
@@ -70,5 +73,32 @@ final class BackupActionDtoTest extends TestCase
             [BackupSetKeepActionDTO::backupId => 'bk-3', BackupSetKeepActionDTO::keep => false],
             $dto->toArray(),
         );
+    }
+
+    public function testCreateSignalRoundTripsTheRequestingConnection(): void
+    {
+        $dto = BackupCreateSignalData::fromArray(
+            (new BackupCreateSignalData('full', 'accept-key-1'))->toArray(),
+        );
+
+        $this->assertSame('full', $dto->scope);
+        $this->assertSame('accept-key-1', $dto->initiatorAcceptKey);
+    }
+
+    public function testCreateSignalHasNoInitiatorWhenUnattended(): void
+    {
+        $dto = BackupCreateSignalData::fromArray([BackupCreateSignalData::scope => 'full']);
+
+        $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testCreateSignalTreatsAnEmptyInitiatorAsUnattended(): void
+    {
+        $dto = BackupCreateSignalData::fromArray([
+            BackupCreateSignalData::scope => 'full',
+            BackupCreateSignalData::initiatorAcceptKey => '',
+        ]);
+
+        $this->assertNull($dto->initiatorAcceptKey);
     }
 }

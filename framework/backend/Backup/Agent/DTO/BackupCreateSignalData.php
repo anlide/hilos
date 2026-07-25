@@ -12,17 +12,29 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Carries the validated scope value a manual create should capture; the agent
  * resolves it back to a {@see \Hilos\Backup\BackupScope} on the guarded create path.
+ *
+ * It also carries who asked. A backup is accepted synchronously but finishes long
+ * after its action was acked, so the run's outcome has no reply to ride: the agent
+ * keeps this accept key with the in-flight run and addresses the failure notice back
+ * to that one connection. Only a human create carries it — a scheduled or CLI run
+ * has no initiator, and its failure is deliberately told to nobody (it is recorded
+ * in the storage index and the agent log instead).
  */
 final class BackupCreateSignalData extends BaseDTO implements SignalDataInterface
 {
     /** Payload key: the backup scope value. */
     public const string scope = 'scope';
 
+    /** Payload key: the requesting connection's accept key. */
+    public const string initiatorAcceptKey = 'initiatorAcceptKey';
+
     /**
      * @param string $scope Backup scope value
+     * @param ?string $initiatorAcceptKey Accept key of the connection that asked, or null when unattended
      */
     public function __construct(
         public readonly string $scope,
+        public readonly ?string $initiatorAcceptKey = null,
     ) {
     }
 
@@ -31,7 +43,10 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
      */
     public function toArray(): array
     {
-        return [self::scope => $this->scope];
+        return [
+            self::scope => $this->scope,
+            self::initiatorAcceptKey => $this->initiatorAcceptKey,
+        ];
     }
 
     /**
@@ -40,8 +55,11 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
      */
     public static function fromArray(array $data): static
     {
+        $initiator = $data[self::initiatorAcceptKey] ?? null;
+
         return new static(
             scope: (string)($data[self::scope] ?? ''),
+            initiatorAcceptKey: is_string($initiator) && $initiator !== '' ? $initiator : null,
         );
     }
 }

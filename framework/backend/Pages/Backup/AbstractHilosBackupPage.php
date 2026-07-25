@@ -39,6 +39,11 @@ use Hilos\Runtime\State\Item\BackupRuntime;
  * action ack (ACTION_SUCCESS / ACTION_ERROR, correlated by requestId) reports
  * acceptance; the committed outcome is observed reactively over the live table.
  *
+ * A create outlives its ack — a dump runs far longer than any reply window — so the
+ * requester's accept key travels with it and the agent addresses the failure back to
+ * that connection when the run ends ({@see BackupAgent}). A run nobody asked for
+ * (schedule, CLI) reports to nobody and is read from the list instead.
+ *
  * Projects must implement a concrete subclass (e.g.
  * Demo\Chat\Pages\Hilos\Backup\BackupPage) with a `SUBSCRIPTION_AGENT_TYPE`; they
  * add no action code of their own.
@@ -74,7 +79,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                 if (!$dto instanceof BackupCreateActionDTO) {
                     throw new InvalidActionPayloadException($action, BackupCreateActionDTO::class, $dto);
                 }
-                $this->handleCreate($dto);
+                $this->handleCreate($acceptKey, $dto);
 
                 break;
 
@@ -105,17 +110,23 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * A busy agent is not an error: the design accepts a manual create while one is
      * running into a single in-memory pending slot, so acceptance is always acked.
      *
+     * The ack answers acceptance, never the run: a dump takes as long as it takes,
+     * far past the client's reply timeout, so the action must not be held open for it.
+     * The requester's accept key rides along instead, and the agent addresses the
+     * outcome back to that connection once the run ends.
+     *
      * A misconfigured install is an error, and a synchronous one: the same precondition the
      * agent enforces ({@see BackupAgent::missingCreateConfig()}) is checked here so the click
      * fails with a correlated ACTION_ERROR instead of being accepted into a run that can never
      * report back - the agent would refuse it, and with no storage root even the error record
      * has nowhere to go.
      *
+     * @param string $acceptKey Accept key of the requesting connection, told the run's outcome
      * @param BackupCreateActionDTO $dto Create action payload
      * @throws TableActionException When the scope is not a known backup scope, or backup storage
      *     is not configured
      */
-    private function handleCreate(BackupCreateActionDTO $dto): void
+    private function handleCreate(string $acceptKey, BackupCreateActionDTO $dto): void
     {
         $scope = BackupScope::fromString($dto->scope);
         if ($scope === null) {
@@ -132,7 +143,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_CREATE,
-            new BackupCreateSignalData($scope->value),
+            new BackupCreateSignalData($scope->value, $acceptKey),
         );
     }
 

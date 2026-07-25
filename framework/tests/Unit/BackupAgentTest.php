@@ -82,4 +82,33 @@ final class BackupAgentTest extends TestCase
             $missing,
         );
     }
+
+    public function testFailureNoticeCarriesTheIdAndTheReason(): void
+    {
+        $notice = BackupAgent::failureNotice('2026-07-19_10-30-00', 'child exited with code 1');
+
+        $this->assertSame('Backup 2026-07-19_10-30-00 failed: child exited with code 1', $notice);
+    }
+
+    public function testFailureNoticeKeepsOnlyTheFirstStderrLine(): void
+    {
+        $notice = BackupAgent::failureNotice('id', "dump failed\nmysqldump: not found\nstack trace");
+
+        $this->assertSame('Backup id failed: dump failed', $notice);
+    }
+
+    public function testFailureNoticeCapsALongDetail(): void
+    {
+        $notice = BackupAgent::failureNotice('id', str_repeat('x', 500));
+
+        $this->assertSame(200, mb_strlen(substr($notice, strlen('Backup id failed: '))));
+        $this->assertStringEndsWith('…', $notice);
+    }
+
+    public function testFailureNoticeStandsAloneWithoutADetail(): void
+    {
+        $notice = BackupAgent::failureNotice('id', '');
+
+        $this->assertSame('Backup id failed', $notice);
+    }
 }
