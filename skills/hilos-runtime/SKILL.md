@@ -13,6 +13,7 @@ Start with `agents.md`, then read the matching runtime guide.
 - `Hilos::$rt`, runtime collections, worker sync: `docs/agents/runtime/rt-context.md`
 - `RtState` subclasses and state item access: `docs/agents/runtime/rt-state.md`
 - Truth sources and shared state ownership: `docs/agents/agent-system/monopolistic-agent.md`
+- Why a direct state write never leaves its worker: `docs/agents/antipatterns/rt-write-outside-actions.md`
 - RT sync signal flow: use `$hilos-signals`
 
 ## Mental Model
@@ -46,7 +47,10 @@ Start with `agents.md`, then read the matching runtime guide.
 1. Decide whether the data is durable DB state or runtime-only RT state.
 2. Use DB/ORM for durable state and `$hilos-orm` for schema-backed work.
 3. Find the existing `RtContext` collection constant, `setRepresent()` entry,
-   and any `setRepresentItem()` aliases before adding new runtime logic.
+   and any `setRepresentItem()` aliases before adding new runtime logic. A
+   collection registered in `_stateCollections` with no `setRepresent()` is a
+   half-activation — data written to it never leaves its worker; fix that before
+   anything else.
 4. Inspect the matching View collection/item, State collection/item, and Actions
    classes.
 5. Find the owning truth source agent before writing shared runtime state.
@@ -179,6 +183,14 @@ of duplicating runtime mutation logic in the page/table layer.
 
 - Never run `git commit` or `git push`.
 - Only the truth source agent writes to its owned RT collection.
+- Never write to an `RtStates` collection directly (`add()`, `remove()`,
+  `clear()`): those queue no RT sync, so the change exists in the writing worker
+  and nowhere else. Write through the collection or item actions.
+- Never register a state collection without its `setRepresent()` representation:
+  with no actions class there is no write path that syncs, and every other
+  worker keeps an empty collection forever.
+- Rebuild an index by diffing against the current rows (one signal per real
+  change), never by `clear()` + re-add.
 - Do not use runtime state as a hidden durable database.
 - Keep sync payloads explicit and typed.
 - Do not call `getStateCollection()` outside files under `Database/` or

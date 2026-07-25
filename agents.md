@@ -101,6 +101,7 @@ Minimum ORM rules before editing:
 | [antipatterns/no-repository-service.md](docs/agents/antipatterns/no-repository-service.md) | any time you think about adding a Service or Repository class |
 | [antipatterns/blocking-in-ontick.md](docs/agents/antipatterns/blocking-in-ontick.md) | any time you write code inside onTick() or signal handlers |
 | [antipatterns/heavy-work-in-master.md](docs/agents/antipatterns/heavy-work-in-master.md) | any time you add DB, file, network, or blocking work to the master daemon / connection / handshake path, or weigh such an option |
+| [antipatterns/rt-write-outside-actions.md](docs/agents/antipatterns/rt-write-outside-actions.md) | any time you write to a runtime collection, or register one on an RtContext — writing state directly, or registering it without `setRepresent()`, keeps the data inside a single worker |
 
 ## CLI
 

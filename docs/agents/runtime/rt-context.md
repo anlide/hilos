@@ -332,6 +332,45 @@ Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT
 synchronization internals after another worker already made the write.
 
+### A collection written outside its actions is worker-local
+
+`RtStates::add()`, `remove()`, and `clear()` are plain in-memory operations:
+they queue **nothing**. The `RT_SYNC_*` signals come from the actions layer
+(`RtActions::addStateToCollection()`, `removeStateFromCollection()`,
+`clearAllStates()`, item `remove()`, and `sync()`). So a write that skips the
+actions changes the collection **in the writing worker only**.
+
+That failure is silent and looks like a frontend bug: the writing agent's log
+says the data is there, and a page served by any other worker shows nothing —
+including after a reload, because the reload lands on a worker whose collection
+was never populated. The truth-source rule guarantees a single writer; it does
+not move a single byte between processes on its own.
+
+Two rules follow, and both are mandatory:
+
+- **Register the representation.** A state collection in `_stateCollections`
+  with no matching `setRepresent()` has no actions class, so it has no write
+  path that syncs. Registering the state alone is a half-activation: reads work
+  inside one worker and nothing else does.
+- **Write through the actions,** never through the state collection —
+  even from the owning agent, even for a bulk rebuild. When a rebuild is
+  genuinely a rebuild, diff it against the current rows and emit one create /
+  update / delete per real change (`clear()` + re-add would tear down and
+  recreate every row for every browser watching).
+
+```php
+// Wrong: memory-only, invisible to every other worker and to the browser.
+Hilos::$rt->getStateCollection(Foo::RT_COLLECTION)->add(Foo::fromRow($row));
+
+// Right: the actions queue RT_SYNC_CREATED, so every worker and every
+// subscribed table sees the new row.
+Hilos::$rt->fooRows->actions->register($row);
+```
+
+A framework-owned collection binds its own framework-owned representation; the
+project supplies only the `setRepresent()` call
+([architecture/admin-feature-scaffold.md](../architecture/admin-feature-scaffold.md)).
+
 ## Anti-Patterns
 
 Do not use runtime state as a hidden durable database:

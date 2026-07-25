@@ -155,7 +155,25 @@ also registers those. Generate, in any order:
    `BackupHistories` state collection (`BackupHistory::RT_COLLECTION`) and the
    `BackupRuntime` state item (`BackupRuntime::RT_ITEM`). Files are truth; this RT
    index is a rebuildable projection the agent rescans from `BACKUP_DIR` on start,
-   so the project persists no backup DB table.
+   so the project persists no backup DB table. **Then bind the framework
+   representation to it** — the state registration alone is a half-activation:
+
+   ```php
+   $this->setRepresent(
+       StateBackupHistory::RT_COLLECTION,
+       BackupHistories::class,          // Hilos\Runtime\View\Collection
+       BackupHistoriesActions::class,   // Hilos\Runtime\View\Actions\Collection
+       BackupHistoryActions::class,     // Hilos\Runtime\View\Actions\Item
+   );
+   ```
+
+   The backup agent is monopolistic and the backup page is served by whichever
+   worker owns the browser's connection — a different process. Only the actions
+   emit `RT_SYNC_*`, so without this line the index exists in the agent's worker
+   alone and the page shows an empty table forever
+   ([../runtime/rt-context.md](../runtime/rt-context.md), *A collection written
+   outside its actions is worker-local*). All four classes are framework-owned;
+   the project writes only this call.
 6. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
    the project `TableContext`, add a thin subscription-owner page — `final class …
    extends Hilos\Pages\Backup\AbstractHilosBackupPage` carrying only a

@@ -35,6 +35,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime;
+use Hilos\Runtime\View\Collection\BackupHistories as BackupHistoriesView;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Throwable;
@@ -417,7 +418,7 @@ final class BackupAgent extends AbstractAgent
 
         try {
             (new BackupPruner())->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
-            $histories->remove($id);
+            $this->historiesView()?->actions->forget($id);
             $this->logAgentInfo("Backup deleted: {$id}");
         } catch (Throwable $e) {
             $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
@@ -853,17 +854,18 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Rescans the storage tree and rebuilds the runtime index from the scanned sidecars.
+     * Rescans the storage tree and brings the runtime index in line with it.
      */
     private function refreshHistory(): void
     {
         $result = (new BackupHistoryScanner())->scan(Hilos::$env->string(EnvConstants::BACKUP_DIR));
-        $this->rebuildHistory($result);
+        $changes = $this->historiesView()?->actions->syncToScan($result->metadatas) ?? 0;
         $this->reportAnomalies($result);
 
         $this->logAgentInfo(sprintf(
-            'Backup history rebuilt: %d entries, %d anomalies',
+            'Backup index synced: %d entries, %d changed, %d anomalies',
             count($result->metadatas),
+            $changes,
             count($result->anomalies),
         ));
     }
@@ -904,12 +906,19 @@ final class BackupAgent extends AbstractAgent
             }
 
             $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+            $view = $this->historiesView();
+            $pruned = [];
             foreach ($doomed as $row) {
                 $pruner->deleteStored($row, $root);
-                $histories->remove($row->getId());
+                $view?->actions->forget($row->getId());
+                $pruned[] = $row->getId();
             }
 
-            $this->logAgentInfo(sprintf('Backup rotation pruned %d entries', count($doomed)));
+            $this->logAgentInfo(sprintf(
+                'Backup rotation pruned %d entries: %s',
+                count($pruned),
+                implode(', ', $pruned),
+            ));
 
             return count($doomed);
         } catch (Throwable $e) {
@@ -920,24 +929,34 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Replaces the runtime backup index with the scanned metadata.
+     * Resolves the backup index's runtime representation, or null when it is not bound.
      *
-     * The typed browser view/representation lands in HIL-278; until then the
-     * monopoly agent owns the index directly on its registered state collection.
+     * Every index write goes through this view's actions rather than the state collection:
+     * the actions are what put a create / update / delete on the RT sync wire, and this agent
+     * runs on its own monopolistic worker while the backup page is served by another. Written
+     * any other way the index would exist in this process and nowhere else — no other worker,
+     * and no browser table, would ever see a backup.
      *
-     * @param BackupScanResult $result Scan result to project into runtime state
+     * Null means the project registered the state collection but never bound the framework
+     * representation to it ({@see RtContext::setRepresent()}); the backup page would be
+     * permanently empty, so say so rather than write into the void.
+     *
+     * @return ?BackupHistoriesView Backup index view, or null when unrepresented
      */
-    private function rebuildHistory(BackupScanResult $result): void
+    private function historiesView(): ?BackupHistoriesView
     {
-        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-        if (!$histories instanceof BackupHistories) {
-            return;
+        $collection = Hilos::$rt?->{BackupHistory::RT_COLLECTION} ?? null;
+        if ($collection instanceof BackupHistoriesView) {
+            return $collection;
         }
 
-        $histories->clear();
-        foreach ($result->metadatas as $metadata) {
-            $histories->add(BackupHistory::fromMetadata($metadata));
-        }
+        $this->logAgentError(
+            'Backup index has no runtime representation: register it with setRepresent('
+            . BackupHistory::RT_COLLECTION
+            . ', BackupHistories::class, BackupHistoriesActions::class, BackupHistoryActions::class)',
+        );
+
+        return null;
     }
 
     /**

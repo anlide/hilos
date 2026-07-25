@@ -35,6 +35,9 @@ use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
+use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
+use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -46,6 +49,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   - attachmentDrafts: Uploaded quarantine files waiting for message submit
  *   - botAgentStatuses: Runtime lifecycle markers for bot agents
  *   - guardianAgentStatuses: Runtime UI statuses for Hilos guardian agents
+ *   - hilosBackupHistories: Framework-owned stored-backup index (files = truth)
  *
  * Usage:
  *   Hilos::$rt->connections[$acceptKey];
@@ -62,6 +66,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read AttachmentDrafts $attachmentDrafts Uploaded attachment drafts
  * @property-read BotAgentStatuses $botAgentStatuses Bot agent lifecycle status collection
  * @property-read GuardianAgentStatuses $guardianAgentStatuses Guardian run status collection
+ * @property-read BackupHistories $hilosBackupHistories Stored-backup index
  */
 final class ChatRtContext extends RtContext
 {
@@ -93,7 +98,9 @@ final class ChatRtContext extends RtContext
         $this->_stateItems[self::chatContext] = StateChatContext::create();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
-        // Framework-owned backup index; the browser view/representation lands in HIL-278.
+        // Framework-owned backup index, with the framework's own representation bound to
+        // it: the backup agent and the backup page live on different workers, so the index
+        // only reaches the page through the RT sync its actions emit.
         $this->_stateCollections[StateBackupHistory::RT_COLLECTION] = StateBackupHistories::init();
         $this->_stateItems[StateBackupRuntime::RT_ITEM] = StateBackupRuntime::create();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
@@ -132,6 +139,12 @@ final class ChatRtContext extends RtContext
             GuardianAgentStatuses::class,
             GuardianAgentStatusesActions::class,
             GuardianAgentStatusActions::class,
+        );
+        $this->setRepresent(
+            StateBackupHistory::RT_COLLECTION,
+            BackupHistories::class,
+            BackupHistoriesActions::class,
+            BackupHistoryActions::class,
         );
         $this->setRepresentItem(
             self::selfConnection,
