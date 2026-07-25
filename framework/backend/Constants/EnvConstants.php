@@ -282,18 +282,18 @@ enum EnvConstants
     case BACKUP_TIMEOUT;
 
     /**
-     * Retention depth (number of buckets kept) of the daily rotation tier. One shared
-     * set of tier depths applies to every scope's grid. Default 45.
+     * Age **in days** from which rotation keeps only the newest backup of each day; nothing
+     * younger is thinned at all. One shared ladder applies to every scope's grid. Default 45.
      */
     case BACKUP_RETENTION_DAILY;
 
-    /** Retention depth of the ISO-week rotation tier, shared across scopes. Default 45. */
+    /** Age in weeks from which only the newest backup of each ISO week is kept. Default 45. */
     case BACKUP_RETENTION_WEEKLY;
 
-    /** Retention depth of the calendar-month rotation tier, shared across scopes. Default 45. */
+    /** Age in months from which only the newest backup of each month is kept. Default 45. */
     case BACKUP_RETENTION_MONTHLY;
 
-    /** Retention depth of the calendar-year rotation tier, shared across scopes. Default 45. */
+    /** Age in years from which only the newest backup of each year is kept. Default 45. */
     case BACKUP_RETENTION_YEARLY;
 
     /**

@@ -900,6 +900,7 @@ final class BackupAgent extends AbstractAgent
                 $rows,
                 BackupRetentionPolicy::fromEnv(),
                 new DateTimeZone(date_default_timezone_get()),
+                new DateTimeImmutable(),
             );
             if ($doomed === []) {
                 return 0;

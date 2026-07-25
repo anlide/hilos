@@ -130,8 +130,10 @@ also registers those. Generate, in any order:
    schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
    framework default: one daily full backup at 03:00 on the agent mechanism).
 2. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
-   `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, the retention counters
-   (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY`), and
+   `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, the retention ladder
+   (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
+   in its own unit, at which that granularity starts applying, so a backup younger
+   than `BACKUP_RETENTION_DAILY` days is never thinned), and
    `BACKUP_ERROR_RETENTION_COUNT`. These are framework `EnvConstants` keys the
    agent and pruner read from `Hilos::$env`; the project supplies values, never new
    keys. `BACKUP_DIR` and `BACKUP_CLI_ENTRY` are what the create path *needs*:

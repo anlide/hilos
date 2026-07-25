@@ -14,10 +14,18 @@ use Throwable;
  *
  * Rotation is a pure recompute: every pass {@see selectForDeletion()} derives the full
  * keep-set from scratch (no promotion flags on the rows) and returns everything else for
- * deletion, so the policy is self-healing and never drifts. The keep-set is the union of:
- * - each scope's own grid - the newest backup in every populated day / ISO-week /
- *   calendar-month / calendar-year bucket, capped at the policy's per-tier depth; the three
- *   scopes keep independent grids that never evict each other;
+ * deletion, so the policy is self-healing and never drifts.
+ *
+ * Thinning is a ladder of age bands, coarsening as backups get older
+ * ({@see BackupRetentionPolicy}): nothing younger than the daily age is thinned at all, then
+ * one per day, then per ISO week, per calendar month, and finally per calendar year. The
+ * youngest band is the important one - a backup taken minutes ago is a deliberate act
+ * (before a migration, before a risky change), and rotation must not eat one manual backup
+ * because another was taken the same day.
+ *
+ * Within a band the keep-set is the union of:
+ * - each scope's own grid - the newest backup in every populated bucket of that band; the
+ *   three scopes keep independent grids that never evict each other;
  * - the full restore timeline - across all scopes, each bucket keeps one representative
  *   preferring full over schema-seed over schema-only (newest within the best available),
  *   so the primary timeline has no holes even where no true full exists yet;
@@ -25,9 +33,9 @@ use Throwable;
  * - the newest {@see BackupRetentionPolicy::$errorCount} error records, which never enter the
  *   restore grids because they carry no restore value.
  *
- * Bucket membership is derived on the fly from each row's timestamp in the given timezone; no
- * bucket is ever stored on a row or in a sidecar. A row whose timestamp cannot be parsed is
- * kept, so a malformed index row is never silently deleted.
+ * Band and bucket membership are derived on the fly from each row's timestamp in the given
+ * timezone; neither is ever stored on a row or in a sidecar. A row whose timestamp cannot be
+ * parsed is kept, so a malformed index row is never silently deleted.
  *
  * {@see deleteStored()} is the shared physical-delete path (archive + sidecar) reused by manual
  * delete (HIL-333); the agent owns removing the matching runtime index row.
@@ -46,18 +54,27 @@ final class BackupPruner
     /** Bucket format for the yearly tier (calendar year). */
     private const string FORMAT_YEAR = 'Y';
 
+    /** Band marker for backups too young to thin: every row in it is kept. */
+    private const string BAND_KEEP_ALL = 'keep-all';
+
     /**
      * Plans one rotation pass: returns the index rows whose stored files should be deleted.
      *
-     * Pure - no I/O and no clock read; the caller supplies the timezone used for bucketing.
+     * Pure - no I/O and no clock read; the caller supplies both the timezone the buckets are
+     * derived in and the instant the ages are measured from.
      *
      * @param list<BackupHistory> $rows Current backup index rows
-     * @param BackupRetentionPolicy $policy Retention depths and error count
+     * @param BackupRetentionPolicy $policy Retention ages and error count
      * @param DateTimeZone $timezone Timezone the day/week/month/year buckets are derived in
-     * @return list<BackupHistory> Rows to prune (never any pinned, error-retained, or grid representative)
+     * @param DateTimeImmutable $now Instant every row's age is measured against
+     * @return list<BackupHistory> Rows to prune (never any pinned, error-retained, or kept representative)
      */
-    public function selectForDeletion(array $rows, BackupRetentionPolicy $policy, DateTimeZone $timezone): array
-    {
+    public function selectForDeletion(
+        array $rows,
+        BackupRetentionPolicy $policy,
+        DateTimeZone $timezone,
+        DateTimeImmutable $now,
+    ): array {
         $times = $this->indexTimes($rows, $timezone);
 
         /** @var array<string, true> $keep */
@@ -86,13 +103,24 @@ final class BackupPruner
             }
         }
 
-        foreach (BackupScope::cases() as $scope) {
-            $scopeRows = array_values(
-                array_filter($success, static fn(BackupHistory $row): bool => $row->scope === $scope->value),
-            );
-            $this->addGridKeep($scopeRows, $times, $policy, $keep);
+        $bands = $this->groupByBand($success, $times, $policy, $now);
+        foreach ($bands as $format => $bandRows) {
+            if ($format === self::BAND_KEEP_ALL) {
+                foreach ($bandRows as $row) {
+                    $keep[$row->getId()] = true;
+                }
+
+                continue;
+            }
+
+            foreach (BackupScope::cases() as $scope) {
+                $scopeRows = array_values(
+                    array_filter($bandRows, static fn(BackupHistory $row): bool => $row->scope === $scope->value),
+                );
+                $this->keepNewestBuckets($scopeRows, $times, $format, $keep);
+            }
+            $this->keepBestBuckets($bandRows, $times, $format, $keep);
         }
-        $this->addTimelineKeep($success, $times, $policy, $keep);
         $this->keepNewestErrors($errors, $times, $policy->errorCount, $keep);
 
         $doomed = [];
@@ -128,52 +156,59 @@ final class BackupPruner
     }
 
     /**
-     * Adds one scope grid's representatives (newest per bucket, per tier) to the keep-set.
+     * Splits success rows into their age bands, keyed by the band's bucket format.
      *
-     * @param list<BackupHistory> $scopeRows Success rows of a single scope
+     * The ladder is walked youngest first, so each row lands in the first band whose age it
+     * has not yet reached: below the daily age it belongs to the keep-everything band, then
+     * day, ISO week, month, and finally year. The band boundaries are computed once here
+     * rather than per row.
+     *
+     * @param list<BackupHistory> $success Success rows with parsed timestamps
      * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
-     * @param BackupRetentionPolicy $policy Retention depths
-     * @param array<string, true> $keep Keep-set to extend, keyed by backup id
+     * @param BackupRetentionPolicy $policy Retention ages
+     * @param DateTimeImmutable $now Instant the ages are measured from
+     * @return array<string, list<BackupHistory>> Rows keyed by band bucket format
      */
-    private function addGridKeep(array $scopeRows, array $times, BackupRetentionPolicy $policy, array &$keep): void
-    {
-        $this->keepNewestBuckets($scopeRows, $times, self::FORMAT_DAY, $policy->daily, $keep);
-        $this->keepNewestBuckets($scopeRows, $times, self::FORMAT_WEEK, $policy->weekly, $keep);
-        $this->keepNewestBuckets($scopeRows, $times, self::FORMAT_MONTH, $policy->monthly, $keep);
-        $this->keepNewestBuckets($scopeRows, $times, self::FORMAT_YEAR, $policy->yearly, $keep);
-    }
+    private function groupByBand(
+        array $success,
+        array $times,
+        BackupRetentionPolicy $policy,
+        DateTimeImmutable $now,
+    ): array {
+        $ladder = [
+            [$now->modify('-' . max(0, $policy->daily) . ' days'), self::BAND_KEEP_ALL],
+            [$now->modify('-' . max(0, $policy->weekly) . ' weeks'), self::FORMAT_DAY],
+            [$now->modify('-' . max(0, $policy->monthly) . ' months'), self::FORMAT_WEEK],
+            [$now->modify('-' . max(0, $policy->yearly) . ' years'), self::FORMAT_MONTH],
+        ];
 
-    /**
-     * Adds the full-timeline representatives (best available per bucket, per tier) to the keep-set.
-     *
-     * @param list<BackupHistory> $success All success rows across every scope
-     * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
-     * @param BackupRetentionPolicy $policy Retention depths
-     * @param array<string, true> $keep Keep-set to extend, keyed by backup id
-     */
-    private function addTimelineKeep(array $success, array $times, BackupRetentionPolicy $policy, array &$keep): void
-    {
-        $this->keepBestBuckets($success, $times, self::FORMAT_DAY, $policy->daily, $keep);
-        $this->keepBestBuckets($success, $times, self::FORMAT_WEEK, $policy->weekly, $keep);
-        $this->keepBestBuckets($success, $times, self::FORMAT_MONTH, $policy->monthly, $keep);
-        $this->keepBestBuckets($success, $times, self::FORMAT_YEAR, $policy->yearly, $keep);
-    }
+        $bands = [];
+        foreach ($success as $row) {
+            $time = $times[$row->getId()];
+            $format = self::FORMAT_YEAR;
+            foreach ($ladder as [$boundary, $bandFormat]) {
+                if ($time >= $boundary) {
+                    $format = $bandFormat;
 
-    /**
-     * Keeps the newest row in each of the newest `$depth` buckets for one tier.
-     *
-     * @param list<BackupHistory> $rows Candidate rows (single scope)
-     * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
-     * @param string $format Date format naming the tier's bucket
-     * @param int $depth Buckets to keep; a non-positive depth disables the tier
-     * @param array<string, true> $keep Keep-set to extend, keyed by backup id
-     */
-    private function keepNewestBuckets(array $rows, array $times, string $format, int $depth, array &$keep): void
-    {
-        if ($depth <= 0) {
-            return;
+                    break;
+                }
+            }
+            $bands[$format][] = $row;
         }
 
+        return $bands;
+    }
+
+    /**
+     * Keeps the newest row of every bucket in one band.
+     *
+     * @param list<BackupHistory> $rows Candidate rows of one band (single scope)
+     * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
+     * @param string $format Date format naming the band's bucket
+     * @param array<string, true> $keep Keep-set to extend, keyed by backup id
+     */
+    private function keepNewestBuckets(array $rows, array $times, string $format, array &$keep): void
+    {
         /** @var array<string, BackupHistory> $buckets */
         $buckets = [];
         foreach ($rows as $row) {
@@ -183,24 +218,21 @@ final class BackupPruner
             }
         }
 
-        $this->keepTopBuckets($buckets, $depth, $keep);
+        foreach ($buckets as $row) {
+            $keep[$row->getId()] = true;
+        }
     }
 
     /**
-     * Keeps the best-available representative in each of the newest `$depth` buckets for one tier.
+     * Keeps the best-available representative of every bucket in one band.
      *
-     * @param list<BackupHistory> $rows Candidate rows (all scopes)
+     * @param list<BackupHistory> $rows Candidate rows of one band (all scopes)
      * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
-     * @param string $format Date format naming the tier's bucket
-     * @param int $depth Buckets to keep; a non-positive depth disables the tier
+     * @param string $format Date format naming the band's bucket
      * @param array<string, true> $keep Keep-set to extend, keyed by backup id
      */
-    private function keepBestBuckets(array $rows, array $times, string $format, int $depth, array &$keep): void
+    private function keepBestBuckets(array $rows, array $times, string $format, array &$keep): void
     {
-        if ($depth <= 0) {
-            return;
-        }
-
         /** @var array<string, BackupHistory> $buckets */
         $buckets = [];
         foreach ($rows as $row) {
@@ -210,27 +242,8 @@ final class BackupPruner
             }
         }
 
-        $this->keepTopBuckets($buckets, $depth, $keep);
-    }
-
-    /**
-     * Adds the representatives of the newest `$depth` buckets to the keep-set.
-     *
-     * @param array<string, BackupHistory> $buckets Representative row keyed by bucket
-     * @param int $depth Buckets to keep
-     * @param array<string, true> $keep Keep-set to extend, keyed by backup id
-     */
-    private function keepTopBuckets(array $buckets, int $depth, array &$keep): void
-    {
-        krsort($buckets, SORT_STRING);
-
-        $kept = 0;
         foreach ($buckets as $row) {
-            if ($kept >= $depth) {
-                break;
-            }
             $keep[$row->getId()] = true;
-            $kept++;
         }
     }
 
