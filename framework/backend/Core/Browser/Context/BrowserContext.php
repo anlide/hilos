@@ -1224,7 +1224,13 @@ abstract class BrowserContext
         if ($mutation->type === TableMutationType::Delete) {
             $viewport->forgetRow($rowKey);
 
-            return TableViewportDeltaDTO::rowRemoved($page, $browserKey, $mutation->rowKey, TableViewportDeltaDTO::REASON_DELETED);
+            return TableViewportDeltaDTO::rowRemoved(
+                $page,
+                $browserKey,
+                $mutation->rowKey,
+                TableViewportDeltaDTO::REASON_DELETED,
+                $mutation->live,
+            );
         }
 
         if ($mutation->row === null) {
@@ -1236,6 +1242,7 @@ abstract class BrowserContext
             $browserKey,
             $mutation->rowKey,
             $this->browserRowToWire($table->browserRow($mutation->row)),
+            $mutation->live,
         );
     }
 

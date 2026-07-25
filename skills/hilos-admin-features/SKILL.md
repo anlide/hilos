@@ -14,6 +14,9 @@ read the canonical spec before editing.
   `docs/agents/architecture/admin-features.md`
 - Browser table / source fan-out mechanics:
   `docs/agents/architecture/browser-source-fanout.md`
+- What a row change does on the client — the pending/Apply gate, own changes, and
+  the live exception for progress/status rows:
+  `docs/agents/frontend/table-subscription.md`
 - Framework extension points + the contract gate:
   `docs/agents/framework-development.md`
 - Page/table topology registration: `docs/agents/app-topology.md`
@@ -39,6 +42,13 @@ read the canonical spec before editing.
    e2e green and add framework unit coverage for the graduated base.
 
 ## Hard Rules
+
+- Every row change is gated behind Apply by default. Only a report about work — a
+  progress / live-status row, with a synthetic key, carrying nothing the user could
+  lose — may be emitted live (`TableRowMutationDTO::$live`), and then **both** its
+  arrival and its removal must be live. Data rows stay gated even when this
+  feature's own action created them (`docs/agents/frontend/table-subscription.md`,
+  *Rule — what may bypass the Apply gate*).
 
 - Never run `git commit` or `git push`.
 - Do not copy a framework admin table's query/merge/mutation/action code into a

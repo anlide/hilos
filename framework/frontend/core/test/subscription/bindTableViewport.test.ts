@@ -171,10 +171,36 @@ describe('bindTableViewport', () => {
       row: { rowKey: 'a', slots: { value: 'x' } },
     })
 
+    // A delta without the backend's `live` marker keeps the pending gate.
     expect(sink.deltas[0]).toEqual({
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { value: 'x' } },
+      live: false,
+    })
+  })
+
+  it('carries the backend live marker through to the sink', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    scopes.openPage('main')
+    const sink = fakeSink()
+    bind(connection, scopes, sink)
+
+    connection.emitDelta({
+      page: 'main',
+      tableKey: 'settings',
+      kind: 'row_removed',
+      rowKey: 'progress',
+      reason: 'deleted',
+      live: true,
+    })
+
+    expect(sink.deltas[0]).toEqual({
+      kind: 'row_removed',
+      rowKey: 'progress',
+      reason: 'deleted',
+      live: true,
     })
   })
 

@@ -50,11 +50,15 @@ export type TableViewportDelta =
       readonly kind: 'row_updated'
       readonly rowKey: string
       readonly row: TableRow
+      /** The backend declared this change live: apply it now, never gate it. */
+      readonly live?: boolean
     }
   | {
       readonly kind: 'row_removed'
       readonly rowKey: string
       readonly reason: string
+      /** The backend declared this change live: apply it now, never gate it. */
+      readonly live?: boolean
     }
 
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
@@ -343,6 +347,11 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param delta The normalized viewport delta.
    */
   ingestDelta(delta: TableViewportDelta): void {
+    if (delta.live === true) {
+      this.applyLiveDelta(delta)
+
+      return
+    }
     if (
       (delta.kind === 'row_updated' || delta.kind === 'row_removed') &&
       this.ownRowKeys.has(delta.rowKey)
@@ -365,6 +374,44 @@ export class TableViewportController<R> implements TableWindowSink {
         }
         break
     }
+    this.refreshPendingSignals()
+  }
+
+  /**
+   * Apply a backend-declared live change at once, gate or no gate.
+   *
+   * A live row is a status the table shows *about* work — an in-progress row, a
+   * progress bar — not content the reader is studying, so the frozen-viewport rule
+   * does not apply to it: an update lands in place and a removal takes the row out
+   * of the window entirely rather than leaving a placeholder in its slot, because a
+   * status that ended has nothing to hold a place for. The count that accompanies
+   * the change is already live.
+   *
+   * @param delta The live delta (row_updated or row_removed).
+   */
+  private applyLiveDelta(delta: TableViewportDelta): void {
+    this.ownRowKeys.delete(delta.rowKey)
+    this.pendingUpdates.delete(delta.rowKey)
+    this.pendingRemoved.delete(delta.rowKey)
+
+    if (delta.kind === 'row_updated') {
+      if (this.isInWindow(delta.rowKey)) {
+        this.windowSignal.set(
+          this.windowSignal
+            .get()
+            .map((row) => (row.rowKey === delta.rowKey ? delta.row : row)),
+        )
+      }
+    } else {
+      this.windowSignal.set(
+        this.windowSignal.get().filter((row) => row.rowKey !== delta.rowKey),
+      )
+      const placeholders = new Set(this.placeholderKeysSignal.get())
+      if (placeholders.delete(delta.rowKey)) {
+        this.placeholderKeysSignal.set(placeholders)
+      }
+    }
+
     this.refreshPendingSignals()
   }
 

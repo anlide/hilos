@@ -103,6 +103,7 @@ export const tableViewportDeltaSignalDataSchema = z.looseObject({
   rowKey: z.union([z.string(), z.number()]).optional(),
   row: tableRowFragmentSchema.optional(),
   reason: z.string().optional(),
+  live: z.boolean().optional(),
 })
 
 export type TableViewportDeltaSignalData = z.infer<

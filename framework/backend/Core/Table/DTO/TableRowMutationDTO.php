@@ -14,6 +14,12 @@ use ValueError;
  * DTO for one table row mutation (create/update/delete).
  *
  * Broadcast to all connected users so the frontend can show pending-change indicators.
+ *
+ * A mutation may declare itself {@see $live}: the row is not data the user is reading but a
+ * status the table shows *about* work in progress, so freezing it behind Apply would strand a
+ * progress row on screen after the work it reports has finished. Live is the exception - a row
+ * carrying content stays gated, because the gate exists so a table never rearranges itself
+ * under the reader's hands.
  */
 readonly class TableRowMutationDTO
 {
@@ -23,11 +29,13 @@ readonly class TableRowMutationDTO
      * @param TableMutationType $type Mutation type (create, update, delete)
      * @param string|int $rowKey Affected row key
      * @param ?AbstractTableRow $row Optional row data for create/update
+     * @param bool $live Whether the change must apply at once instead of waiting for Apply
      */
     public function __construct(
         public TableMutationType $type,
         public string|int $rowKey,
         public ?AbstractTableRow $row = null,
+        public bool $live = false,
     ) {
     }
 

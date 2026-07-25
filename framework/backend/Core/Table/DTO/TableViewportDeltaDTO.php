@@ -36,6 +36,7 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
     public const string rowKey = 'rowKey';
     public const string row = 'row';
     public const string reason = 'reason';
+    public const string live = 'live';
 
     /**
      * @param string $page Page the table belongs to
@@ -44,6 +45,7 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param int|string|null $rowKey Affected row key (row_updated / row_removed)
      * @param ?array<string, mixed> $row New row as a `{rowKey, slots}` fragment (row_updated)
      * @param ?string $reason Removal reason `deleted` / `left_set` (row_removed)
+     * @param bool $live Whether the change applies at once instead of accumulating as pending
      */
     private function __construct(
         public readonly string $page,
@@ -52,6 +54,7 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         public readonly int|string|null $rowKey = null,
         public readonly ?array $row = null,
         public readonly ?string $reason = null,
+        public readonly bool $live = false,
     ) {
     }
 
@@ -62,11 +65,17 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param string $tableKey Table key
      * @param int|string $rowKey Affected row key
      * @param array<string, mixed> $row New row as a `{rowKey, slots}` fragment
+     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @return self Row-updated delta
      */
-    public static function rowUpdated(string $page, string $tableKey, int|string $rowKey, array $row): self
-    {
-        return new self($page, $tableKey, self::KIND_ROW_UPDATED, rowKey: $rowKey, row: $row);
+    public static function rowUpdated(
+        string $page,
+        string $tableKey,
+        int|string $rowKey,
+        array $row,
+        bool $live = false,
+    ): self {
+        return new self($page, $tableKey, self::KIND_ROW_UPDATED, rowKey: $rowKey, row: $row, live: $live);
     }
 
     /**
@@ -76,11 +85,17 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
      * @param string $tableKey Table key
      * @param int|string $rowKey Affected row key
      * @param string $reason Removal reason (REASON_DELETED / REASON_LEFT_SET)
+     * @param bool $live Whether the change applies at once instead of accumulating as pending
      * @return self Row-removed delta
      */
-    public static function rowRemoved(string $page, string $tableKey, int|string $rowKey, string $reason): self
-    {
-        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, reason: $reason);
+    public static function rowRemoved(
+        string $page,
+        string $tableKey,
+        int|string $rowKey,
+        string $reason,
+        bool $live = false,
+    ): self {
+        return new self($page, $tableKey, self::KIND_ROW_REMOVED, rowKey: $rowKey, reason: $reason, live: $live);
     }
 
     /**
@@ -104,6 +119,9 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
         if ($this->reason !== null) {
             $data[self::reason] = $this->reason;
         }
+        if ($this->live) {
+            $data[self::live] = true;
+        }
 
         return $data;
     }
@@ -126,6 +144,7 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
             rowKey: is_int($rowKey) || is_string($rowKey) ? $rowKey : null,
             row: is_array($row) ? $row : null,
             reason: is_string($data[self::reason] ?? null) ? $data[self::reason] : null,
+            live: (bool) ($data[self::live] ?? false),
         );
     }
 }

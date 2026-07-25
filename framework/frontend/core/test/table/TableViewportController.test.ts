@@ -86,6 +86,45 @@ describe('TableViewportController', () => {
     expect(controller.pageCount.get()).toBe(5)
   })
 
+  it('applies a live row update at once, with nothing left pending', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'new' } },
+      live: true,
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'new' },
+    })
+  })
+
+  it('takes a live removal out of the window instead of leaving a placeholder', () => {
+    const { controller } = makeController()
+    controller.ingestWindow(
+      [
+        { rowKey: 'progress', slots: { name: 'running' } },
+        { rowKey: 'a', slots: { name: 'stored' } },
+      ],
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'progress',
+      reason: 'deleted',
+      live: true,
+    })
+
+    // A status row that ended has nothing to hold a place for: it goes, and no
+    // Apply badge is left behind for a change the user never made.
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a'])
+  })
+
   it('accumulates a row update as pending without changing the rows', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)

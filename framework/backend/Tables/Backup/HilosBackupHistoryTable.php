@@ -143,12 +143,24 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     private function runtimeMutation(): TableRowMutationDTO
     {
+        // The in-progress row is a status the table shows about work, not content the reader is
+        // studying: gating it behind Apply would strand "In progress" on screen long after the
+        // run ended. Both its arrival and its removal are declared live.
         $running = $this->runningRow();
         if ($running === null) {
-            return $this->mutation(TableMutationType::Delete, HilosBackupTableRow::RUNNING_ROW_KEY);
+            return $this->mutation(
+                TableMutationType::Delete,
+                HilosBackupTableRow::RUNNING_ROW_KEY,
+                live: true,
+            );
         }
 
-        return $this->mutation(TableMutationType::Create, HilosBackupTableRow::RUNNING_ROW_KEY, $running);
+        return $this->mutation(
+            TableMutationType::Create,
+            HilosBackupTableRow::RUNNING_ROW_KEY,
+            $running,
+            live: true,
+        );
     }
 
     /**

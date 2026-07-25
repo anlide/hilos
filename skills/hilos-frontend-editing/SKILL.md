@@ -11,6 +11,9 @@ rules below. Every edit surface is a modal — never an inline form.
 
 ## Read First
 
+- What an edit does to a live table — the pending/Apply gate, own-change
+  correlation, and the narrow live exception:
+  `docs/agents/frontend/table-subscription.md`
 - Editing and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
@@ -37,6 +40,11 @@ rules below. Every edit surface is a modal — never an inline form.
    and `conflict-resolution.md`; do not copy an inline form forward.
 
 ## Hard Rules
+
+- An edit's echo is gated behind Apply for every tab but the one that made it. Do
+  not work around the gate: mark the edited row before dispatching
+  (`expectOwnChange`) so the initiator applies its own change, and leave everyone
+  else gated.
 
 - Edit only in a modal; inline forms are forbidden. Use `HilosModal` or a
   descendant — the parent owns the form.

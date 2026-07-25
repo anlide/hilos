@@ -53,6 +53,9 @@ final class BackupCreator
     /** Allowed backup id characters; the id is a filesystem base name, so no separators. */
     private const string ID_PATTERN = '/^[A-Za-z0-9._-]+$/';
 
+    /** Clock format the supervisor mints a backup id from; read back to date the backup. */
+    private const string ID_TIME_FORMAT = 'Y-m-d_H-i-s';
+
     private const string SQL_FILE_PREFIX = 'db-';
     private const string SQL_FILE_SUFFIX = '.sql';
     private const string METADATA_FILENAME = 'metadata.json';
@@ -497,7 +500,7 @@ final class BackupCreator
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
-            (new DateTimeImmutable())->format(DateTimeInterface::ATOM),
+            self::startedAtFromId($id),
             Hilos::$env->string(EnvConstants::APP_ENV),
             $scope,
             $connections,
@@ -507,6 +510,28 @@ final class BackupCreator
             $status,
             $warnings,
         );
+    }
+
+    /**
+     * Reads a backup's start instant back out of its id.
+     *
+     * The id is minted from the clock when the run starts
+     * ({@see \Hilos\Backup\Agent\BackupAgent::generateBackupId()}), so it already carries the
+     * only timestamp a backup should be dated by. Reading the clock here instead would date the
+     * backup by the moment the metadata is built - after the dump - and a twenty-minute dump
+     * would then disagree with its own id by twenty minutes, on the record and in the list.
+     *
+     * A malformed id (never produced by the supervisor) falls back to now, so a backup is
+     * always dated by something.
+     *
+     * @param string $id Backup id in the `Y-m-d_H-i-s` stem form
+     * @return string ISO-8601 start instant
+     */
+    public static function startedAtFromId(string $id): string
+    {
+        $started = DateTimeImmutable::createFromFormat(self::ID_TIME_FORMAT, $id);
+
+        return ($started === false ? new DateTimeImmutable() : $started)->format(DateTimeInterface::ATOM);
     }
 
     /**

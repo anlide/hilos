@@ -94,9 +94,57 @@ always the **value inside a cell**. Four changes are deliberately not gated:
   so the dialog edits the latest committed state, never a stale value — the same
   reasoning as an explicit viewport change, which is authoritative and also
   discards or applies pending.
+- **A backend-declared live change applies at once, for everybody.** A row that
+  reports *work in progress* — the backup page's in-progress row is the worked
+  example — is a status the table shows about an operation, not content the reader
+  is studying. The backend marks its mutations live (`TableRowMutationDTO::$live`,
+  wire field `live`), and the controller applies them immediately: an update lands
+  in place, and a removal takes the row out of the window rather than leaving a
+  placeholder, because a status that ended has nothing to hold a place for. Do not
+  reach for this to dodge the gate on ordinary data — a row carrying content the
+  user reads stays gated, and that is the whole point of the gate.
 - **A tail append and a count change are live** (see *Pending vs live* above):
   they add a row at the tail of a last-page-with-room window or update the pager,
   disturbing nothing already shown.
+
+### Rule — what may bypass the Apply gate
+
+The gate exists for one reason: a table must never rearrange itself while someone
+is reading it. Everything else follows from that, so **the default is gated** and
+each exception has to earn its place.
+
+Apply the test in this order to a row change you are adding:
+
+1. **Is it content the user reads?** Then it is gated. Always — including a row
+   your own feature just wrote on the server. "It feels laggy behind Apply" is not
+   a reason; the badge *is* the feature.
+2. **Did this connection ask for it?** Then it applies at once for that connection
+   only (`expectOwnChange`), and stays gated for every other tab. Note the
+   mechanism's limit: correlation is by a row key the client knew **before** the
+   action, so it does not cover a create whose key the server mints.
+3. **Is it a new row or a count?** Then it is already live by taxonomy — an append
+   or a count update, never pending.
+4. **Is it a report about work rather than data — a progress row, a live status?**
+   Only then may the backend declare it live (`TableRowMutationDTO::$live`).
+
+The fourth case is deliberately rare. In the whole framework it has exactly one
+user today: the backup page's in-progress row. Before adding a second, all of
+these must hold — if any fails, the answer is one of the first three cases, not
+this one:
+
+- the row **reports an operation** and disappears when the operation ends;
+- it carries **nothing the user could lose** by having it vanish (no edits, no
+  content, nothing worth a placeholder);
+- it has a **fixed synthetic row key** (`__running__`-style), so it can never
+  collide with a data row or be mistaken for one;
+- the same feature's **real data rows stay gated** — declaring an entire table
+  live is always wrong.
+
+The failure this rule prevents is specific and was seen in the backup page: the
+progress row's *arrival* was live (an append) while its *removal* was a pending
+delta, so "In progress" stayed on screen after the run had finished, next to the
+finished row, with an Apply badge for a change the user never made. A status row
+whose two halves disagree about the gate is worse than either choice alone.
 
 ## The viewport changes only by explicit user action
 

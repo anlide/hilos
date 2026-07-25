@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use DateTimeImmutable;
+use DateTimeInterface;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
@@ -22,6 +24,22 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackupCreatorTest extends TestCase
 {
+    public function testABackupIsDatedByItsStartNotItsFinish(): void
+    {
+        // The id is minted when the run starts, so the record must read the same instant back:
+        // dating by "now" would put a long dump's finish time on a row whose id says otherwise.
+        // Built through the same default timezone the supervisor mints ids in, so the case does
+        // not depend on where the suite runs.
+        $expected = (new DateTimeImmutable('2026-07-19 10:30:00'))->format(DateTimeInterface::ATOM);
+
+        $this->assertSame($expected, BackupCreator::startedAtFromId('2026-07-19_10-30-00'));
+    }
+
+    public function testAMalformedIdStillYieldsADate(): void
+    {
+        $this->assertNotSame('', BackupCreator::startedAtFromId('not-a-timestamp'));
+    }
+
     public function testFullScopeIsOneUnrestrictedPass(): void
     {
         $passes = BackupCreator::scopeDumpPasses(BackupScope::FULL, []);

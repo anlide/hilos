@@ -172,6 +172,36 @@ final class HilosBackupHistoryTableTest extends TestCase
         );
     }
 
+    public function testTheInProgressRowIsDeclaredLive(): void
+    {
+        $create = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+        );
+        $delete = $this->table()->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+        );
+
+        // A progress row must never wait behind Apply: it would outlive the run it reports.
+        $this->assertNotNull($create);
+        $this->assertTrue($create->live);
+        $this->assertNotNull($delete);
+        $this->assertTrue($delete->live);
+    }
+
+    public function testAStoredBackupRowIsNotLive(): void
+    {
+        $histories = $this->historiesWith(
+            BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+        );
+        $mutation = $this->table($histories)->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
+        );
+
+        // Stored backups are content: they keep the pending gate like any other row.
+        $this->assertNotNull($mutation);
+        $this->assertFalse($mutation->live);
+    }
+
     public function testTheRowSlotCarriesNoIdField(): void
     {
         $row = new HilosBackupTableRow(

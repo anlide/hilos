@@ -170,11 +170,16 @@ abstract class TableDefinition implements ArrayAccess
      * @param TableMutationType $type Mutation type
      * @param string|int $rowKey Affected table row key
      * @param ?AbstractTableRow $row Row payload for create/update mutations
+     * @param bool $live Whether the change must apply at once instead of waiting for Apply
      * @return TableRowMutationDTO Row mutation payload
      */
-    protected function mutation(TableMutationType $type, string|int $rowKey, ?AbstractTableRow $row = null): TableRowMutationDTO
-    {
-        return new TableRowMutationDTO($type, $rowKey, $row);
+    protected function mutation(
+        TableMutationType $type,
+        string|int $rowKey,
+        ?AbstractTableRow $row = null,
+        bool $live = false,
+    ): TableRowMutationDTO {
+        return new TableRowMutationDTO($type, $rowKey, $row, $live);
     }
 
     /**
