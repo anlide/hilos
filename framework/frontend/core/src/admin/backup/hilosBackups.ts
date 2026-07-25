@@ -23,6 +23,7 @@ import {
   readString,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
+import { subscribeSignal } from '../../state/signal.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -173,6 +174,51 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
   }
 }
 
+/**
+ * Human-readable archive size, or a dash when there is no archive.
+ *
+ * A run in progress has not written one yet, and a failed run never will — both read
+ * as a dash. Shared by the three views so the column cannot drift between them.
+ *
+ * @param row The backup row to format.
+ */
+export function formatBackupSize(row: HilosBackupRow): string {
+  if (isBackupInProgress(row) || row.sizeBytes <= 0) {
+    return '—'
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = row.sizeBytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+
+  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
+}
+
+/**
+ * Human-readable capture duration, or a dash while the run is still going.
+ *
+ * A finished run always has a duration, and a backup that took under a second took
+ * `0s` — the dash is reserved for the in-progress row, where the number is not known
+ * yet. Reporting a completed run as "no duration" reads as missing data.
+ *
+ * @param row The backup row to format.
+ */
+export function formatBackupDuration(row: HilosBackupRow): string {
+  if (isBackupInProgress(row)) {
+    return '—'
+  }
+
+  const seconds = Math.max(0, row.durationSeconds)
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
 /** The single in-progress backup (renders the live progress row; not actionable). */
 export function isBackupInProgress(row: HilosBackupRow): boolean {
   return row.finished === false
@@ -192,6 +238,17 @@ export function isBackupKeepable(row: HilosBackupRow): boolean {
 export interface HilosBackupsTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
   readonly controller: TableViewportController<HilosBackupRow>
+  /**
+   * Remember that this connection started the run now in progress.
+   *
+   * A create's row key is minted by the server, so the usual own-change mark
+   * (`expectOwnChange`) cannot be set before dispatching — there is nothing to name
+   * yet. This is the same idea for that case: the connection that asked remembers it
+   * did, and when the run it started finishes, its window is re-requested so the new
+   * backup appears in its sorted place instead of appended at the tail. Every other
+   * connection keeps the frozen viewport and the plain append.
+   */
+  markOwnRun(): void
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -224,11 +281,38 @@ export function createHilosBackupsTable(
     initialSort: { field: 'createdAt', direction: 'desc' },
   })
   const teardown: Array<() => void> = []
+  // Set when this connection starts a run, cleared when that run's progress row
+  // leaves the table — the moment its stored row exists on the server.
+  let ownRunPending = false
+  let progressRowShown = false
 
   return {
     controller,
+    markOwnRun() {
+      ownRunPending = true
+    },
     start() {
       teardown.push(
+        // Watch the progress row's lifetime rather than the create's reply: a dump
+        // outlives its acknowledgement, so "my run ended" is only knowable here.
+        subscribeSignal(controller.rows, (rows) => {
+          const running = rows.some(
+            (row) => row.row !== null && isBackupInProgress(row.row),
+          )
+          if (running) {
+            progressRowShown = true
+
+            return
+          }
+          if (progressRowShown && ownRunPending) {
+            ownRunPending = false
+            progressRowShown = false
+            controller.start()
+
+            return
+          }
+          progressRowShown = false
+        }),
         // A backup action_error without a requestId answers no pending request: it is the
         // agent reporting how a run this connection started ended, long after the create was
         // acked. Nothing on this page is waiting for it, so it surfaces as a toast rather than
@@ -281,17 +365,26 @@ export function createHilosBackupsTable(
  */
 export function createHilosBackupsActions(
   context: HilosBackupsContext,
-  table: TableViewportController<HilosBackupRow>,
+  table: HilosBackupsTable,
 ): HilosBackupsActions {
+  const controller = table.controller
+
   return {
     sendBackupCreate(scope) {
-      return context.actions.dispatch(BACKUP_CREATE_ACTION, { scope })
+      const handle = context.actions.dispatch(BACKUP_CREATE_ACTION, { scope })
+      // The row key does not exist yet, so the run itself is what gets marked as ours.
+      handle.done.then(
+        () => table.markOwnRun(),
+        () => undefined,
+      )
+
+      return handle
     },
     sendBackupDelete(id) {
       const handle = context.actions.dispatch(BACKUP_DELETE_ACTION, {
         backupId: id,
       })
-      table.expectOwnChange(id, handle.done)
+      controller.expectOwnChange(id, handle.done)
 
       return handle
     },
@@ -300,7 +393,7 @@ export function createHilosBackupsActions(
         backupId: id,
         keep,
       })
-      table.expectOwnChange(id, handle.done)
+      controller.expectOwnChange(id, handle.done)
 
       return handle
     },

@@ -291,6 +291,8 @@ export {
   resolveHilosBackupRow,
   createHilosBackupsTable,
   createHilosBackupsActions,
+  formatBackupDuration,
+  formatBackupSize,
   isBackupInProgress,
   isBackupDeletable,
   isBackupKeepable,

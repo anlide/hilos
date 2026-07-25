@@ -12,6 +12,8 @@ it by passing its HilosBackupsContext. Bootstrap classes only (styling-rules.md)
 import {
   createHilosBackupsActions,
   createHilosBackupsTable,
+  formatBackupDuration,
+  formatBackupSize,
   HILOS_BACKUP_SCOPES,
   HilosPages,
   isBackupDeletable,
@@ -37,7 +39,7 @@ const props = defineProps<{
 const backups = createHilosBackupsTable(props.context)
 const backupsTable = backups.controller
 const { sendBackupCreate, sendBackupDelete, sendBackupSetKeep } =
-  createHilosBackupsActions(props.context, backups.controller)
+  createHilosBackupsActions(props.context, backups)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
@@ -124,35 +126,6 @@ async function submitDelete(): Promise<void> {
     closeDelete()
   }
 }
-
-/** Human-readable archive size; an in-progress backup has no size yet. */
-function formatSize(row: HilosBackupRow): string {
-  if (isBackupInProgress(row) || row.sizeBytes <= 0) {
-    return '—'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = row.sizeBytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
-}
-
-/** Human-readable capture duration; an in-progress backup has no duration yet. */
-function formatDuration(row: HilosBackupRow): string {
-  if (isBackupInProgress(row) || row.durationSeconds <= 0) {
-    return '—'
-  }
-  const seconds = row.durationSeconds
-  if (seconds < 60) {
-    return `${seconds}s`
-  }
-
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-}
 </script>
 
 <template>
@@ -218,8 +191,8 @@ function formatDuration(row: HilosBackupRow): string {
         <td>
           <code>{{ row.scope || '—' }}</code>
         </td>
-        <td class="text-end">{{ formatSize(row) }}</td>
-        <td class="text-end">{{ formatDuration(row) }}</td>
+        <td class="text-end">{{ formatBackupSize(row) }}</td>
+        <td class="text-end">{{ formatBackupDuration(row) }}</td>
         <td style="min-width: 10rem">
           <div v-if="isBackupInProgress(row)" class="progress" role="status">
             <div

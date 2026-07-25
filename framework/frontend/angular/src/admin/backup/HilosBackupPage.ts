@@ -22,6 +22,8 @@ import {
   HilosPages,
   createHilosBackupsActions,
   createHilosBackupsTable,
+  formatBackupDuration,
+  formatBackupSize,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -248,7 +250,7 @@ export class HilosBackupPage {
     createHilosBackupsTable(this.context()),
   )
   private readonly actions = computed(() =>
-    createHilosBackupsActions(this.context(), this.backups().controller),
+    createHilosBackupsActions(this.context(), this.backups()),
   )
 
   // Create toolbar: pick a scope and start a backup as a tracked action.
@@ -324,32 +326,13 @@ export class HilosBackupPage {
     return isBackupInProgress(row)
   }
 
-  /** Human-readable archive size; an in-progress backup has no size yet. */
+  /** Human-readable archive size, shared with the other view layers. */
   protected formatSize(row: HilosBackupRow): string {
-    if (this.isRunning(row) || row.sizeBytes <= 0) {
-      return '—'
-    }
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    let size = row.sizeBytes
-    let unit = 0
-    while (size >= 1024 && unit < units.length - 1) {
-      size /= 1024
-      unit += 1
-    }
-
-    return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
+    return formatBackupSize(row)
   }
 
-  /** Human-readable capture duration; an in-progress backup has no duration yet. */
+  /** Human-readable capture duration, shared with the other view layers. */
   protected formatDuration(row: HilosBackupRow): string {
-    if (this.isRunning(row) || row.durationSeconds <= 0) {
-      return '—'
-    }
-    const seconds = row.durationSeconds
-    if (seconds < 60) {
-      return `${seconds}s`
-    }
-
-    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+    return formatBackupDuration(row)
   }
 }

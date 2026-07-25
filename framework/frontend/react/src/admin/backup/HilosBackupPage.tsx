@@ -15,6 +15,8 @@ import {
   HilosPages,
   createHilosBackupsActions,
   createHilosBackupsTable,
+  formatBackupDuration,
+  formatBackupSize,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -53,35 +55,6 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
-/** Human-readable archive size; an in-progress backup has no size yet. */
-function formatSize(row: HilosBackupRow): string {
-  if (isBackupInProgress(row) || row.sizeBytes <= 0) {
-    return '—'
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = row.sizeBytes
-  let unit = 0
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024
-    unit += 1
-  }
-
-  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`
-}
-
-/** Human-readable capture duration; an in-progress backup has no duration yet. */
-function formatDuration(row: HilosBackupRow): string {
-  if (isBackupInProgress(row) || row.durationSeconds <= 0) {
-    return '—'
-  }
-  const seconds = row.durationSeconds
-  if (seconds < 60) {
-    return `${seconds}s`
-  }
-
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-}
-
 /** The backup status cell: a live progress bar, a success badge, or a failure badge. */
 function statusCell(row: HilosBackupRow) {
   if (isBackupInProgress(row)) {
@@ -114,7 +87,7 @@ function statusCell(row: HilosBackupRow) {
 export function HilosBackupPage({ context }: HilosBackupPageProps) {
   const backups = useMemo(() => createHilosBackupsTable(context), [context])
   const actions = useMemo(
-    () => createHilosBackupsActions(context, backups.controller),
+    () => createHilosBackupsActions(context, backups),
     [context, backups],
   )
 
@@ -241,8 +214,8 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             <td>
               <code>{row.scope || '—'}</code>
             </td>
-            <td className="text-end">{formatSize(row)}</td>
-            <td className="text-end">{formatDuration(row)}</td>
+            <td className="text-end">{formatBackupSize(row)}</td>
+            <td className="text-end">{formatBackupDuration(row)}</td>
             <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
             <td className="text-center">
               {isBackupKeepable(row) ? (
