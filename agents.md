@@ -176,3 +176,14 @@ additional change in one of these surfaces, stop and ask again before editing it
 - [docs/reference.md](docs/reference.md) — API reference
 - [docs/cli-commands.md](docs/cli-commands.md) — CLI reference (legacy, prefer docs/agents/cli/commands.md)
 - [docs/new-project/README.md](docs/new-project/README.md) — creating a new Hilos project (backend + frontend), routes to the per-framework frontend parts
+
+## Demo docs
+
+Each demo documents itself: an index at `<demo>/agents.md`, the demo's own
+documentation under `<demo>/spec/**`. These describe one demo's behavior and
+never override a framework rule — see
+[rule-authoring.md](docs/agents/rule-authoring.md), *Per-Demo Documentation*.
+
+| File | Read when... |
+|---|---|
+| [demo/chat/agents.md](demo/chat/agents.md) | working in the chat demo: its agents, pages, data flows, runtime state, moderation/LLM setup, known issues |

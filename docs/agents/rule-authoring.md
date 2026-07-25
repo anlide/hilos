@@ -15,6 +15,23 @@ documentation, Codex skill wrappers, Claude adapters, or Cursor rules.
   detailed rules.
 - All repository rule, skill, and adapter files must be written in English.
 
+## Per-Demo Documentation
+
+A demo documents itself; it never documents the framework.
+
+- `<demo>/agents.md` is that demo's index for AI agents: a link table plus the
+  demo's own always-on facts. It points up to `/agents.md` first.
+- `<demo>/spec/**` holds the demo's own documentation — how *this* demo works
+  (its agents, pages, data flows, runtime state). Name it `spec`, not `agents`:
+  a folder called `agents` next to `backend/` reads as the demo's agent classes,
+  which is a different thing that already exists in `<demo>/backend/Agents`.
+- A demo doc describes behavior; it must not restate or override a framework
+  rule. When a demo file starts prescribing how to build things in general, the
+  rule belongs in `docs/agents/*` instead.
+- Link every new demo index from the *Demo docs* table in `/agents.md`. An
+  unlinked demo index is unreachable: an agent that never opens the demo folder
+  never learns it exists.
+
 ## What Counts As A Rule
 
 A rule is an actionable constraint that changes how an agent implements,
