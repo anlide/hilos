@@ -41,6 +41,7 @@ export {
 } from './admin/users/HilosUsersPage.js'
 export { HilosUserPage } from './admin/users/HilosUserPage.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
+export { HilosToastHost } from './HilosToastHost.js'
 export {
   HilosViewportTable,
   type ViewportTableRowContext,

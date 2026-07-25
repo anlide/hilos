@@ -27,7 +27,6 @@ import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
-import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
 const props = defineProps<{
@@ -37,9 +36,6 @@ const props = defineProps<{
 
 const backups = createHilosBackupsTable(props.context)
 const backupsTable = backups.controller
-// How a run this tab started ended. The create action is acked at acceptance, so a
-// failure minutes later arrives on its own and is shown until dismissed.
-const runFailure = useSignal(backups.runFailure)
 const { sendBackupCreate, sendBackupDelete, sendBackupSetKeep } =
   createHilosBackupsActions(props.context, backups.controller)
 
@@ -191,21 +187,6 @@ function formatDuration(row: HilosBackupRow): string {
       </LoadingButton>
     </div>
 
-    <div
-      v-if="runFailure"
-      class="alert alert-danger alert-dismissible"
-      role="alert"
-      data-id="hilos-backup-run-failure"
-    >
-      {{ runFailure }}
-      <button
-        type="button"
-        class="btn-close"
-        aria-label="Dismiss"
-        data-id="hilos-backup-run-failure-dismiss"
-        @click="backups.dismissRunFailure()"
-      ></button>
-    </div>
     <div
       v-if="createError"
       class="alert alert-danger"

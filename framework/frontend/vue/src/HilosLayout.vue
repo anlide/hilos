@@ -22,6 +22,7 @@ import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
 
 import HilosLink from './HilosLink.vue'
+import HilosToastHost from './HilosToastHost.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useSignal } from './useSignal.js'
@@ -156,5 +157,8 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         </HilosLink>
       </div>
     </footer>
+    <!-- Transient notices float over the shell, so every page inside it can report
+    an outcome without owning a notification surface of its own. -->
+    <HilosToastHost />
   </div>
 </template>

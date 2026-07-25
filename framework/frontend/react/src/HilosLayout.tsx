@@ -26,6 +26,7 @@ import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosToastHost } from './HilosToastHost.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
 import { useSignal } from './useSignal.js'
@@ -169,6 +170,9 @@ export function HilosLayout({
           ))}
         </div>
       </footer>
+      {/* Transient notices float over the shell, so every page inside it can
+      report an outcome without owning a notification surface of its own. */}
+      <HilosToastHost />
     </div>
   )
 }

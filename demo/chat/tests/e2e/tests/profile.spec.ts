@@ -151,13 +151,17 @@ test('changes the current user password from the profile (HIL-402)', async ({
   await typeInto(page.getByTestId('profile-password-confirm'), newPassword)
   await page.getByTestId('profile-password-save').click()
   await expect(page.getByTestId('profile-set-password-error')).toBeVisible()
-  await expect(page.getByTestId('profile-password-updated')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Password changed.'),
+  ).toHaveCount(0)
 
   // The correct current password updates it: the success toast lands (over the
   // password_updated signal, not a projection change) and the fields clear.
   await typeInto(page.getByTestId('profile-password-current'), PASSWORD)
   await page.getByTestId('profile-password-save').click()
-  await expect(page.getByTestId('profile-password-updated')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Password changed.'),
+  ).toBeVisible()
   await expect(page.getByTestId('profile-set-password-error')).toHaveCount(0)
   await expect(page.getByTestId('profile-password-new')).toHaveValue('')
 })

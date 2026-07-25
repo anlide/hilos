@@ -27,6 +27,7 @@ import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosToastHost } from './HilosToastHost.js'
 import { HILOS_ROUTER } from './hilosRouterToken.js'
 import { hilosSignal } from './hilosSignal.js'
 
@@ -49,7 +50,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 @Component({
   selector: 'hilos-layout',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosLink],
+  imports: [HilosLink, HilosToastHost],
   template: `
     <div class="d-flex flex-column vh-100 overflow-hidden" data-id="app-root">
       <a
@@ -124,6 +125,9 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           }
         </div>
       </footer>
+      <!-- Transient notices float over the shell, so every page inside it can
+      report an outcome without owning a notification surface of its own. -->
+      <hilos-toast-host />
     </div>
   `,
 })

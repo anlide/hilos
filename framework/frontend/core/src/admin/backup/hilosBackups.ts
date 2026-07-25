@@ -23,7 +23,7 @@ import {
   readString,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { createSignal, type ReadonlySignal } from '../../state/signal.js'
+import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
@@ -189,20 +189,8 @@ export function isBackupKeepable(row: HilosBackupRow): boolean {
 export interface HilosBackupsTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
   readonly controller: TableViewportController<HilosBackupRow>
-  /**
-   * The latest failure of a backup run this connection asked for, or null.
-   *
-   * A create is acked at acceptance — a dump outlives any request timeout — so the run's
-   * outcome cannot be that action's reply. The backend addresses it back here instead, as an
-   * uncorrelated action_error, and this is where a view reads it: the tracked-action error
-   * covers "we would not even start", this covers "it started and then failed". Unattended
-   * runs (schedule, CLI) report to nobody and never set it.
-   */
-  readonly runFailure: ReadonlySignal<string | null>
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
-  /** Clear the run-failure notice — the view's dismiss. */
-  dismissRunFailure(): void
   /** Unbind from the connection — call on unmount. */
   dispose(): void
 }
@@ -233,25 +221,21 @@ export function createHilosBackupsTable(
     initialSort: { field: 'createdAt', direction: 'desc' },
   })
   const teardown: Array<() => void> = []
-  const runFailure = createSignal<string | null>(null)
 
   return {
     controller,
-    runFailure,
-    dismissRunFailure() {
-      runFailure.set(null)
-    },
     start() {
       teardown.push(
         // A backup action_error without a requestId answers no pending request: it is the
-        // agent reporting how a run this connection started ended. The correlated ones stay
-        // with the tracked action that dispatched them.
+        // agent reporting how a run this connection started ended, long after the create was
+        // acked. Nothing on this page is waiting for it, so it surfaces as a toast rather than
+        // an inline error; the correlated ones stay with the tracked action that dispatched them.
         context.connection.on('actionError', (signal) => {
           if (
             signal.requestId === undefined &&
             BACKUP_ACTIONS.has(signal.action)
           ) {
-            runFailure.set(signal.reason)
+            hilosToasts.push(signal.reason, { severity: 'error' })
           }
         }),
         bindTableViewport(

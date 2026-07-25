@@ -63,7 +63,9 @@ test('enrolls a passkey in the profile and signs back in with it username-first'
   // REGISTER: enroll a passkey; the virtual authenticator auto-approves, the
   // attestation verifies server-side, and the profile flags the credential added.
   await page.getByTestId('profile-passkey-add').click()
-  await expect(page.getByTestId('profile-passkey-added')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Passkey added.'),
+  ).toBeVisible()
   await expect(page.getByTestId('profile-passkey-error')).toHaveCount(0)
 
   // Back to anonymous: the gated profile re-mounts the sign-in surface (login
@@ -108,7 +110,9 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await page.goto('/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await page.getByTestId('profile-passkey-add').click()
-  await expect(page.getByTestId('profile-passkey-added')).toBeVisible()
+  await expect(
+    page.getByTestId('hilos-toasts').getByText('Passkey added.'),
+  ).toBeVisible()
 
   await logout(page)
   await page.goto('/profile')

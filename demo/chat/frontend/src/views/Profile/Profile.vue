@@ -9,7 +9,7 @@ only, no CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { isPasskeySupported, threeWayMerge } from '@hilos/core'
+import { hilosToasts, isPasskeySupported, threeWayMerge } from '@hilos/core'
 import {
   ConflictActions,
   ConflictHeader,
@@ -160,7 +160,6 @@ const valid = computed(() => {
 const passkeySupported = isPasskeySupported()
 const passkeyPending = ref(false)
 const passkeyError = ref<string | null>(null)
-const passkeyAdded = ref(false)
 
 async function addPasskey(): Promise<void> {
   if (passkeyPending.value) {
@@ -168,11 +167,12 @@ async function addPasskey(): Promise<void> {
   }
   passkeyPending.value = true
   passkeyError.value = null
-  passkeyAdded.value = false
   const outcome = await runPasskeyRegister()
   passkeyPending.value = false
   if (outcome.ok) {
-    passkeyAdded.value = true
+    hilosToasts.push('Passkey added. You can now sign in with it.', {
+      severity: 'success',
+    })
   } else {
     passkeyError.value = outcome.message ?? null
   }
@@ -222,7 +222,10 @@ async function submitSmsConfirm(): Promise<void> {
   }
   smsLoading.value = true
   smsError.value = null
-  const outcome = await sendAddSmsConfirm(smsPhone.value.trim(), smsCode.value.trim())
+  const outcome = await sendAddSmsConfirm(
+    smsPhone.value.trim(),
+    smsCode.value.trim(),
+  )
   smsLoading.value = false
   if (outcome.ok) {
     addingSms.value = false
@@ -246,7 +249,6 @@ const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 const passwordLoading = ref(false)
-const passwordUpdated = ref<string | null>(null)
 
 const passwordValid = computed(() => {
   if (newPassword.value.length < PASSWORD_MIN) {
@@ -263,7 +265,6 @@ function submitPassword(): void {
   if (!passwordValid.value || passwordLoading.value) {
     return
   }
-  passwordUpdated.value = null
   passwordLoading.value = sendSetPassword(
     password.value.hasPassword ? currentPassword.value : null,
     newPassword.value,
@@ -357,8 +358,12 @@ onMounted(() => {
     addPwConfirm.value = ''
     addPwLoading.value = false
     addPwError.value = null
-    passwordUpdated.value =
-      data.mode === PASSWORD_MODE_ADDED ? 'Password added.' : 'Password changed.'
+    hilosToasts.push(
+      data.mode === PASSWORD_MODE_ADDED
+        ? 'Password added.'
+        : 'Password changed.',
+      { severity: 'success' },
+    )
   })
 })
 onUnmounted(() => {
@@ -506,7 +511,10 @@ function mergeBoth(): void {
               Unverified
             </span>
             <template v-if="unlinkConfirmKey === identity.key">
-              <span class="text-body-secondary small" data-id="identity-unlink-confirm">
+              <span
+                class="text-body-secondary small"
+                data-id="identity-unlink-confirm"
+              >
                 Remove?
               </span>
               <LoadingButton
@@ -566,14 +574,6 @@ function mergeBoth(): void {
       credential appears in the list once list refresh lands (HIL-404). -->
       <div v-if="passkeySupported" class="mt-3" data-id="profile-passkey">
         <div
-          v-if="passkeyAdded"
-          class="alert alert-success py-2"
-          role="status"
-          data-id="profile-passkey-added"
-        >
-          Passkey added. You can now sign in with it.
-        </div>
-        <div
           v-if="passkeyError"
           class="alert alert-danger py-2"
           role="alert"
@@ -609,11 +609,7 @@ function mergeBoth(): void {
       Only providers not already linked are offered; each button starts the redirect
       (staying loading through it) and the row vanishes once the link lands and the
       identity list re-emits. A rejected start shows an inline error. -->
-      <div
-        v-if="providers.length"
-        class="mt-3"
-        data-id="profile-oauth-link"
-      >
+      <div v-if="providers.length" class="mt-3" data-id="profile-oauth-link">
         <h3 class="h6 mb-2">Link an account</h3>
         <div class="d-flex flex-wrap gap-2">
           <LoadingButton
@@ -621,7 +617,9 @@ function mergeBoth(): void {
             :key="provider.key"
             class="btn-outline-primary btn-sm"
             :loading="linkPendingKey === provider.key"
-            :disabled="linkPendingKey !== null && linkPendingKey !== provider.key"
+            :disabled="
+              linkPendingKey !== null && linkPendingKey !== provider.key
+            "
             :data-id="`profile-oauth-link-${provider.key}`"
             @click="linkProvider(provider.key)"
           >
@@ -657,7 +655,9 @@ function mergeBoth(): void {
             Confirm an email address to set a password.
           </p>
           <div class="mb-2">
-            <label class="form-label" for="profile-add-password-email">Email</label>
+            <label class="form-label" for="profile-add-password-email"
+              >Email</label
+            >
             <input
               id="profile-add-password-email"
               v-model="addPwEmail"
@@ -701,7 +701,9 @@ function mergeBoth(): void {
               class="form-control"
               data-id="profile-add-password-code"
             />
-            <div class="form-text">Enter the code sent to {{ addPwEmail }}.</div>
+            <div class="form-text">
+              Enter the code sent to {{ addPwEmail }}.
+            </div>
           </div>
           <div class="mb-2">
             <label class="form-label" for="profile-add-password-new">
@@ -803,14 +805,6 @@ function mergeBoth(): void {
           {{ password.hasPassword ? 'Change password' : 'Set password' }}
         </LoadingButton>
         <div
-          v-if="passwordUpdated"
-          class="alert alert-success mt-2 mb-0"
-          role="status"
-          data-id="profile-password-updated"
-        >
-          {{ passwordUpdated }}
-        </div>
-        <div
           v-if="passwordError"
           class="alert alert-danger mt-2 mb-0"
           role="alert"
@@ -892,7 +886,9 @@ function mergeBoth(): void {
       </template>
 
       <form v-if="smsStep === 1" @submit.prevent="submitSmsRequest">
-        <label class="form-label" for="profile-add-sms-phone">Phone number</label>
+        <label class="form-label" for="profile-add-sms-phone"
+          >Phone number</label
+        >
         <input
           id="profile-add-sms-phone"
           v-model="smsPhone"
@@ -914,7 +910,9 @@ function mergeBoth(): void {
       </form>
 
       <form v-else @submit.prevent="submitSmsConfirm">
-        <label class="form-label" for="profile-add-sms-code">Verification code</label>
+        <label class="form-label" for="profile-add-sms-code"
+          >Verification code</label
+        >
         <input
           id="profile-add-sms-code"
           v-model="smsCode"

@@ -29,7 +29,6 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
-import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
 
 /** Props for {@link HilosBackupPage}. */
@@ -118,9 +117,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     () => createHilosBackupsActions(context, backups.controller),
     [context, backups],
   )
-  // How a run this tab started ended. The create action is acked at acceptance, so
-  // a failure minutes later arrives on its own and is shown until dismissed.
-  const runFailure = useSignal(backups.runFailure)
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.
@@ -212,22 +208,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         </LoadingButton>
       </div>
 
-      {runFailure ? (
-        <div
-          className="alert alert-danger alert-dismissible"
-          role="alert"
-          data-id="hilos-backup-run-failure"
-        >
-          {runFailure}
-          <button
-            type="button"
-            className="btn-close"
-            aria-label="Dismiss"
-            data-id="hilos-backup-run-failure-dismiss"
-            onClick={() => backups.dismissRunFailure()}
-          ></button>
-        </div>
-      ) : null}
       {create.error ? (
         <div
           className="alert alert-danger"

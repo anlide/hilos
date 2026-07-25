@@ -46,7 +46,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 | File | Read when... |
 |---|---|
-| [frontend/README.md](docs/agents/frontend/README.md) | any frontend change — routes to the core/connection, wire-protocol, data-model, table-subscription, conflict-resolution, SDK-packaging, multiframework-core, page-module file layout, styling, testing, and build specs, plus the AI-first premise and the rules/violations catalog |
+| [frontend/README.md](docs/agents/frontend/README.md) | any frontend change — routes to the core/connection, wire-protocol, data-model, table-subscription, conflict-resolution, SDK-packaging, multiframework-core, page-module file layout, toasts, styling, testing, and build specs, plus the AI-first premise and the rules/violations catalog |
+| [frontend/toasts.md](docs/agents/frontend/toasts.md) | showing an outcome that is not attached to what the user is looking at: the toast store, toast vs inline error vs durable record, and what must never interrupt an uninvolved user |
 
 The frontend is rebuilt from zero on this branch (Path 1 rewrite) and its
 specification is graduated ahead of the code. Frontend FE↔BE contract changes
