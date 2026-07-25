@@ -447,23 +447,6 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="!isAuthenticated"
-        class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
-        role="status"
-        data-id="register-banner"
-      >
-        <span>Sign in or create an account to send messages.</span>
-        <button
-          type="button"
-          class="btn btn-sm btn-primary flex-shrink-0"
-          data-id="register-banner-cta"
-          @click="promptSignIn"
-        >
-          Sign in
-        </button>
-      </div>
-
-      <div
         v-if="moderationBanner"
         class="small mb-1 d-flex align-items-center gap-2"
         :class="moderationBanner.className"
@@ -571,7 +554,9 @@ onUnmounted(() => {
           :value="displayMessage"
           type="text"
           class="form-control"
-          placeholder="Type your message..."
+          :placeholder="
+            isAuthenticated ? 'Type your message...' : 'Sign in to send a message'
+          "
           maxlength="500"
           :disabled="!isAuthenticated || !isConnected || isModerating"
           data-id="message-input"
@@ -585,12 +570,22 @@ onUnmounted(() => {
           >{{ cooldownSeconds }}s</span
         >
         <button
+          v-if="isAuthenticated"
           type="submit"
           class="btn btn-primary flex-shrink-0"
           :disabled="!canSend"
           data-id="message-send"
         >
           Send
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-primary flex-shrink-0"
+          data-id="message-signin"
+          @click="promptSignIn"
+        >
+          Sign in to send
         </button>
       </form>
     </div>

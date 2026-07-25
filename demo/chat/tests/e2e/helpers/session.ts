@@ -116,8 +116,8 @@ export interface SignedInUser {
 /**
  * Register a fresh account from the anonymous main page and return its identity.
  *
- * Opens the auth-gate modal through the composer's "register to send" banner CTA
- * and registers; auto-login (autoLoginAfterRegister default) upgrades the live
+ * Opens the auth-gate modal through the composer's "Sign in to send" button and
+ * registers; auto-login (autoLoginAfterRegister default) upgrades the live
  * session in place, so the page is left on '/' signed in with the self user
  * resolved. This is the standard way an authenticated spec obtains its user under
  * the session≠user model.
@@ -130,7 +130,7 @@ export async function signUp(page: Page): Promise<SignedInUser> {
 
   await page.goto('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await page.getByTestId('register-banner-cta').click()
+  await page.getByTestId('message-signin').click()
   await register(page, email)
 
   const name = nameFromEmail(email)

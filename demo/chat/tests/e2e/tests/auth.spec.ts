@@ -13,7 +13,7 @@ import { login, logout, PASSWORD, register, uniqueEmail } from '../helpers/sessi
 //   - login rejects a wrong password and an unknown email with the SAME generic
 //     "Invalid email or password" (no user enumeration);
 //   - the anonymous visitor reads the chat but the composer gates sending behind
-//     the same surface, opened as the auth-gate modal via the banner CTA.
+//     the same surface, opened as the auth-gate modal via the composer's Sign in button.
 // Recovery (HIL-365) has no reachable e2e leg yet — its surface entry renders a
 // placeholder — so it is left to the integration tests until the flow lands. The
 // backend of each action is already covered by the Integration suite; this file
@@ -28,7 +28,7 @@ test('registers through the gated profile surface, auto-logs-in, and resumes it 
   await page.goto('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   // Anonymous: no session user yet, so the chat composer prompts to sign in.
-  await expect(page.getByTestId('register-banner')).toBeVisible()
+  await expect(page.getByTestId('message-signin')).toBeVisible()
 
   // The framework profile page is AUTHENTICATED-guarded: an anonymous subscribe
   // 401s and the gate mounts the sign-in surface in place of the profile view.
@@ -107,7 +107,7 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
   await page.getByTestId('auth-oauth-github').click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByTestId('message-input')).toBeEnabled()
-  await expect(page.getByTestId('register-banner')).toHaveCount(0)
+  await expect(page.getByTestId('message-signin')).toHaveCount(0)
 
   // The upgraded session persists: the gated profile now resolves in place, with the
   // OAuth identity bound to the freshly created account.
@@ -156,14 +156,14 @@ test('lets an anonymous visitor read the chat but gates sending behind the sign-
   // Anonymous read: the live event stream renders without a session.
   await expect(page.getByTestId('events-scroll')).toBeVisible()
 
-  // The composer is gated: the message input is disabled and a banner prompts to
-  // sign in rather than sending.
+  // The composer is gated: the message input is disabled and the send control
+  // becomes a Sign in button rather than sending.
   await expect(page.getByTestId('message-input')).toBeDisabled()
-  await expect(page.getByTestId('register-banner')).toBeVisible()
+  await expect(page.getByTestId('message-signin')).toBeVisible()
 
-  // The banner CTA opens the same surface as the auth-gate modal (requireAuth),
+  // The composer's Sign in button opens the same surface as the auth-gate modal (requireAuth),
   // in place over the live page.
-  await page.getByTestId('register-banner-cta').click()
+  await page.getByTestId('message-signin').click()
   const modal = page.getByTestId('modal')
   await expect(modal).toBeVisible()
   await expect(modal.getByTestId('auth-surface')).toBeVisible()
@@ -173,5 +173,5 @@ test('lets an anonymous visitor read the chat but gates sending behind the sign-
   await register(page, uniqueEmail())
   await expect(modal).toBeHidden()
   await expect(page.getByTestId('message-input')).toBeEnabled()
-  await expect(page.getByTestId('register-banner')).toHaveCount(0)
+  await expect(page.getByTestId('message-signin')).toHaveCount(0)
 })
