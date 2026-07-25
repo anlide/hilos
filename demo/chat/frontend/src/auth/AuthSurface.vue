@@ -543,60 +543,72 @@ onMounted(() => {
       </button>
     </div>
 
-    <div class="d-flex justify-content-between mt-3 small">
+    <div class="d-flex mt-3">
       <button
         v-if="mode !== 'login'"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Sign in"
+        title="Sign in"
         data-id="auth-to-login"
         @click="surface.switchTo('login')"
       >
-        Sign in
+        <i class="bi bi-box-arrow-in-right" aria-hidden="true" />
       </button>
       <button
         v-if="mode === 'login' && canRegister"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Create account"
+        title="Create account"
         data-id="auth-to-register"
         @click="surface.switchTo('register')"
       >
-        Create account
+        <i class="bi bi-person-plus" aria-hidden="true" />
       </button>
       <button
         v-if="mode === 'login' && canRecover"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Forgot password?"
+        title="Forgot password?"
         data-id="auth-to-recovery"
         @click="surface.switchTo('recovery_request')"
       >
-        Forgot password?
+        <i class="bi bi-key" aria-hidden="true" />
       </button>
       <button
         v-if="mode === 'login' && canSms"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Sign in with phone"
+        title="Sign in with phone"
         data-id="auth-to-sms"
         @click="surface.switchTo('sms_request')"
       >
-        Sign in with phone
+        <i class="bi bi-phone" aria-hidden="true" />
       </button>
       <button
         v-if="mode === 'login' && canMagicLink"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Email me a link"
+        title="Email me a link"
         data-id="auth-to-magic"
         @click="surface.switchTo('magic_link_request')"
       >
-        Email me a link
+        <i class="bi bi-envelope" aria-hidden="true" />
       </button>
       <button
         v-if="mode === 'login' && canPasskey"
         type="button"
-        class="btn btn-link p-0"
+        class="btn btn-link flex-fill text-center fs-4"
+        aria-label="Use a passkey"
+        title="Use a passkey"
         data-id="auth-to-passkey"
         @click="surface.switchTo('passkey')"
       >
-        Use a passkey
+        <i class="bi bi-fingerprint" aria-hidden="true" />
       </button>
     </div>
   </section>

@@ -22,7 +22,6 @@ services:
       - TZ=UTC
     volumes:
       - ../data/mysql:/var/lib/mysql
-      - ../data/backup:/root/backup
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: >
       --character-set-server=utf8mb4

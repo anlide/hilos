@@ -130,28 +130,39 @@ also registers those. Generate, in any order:
    schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
    framework default: one daily full backup at 03:00 on the agent mechanism).
 2. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
-   `BACKUP_DIR`, the retention counters (`BACKUP_RETENTION_DAILY` / `WEEKLY` /
-   `MONTHLY` / `YEARLY`), and `BACKUP_ERROR_RETENTION_COUNT`. These are framework
-   `EnvConstants` keys the agent and pruner read from `Hilos::$env`; the project
-   supplies values, never new keys.
-3. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
+   `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, the retention counters
+   (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY`), and
+   `BACKUP_ERROR_RETENTION_COUNT`. These are framework `EnvConstants` keys the
+   agent and pruner read from `Hilos::$env`; the project supplies values, never new
+   keys. `BACKUP_DIR` and `BACKUP_CLI_ENTRY` are what the create path *needs*:
+   without either, every create is refused up front
+   (`BackupAgent::missingCreateConfig()`) — a page action fails with an
+   ACTION_ERROR and the agent logs the missing key on start. Give `BACKUP_DIR` a
+   working default in the catalog rather than leaving it to the deployment (the
+   chat demo computes `demo/chat/data/backup`, keeping the env value an override),
+   or the feature activates into a state where nothing can ever be written.
+3. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
+   `backup:run` child shells out to it (Debian: `default-mysql-client`). Missing,
+   it is not a config error but a failed run: the dump exits non-zero and the
+   backup is recorded as an error.
+4. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),
    *Worker pool*) — and expose the `backup:run` child command
    (`BackupConstants::RUN_COMMAND`) in the project CLI command registry. Both are
    framework-owned; the project only lists them.
-4. Register the framework runtime index on the project `RtContext`: the
+5. Register the framework runtime index on the project `RtContext`: the
    `BackupHistories` state collection (`BackupHistory::RT_COLLECTION`) and the
    `BackupRuntime` state item (`BackupRuntime::RT_ITEM`). Files are truth; this RT
    index is a rebuildable projection the agent rescans from `BACKUP_DIR` on start,
    so the project persists no backup DB table.
-5. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
+6. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
    the project `TableContext`, add a thin subscription-owner page — `final class …
    extends Hilos\Pages\Backup\AbstractHilosBackupPage` carrying only a
    `SUBSCRIPTION_AGENT_TYPE` — to `PAGES`, and bind the table to the page in
    `PAGE_TABLES`. Register the framework table; never subclass it. Add the page's
    nav entry to the project page catalog if it should appear in the admin shell.
-6. Mount the SDK view: map `HilosPages.BACKUP` to the framework view from
+7. Mount the SDK view: map `HilosPages.BACKUP` to the framework view from
    `@hilos/{vue,react,angular}` `admin/backup/HilosBackupPage`, through a thin
    project context (`HilosBackupsContext` = `{ connection, scopes, actions }` from
    the project bootstrap). The table, the row view-model, the live-row behavior,

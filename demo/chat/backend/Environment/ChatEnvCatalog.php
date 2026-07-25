@@ -6,6 +6,8 @@ namespace Demo\Chat\Environment;
 
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Constants\ChatLLMConstants;
+use Demo\Chat\Fs\ChatFsContext;
+use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -17,6 +19,9 @@ use Hilos\Environment\EnvCatalogStub;
  */
 final class ChatEnvCatalog implements CatalogProviderInterface
 {
+    /** Backup storage folder under the project data dir ({@see defaultBackupDir()}). */
+    private const string BACKUP_STORAGE_DIR = 'backup';
+
     /**
      * Returns the chat demo environment catalog.
      *
@@ -51,7 +56,7 @@ final class ChatEnvCatalog implements CatalogProviderInterface
                 emptyIsMissing: true,
             ),
             EnvConstants::CHAT_BOT_LANGUAGE->name => self::stringEntry('ru', emptyIsMissing: true),
-            EnvConstants::BACKUP_DIR->name => self::stringEntry(''),
+            EnvConstants::BACKUP_DIR->name => self::stringEntry(self::defaultBackupDir(), emptyIsMissing: true),
             EnvConstants::BACKUP_ENABLED->name => self::boolEntry(true, emptyIsMissing: true),
             EnvConstants::BACKUP_CLI_ENTRY->name => self::stringEntry(
                 '/app/backend/Bootstrap/cli.php',
@@ -77,6 +82,21 @@ final class ChatEnvCatalog implements CatalogProviderInterface
                 emptyIsMissing: true,
             ),
         ]);
+    }
+
+    /**
+     * Project-relative backup storage root: demo/chat/data/backup.
+     *
+     * Computed rather than left to the deployment ({@see ChatFsContext} does the same for
+     * attachments) so the activation is complete on its own: an unset BACKUP_DIR would disable
+     * storage, and the whole subsystem would sit enabled but unable to write a single archive.
+     * `BACKUP_DIR` stays an override for a deployment that stores backups elsewhere.
+     *
+     * @return string Absolute path to the default backup root
+     */
+    private static function defaultBackupDir(): string
+    {
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . Hilos::DATA_DIR . DIRECTORY_SEPARATOR . self::BACKUP_STORAGE_DIR;
     }
 
     /**

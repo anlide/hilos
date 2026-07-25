@@ -8,14 +8,16 @@ use DateTimeImmutable;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
+use Hilos\Constants\EnvConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit tests for the pure, side-effect-free logic of the backup supervisor.
  *
  * The spawn/poll/timeout path drives a live child and is exercised at e2e; here we pin the
- * id-from-timestamp format and the child argv contract (command name + scope option) the
- * supervisor and the project child command must agree on.
+ * id-from-timestamp format, the child argv contract (command name + scope option) the
+ * supervisor and the project child command must agree on, and the create-path precondition
+ * that keeps a misconfigured install from launching a run it could never report on.
  */
 final class BackupAgentTest extends TestCase
 {
@@ -48,5 +50,36 @@ final class BackupAgentTest extends TestCase
         $args = BackupAgent::buildChildArgs('/app/cli.php', 'id', BackupScope::SCHEMA_ONLY);
 
         $this->assertSame('--scope=schema-only', $args[3]);
+    }
+
+    public function testNothingIsMissingWhenBothCreateSettingsAreConfigured(): void
+    {
+        $missing = BackupAgent::missingCreateConfig('/app/data/backup', '/app/cli.php');
+
+        $this->assertSame([], $missing);
+    }
+
+    public function testAnEmptyStorageRootIsReportedMissing(): void
+    {
+        $missing = BackupAgent::missingCreateConfig('', '/app/cli.php');
+
+        $this->assertSame([EnvConstants::BACKUP_DIR->name], $missing);
+    }
+
+    public function testAnEmptyCliEntryIsReportedMissing(): void
+    {
+        $missing = BackupAgent::missingCreateConfig('/app/data/backup', '');
+
+        $this->assertSame([EnvConstants::BACKUP_CLI_ENTRY->name], $missing);
+    }
+
+    public function testBothSettingsAreReportedWhenNeitherIsConfigured(): void
+    {
+        $missing = BackupAgent::missingCreateConfig('', '');
+
+        $this->assertSame(
+            [EnvConstants::BACKUP_DIR->name, EnvConstants::BACKUP_CLI_ENTRY->name],
+            $missing,
+        );
     }
 }

@@ -9,6 +9,8 @@ FROM php:8.4-cli
 # - libevent-dev: required to compile ext-event
 # - libssl-dev: enables SSL support (optional)
 # - git, zip, unzip: required for Composer installations
+# - default-mysql-client: provides mysqldump, which the backup child command
+#   (`backup:run`) shells out to; without it every backup fails at the dump step
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
@@ -16,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     unzip \
+    default-mysql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------

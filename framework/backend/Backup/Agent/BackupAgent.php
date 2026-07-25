@@ -133,6 +133,16 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        // Enabled but unconfigured is the silent-failure trap: the page and the schedule still
+        // work, every create is refused by startBackup(), and the storage scan finds nothing -
+        // so say it once, loudly, at the only moment an operator is reading the agent log.
+        foreach (self::missingCreateConfig(
+            Hilos::$env->string(EnvConstants::BACKUP_DIR),
+            Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+        ) as $key) {
+            $this->logAgentError("Backups are enabled but {$key} is not configured; no backup can be created");
+        }
+
         $this->registerRtTruthSource(BackupHistory::RT_COLLECTION);
         $this->registerRtTruthSource(BackupRuntime::RT_ITEM);
 
@@ -453,6 +463,10 @@ final class BackupAgent extends AbstractAgent
      * daemon-mechanism schedule ({@see onSignalCron()}), the list action (HIL-333), and the
      * manual CLI backup. A second request while a backup runs is skipped and logged, never queued.
      *
+     * Refused before anything is allocated when backups are disabled or a required setting is
+     * missing ({@see missingCreateConfig()}), so a misconfigured install never shows a phantom
+     * running row for a child that cannot work.
+     *
      * @param BackupScope $scope What the backup should capture
      */
     public function startBackup(BackupScope $scope): void
@@ -472,8 +486,9 @@ final class BackupAgent extends AbstractAgent
         }
 
         $cliEntry = Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY);
-        if ($cliEntry === '') {
-            $this->logAgentError('Cannot start backup: BACKUP_CLI_ENTRY is not configured');
+        $missing = self::missingCreateConfig(Hilos::$env->string(EnvConstants::BACKUP_DIR), $cliEntry);
+        if ($missing !== []) {
+            $this->logAgentError('Cannot start backup: missing configuration (' . implode(', ', $missing) . ')');
 
             return;
         }
@@ -501,6 +516,35 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->logAgentInfo("Backup started: {$id} (scope={$scope->value})");
+    }
+
+    /**
+     * Reports which settings the create path needs but does not have.
+     *
+     * Both are hard preconditions, checked before a run is ever started: an empty
+     * `BACKUP_CLI_ENTRY` leaves nothing to spawn, and an empty `BACKUP_DIR` is the documented
+     * "storage off" state ({@see EnvConstants::BACKUP_DIR}) under which a child could only die on
+     * the missing root - and, worse, its failure could not be recorded either, because the error
+     * sidecar goes to that same root. Refusing up front keeps the runtime flag, the id, and the
+     * child from ever existing for a run that cannot produce an outcome.
+     *
+     * Pure (values in, key names out) so the precondition is unit-testable without a live env.
+     *
+     * @param string $backupDir Configured storage root (`BACKUP_DIR`)
+     * @param string $cliEntry Configured child CLI entry (`BACKUP_CLI_ENTRY`)
+     * @return list<string> Names of the unconfigured env keys; empty when a backup may start
+     */
+    public static function missingCreateConfig(string $backupDir, string $cliEntry): array
+    {
+        $missing = [];
+        if ($backupDir === '') {
+            $missing[] = EnvConstants::BACKUP_DIR->name;
+        }
+        if ($cliEntry === '') {
+            $missing[] = EnvConstants::BACKUP_CLI_ENTRY->name;
+        }
+
+        return $missing;
     }
 
     /**

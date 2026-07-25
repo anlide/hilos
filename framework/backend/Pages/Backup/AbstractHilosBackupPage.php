@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Backup;
 
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -103,14 +105,29 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * A busy agent is not an error: the design accepts a manual create while one is
      * running into a single in-memory pending slot, so acceptance is always acked.
      *
+     * A misconfigured install is an error, and a synchronous one: the same precondition the
+     * agent enforces ({@see BackupAgent::missingCreateConfig()}) is checked here so the click
+     * fails with a correlated ACTION_ERROR instead of being accepted into a run that can never
+     * report back - the agent would refuse it, and with no storage root even the error record
+     * has nowhere to go.
+     *
      * @param BackupCreateActionDTO $dto Create action payload
-     * @throws TableActionException When the scope is not a known backup scope
+     * @throws TableActionException When the scope is not a known backup scope, or backup storage
+     *     is not configured
      */
     private function handleCreate(BackupCreateActionDTO $dto): void
     {
         $scope = BackupScope::fromString($dto->scope);
         if ($scope === null) {
             throw new TableActionException("Invalid backup scope: {$dto->scope}");
+        }
+
+        $missing = BackupAgent::missingCreateConfig(
+            Hilos::$env->string(EnvConstants::BACKUP_DIR),
+            Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+        );
+        if ($missing !== []) {
+            throw new TableActionException('Backups are not configured: ' . implode(', ', $missing));
         }
 
         $this->agent->sendToAgent(
