@@ -143,6 +143,11 @@ also registers those. Generate, in any order:
    working default in the catalog rather than leaving it to the deployment (the
    chat demo computes `demo/chat/data/backup`, keeping the env value an override),
    or the feature activates into a state where nothing can ever be written.
+   TODO (HIL-431): `BACKUP_DIR` is a local directory, so every archive lives on the
+   same host and disk as the application it protects — and, in a cluster, on
+   whichever node currently holds the monopoly agent. Copying an archive off the
+   machine is not implemented; a deployment that needs to survive losing the box
+   must arrange that outside the framework for now.
 3. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
    `backup:run` child shells out to it (Debian: `default-mysql-client`). Missing,
    it is not a config error but a failed run: the dump exits non-zero and the
