@@ -158,7 +158,10 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
   const slot = recordSlot(row.slots[BACKUP_SLOT]) ?? {}
 
   return {
-    id: readString(slot, 'id') || String(row.rowKey),
+    // Identity is the fragment's row key. It must not travel inside the slot: a slot
+    // payload carrying `id` is ingested as an entity fragment and replaced by a
+    // reference, which would strip every other field off the row (normalizer.ts).
+    id: String(row.rowKey),
     createdAt: readString(slot, 'createdAt'),
     env: readString(slot, 'env'),
     scope: readString(slot, 'scope'),

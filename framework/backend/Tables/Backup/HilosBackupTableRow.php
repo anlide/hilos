@@ -23,7 +23,16 @@ final class HilosBackupTableRow extends AbstractTableRow
     /** Stable row key of the single in-progress backup row. */
     public const string RUNNING_ROW_KEY = '__running__';
 
-    public const string id = 'id';
+    /**
+     * Payload key of the row identity.
+     *
+     * It rides the row fragment's `rowKey`, never a field inside the slot: a slot payload
+     * carrying `id` is ingested by the frontend normalizer as an entity fragment and replaced
+     * with a reference, which would strip every other field off this row
+     * ({@see \Hilos\Core\Table\Row\AbstractTableRow}).
+     */
+    public const string rowKey = 'rowKey';
+
     public const string createdAt = 'createdAt';
     public const string env = 'env';
     public const string scope = 'scope';
@@ -75,7 +84,9 @@ final class HilosBackupTableRow extends AbstractTableRow
     public function toArray(): array
     {
         return [
-            self::id => $this->rowKey,
+            // The key rides the payload under a name the normalizer ignores; `id` would make
+            // the whole slot look like an entity fragment on the frontend.
+            self::rowKey => $this->rowKey,
             self::createdAt => $this->createdAt,
             self::env => $this->env,
             self::scope => $this->scope,
@@ -96,7 +107,7 @@ final class HilosBackupTableRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         return new static(
-            rowKey: (string) ($data[self::id] ?? ''),
+            rowKey: (string) ($data[self::rowKey] ?? ''),
             createdAt: (string) ($data[self::createdAt] ?? ''),
             env: (string) ($data[self::env] ?? ''),
             scope: (string) ($data[self::scope] ?? ''),

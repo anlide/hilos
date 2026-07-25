@@ -146,6 +146,18 @@ referenced; a slot without one stays inline. A list's references therefore
 dedupe against entities delivered elsewhere (the chat user list and the chat
 event stream share the one `user` entity).
 
+> **Rule — an inline slot must not carry an `id`.** The detection is by
+> convention and it is not optional: a slot payload with a non-null `id` **is**
+> an entity, whatever the backend meant it to be. It is upserted into the entity
+> store and the slot is replaced by a reference — so a row that meant to deliver
+> a flat record of fields arrives with only its reference, and every other field
+> reads as empty. The failure is silent and looks like a backend bug: the wire
+> carries the full payload, the table renders blank cells. When a row's fields
+> are page-scoped and not a shared entity, keep the identity in the fragment's
+> `rowKey` and give the slot no `id` field (the framework backup table does
+> exactly this). When the row *is* an entity, let it be one and read it through
+> the reference — the one thing that never works is an inline record named `id`.
+
 > **Rule — keep the frontend slot→type map in sync with the backend source.**
 > The override map is **frontend config** (declared per page/list in the
 > frontend, not emitted on the wire today). Whenever you add or change it, **read

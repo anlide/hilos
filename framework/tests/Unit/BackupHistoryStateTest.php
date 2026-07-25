@@ -103,6 +103,53 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertSame('2026-07-18T10:00:00+00:00', $restored->startedAt);
     }
 
+    public function testHistoryAppliesAnInboundSyncDiff(): void
+    {
+        $row = BackupHistory::fromMetadata($this->minimalMetadata('hist-diff'));
+
+        $row->applyDiff([
+            BackupHistory::keep => true,
+            BackupHistory::status => 'error',
+            BackupHistory::sizeBytes => 4096,
+        ]);
+
+        // Untouched fields survive; the diff lands. Without applyDiff every worker but the
+        // writer would keep the row exactly as it first arrived.
+        $this->assertTrue($row->keep);
+        $this->assertSame('error', $row->status);
+        $this->assertSame(4096, $row->sizeBytes);
+        $this->assertSame('test', $row->env);
+        $this->assertSame('hist-diff', $row->getId());
+    }
+
+    public function testRuntimeAppliesAnInboundSyncDiff(): void
+    {
+        $runtime = BackupRuntime::create();
+
+        $runtime->applyDiff([
+            BackupRuntime::running => true,
+            BackupRuntime::currentBackupId => 'hist-live',
+            BackupRuntime::scope => 'full',
+            BackupRuntime::startedAt => '2026-07-18T10:00:00+00:00',
+        ]);
+
+        $this->assertTrue($runtime->running);
+        $this->assertSame('hist-live', $runtime->currentBackupId);
+
+        $runtime->applyDiff([
+            BackupRuntime::running => false,
+            BackupRuntime::currentBackupId => null,
+            BackupRuntime::scope => null,
+            BackupRuntime::startedAt => null,
+        ]);
+
+        // Clearing the in-progress row is a diff of nulls: it must clear, not be ignored.
+        $this->assertFalse($runtime->running);
+        $this->assertNull($runtime->currentBackupId);
+        $this->assertNull($runtime->scope);
+        $this->assertNull($runtime->startedAt);
+    }
+
     /**
      * @param string $id Backup id
      * @return BackupMetadata Minimal successful metadata

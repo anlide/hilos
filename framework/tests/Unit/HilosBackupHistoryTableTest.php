@@ -156,7 +156,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                 BrowserPageSignalData::rowKey => 'b1',
                 BrowserPageSignalData::sources => [
                     'backup' => [
-                        HilosBackupTableRow::id => 'b1',
+                        HilosBackupTableRow::rowKey => 'b1',
                         HilosBackupTableRow::createdAt => '2026-07-20T10:00:00+00:00',
                         HilosBackupTableRow::env => 'prod',
                         HilosBackupTableRow::scope => 'full',
@@ -170,6 +170,27 @@ final class HilosBackupHistoryTableTest extends TestCase
             ],
             $table->browserRow($row),
         );
+    }
+
+    public function testTheRowSlotCarriesNoIdField(): void
+    {
+        $row = new HilosBackupTableRow(
+            rowKey: 'b1',
+            createdAt: '2026-07-20T10:00:00+00:00',
+            env: 'prod',
+            scope: 'full',
+            sizeBytes: 2048,
+            durationSeconds: 7,
+            keep: false,
+            status: 'success',
+            finished: true,
+        );
+
+        // The frontend normalizer ingests any slot payload bearing an `id` as an entity
+        // fragment and replaces it with a reference, which strips every other field off the
+        // row. The identity rides the fragment's rowKey instead.
+        $this->assertArrayNotHasKey('id', $row->toArray());
+        $this->assertSame('b1', $row->toArray()[HilosBackupTableRow::rowKey]);
     }
 
     /**

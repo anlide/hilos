@@ -109,6 +109,48 @@ final class BackupHistory extends RtState
     }
 
     /**
+     * Applies an inbound RT sync diff to this row.
+     *
+     * Without it a synced update is silently dropped, and every worker but the writer keeps
+     * the row it first received - a pinned backup would stay unpinned everywhere else.
+     *
+     * @param array<string, mixed> $diff Changed fields and values from another worker
+     */
+    public function applyDiff(array $diff): void
+    {
+        if (array_key_exists(self::createdAt, $diff)) {
+            $this->createdAt = (string)$diff[self::createdAt];
+        }
+        if (array_key_exists(self::env, $diff)) {
+            $this->env = (string)$diff[self::env];
+        }
+        if (array_key_exists(self::scope, $diff)) {
+            $this->scope = (string)$diff[self::scope];
+        }
+        if (array_key_exists(self::connections, $diff)) {
+            $connections = [];
+            foreach ((array)$diff[self::connections] as $connectionRow) {
+                if (is_array($connectionRow)) {
+                    $connections[] = BackupConnectionMeta::fromArray($connectionRow);
+                }
+            }
+            $this->connections = $connections;
+        }
+        if (array_key_exists(self::sizeBytes, $diff)) {
+            $this->sizeBytes = (int)$diff[self::sizeBytes];
+        }
+        if (array_key_exists(self::durationSeconds, $diff)) {
+            $this->durationSeconds = (int)$diff[self::durationSeconds];
+        }
+        if (array_key_exists(self::keep, $diff)) {
+            $this->keep = (bool)$diff[self::keep];
+        }
+        if (array_key_exists(self::status, $diff)) {
+            $this->status = (string)$diff[self::status];
+        }
+    }
+
+    /**
      * @return string Runtime collection key for backup history rows
      */
     public static function getRtCollectionKey(): string

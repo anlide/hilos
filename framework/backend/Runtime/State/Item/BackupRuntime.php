@@ -72,6 +72,36 @@ final class BackupRuntime extends RtState
     /**
      * @return string Runtime collection key for the backup runtime singleton
      */
+    /**
+     * Applies an inbound RT sync diff to this singleton.
+     *
+     * The in-progress backup row is delivered as diffs of this item, so without it every
+     * worker but the agent's would show no running backup at all.
+     *
+     * @param array<string, mixed> $diff Changed fields and values from another worker
+     */
+    public function applyDiff(array $diff): void
+    {
+        if (array_key_exists(self::running, $diff)) {
+            $this->running = (bool)$diff[self::running];
+        }
+        if (array_key_exists(self::currentBackupId, $diff)) {
+            $value = $diff[self::currentBackupId];
+            $this->currentBackupId = $value === null ? null : (string)$value;
+        }
+        if (array_key_exists(self::scope, $diff)) {
+            $value = $diff[self::scope];
+            $this->scope = $value === null ? null : (string)$value;
+        }
+        if (array_key_exists(self::startedAt, $diff)) {
+            $value = $diff[self::startedAt];
+            $this->startedAt = $value === null ? null : (string)$value;
+        }
+    }
+
+    /**
+     * @return string Runtime collection key for the backup runtime singleton
+     */
     public static function getRtCollectionKey(): string
     {
         return self::RT_ITEM;
