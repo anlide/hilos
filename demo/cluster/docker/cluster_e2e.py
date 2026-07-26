@@ -390,15 +390,12 @@ SCENARIOS = [
     ("8 split-brain prevention", scenario_8_split_brain),
 ]
 
-# Scenarios disabled as known timing-flaky -- the cluster analogue of a Playwright
-# test.fixme. They degrade on a convergence timeout under host load (the mesh is
-# slow to re-converge after repeated node churn), not on a logic failure: the
-# quorum invariant itself holds when the scenario runs. Re-enable once HIL-367
-# (adaptive cluster timing) lands.
-FLAKY_SKIP = {
-    "7 quorum-loss": "HIL-367 -- mesh re-converge times out under host load; "
-                     "quorum invariant holds, timing-flaky not a logic failure",
-}
+# Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
+# cluster analogue of a Playwright test.fixme. Empty on purpose: "7 quorum-loss"
+# used to sit here for slow re-convergence, which turned out to be the membership
+# gossip echoing between nodes rather than host load. With that echo fixed the
+# scenario passes repeatedly, so the whole matrix runs.
+FLAKY_SKIP = {}
 
 
 def run_scenario(name, fn):

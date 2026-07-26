@@ -635,7 +635,15 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
-     * Merges a received announcement and re-announces it only when it changed us.
+     * Merges a received announcement about a node this one does not observe itself.
+     *
+     * Liveness is observed, not relayed. The mesh is full (every node dials every
+     * other), so a peer speaks authoritatively only about itself: an announcement
+     * describing a third node this node already holds a handshaked link to is
+     * dropped, because the local link is the better evidence. The merged entry is
+     * also never re-announced onward — the observer already broadcast the change to
+     * every peer, so relaying only re-amplifies it, and two nodes holding opposite
+     * liveness views would echo the flip between them without ever converging.
      *
      * @param PeerLink $link Link the announcement arrived on
      * @param PeerAnnounceDTO $announce Received announcement
@@ -647,6 +655,11 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             return;
         }
 
+        if ($announce->node->nodeId !== $link->remoteIdentity()?->nodeId
+            && $this->hasHandshakedLinkToNode($announce->node->nodeId)) {
+            return;
+        }
+
         $now = microtime(true);
         if ($this->mergeEntry($registry, $announce->node, $now)) {
             $identity = $announce->node->toIdentity();
@@ -655,7 +668,6 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             } else {
                 $this->notifyLeft($identity, $now);
             }
-            $this->broadcastAnnounce($announce->node, $link);
         }
     }
 
