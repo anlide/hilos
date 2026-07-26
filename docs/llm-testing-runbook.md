@@ -237,6 +237,21 @@ The external client is OpenAI-compatible: `POST {base}/v1/chat/completions` with
    `LLMConfigurationException`. Confirm the failure is visible in the UI and not
    just in the log.
 
+### Where the requests show up
+
+OpenAI's console splits its request log by surface and by project, and both
+catch people out:
+
+- The client calls `/v1/chat/completions`, so the requests appear under
+  **Completions**, not under Responses (a different API with its own tab).
+- API keys belong to a **project**, and the console shows logs and usage for the
+  project selected at the top. In any other project the same key looks unused.
+  The response headers name the one that was billed — `openai-project`, next to
+  `x-request-id`, which is also how a single call is looked up.
+- Usage is counted even when request bodies are not stored, so a non-zero usage
+  figure with an empty log means storage is off for that project, not that the
+  request went somewhere else.
+
 ## 4. External provider — Anthropic
 
 Anthropic is reachable through its OpenAI-compatibility endpoint, so the same
@@ -270,8 +285,13 @@ them. Until the agent stops sending `temperature`, it is the only Claude model
 this client can drive.
 
 > Only one external endpoint and key exist at a time (`LLM_EXTERNAL_*`), so the
-> roles cannot point at two different vendors simultaneously. HIL-332 covers the
+> roles cannot point at two different vendors simultaneously, and switching
+> vendors means editing `.env` and recreating the container. HIL-332 covers the
 > named endpoint/credential catalog that would lift this.
+>
+> Changing an LLM setting needs a daemon restart either way: an agent resolves
+> its profile in its constructor, so a saved setting reaches it only on the next
+> start (HIL-331).
 
 ## Troubleshooting
 
