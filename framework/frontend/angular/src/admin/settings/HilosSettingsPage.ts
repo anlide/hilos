@@ -282,12 +282,12 @@ export class HilosSettingsPage {
   protected readonly editRow = signal<HilosSettingRow | null>(null)
   protected readonly editValue = signal('')
   protected readonly editUseCustom = signal(false)
-  protected readonly edit = createHilosTrackedAction({ toast: true })
+  protected readonly edit = createHilosTrackedAction()
 
   // Delete dialog: orphan keys only (not in the catalog).
   protected readonly deleteOpen = signal(false)
   protected readonly deleteRow = signal<HilosSettingRow | null>(null)
-  protected readonly del = createHilosTrackedAction({ toast: true })
+  protected readonly del = createHilosTrackedAction()
 
   protected readonly editInputType = computed(() =>
     inputType(this.editRow()?.type),

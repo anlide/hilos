@@ -66,7 +66,6 @@ const fActive = ref(true)
 const {
   loading: formLoading,
   busy: formBusy,
-  error: formError,
   run: runFormAction,
   clearError: clearFormError,
 } = useTrackedAction()
@@ -77,7 +76,6 @@ const deleteRow = ref<BotRow | null>(null)
 const {
   loading: deleteLoading,
   busy: deleteBusy,
-  error: deleteError,
   run: runDeleteAction,
   clearError: clearDeleteError,
 } = useTrackedAction()
@@ -304,14 +302,6 @@ async function submitDelete(): Promise<void> {
       :confirm-on-close="formDirty"
       @cancel="closeForm"
     >
-      <div
-        v-if="formError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="admin-bots-error"
-      >
-        {{ formError }}
-      </div>
       <form @submit.prevent="submitForm">
         <div class="mb-3">
           <label class="form-label" for="admin-bots-name">Name</label>
@@ -407,14 +397,6 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
-      <div
-        v-if="deleteError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="admin-bots-delete-error"
-      >
-        {{ deleteError }}
-      </div>
       <p class="mb-0 text-body-secondary">
         This permanently removes the bot and stops its agent.
       </p>

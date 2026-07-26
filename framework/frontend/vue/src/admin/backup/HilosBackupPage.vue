@@ -67,7 +67,6 @@ const createScope = ref(HILOS_BACKUP_SCOPES[0].value)
 const {
   loading: createLoading,
   busy: createBusy,
-  error: createError,
   run: runCreateAction,
 } = useTrackedAction()
 
@@ -80,11 +79,7 @@ async function submitCreate(): Promise<void> {
 
 // Keep toggle: a per-row switch dispatched as a tracked action; the row stays
 // authoritative (the switch reflects the live row's keep, never an optimistic flip).
-const {
-  busy: keepBusy,
-  error: keepError,
-  run: runKeepAction,
-} = useTrackedAction()
+const { busy: keepBusy, run: runKeepAction } = useTrackedAction()
 const keepPendingId = ref<string | null>(null)
 
 async function toggleKeep(row: HilosBackupRow): Promise<void> {
@@ -102,7 +97,6 @@ const deleteRow = ref<HilosBackupRow | null>(null)
 const {
   loading: deleteLoading,
   busy: deleteBusy,
-  error: deleteError,
   run: runDeleteAction,
   clearError: clearDeleteError,
 } = useTrackedAction()
@@ -158,23 +152,6 @@ async function submitDelete(): Promise<void> {
       >
         Create backup
       </LoadingButton>
-    </div>
-
-    <div
-      v-if="createError"
-      class="alert alert-danger"
-      role="alert"
-      data-id="hilos-backup-create-error"
-    >
-      {{ createError }}
-    </div>
-    <div
-      v-if="keepError"
-      class="alert alert-danger"
-      role="alert"
-      data-id="hilos-backup-keep-error"
-    >
-      {{ keepError }}
     </div>
 
     <HilosViewportTable
@@ -257,14 +234,6 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
-      <div
-        v-if="deleteError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="hilos-backup-delete-error"
-      >
-        {{ deleteError }}
-      </div>
       <p class="mb-0 text-body-secondary">
         This permanently deletes the backup archive and its metadata. A pinned
         backup is deleted too — the pin only protects it from rotation.

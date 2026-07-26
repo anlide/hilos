@@ -93,25 +93,6 @@ const COLUMNS: HilosTableColumn[] = [
         </button>
       </div>
 
-      @if (create.error()) {
-        <div
-          class="alert alert-danger"
-          role="alert"
-          data-id="hilos-backup-create-error"
-        >
-          {{ create.error() }}
-        </div>
-      }
-      @if (keep.error()) {
-        <div
-          class="alert alert-danger"
-          role="alert"
-          data-id="hilos-backup-keep-error"
-        >
-          {{ keep.error() }}
-        </div>
-      }
-
       <hilos-viewport-table
         label="Backups"
         [controller]="backups().controller"
@@ -195,15 +176,6 @@ const COLUMNS: HilosTableColumn[] = [
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
       >
-        @if (del.error()) {
-          <div
-            class="alert alert-danger"
-            role="alert"
-            data-id="hilos-backup-delete-error"
-          >
-            {{ del.error() }}
-          </div>
-        }
         <p class="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.

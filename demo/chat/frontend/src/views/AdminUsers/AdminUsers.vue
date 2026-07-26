@@ -53,7 +53,6 @@ const editName = ref('')
 const {
   loading: editLoading,
   busy: editBusy,
-  error: editError,
   run: runEditAction,
   clearError: clearEditError,
 } = useTrackedAction()
@@ -108,7 +107,6 @@ const impersonateRow = ref<HilosUserRow | null>(null)
 const {
   loading: impersonateLoading,
   busy: impersonateBusy,
-  error: impersonateError,
   run: runImpersonateAction,
   clearError: clearImpersonateError,
 } = useTrackedAction()
@@ -203,14 +201,6 @@ async function submitImpersonate(): Promise<void> {
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
-      <div
-        v-if="editError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="admin-users-error"
-      >
-        {{ editError }}
-      </div>
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div class="mb-3">
           <label class="form-label" for="admin-users-name">Name</label>
@@ -260,14 +250,6 @@ async function submitImpersonate(): Promise<void> {
       "
       @cancel="closeImpersonate"
     >
-      <div
-        v-if="impersonateError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="admin-users-impersonate-error"
-      >
-        {{ impersonateError }}
-      </div>
       <p v-if="impersonateRow" class="mb-0">
         Become <strong>{{ impersonateRow.name }}</strong> and see the app as they
         do? You can stop from the banner at any time.

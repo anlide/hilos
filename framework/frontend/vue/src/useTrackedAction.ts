@@ -23,8 +23,9 @@ export interface TrackedActionOptions {
    */
   describeError?: (error: unknown) => string
   /**
-   * Push the failure into the shell's toast stack instead of leaving it for the
-   * caller to render next to the button. `error` is still set either way.
+   * Where the failure surfaces. Defaults to the shell's toast stack; pass false
+   * only where the failure belongs next to the control that raised it (field
+   * validation, a sign-in form). `error` is set either way (toasts.md).
    */
   toast?: boolean
 }
@@ -77,7 +78,7 @@ export function useTrackedAction(
     } catch (caught) {
       const message = describeError(caught)
       error.value = message
-      if (options.toast === true) {
+      if (options.toast !== false) {
         hilosToasts.push(message, { severity: 'error' })
       }
 

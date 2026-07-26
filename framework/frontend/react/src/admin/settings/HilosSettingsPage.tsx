@@ -86,12 +86,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const [editRow, setEditRow] = useState<HilosSettingRow | null>(null)
   const [editValue, setEditValue] = useState('')
   const [editUseCustom, setEditUseCustom] = useState(false)
-  const edit = useTrackedAction({ toast: true })
+  const edit = useTrackedAction()
 
   // Delete dialog: orphan keys only (not in the catalog).
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRow, setDeleteRow] = useState<HilosSettingRow | null>(null)
-  const del = useTrackedAction({ toast: true })
+  const del = useTrackedAction()
 
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)

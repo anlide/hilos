@@ -45,8 +45,8 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   await page.getByTestId('hilos-backup-create').click()
 
   // Acceptance is acked at once and the request must not fail: a misconfigured
-  // storage root or CLI entry is refused synchronously and would land here.
-  await expect(page.getByTestId('hilos-backup-create-error')).toHaveCount(0)
+  // storage root or CLI entry is refused synchronously and would toast here.
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
 
   // The run lands as a new row, live — no Apply gate for the tab that asked.
   await expect
@@ -75,7 +75,7 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   const createdKey = await row.getAttribute('data-id')
   await row.locator('[data-id^="hilos-backup-delete-"]').click()
   await page.getByTestId('hilos-backup-delete-confirm').click()
-  await expect(page.getByTestId('hilos-backup-delete-error')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
   // The row does not vanish: a removal leaves a placeholder in its slot, so the
   // window never collapses under the reader (table-subscription.md). What must be
   // gone is the backup itself — the row stops offering its actions.

@@ -17,8 +17,7 @@ Pick the surface by where the user is looking and how long the fact matters:
 | The fact | Surface |
 |---|---|
 | this field / this form is wrong | inline, next to the field — never a toast |
-| the action I just pressed failed, in a dialog | **toast** — the dialog stays open with the entered values, and the notice does not push the form around |
-| the action I just pressed failed, on the page itself | the tracked action's own error, next to the button |
+| the action I just pressed failed | **toast** — this is the default, in a dialog and on a page alike |
 | something I started earlier finished or failed | **toast** |
 | a late reply reconciling after a timeout | **toast** |
 | an outcome the user may need tomorrow | the feature's own record (a history row, a status field) — a toast may accompany it, never replace it |
@@ -48,24 +47,34 @@ that asked for the work, or to nobody.
    disguise.
 4. Write the message as a whole sentence the user can act on. A failure names
    what failed and why in one line; the full detail belongs in the log, not in
-   the corner of the screen.
+   the corner of the screen — and never the engine's own words
+   ([wire-protocol.md](wire-protocol.md), "A failure reason is a domain
+   sentence").
 5. Nothing to mount: `HilosToastHost` is part of `HilosLayout` in all three view
    layers, so any page inside the shell is covered. Mount the host yourself only
    in an app that does not use the framework shell.
 
 ## Failures of a tracked action
 
-A dialog's submit does not push its own toast. The tracked-action driver does it:
-pass `toast: true` when building it, and it pushes the described failure while
-still setting `error` for anything that wants to render it.
+A view does not push its own toast for a submit. The tracked-action driver does
+it — by default, with no flag — and still sets `error` for anything that wants to
+render it:
 
 ```ts
-const { loading, busy, run } = useTrackedAction({ toast: true })   // Vue / React
-protected readonly edit = createHilosTrackedAction({ toast: true }) // Angular
+const { loading, busy, run } = useTrackedAction()   // Vue / React
+protected readonly edit = createHilosTrackedAction() // Angular
 ```
 
-Without the flag the driver behaves as before — `error` is set and nothing is
-pushed — which is what a page-level action next to its own button wants.
+**Do not render `error` as an inline alert alongside this.** The toast is the
+surface; a banner as well is the same failure said twice, and it shoves the form
+down as it appears.
+
+Opting out is `toast: false`, and it needs a reason at the call site. The two
+that qualify:
+
+- **field validation** — the message belongs against the field it describes;
+- **sign-in and verification forms** — "wrong password" answers the value the
+  user just typed, on a form they are already looking at.
 
 ## Preferred Shape
 

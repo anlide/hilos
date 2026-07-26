@@ -181,25 +181,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         </LoadingButton>
       </div>
 
-      {create.error ? (
-        <div
-          className="alert alert-danger"
-          role="alert"
-          data-id="hilos-backup-create-error"
-        >
-          {create.error}
-        </div>
-      ) : null}
-      {keep.error ? (
-        <div
-          className="alert alert-danger"
-          role="alert"
-          data-id="hilos-backup-keep-error"
-        >
-          {keep.error}
-        </div>
-      ) : null}
-
       <HilosViewportTable
         label="Backups"
         controller={backups.controller}
@@ -287,15 +268,6 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
           </>
         )}
       >
-        {del.error ? (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-id="hilos-backup-delete-error"
-          >
-            {del.error}
-          </div>
-        ) : null}
         <p className="mb-0 text-body-secondary">
           This permanently deletes the backup archive and its metadata. A pinned
           backup is deleted too — the pin only protects it from rotation.

@@ -77,7 +77,7 @@ const {
   busy: editBusy,
   run: runEditAction,
   clearError: clearEditError,
-} = useTrackedAction({ toast: true })
+} = useTrackedAction()
 const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() => inputStep(editRow.value?.type))
 const editValueBool = computed({
@@ -104,7 +104,7 @@ const {
   busy: deleteBusy,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction({ toast: true })
+} = useTrackedAction()
 
 function openEdit(row: HilosSettingRow): void {
   // Flush pending so the dialog edits the latest committed row; a row removed by
