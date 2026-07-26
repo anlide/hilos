@@ -49,6 +49,12 @@ export interface HilosSettingRow {
   readonly defaultReferenceKey: string | null
   /** Where the effective value comes from. */
   readonly valueSource: SettingValueSource
+  /**
+   * Whether a DB row backs this key. `valueSource` cannot answer it: a stored
+   * NULL (no override, inherit the default) and a catalog key with no row at all
+   * both read as `default` / `reference`.
+   */
+  readonly persisted: boolean
 }
 
 // Wire keys: the framework settings table and its single inline `settings` slot
@@ -133,6 +139,7 @@ export function resolveHilosSettingRow(row: TableRow): HilosSettingRow {
     defaultValue: readStringOrNull(slot, 'default_value'),
     defaultReferenceKey: readStringOrNull(slot, 'default_reference_key'),
     valueSource: toValueSource(slot['value_source']),
+    persisted: slot['persisted'] === true,
   }
 }
 
@@ -141,9 +148,15 @@ export function isOrphanSetting(row: HilosSettingRow): boolean {
   return row.valueSource === 'orphan'
 }
 
-/** A setting backed by a persisted DB row (a custom override or an orphan). */
+/**
+ * A setting backed by a persisted DB row — edit it, do not insert it again.
+ *
+ * Read from the row's own flag rather than inferred from `valueSource`: a row
+ * storing NULL inherits its value and still exists, so treating it as absent
+ * sends an add for a key that is already there.
+ */
 export function isPersistedSetting(row: HilosSettingRow): boolean {
-  return row.valueSource === 'override' || row.valueSource === 'orphan'
+  return row.persisted
 }
 
 /** The settings table handle a settings view drives: the controller plus its mount lifecycle. */

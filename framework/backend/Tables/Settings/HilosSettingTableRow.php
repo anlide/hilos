@@ -9,6 +9,13 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 
 /**
  * Backend row payload for the framework settings table.
+ *
+ * `persisted` says whether a DB row backs this key, which `valueSource` cannot:
+ * a stored row whose value is NULL (no override, inherit the default) and a
+ * catalog key with no row at all both resolve to `default` / `reference`. The
+ * frontend needs the distinction to edit an existing row instead of inserting a
+ * duplicate, and the DB id cannot carry it — {@see HilosSettingsTable::browserRow()}
+ * strips the id so the frontend normalizer does not read the slot as an entity.
  */
 final class HilosSettingTableRow extends AbstractTableRow
 {
@@ -25,6 +32,7 @@ final class HilosSettingTableRow extends AbstractTableRow
     public const string defaultValue = 'default_value';
     public const string defaultReferenceKey = 'default_reference_key';
     public const string valueSource = 'value_source';
+    public const string persisted = 'persisted';
 
     public function __construct(
         public ?int $id,
@@ -35,6 +43,7 @@ final class HilosSettingTableRow extends AbstractTableRow
         public ?string $defaultValue,
         public ?string $defaultReferenceKey,
         public string $valueSource,
+        public bool $persisted,
     ) {
     }
 
@@ -64,6 +73,7 @@ final class HilosSettingTableRow extends AbstractTableRow
             self::defaultValue => $this->defaultValue,
             self::defaultReferenceKey => $this->defaultReferenceKey,
             self::valueSource => $this->valueSource,
+            self::persisted => $this->persisted,
         ];
     }
 
@@ -83,6 +93,7 @@ final class HilosSettingTableRow extends AbstractTableRow
             defaultValue: isset($data[self::defaultValue]) ? (string) $data[self::defaultValue] : null,
             defaultReferenceKey: isset($data[self::defaultReferenceKey]) ? (string) $data[self::defaultReferenceKey] : null,
             valueSource: (string) ($data[self::valueSource] ?? self::VALUE_SOURCE_ORPHAN),
+            persisted: (bool) ($data[self::persisted] ?? false),
         );
     }
 }

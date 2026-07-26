@@ -26,6 +26,7 @@ final class HilosSettingsTableTest extends TestCase
             defaultValue: 'off',
             defaultReferenceKey: null,
             valueSource: HilosSettingTableRow::VALUE_SOURCE_OVERRIDE,
+            persisted: true,
         );
 
         $browserRow = (new HilosSettingsTable())->browserRow($row);
@@ -37,5 +38,8 @@ final class HilosSettingsTableTest extends TestCase
         $this->assertSame('feature_flag', $slot[HilosSettingTableRow::key]);
         $this->assertSame('on', $slot[HilosSettingTableRow::value]);
         $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $slot[HilosSettingTableRow::valueSource]);
+        // The frontend reads persisted-ness from this flag, since the id is stripped
+        // above and value_source cannot tell a stored NULL from an absent row.
+        $this->assertTrue($slot[HilosSettingTableRow::persisted]);
     }
 }

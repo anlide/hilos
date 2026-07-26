@@ -155,6 +155,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
                 defaultValue: null,
                 defaultReferenceKey: null,
                 valueSource: HilosSettingTableRow::VALUE_SOURCE_ORPHAN,
+                persisted: true,
             );
         }
 
@@ -177,6 +178,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
                 : ($defaultReferenceKey !== null
                     ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
                     : HilosSettingTableRow::VALUE_SOURCE_DEFAULT),
+            persisted: true,
         );
     }
 
@@ -186,7 +188,9 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
      * The DB id is dropped from the slot: the frontend normalizer treats any slot
      * carrying a non-null id as a referenced entity, but settings rows are
      * page-scoped, keyed by the setting key, and carry a nullable id (catalog
-     * placeholders have none). Persisted-ness is read from value_source instead.
+     * placeholders have none). The row's own `persisted` flag carries that fact
+     * instead — value_source cannot, since a stored NULL and an absent row both
+     * read as default/reference.
      *
      * @param AbstractTableRow $row Settings table row from this table's snapshot or mutation
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
@@ -316,6 +320,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
             valueSource: $defaultReferenceKey !== null
                 ? HilosSettingTableRow::VALUE_SOURCE_REFERENCE
                 : HilosSettingTableRow::VALUE_SOURCE_DEFAULT,
+            persisted: false,
         );
     }
 

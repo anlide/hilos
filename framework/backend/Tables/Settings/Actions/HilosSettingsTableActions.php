@@ -17,21 +17,24 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 /**
  * Collection-level actions for the framework settings table (table layer).
  *
- * Operation: add setting. Delegates to Hilos::$db->settings->actions->add().
+ * Operation: set a custom value on a cataloged key. Idempotent by key: it writes
+ * through the existing row when one is already stored (a stored NULL means "no
+ * override, inherit the default" — the row exists), and inserts only when the key
+ * has no row at all.
  *
  * @property HilosSettingsTable $definition Settings table definition that builds row mutation payloads.
  */
 final class HilosSettingsTableActions extends TableActions
 {
     /**
-     * Adds a setting. Key must exist in catalog. Value defaults from catalog if null.
+     * Sets a custom value on a cataloged key, inserting the row only when absent.
      *
      * @param string $key Setting key (must be in catalog)
      * @param mixed $value Value (null = use catalog default when reading)
-     * @return TableRowMutationDTO Row mutation DTO for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast — an update when the row existed
      * @throws DatabaseException When the active database context is not a HilosDbContext
      * @throws SettingAccessorUnavailableException When the settings accessor is not initialized
-     * @throws HilosException When settings catalog validation or DB persistence fails
+     * @throws HilosException When settings catalog validation, the write guard, or DB persistence fails
      */
     public function add(string $key, mixed $value = null): TableRowMutationDTO
     {
@@ -41,6 +44,22 @@ final class HilosSettingsTableActions extends TableActions
         }
         $catalog = Hilos::$setting?->catalog()
             ?? throw new SettingAccessorUnavailableException('Settings accessor is not initialized');
+
+        // Setting a custom value on a key that already has a row is an update, not
+        // an insert: a stored NULL means "no override, inherit", so the row exists.
+        // Insert-only here would hit the unique key — which is also what a second
+        // admin sees when the first one created the row between render and submit.
+        $existing = $db->settings[$key] ?? null;
+        if ($existing !== null) {
+            $existing->actions->updateValue($value);
+
+            return $this->mutation(
+                TableMutationType::Update,
+                $existing->key,
+                $this->definition->rowFromSetting($existing),
+            );
+        }
+
         $dbSetting = $db->settings->actions->add($key, $value, $catalog);
 
         return $this->mutation(TableMutationType::Create, $dbSetting->key, $this->definition->rowFromSetting($dbSetting));

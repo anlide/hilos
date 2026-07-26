@@ -17,8 +17,11 @@ function settingsRow(
   return { rowKey, slots: slot === undefined ? {} : { settings: slot } }
 }
 
-/** Build a resolved settings view-model with the given value source. */
-function rowWithSource(valueSource: SettingValueSource): HilosSettingRow {
+/** Build a resolved settings view-model with the given value source and backing. */
+function rowWithSource(
+  valueSource: SettingValueSource,
+  persisted = false,
+): HilosSettingRow {
   return {
     key: 'k',
     type: 'string',
@@ -27,6 +30,7 @@ function rowWithSource(valueSource: SettingValueSource): HilosSettingRow {
     defaultValue: null,
     defaultReferenceKey: null,
     valueSource,
+    persisted,
   }
 }
 
@@ -41,6 +45,7 @@ describe('resolveHilosSettingRow', () => {
         default_value: '1.0',
         default_reference_key: 'default_bot_timeout_sec',
         value_source: 'reference',
+        persisted: true,
       }),
     )
 
@@ -52,6 +57,7 @@ describe('resolveHilosSettingRow', () => {
       defaultValue: '1.0',
       defaultReferenceKey: 'default_bot_timeout_sec',
       valueSource: 'reference',
+      persisted: true,
     })
   })
 
@@ -65,6 +71,7 @@ describe('resolveHilosSettingRow', () => {
     expect(row.defaultValue).toBeNull()
     expect(row.defaultReferenceKey).toBeNull()
     expect(row.valueSource).toBe('orphan')
+    expect(row.persisted).toBe(false)
   })
 
   it('narrows an unknown value_source to orphan', () => {
@@ -86,10 +93,17 @@ describe('isOrphanSetting', () => {
 })
 
 describe('isPersistedSetting', () => {
-  it('is true for an override or an orphan (both back a DB row)', () => {
-    expect(isPersistedSetting(rowWithSource('override'))).toBe(true)
-    expect(isPersistedSetting(rowWithSource('orphan'))).toBe(true)
-    expect(isPersistedSetting(rowWithSource('default'))).toBe(false)
-    expect(isPersistedSetting(rowWithSource('reference'))).toBe(false)
+  it('reads the row flag, not the value source', () => {
+    expect(isPersistedSetting(rowWithSource('override', true))).toBe(true)
+    expect(isPersistedSetting(rowWithSource('orphan', true))).toBe(true)
+    expect(isPersistedSetting(rowWithSource('default', false))).toBe(false)
+    expect(isPersistedSetting(rowWithSource('reference', false))).toBe(false)
+  })
+
+  it('is true for a stored row that inherits its value', () => {
+    // A row storing NULL resolves to default/reference and still exists: editing
+    // it must update, not insert a duplicate.
+    expect(isPersistedSetting(rowWithSource('reference', true))).toBe(true)
+    expect(isPersistedSetting(rowWithSource('default', true))).toBe(true)
   })
 })
