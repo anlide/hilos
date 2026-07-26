@@ -70,10 +70,22 @@ The daemon applies migrations on startup. Endpoints (defaults):
 | Endpoint | URL |
 |---|---|
 | Frontend dev server (HMR) | http://localhost:5175 |
+| Built frontend behind nginx (`daemon-start-build`) | https://localhost:8445 |
 | phpMyAdmin | http://localhost:8082 |
 | Daemon status API | http://localhost:8104/status |
 | Daemon WebSocket | ws://localhost:8106 |
 | MySQL (from host) | localhost:33065 |
+
+The nginx certificate is self-signed, so the browser warns once. Only HTTPS is
+published locally: the container's plain-HTTP vhost redirects to `https://$host`
+with the port dropped, which would land on whatever holds 443 rather than on
+this stack.
+
+These host-side ports are compose *interpolation* values, so `.env` cannot
+change them — compose reads them from the shell environment or from
+`docker/.env` before any container exists (`NGINX_HTTPS_PORT=9445 composer run
+daemon-start-build`). A port written into `.env` is silently ignored: that file
+is the container `env_file`.
 
 ## Stack commands
 

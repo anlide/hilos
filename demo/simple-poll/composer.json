@@ -42,7 +42,11 @@
         "setup-env": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local sh -c \"cd /hilos/demo/simple-poll && cp -n .env.example .env || true; cp -n tests/.env.example tests/.env || true; ls -l .env tests/.env\"",
         "install-deps": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local composer install",
         "daemon-start": "docker compose -f docker/docker-compose.local.yml up -d",
-        "daemon-start-build": "docker compose -f docker/docker-compose.local.yml --profile full up -d --build",
+        "assert-frontend-dist": "@php -r \"if (!is_file('frontend/dist/build-timestamp.txt')) { fwrite(STDERR, PHP_EOL . 'No built frontend in frontend/dist - nginx would serve 404s. Run: composer run frontend:build' . PHP_EOL . PHP_EOL); exit(1); }\"",
+        "daemon-start-build": [
+            "@assert-frontend-dist",
+            "docker compose -f docker/docker-compose.local.yml --profile full up -d --build"
+        ],
         "daemon-stop": "docker compose -f docker/docker-compose.local.yml stop",
         "daemon-restart": "docker compose -f docker/docker-compose.local.yml restart poll-daemon-local",
         "daemon-status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php daemon:status",
@@ -77,7 +81,7 @@
             "@test:up",
             "@test:db-wait",
             "@test:db-reset",
-            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d poll-daemon-test poll-nginx-test"
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build poll-daemon-test poll-nginx-test"
         ],
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",

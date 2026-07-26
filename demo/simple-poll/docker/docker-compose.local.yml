@@ -8,7 +8,13 @@
 # worker comm / 8092 websocket, same as every demo — the nginx template proxies
 # /ws to :8092); only the host-side publishes shift per demo so the stacks run
 # side by side (chat holds 8090-8097, simple-todo 8098-8103, simple-poll takes
-# 8104-8109).
+# 8104-8109 across this file and docker-compose.test.yml).
+#
+# Every ${...} below is compose *interpolation*, resolved before a container
+# exists: it comes from the shell environment or from a `.env` next to this file
+# (docker/.env), NEVER from the demo's ../.env — that one is wired as `env_file`
+# and only reaches container environments. A host-port override written into
+# ../.env is silently ignored, so keep the defaults here usable as-is.
 
 name: hilos-simple-poll-local
 
@@ -139,6 +145,8 @@ services:
 
   # Prod-parity nginx over the BUILT frontend artifact (profile full — only
   # `daemon-start-build` starts it; the dev loop uses the ng dev server instead).
+  # Run `composer run frontend:build` first: this mounts frontend/dist read-only,
+  # and docker would otherwise create it empty and serve 404s.
   poll-nginx-local:
     build:
       context: .
@@ -148,8 +156,14 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
-      - "${NGINX_HTTP_PORT:-82}:80"
-      - "${NGINX_HTTPS_PORT:-445}:443"
+      # HTTPS only, on a high port. The former 443+n scheme (this demo had 445)
+      # is unusable on a Windows host: SMB owns 445, so Docker Desktop rejects
+      # the publish with "/forwards/expose returned unexpected status: 500" and
+      # leaves the container created but never started. The container's own :80
+      # vhost stays unpublished on purpose — it 301s to https://$host with the
+      # port dropped, which lands on whatever holds 443 (another demo's stack),
+      # not here. Reach this stack at https://localhost:8445.
+      - "${NGINX_HTTPS_PORT:-8445}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=poll-daemon-local
     depends_on:
