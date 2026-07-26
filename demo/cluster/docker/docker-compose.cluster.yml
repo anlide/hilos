@@ -153,6 +153,11 @@ services:
       CLUSTER_NODE_CAPABILITIES: "worker"
       CLUSTER_PEER_ADVERTISE: "172.31.0.14:8095"
       CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.15:8095"
+      # Fleet members share these regular workers. A member's synthetic job blocks its
+      # worker, so several of them keep the whole fleet ticking even when one node holds
+      # it all after a failover.
+      WORKER_MIN_REGULAR: "5"
+      WORKER_MAX_REGULAR: "5"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro
@@ -174,6 +179,9 @@ services:
       CLUSTER_NODE_CAPABILITIES: "worker"
       CLUSTER_PEER_ADVERTISE: "172.31.0.15:8095"
       CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.14:8095"
+      # Regular workers the fleet members share on this node; see s1.
+      WORKER_MIN_REGULAR: "5"
+      WORKER_MAX_REGULAR: "5"
     volumes:
       - ..:/app
       - ../../../composer.json:/hilos/composer.json:ro

@@ -9,6 +9,7 @@ use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Core\Socket\Server\ClusterWorkerServer;
 use Demo\Cluster\Hilos;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
@@ -26,20 +27,29 @@ use Hilos\Utils\Logger;
 /**
  * ClusterDaemonManager - Main daemon manager for the cluster demo.
  *
- * Beyond the standard factory wiring it drives placement of the demo's single
- * no-op agent. Once this node is leader and the mesh has settled, it asks the
- * framework's best-fit policy (HIL-182) to place the WORKER agent on the strongest
- * capable data-plane node, and lets the framework's failover defaults (HIL-183)
- * re-place it when that node is lost. Placement is idempotent — a single tracked
- * record, in any state, suppresses re-placing — so the leader never double-runs the
- * agent, and a fresh leader re-derives placement from the mesh.
+ * Beyond the standard factory wiring it drives placement of the demo's worker
+ * fleet. Once this node is leader and the mesh has settled, it asks the framework's
+ * best-fit policy (HIL-182) to place every fleet member on the strongest capable
+ * data-plane node, and lets the framework's failover defaults (HIL-183) re-place the
+ * lost node's share when that node dies. Placement is idempotent per member — a
+ * tracked record, in any state, suppresses re-placing — so the leader never
+ * double-runs a member, and a fresh leader re-derives the fleet from the mesh.
  */
 final class ClusterDaemonManager extends DaemonManager
 {
     /** @var float Heartbeats to wait after winning leadership before placing, so the mesh rebuild settles */
     private const float PLACE_SETTLE_HEARTBEATS = 4.0;
 
-    /** @var ?string Placement view has settled after this microtime; null while not leader or still settling */
+    /** @var int Worker agents the leader keeps placed across the data plane */
+    private const int WORKER_FLEET_SIZE = 10;
+
+    /** @var float Seconds between attempts to re-place a fleet member whose start failed */
+    private const float FAILED_RETRY_INTERVAL_SEC = 5.0;
+
+    /** @var float Microtime a failed fleet member may be re-placed again */
+    private float $retryFailedAt = 0.0;
+
+    /** @var ?float Placement view has settled after this microtime; null while not leader or still settling */
     private ?float $placeSettleDeadline = null;
 
     /** @var ClusterWorkerServer Worker server, stashed while composing so the status route can read its counts */
@@ -157,8 +167,8 @@ final class ClusterDaemonManager extends DaemonManager
     }
 
     /**
-     * Leader per-tick hook: once the settle window has elapsed, ensure the demo agent is
-     * placed. Cheap and idempotent — a single registry lookup on most ticks.
+     * Leader per-tick hook: once the settle window has elapsed, ensure the worker fleet is
+     * placed. Cheap and idempotent — one registry lookup per fleet member on most ticks.
      */
     protected function onTickLeaderMaster(): void
     {
@@ -166,31 +176,59 @@ final class ClusterDaemonManager extends DaemonManager
             return;
         }
 
-        $this->ensureWorkerPlaced();
+        $this->ensureWorkerFleetPlaced();
     }
 
     /**
-     * Places the WORKER agent on the best-fit data-plane node when it is not already tracked.
+     * Places every fleet member the leader is not already tracking on the best-fit node.
      *
      * Delegates node choice to the framework's best-fit policy (HIL-182) via
      * {@see ClusterPlacement::placeAgentOnBestNode()}: it ranks the online capable nodes and
-     * places on the winner, or does nothing when none is a fit yet. A record in any state
-     * (including Unplaced, which the framework retries on the next capable join) suppresses
-     * placement, so this never fights failover or double-runs the agent.
+     * places on the winner, or does nothing when none is a fit yet. A record in any live
+     * state (including Unplaced, which the framework retries on the next capable join)
+     * suppresses placement, so this never fights failover or double-runs a member. A member
+     * whose start Failed is the exception: nothing else retries it, so this supervisor
+     * re-places it once per retry interval until it comes up.
      */
-    private function ensureWorkerPlaced(): void
+    private function ensureWorkerFleetPlaced(): void
     {
         // Runs on the master loop, so the whole placement read/write is guarded: a
-        // registry hiccup or a rejected placement is logged, never propagated.
+        // registry hiccup or a rejected placement is logged, never propagated. A member
+        // that throws leaves the rest for the next tick, which retries from where it stopped.
         try {
             $placement = Hilos::$cluster?->placement();
-            if ($placement === null || $placement->registry()->get(AgentType::WORKER) !== null) {
+            if ($placement === null) {
                 return;
             }
 
-            $placement->placeAgentOnBestNode(AgentType::WORKER, null);
+            $now = microtime(true);
+            $retryFailed = $now >= $this->retryFailedAt;
+            if ($retryFailed) {
+                $this->retryFailedAt = $now + self::FAILED_RETRY_INTERVAL_SEC;
+            }
+
+            $tracked = [];
+            foreach ($placement->registry()->all() as $record) {
+                if ($record->agentType !== AgentType::WORKER || $record->agentIndex === null) {
+                    continue;
+                }
+                if ($retryFailed && $record->state === PlacementState::Failed) {
+                    continue;
+                }
+
+                $tracked[$record->agentIndex] = true;
+            }
+
+            for ($index = 0; $index < self::WORKER_FLEET_SIZE; $index++) {
+                $agentIndex = (string)$index;
+                if (isset($tracked[$agentIndex])) {
+                    continue;
+                }
+
+                $placement->placeAgentOnBestNode(AgentType::WORKER, $agentIndex);
+            }
         } catch (\Throwable $e) {
-            Logger::warning("Cluster demo could not place WORKER agent: {$e->getMessage()}");
+            Logger::warning("Cluster demo could not place the WORKER fleet: {$e->getMessage()}");
         }
     }
 }

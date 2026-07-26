@@ -34,6 +34,8 @@ final class Hilos extends \Hilos\Hilos
         WorkerAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => WorkerAgent::class,
             AgentRegistryKey::DAEMON => WorkerAgentDaemon::class,
+            // The leader places a fleet of these, so every instance carries its own index.
+            AgentRegistryKey::INDEXED => true,
         ],
     ];
 

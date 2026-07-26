@@ -47,7 +47,8 @@ final class ClusterTopologyRegistryTest extends TestCase
         $entry = Hilos::AGENTS[AgentType::WORKER];
         $this->assertSame(WorkerAgent::class, AgentRegistry::workerClass($entry));
         $this->assertSame(WorkerAgentDaemon::class, AgentRegistry::daemonClass($entry));
-        $this->assertFalse(AgentRegistry::requiresIndex($entry));
+        // The leader places a fleet, so the registry must hand each instance its index.
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
         $this->assertTrue(is_subclass_of(WorkerAgentDaemon::class, AbstractAgentDaemon::class));
         $this->assertSame(AgentType::WORKER, WorkerAgent::AGENT_TYPE);
     }

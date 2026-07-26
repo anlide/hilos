@@ -50,7 +50,9 @@ MASTERS = ["m1", "m2", "m3"]
 SLAVES = ["s1", "s2"]
 ALL_NODES = MASTERS + SLAVES
 
-WORKER_AGENT_ID = "worker"
+WORKER_AGENT_TYPE = "worker"
+# Fleet size the leader keeps placed; mirrors ClusterDaemonManager::WORKER_FLEET_SIZE.
+WORKER_FLEET_SIZE = 10
 
 
 # ------------------------------------------------------- adaptive timing (HIL-367)
@@ -170,12 +172,23 @@ def leader_placements(views):
     return views[ls[0]].get("placements", []) or []
 
 
-def worker_placement(views):
-    """The worker agent's placement row on the leader, or None."""
-    for row in leader_placements(views):
-        if row.get("agentId") == WORKER_AGENT_ID:
-            return row
-    return None
+def worker_placements(views):
+    """The worker fleet's placement rows on the leader, keyed by agent id."""
+    prefix = WORKER_AGENT_TYPE + ":"
+    return {row["agentId"]: row for row in leader_placements(views)
+            if str(row.get("agentId", "")).startswith(prefix)}
+
+
+def hosted_by(views, node):
+    """Agent ids of the fleet members the leader reports started on one node."""
+    return {i for i, row in worker_placements(views).items()
+            if row.get("nodeId") == node and row.get("state") == "started"}
+
+
+def fleet_started(views):
+    """Predicate: every fleet member is placed and started somewhere."""
+    rows = worker_placements(views)
+    return len(rows) == WORKER_FLEET_SIZE and all(r.get("state") == "started" for r in rows.values())
 
 
 # ------------------------------------------------------------------- polling
@@ -264,26 +277,28 @@ def scenario_2_master_master():
 
 
 def scenario_3_placement():
-    views = wait_until(lambda v: (worker_placement(v) or {}).get("state") == "started",
-                       CONVERGE_TIMEOUT, "worker agent placed and started")
-    row = worker_placement(views)
-    assert row["nodeId"] in SLAVES, f"worker placed on non-slave node {row['nodeId']}"
-    return f"worker placed on {row['nodeId']} (state={row['state']})"
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT,
+                       f"all {WORKER_FLEET_SIZE} worker agents placed and started")
+    rows = worker_placements(views)
+    stray = {row["nodeId"] for row in rows.values()} - set(SLAVES)
+    assert not stray, f"worker fleet placed on non-slave nodes {sorted(stray)}"
+    spread = ", ".join(f"{s}={len(hosted_by(views, s))}" for s in SLAVES)
+    return f"{len(rows)} workers placed and started on the data plane ({spread})"
 
 
 def scenario_4_slave_kill_failover():
-    views = wait_until(lambda v: (worker_placement(v) or {}).get("state") == "started",
-                       CONVERGE_TIMEOUT, "worker placed before failover")
-    host = worker_placement(views)["nodeId"]
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before failover")
+    host = max(SLAVES, key=lambda s: len(hosted_by(views, s)))
     other = next(s for s in SLAVES if s != host)
-    print(f"    killing worker host slave {host}; expecting re-placement onto {other}")
+    moving = len(hosted_by(views, host))
+    print(f"    killing worker host slave {host} carrying {moving} agent(s); "
+          f"expecting re-placement onto {other}")
     ctl("kill", host)
     try:
-        views = wait_until(
-            lambda v: (worker_placement(v) or {}).get("nodeId") == other
-            and worker_placement(v).get("state") == "started",
-            FAILOVER_TIMEOUT, f"worker re-placed onto {other}")
-        return f"worker failed over {host} -> {other}"
+        # The survivor is the only capable node left, so the whole fleet must land on it.
+        wait_until(lambda v: len(hosted_by(v, other)) == WORKER_FLEET_SIZE,
+                   FAILOVER_TIMEOUT, f"the whole fleet re-placed onto {other}")
+        return f"{moving} worker(s) failed over {host} -> {other}; all {WORKER_FLEET_SIZE} started there"
     finally:
         ctl("start", host)
         wait_converge(ALL_NODES)

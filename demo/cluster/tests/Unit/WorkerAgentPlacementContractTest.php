@@ -16,22 +16,28 @@ use PHPUnit\Framework\TestCase;
  */
 final class WorkerAgentPlacementContractTest extends TestCase
 {
+    /** @var string Fleet member index the daemon under test stands for */
+    private const string FLEET_INDEX = '3';
+
     private WorkerAgentDaemon $daemon;
 
     protected function setUp(): void
     {
-        $this->daemon = new WorkerAgentDaemon();
+        $this->daemon = new WorkerAgentDaemon(self::FLEET_INDEX);
     }
 
     public function testAgentTypeMatchesConstant(): void
     {
         $this->assertSame(AgentType::WORKER, $this->daemon->getType());
-        $this->assertNull($this->daemon->getIndex());
+        // A fleet member, so it carries the index the leader placed it under.
+        $this->assertSame(self::FLEET_INDEX, $this->daemon->getIndex());
     }
 
-    public function testAgentIsMonopolistic(): void
+    public function testAgentSharesTheNodeRegularWorkers(): void
     {
-        $this->assertTrue($this->daemon->requiresMonopolisticProcess());
+        // Monopolistic workers are pre-forked, which would cap how much of the fleet a
+        // node can take — and on failover it must take all of it.
+        $this->assertFalse($this->daemon->requiresMonopolisticProcess());
     }
 
     public function testAgentIsPerNodeNotLeaderSingleton(): void

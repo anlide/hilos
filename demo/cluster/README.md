@@ -6,18 +6,20 @@ dedicated bridge network, with two blunt fault switches — `docker kill -9`
 (node-down / failover) and `docker network disconnect` (partition / split-brain).
 
 It doubles as the home for the real synthetic cluster workload that the
-bot-agents epic (HIL-120) will add later; for now the only agent is a placeable
-no-op the harness observes.
+bot-agents epic (HIL-120) will add later; for now it runs a fleet of placeable
+agents whose only job is to keep their workers busy.
 
 ## Shape
 
 - **Nodes:** 3 masters (`m1..m3`, the consensus master-set) + 2 data-plane slaves
   (`s1`, `s2`, advertising the `worker` capability). Role, identity, master set,
   and every timeout come from `CLUSTER_*` env in `docker/docker-compose.cluster.yml`.
-- **One agent:** `WorkerAgent` — monopolistic, **not** a cluster-singleton
-  (`requiresClusterLeadership() = false`), gated to the `worker` capability. The
-  leader places it on the best-fit slave via the framework's node-selection
-  policy (HIL-182) and re-places it on failover (HIL-183).
+- **Workload:** a fleet of 10 `WorkerAgent` instances (`worker:0`…`worker:9`) —
+  monopolistic, **not** cluster-singletons (`requiresClusterLeadership() = false`),
+  gated to the `worker` capability. Each one busies its worker with 50–250 ms jobs
+  and reports its throughput, so a node's share of the load is visible in its log.
+  The leader spreads the fleet over the slaves via the framework's node-selection
+  policy (HIL-182) and re-places a lost node's share on failover (HIL-183).
   `ClusterDaemonManager` supplies only the placement *trigger*.
 - **Assertion surface:** the read-only `cluster:test:inspect` command (HIL-325),
   run per node from the `cluster-cli` container.
