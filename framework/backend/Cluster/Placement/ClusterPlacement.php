@@ -574,10 +574,11 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Picks the best-fit online node other than the excluded one, or null when none is a fit.
      *
-     * Builds the candidate set from the online nodes' advertised capacities and hands the
-     * ranking to the {@see PlacementPolicy}: the hard gate (required tags plus capacity
-     * minimums) and the soft best-fit preference both live in the policy, so failover and the
-     * automatic entry choose identically.
+     * Builds the candidate set from the online nodes' advertised capacities, counts what each
+     * one already runs, and hands the ranking to the {@see PlacementPolicy}: the hard gate
+     * (required tags plus capacity minimums) and the soft best-fit preference both live in the
+     * policy, so failover and the automatic entry choose identically. Occupancy comes from this
+     * leader's own placement view, which is the only cluster-wide record of who runs what.
      *
      * @param list<string> $required Capability tags the agent needs
      * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
@@ -587,15 +588,26 @@ final class ClusterPlacement implements WorkerPlacement
     private function pickBestNode(array $required, ResourceProfile $profile, string $excludeNodeId): ?string
     {
         $candidates = [];
+        $hosted = [];
         foreach ($this->mesh->onlineNodeIds() as $nodeId) {
             if ($nodeId === $excludeNodeId) {
                 continue;
             }
 
             $candidates[$nodeId] = NodeCapacities::fromTags($this->mesh->nodeCapabilities($nodeId) ?? []);
+            $hosted[$nodeId] = 0;
         }
 
-        return $this->policy->selectNode($required, $profile, $candidates);
+        // Only a live placement occupies a node: an unplaced agent runs nowhere, and a
+        // stopped or failed one has already released whatever it held.
+        foreach ($this->registry->all() as $record) {
+            if (isset($hosted[$record->nodeId])
+                && ($record->state === PlacementState::Placing || $record->state === PlacementState::Started)) {
+                $hosted[$record->nodeId]++;
+            }
+        }
+
+        return $this->policy->selectNode($required, $profile, $candidates, $hosted);
     }
 
     /**

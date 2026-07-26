@@ -26,12 +26,21 @@ interface PlacementPolicy
      * The implementation is the arbiter of both the hard gate (a candidate that lacks a
      * required tag or falls below a minimum is not eligible) and the soft ranking among the
      * eligible ones. The choice must be deterministic so re-elections and repeated calls
-     * converge on the same node.
+     * converge on the same node — but it is passed the current occupancy, so "deterministic"
+     * means a function of the placement view, not the same node every time regardless of what
+     * already runs there.
      *
      * @param list<string> $requiredTags Boolean capability tags the agent must have
      * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
      * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
+     * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id;
+     *     absent means none, so a policy that ignores occupancy keeps its old behaviour
      * @return ?string Chosen node id, or null when no candidate satisfies the hard gate
      */
-    public function selectNode(array $requiredTags, ResourceProfile $profile, array $candidates): ?string;
+    public function selectNode(
+        array $requiredTags,
+        ResourceProfile $profile,
+        array $candidates,
+        array $hosted = [],
+    ): ?string;
 }

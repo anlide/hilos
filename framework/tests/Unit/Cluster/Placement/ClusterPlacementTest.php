@@ -388,6 +388,26 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('node-c', $placement->registry()->get('render')?->nodeId);
     }
 
+    public function testAFleetOfEqualAgentsSpreadsOverTheCapableNodes(): void
+    {
+        // Equally capable nodes: each new member must go where fewer members already run,
+        // otherwise a fleet piles onto whichever node won the first pick.
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['worker', 'cpu=4'], 'node-c' => ['worker', 'cpu=4']],
+            linked: ['node-b', 'node-c'],
+            online: [self::SELF, 'node-b', 'node-c'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+
+        $targets = [];
+        for ($index = 0; $index < 4; $index++) {
+            $targets[] = $placement->placeAgentOnBestNode('render', (string)$index);
+        }
+
+        $this->assertSame(2, count(array_filter($targets, static fn(?string $n): bool => $n === 'node-b')));
+        $this->assertSame(2, count(array_filter($targets, static fn(?string $n): bool => $n === 'node-c')));
+    }
+
     public function testPlaceAgentOnBestNodeReturnsNullWhenNoNodeIsAFit(): void
     {
         $mesh = new FakePlacementMesh(

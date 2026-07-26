@@ -16,13 +16,16 @@ namespace Hilos\Cluster\Placement;
  *    then reject.
  * 2. Soft ranking — among eligible nodes, each is scored by the profile's preference weights
  *    against the node's declared capacities (a heavier preference for a resource pulls toward
- *    nodes that have more of it). The highest score wins; ties break toward the node with the
- *    greater total declared capacity (the stronger node), then toward the lexicographically
- *    smaller id so the pick is deterministic.
+ *    nodes that have more of it). The highest score wins; ties break toward the node already
+ *    hosting the fewest placed agents, then toward the node with the greater total declared
+ *    capacity (the stronger node), then toward the lexicographically smaller id so the pick is
+ *    deterministic.
  *
  * An empty profile scores every eligible node zero, so selection falls through to the
- * tiebreak: the strongest capable node. That makes "place on the strongest fit" the sensible
- * default before any agent declares a numeric demand.
+ * tiebreaks: the least loaded capable node, and the strongest among equals. That makes
+ * "spread over the capable nodes" the sensible default before any agent declares a numeric
+ * demand — without it a fleet of identical agents would pile onto one node, since declared
+ * capacity alone never changes as agents land.
  */
 final class BestFitPlacementPolicy implements PlacementPolicy
 {
@@ -30,12 +33,18 @@ final class BestFitPlacementPolicy implements PlacementPolicy
      * @param list<string> $requiredTags Boolean capability tags the agent must have
      * @param ResourceProfile $profile Numeric hard minimums and soft preferences of the agent
      * @param array<string, NodeCapacities> $candidates Candidate nodes' capacities keyed by node id
+     * @param array<string, int> $hosted Agents each candidate already hosts, keyed by node id
      * @return ?string Chosen node id, or null when no candidate satisfies the hard gate
      */
-    public function selectNode(array $requiredTags, ResourceProfile $profile, array $candidates): ?string
-    {
+    public function selectNode(
+        array $requiredTags,
+        ResourceProfile $profile,
+        array $candidates,
+        array $hosted = [],
+    ): ?string {
         $chosen = null;
         $chosenScore = 0.0;
+        $chosenLoad = 0;
         $chosenTotal = 0.0;
 
         $nodeIds = array_keys($candidates);
@@ -47,10 +56,15 @@ final class BestFitPlacementPolicy implements PlacementPolicy
             }
 
             $score = $this->score($profile, $capacities);
+            $load = $hosted[$nodeId] ?? 0;
             $total = $capacities->totalCapacity();
-            if ($chosen === null || $score > $chosenScore || ($score === $chosenScore && $total > $chosenTotal)) {
+            if ($chosen === null
+                || $score > $chosenScore
+                || ($score === $chosenScore && $load < $chosenLoad)
+                || ($score === $chosenScore && $load === $chosenLoad && $total > $chosenTotal)) {
                 $chosen = $nodeId;
                 $chosenScore = $score;
+                $chosenLoad = $load;
                 $chosenTotal = $total;
             }
         }
