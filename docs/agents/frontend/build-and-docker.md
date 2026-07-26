@@ -106,9 +106,20 @@ artifact — **absent on a fresh clone**. A production build resolves the SDK to
 that `dist` (to build against the same artifact a real vendored consumer ships —
 "test what you ship"), so it fails until the SDK is built once. Each demo has a
 `prebuild` npm hook — `npm --prefix ../../../framework/frontend install && … run
-build` — so `npm run build` builds the SDK first automatically, the same
+build:<view>` — so `npm run build` builds the SDK first automatically, the same
 lifecycle idiom the SDK already uses internally
-(`@hilos/angular`'s `prebuild` builds `@hilos/core`). Dev needs no hook: every
+(`@hilos/angular`'s `prebuild` builds `@hilos/core`).
+
+The hook names a **per-view** script (`build:vue`, `build:react`,
+`build:angular`), which builds `@hilos/core` plus that demo's own view layer and
+nothing else. Reaching for the full-workspace `build` instead would couple the
+demos that exist to prove the core is framework-agnostic: a broken or
+version-drifted sibling layer would fail an unrelated demo's build, and every
+demo would pay for the Angular layer's `ng-packagr` pass. The full-workspace
+`build` stays the entry point for `pack` and for the SDK's own checks. The
+Angular path compiles the core twice — the explicit list plus the layer's own
+`prebuild` guard — a cheap `tsc` that keeps the core current however the layer
+is built. Dev needs no hook: every
 demo resolves the SDK to `src` in dev (the Vite demos through the `development`
 export condition, the Angular demo through its `tsconfig.dev.json` paths), so a
 `dist` is never required to `npm run dev`.

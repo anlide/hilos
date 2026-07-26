@@ -30,14 +30,22 @@ For example, append `npm install` or `npm run build` as `<command>`.
 | `npm run check` | type-check every package (`tsc` / `vue-tsc`, no emit) |
 | `npm run test` | run the unit tests (vitest, against source) |
 | `npm run build` | build every package from `src/` into `dist/` |
+| `npm run build:vue` | build `@hilos/core` + `@hilos/vue` only |
+| `npm run build:react` | build `@hilos/core` + `@hilos/react` only |
+| `npm run build:angular` | build `@hilos/core` + `@hilos/angular` only |
 | `npm run pack` | build, then `npm pack` each package into `dist-pack/` |
 
+The per-view scripts are what a demo's `prebuild` hook calls, so building one
+demo never builds a view layer it does not consume — see
+`docs/agents/frontend/build-and-docker.md`. Use the full `build` for `pack` and
+for a workspace-wide check.
+
 `@hilos/core` builds with `tsc` — it is a pure-TS, agnostic package we keep
-npm-publishable later, so it carries no bundler. `@hilos/react` (plain TS hooks
-over the core) and `@hilos/angular` (plain TS signal bridges over the core)
-build with `tsc` too. `@hilos/vue` builds with Vite library mode because it
-compiles `.vue` single-file components. All emit `dist/index.js` plus
-`dist/index.d.ts`.
+npm-publishable later, so it carries no bundler; `@hilos/prerender` (the static
+render orchestrator) builds the same way. `@hilos/vue` and `@hilos/react` build
+with Vite library mode plus a declaration-only `vue-tsc` / `tsc` pass, and
+`@hilos/angular` builds with `ng-packagr`, the Angular Package Format tool an
+Angular consumer expects. All emit an entry module plus its `.d.ts`.
 
 Unit tests are vitest, colocated with the source as `*.test.ts`
 (`docs/agents/frontend/testing-strategy.md`). The workspace-root

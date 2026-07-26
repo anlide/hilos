@@ -18,6 +18,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "npm run build --workspaces --if-present",
+    "build:vue": "npm run build -w @hilos/core -w @hilos/vue",
+    "build:react": "npm run build -w @hilos/core -w @hilos/react",
+    "build:angular": "npm run build -w @hilos/core -w @hilos/angular",
     "pack": "npm run build && mkdir -p dist-pack && npm pack --workspaces --pack-destination ./dist-pack"
   },
   "devDependencies": {

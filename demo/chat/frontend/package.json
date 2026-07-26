@@ -6,7 +6,7 @@
   "description": "Chat demo — an end project that consumes the Hilos frontend SDK (@hilos/vue).",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm --prefix ../../../framework/frontend install && npm --prefix ../../../framework/frontend run build",
+    "prebuild": "npm --prefix ../../../framework/frontend install && npm --prefix ../../../framework/frontend run build:vue",
     "build": "vite build && vite build --ssr scripts/prerenderEntry.ts --outDir dist-prerender && node dist-prerender/prerenderEntry.js",
     "preview": "vite preview",
     "check": "vue-tsc --noEmit -p tsconfig.json",
