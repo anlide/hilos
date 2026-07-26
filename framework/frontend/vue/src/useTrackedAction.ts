@@ -8,7 +8,26 @@
 // a table echo (which is why a no-op save no longer hangs: the `::success` ack
 // always arrives, even when the row did not change).
 import { ref, type Ref } from 'vue'
-import { ActionError, subscribeSignal, type ActionHandle } from '@hilos/core'
+import {
+  ActionError,
+  hilosToasts,
+  subscribeSignal,
+  type ActionHandle,
+} from '@hilos/core'
+
+/** How a tracked action reports a failure. */
+export interface TrackedActionOptions {
+  /**
+   * Map a caught failure to a user-facing message; defaults to a generic
+   * phrasing that keeps the backend reason off-screen.
+   */
+  describeError?: (error: unknown) => string
+  /**
+   * Push the failure into the shell's toast stack instead of leaving it for the
+   * caller to render next to the button. `error` is still set either way.
+   */
+  toast?: boolean
+}
 
 /** The reactive state and runner {@link useTrackedAction} exposes. */
 export interface TrackedAction {
@@ -32,11 +51,12 @@ export interface TrackedAction {
 /**
  * Drive the action lifecycle from a Vue component.
  *
- * @param describeError Map a caught failure to a user-facing message; defaults to a generic phrasing that keeps the backend reason off-screen.
+ * @param options How the failure is described and where it surfaces.
  */
 export function useTrackedAction(
-  describeError: (error: unknown) => string = defaultDescribeError,
+  options: TrackedActionOptions = {},
 ): TrackedAction {
+  const describeError = options.describeError ?? defaultDescribeError
   const loading = ref(false)
   const busy = ref(false)
   const error = ref<string | null>(null)
@@ -55,7 +75,11 @@ export function useTrackedAction(
 
       return true
     } catch (caught) {
-      error.value = describeError(caught)
+      const message = describeError(caught)
+      error.value = message
+      if (options.toast === true) {
+        hilosToasts.push(message, { severity: 'error' })
+      }
 
       return false
     } finally {

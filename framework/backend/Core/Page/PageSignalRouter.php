@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -224,6 +225,20 @@ class PageSignalRouter
                 $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId);
             }
         } catch (Throwable $e) {
+            // The client is told an action failed, never why: the frontend shows a
+            // generic message and deliberately does not surface the backend reason.
+            // Without this log the failure exists nowhere on the server either, so
+            // a broken action is undiagnosable from the outside.
+            Logger::error(
+                "Page action failed: page={$page}, action={$data->action}, "
+                    . 'exception=' . $e::class . ', message=' . $e->getMessage(),
+                [
+                    ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+                    ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+                    ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+                ],
+            );
+
             $errorCode = $e instanceof ActionUnauthorizedException ? $e->errorCode : null;
             if ($data->requestId !== null) {
                 $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage(), $errorCode);

@@ -9,7 +9,8 @@
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
 // closes on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces
-// in the dialog. Bootstrap classes only (styling-rules.md).
+// as a toast and leaves the dialog open with the entered value (toasts.md).
+// Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
@@ -85,12 +86,12 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   const [editRow, setEditRow] = useState<HilosSettingRow | null>(null)
   const [editValue, setEditValue] = useState('')
   const [editUseCustom, setEditUseCustom] = useState(false)
-  const edit = useTrackedAction()
+  const edit = useTrackedAction({ toast: true })
 
   // Delete dialog: orphan keys only (not in the catalog).
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRow, setDeleteRow] = useState<HilosSettingRow | null>(null)
-  const del = useTrackedAction()
+  const del = useTrackedAction({ toast: true })
 
   const editInputType = inputType(editRow?.type)
   const editStep = inputStep(editRow?.type)
@@ -119,7 +120,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
-  // reply; a failure stays open with the reason shown.
+  // reply; a failure toasts and stays open so the entered value survives.
   async function submitEdit(): Promise<void> {
     if (!editRow || edit.busy) {
       return
@@ -249,15 +250,6 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
-        {edit.error ? (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-id="hilos-settings-error"
-          >
-            {edit.error}
-          </div>
-        ) : null}
         {editRow ? (
           <form
             onSubmit={(event) => {
@@ -367,15 +359,6 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
           </>
         )}
       >
-        {del.error ? (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-id="hilos-settings-delete-error"
-          >
-            {del.error}
-          </div>
-        ) : null}
         <p className="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.

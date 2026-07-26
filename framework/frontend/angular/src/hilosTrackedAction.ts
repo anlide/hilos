@@ -11,8 +11,22 @@
 // writable signals, so a component creates it at field init.
 import { signal } from '@angular/core'
 import type { Signal } from '@angular/core'
-import { ActionError, subscribeSignal } from '@hilos/core'
+import { ActionError, hilosToasts, subscribeSignal } from '@hilos/core'
 import type { ActionHandle } from '@hilos/core'
+
+/** How a tracked action reports a failure. */
+export interface HilosTrackedActionOptions {
+  /**
+   * Map a caught failure to a user-facing message; defaults to a generic
+   * phrasing that keeps the backend reason off-screen.
+   */
+  describeError?: (error: unknown) => string
+  /**
+   * Push the failure into the shell's toast stack instead of leaving it for the
+   * caller to render next to the button. `error` is still set either way.
+   */
+  toast?: boolean
+}
 
 /** The reactive state and runner {@link createHilosTrackedAction} exposes. */
 export interface HilosTrackedAction {
@@ -36,12 +50,12 @@ export interface HilosTrackedAction {
 /**
  * Build an Angular tracked-action driver over the action lifecycle.
  *
- * @param describeError Map a caught failure to a user-facing message; defaults to
- *   a generic phrasing that keeps the backend reason off-screen.
+ * @param options How the failure is described and where it surfaces.
  */
 export function createHilosTrackedAction(
-  describeError: (error: unknown) => string = defaultDescribeError,
+  options: HilosTrackedActionOptions = {},
 ): HilosTrackedAction {
+  const describeError = options.describeError ?? defaultDescribeError
   const loading = signal(false)
   const busy = signal(false)
   const error = signal<string | null>(null)
@@ -62,7 +76,11 @@ export function createHilosTrackedAction(
 
       return true
     } catch (caught) {
-      error.set(describeError(caught))
+      const message = describeError(caught)
+      error.set(message)
+      if (options.toast === true) {
+        hilosToasts.push(message, { severity: 'error' })
+      }
 
       return false
     } finally {

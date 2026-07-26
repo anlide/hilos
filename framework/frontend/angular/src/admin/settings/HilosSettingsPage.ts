@@ -9,7 +9,8 @@
 // it by passing its HilosSettingsContext and declares the catalog on its backend.
 // Authoritative-backend: a submit dispatches a tracked action and the dialog
 // closes on its `::success` reply (createHilosTrackedAction, step 7.4); a failure
-// surfaces in the dialog. Bootstrap classes only (styling-rules.md).
+// surfaces as a toast and leaves the dialog open with the entered value
+// (toasts.md). Bootstrap classes only (styling-rules.md).
 import {
   ChangeDetectionStrategy,
   Component,
@@ -133,15 +134,6 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [title]="editTitle()"
         [confirmOnClose]="editDirty()"
       >
-        @if (edit.error()) {
-          <div
-            class="alert alert-danger"
-            role="alert"
-            data-id="hilos-settings-error"
-          >
-            {{ edit.error() }}
-          </div>
-        }
         @if (editRow(); as row) {
           <form (submit)="submitEdit($event)">
             @if (!isOrphan(row)) {
@@ -237,15 +229,6 @@ function inputStep(type: string | undefined): 'any' | undefined {
         [closeOnBackdrop]="!del.busy()"
         [closeOnEsc]="!del.busy()"
       >
-        @if (del.error()) {
-          <div
-            class="alert alert-danger"
-            role="alert"
-            data-id="hilos-settings-delete-error"
-          >
-            {{ del.error() }}
-          </div>
-        }
         <p class="mb-0 text-body-secondary">
           This removes the orphan row from the database. Orphan keys are not in
           the catalog.
@@ -299,12 +282,12 @@ export class HilosSettingsPage {
   protected readonly editRow = signal<HilosSettingRow | null>(null)
   protected readonly editValue = signal('')
   protected readonly editUseCustom = signal(false)
-  protected readonly edit = createHilosTrackedAction()
+  protected readonly edit = createHilosTrackedAction({ toast: true })
 
   // Delete dialog: orphan keys only (not in the catalog).
   protected readonly deleteOpen = signal(false)
   protected readonly deleteRow = signal<HilosSettingRow | null>(null)
-  protected readonly del = createHilosTrackedAction()
+  protected readonly del = createHilosTrackedAction({ toast: true })
 
   protected readonly editInputType = computed(() =>
     inputType(this.editRow()?.type),
@@ -357,7 +340,7 @@ export class HilosSettingsPage {
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
-  // reply; a failure stays open with the reason shown.
+  // reply; a failure toasts and stays open so the entered value survives.
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()

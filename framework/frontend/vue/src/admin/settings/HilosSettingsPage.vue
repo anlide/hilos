@@ -8,8 +8,8 @@ add/update/delete round-trips are the core headless's (createHilosSettingsTable 
 createHilosSettingsActions); this view owns only the markup, so a project mounts
 it by passing its HilosSettingsContext and declares the catalog on its backend.
 Authoritative-backend: a submit dispatches a tracked action and the dialog closes
-on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces in the
-dialog. Bootstrap classes only (styling-rules.md). -->
+on its `::success` reply (useTrackedAction, step 7.4); a failure surfaces as a
+toast and leaves the dialog open with the entered value (toasts.md). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSettingsActions,
@@ -75,10 +75,9 @@ const editUseCustom = ref(false)
 const {
   loading: editLoading,
   busy: editBusy,
-  error: editError,
   run: runEditAction,
   clearError: clearEditError,
-} = useTrackedAction()
+} = useTrackedAction({ toast: true })
 const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() => inputStep(editRow.value?.type))
 const editValueBool = computed({
@@ -103,10 +102,9 @@ const deleteRow = ref<HilosSettingRow | null>(null)
 const {
   loading: deleteLoading,
   busy: deleteBusy,
-  error: deleteError,
   run: runDeleteAction,
   clearError: clearDeleteError,
-} = useTrackedAction()
+} = useTrackedAction({ toast: true })
 
 function openEdit(row: HilosSettingRow): void {
   // Flush pending so the dialog edits the latest committed row; a row removed by
@@ -127,7 +125,7 @@ function closeEdit(): void {
 }
 
 // Authoritative-backend: dispatch the tracked action, close on its `::success`
-// reply; a failure stays open with the reason shown.
+// reply; a failure toasts and stays open so the entered value survives.
 async function submitEdit(): Promise<void> {
   const row = editRow.value
   if (!row || editBusy.value) {
@@ -237,14 +235,6 @@ async function submitDelete(): Promise<void> {
       :confirm-on-close="editDirty"
       @cancel="closeEdit"
     >
-      <div
-        v-if="editError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="hilos-settings-error"
-      >
-        {{ editError }}
-      </div>
       <form v-if="editRow" @submit.prevent="submitEdit">
         <div v-if="!isOrphanSetting(editRow)" class="mb-3">
           <span class="form-label d-block">Catalog default</span>
@@ -326,14 +316,6 @@ async function submitDelete(): Promise<void> {
       :close-on-esc="!deleteBusy"
       @cancel="closeDelete"
     >
-      <div
-        v-if="deleteError"
-        class="alert alert-danger"
-        role="alert"
-        data-id="hilos-settings-delete-error"
-      >
-        {{ deleteError }}
-      </div>
       <p class="mb-0 text-body-secondary">
         This removes the orphan row from the database. Orphan keys are not in
         the catalog.
