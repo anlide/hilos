@@ -36,4 +36,10 @@ final class SignalConstants
 
     /** @var string Page action success signal - the framework reply confirming a tracked action committed */
     public const string ACTION_SUCCESS = 'action_success';
+
+    /**
+     * @var string Reason sent in place of an infrastructural failure's own message,
+     *   which never crosses the wire (docs/agents/frontend/wire-protocol.md)
+     */
+    public const string ACTION_FAILED_REASON = 'The action could not be completed.';
 }

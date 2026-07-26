@@ -188,6 +188,31 @@ initiator's own loading; the **effect is broadcast as a signal** to every
 affected connection, and each frontend reacts to that signal. Do not have one
 connection mutate and assume the others discover it — send them the signal.
 
+### A failure reason is a domain sentence, never an engine message
+
+What travels on a `::fail` is a sentence about the thing the caller asked for:
+"That name is already taken", "Backups are disabled". What must never travel is
+the machinery underneath — driver text, SQL statements, index and column names,
+file paths, class names, stack traces. A message like
+
+    Duplicate entry 'chat_moderation_provider' for key 'uk_key'
+    Query: INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)
+
+names a table, a column set and an index to anyone holding a socket, and tells
+the user nothing they can act on. It is a leak whether or not the frontend
+renders it.
+
+The framework enforces this at the edge: `PageSignalRouter` logs the exception in
+full — class, message, file, line, trace — and sends the client a domain message,
+substituting a generic one for any infrastructural failure (a `DatabaseException`,
+or any non-`HilosException` fault). A handler that wants the user to read
+something specific raises a domain exception whose message is written for them.
+
+**Admin surfaces are the exception, and only behind the admin guard.** An
+operator debugging a failing job may be shown the detail — an error column, an
+expandable row, a log page. That is a deliberate, guarded feature, not the
+default reply path: the same detail must never reach an end-user surface.
+
 ### When the work outlives the reply
 
 Some actions start work that cannot possibly finish inside the reply window: a

@@ -20,7 +20,9 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -241,11 +243,38 @@ class PageSignalRouter
 
             $errorCode = $e instanceof ActionUnauthorizedException ? $e->errorCode : null;
             if ($data->requestId !== null) {
-                $pageInstance->sendActionFail($data->acceptKey, $data->action, $data->requestId, $e->getMessage(), $errorCode);
+                $pageInstance->sendActionFail(
+                    $data->acceptKey,
+                    $data->action,
+                    $data->requestId,
+                    self::clientReason($e),
+                    $errorCode,
+                );
             } else {
                 $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
             }
         }
+    }
+
+    /**
+     * Reduces an action failure to what may cross the wire.
+     *
+     * A domain failure (validation, authorization, a business rule) describes
+     * itself in terms the caller asked about, so its message travels. Anything
+     * infrastructural — a driver error carrying SQL text, index names, paths, or
+     * an unexpected engine fault — stays on the server: the full detail is in the
+     * log written above. See docs/agents/frontend/wire-protocol.md.
+     *
+     * @param Throwable $e Failure raised by the action handler
+     * @return string Message safe to deliver to a client
+     */
+    private static function clientReason(Throwable $e): string
+    {
+        if ($e instanceof DatabaseException || !$e instanceof HilosException) {
+            return SignalConstants::ACTION_FAILED_REASON;
+        }
+
+        return $e->getMessage();
     }
 
     /**
