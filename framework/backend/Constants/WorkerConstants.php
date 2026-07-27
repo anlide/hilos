@@ -86,4 +86,10 @@ final class WorkerConstants
 
     /** @var string Agent stopped notification */
     public const string MESSAGE_AGENT_STOPPED = 'agent_stopped';
+
+    /** @var string Protected-mode enable request (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_ENABLE = 'worker_protected_mode_enable';
+
+    /** @var string Protected-mode disable request (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_DISABLE = 'worker_protected_mode_disable';
 }

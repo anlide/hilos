@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Constants\WorkerConstants;
+use Hilos\Hilos;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -20,6 +21,8 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
@@ -178,6 +181,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
     }
@@ -306,6 +311,34 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $dto): void
     {
         $this->agentManager->handleWorkerRtSyncDeleted($dto);
+    }
+
+    /**
+     * Handle protected-mode enable request from an initiator worker.
+     *
+     * Hands the carried initiator identity to the cluster's freeze coordinator, which enables
+     * protected mode locally when this node leads or forwards the request to the current leader.
+     * A node without a coordinator (cluster mode off) ignores the request.
+     *
+     * @param WorkerProtectedModeEnableDTO $dto DTO with the initiator identity and operation
+     */
+    private function handleProtectedModeEnableMessage(WorkerProtectedModeEnableDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestEnable($dto->data);
+    }
+
+    /**
+     * Handle protected-mode disable request from an initiator worker.
+     *
+     * Hands the release to the cluster's freeze coordinator, which lifts protected mode locally
+     * when this node leads or forwards the request to the current leader. A node without a
+     * coordinator (cluster mode off) ignores the request.
+     *
+     * @param WorkerProtectedModeDisableDTO $dto DTO carrying only the disable request
+     */
+    private function handleProtectedModeDisableMessage(WorkerProtectedModeDisableDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestDisable();
     }
 
     /**

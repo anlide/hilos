@@ -17,6 +17,8 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
@@ -77,6 +79,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
             WorkerRtSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncUpdatedMessageDTO::fromArray($data),
             WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),
+            WorkerProtectedModeEnableDTO::MESSAGE_TYPE => WorkerProtectedModeEnableDTO::fromArray($data),
+            WorkerProtectedModeDisableDTO::MESSAGE_TYPE => WorkerProtectedModeDisableDTO::fromArray($data),
             default => throw new InvalidArgumentException("Unknown worker message type: {$type}"),
         };
     }
