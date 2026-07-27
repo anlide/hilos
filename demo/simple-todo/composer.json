@@ -77,7 +77,7 @@
             "@test:up",
             "@test:db-wait",
             "@test:db-reset",
-            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d todo-daemon-test todo-nginx-test"
+            "docker compose -f docker/docker-compose.test.yml --profile e2e up -d --build todo-daemon-test todo-nginx-test"
         ],
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm todo-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",
