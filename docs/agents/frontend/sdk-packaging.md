@@ -151,8 +151,9 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   states — the concrete form of "a placeholder for everything"
   ([core-and-connection.md](core-and-connection.md)).
 
-Per-page code-splitting (a dynamic `import()` per route) pairs with these: the
-loading state during a chunk fetch is the skeleton ([build-and-docker.md](build-and-docker.md)).
+The skeleton is a **data-block** loading state — it fills a block while that
+block's data streams in, not a wait on a code chunk: the app ships as a single
+application chunk with no per-page splitting ([build-and-docker.md](build-and-docker.md)).
 
 ## IDE correctness
 

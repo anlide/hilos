@@ -88,13 +88,25 @@ unsolvable. The order to try:
 Adopt whichever works. The environment contract is unchanged either way: dev is
 the only environment that uses the dev server.
 
-## Per-page code-splitting
+## A single application chunk (no per-page code-splitting)
 
-Each route component is a dynamic `import()`, so the bundler splits one chunk per
-page automatically — "just config", no special build setup. The loading state
-during a chunk fetch is the standard skeleton ([sdk-packaging.md](sdk-packaging.md)), and a stale
-chunk after a redeploy is caught by the build-version → forced-refresh check
-([wire-protocol.md](wire-protocol.md)).
+Each demo ships as **one application chunk** — there is no per-page splitting.
+Route components are resolved **statically** through the page registry:
+`createAppPageRouter` builds a page-key → path map from the pages declared in
+`@hilos/core`, and there is no dynamic `import()` anywhere in the source, so the
+bundler emits a single chunk (measured 2026-07-27: simple-poll ~596 KB, chat
+~336 KB, simple-todo similar). For demos this size a single chunk is the right
+default; there is no per-page chunk and no chunk-fetch loading state.
+
+The build-version → forced-refresh check ([wire-protocol.md](wire-protocol.md))
+is a **separate, whole-app** mechanism, unrelated to code-splitting: a build
+timestamp carried in the handshake welcome frame is compared on every connect, and
+a mismatch (a long-lived SPA outliving a backend redeploy) forces a page refresh
+onto the new build.
+
+Per-page code-splitting as a real framework capability — lazy route chunks for
+genuinely large apps, not demos — is a possible future addition, not something the
+current build does.
 
 ## SSG and the public surface
 
