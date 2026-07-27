@@ -8,6 +8,7 @@ use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
@@ -39,6 +40,16 @@ abstract class DbContext
      * @var array<string, DbCollection>
      */
     protected array $_dbItemCollections = [];
+
+    /**
+     * Baseline DB generation marker, sampled at init() and after each re-hydration.
+     * Null until refreshDbGeneration() first reads it (or when the marker is
+     * unavailable, e.g. no DB connection). A change signals the DB was replaced
+     * under the live process (external db-reset or restore).
+     *
+     * @var ?string
+     */
+    protected ?string $_dbGeneration = null;
 
     /**
      * Creates DB context.
@@ -113,6 +124,90 @@ abstract class DbContext
     {
         ($this->_objectCollections[$name] ?? null)?->clearInMemory();
         ($this->_dbItemCollections[$name] ?? null)?->clearCache();
+    }
+
+    /**
+     * Re-hydrates every DB-backed collection from the current DB.
+     *
+     * Used when the DB was replaced under the live process (external db-reset or
+     * restore): each object collection is reset to its fresh post-initDB state
+     * (eager collections reload now, lazy ones on next access) and each DbItem
+     * wrapper cache is dropped so it does not return stale items. Does not touch
+     * the DB generation baseline; callers that detected a change refresh it.
+     *
+     * @throws LogicException When a represented collection entity class is not configured (eager reload)
+     * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     */
+    public function reHydrateDbBackedCollections(): void
+    {
+        foreach ($this->_objectCollections as $name => $objectCollection) {
+            $objectCollection->reHydrate();
+            ($this->_dbItemCollections[$name] ?? null)?->clearCache();
+        }
+    }
+
+    /**
+     * Samples the current DB generation as the baseline. Called from Hilos::init()
+     * after configure() so a later reHydrateIfDbChanged() can detect a replacement.
+     */
+    public function refreshDbGeneration(): void
+    {
+        $this->_dbGeneration = $this->readDbGeneration();
+    }
+
+    /**
+     * Re-hydrates all DB-backed collections when the DB generation changed since the
+     * baseline, the fallback for a raw db-reset that fires no restore signal.
+     *
+     * On a detected change it re-hydrates and refreshes the baseline, so a stale
+     * in-memory row that collided with a freshly-minted id is replaced rather than
+     * rejected. Returns false when the generation is unchanged or unreadable, so a
+     * genuine duplicate id still surfaces as an error.
+     *
+     * @return bool True when the DB changed and collections were re-hydrated
+     * @throws LogicException When a represented collection entity class is not configured (eager reload)
+     * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     */
+    public function reHydrateIfDbChanged(): bool
+    {
+        $current = $this->readDbGeneration();
+        if ($current === null || $current === $this->_dbGeneration) {
+            return false;
+        }
+
+        $this->reHydrateDbBackedCollections();
+        $this->_dbGeneration = $current;
+
+        return true;
+    }
+
+    /**
+     * Reads a marker that changes when the DB schema is dropped and recreated.
+     *
+     * Default reads the max table CREATE_TIME plus table count from
+     * information_schema, which jumps on the DROP+CREATE of a db-reset or restore.
+     * Returns null when the marker cannot be read (e.g. no DB connection), which
+     * callers treat as "unchanged". Overridable so unit tests can drive the marker
+     * without a real DB.
+     *
+     * @return ?string DB generation marker, or null when unavailable
+     */
+    protected function readDbGeneration(): ?string
+    {
+        try {
+            $row = Database::sql(
+                "SELECT MAX(`CREATE_TIME`) AS `create_time`, COUNT(*) AS `table_count` "
+                . "FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = DATABASE()"
+            )->first()?->first();
+        } catch (DatabaseException) {
+            return null;
+        }
+
+        if ($row === null) {
+            return null;
+        }
+
+        return (string)($row['create_time'] ?? '') . ':' . (string)($row['table_count'] ?? '');
     }
 
     /**

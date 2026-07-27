@@ -444,6 +444,7 @@ abstract class Hilos
         if (static::$db === null) {
             static::$db = static::createDb();
             static::$db->configure();
+            static::$db->refreshDbGeneration();
         }
 
         if (static::$rt === null) {

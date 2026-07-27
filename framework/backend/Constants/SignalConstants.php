@@ -23,6 +23,9 @@ final class SignalConstants
     public const string DB_SYNC_DELETED = SignalTypeConstants::DB_SYNC_DELETED;
     public const string DB_SYNC_CLEARED = SignalTypeConstants::DB_SYNC_CLEARED;
 
+    /** @var string DB re-hydrate signal name; canonical value in SignalTypeConstants */
+    public const string DB_REHYDRATE = SignalTypeConstants::DB_REHYDRATE;
+
     /** @var string RT sync signal names (operation); canonical values in SignalTypeConstants */
     public const string RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
     public const string RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;

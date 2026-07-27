@@ -8,6 +8,7 @@ use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -121,6 +122,20 @@ final class DbSyncApplicator
         }
 
         Hilos::$db->clearCollectionInMemory($data->collectionKey);
+    }
+
+    /**
+     * Re-hydrates all DB-backed collections after the DB was replaced under the live
+     * process (restore fires this signal once it swapped the DB). Whole-context event
+     * with no per-row payload: every collection is reset to the fresh DB so stale
+     * pre-replacement rows no longer collide with freshly-minted ids.
+     *
+     * @throws LogicException When a represented collection entity class is not configured (eager reload)
+     * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     */
+    public static function applyReHydrate(): void
+    {
+        Hilos::$db?->reHydrateDbBackedCollections();
     }
 
     /**

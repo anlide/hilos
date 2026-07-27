@@ -590,6 +590,31 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
+     * Resets the collection to its fresh post-initDB() state after the underlying
+     * DB was replaced under a live daemon (external db-reset or restore).
+     *
+     * Unlike clearInMemory(), which only drops rows to mirror a truncate, this
+     * re-reads the new DB so the daemon stops holding pre-reset rows. Strategy-aware:
+     * an eager (LAZY_STRATEGY_NONE) collection reloads now via loadAllFromDB(); a lazy
+     * collection drops its rows and reloads them from the fresh DB on next access.
+     *
+     * @throws LogicException When the entity collection class is not configured (eager reload)
+     * @throws DatabaseException If reloading the full collection from the fresh DB fails (eager reload)
+     */
+    public function reHydrate(): void
+    {
+        $this->objects = [];
+        $this->index = 0;
+
+        if ($this->_lazyStrategy === self::LAZY_STRATEGY_NONE) {
+            $this->loadAllFromDB();
+            return;
+        }
+
+        $this->_allLoaded = false;
+    }
+
+    /**
      * Get first object in collection.
      *
      * @return ?T First Object_ or null if collection empty

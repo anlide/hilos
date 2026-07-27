@@ -98,6 +98,9 @@ final class SignalTypeConstants
     /** @var string DB sync cleared signal type (whole collection truncated) */
     public const string DB_SYNC_CLEARED = 'db_sync_cleared';
 
+    /** @var string DB re-hydrate signal type (whole DB replaced under a live daemon, e.g. restore) */
+    public const string DB_REHYDRATE = 'db_rehydrate';
+
     /** @var string RT sync created signal type */
     public const string RT_SYNC_CREATED = 'rt_sync_created';
 

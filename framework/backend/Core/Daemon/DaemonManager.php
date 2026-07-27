@@ -796,6 +796,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             SignalTypeConstants::DB_SYNC_UPDATED,
             SignalTypeConstants::DB_SYNC_DELETED,
             SignalTypeConstants::DB_SYNC_CLEARED,
+            SignalTypeConstants::DB_REHYDRATE,
             SignalTypeConstants::RT_SYNC_CREATED,
             SignalTypeConstants::RT_SYNC_UPDATED,
             SignalTypeConstants::RT_SYNC_DELETED,
@@ -978,7 +979,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     /**
      * Handle daemon-internal signal (e.g. start/stop agents, DB/RT sync)
      *
-     * Default dispatches DB/RT sync to 6 apply methods.
+     * Default dispatches DB/RT sync and the DB re-hydrate signal to their apply methods.
      *
      * @param SignalDTO $signal Signal DTO
      */
@@ -998,6 +999,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
+            SignalTypeConstants::DB_REHYDRATE => DbSyncApplicator::applyReHydrate(),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),

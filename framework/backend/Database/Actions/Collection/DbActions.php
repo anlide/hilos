@@ -20,6 +20,7 @@ use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\Hilos;
 
 /**
  * Base class for Db collection actions.
@@ -250,13 +251,24 @@ abstract class DbActions
      *
      * @param Object_ $object Object instance to add
      * @throws ObjectGetIdStringNotImplementedException When the object primary key is null
-     * @throws DuplicateIdException If object with same ID already exists
+     * @throws DuplicateIdException If object with same ID already exists and the DB was not replaced
      * @throws TableNameUndeterminedException If table name cannot be determined
+     * @throws LogicException When a represented collection entity class is not configured (re-hydrate reload)
+     * @throws DatabaseException If reloading an eager collection from the fresh DB fails (re-hydrate)
      */
     protected function addObjectToCollection(Object_ $object): void
     {
         $idString = $object->getIdString();
         if (isset($this->objectCollection[$idString])) {
+            // A collision is a genuine duplicate only if the DB is the same one the
+            // in-memory row came from. After an external db-reset/restore the
+            // autoincrement restarts and the fresh id clashes with a stale row; a
+            // detected DB generation change re-hydrates the collections, turning the
+            // collision into a clean insert instead of a DuplicateIdException.
+            if (Hilos::$db?->reHydrateIfDbChanged() === true) {
+                $this->objectCollection[$idString] = $object;
+                return;
+            }
             $table = $this->getTableName();
             throw new DuplicateIdException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
         }
