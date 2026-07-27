@@ -64,9 +64,12 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -1516,6 +1519,21 @@ abstract class WorkerManager extends BaseManager
                     $this->dispatchSyncToLocalAgents($syncSignalData);
                     $this->daemonClient->send($syncDto);
                 }
+                continue;
+            }
+
+            // Protected-mode requests are worker->own-daemon control frames, not agent messages:
+            // the initiator agent cannot emit the peer frame itself, so the daemon does it (slice 5d).
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_ENABLE) {
+                if ($signal->data instanceof ProtectedModeEnableSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeEnableDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode enable carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_DISABLE) {
+                $this->daemonClient->send(new WorkerProtectedModeDisableDTO());
                 continue;
             }
 

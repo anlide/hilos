@@ -109,4 +109,10 @@ final class SignalTypeConstants
 
     /** @var string RT sync deleted signal type */
     public const string RT_SYNC_DELETED = 'rt_sync_deleted';
+
+    /** @var string Protected-mode enable request signal type (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_ENABLE = 'protected_mode_enable';
+
+    /** @var string Protected-mode disable request signal type (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_DISABLE = 'protected_mode_disable';
 }

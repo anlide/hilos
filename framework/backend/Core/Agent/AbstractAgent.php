@@ -22,7 +22,11 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -282,6 +286,74 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             signalName: new SignalName($signalName),
             signalData: new AgentSignalData(data: $data),
+        );
+    }
+
+    /**
+     * Request the cluster to enter protected mode for a destructive operation.
+     *
+     * The initiator agent (a backup restore agent today, other destructive operations later) runs in
+     * a worker and cannot reach the leader directly, so it asks its own master daemon to start the
+     * two-phase freeze. This queues a worker-drained {@see SignalTypeConstants::PROTECTED_MODE_ENABLE}
+     * signal that {@see \Hilos\Core\Daemon\WorkerManager} turns into a worker-to-daemon frame; the
+     * daemon hands the payload to {@see \Hilos\ProtectedMode\ClusterProtectedMode::requestEnable()}.
+     * The initiator identity carried here (this agent's type and index, this node's id) is what the
+     * leader leaves running through the lockdown and later authorizes {@see requestProtectedModeDisable()}
+     * against, so it must name this node. No-op when cluster mode is off, where a cluster-wide freeze
+     * is meaningless.
+     *
+     * @param string $operation Operation name the freeze protects (for example a restore)
+     * @param string $initiatorAcceptKey Accept key of the connection driving the operation
+     * @throws EnvException When a cluster environment value cannot be read
+     * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     */
+    protected function requestProtectedModeEnable(string $operation, string $initiatorAcceptKey): void
+    {
+        $cluster = Hilos::$cluster;
+        if ($cluster === null || !$cluster->isEnabled()) {
+            $this->logAgentWarning('Protected mode enable ignored — cluster mode is disabled');
+            return;
+        }
+
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_ENABLE),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_ENABLE),
+            signalData: new ProtectedModeEnableSignalData(
+                operation: $operation,
+                initiatorAcceptKey: $initiatorAcceptKey,
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+                initiatorNodeId: $cluster->identity()->nodeId,
+            ),
+        );
+    }
+
+    /**
+     * Request the cluster to leave protected mode once the destructive operation is done.
+     *
+     * The mirror of {@see requestProtectedModeEnable()}: queues a worker-drained
+     * {@see SignalTypeConstants::PROTECTED_MODE_DISABLE} signal that {@see \Hilos\Core\Daemon\WorkerManager}
+     * sends to this node's daemon, which routes it to {@see \Hilos\ProtectedMode\ClusterProtectedMode::requestDisable()}.
+     * The leader lifts only a freeze this node initiated, so it must be called from the same initiator
+     * node that enabled it. No-op when cluster mode is off.
+     *
+     * @throws EnvException When the cluster-enabled flag value cannot be read
+     */
+    protected function requestProtectedModeDisable(): void
+    {
+        $cluster = Hilos::$cluster;
+        if ($cluster === null || !$cluster->isEnabled()) {
+            $this->logAgentWarning('Protected mode disable ignored — cluster mode is disabled');
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_DISABLE),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_DISABLE),
+            signalData: new ProtectedModeDisableSignalData(),
         );
     }
 
