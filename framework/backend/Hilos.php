@@ -30,6 +30,7 @@ use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -46,6 +47,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$sr         — signal router
  * - Hilos::$ac         — analytics collector
  * - Hilos::$cluster    — cluster mode and local node identity
+ * - Hilos::$notify     — durable notification emit seam
  */
 abstract class Hilos
 {
@@ -140,6 +142,9 @@ abstract class Hilos
 
     /** @var ?ClusterContext Cluster mode and local node identity singleton */
     public static ?ClusterContext $cluster = null;
+
+    /** @var ?HilosNotifier Durable notification emit seam singleton */
+    public static ?HilosNotifier $notify = null;
 
     /**
      * Returns the project's backup catalog provider class, or null when backup is unconfigured.
@@ -447,6 +452,10 @@ abstract class Hilos
             static::$db->refreshDbGeneration();
         }
 
+        if (static::$notify === null) {
+            static::$notify = static::createNotifier();
+        }
+
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
             static::$rt?->configure();
@@ -593,6 +602,19 @@ abstract class Hilos
      * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
+
+    /**
+     * Creates the durable notification emit seam.
+     *
+     * Override to return a project HilosNotifier subclass (e.g. one that also fans
+     * to channel-delivery agents in HIL-196+).
+     *
+     * @return HilosNotifier Notification emit seam
+     */
+    protected static function createNotifier(): HilosNotifier
+    {
+        return new HilosNotifier();
+    }
 
     /**
      * Creates topology validator instance.
