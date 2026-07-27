@@ -17,6 +17,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -28,6 +29,7 @@ use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
+use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -202,8 +204,10 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Composes the daemon from its declarative hooks before the main loop runs.
      *
      * Called once by {@see DaemonApplication} after the facade is initialized: it
-     * registers the servers from {@see createServers()}, builds the HTTP router from
-     * {@see httpRoutes()}, and registers each active module from {@see modules()}. The
+     * registers the servers from {@see createServers()}, builds the HTTP router with a
+     * default GET / hint ({@see RootInfoHandler}) plus the routes from {@see httpRoutes()}
+     * (a demo route on / overrides the hint), and registers each active module from
+     * {@see modules()}. The
      * order is fixed — core servers, then router, then opt-in modules — so a module can
      * rely on the core servers already being present. Finally it registers the
      * daemon-mechanism backup cron rules ({@see registerBackupCronRules()}). A hook or module
@@ -219,6 +223,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         }
 
         $router = new HttpRouter();
+        $router->addRoute(HttpConstants::METHOD_GET, HttpConstants::PATH_ROOT, new RootInfoHandler());
         foreach ($this->httpRoutes($context) as [$method, $path, $handler]) {
             $router->addRoute($method, $path, $handler);
         }
