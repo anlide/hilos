@@ -8,6 +8,13 @@
 # worker comm / 8092 websocket, same as every demo — the nginx template proxies
 # /ws to :8092); only the host-side publishes shift per demo so the stacks run
 # side by side (chat holds 8090-8097, simple-todo takes 8098-8103).
+#
+# Every ${...} below is compose *interpolation*, resolved before a container
+# exists: it comes from the shell environment or from a `.env` next to this file
+# (docker/.env, see docker/.env.example), NEVER from the demo's ../.env — that
+# one is wired as `env_file` and only reaches container environments. A host-port
+# override written into ../.env is silently ignored, so keep the defaults here
+# usable as-is.
 
 name: hilos-simple-todo-local
 

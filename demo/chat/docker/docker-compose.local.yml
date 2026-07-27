@@ -3,12 +3,19 @@
 # frontend dev server (chat-frontend-local, HMR). `composer run daemon-start` brings
 # the whole stack up; the chat-frontend-cli-local service (profile cli) runs on-demand
 # npm commands (see the composer frontend:* scripts).
+#
+# Every ${...} below is compose *interpolation*, resolved before a container
+# exists: it comes from the shell environment or from a `.env` next to this file
+# (docker/.env, see docker/.env.example), NEVER from the demo's ../.env — that
+# one is wired as `env_file` and only reaches container environments. A host-port
+# override written into ../.env is silently ignored, so keep the defaults here
+# usable as-is.
 
 name: hilos-chat-local
 
 services:
   # MySQL: inside the network use mysql-local:3306. From host use localhost:${MYSQL_HOST_PORT} (default 33060 for demo/chat).
-  # Other demos should set their own MYSQL_HOST_PORT in .env (33061, 33062, …).
+  # To publish it on a different host port, set MYSQL_HOST_PORT in docker/.env (not ../.env).
   mysql-local:
     image: mariadb:11.4
     container_name: chat-mysql-local

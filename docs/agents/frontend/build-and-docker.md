@@ -35,6 +35,32 @@ the **host bind-mount** — the normal install layout, never a named volume — 
 IDE resolves the SDK packages exactly as in any other project; hiding `node_modules`
 in a volume breaks that resolution.
 
+## Two `.env` files: the container env_file vs `docker/.env`
+
+A demo's local stack reads two different `.env` files, and confusing them is a
+silent trap. The demo's `../.env` (next to `composer.json`) is wired into each
+service as its **`env_file`**: it populates the *container* environment and is
+read only after a container starts. Compose's own `${VAR:-default}`
+**interpolation** — which resolves the host-side port publishes, the network
+subnet, and other compose-level values *before any container exists* — does not
+look at that file at all. Compose interpolation reads the shell environment and a
+`.env` sitting **next to the compose file**, i.e. `docker/.env`.
+
+So a host-port override (`NGINX_HTTPS_PORT`, `MYSQL_HOST_PORT`, `PHPMYADMIN_PORT`,
+`FRONTEND_DEV_PORT`, and — for demos that publish the daemon directly —
+`HTTP_STATUS_HOST_PORT` / `WORKER_COMM_HOST_PORT` / `WEBSOCKET_HOST_PORT`) only
+takes effect from `docker/.env` (or the shell); the same line placed in the demo
+`../.env` is silently ignored, because a published port is chosen before the
+container the env_file would feed ever exists.
+
+`docker/.env` is gitignored (host-specific), with a committed
+`docker/.env.example` per demo listing the overridable knobs and their compose
+defaults. It is optional: every knob has a `:-default` in the compose file, so a
+fresh clone with no `docker/.env` publishes the demo's default host ports and
+needs no setup step. The same split holds across all three reference demos
+(simple-poll, simple-todo, chat); `docker/.env` is also where a host keeps other
+non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
+
 ## One build for e2e, staging, and prod
 
 A single `vite build` produces the artifact that e2e, staging, and prod all run:
