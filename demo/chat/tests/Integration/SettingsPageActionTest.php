@@ -13,7 +13,6 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
@@ -55,7 +54,7 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }, [self::CATALOG_KEY]);
     }
 
-    public function testAddActionRejectsExistingKey(): void
+    public function testAddActionUpdatesExistingKeyInPlace(): void
     {
         $this->withSettingsWriter(function (): void {
             $this->deleteSettingIfExists(self::CATALOG_KEY);
@@ -64,13 +63,17 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'first'),
             );
+            // Snapshot before the second add: the row must be updated, not replaced.
+            $createdId = Hilos::$db->settings[self::CATALOG_KEY]?->id;
 
-            $this->expectException(DuplicateEntryException::class);
             $this->settingsPage()->onAction(
                 'add-dup-ak',
                 HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO(self::CATALOG_KEY, 'second'),
             );
+
+            $this->assertSame('second', Hilos::$db->settings[self::CATALOG_KEY]?->value);
+            $this->assertSame($createdId, Hilos::$db->settings[self::CATALOG_KEY]?->id);
         }, [self::CATALOG_KEY]);
     }
 
