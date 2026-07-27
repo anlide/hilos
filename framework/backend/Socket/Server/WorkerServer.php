@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
@@ -55,7 +56,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<WorkerClientInterface>
  */
-abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink, ProtectedModeReadyRelay
+abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink, ProtectedModeReadyRelay, ProtectedModeAgentFreezer
 {
     /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
     private array $workers = [];
@@ -1117,6 +1118,33 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         }
 
         $workerClient->sendProtectedModeReady($agentType, $agentIndex);
+    }
+
+    /**
+     * Stops every agent this node hosts except the initiator, for the protected-mode freeze
+     * ({@see ProtectedModeAgentFreezer}).
+     *
+     * Walks this node's agent roster exactly like {@see onLostSingletonHost()} and stops each
+     * one through {@see stopAgent()}, leaving the initiator agent running so it can carry out
+     * the destructive operation the freeze protects. Snapshots the id list first because
+     * {@see stopAgent()} mutates the roster. Bringing the stopped agents back when the freeze
+     * lifts is the mirror seam, landed in HIL-267 slice 7b.
+     *
+     * @param ?string $initiatorAgentType Initiator agent type left running, or null when none is recorded
+     * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
+     */
+    public function stopAgentsForProtectedMode(?string $initiatorAgentType, ?string $initiatorAgentIndex): void
+    {
+        $initiatorAgentId = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
+
+        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
+            if ($agentId === $initiatorAgentId) {
+                continue;
+            }
+
+            $parsed = $this->parseAgentId($agentId);
+            $this->stopAgent($parsed->type, $parsed->index);
+        }
     }
 
     /**

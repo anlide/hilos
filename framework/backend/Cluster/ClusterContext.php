@@ -16,6 +16,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 
 /**
@@ -66,6 +67,9 @@ final class ClusterContext
 
     /** @var ?ProtectedModeReadyRelay Local relay of the leader's ready to the initiator agent, registered by the daemon at start. */
     private ?ProtectedModeReadyRelay $protectedModeReadyRelay = null;
+
+    /** @var ?ProtectedModeAgentFreezer Local port that stops this node's agents during the freeze, registered by the daemon at start. */
+    private ?ProtectedModeAgentFreezer $protectedModeAgentFreezer = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
     private ?WorkerPlacement $workerPlacement = null;
@@ -373,6 +377,29 @@ final class ClusterContext
     public function protectedModeReadyRelay(): ?ProtectedModeReadyRelay
     {
         return $this->protectedModeReadyRelay;
+    }
+
+    /**
+     * Registers the local port used to stop this node's agents while protected mode holds.
+     *
+     * The daemon registers its worker server here at start so the protected-mode executor can
+     * stop every hosted agent except the initiator. Symmetric to {@see registerProtectedModeReadyRelay()}.
+     *
+     * @param ProtectedModeAgentFreezer $freezer Local agent-freezer for the protected-mode freeze
+     */
+    public function registerProtectedModeAgentFreezer(ProtectedModeAgentFreezer $freezer): void
+    {
+        $this->protectedModeAgentFreezer = $freezer;
+    }
+
+    /**
+     * Returns the registered protected-mode agent freezer, or null when none is set.
+     *
+     * @return ?ProtectedModeAgentFreezer Local agent freezer, or null
+     */
+    public function protectedModeAgentFreezer(): ?ProtectedModeAgentFreezer
+    {
+        return $this->protectedModeAgentFreezer;
     }
 
     /**

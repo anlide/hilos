@@ -22,8 +22,9 @@ use Hilos\Utils\Logger;
  *
  * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
  * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
- * the runtime row this node wrote on entry. One effect is still a seam a later slice fills: stopping
- * and resuming this node's own agents (leaving the initiator agent running) is HIL-267 slice 7.
+ * the runtime row this node wrote on entry. On entry it stops this node's own agents through
+ * {@see ProtectedModeAgentFreezer} (HIL-267 slice 7a), leaving the initiator agent running; bringing
+ * them back when the freeze lifts is the mirror seam a later slice fills (HIL-267 slice 7b).
  */
 final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 {
@@ -48,7 +49,12 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         $state->activatedAt = null;
         $state->sync();
 
-        // Stopping this node's own agents (leaving the initiator running) lands in HIL-267 slice 7.
+        // Stop this node's own agents so no application work runs against the destructive
+        // operation, leaving the initiator agent running to carry it out (HIL-267 slice 7a).
+        Hilos::$cluster?->protectedModeAgentFreezer()?->stopAgentsForProtectedMode(
+            $freeze->initiatorAgentType,
+            $freeze->initiatorAgentIndex === null ? null : (string)$freeze->initiatorAgentIndex,
+        );
     }
 
     public function enterActive(): void
@@ -91,7 +97,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         $state->activatedAt = null;
         $state->sync();
 
-        // Resuming the agents stopped on entry lands with the mass agent-stop in HIL-267 slice 7.
+        // Resuming the agents stopped on entry (mirror of enterActivating's freeze) lands in HIL-267 slice 7b.
     }
 
     public function notifyInitiatorReady(): void

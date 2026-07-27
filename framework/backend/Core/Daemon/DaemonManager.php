@@ -50,6 +50,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -335,6 +336,11 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         // leader's ready to the worker hosting the initiator agent on this node.
         if ($workerServer instanceof ProtectedModeReadyRelay) {
             Hilos::$cluster?->registerProtectedModeReadyRelay($workerServer);
+        }
+        // Expose the worker server as the port the protected-mode executor uses to stop this
+        // node's agents (leaving the initiator running) while the freeze holds.
+        if ($workerServer instanceof ProtectedModeAgentFreezer) {
+            Hilos::$cluster?->registerProtectedModeAgentFreezer($workerServer);
         }
 
         Logger::info("Daemon started with epoll");
