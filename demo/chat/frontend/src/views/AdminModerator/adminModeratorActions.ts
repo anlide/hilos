@@ -8,7 +8,6 @@
 import { type ActionHandle } from '@hilos/core'
 
 import { actions } from '../../bootstrap/connection'
-import { moderatorPiecesTable } from './adminModeratorPage'
 import { type ModeratorSection } from './types/tables/ModeratorPieceRow'
 
 // Backend action names (PHP ChatSignalConstants).
@@ -45,11 +44,9 @@ export function sendModeratorPieceUpdate(
   id: number,
   input: ModeratorPieceInput,
 ): ActionHandle {
-  const handle = actions.dispatch(MODERATOR_PIECE_UPDATE, { id, ...input })
-  // Auto-apply this tab's own echo for the edited row; other tabs keep the pending gate.
-  moderatorPiecesTable.expectOwnChange(String(id), handle.done)
-
-  return handle
+  // Own-change is decided server-side: the backend tags this tab's own echo `own`
+  // (page action origin), so it auto-applies while other tabs keep the pending gate.
+  return actions.dispatch(MODERATOR_PIECE_UPDATE, { id, ...input })
 }
 
 /**
@@ -58,8 +55,5 @@ export function sendModeratorPieceUpdate(
  * @param id The piece id to delete.
  */
 export function sendModeratorPieceDelete(id: number): ActionHandle {
-  const handle = actions.dispatch(MODERATOR_PIECE_DELETE, { id })
-  moderatorPiecesTable.expectOwnChange(String(id), handle.done)
-
-  return handle
+  return actions.dispatch(MODERATOR_PIECE_DELETE, { id })
 }

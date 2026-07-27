@@ -4,6 +4,7 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
@@ -572,7 +573,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
         $collectionKey = static::COLLECTION_KEY;
         if ($collectionKey !== '') {
-            Hilos::$sr?->queueDbSyncClearedSignal(new DbSyncClearedSignalData($collectionKey));
+            Hilos::$sr?->queueDbSyncClearedSignal(
+                new DbSyncClearedSignalData($collectionKey, ExecutionContext::currentAcceptKey()),
+            );
         }
     }
 

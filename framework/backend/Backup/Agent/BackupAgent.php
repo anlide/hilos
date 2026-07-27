@@ -27,6 +27,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
@@ -418,7 +419,12 @@ final class BackupAgent extends AbstractAgent
 
         try {
             (new BackupPruner())->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
-            $this->historiesView()?->actions->forget($id);
+            // Stamp the requester as the origin of the index write so its own row
+            // removal applies at once while other tabs keep the pending gate.
+            ExecutionContext::withAcceptKey(
+                $data->initiatorAcceptKey,
+                fn () => $this->historiesView()?->actions->forget($id),
+            );
             $this->logAgentInfo("Backup deleted: {$id}");
         } catch (Throwable $e) {
             $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
@@ -465,8 +471,9 @@ final class BackupAgent extends AbstractAgent
         try {
             (new BackupCreator())->setStoredKeep($row, Hilos::$env->string(EnvConstants::BACKUP_DIR), $data->keep);
             // Re-mirror the index from the rewritten sidecar (files=truth): the cleared +
-            // recreated rows carry the new keep pin to every reader over RT sync.
-            $this->refreshHistory();
+            // recreated rows carry the new keep pin to every reader over RT sync. Stamp the
+            // requester as the origin so its own row update applies at once, other tabs gate.
+            ExecutionContext::withAcceptKey($data->initiatorAcceptKey, fn () => $this->refreshHistory());
             $this->logAgentInfo("Backup keep set: {$id} keep=" . ($data->keep ? 'true' : 'false'));
         } catch (Throwable $e) {
             $this->logAgentError("Failed to set keep on backup {$id}: " . $e->getMessage());

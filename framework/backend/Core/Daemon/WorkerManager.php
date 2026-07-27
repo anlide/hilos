@@ -753,34 +753,41 @@ abstract class WorkerManager extends BaseManager
                 $signalData->collectionKey,
                 $signalData->idString,
                 $signalData->row,
+                $signalData->origin,
             ),
             $signalData instanceof DbSyncUpdatedSignalData => SourceChange::dbUpdated(
                 $signalData->collectionKey,
                 $signalData->idString,
                 $signalData->row,
+                $signalData->origin,
             ),
             $signalData instanceof DbSyncDeletedSignalData => SourceChange::dbDeleted(
                 $signalData->collectionKey,
                 $signalData->idString,
                 $signalData->row,
+                $signalData->origin,
             ),
             $signalData instanceof DbSyncClearedSignalData => SourceChange::dbCleared(
                 $signalData->collectionKey,
+                $signalData->origin,
             ),
             $signalData instanceof RtSyncCreatedSignalData => SourceChange::rtCreated(
                 $signalData->collectionKey,
                 $signalData->stateId,
                 $signalData->row,
+                $signalData->origin,
             ),
             $signalData instanceof RtSyncUpdatedSignalData => SourceChange::rtUpdated(
                 $signalData->collectionKey,
                 $signalData->stateId,
                 $signalData->row,
+                $signalData->origin,
             ),
             $signalData instanceof RtSyncDeletedSignalData => SourceChange::rtDeleted(
                 $signalData->collectionKey,
                 $signalData->stateId,
                 $signalData->row,
+                $signalData->origin,
             ),
             default => null,
         };

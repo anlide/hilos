@@ -46,6 +46,26 @@ final class ExecutionContext
     }
 
     /**
+     * Runs a callback with the given accept key stamped on a pushed frame, then restores the previous frame.
+     *
+     * Lets an agent acting on behalf of a connection (the backup initiator) stamp
+     * that connection as the origin of the DB/RT writes it performs inside the
+     * callback, so the initiator's own table deltas apply at once. The current
+     * agent id is preserved; outside such a scope an agent write carries no accept
+     * key and its origin stays null (nobody's own).
+     *
+     * @template T
+     * @param ?string $acceptKey Accept key to scope writes to, or null for an unattended scope
+     * @param callable(): T $callback Work to execute in this scope
+     * @return T Callback result
+     * @throws FramePopOrderException When the callback leaves the frame stack imbalanced
+     */
+    public static function withAcceptKey(?string $acceptKey, callable $callback): mixed
+    {
+        return self::run(self::currentFrame()->withAcceptKey($acceptKey), $callback);
+    }
+
+    /**
      * Pushes an execution frame and returns a token that must be popped in a finally block.
      *
      * @param ExecutionFrame $frame Frame to make current

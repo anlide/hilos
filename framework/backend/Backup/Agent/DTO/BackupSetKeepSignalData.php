@@ -12,6 +12,11 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Carries the target backup id and the desired keep pin; the agent atomically
  * rewrites the sidecar (files=truth) and re-mirrors the runtime index.
+ *
+ * It also carries who asked, so the agent can stamp that connection as the origin
+ * of the re-mirror write ({@see \Hilos\Core\Execution\ExecutionContext::withAcceptKey()}):
+ * the requester's own row-updated delta then applies at once while other tabs keep
+ * the pending gate. Null when the toggle has no connection behind it.
  */
 final class BackupSetKeepSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -21,13 +26,18 @@ final class BackupSetKeepSignalData extends BaseDTO implements SignalDataInterfa
     /** Payload key: the desired keep pin. */
     public const string keep = 'keep';
 
+    /** Payload key: the requesting connection's accept key. */
+    public const string initiatorAcceptKey = 'initiatorAcceptKey';
+
     /**
      * @param string $backupId Target backup id
      * @param bool $keep Desired keep pin
+     * @param ?string $initiatorAcceptKey Accept key of the connection that asked, or null when none
      */
     public function __construct(
         public readonly string $backupId,
         public readonly bool $keep,
+        public readonly ?string $initiatorAcceptKey = null,
     ) {
     }
 
@@ -39,6 +49,7 @@ final class BackupSetKeepSignalData extends BaseDTO implements SignalDataInterfa
         return [
             self::backupId => $this->backupId,
             self::keep => $this->keep,
+            self::initiatorAcceptKey => $this->initiatorAcceptKey,
         ];
     }
 
@@ -48,9 +59,12 @@ final class BackupSetKeepSignalData extends BaseDTO implements SignalDataInterfa
      */
     public static function fromArray(array $data): static
     {
+        $initiator = $data[self::initiatorAcceptKey] ?? null;
+
         return new static(
             backupId: (string)($data[self::backupId] ?? ''),
             keep: (bool)($data[self::keep] ?? false),
+            initiatorAcceptKey: is_string($initiator) && $initiator !== '' ? $initiator : null,
         );
     }
 }

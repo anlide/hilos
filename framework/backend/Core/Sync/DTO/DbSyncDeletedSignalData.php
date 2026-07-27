@@ -20,11 +20,13 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      * @param string $collectionKey Collection key
      * @param string $idString Row ID from Object::getIdString()
      * @param array<string, mixed> $row Previous row, when available
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $idString,
         public readonly array $row = [],
+        public readonly ?string $origin = null,
     ) {
     }
 
@@ -39,6 +41,7 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::ID_STRING => $this->idString,
             SyncSignalDataKey::ROW => $this->row,
+            SyncSignalDataKey::ORIGIN => $this->origin,
         ];
     }
 
@@ -50,12 +53,15 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
+        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
+
         return new static(
             collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
             idString: $data[SyncSignalDataKey::ID_STRING] ?? '',
             row: isset($data[SyncSignalDataKey::ROW]) && is_array($data[SyncSignalDataKey::ROW])
                 ? $data[SyncSignalDataKey::ROW]
                 : [],
+            origin: is_string($origin) && $origin !== '' ? $origin : null,
         );
     }
 }

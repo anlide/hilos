@@ -222,7 +222,7 @@ export class HilosBackupPage {
     createHilosBackupsTable(this.context()),
   )
   private readonly actions = computed(() =>
-    createHilosBackupsActions(this.context(), this.backups()),
+    createHilosBackupsActions(this.context()),
   )
 
   // Create toolbar: pick a scope and start a backup as a tracked action.

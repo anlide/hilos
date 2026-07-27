@@ -26,6 +26,7 @@ final class SourceChange extends BaseDTO
     public const string FIELD_SOURCE_ID = 'sourceId';
     public const string FIELD_MUTATION_TYPE = 'mutationType';
     public const string FIELD_ROW = 'row';
+    public const string FIELD_ORIGIN = 'origin';
 
     /**
      * Creates a source fact for one DB or RT collection mutation.
@@ -35,6 +36,7 @@ final class SourceChange extends BaseDTO
      * @param string $sourceId Row id or runtime state id, always serialized as string
      * @param TableMutationType $mutationType Source mutation type
      * @param array<string, mixed> $row Full row for create, diff for update, previous row for delete when available
+     * @param ?string $origin Accept key of the connection whose write caused this change, or null when unattended
      */
     public function __construct(
         public readonly string $kind,
@@ -42,6 +44,7 @@ final class SourceChange extends BaseDTO
         public readonly string $sourceId,
         public readonly TableMutationType $mutationType,
         public readonly array $row = [],
+        public readonly ?string $origin = null,
     ) {
     }
 
@@ -51,11 +54,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey DB collection key
      * @param string $idString Created row id serialized as a string
      * @param array<string, mixed> $row Full persisted row
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the created DB row
      */
-    public static function dbCreated(string $collectionKey, string $idString, array $row): self
+    public static function dbCreated(string $collectionKey, string $idString, array $row, ?string $origin = null): self
     {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Create, $row);
+        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Create, $row, $origin);
     }
 
     /**
@@ -64,11 +68,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey DB collection key
      * @param string $idString Updated row id serialized as a string
      * @param array<string, mixed> $row Changed columns
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the updated DB row
      */
-    public static function dbUpdated(string $collectionKey, string $idString, array $row): self
+    public static function dbUpdated(string $collectionKey, string $idString, array $row, ?string $origin = null): self
     {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Update, $row);
+        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Update, $row, $origin);
     }
 
     /**
@@ -77,11 +82,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey DB collection key
      * @param string $idString Deleted row id serialized as a string
      * @param array<string, mixed> $row Previous persisted row, when the source can provide it
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the deleted DB row
      */
-    public static function dbDeleted(string $collectionKey, string $idString, array $row = []): self
+    public static function dbDeleted(string $collectionKey, string $idString, array $row = [], ?string $origin = null): self
     {
-        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Delete, $row);
+        return new self(self::KIND_DB, $collectionKey, $idString, TableMutationType::Delete, $row, $origin);
     }
 
     /**
@@ -91,11 +97,12 @@ final class SourceChange extends BaseDTO
      * row is empty. A subscribed table observing this collection wipes its rows.
      *
      * @param string $collectionKey DB collection key whose rows were all removed
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the cleared DB collection
      */
-    public static function dbCleared(string $collectionKey): self
+    public static function dbCleared(string $collectionKey, ?string $origin = null): self
     {
-        return new self(self::KIND_DB, $collectionKey, '', TableMutationType::Clear, []);
+        return new self(self::KIND_DB, $collectionKey, '', TableMutationType::Clear, [], $origin);
     }
 
     /**
@@ -104,11 +111,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey RT collection key
      * @param string $stateId Created runtime state id
      * @param array<string, mixed> $row Full runtime row
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the created runtime row
      */
-    public static function rtCreated(string $collectionKey, string $stateId, array $row): self
+    public static function rtCreated(string $collectionKey, string $stateId, array $row, ?string $origin = null): self
     {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Create, $row);
+        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Create, $row, $origin);
     }
 
     /**
@@ -117,11 +125,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey RT collection key
      * @param string $stateId Updated runtime state id
      * @param array<string, mixed> $row Changed runtime fields
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the updated runtime row
      */
-    public static function rtUpdated(string $collectionKey, string $stateId, array $row): self
+    public static function rtUpdated(string $collectionKey, string $stateId, array $row, ?string $origin = null): self
     {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Update, $row);
+        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Update, $row, $origin);
     }
 
     /**
@@ -130,11 +139,12 @@ final class SourceChange extends BaseDTO
      * @param string $collectionKey RT collection key
      * @param string $stateId Deleted runtime state id
      * @param array<string, mixed> $row Previous runtime row, when the source can provide it
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @return self Source change for the deleted runtime row
      */
-    public static function rtDeleted(string $collectionKey, string $stateId, array $row = []): self
+    public static function rtDeleted(string $collectionKey, string $stateId, array $row = [], ?string $origin = null): self
     {
-        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Delete, $row);
+        return new self(self::KIND_RT, $collectionKey, $stateId, TableMutationType::Delete, $row, $origin);
     }
 
     /**
@@ -170,6 +180,7 @@ final class SourceChange extends BaseDTO
             self::FIELD_SOURCE_ID => $this->sourceId,
             self::FIELD_MUTATION_TYPE => $this->mutationType->value,
             self::FIELD_ROW => $this->row,
+            self::FIELD_ORIGIN => $this->origin,
         ];
     }
 
@@ -183,6 +194,7 @@ final class SourceChange extends BaseDTO
     {
         $sourceId = $data[self::FIELD_SOURCE_ID] ?? '';
         $row = $data[self::FIELD_ROW] ?? [];
+        $origin = $data[self::FIELD_ORIGIN] ?? null;
 
         return new static(
             kind: (string) ($data[self::FIELD_KIND] ?? self::KIND_DB),
@@ -190,6 +202,7 @@ final class SourceChange extends BaseDTO
             sourceId: is_string($sourceId) || is_int($sourceId) ? (string) $sourceId : '',
             mutationType: TableMutationType::tryFrom((string) ($data[self::FIELD_MUTATION_TYPE] ?? '')) ?? TableMutationType::Update,
             row: is_array($row) ? $row : [],
+            origin: is_string($origin) && $origin !== '' ? $origin : null,
         );
     }
 }

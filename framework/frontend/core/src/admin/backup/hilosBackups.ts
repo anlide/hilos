@@ -23,7 +23,6 @@ import {
   readString,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { subscribeSignal } from '../../state/signal.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -238,17 +237,6 @@ export function isBackupKeepable(row: HilosBackupRow): boolean {
 export interface HilosBackupsTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
   readonly controller: TableViewportController<HilosBackupRow>
-  /**
-   * Remember that this connection started the run now in progress.
-   *
-   * A create's row key is minted by the server, so the usual own-change mark
-   * (`expectOwnChange`) cannot be set before dispatching — there is nothing to name
-   * yet. This is the same idea for that case: the connection that asked remembers it
-   * did, and when the run it started finishes, its window is re-requested so the new
-   * backup appears in its sorted place instead of appended at the tail. Every other
-   * connection keeps the frozen viewport and the plain append.
-   */
-  markOwnRun(): void
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -281,38 +269,11 @@ export function createHilosBackupsTable(
     initialSort: { field: 'createdAt', direction: 'desc' },
   })
   const teardown: Array<() => void> = []
-  // Set when this connection starts a run, cleared when that run's progress row
-  // leaves the table — the moment its stored row exists on the server.
-  let ownRunPending = false
-  let progressRowShown = false
 
   return {
     controller,
-    markOwnRun() {
-      ownRunPending = true
-    },
     start() {
       teardown.push(
-        // Watch the progress row's lifetime rather than the create's reply: a dump
-        // outlives its acknowledgement, so "my run ended" is only knowable here.
-        subscribeSignal(controller.rows, (rows) => {
-          const running = rows.some(
-            (row) => row.row !== null && isBackupInProgress(row.row),
-          )
-          if (running) {
-            progressRowShown = true
-
-            return
-          }
-          if (progressRowShown && ownRunPending) {
-            ownRunPending = false
-            progressRowShown = false
-            controller.start()
-
-            return
-          }
-          progressRowShown = false
-        }),
         // A backup action_error without a requestId answers no pending request: it is the
         // agent reporting how a run this connection started ended, long after the create was
         // acked. Nothing on this page is waiting for it, so it surfaces as a toast rather than
@@ -354,48 +315,30 @@ export function createHilosBackupsTable(
  * The backup mutation surface: create / delete / set-keep submit as tracked
  * actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
  * on the backend's `::success` ack and rejects on `::fail` — a view surfaces the
- * failure (authoritative-backend). Delete and set-keep mark their row as an
- * own-change on the table (table.expectOwnChange) so the echo applies at once in
- * this tab while other tabs keep the pending gate; create makes a new row whose
- * server-minted id is unknown up front, so it has no own-change to mark and simply
- * surfaces over the live table.
+ * failure (authoritative-backend). Own-change is decided server-side now: the
+ * backend tags the echoed delta `own` for the connection that authored it (the
+ * agent stamps the initiator on its index write), so this surface only dispatches
+ * and no longer marks rows on the controller.
  *
  * @param context The project context (the action lifecycle the actions dispatch over).
- * @param table The backup table controller the own-change marks land on.
  */
 export function createHilosBackupsActions(
   context: HilosBackupsContext,
-  table: HilosBackupsTable,
 ): HilosBackupsActions {
-  const controller = table.controller
-
   return {
     sendBackupCreate(scope) {
-      const handle = context.actions.dispatch(BACKUP_CREATE_ACTION, { scope })
-      // The row key does not exist yet, so the run itself is what gets marked as ours.
-      handle.done.then(
-        () => table.markOwnRun(),
-        () => undefined,
-      )
-
-      return handle
+      return context.actions.dispatch(BACKUP_CREATE_ACTION, { scope })
     },
     sendBackupDelete(id) {
-      const handle = context.actions.dispatch(BACKUP_DELETE_ACTION, {
+      return context.actions.dispatch(BACKUP_DELETE_ACTION, {
         backupId: id,
       })
-      controller.expectOwnChange(id, handle.done)
-
-      return handle
     },
     sendBackupSetKeep(id, keep) {
-      const handle = context.actions.dispatch(BACKUP_SET_KEEP_ACTION, {
+      return context.actions.dispatch(BACKUP_SET_KEEP_ACTION, {
         backupId: id,
         keep,
       })
-      controller.expectOwnChange(id, handle.done)
-
-      return handle
     },
   }
 }

@@ -38,7 +38,7 @@ const props = defineProps<{
 const settings = createHilosSettingsTable(props.context)
 const settingsTable = settings.controller
 const { sendSettingAdd, sendSettingUpdate, sendSettingDelete } =
-  createHilosSettingsActions(props.context, settings.controller)
+  createHilosSettingsActions(props.context)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.

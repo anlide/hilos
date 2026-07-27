@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Hilos;
 use Hilos\Database\Actions\Item\DbActions;
@@ -133,7 +134,7 @@ abstract class RtActions
 
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($collectionName, $stateId, $row),
+            new RtSyncDeletedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 

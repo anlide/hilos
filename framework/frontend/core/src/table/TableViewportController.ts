@@ -52,6 +52,8 @@ export type TableViewportDelta =
       readonly row: TableRow
       /** The backend declared this change live: apply it now, never gate it. */
       readonly live?: boolean
+      /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
+      readonly own?: boolean
     }
   | {
       readonly kind: 'row_removed'
@@ -59,6 +61,8 @@ export type TableViewportDelta =
       readonly reason: string
       /** The backend declared this change live: apply it now, never gate it. */
       readonly live?: boolean
+      /** The backend tagged this receiver as the change's author: apply it now, resolving any queued pending. */
+      readonly own?: boolean
     }
 
 /** A displayed row: its key, the resolved view-model, and whether it is a removed placeholder. */
@@ -140,12 +144,6 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly pendingKindSignal = createSignal<
     ReadonlyMap<string, 'update' | 'remove'>
   >(new Map())
-
-  /**
-   * Row keys this connection is itself changing — their echoed delta applies at
-   * once instead of queuing as pending (see {@link expectOwnChange}).
-   */
-  private readonly ownRowKeys = new Set<string>()
 
   /** The displayed rows resolved to view-models — what the view renders. */
   readonly rows: ReadonlySignal<readonly TableViewportRow<R>[]>
@@ -316,33 +314,11 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Mark a row this connection is itself changing so its echoed delta is applied
-   * at once instead of queuing as pending: the tab that made the edit picks up
-   * its own change, while other tabs keep the pending gate (table-subscription.md).
-   * The mark is dropped if `settled` rejects (the action failed, so no echo is
-   * coming) or the window changes.
-   *
-   * KNOWN RACE: correlation is by row key, not by the action's id — the backend
-   * does not thread the originating action through the delta fanout (see
-   * BrowserContext::emitViewportDelta). If a concurrent change to the SAME row
-   * lands between the edit and its echo, the marks can cross and one change is
-   * left pending. Accepted as a minor bug; the precise fix is server-side tagging.
-   *
-   * @param rowKey The row key being changed.
-   * @param settled The action's completion — rejects on failure (the tracked-action handle's `done`).
-   */
-  expectOwnChange(rowKey: string, settled: Promise<unknown>): void {
-    this.ownRowKeys.add(rowKey)
-    settled.catch(() => {
-      this.ownRowKeys.delete(rowKey)
-    })
-  }
-
-  /**
    * Accumulate one live row delta as pending — never applied automatically. The
    * delta is kept only when its row is in the current window (anchored by row-id).
-   * An own-change echo for a marked row is the exception: it applies immediately
-   * via {@link applyOwnDelta}.
+   * A backend-tagged own-change is the exception: the server marks the delta `own`
+   * for the connection that authored it, and it applies immediately via
+   * {@link applyOwnDelta}.
    *
    * @param delta The normalized viewport delta.
    */
@@ -353,8 +329,8 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
     if (
-      (delta.kind === 'row_updated' || delta.kind === 'row_removed') &&
-      this.ownRowKeys.has(delta.rowKey)
+      delta.own === true &&
+      (delta.kind === 'row_updated' || delta.kind === 'row_removed')
     ) {
       this.applyOwnDelta(delta)
 
@@ -390,7 +366,6 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param delta The live delta (row_updated or row_removed).
    */
   private applyLiveDelta(delta: TableViewportDelta): void {
-    this.ownRowKeys.delete(delta.rowKey)
     this.pendingUpdates.delete(delta.rowKey)
     this.pendingRemoved.delete(delta.rowKey)
 
@@ -416,17 +391,16 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
-   * Apply an own-change echo for a marked row at once, resolving everything
-   * accumulated for that row: this echo is the authoritative latest, so any
-   * pending update / removal already queued for the same row is dropped, the row
-   * is updated in place (or replaced by a placeholder), and the mark is consumed.
+   * Apply a backend-tagged own-change at once, resolving everything accumulated
+   * for that row: this echo is the authoritative latest, so any pending update /
+   * removal already queued for the same row is dropped, and the row is updated in
+   * place (or replaced by a placeholder).
    *
    * @param delta The own-change echo (row_updated or row_removed).
    */
   private applyOwnDelta(
     delta: Extract<TableViewportDelta, { kind: 'row_updated' | 'row_removed' }>,
   ): void {
-    this.ownRowKeys.delete(delta.rowKey)
     if (!this.isInWindow(delta.rowKey)) {
       return
     }
@@ -502,7 +476,6 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Discard pending and placeholders, then request the new window. */
   private changeWindow(): void {
     this.placeholderKeysSignal.set(new Set())
-    this.ownRowKeys.clear()
     this.clearPending()
     this.send()
   }

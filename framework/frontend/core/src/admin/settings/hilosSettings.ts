@@ -229,41 +229,30 @@ export function createHilosSettingsTable(
  * actions over the lifecycle. Each returns an ActionHandle whose `done` resolves
  * on the backend's `::success` ack and rejects on `::fail` — the view closes the
  * dialog on success and surfaces the failure (authoritative-backend). The
- * committed row returns separately over the live settings table; each mutation
- * marks its row as an own-change on the table (table.expectOwnChange) so that
- * echo applies at once in this tab while other tabs keep the pending gate.
+ * committed row returns separately over the live settings table; own-change is
+ * decided server-side now (the backend tags the echoed delta `own` for the author
+ * connection), so this surface only dispatches and no longer marks rows.
  *
  * @param context The project context (the action lifecycle the actions dispatch over).
- * @param table The settings table controller the own-change marks land on.
  */
 export function createHilosSettingsActions(
   context: HilosSettingsContext,
-  table: TableViewportController<HilosSettingRow>,
 ): HilosSettingsActions {
   return {
     sendSettingAdd(key, value) {
-      const handle = context.actions.dispatch(SETTING_ADD_ACTION, {
+      return context.actions.dispatch(SETTING_ADD_ACTION, {
         key,
         value,
       })
-      table.expectOwnChange(key, handle.done)
-
-      return handle
     },
     sendSettingUpdate(key, value) {
-      const handle = context.actions.dispatch(SETTING_UPDATE_ACTION, {
+      return context.actions.dispatch(SETTING_UPDATE_ACTION, {
         key,
         value,
       })
-      table.expectOwnChange(key, handle.done)
-
-      return handle
     },
     sendSettingDelete(key) {
-      const handle = context.actions.dispatch(SETTING_DELETE_ACTION, { key })
-      table.expectOwnChange(key, handle.done)
-
-      return handle
+      return context.actions.dispatch(SETTING_DELETE_ACTION, { key })
     },
   }
 }

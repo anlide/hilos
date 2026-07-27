@@ -45,4 +45,17 @@ final class TableViewportDeltaDTOTest extends TestCase
         $updated = TableViewportDeltaDTO::rowUpdated('p', 't', 5, ['rowKey' => 5])->toArray();
         $this->assertArrayNotHasKey(TableViewportDeltaDTO::reason, $updated);
     }
+
+    public function testOwnRoundTrip(): void
+    {
+        $restored = TableViewportDeltaDTO::fromArray(
+            TableViewportDeltaDTO::rowUpdated('p', 't', 'a', ['rowKey' => 'a'], own: true)->toArray(),
+        );
+        $this->assertTrue($restored->own);
+
+        // Own is omitted from the wire when false and defaults back to false.
+        $notOwn = TableViewportDeltaDTO::rowUpdated('p', 't', 'a', ['rowKey' => 'a'])->toArray();
+        $this->assertArrayNotHasKey(TableViewportDeltaDTO::own, $notOwn);
+        $this->assertFalse(TableViewportDeltaDTO::fromArray($notOwn)->own);
+    }
 }

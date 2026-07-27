@@ -86,6 +86,76 @@ final class BrowserContextViewportDeltaTest extends TestCase
         $this->assertFalse($viewport->hasRow('alpha'));
     }
 
+    public function testDeltaTaggedOwnWhenOriginMatchesReceiver(): void
+    {
+        $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
+        $context->record(SourceChange::dbUpdated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'alpha',
+            ['label' => 'Alpha'],
+            'ak-1',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertTrue($this->nextDelta()->own);
+    }
+
+    public function testDeltaNotOwnWhenOriginIsAnotherConnection(): void
+    {
+        $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
+        $context->record(SourceChange::dbUpdated(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'alpha',
+            ['label' => 'Alpha'],
+            'ak-2',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->assertFalse($this->nextDelta()->own);
+    }
+
+    public function testDeltaNotOwnForUnattendedWrite(): void
+    {
+        // An agent write with no accept key set (origin null) is nobody's own; the
+        // agent-origin setter (ExecutionContext::withAcceptKey) would supply the
+        // initiator to flip this to own.
+        $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha']));
+        $context->flushToSignalRouter();
+
+        $this->assertFalse($this->nextDelta()->own);
+    }
+
+    public function testMergedSameRowRaceUsesLaterWriterOrigin(): void
+    {
+        $context = $this->boot([new ViewportDeltaUnitRow('alpha', 'Alpha')], ['alpha'], 1);
+        // Two writes to the same row in one tick: another connection first, then this one.
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha'], 'ak-2'));
+        $context->record(SourceChange::dbUpdated(ViewportDeltaUnitTable::SOURCE_KEY, 'alpha', ['label' => 'Alpha'], 'ak-1'));
+        $context->flushToSignalRouter();
+
+        // The later writer wins the merge, so its author (this receiver) gets own.
+        $this->assertTrue($this->nextDelta()->own);
+    }
+
+    public function testOwnRemovalTagsDeltaOwn(): void
+    {
+        $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 10);
+        $viewport->recordWindow(['alpha'], 1);
+        $context = $this->bootWithViewport([], $viewport);
+
+        $context->record(SourceChange::dbDeleted(
+            ViewportDeltaUnitTable::SOURCE_KEY,
+            'alpha',
+            ['key' => 'alpha'],
+            'ak-1',
+        ));
+        $context->flushToSignalRouter();
+
+        $this->nextCount();
+        $this->assertTrue($this->nextDelta()->own);
+    }
+
     public function testLastPageWithRoomCreateAppends(): void
     {
         $viewport = new TableViewportSubscription(tableKey: ViewportDeltaUnitTable::TABLE, offset: 0, limit: 10);

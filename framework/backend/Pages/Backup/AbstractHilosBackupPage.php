@@ -87,7 +87,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                 if (!$dto instanceof BackupDeleteActionDTO) {
                     throw new InvalidActionPayloadException($action, BackupDeleteActionDTO::class, $dto);
                 }
-                $this->handleDelete($dto);
+                $this->handleDelete($acceptKey, $dto);
 
                 break;
 
@@ -95,7 +95,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                 if (!$dto instanceof BackupSetKeepActionDTO) {
                     throw new InvalidActionPayloadException($action, BackupSetKeepActionDTO::class, $dto);
                 }
-                $this->handleSetKeep($dto);
+                $this->handleSetKeep($acceptKey, $dto);
 
                 break;
 
@@ -153,10 +153,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * Deleting the in-progress backup is rejected; deleting an already-removed backup
      * is not (the agent no-ops it), so a permissive delete stays idempotent.
      *
+     * The requester's accept key rides along so the agent stamps it as the origin of
+     * the index write and this tab applies its own row removal at once.
+     *
+     * @param string $acceptKey Accept key of the requesting connection
      * @param BackupDeleteActionDTO $dto Delete action payload
      * @throws TableActionException When the id is empty or names the in-progress backup
      */
-    private function handleDelete(BackupDeleteActionDTO $dto): void
+    private function handleDelete(string $acceptKey, BackupDeleteActionDTO $dto): void
     {
         if ($dto->backupId === '') {
             throw new TableActionException('Backup id is required');
@@ -167,7 +171,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_DELETE,
-            new BackupDeleteSignalData($dto->backupId),
+            new BackupDeleteSignalData($dto->backupId, $acceptKey),
         );
     }
 
@@ -177,10 +181,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * Only a successful, completed backup can be pinned; an in-progress or error
      * record is rejected with a correlated ACTION_ERROR.
      *
+     * The requester's accept key rides along so the agent stamps it as the origin of
+     * the re-mirror write and this tab applies its own row update at once.
+     *
+     * @param string $acceptKey Accept key of the requesting connection
      * @param BackupSetKeepActionDTO $dto Set-keep action payload
      * @throws TableActionException When the id is empty, missing, in progress, or not a success
      */
-    private function handleSetKeep(BackupSetKeepActionDTO $dto): void
+    private function handleSetKeep(string $acceptKey, BackupSetKeepActionDTO $dto): void
     {
         if ($dto->backupId === '') {
             throw new TableActionException('Backup id is required');
@@ -199,7 +207,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP,
-            new BackupSetKeepSignalData($dto->backupId, $dto->keep),
+            new BackupSetKeepSignalData($dto->backupId, $dto->keep, $acceptKey),
         );
     }
 

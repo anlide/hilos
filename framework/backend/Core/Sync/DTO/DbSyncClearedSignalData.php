@@ -20,9 +20,11 @@ class DbSyncClearedSignalData extends BaseDTO implements SignalDataInterface
      * Creates DB sync cleared signal data.
      *
      * @param string $collectionKey Collection key whose rows were all removed
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      */
     public function __construct(
         public readonly string $collectionKey,
+        public readonly ?string $origin = null,
     ) {
     }
 
@@ -35,6 +37,7 @@ class DbSyncClearedSignalData extends BaseDTO implements SignalDataInterface
     {
         return [
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
+            SyncSignalDataKey::ORIGIN => $this->origin,
         ];
     }
 
@@ -46,8 +49,11 @@ class DbSyncClearedSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
+        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
+
         return new static(
             collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
+            origin: is_string($origin) && $origin !== '' ? $origin : null,
         );
     }
 }

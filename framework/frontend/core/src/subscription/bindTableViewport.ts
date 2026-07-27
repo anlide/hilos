@@ -133,6 +133,7 @@ function toViewportDelta(
         rowKey: String(data.rowKey),
         row: normalizeTableRow(scope, data.row, options),
         live: data.live === true,
+        own: data.own === true,
       }
     case 'row_removed':
       if (data.rowKey === undefined) {
@@ -144,6 +145,7 @@ function toViewportDelta(
         rowKey: String(data.rowKey),
         reason: data.reason ?? '',
         live: data.live === true,
+        own: data.own === true,
       }
     default:
       return null

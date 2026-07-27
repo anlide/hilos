@@ -3,6 +3,7 @@
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -265,7 +266,7 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_CREATED,
-            new DbSyncCreatedSignalData($collectionKey, $idString, $row),
+            new DbSyncCreatedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 
@@ -280,7 +281,7 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_UPDATED,
-            new DbSyncUpdatedSignalData($collectionKey, $idString, $row),
+            new DbSyncUpdatedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 
@@ -295,7 +296,7 @@ abstract class Object_
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_DELETED,
-            new DbSyncDeletedSignalData($collectionKey, $idString, $row),
+            new DbSyncDeletedSignalData($collectionKey, $idString, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 

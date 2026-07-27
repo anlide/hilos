@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
@@ -142,7 +143,7 @@ abstract class RtState
             RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId());
             Hilos::$sr->queueRtSyncSignal(
                 SignalConstants::RT_SYNC_UPDATED,
-                new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff),
+                new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff, ExecutionContext::currentAcceptKey()),
             );
         }
 

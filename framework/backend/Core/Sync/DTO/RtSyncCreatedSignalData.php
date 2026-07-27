@@ -20,11 +20,13 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
      * @param string $collectionKey Collection key
      * @param string $stateId State ID
      * @param array<string, mixed> $row Full state data
+     * @param ?string $origin Accept key of the writing connection, or null when unattended
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
         public readonly array $row,
+        public readonly ?string $origin = null,
     ) {
     }
 
@@ -39,6 +41,7 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::STATE_ID => $this->stateId,
             SyncSignalDataKey::ROW => $this->row,
+            SyncSignalDataKey::ORIGIN => $this->origin,
         ];
     }
 
@@ -50,10 +53,13 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
      */
     public static function fromArray(array $data): static
     {
+        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
+
         return new static(
             collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
             stateId: $data[SyncSignalDataKey::STATE_ID] ?? '',
             row: $data[SyncSignalDataKey::ROW] ?? [],
+            origin: is_string($origin) && $origin !== '' ? $origin : null,
         );
     }
 }

@@ -8,7 +8,6 @@
 import { type ActionHandle } from '@hilos/core'
 
 import { actions } from '../../bootstrap/connection'
-import { adminUsersTable } from './adminUsersPage'
 
 // Backend action name (ChatSignalConstants::USER_UPDATE).
 const ADMIN_USER_UPDATE = 'user_update'
@@ -17,17 +16,15 @@ const ADMIN_USER_UPDATE = 'user_update'
 const IMPERSONATE_START = 'impersonate_start'
 
 /**
- * Rename a user as a tracked action. The row is marked as this tab's own change
- * so its echo applies at once here while other tabs keep the pending gate.
+ * Rename a user as a tracked action. Own-change is decided server-side: the
+ * backend tags this tab's own echo `own` (page action origin) so it applies at
+ * once here while other tabs keep the pending gate.
  *
  * @param id The user id to rename.
  * @param name The new display name.
  */
 export function sendAdminUserUpdate(id: number, name: string): ActionHandle {
-  const handle = actions.dispatch(ADMIN_USER_UPDATE, { id, name })
-  adminUsersTable.expectOwnChange(String(id), handle.done)
-
-  return handle
+  return actions.dispatch(ADMIN_USER_UPDATE, { id, name })
 }
 
 /**

@@ -39,7 +39,7 @@ const props = defineProps<{
 const backups = createHilosBackupsTable(props.context)
 const backupsTable = backups.controller
 const { sendBackupCreate, sendBackupDelete, sendBackupSetKeep } =
-  createHilosBackupsActions(props.context, backups)
+  createHilosBackupsActions(props.context)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.

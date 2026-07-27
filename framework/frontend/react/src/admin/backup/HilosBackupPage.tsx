@@ -86,10 +86,7 @@ function statusCell(row: HilosBackupRow) {
  */
 export function HilosBackupPage({ context }: HilosBackupPageProps) {
   const backups = useMemo(() => createHilosBackupsTable(context), [context])
-  const actions = useMemo(
-    () => createHilosBackupsActions(context, backups),
-    [context, backups],
-  )
+  const actions = useMemo(() => createHilosBackupsActions(context), [context])
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.

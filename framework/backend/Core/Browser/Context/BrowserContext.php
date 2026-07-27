@@ -344,6 +344,10 @@ abstract class BrowserContext
     /**
      * Merges two source changes from the same source item.
      *
+     * The later writer's origin wins, consistent with the row array_replace
+     * last-wins: the connection whose value survives the merge is the one that
+     * gets "own", so the loser's edit gates as pending against the winning value.
+     *
      * @param SourceChange $current Earlier grouped source change
      * @param SourceChange $next Later source change to fold in
      * @return SourceChange Collapsed source change
@@ -361,6 +365,7 @@ abstract class BrowserContext
             sourceId: $current->sourceId,
             mutationType: $this->mergeMutationType($current->mutationType, $next->mutationType),
             row: $row,
+            origin: $next->origin,
         );
     }
 
@@ -998,14 +1003,13 @@ abstract class BrowserContext
      * total shift (navigation metadata the frontend applies at once), and a pending
      * table_viewport_delta carries an in-window row edit or removal.
      *
-     * The signals are also queued to the connection whose own action caused the
-     * change: the fanout runs off grouped source changes and does not carry the
-     * originating action's id, so the originator is not distinguished here. The
-     * frontend instead auto-applies its own row change by row-key correlation
-     * (TableViewportController::expectOwnChange) while other connections keep the
-     * pending gate. KNOWN RACE: a concurrent change to the SAME row between an edit
-     * and its echo can cross the frontend marks and leave one change pending; the
-     * precise fix is to tag the originating connection here.
+     * The originator is distinguished here: the delta is tagged `own` when the
+     * grouped change's origin equals this receiver's accept key, so its own edit
+     * applies at once in that tab while other connections keep the pending gate.
+     * The server owns the decision (the client stays dumb); this closes the race a
+     * client-side row-key mark left open — a concurrent change to the SAME row folds
+     * into one grouped change whose origin is the later writer's, so exactly one
+     * author gets `own` and the loser gates against the winning value.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its row-id set and total are updated in place
@@ -1038,7 +1042,8 @@ abstract class BrowserContext
 
         $this->emitViewportCount($table, $viewport, $mutation, $acceptKey, $page, $browserKey);
 
-        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey);
+        $own = $change->origin !== null && $change->origin === $acceptKey;
+        $delta = $this->rowDeltaForMutation($viewport, $table, $mutation, $page, $browserKey, $own);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
@@ -1207,6 +1212,7 @@ abstract class BrowserContext
      * @param TableRowMutationDTO $mutation Mutation the table built for the change
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @param bool $own Whether this receiver authored the change (applies at once, never gated)
      * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
      */
     private function rowDeltaForMutation(
@@ -1215,6 +1221,7 @@ abstract class BrowserContext
         TableRowMutationDTO $mutation,
         string $page,
         string $browserKey,
+        bool $own,
     ): ?TableViewportDeltaDTO {
         $rowKey = (string) $mutation->rowKey;
         if (!$viewport->hasRow($rowKey)) {
@@ -1230,6 +1237,7 @@ abstract class BrowserContext
                 $mutation->rowKey,
                 TableViewportDeltaDTO::REASON_DELETED,
                 $mutation->live,
+                $own,
             );
         }
 
@@ -1243,6 +1251,7 @@ abstract class BrowserContext
             $mutation->rowKey,
             $this->browserRowToWire($table->browserRow($mutation->row)),
             $mutation->live,
+            $own,
         );
     }
 

@@ -221,14 +221,16 @@ describe('TableViewportController', () => {
     expect(controller.pendingCount.get()).toBe(0)
   })
 
-  it('applies an own-change echo at once instead of queuing it', () => {
+  it('applies a server-tagged own change at once, with no pre-mark', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
-    controller.expectOwnChange('a', Promise.resolve())
+    // The backend tags the delta `own` for the author connection; the client keeps
+    // no per-row mark and simply trusts it.
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'new' } },
+      own: true,
     })
 
     expect(controller.pendingCount.get()).toBe(0)
@@ -238,22 +240,23 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('an own-change echo resolves a pending change already queued for the same row', () => {
+  it('a server-tagged own change resolves a pending change racing on the same row', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
-    // A concurrent change for the same row lands first as pending...
+    // A concurrent change for the same row lands first as pending (not own)...
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'other' } },
     })
     expect(controller.pendingCount.get()).toBe(1)
-    // ...then this tab's own echo arrives and applies, clearing the pending.
-    controller.expectOwnChange('a', Promise.resolve())
+    // ...then the server tags this tab as the winning author, so it applies at once
+    // and clears the pending — the race a client-side row-key mark left open is gone.
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
       row: { rowKey: 'a', slots: { name: 'mine' } },
+      own: true,
     })
 
     expect(controller.pendingCount.get()).toBe(0)
@@ -263,14 +266,14 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('applies an own removal at once as a placeholder', () => {
+  it('applies a server-tagged own removal at once as a placeholder', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: {} }], 1)
-    controller.expectOwnChange('a', Promise.resolve())
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
       reason: 'deleted',
+      own: true,
     })
 
     expect(controller.pendingCount.get()).toBe(0)
@@ -282,19 +285,42 @@ describe('TableViewportController', () => {
     })
   })
 
-  it('drops the own-change mark when the action fails, so the echo queues as pending', async () => {
+  it('applies a server-tagged own edit to a server-minted create key the client never pre-marked', () => {
+    const { controller } = makeController()
+    controller.ingestWindow([], 0)
+    // The server mints the new row's key and appends it live — the old client-side
+    // mark could never have named it up front.
+    controller.ingestAppend({ rowKey: 'srv-1', slots: { name: 'fresh' } }, 1)
+    // A follow-up own edit to that minted key still applies at once via the server tag.
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'srv-1',
+      row: { rowKey: 'srv-1', slots: { name: 'edited' } },
+      own: true,
+    })
+
+    expect(controller.pendingCount.get()).toBe(0)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'srv-1',
+      slots: { name: 'edited' },
+    })
+  })
+
+  it('queues an untagged delta as pending — only the server can grant own', () => {
     const { controller } = makeController()
     controller.ingestWindow([{ rowKey: 'a', slots: { name: 'old' } }], 1)
-    const settled = Promise.reject(new Error('fail'))
-    controller.expectOwnChange('a', settled)
-    await settled.catch(() => {}) // let the rejection clear the mark
+    // No own tag: another connection's edit gates as pending, never auto-applies.
     controller.ingestDelta({
       kind: 'row_updated',
       rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'new' } },
+      row: { rowKey: 'a', slots: { name: 'theirs' } },
     })
 
     expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'old' },
+    })
   })
 
   it('is not loaded until the first window arrives', () => {

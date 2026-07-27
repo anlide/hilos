@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -260,7 +261,7 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_CREATED,
-            new RtSyncCreatedSignalData($collectionName, $stateId, $row),
+            new RtSyncCreatedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 
@@ -278,7 +279,7 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_UPDATED,
-            new RtSyncUpdatedSignalData($collectionName, $stateId, $diff),
+            new RtSyncUpdatedSignalData($collectionName, $stateId, $diff, ExecutionContext::currentAcceptKey()),
         );
     }
 
@@ -296,7 +297,7 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($collectionName, $stateId, $row),
+            new RtSyncDeletedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
         );
     }
 }

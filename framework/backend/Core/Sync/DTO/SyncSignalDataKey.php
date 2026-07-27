@@ -13,4 +13,5 @@ final class SyncSignalDataKey
     public const string ID_STRING = 'idString';
     public const string STATE_ID = 'stateId';
     public const string ROW = 'row';
+    public const string ORIGIN = 'origin';
 }

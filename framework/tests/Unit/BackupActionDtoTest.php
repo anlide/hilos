@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
+use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
@@ -97,6 +99,44 @@ final class BackupActionDtoTest extends TestCase
         $dto = BackupCreateSignalData::fromArray([
             BackupCreateSignalData::scope => 'full',
             BackupCreateSignalData::initiatorAcceptKey => '',
+        ]);
+
+        $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testDeleteSignalRoundTripsTheRequestingConnection(): void
+    {
+        $dto = BackupDeleteSignalData::fromArray(
+            (new BackupDeleteSignalData('bk-1', 'accept-key-1'))->toArray(),
+        );
+
+        $this->assertSame('bk-1', $dto->backupId);
+        $this->assertSame('accept-key-1', $dto->initiatorAcceptKey);
+    }
+
+    public function testDeleteSignalHasNoInitiatorWhenAbsent(): void
+    {
+        $dto = BackupDeleteSignalData::fromArray([BackupDeleteSignalData::backupId => 'bk-1']);
+
+        $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testSetKeepSignalRoundTripsTheRequestingConnection(): void
+    {
+        $dto = BackupSetKeepSignalData::fromArray(
+            (new BackupSetKeepSignalData('bk-2', true, 'accept-key-2'))->toArray(),
+        );
+
+        $this->assertSame('bk-2', $dto->backupId);
+        $this->assertTrue($dto->keep);
+        $this->assertSame('accept-key-2', $dto->initiatorAcceptKey);
+    }
+
+    public function testSetKeepSignalHasNoInitiatorWhenAbsent(): void
+    {
+        $dto = BackupSetKeepSignalData::fromArray([
+            BackupSetKeepSignalData::backupId => 'bk-2',
+            BackupSetKeepSignalData::keep => true,
         ]);
 
         $this->assertNull($dto->initiatorAcceptKey);
