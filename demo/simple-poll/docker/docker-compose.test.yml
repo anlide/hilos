@@ -87,15 +87,15 @@ services:
     container_name: poll-frontend-cli-test
     volumes:
       - ../../..:/hilos
+      # A private Angular disk cache, separate from both the repo copy (owned by
+      # the local dev server) and the local cli container's own volume: lmdb
+      # opened from two containers at once corrupts its reader lock table (PID
+      # namespaces overlap) and crashes ng build. Isolated this way the cache
+      # stays ENABLED here too, which is worth ~35% of the e2e build.
+      - ng-cache-cli-test:/hilos/demo/simple-poll/frontend/.angular
     working_dir: /hilos/demo/simple-poll/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
-      # Disable the Angular disk cache (cache.environment defaults to "local"):
-      # .angular/cache is an lmdb database shared with the local dev container
-      # through the repo bind-mount, and lmdb opened from two containers at
-      # once corrupts its reader lock table (PID namespaces overlap) and
-      # crashes ng build.
-      CI: "true"
     profiles:
       - cli
 
@@ -177,6 +177,7 @@ volumes:
   mysql-test-data:
     name: hilos-simple-poll-mysql-test-data
   nginx-ssl-test:
+  ng-cache-cli-test:
 
 networks:
   hilos-simple-poll-test-network:

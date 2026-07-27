@@ -136,3 +136,40 @@ builds with plain `tsc` (no bundler; it stays npm-publishable), so resolving tha
 dependency is the consumer's concern: the Angular demo lists `@vue/reactivity`
 under `allowedCommonJsDependencies` to accept its CommonJS entry without an
 optimization-bailout warning. The Vite demos handle it through their own bundler.
+
+## What the build actually costs
+
+Measured 2026-07-27, each step alone in its own container on an otherwise idle
+machine (WSL2, docker, `node:22-bookworm-slim`):
+
+| | app build | typecheck | together |
+|---|---|---|---|
+| Angular (simple-poll) | 7.3–8.4s `ng build` | inside the build | **~8s** |
+| React (simple-todo) | 5.3s (2.60 + 1.91 + 0.76) | 3.0s `tsc` | **8.3s** |
+| Vue (chat) | 5.8s (3.14 + 1.90 + 0.75) | 4.3s `vue-tsc` | **10.1s** |
+
+Full `npm run build`, SDK prebuild included: Angular 15.8s, React 10.3s,
+Vue 12.3s. The dev server starts in 4.5–5.5s (`ng serve`) against 0.7–0.8s for
+the Vite demos, and its HMR round-trip settles at ~0.4s, for an app edit and an
+SDK-source edit alike.
+
+Read those numbers with three rules:
+
+- **Do not compare `vite build` against `ng build` as they stand.** `vite build`
+  does no type checking at all — the Vite demos keep it in a separate `check`
+  script — while Angular's is inside the compiler. Only build+check is a
+  like-for-like pair, and on that basis Angular is not the slow one.
+- **Angular's AOT cost is fixed, not size-driven.** simple-poll is 573 source
+  lines and chat is 7 764, and they still land within seconds of each other.
+  Expect the gap to close, not widen, as an app grows.
+- **Measure alone on an idle machine, or do not record the figure.** A dev-start
+  of 11.6s and a prod build of 45s were once recorded here from a sweep that
+  booted all three stacks at once; both stood for eleven days, drove a spike
+  (HIL-359) and an out-of-scope decision, and neither reproduced. A number
+  without its measurement conditions is not evidence.
+
+The Angular disk cache does nothing for `ng serve` but is worth ~35% of
+`ng build` (6.3s → 3.6–4.1s of builder time). Each Angular cli container
+therefore mounts its **own** `.angular` volume, keeping the cache enabled while
+staying off the lmdb database the long-lived dev server holds; do not disable it
+again with `CI=true`.

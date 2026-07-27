@@ -207,15 +207,19 @@ services:
     container_name: poll-frontend-cli-local
     volumes:
       - ../../..:/hilos
+      # A private Angular disk cache, mounted over the repo copy. `.angular/cache`
+      # is an lmdb database owned by the long-lived dev server
+      # (poll-frontend-local); lmdb opened from two containers at once corrupts
+      # its reader lock table (PID namespaces overlap) and crashes ng build.
+      # Keeping the two apart lets this container keep the cache ENABLED, which
+      # is worth ~35% of `ng build` (measured: 6.3s -> 3.7-4.1s of builder time).
+      # The "node_modules never in a named volume" rule does not apply: a build
+      # cache is neither source nor a dependency, and the IDE never resolves
+      # through it.
+      - ng-cache-cli-local:/hilos/demo/simple-poll/frontend/.angular
     working_dir: /hilos/demo/simple-poll/frontend
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
-      # Disable the Angular disk cache (cache.environment defaults to "local"):
-      # .angular/cache is an lmdb database owned by the long-lived dev server
-      # (poll-frontend-local), and lmdb opened from two containers at once
-      # corrupts its reader lock table (PID namespaces overlap) and crashes
-      # ng build.
-      CI: "true"
     profiles:
       - cli
     networks:
@@ -223,6 +227,7 @@ services:
 
 volumes:
   nginx-ssl-local:
+  ng-cache-cli-local:
 
 networks:
   hilos-simple-poll-local-network:
