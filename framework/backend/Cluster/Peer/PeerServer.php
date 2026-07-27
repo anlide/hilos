@@ -39,7 +39,11 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
+use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
@@ -69,7 +73,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<PeerLink>
  */
-final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh, PlacementMesh
+final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh, PlacementMesh, ProtectedModeMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -157,6 +161,20 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             // The placement coordinator doubles as the router's read-only placement lookup, so
             // cross-node signal routing (HIL-180) can ask where a placed agent lives.
             Hilos::$cluster->registerWorkerPlacement($this->placement);
+        }
+
+        // Every clustered node builds one protected-mode coordinator: the leader orchestrates the
+        // two-phase freeze, a follower reacts to it, and this server is its outbound peer port. It
+        // routes the freeze frames here and drives its leader-side role from the daemon's leadership
+        // hooks; a node that never mounted the runtime item simply writes nothing.
+        if (Hilos::$cluster !== null) {
+            $protectedMode = new ClusterProtectedMode(
+                $this->localIdentity->nodeId,
+                $this,
+                new DaemonProtectedModeExecutor(),
+            );
+            $this->registerProtectedMode($protectedMode);
+            Hilos::$cluster->registerProtectedMode($protectedMode);
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");
@@ -918,6 +936,65 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         if ($from !== null) {
             $this->protectedMode?->onLift($from);
         }
+    }
+
+    /**
+     * Returns the online master node ids other than self — the followers the leader freezes.
+     *
+     * Backs {@see ProtectedModeMesh}: the leader broadcasts quiesce to these and awaits a quiesced
+     * report from each. A registry hiccup collapses {@see onlineMasterIds()} to empty, so the leader
+     * simply sees no followers and activates on its own node alone.
+     *
+     * @return array<string> Online master node ids excluding the local node
+     */
+    public function followerMasterNodeIds(): array
+    {
+        $followers = [];
+        foreach ($this->onlineMasterIds() as $nodeId) {
+            if ($nodeId !== $this->localIdentity->nodeId) {
+                $followers[] = $nodeId;
+            }
+        }
+
+        return $followers;
+    }
+
+    /**
+     * Broadcasts the freeze order to every follower master.
+     *
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     */
+    public function broadcastQuiesce(ProtectedModeQuiesceData $data): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeQuiesceDTO($data));
+    }
+
+    /**
+     * Signals the initiator that every node has quiesced and its operation may proceed.
+     *
+     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     */
+    public function sendReady(string $initiatorNodeId): void
+    {
+        $this->sendToMaster($initiatorNodeId, new PeerProtectedModeReadyDTO());
+    }
+
+    /**
+     * Broadcasts the release order to every follower master.
+     */
+    public function broadcastLift(): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeLiftDTO());
+    }
+
+    /**
+     * Reports this follower's quiesced state back to the leader that ordered the freeze.
+     *
+     * @param string $leaderNodeId Node id of the leader that ordered the freeze
+     */
+    public function sendQuiesced(string $leaderNodeId): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeQuiescedDTO());
     }
 
     /**

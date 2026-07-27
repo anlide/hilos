@@ -15,6 +15,7 @@ use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ClusterProtectedMode;
 
 /**
  * Facade context for cluster mode and the local node identity.
@@ -58,6 +59,9 @@ final class ClusterContext
 
     /** @var ?ClusterPlacement Agent-placement coordinator, registered by the peer transport at start. */
     private ?ClusterPlacement $placement = null;
+
+    /** @var ?ClusterProtectedMode Protected-mode freeze coordinator, registered by the peer transport at start. */
+    private ?ClusterProtectedMode $protectedMode = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
     private ?WorkerPlacement $workerPlacement = null;
@@ -316,6 +320,32 @@ final class ClusterContext
     public function placement(): ?ClusterPlacement
     {
         return $this->placement;
+    }
+
+    /**
+     * Installs the protected-mode freeze coordinator built by the peer transport.
+     *
+     * The transport builds the {@see ClusterProtectedMode} for a clustered node at start and
+     * registers it here so the daemon's leadership hooks can drive its leader-side role.
+     *
+     * @param ClusterProtectedMode $protectedMode Freeze coordinator to install
+     */
+    public function registerProtectedMode(ClusterProtectedMode $protectedMode): void
+    {
+        $this->protectedMode = $protectedMode;
+    }
+
+    /**
+     * Returns the protected-mode freeze coordinator, or null on a node without one.
+     *
+     * Null off-cluster (no peer transport); present on every clustered node so its leadership
+     * hooks can take up and drop the leader-side orchestration.
+     *
+     * @return ?ClusterProtectedMode Freeze coordinator, or null
+     */
+    public function protectedMode(): ?ClusterProtectedMode
+    {
+        return $this->protectedMode;
     }
 
     /**

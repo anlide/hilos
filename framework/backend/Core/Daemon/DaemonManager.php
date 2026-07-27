@@ -1486,6 +1486,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     {
         // Placement tracking is soft-state: a fresh leader rebuilds its view from the mesh.
         Hilos::$cluster?->placement()?->onBecameLeader();
+
+        // The new leader takes up the protected-mode freeze orchestration.
+        Hilos::$cluster?->protectedMode()?->onBecameLeader();
     }
 
     /**
@@ -1509,6 +1512,10 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         // Drop the leader-side placement view; the placed agents keep running (data-plane)
         // and the next leader rebuilds the view from the mesh.
         Hilos::$cluster?->placement()?->onLostLeadership();
+
+        // Drop any protected-mode freeze this node was orchestrating as leader; the follower-side
+        // state stays, so a freeze the new leader ordered against this node is still honoured.
+        Hilos::$cluster?->protectedMode()?->onLostLeadership();
     }
 
     /**
