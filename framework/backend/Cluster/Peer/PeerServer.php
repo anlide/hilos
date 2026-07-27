@@ -23,6 +23,9 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
@@ -869,6 +872,51 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->protectedMode?->onDisable($from);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode quiesce order to the local handler for this follower to freeze.
+     *
+     * A no-op before the handler is registered; the envelope is unwrapped so the domain handler
+     * receives the freeze descriptor, never the wire frame.
+     *
+     * @param PeerLink $link Link the order arrived on
+     * @param PeerProtectedModeQuiesceDTO $frame Received protected-mode quiesce frame
+     */
+    public function onProtectedModeQuiesceReceived(PeerLink $link, PeerProtectedModeQuiesceDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onQuiesce($from, $frame->data);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode quiesced report to the local handler for the leader to track.
+     *
+     * @param PeerLink $link Link the report arrived on
+     * @param PeerProtectedModeQuiescedDTO $frame Received protected-mode quiesced frame
+     */
+    public function onProtectedModeQuiescedReceived(PeerLink $link, PeerProtectedModeQuiescedDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onQuiesced($from);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode lift order to the local handler for this follower to release.
+     *
+     * @param PeerLink $link Link the order arrived on
+     * @param PeerProtectedModeLiftDTO $frame Received protected-mode lift frame
+     */
+    public function onProtectedModeLiftReceived(PeerLink $link, PeerProtectedModeLiftDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onLift($from);
         }
     }
 

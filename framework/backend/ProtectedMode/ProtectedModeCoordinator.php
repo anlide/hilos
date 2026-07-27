@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
 /**
  * Node-local handler for the protected-mode frames the peer transport delivers.
@@ -15,6 +16,10 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
  * its kind here, so this seam receives the domain payload and never the wire frame: enable carries
  * the {@see ProtectedModeEnableSignalData} contract fields, while ready and disable are bare
  * signals (the frame itself is the whole message) and carry only the originating node id.
+ *
+ * The initiator↔leader half (enable/ready/disable) is mirrored by the cluster-wide half the leader
+ * drives against its followers: quiesce carries the {@see ProtectedModeQuiesceData} freeze
+ * descriptor, quiesced is the follower's bare readiness report, and lift is the bare release.
  *
  * The transport slice wires the routing to this interface; the leader orchestration slice supplies
  * the implementation and registers it with {@see \Hilos\Cluster\Peer\PeerServer::registerProtectedMode()}.
@@ -50,4 +55,33 @@ interface ProtectedModeCoordinator
      * @param string $fromNodeId Node id of the initiator that released the freeze
      */
     public function onDisable(string $fromNodeId): void;
+
+    /**
+     * Handles the leader's order to freeze this node for a destructive operation.
+     *
+     * Arrives on a follower; the follower quiesces its own agents (leaving the initiator agent
+     * named in the descriptor running), writes the freeze locally, and reports back quiesced.
+     *
+     * @param string $fromNodeId Node id of the leader that ordered the freeze
+     * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     */
+    public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void;
+
+    /**
+     * Handles a follower's confirmation that it has quiesced.
+     *
+     * Arrives on the leader; the leader activates the mode once every follower has reported.
+     *
+     * @param string $fromNodeId Node id of the follower that quiesced
+     */
+    public function onQuiesced(string $fromNodeId): void;
+
+    /**
+     * Handles the leader's order to lift the freeze on this node.
+     *
+     * Arrives on a follower; the follower clears its local freeze and resumes normal operation.
+     *
+     * @param string $fromNodeId Node id of the leader that lifted the freeze
+     */
+    public function onLift(string $fromNodeId): void;
 }

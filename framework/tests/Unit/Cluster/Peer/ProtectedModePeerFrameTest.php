@@ -8,18 +8,22 @@ use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests the protected-mode peer transport frames (HIL-267 slice 3).
+ * Tests the protected-mode peer transport frames (HIL-267 slices 3 and 4).
  *
  * The initiator↔leader hand-off cannot use the agent-signal fabric — a worker-sent signal never
- * reaches the leader daemon — so enable/ready/disable ride the peer channel instead. These frames
- * are thin envelopes over the slice-1 payload DTOs; here we lock the wire shape and the transport
- * error on a malformed payload. Recognition by {@see \Hilos\Cluster\Peer\DTO\PeerDTO::fromWire} and
- * leader-side handling land with the orchestration slices.
+ * reaches the leader daemon — so enable/ready/disable ride the peer channel instead, and their
+ * cluster-wide mirror (quiesce/quiesced/lift) rides it too as the leader freezes its followers.
+ * These frames are thin envelopes over the domain payload DTOs; here we lock the wire shape and the
+ * transport error on a malformed payload. Leader-side handling lands with the orchestration slices.
  */
 final class ProtectedModePeerFrameTest extends TestCase
 {
@@ -117,5 +121,91 @@ final class ProtectedModePeerFrameTest extends TestCase
         $parsed = PeerDTO::fromWire((new PeerProtectedModeDisableDTO())->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeDisableDTO::class, $parsed);
+    }
+
+    public function testQuiesceFrameRoundTripsThroughTheWire(): void
+    {
+        $frame = new PeerProtectedModeQuiesceDTO(new ProtectedModeQuiesceData(
+            operation: 'restore',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 3,
+            initiatorNodeId: 'node-a',
+        ));
+
+        $restored = PeerProtectedModeQuiesceDTO::fromJson($frame->toJson());
+
+        $this->assertSame(PeerProtectedModeQuiesceDTO::MESSAGE_TYPE, $restored->getType());
+        $this->assertSame('restore', $restored->data->operation);
+        $this->assertSame('backup', $restored->data->initiatorAgentType);
+        $this->assertSame(3, $restored->data->initiatorAgentIndex);
+        $this->assertSame('node-a', $restored->data->initiatorNodeId);
+    }
+
+    public function testQuiesceFrameKeepsNullAgentIndex(): void
+    {
+        $frame = new PeerProtectedModeQuiesceDTO(new ProtectedModeQuiesceData(
+            operation: 'restore',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+            initiatorNodeId: 'node-a',
+        ));
+
+        $restored = PeerProtectedModeQuiesceDTO::fromArray($frame->toArray());
+
+        $this->assertNull($restored->data->initiatorAgentIndex);
+    }
+
+    public function testQuiesceFrameRejectsNonObjectPayload(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerProtectedModeQuiesceDTO::fromArray([
+            PeerProtectedModeQuiesceDTO::FIELD_PAYLOAD => 'not-an-object',
+        ]);
+    }
+
+    public function testQuiescedFrameRoundTripsAsEmptyPayload(): void
+    {
+        $restored = PeerProtectedModeQuiescedDTO::fromJson((new PeerProtectedModeQuiescedDTO())->toJson());
+
+        $this->assertSame(PeerProtectedModeQuiescedDTO::MESSAGE_TYPE, $restored->getType());
+    }
+
+    public function testLiftFrameRoundTripsAsEmptyPayload(): void
+    {
+        $restored = PeerProtectedModeLiftDTO::fromJson((new PeerProtectedModeLiftDTO())->toJson());
+
+        $this->assertSame(PeerProtectedModeLiftDTO::MESSAGE_TYPE, $restored->getType());
+    }
+
+    public function testQuiesceFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $frame = new PeerProtectedModeQuiesceDTO(new ProtectedModeQuiesceData(
+            operation: 'restore',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 1,
+            initiatorNodeId: 'node-a',
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeQuiesceDTO::class, $parsed);
+        $this->assertSame('restore', $parsed->data->operation);
+        $this->assertSame(1, $parsed->data->initiatorAgentIndex);
+        $this->assertSame('node-a', $parsed->data->initiatorNodeId);
+    }
+
+    public function testQuiescedFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $parsed = PeerDTO::fromWire((new PeerProtectedModeQuiescedDTO())->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeQuiescedDTO::class, $parsed);
+    }
+
+    public function testLiftFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $parsed = PeerDTO::fromWire((new PeerProtectedModeLiftDTO())->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeLiftDTO::class, $parsed);
     }
 }

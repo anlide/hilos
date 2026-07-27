@@ -20,6 +20,9 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
@@ -259,6 +262,9 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
             $frame instanceof PeerProtectedModeReadyDTO => $this->onProtectedModeReady($frame),
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
+            $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
+            $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
+            $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
             $frame instanceof PeerPongDTO => $this->onPong(),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
@@ -491,6 +497,42 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode disable');
         $this->server->onProtectedModeDisableReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode quiesce order to the server for this follower to freeze.
+     *
+     * @param PeerProtectedModeQuiesceDTO $frame Incoming protected-mode quiesce frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeQuiesce(PeerProtectedModeQuiesceDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode quiesce');
+        $this->server->onProtectedModeQuiesceReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode quiesced report to the server for the leader to track.
+     *
+     * @param PeerProtectedModeQuiescedDTO $frame Incoming protected-mode quiesced frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeQuiesced(PeerProtectedModeQuiescedDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode quiesced');
+        $this->server->onProtectedModeQuiescedReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode lift order to the server for this follower to release.
+     *
+     * @param PeerProtectedModeLiftDTO $frame Incoming protected-mode lift frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeLift(PeerProtectedModeLiftDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode lift');
+        $this->server->onProtectedModeLiftReceived($this, $frame);
     }
 
     /**
