@@ -29,6 +29,7 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
@@ -52,6 +53,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Throwable;
 
 /**
@@ -1832,13 +1834,24 @@ abstract class BrowserContext
     /**
      * Enforces page-level browser guards.
      *
+     * The protected-mode route lockdown is checked first, as defense-in-depth behind
+     * the master welcome choke: while the freeze is up every connection but the
+     * initiator's is refused all page data with one domain sentence, regardless of the
+     * page's own guards (the lockdown is binary, no per-page whitelist). Authentication
+     * is unaffected — it travels the action path, not the browser guards.
+     *
      * @param BrowserPageConfig $pageConfig Browser page config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
+     * @throws PageServiceUnavailableException When the protected-mode freeze locks this connection out
      * @throws PageSubscriptionException When a guard rejects the subscription or declares an unsupported type
      */
     private function assertPageGuards(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
     {
+        if ($this->protectedModeLocksOut($acceptKey)) {
+            throw new PageServiceUnavailableException();
+        }
+
         foreach ($pageConfig->guardConfigs() as $guard) {
             match ($guard[BrowserGuardKey::TYPE] ?? '') {
                 BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
@@ -1874,6 +1887,23 @@ abstract class BrowserContext
         }
 
         return true;
+    }
+
+    /**
+     * Whether the protected-mode freeze locks this connection out of all page data.
+     *
+     * Reads the daemon-owned runtime singleton synced into this worker; false (open)
+     * when no project mounted the item, so a non-cluster project is unaffected. Same
+     * lightweight in-memory read the master welcome path uses.
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @return bool Whether this connection is frozen out right now
+     */
+    private function protectedModeLocksOut(string $acceptKey): bool
+    {
+        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
+
+        return $state instanceof ProtectedModeRuntime && $state->locksOut($acceptKey);
     }
 
     /**
