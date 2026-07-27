@@ -406,6 +406,18 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     abstract public function onStop(): void;
 
     /**
+     * Default implementation - no action when the cluster is ready for a protected operation.
+     *
+     * The initiator agent overrides this to run its destructive operation once the cluster has
+     * frozen. Reaches this node over the daemon->worker ready relay driven by
+     * {@see requestProtectedModeEnable()}; a no-op for agents that never request protected mode.
+     */
+    public function onProtectedModeReady(): void
+    {
+        // Default: do nothing
+    }
+
+    /**
      * Default implementation - no system signal handling
      *
      * Child classes can override this method.

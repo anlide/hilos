@@ -50,6 +50,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -329,6 +330,11 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         // nodes, so the peer transport can hand a received cross-node signal to its agent.
         if ($workerServer instanceof AgentSignalSink) {
             Hilos::$cluster?->registerAgentSignalSink($workerServer);
+        }
+        // Expose the worker server as the relay the protected-mode executor uses to hand the
+        // leader's ready to the worker hosting the initiator agent on this node.
+        if ($workerServer instanceof ProtectedModeReadyRelay) {
+            Hilos::$cluster?->registerProtectedModeReadyRelay($workerServer);
         }
 
         Logger::info("Daemon started with epoll");

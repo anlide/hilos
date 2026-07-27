@@ -20,10 +20,10 @@ use Hilos\Utils\Logger;
  * mounted the runtime item (getStateItem returns null) writes nothing, so the executor is inert
  * there rather than failing.
  *
- * Two effects are seams a later slice fills: stopping and resuming this node's own agents (leaving
- * the initiator agent running) is HIL-267 slice 7, and relaying the leader's ready to the local
- * initiator agent is the worker bridge of HIL-267 slice 5c — until it lands
- * {@see notifyInitiatorReady()} only records the arrival.
+ * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
+ * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
+ * the runtime row this node wrote on entry. One effect is still a seam a later slice fills: stopping
+ * and resuming this node's own agents (leaving the initiator agent running) is HIL-267 slice 7.
  */
 final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 {
@@ -96,9 +96,20 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 
     public function notifyInitiatorReady(): void
     {
-        // The worker bridge that carries this to the initiator agent lands in HIL-267 slice 5c;
-        // until then the leader's ready is recorded but not yet relayed.
-        Logger::info('Protected mode: cluster quiesced, initiator may proceed (worker relay pending)');
+        $state = $this->runtimeState();
+        if ($state === null) {
+            return;
+        }
+
+        if ($state->initiatorAgentType === null) {
+            Logger::warning('Protected mode: ready arrived but no initiator identity is recorded');
+            return;
+        }
+
+        Hilos::$cluster?->protectedModeReadyRelay()?->deliverProtectedModeReady(
+            $state->initiatorAgentType,
+            $state->initiatorAgentIndex === null ? null : (string)$state->initiatorAgentIndex,
+        );
     }
 
     /**

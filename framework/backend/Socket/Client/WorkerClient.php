@@ -14,6 +14,7 @@ use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
+use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
@@ -381,6 +382,24 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentStopDTO(
+            agentId: $agentId,
+        );
+
+        $this->send($dto->toJson());
+    }
+
+    /**
+     * Send protected-mode ready relay to worker for a specific initiator agent.
+     *
+     * @param string $agentType Initiator agent type
+     * @param ?string $agentIndex Initiator agent index, or null for a singleton agent
+     */
+    public function sendProtectedModeReady(string $agentType, ?string $agentIndex = null): void
+    {
+        $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
+        Logger::debug("Sending protected_mode_ready signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
+
+        $dto = new ProtectedModeReadyDTO(
             agentId: $agentId,
         );
 

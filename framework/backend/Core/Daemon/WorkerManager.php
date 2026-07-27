@@ -48,6 +48,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
+use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -330,6 +331,15 @@ abstract class WorkerManager extends BaseManager
                 $this->handleAgentStop($data);
                 break;
 
+            case WorkerConstants::MESSAGE_PROTECTED_MODE_READY:
+                if (!$data instanceof ProtectedModeReadyDTO) {
+                    Logger::error("handleProtectedModeReady - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->setCurrentAgentId($data->agentId);
+                $this->handleProtectedModeReady($data);
+                break;
+
             case WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE:
                 if (!$data instanceof DaemonAgentMessageDTO) {
                     Logger::error("handleAgentMessage - unexpected type: " . get_class($data));
@@ -490,6 +500,27 @@ abstract class WorkerManager extends BaseManager
 
         // Notify daemon that agent stopped
         $this->notifyAgentStopped($agentId);
+    }
+
+    /**
+     * Relays the leader's protected-mode ready to the addressed initiator agent on this worker.
+     *
+     * A no-op when the agent is not (or no longer) hosted here, mirroring {@see handleAgentStop()}.
+     *
+     * @param ProtectedModeReadyDTO $data Ready relay naming the initiator agent
+     */
+    private function handleProtectedModeReady(ProtectedModeReadyDTO $data): void
+    {
+        if ($data->agentId === '') {
+            return;
+        }
+
+        $agent = $this->agentManager->getAgent($data->agentId);
+        if ($agent === null) {
+            return;
+        }
+
+        $agent->onProtectedModeReady();
     }
 
     /**

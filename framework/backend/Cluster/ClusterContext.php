@@ -16,6 +16,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 
 /**
  * Facade context for cluster mode and the local node identity.
@@ -62,6 +63,9 @@ final class ClusterContext
 
     /** @var ?ClusterProtectedMode Protected-mode freeze coordinator, registered by the peer transport at start. */
     private ?ClusterProtectedMode $protectedMode = null;
+
+    /** @var ?ProtectedModeReadyRelay Local relay of the leader's ready to the initiator agent, registered by the daemon at start. */
+    private ?ProtectedModeReadyRelay $protectedModeReadyRelay = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
     private ?WorkerPlacement $workerPlacement = null;
@@ -346,6 +350,29 @@ final class ClusterContext
     public function protectedMode(): ?ClusterProtectedMode
     {
         return $this->protectedMode;
+    }
+
+    /**
+     * Registers the local relay used to deliver the leader's ready to the initiator agent.
+     *
+     * The daemon registers its worker server here at start so the protected-mode executor can
+     * address the worker hosting the initiator agent. Symmetric to {@see registerAgentSignalSink()}.
+     *
+     * @param ProtectedModeReadyRelay $relay Local ready relay for the initiator agent
+     */
+    public function registerProtectedModeReadyRelay(ProtectedModeReadyRelay $relay): void
+    {
+        $this->protectedModeReadyRelay = $relay;
+    }
+
+    /**
+     * Returns the registered protected-mode ready relay, or null when none is set.
+     *
+     * @return ?ProtectedModeReadyRelay Local ready relay, or null
+     */
+    public function protectedModeReadyRelay(): ?ProtectedModeReadyRelay
+    {
+        return $this->protectedModeReadyRelay;
     }
 
     /**

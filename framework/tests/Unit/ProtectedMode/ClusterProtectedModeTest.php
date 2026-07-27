@@ -175,6 +175,21 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
     }
 
+    public function testLeaderInitiatorRelaysReadyLocallyOnceFollowersQuiesce(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable(self::SELF, $this->enableDataFrom(self::SELF));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesced('node-b');
+
+        // The leader is the initiator: the ready is handed to the local agent, never sent to itself.
+        $this->assertSame(['enterActive', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
     public function testInitiatorLeaderHandlesEnableRequestLocally(): void
     {
         $this->mesh->followers = [];
@@ -182,9 +197,10 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
 
-        // Routed straight into the leader flow, not out over the peer channel.
-        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
-        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', self::SELF]], $this->mesh->calls);
+        // Routed straight into the leader flow; the leader is the initiator, so the ready is relayed
+        // to the local agent instead of being sent over the peer channel to itself.
+        $this->assertSame(['enterActivating', 'enterActive', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
     }
 
     public function testInitiatorFollowerSendsEnableRequestToLeader(): void

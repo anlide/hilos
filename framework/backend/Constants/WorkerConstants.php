@@ -50,6 +50,9 @@ final class WorkerConstants
     /** @var string Agent stop signal */
     public const string MESSAGE_AGENT_STOP = 'agent_stop';
 
+    /** @var string Protected-mode ready relay (daemon -> initiator worker): cluster quiesced, proceed */
+    public const string MESSAGE_PROTECTED_MODE_READY = 'protected_mode_ready';
+
     /** @var string Agent message signal (worker -> daemon) */
     public const string MESSAGE_AGENT_MESSAGE = 'agent_message';
 

@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
@@ -54,7 +55,7 @@ use Hilos\Utils\Logger;
  *
  * @extends AbstractServer<WorkerClientInterface>
  */
-abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink
+abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink, ProtectedModeReadyRelay
 {
     /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
     private array $workers = [];
@@ -1088,6 +1089,34 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
         $workerClient->sendAgentStop($agentType, $agentIndex);
         $this->agentManager->removeAgent($agentId);
+    }
+
+    /**
+     * Relays the leader's protected-mode ready to the worker hosting the initiator agent
+     * ({@see ProtectedModeReadyRelay}).
+     *
+     * Resolves the agent's worker exactly like {@see stopAgent()} but leaves the agent running —
+     * a no-op when the agent is not hosted on this node.
+     *
+     * @param string $agentType Initiator agent type
+     * @param ?string $agentIndex Initiator agent index, or null for a singleton agent
+     */
+    public function deliverProtectedModeReady(string $agentType, ?string $agentIndex): void
+    {
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($this->buildAgentId($agentType, $agentIndex));
+        if ($workerInfo === null) {
+            return;
+        }
+
+        $workerClient = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
+            $workerInfo->workerIndex,
+            $workerInfo->isMonopolistic,
+        ));
+        if ($workerClient === null) {
+            return;
+        }
+
+        $workerClient->sendProtectedModeReady($agentType, $agentIndex);
     }
 
     /**

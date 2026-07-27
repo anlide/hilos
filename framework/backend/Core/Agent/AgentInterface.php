@@ -70,6 +70,15 @@ interface AgentInterface
     public function onStop(): void;
 
     /**
+     * Called on the initiator agent once the cluster has quiesced for its protected operation.
+     *
+     * Delivered on the initiator node after {@see AbstractAgent::requestProtectedModeEnable()} and
+     * every node has frozen: the initiator may now run its destructive operation. Never called on a
+     * non-initiator agent.
+     */
+    public function onProtectedModeReady(): void;
+
+    /**
      * Handle system signal.
      *
      * @param SignalDataInterface $data Signal data

@@ -240,6 +240,10 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
 
     /**
      * Marks the freeze active and signals the initiator once no follower is still pending.
+     *
+     * When the leader is itself the initiator the ready has no peer to travel over — a self send
+     * would go nowhere — so it is relayed to the local agent directly; otherwise it rides the peer
+     * channel to the initiator's node.
      */
     private function activateWhenAllQuiesced(): void
     {
@@ -249,6 +253,12 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
 
         $this->active = true;
         $this->executor->enterActive();
+
+        if ($this->activeFreeze->initiatorNodeId === $this->selfNodeId) {
+            $this->executor->notifyInitiatorReady();
+            return;
+        }
+
         $this->mesh->sendReady($this->activeFreeze->initiatorNodeId);
     }
 
