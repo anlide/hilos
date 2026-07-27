@@ -21,7 +21,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO})
  * launch, stop, and track agents placed on a named node; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
- * liveness frames ({@see PeerPingDTO}, {@see PeerPongDTO}) keep a quiet link proven alive.
+ * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
+ * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
+ * agent-signal fabric cannot deliver to a leader daemon; the liveness frames
+ * ({@see PeerPingDTO}, {@see PeerPongDTO}) keep a quiet link proven alive.
  * All extend this base directly.
  */
 abstract class PeerDTO extends BaseDTO
@@ -67,6 +70,9 @@ abstract class PeerDTO extends BaseDTO
             PeerPlacementQueryDTO::MESSAGE_TYPE => PeerPlacementQueryDTO::fromArray($data),
             PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
             PeerSignalDTO::MESSAGE_TYPE => PeerSignalDTO::fromArray($data),
+            PeerProtectedModeEnableDTO::MESSAGE_TYPE => PeerProtectedModeEnableDTO::fromArray($data),
+            PeerProtectedModeReadyDTO::MESSAGE_TYPE => PeerProtectedModeReadyDTO::fromArray($data),
+            PeerProtectedModeDisableDTO::MESSAGE_TYPE => PeerProtectedModeDisableDTO::fromArray($data),
             PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
             PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),
             default => throw new PeerTransportException("Unknown peer frame type: '{$type}'"),

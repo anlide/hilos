@@ -18,6 +18,9 @@ use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -253,6 +256,9 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
+            $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
+            $frame instanceof PeerProtectedModeReadyDTO => $this->onProtectedModeReady($frame),
+            $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
             $frame instanceof PeerPongDTO => $this->onPong(),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
@@ -449,6 +455,42 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('signal');
         $this->server->onSignalReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode enable request to the server for the leader to act on.
+     *
+     * @param PeerProtectedModeEnableDTO $frame Incoming protected-mode enable frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeEnable(PeerProtectedModeEnableDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode enable');
+        $this->server->onProtectedModeEnableReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode ready confirmation to the server for the initiator to act on.
+     *
+     * @param PeerProtectedModeReadyDTO $frame Incoming protected-mode ready frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeReady(PeerProtectedModeReadyDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode ready');
+        $this->server->onProtectedModeReadyReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode disable request to the server for the leader to act on.
+     *
+     * @param PeerProtectedModeDisableDTO $frame Incoming protected-mode disable frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeDisable(PeerProtectedModeDisableDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode disable');
+        $this->server->onProtectedModeDisableReceived($this, $frame);
     }
 
     /**

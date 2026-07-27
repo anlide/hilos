@@ -21,6 +21,9 @@ use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -33,6 +36,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
@@ -90,6 +94,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
 
     /** @var ?ClusterPlacement Agent-placement coordinator, built at start on any clustered node; null when no worker executor is registered */
     private ?ClusterPlacement $placement = null;
+
+    /** @var ?ProtectedModeCoordinator Protected-mode freeze handler, registered by the leader-orchestration slice; null until then */
+    private ?ProtectedModeCoordinator $protectedMode = null;
 
     /**
      * @param string $host Host to bind the peer listener
@@ -803,6 +810,65 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
             $this->placement?->onPlacementReport($from, $frame);
+        }
+    }
+
+    /**
+     * Registers the node-local protected-mode handler the freeze frames route to.
+     *
+     * The leader-orchestration slice builds the handler and installs it here; until it does, the
+     * seam stays null and the arriving frames route to a no-op, exactly like the placement seam
+     * before a worker executor is registered.
+     *
+     * @param ProtectedModeCoordinator $coordinator Handler for the protected-mode freeze frames
+     */
+    public function registerProtectedMode(ProtectedModeCoordinator $coordinator): void
+    {
+        $this->protectedMode = $coordinator;
+    }
+
+    /**
+     * Routes a received protected-mode enable request to the local handler for the leader to act on.
+     *
+     * A no-op before the handler is registered; the envelope is unwrapped so the domain handler
+     * receives the contract payload, never the wire frame.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerProtectedModeEnableDTO $frame Received protected-mode enable frame
+     */
+    public function onProtectedModeEnableReceived(PeerLink $link, PeerProtectedModeEnableDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onEnable($from, $frame->data);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode ready confirmation to the local handler for the initiator to act on.
+     *
+     * @param PeerLink $link Link the confirmation arrived on
+     * @param PeerProtectedModeReadyDTO $frame Received protected-mode ready frame
+     */
+    public function onProtectedModeReadyReceived(PeerLink $link, PeerProtectedModeReadyDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onReady($from);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode disable request to the local handler for the leader to act on.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerProtectedModeDisableDTO $frame Received protected-mode disable frame
+     */
+    public function onProtectedModeDisableReceived(PeerLink $link, PeerProtectedModeDisableDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onDisable($from);
         }
     }
 

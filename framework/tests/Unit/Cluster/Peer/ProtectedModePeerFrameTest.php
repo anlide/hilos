@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
@@ -84,5 +85,37 @@ final class ProtectedModePeerFrameTest extends TestCase
 
         $this->assertSame(PeerProtectedModeDisableDTO::MESSAGE_TYPE, $restored->getType());
         $this->assertSame([], $restored->data->toArray());
+    }
+
+    public function testEnableFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $frame = new PeerProtectedModeEnableDTO(new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-9',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 2,
+            initiatorNodeId: 'node-a',
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeEnableDTO::class, $parsed);
+        $this->assertSame('restore', $parsed->data->operation);
+        $this->assertSame(2, $parsed->data->initiatorAgentIndex);
+        $this->assertSame('node-a', $parsed->data->initiatorNodeId);
+    }
+
+    public function testReadyFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $parsed = PeerDTO::fromWire((new PeerProtectedModeReadyDTO())->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeReadyDTO::class, $parsed);
+    }
+
+    public function testDisableFrameDispatchesThroughTheSharedWireParser(): void
+    {
+        $parsed = PeerDTO::fromWire((new PeerProtectedModeDisableDTO())->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeDisableDTO::class, $parsed);
     }
 }
