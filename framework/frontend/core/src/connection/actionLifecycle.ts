@@ -49,8 +49,12 @@ export interface ActionHandle {
   readonly requestId: string
   /** Loading: stays false until the deferral elapses while the action is still pending. */
   readonly loading: ReadonlySignal<boolean>
-  /** Resolves on `::success`; rejects with an {@link ActionError} on fail, timeout, or disconnect. */
-  readonly done: Promise<void>
+  /**
+   * Resolves on `::success` with the backend-authored success message when the
+   * reply carried one (else undefined); rejects with an {@link ActionError} on
+   * fail, timeout, or disconnect.
+   */
+  readonly done: Promise<string | undefined>
 }
 
 /** The connection events {@link ActionLifecycle} subscribes to. */
@@ -90,7 +94,7 @@ export interface ActionLifecycleSource {
 interface PendingAction {
   readonly action: string
   readonly loading: WritableSignal<boolean>
-  readonly resolve: () => void
+  readonly resolve: (message?: string) => void
   readonly reject: (error: ActionError) => void
   readonly deferredTimer: ReturnType<typeof setTimeout>
   readonly timeoutTimer: ReturnType<typeof setTimeout>
@@ -143,7 +147,7 @@ export class ActionLifecycle {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.onLateReply = options.onLateReply
     source.on('actionSuccess', (signal) =>
-      this.onReply(signal.requestId, signal.action, 'success'),
+      this.onReply(signal.requestId, signal.action, 'success', signal.message),
     )
     source.on('actionError', (signal) =>
       this.onReply(signal.requestId, signal.action, 'fail', signal.reason),
@@ -165,9 +169,9 @@ export class ActionLifecycle {
   dispatch(action: string, data: unknown): ActionHandle {
     const requestId = String(++this.sequence)
     const loading = createSignal(false)
-    let resolve!: () => void
+    let resolve!: (message?: string) => void
     let reject!: (error: ActionError) => void
-    const done = new Promise<void>((resolveFn, rejectFn) => {
+    const done = new Promise<string | undefined>((resolveFn, rejectFn) => {
       resolve = resolveFn
       reject = rejectFn
     })
@@ -203,13 +207,13 @@ export class ActionLifecycle {
    * @param requestId The reply's correlation id (undefined for a legacy reply).
    * @param action The action name the reply answers.
    * @param outcome Whether the reply was a success or a failure.
-   * @param reason The failure reason, present on a failure reply.
+   * @param detail The success message on a success reply, or the failure reason on a fail reply; undefined when absent.
    */
   private onReply(
     requestId: string | undefined,
     action: string,
     outcome: 'success' | 'fail',
-    reason?: string,
+    detail?: string,
   ): void {
     if (requestId === undefined) {
       return
@@ -224,12 +228,12 @@ export class ActionLifecycle {
     }
     this.settle(requestId, pending)
     if (outcome === 'success') {
-      pending.resolve()
+      pending.resolve(detail)
 
       return
     }
     pending.reject(
-      new ActionError(action, 'fail', reason ?? 'The action failed.'),
+      new ActionError(action, 'fail', detail ?? 'The action failed.'),
     )
   }
 

@@ -68,6 +68,13 @@ abstract class AbstractPage
     protected PageAgentInterface $agent;
 
     /**
+     * Backend-authored success sentence set during the current onAction(), consumed
+     * by the tracked success reply that immediately follows it. Null unless the
+     * handler opted to send outcome text for the frontend toast.
+     */
+    private ?string $pendingActionSuccessMessage = null;
+
+    /**
      * Creates a page bound to its owning agent.
      *
      * @param PageAgentInterface $agent Agent instance
@@ -219,6 +226,23 @@ abstract class AbstractPage
     }
 
     /**
+     * Sets the backend-authored success sentence for the action currently being
+     * handled.
+     *
+     * Call from onAction() to have the framework success reply carry outcome text
+     * the frontend surfaces as a success toast; the domain sentence lives on the
+     * backend because Hilos i18n does. The message is consumed by the tracked
+     * success reply that immediately follows onAction() and does not carry over to
+     * a later action. Leave unset for the frontend's generic fallback.
+     *
+     * @param string $message Backend-authored, already-localized success sentence
+     */
+    protected function setActionSuccessMessage(string $message): void
+    {
+        $this->pendingActionSuccessMessage = $message;
+    }
+
+    /**
      * Sends the default page action error signal.
      *
      * Optional hook called by PageSignalRouter when onAction() throws. Override
@@ -246,9 +270,10 @@ abstract class AbstractPage
      * Sends the framework action-success reply for a tracked action.
      *
      * Called by PageSignalRouter after onAction() returns without throwing, only
-     * when the action carried a client-minted requestId. The reply carries no
-     * domain body — it releases the action's loading state and resolves its
-     * request on the client, correlated by the echoed requestId.
+     * when the action carried a client-minted requestId. It releases the action's
+     * loading state and resolves its request on the client, correlated by the
+     * echoed requestId, and consumes any success sentence the handler set via
+     * {@see AbstractPage::setActionSuccessMessage()} so the frontend can toast it.
      *
      * @param string $acceptKey WebSocket accept key of the initiating client
      * @param string $action Action name that committed
@@ -256,10 +281,12 @@ abstract class AbstractPage
      */
     public function sendActionSuccess(string $acceptKey, string $action, string $requestId): void
     {
+        $message = $this->pendingActionSuccessMessage;
+        $this->pendingActionSuccessMessage = null;
         $this->sendToUser(
             SignalConstants::ACTION_SUCCESS,
             $acceptKey,
-            new PageActionSuccessSignalData($action, $requestId),
+            new PageActionSuccessSignalData($action, $requestId, $message),
         );
     }
 
@@ -283,6 +310,8 @@ abstract class AbstractPage
         string $reason,
         ?string $errorCode = null,
     ): void {
+        // A failed action carries no success text; drop any the handler set before throwing.
+        $this->pendingActionSuccessMessage = null;
         $this->sendToUser(
             SignalConstants::ACTION_ERROR,
             $acceptKey,

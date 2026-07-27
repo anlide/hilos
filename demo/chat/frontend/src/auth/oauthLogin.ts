@@ -69,7 +69,9 @@ const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 export function startOAuthLogin(provider: string): Promise<void> {
   sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
 
-  return actions.dispatch(OAUTH_START_ACTION, { provider }).done
+  return actions
+    .dispatch(OAUTH_START_ACTION, { provider })
+    .done.then(() => undefined)
 }
 
 /**
@@ -87,7 +89,9 @@ export function startOAuthLogin(provider: string): Promise<void> {
 export function startOAuthLink(provider: string): Promise<void> {
   sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
 
-  return actions.dispatch(LINK_OAUTH_START_ACTION, { provider }).done
+  return actions
+    .dispatch(LINK_OAUTH_START_ACTION, { provider })
+    .done.then(() => undefined)
 }
 
 /**
@@ -155,7 +159,9 @@ export async function dispatchOAuthCallback(
 ): Promise<void> {
   await whenSessionReady()
 
-  return actions.dispatch(OAUTH_CALLBACK_ACTION, { provider, code, state }).done
+  return actions
+    .dispatch(OAUTH_CALLBACK_ACTION, { provider, code, state })
+    .done.then(() => undefined)
 }
 
 /**
@@ -289,7 +295,9 @@ export function peekOAuthLink(): PendingOAuthLink | null {
  * @param token The signed link token captured by the collision callback.
  */
 export function dispatchLinkOAuthAfterReauth(token: string): Promise<void> {
-  return actions.dispatch(LINK_OAUTH_AFTER_REAUTH_ACTION, { token }).done
+  return actions
+    .dispatch(LINK_OAUTH_AFTER_REAUTH_ACTION, { token })
+    .done.then(() => undefined)
 }
 
 /**

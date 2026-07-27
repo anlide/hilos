@@ -187,9 +187,24 @@ describe('parseSignal', () => {
       expect(result.signal).toMatchObject({
         kind: 'actionSuccess',
         action: 'moderator_piece_update',
+        message: undefined,
         requestId: 'req-9',
       })
       expect(result.signal.envelope.outcome).toBe('success')
+    }
+  })
+
+  it('surfaces the backend success message on an action_success frame', () => {
+    const result = parseSignal(
+      '{"type":"action_success","data":{"action":"moderator_piece_update","message":"Piece approved."},"outcome":"success","requestId":"req-9"}',
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.signal).toMatchObject({
+        kind: 'actionSuccess',
+        action: 'moderator_piece_update',
+        message: 'Piece approved.',
+      })
     }
   })
 

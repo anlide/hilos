@@ -43,6 +43,7 @@ export type ParsedSignal =
   | {
       kind: 'actionSuccess'
       action: string
+      message: string | undefined
       requestId: string | undefined
       envelope: SignalEnvelope
     }
@@ -194,6 +195,7 @@ export function parseSignal(
         signal: {
           kind: 'actionSuccess',
           action: data.data.action,
+          message: data.data.message,
           requestId: envelope.data.requestId,
           envelope: envelope.data,
         },

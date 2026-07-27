@@ -39,11 +39,16 @@ class FakeSource implements ActionLifecycleSource {
     return () => {}
   }
 
-  success(action: string, requestId: string | undefined): void {
+  success(
+    action: string,
+    requestId: string | undefined,
+    message?: string,
+  ): void {
     for (const listener of this.listeners.actionSuccess) {
       listener({
         kind: 'actionSuccess',
         action,
+        message,
         requestId,
         envelope: { type: 'action_success', data: {} },
       })
@@ -94,6 +99,19 @@ describe('ActionLifecycle', () => {
     source.success('moderator_piece_update', handle.requestId)
     await expect(handle.done).resolves.toBeUndefined()
     expect(handle.loading.get()).toBe(false)
+  })
+
+  it('resolves with the backend success message when the reply carries one', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch('moderator_piece_update', { id: 1 })
+    source.success(
+      'moderator_piece_update',
+      handle.requestId,
+      'Piece approved.',
+    )
+    await expect(handle.done).resolves.toBe('Piece approved.')
   })
 
   it('shows loading only after the deferral while pending', async () => {

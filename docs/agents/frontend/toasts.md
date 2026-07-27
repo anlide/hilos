@@ -76,6 +76,23 @@ that qualify:
 - **sign-in and verification forms** — "wrong password" answers the value the
   user just typed, on a form they are already looking at.
 
+## Success of a tracked action
+
+A submit that commits toasts success the same way — by default, with no flag.
+The same `toast: false` that opts out of the failure toast opts out of the
+success one too (the two outcomes share one switch), so the field-validation and
+sign-in forms above stay quiet on both.
+
+The text is **backend-authored**: the `action_success` reply carries an optional
+`message` (PHP `PageActionSuccessSignalData`, set from `onAction()` via
+`AbstractPage::setActionSuccessMessage()`), which the driver shows. The domain
+sentence lives on the backend because Hilos i18n does — the backend authors and
+localizes it, the frontend only decides to toast it. Until a handler supplies
+one, the driver falls back to a generic client string; that fallback is
+transitional, not a place to phrase the outcome. This is the success-side
+symmetry of the wire-protocol rule that a failure reason is a backend-authored
+domain sentence, never the engine's own words.
+
 ## Preferred Shape
 
 Prefer pushing from the **core headless** rather than from each view — one call
