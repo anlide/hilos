@@ -51,6 +51,8 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
@@ -236,6 +238,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         }
 
         $this->registerBackupCronRules();
+        $this->registerProtectedModeTruthSource();
     }
 
     /**
@@ -1663,6 +1666,27 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         foreach (BackupSchedule::fromCatalog()->daemonEntries() as $entry) {
             $this->addCronRule($entry->name, $entry->expression);
         }
+    }
+
+    /**
+     * Registers the daemon master as the non-agent truth source for the protected-mode
+     * runtime singleton, when the project mounts it.
+     *
+     * Protected mode is a daemon-owned framework singleton: the leader master writes the
+     * freeze row by its own decision and each follower master writes it in reaction to the
+     * peer QUIESCE/LIFT frames, so no owner agent stands behind the write. The RT write-guard
+     * accepts such an agent-less writer only for a collection-wide source, so every node's
+     * master registers one here (this runs on the master, so the guard checks against this
+     * process's registry). A project that does not mount the runtime item in its RT context
+     * opts out and registers nothing.
+     */
+    private function registerProtectedModeTruthSource(): void
+    {
+        if (Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM) === null) {
+            return;
+        }
+
+        RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
     }
 
     /**

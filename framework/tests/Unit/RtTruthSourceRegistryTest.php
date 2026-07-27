@@ -23,8 +23,31 @@ final class RtTruthSourceRegistryTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_A);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_B);
+        RtTruthSourceRegistry::unregisterDaemon(self::COLLECTION);
 
         parent::tearDown();
+    }
+
+    public function testDaemonSourceCanWriteWithoutCurrentAgent(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(self::COLLECTION);
+        ExecutionContext::setCurrentAgentId(null);
+
+        RtTruthSourceRegistry::checkCanWrite(self::COLLECTION);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '2');
+
+        $this->assertTrue(true);
+    }
+
+    public function testUnregisterDaemonRevokesAgentLessWrite(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(self::COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(self::COLLECTION);
+        ExecutionContext::setCurrentAgentId(null);
+
+        $this->expectException(RtTruthSourceWriteNotAllowedException::class);
+        RtTruthSourceRegistry::checkCanWriteState(self::COLLECTION, '1');
     }
 
     public function testCurrentAgentCanWriteOnlyRegisteredRtStateKey(): void
