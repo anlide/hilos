@@ -163,7 +163,9 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
+      # HTTPS only. The container's own :80 vhost stays unpublished on purpose —
+      # it 301s to https://$host with the port dropped, which lands on whatever
+      # holds 443 (another demo's stack), not here. Reach this stack over HTTPS.
       - "${NGINX_HTTPS_PORT:-443}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=chat-local
