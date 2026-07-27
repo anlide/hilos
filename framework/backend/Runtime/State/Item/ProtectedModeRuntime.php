@@ -157,6 +157,28 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
+     * Whether a connection holding this accept key is locked out of everything but
+     * authentication while the freeze is up.
+     *
+     * The lockdown is binary: the initiator connection ({@see self::initiatorAcceptKey})
+     * stays fully live so it can drive its destructive operation; every other connection
+     * is frozen out. It engages the moment this node leaves {@see self::PHASE_INACTIVE} —
+     * not only at {@see self::PHASE_ACTIVE} — because a follower node quiesces to
+     * `activating` and never advances to `active` (that phase is the leader-local marker
+     * that every node has quiesced), so a lockdown gated on `active` would leave followers
+     * open for the whole freeze. The initiator's accept key is recorded only on the node
+     * that froze itself with it, so on every other node the null key locks out all.
+     *
+     * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @return bool Whether the connection is locked out right now
+     */
+    public function locksOut(?string $acceptKey): bool
+    {
+        return $this->phase !== self::PHASE_INACTIVE
+            && $acceptKey !== $this->initiatorAcceptKey;
+    }
+
+    /**
      * @return array<string, mixed> Row suitable for runtime sync
      */
     public function toArray(): array

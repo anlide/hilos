@@ -13,9 +13,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the framework handshake welcome frame and the minted accept key.
  *
- * The welcome `{type: 'handshake', data: {build}}` must be the first frame
- * behind the 101 response; the accept key must be a random server-minted
- * identifier, not the client-derivable RFC 6455 Sec-WebSocket-Accept value.
+ * The welcome `{type: 'handshake', data: {build, protectedMode}}` must be the
+ * first frame behind the 101 response; the accept key must be a random
+ * server-minted identifier, not the client-derivable RFC 6455 Sec-WebSocket-Accept
+ * value. With no protected-mode runtime mounted the freeze flag reads inert (false).
  */
 final class WebSocketClientHandshakeWelcomeTest extends TestCase
 {
@@ -44,7 +45,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
 
         $welcome = $this->decodeFirstFrameAfter101($probe->outboundBytes());
         $this->assertSame(
-            ['type' => 'handshake', 'data' => ['build' => 'dev']],
+            ['type' => 'handshake', 'data' => ['build' => 'dev', 'protectedMode' => ['active' => false]]],
             $welcome,
         );
     }

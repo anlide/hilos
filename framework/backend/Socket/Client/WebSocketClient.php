@@ -15,6 +15,7 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
@@ -350,7 +351,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
-        $this->sendHandshakeWelcome();
+        $this->sendHandshakeWelcome($acceptKey);
     }
 
     /**
@@ -418,17 +419,23 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Append the framework welcome frame right behind the 101 response bytes.
      *
-     * First frame of every connection: {type: 'handshake', data: {build}} with
-     * the HILOS_BUILD_TIMESTAMP env value. The frontend compares build on every
-     * (re)connect and forces a page refresh on mismatch. Written directly to
-     * the write buffer so the 101 response and the welcome leave in one flush.
+     * First frame of every connection: {type: 'handshake', data: {build, protectedMode}}.
+     * `build` carries the HILOS_BUILD_TIMESTAMP env value the frontend compares on every
+     * (re)connect to force a page refresh on mismatch; `protectedMode.active` tells a
+     * connection caught by a cluster freeze that it is locked out. The freeze flag is a
+     * light in-memory read of the daemon-owned runtime row on this same master process —
+     * inert (false) when no project mounted the item — so the light master stays light.
+     * Written directly to the write buffer so the 101 response and the welcome leave in
+     * one flush.
      *
+     * @param string $acceptKey This connection's accept key, compared against the initiator's
      * @throws EnvException When the build timestamp env value cannot be read
      */
-    private function sendHandshakeWelcome(): void
+    private function sendHandshakeWelcome(string $acceptKey): void
     {
         $welcome = new HandshakeWelcomeSignalData(
             build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
+            protectedModeActive: $this->protectedModeLocksOut($acceptKey),
         );
         $message = [
             SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,
@@ -441,6 +448,23 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         $this->writeBuffer .= $this->buildFrameHeader(strlen($messageJson), self::OPCODE_TEXT) . $messageJson;
+    }
+
+    /**
+     * Reads the protected-mode runtime row and reports whether this connection is locked out.
+     *
+     * A light in-memory lookup of the daemon-owned singleton on this master process (the same
+     * Hilos::$rt the daemon writes the freeze into): false whenever runtime state is absent or
+     * the item was never mounted, so a project that does not use protected mode is unaffected.
+     *
+     * @param string $acceptKey This connection's accept key, compared against the initiator's
+     * @return bool Whether an active freeze locks this connection out
+     */
+    private function protectedModeLocksOut(string $acceptKey): bool
+    {
+        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
+
+        return $state instanceof ProtectedModeRuntime && $state->locksOut($acceptKey);
     }
 
     /**

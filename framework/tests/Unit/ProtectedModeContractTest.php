@@ -89,6 +89,51 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($runtime->initiatorAgentIndex);
     }
 
+    public function testInactiveRuntimeLocksNobodyOut(): void
+    {
+        $runtime = ProtectedModeRuntime::create();
+
+        $this->assertFalse($runtime->locksOut('accept-9'));
+        $this->assertFalse($runtime->locksOut(null));
+    }
+
+    public function testActiveRuntimeLocksOutEveryConnectionButTheInitiator(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+        ]);
+
+        $this->assertFalse($runtime->locksOut('accept-initiator'));
+        $this->assertTrue($runtime->locksOut('accept-other'));
+        $this->assertTrue($runtime->locksOut(null));
+    }
+
+    public function testFollowerRuntimeLocksOutEveryoneWhileMerelyActivating(): void
+    {
+        // A follower quiesces to `activating` with no initiator key and never advances to
+        // `active`, so the lockdown must engage on any non-inactive phase and lock every real
+        // (server-minted, non-null) connection out.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVATING,
+            ProtectedModeRuntime::initiatorAcceptKey => null,
+        ]);
+
+        $this->assertTrue($runtime->locksOut('accept-9'));
+        $this->assertTrue($runtime->locksOut('accept-other'));
+    }
+
+    public function testDeactivatingRuntimeStillLocksOutNonInitiator(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
+            ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+        ]);
+
+        $this->assertFalse($runtime->locksOut('accept-initiator'));
+        $this->assertTrue($runtime->locksOut('accept-other'));
+    }
+
     public function testEnableSignalDataRoundTrips(): void
     {
         $data = new ProtectedModeEnableSignalData(
