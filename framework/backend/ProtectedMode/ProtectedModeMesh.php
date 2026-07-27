@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
 /**
  * Outbound peer port the {@see ClusterProtectedMode} orchestration sends freeze frames through.
  *
- * It hides the {@see \Hilos\Cluster\Peer\PeerServer} behind the four sends the two-phase freeze
- * needs and the one roster read the leader waits on, so the coordinator stays pure logic and is
- * unit-testable with a fake. The leader broadcasts quiesce and lift to its followers and signals
- * ready to the initiator; a follower reports quiesced back to the leader. The concrete port is
- * wired at daemon start by the leader-orchestration slice.
+ * It hides the {@see \Hilos\Cluster\Peer\PeerServer} behind the sends the freeze needs and the two
+ * roster reads the coordinator relies on, so the coordinator stays pure logic and is unit-testable
+ * with a fake. An initiator that does not lead forwards enable and disable to the current leader
+ * (addressed via {@see leaderNodeId()}); the leader broadcasts quiesce and lift to its followers
+ * and signals ready to the initiator; a follower reports quiesced back to the leader. The concrete
+ * port is wired at daemon start by the leader-orchestration slice.
  */
 interface ProtectedModeMesh
 {
@@ -22,6 +24,27 @@ interface ProtectedModeMesh
      *                       broadcasts quiesce to and awaits a quiesced report from
      */
     public function followerMasterNodeIds(): array;
+
+    /**
+     * @return ?string Node id of the current leader an initiator addresses its request to, or null
+     *                 when leadership is unknown
+     */
+    public function leaderNodeId(): ?string;
+
+    /**
+     * Forwards this initiator node's freeze request to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     */
+    public function sendEnable(string $leaderNodeId, ProtectedModeEnableSignalData $data): void;
+
+    /**
+     * Forwards this initiator node's release request to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendDisable(string $leaderNodeId): void;
 
     /**
      * Broadcasts the freeze order to every follower master.

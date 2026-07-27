@@ -17,6 +17,9 @@ use Hilos\Utils\Logger;
  * {@see ProtectedModeExecutor} (local RT write and agent stop). One coordinator serves both roles
  * of a given freeze, and a node is only ever one role at a time:
  *
+ * - Initiator side: the initiator's own node calls {@see requestEnable()} / {@see requestDisable()},
+ *   which handle the request locally when this node leads or forward it to the current leader over
+ *   the peer channel otherwise. The worker→daemon trigger that reaches these entries is its own slice.
  * - Leader side: an initiator's {@see onEnable()} records the freeze, freezes the leader's own
  *   node, broadcasts quiesce to the followers, and tracks whom it still awaits. Each
  *   {@see onQuiesced()} clears one follower; when none remain the leader marks the mode active and
@@ -88,6 +91,55 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
     {
         $this->isLeader = false;
         $this->resetLeaderState();
+    }
+
+    /**
+     * Entry point on the initiator's own node: routes this node's freeze request to the leader.
+     *
+     * When this node is itself the leader the request is handled locally through {@see onEnable()};
+     * otherwise it rides the peer channel to whichever node currently holds leadership. A request
+     * raised while no leader is known is dropped — driving a stalled hand-off is watchdog territory
+     * (HIL-266), not this path.
+     *
+     * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     */
+    public function requestEnable(ProtectedModeEnableSignalData $data): void
+    {
+        if ($this->isLeader) {
+            $this->onEnable($this->selfNodeId, $data);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping enable request on '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendEnable($leaderNodeId, $data);
+    }
+
+    /**
+     * Entry point on the initiator's own node: routes this node's release request to the leader.
+     *
+     * Mirrors {@see requestEnable()}: handled locally through {@see onDisable()} when this node
+     * leads, otherwise sent to the current leader over the peer channel and dropped when no leader
+     * is known.
+     */
+    public function requestDisable(): void
+    {
+        if ($this->isLeader) {
+            $this->onDisable($this->selfNodeId);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping disable request on '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendDisable($leaderNodeId);
     }
 
     /**

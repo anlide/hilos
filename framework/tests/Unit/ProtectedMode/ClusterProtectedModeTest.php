@@ -175,14 +175,75 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
     }
 
+    public function testInitiatorLeaderHandlesEnableRequestLocally(): void
+    {
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+
+        // Routed straight into the leader flow, not out over the peer channel.
+        $this->assertSame(['enterActivating', 'enterActive'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['sendReady', self::SELF]], $this->mesh->calls);
+    }
+
+    public function testInitiatorFollowerSendsEnableRequestToLeader(): void
+    {
+        $this->mesh->leader = 'node-z';
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendEnable', 'node-z']], $this->mesh->calls);
+    }
+
+    public function testInitiatorDropsEnableRequestWhenNoLeaderIsKnown(): void
+    {
+        $this->mesh->leader = null;
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testInitiatorLeaderHandlesDisableRequestLocally(): void
+    {
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->requestDisable();
+
+        $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
+        $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
+    }
+
+    public function testInitiatorFollowerSendsDisableRequestToLeader(): void
+    {
+        $this->mesh->leader = 'node-z';
+
+        $this->coordinator->requestDisable();
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendDisable', 'node-z']], $this->mesh->calls);
+    }
+
     private function enableData(): ProtectedModeEnableSignalData
+    {
+        return $this->enableDataFrom('node-b');
+    }
+
+    private function enableDataFrom(string $initiatorNodeId): ProtectedModeEnableSignalData
     {
         return new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 0,
-            initiatorNodeId: 'node-b',
+            initiatorNodeId: $initiatorNodeId,
         );
     }
 }
@@ -195,12 +256,30 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     /** @var array<string> Follower node ids to advertise to the leader */
     public array $followers = [];
 
+    /** @var ?string Leader node id to advertise to an initiator, or null when leadership is unknown */
+    public ?string $leader = null;
+
     /** @var array<array{0: string, 1: ?string}> Ordered [method, argument] pairs sent */
     public array $calls = [];
 
     public function followerMasterNodeIds(): array
     {
         return $this->followers;
+    }
+
+    public function leaderNodeId(): ?string
+    {
+        return $this->leader;
+    }
+
+    public function sendEnable(string $leaderNodeId, ProtectedModeEnableSignalData $data): void
+    {
+        $this->calls[] = ['sendEnable', $leaderNodeId];
+    }
+
+    public function sendDisable(string $leaderNodeId): void
+    {
+        $this->calls[] = ['sendDisable', $leaderNodeId];
     }
 
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void

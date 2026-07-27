@@ -41,6 +41,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\ProtectedMode\ProtectedModeMesh;
@@ -957,6 +958,37 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         }
 
         return $followers;
+    }
+
+    /**
+     * Returns the node id of the current cluster leader for an initiator to address its request.
+     *
+     * @return ?string Leader node id, or null when leadership is unknown or the cluster is absent
+     */
+    public function leaderNodeId(): ?string
+    {
+        return Hilos::$cluster?->leadership()->leaderId();
+    }
+
+    /**
+     * Forwards this initiator node's freeze request to the leader over the peer channel.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     */
+    public function sendEnable(string $leaderNodeId, ProtectedModeEnableSignalData $data): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeEnableDTO($data));
+    }
+
+    /**
+     * Forwards this initiator node's release request to the leader over the peer channel.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendDisable(string $leaderNodeId): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeDisableDTO());
     }
 
     /**
