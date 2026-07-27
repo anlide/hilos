@@ -133,6 +133,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     /** @var ?string Cached log directory path */
     private ?string $cachedLogDirectory = null;
 
+    /** @var list<AgentId> Agents stopped for the current protected-mode freeze, replayed on lift; empty outside a freeze */
+    private array $protectedModeStoppedAgents = [];
+
     /**
      * Create worker server with host, port, script paths and agent manager.
      *
@@ -1137,13 +1140,41 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     {
         $initiatorAgentId = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
 
+        $this->protectedModeStoppedAgents = [];
         foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
             if ($agentId === $initiatorAgentId) {
                 continue;
             }
 
             $parsed = $this->parseAgentId($agentId);
+            $this->protectedModeStoppedAgents[] = $parsed;
             $this->stopAgent($parsed->type, $parsed->index);
+        }
+    }
+
+    /**
+     * Restarts the agents {@see stopAgentsForProtectedMode()} stopped for this freeze, when it lifts
+     * ({@see ProtectedModeAgentFreezer}).
+     *
+     * Replays exactly the remembered set through {@see startAgent()} — the same path bootstrap and
+     * placement use — so each agent comes back on this node as it was, and {@see startAgent()}'s own
+     * leadership and worker gates silently drop any that no longer belong here (e.g. a
+     * cluster-singleton whose node lost leadership during the freeze). Clears the remembered set up
+     * front so a second lift is a harmless no-op, and contains a per-agent start failure so one bad
+     * restart never strands the rest.
+     */
+    public function resumeAgentsForProtectedMode(): void
+    {
+        $stopped = $this->protectedModeStoppedAgents;
+        $this->protectedModeStoppedAgents = [];
+
+        foreach ($stopped as $agent) {
+            try {
+                $this->startAgent($agent->type, $agent->index);
+            } catch (\Throwable $e) {
+                $agentId = $this->buildAgentId($agent->type, $agent->index);
+                Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
+            }
         }
     }
 

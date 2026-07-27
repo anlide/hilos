@@ -23,8 +23,8 @@ use Hilos\Utils\Logger;
  * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
  * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
  * the runtime row this node wrote on entry. On entry it stops this node's own agents through
- * {@see ProtectedModeAgentFreezer} (HIL-267 slice 7a), leaving the initiator agent running; bringing
- * them back when the freeze lifts is the mirror seam a later slice fills (HIL-267 slice 7b).
+ * {@see ProtectedModeAgentFreezer}, leaving the initiator agent running; on exit ({@see enterInactive()})
+ * the same freezer brings back exactly the agents it stopped.
  */
 final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 {
@@ -97,7 +97,9 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         $state->activatedAt = null;
         $state->sync();
 
-        // Resuming the agents stopped on entry (mirror of enterActivating's freeze) lands in HIL-267 slice 7b.
+        // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
+        // freeze has lifted; the freezer replays exactly the set it stopped on this node.
+        Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
     }
 
     public function notifyInitiatorReady(): void
