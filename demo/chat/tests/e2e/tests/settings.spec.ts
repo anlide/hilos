@@ -4,7 +4,7 @@ import { test, expect, type Page } from '@playwright/test'
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
 // server replies a window — so a key is isolated with the search box before it
-// is asserted on (the chat catalog spans three pages of ten). Live edits from
+// is asserted on (the chat catalog spans four pages of ten). Live edits from
 // another connection hang as pending (a tinted row + an Apply control), while the
 // tab that made the edit applies its own change at once. Each editing test uses a
 // distinct catalog key and resets it to the catalog default, so the suite stays
@@ -53,24 +53,25 @@ test('lists settings in the server window and filters from the search box', asyn
 test('paginates the server window', async ({ page }) => {
   await openSettings(page)
 
-  // The catalog spans three pages of ten; the first page holds the chat_* keys,
+  // The catalog spans four pages of ten; the first page holds the chat_* keys,
   // the example_* keys sort onto the second, and the notifications.* keys (the
-  // delivery channels plus the delivery-log retention setting) trail onto the third.
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 3')
+  // email and sms delivery channels plus the delivery-log retention setting)
+  // trail onto the third and fourth.
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 4')
   await expect(
     page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
   ).toBeVisible()
   await expect(page.getByTestId('hilos-table-row-example_string')).toHaveCount(0)
 
   await page.getByTestId('hilos-table-next').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 3')
+  await expect(page.getByTestId('hilos-table-page')).toContainText('2 / 4')
   await expect(page.getByTestId('hilos-table-row-example_string')).toBeVisible()
   await expect(
     page.getByTestId('hilos-table-row-chat_attachment_max_file_bytes'),
   ).toHaveCount(0)
 
   await page.getByTestId('hilos-table-prev').click()
-  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 3')
+  await expect(page.getByTestId('hilos-table-page')).toContainText('1 / 4')
 })
 
 test('a tab applies its own edit at once, with no pending gate', async ({
