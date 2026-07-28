@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit\Notification;
 
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
+use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\Schema;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationChannelState;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
@@ -47,6 +49,22 @@ final class NotificationPreferenceTest extends TestCase
         self::assertTrue(NotificationPreferenceTestTypeRegistry::isMandatory('security.alert'));
         self::assertFalse(NotificationPreferenceTestTypeRegistry::isMandatory('chat.mention'));
         self::assertFalse(NotificationPreferenceTestTypeRegistry::isMandatory('unregistered.type'));
+    }
+
+    public function testMutedChannelsDegradesToAllowedWhenTableNotActivated(): void
+    {
+        // A project registers the preference collection unconditionally but may not
+        // have activated the hilos_notification_preference table (no migration).
+        // The read must degrade to an empty muted set — every channel allowed —
+        // rather than query a missing table, keeping the profile subscription and
+        // the emit-time dispatch inert until a project activates the table. With no
+        // schema loaded (no such table), the activation gate short-circuits before
+        // any query.
+        Schema::reset();
+        $preferences = ObjectNotificationPreferences::initDB(Objects::LAZY_STRATEGY_KEY);
+
+        self::assertSame([], $preferences->mutedChannels(1));
+        self::assertTrue($preferences->isAllowed(1, 'email'));
     }
 
     public function testChannelPreferenceActionDtoRoundTrips(): void

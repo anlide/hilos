@@ -11,6 +11,7 @@ use Hilos\Database\Entity\Collection\NotificationPreferences as EntityNotificati
 use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPreference;
 use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPreference;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\Schema;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -105,12 +106,23 @@ final class NotificationPreferences extends Objects
     /**
      * Lists the channels a recipient has muted.
      *
+     * A project registers the preference collection unconditionally
+     * ({@see HilosDbContext::configure()}) but may not have activated the
+     * hilos_notification_preference table (no migration). The sparse model then
+     * treats every channel as allowed, so the read degrades to an empty muted set
+     * instead of hitting a missing table — keeping the profile subscription and the
+     * emit-time dispatch inert until a project activates the table.
+     *
      * @param int $userId Recipient user id
-     * @return list<string> Muted channel names (empty when the recipient muted nothing)
+     * @return list<string> Muted channel names (empty when the recipient muted nothing, or the table is not activated)
      * @throws DatabaseException When the lookup query fails
      */
     public function mutedChannels(int $userId): array
     {
+        if (Schema::getTable(EntityNotificationPreference::_table) === null) {
+            return [];
+        }
+
         $entities = EntityNotificationPreference::get([EntityNotificationPreference::user_id => $userId]);
 
         $muted = [];
