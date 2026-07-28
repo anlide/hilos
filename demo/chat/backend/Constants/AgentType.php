@@ -55,4 +55,7 @@ final class AgentType
 
     /** @var string Hilos SMS delivery agent type (indexed pool, cluster-global) */
     public const string HILOS_SMS = HilosAgentType::HILOS_SMS;
+
+    /** @var string Hilos web-push delivery agent type (indexed pool, cluster-global) */
+    public const string HILOS_PUSH = HilosAgentType::HILOS_PUSH;
 }

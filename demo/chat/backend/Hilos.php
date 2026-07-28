@@ -146,6 +146,8 @@ use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotationAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Push\Delivery\PushDeliveryChannelAgent;
+use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
@@ -327,6 +329,11 @@ final class Hilos extends \Hilos\Hilos
         SmsDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        PushDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => PushDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => PushDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
         ],
         LogRotationAgent::AGENT_TYPE => [

@@ -311,6 +311,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_SMS_DELIVER => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
+            HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -336,6 +337,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::shardKey,
+            HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::shardKey,
         ], Hilos::getAgentSignalIndexFields());
     }
 
@@ -375,6 +377,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
+            HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }
