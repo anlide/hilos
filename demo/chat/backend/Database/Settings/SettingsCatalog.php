@@ -6,8 +6,10 @@ namespace Demo\Chat\Database\Settings;
 
 use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
+use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 
 /**
  * SettingsCatalog - Project settings catalog.
@@ -27,7 +29,7 @@ final class SettingsCatalog implements CatalogProviderInterface
      */
     public static function getCatalog(): array
     {
-        return [
+        return array_replace([
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
@@ -119,6 +121,6 @@ final class SettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
             ],
-        ];
+        ], ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()));
     }
 }

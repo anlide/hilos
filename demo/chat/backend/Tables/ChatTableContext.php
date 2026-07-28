@@ -11,6 +11,8 @@ use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -25,6 +27,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read HilosSettingsTable $settings
  * @property-read HilosBackupHistoryTable $hilosBackups
+ * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
+ * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
  */
 final class ChatTableContext extends TableContext
 {
@@ -34,6 +38,8 @@ final class ChatTableContext extends TableContext
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
+    public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
+    public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

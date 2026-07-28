@@ -1,0 +1,29 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Notification;
+
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Notification\Delivery\AbstractDeliveryChannel;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+
+/**
+ * ChatDeliveryChannelRegistry - the chat demo's delivery-channel registry (HIL-200).
+ *
+ * Registers the email channel ({@see MailDeliveryChannel}) so the notification
+ * dispatcher fans to it and the admin communications surface lists it. Further
+ * channels (sms 285, push 199, telegram 198) merge in here as they land.
+ */
+final class ChatDeliveryChannelRegistry extends DeliveryChannelRegistry
+{
+    /**
+     * @return array<string, AbstractDeliveryChannel> Channel descriptors keyed by name
+     */
+    protected static function channels(): array
+    {
+        return array_replace(parent::channels(), [
+            MailDeliveryChannel::NAME => new MailDeliveryChannel(),
+        ]);
+    }
+}

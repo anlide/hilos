@@ -27,6 +27,15 @@ final class DeliveryChannelSettings
     public const string ENABLED_SUFFIX = '.enabled';
 
     /**
+     * The pseudo-field name the channel-set action uses for the enablement toggle.
+     *
+     * `enabled` is not a config field; it is the global boolean switch. The hub's
+     * toggle rides the shared set action with this field name, and the handler writes
+     * {@see enabledKey()} — note {@see fieldKey()} with this name yields the same key.
+     */
+    public const string ENABLED_FIELD = 'enabled';
+
+    /**
      * Builds the global-enablement setting key for a channel.
      *
      * @param string $channel Channel name

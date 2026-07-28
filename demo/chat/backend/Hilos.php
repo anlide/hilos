@@ -45,6 +45,7 @@ use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\SessionGroup;
+use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
@@ -144,6 +145,8 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
+use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
 /**
@@ -178,6 +181,8 @@ final class Hilos extends \Hilos\Hilos
     protected const ?string LLM_PROFILE_OVERRIDE = ChatLlmProfileOverrideSource::class;
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
+
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
@@ -321,6 +326,8 @@ final class Hilos extends \Hilos\Hilos
         ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
         ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
+        ChatTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
+        ChatTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -409,6 +416,12 @@ final class Hilos extends \Hilos\Hilos
         ],
         BackupPage::PAGE => [
             ChatTableContext::hilosBackups => [],
+        ],
+        CommunicationsPage::PAGE => [
+            ChatTableContext::hilosCommunicationsChannels => [],
+        ],
+        CommunicationsChannelPage::PAGE => [
+            ChatTableContext::hilosCommunicationsChannelFields => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],

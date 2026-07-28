@@ -194,6 +194,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
         ], Hilos::getPageActionRoutes());
     }
 
@@ -247,6 +250,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }
 

@@ -111,4 +111,29 @@ final class MailDeliveryChannelTest extends TestCase
         self::assertTrue($fields[MailDeliveryChannel::FIELD_SMTP_PASSWORD]->secret);
         self::assertTrue($fields[MailDeliveryChannel::FIELD_SMTP_USERNAME]->secret);
     }
+
+    public function testOperationalFieldsCarryValidatorsThatEnforceTheirRules(): void
+    {
+        $fields = [];
+        foreach ((new MailDeliveryChannel())->configFields() as $field) {
+            $fields[$field->key] = $field;
+        }
+
+        $port = $fields[MailDeliveryChannel::FIELD_SMTP_PORT]->validator;
+        self::assertNotNull($port);
+        self::assertNull($port(587));
+        self::assertNotNull($port(70000));
+
+        $security = $fields[MailDeliveryChannel::FIELD_SMTP_SECURITY]->validator;
+        self::assertNotNull($security);
+        self::assertNull($security('starttls'));
+        self::assertNotNull($security('ssl'));
+
+        $from = $fields[MailDeliveryChannel::FIELD_FROM_ADDRESS]->validator;
+        self::assertNotNull($from);
+        self::assertNull($from('noreply@example.com'));
+        self::assertNotNull($from('nope'));
+
+        self::assertNull($fields[MailDeliveryChannel::FIELD_FROM_NAME]->validator);
+    }
 }

@@ -13,6 +13,7 @@ use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
+use Hilos\Notification\Delivery\ChannelConfigValidators;
 
 /**
  * MailDeliveryChannel - the email delivery channel descriptor (HIL-197).
@@ -116,11 +117,11 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     public function configFields(): array
     {
         return [
-            new ChannelConfigField(self::FIELD_FROM_ADDRESS, 'From address', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_FROM_ADDRESS),
+            new ChannelConfigField(self::FIELD_FROM_ADDRESS, 'From address', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_FROM_ADDRESS, '', ChannelConfigValidators::emailAddress(...)),
             new ChannelConfigField(self::FIELD_FROM_NAME, 'From name', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_FROM_NAME),
             new ChannelConfigField(self::FIELD_SMTP_HOST, 'SMTP host', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_SMTP_HOST),
-            new ChannelConfigField(self::FIELD_SMTP_PORT, 'SMTP port', SettingsCatalogConstants::TYPE_INTEGER, false, EnvConstants::MAIL_SMTP_PORT, 587),
-            new ChannelConfigField(self::FIELD_SMTP_SECURITY, 'SMTP security', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_SMTP_SECURITY, 'starttls'),
+            new ChannelConfigField(self::FIELD_SMTP_PORT, 'SMTP port', SettingsCatalogConstants::TYPE_INTEGER, false, EnvConstants::MAIL_SMTP_PORT, 587, ChannelConfigValidators::port(...)),
+            new ChannelConfigField(self::FIELD_SMTP_SECURITY, 'SMTP security', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::MAIL_SMTP_SECURITY, 'starttls', ChannelConfigValidators::mailSecurity(...)),
             new ChannelConfigField(self::FIELD_TIMEOUT_MS, 'Send timeout (ms)', SettingsCatalogConstants::TYPE_INTEGER, false, EnvConstants::MAIL_TIMEOUT_MS, 10000),
             new ChannelConfigField(self::FIELD_SMTP_USERNAME, 'SMTP username', SettingsCatalogConstants::TYPE_STRING, true, EnvConstants::MAIL_SMTP_USERNAME),
             new ChannelConfigField(self::FIELD_SMTP_PASSWORD, 'SMTP password', SettingsCatalogConstants::TYPE_STRING, true, EnvConstants::MAIL_SMTP_PASSWORD),

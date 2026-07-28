@@ -231,6 +231,22 @@ final class HilosSignalConstants
     /** Client → server: toggle a stored backup's rotation pin on the HILOS_BACKUP page. */
     public const string BACKUP_SET_KEEP = 'backup_set_keep';
 
+    // ── Hilos communications admin: channel-config actions (client → server) ──
+    /**
+     * Client → server: write one channel config field's settings override.
+     *
+     * Owned by the channel page; the hub's enablement toggle sends this same action
+     * with the `enabled` field so a single owner routes both surfaces (an action name
+     * is globally unique to one page).
+     */
+    public const string COMMUNICATIONS_CHANNEL_SET = 'communications_channel_set';
+
+    /** Client → server: reset one channel config field to its env/default value. */
+    public const string COMMUNICATIONS_CHANNEL_RESET = 'communications_channel_reset';
+
+    /** Client → server: send a test notification narrowed to one channel. */
+    public const string COMMUNICATIONS_CHANNEL_TEST = 'communications_channel_test';
+
     // ── Hilos OAuth login: async agent → initiating browser (WS_USER) ──
     /**
      * OAuth agent → initiating connection: the async login exchange failed or timed out.

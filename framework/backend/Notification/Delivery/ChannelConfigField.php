@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use Closure;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 
@@ -21,6 +22,10 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
  * layered settings-override -> env -> {@see $default} by {@see ChannelConfigResolver}.
  * A {@see $secret} field (SMTP password/username, API token) is env-only: it is never
  * editable and its value is never sent to the browser, only its set/not-set state.
+ *
+ * An operational field may declare a {@see $validator}: the admin channel-set action
+ * runs it on the type-coerced value before persisting the override and rejects the
+ * write with the returned domain phrase (port range, security enum, address syntax).
  */
 final class ChannelConfigField
 {
@@ -31,6 +36,7 @@ final class ChannelConfigField
      * @param bool $secret Whether the field is an env-only secret (never editable, value never exposed)
      * @param EnvConstants|string|null $envKey Env variable backing the field's env-source value, or null for none
      * @param bool|float|int|string $default Descriptor default used when neither a settings override nor env apply
+     * @param ?Closure(bool|float|int|string): ?string $validator Value validator returning a domain error phrase, or null when valid; null for no validation
      */
     public function __construct(
         public readonly string $key,
@@ -39,6 +45,7 @@ final class ChannelConfigField
         public readonly bool $secret = false,
         public readonly EnvConstants|string|null $envKey = null,
         public readonly bool|float|int|string $default = '',
+        public readonly ?Closure $validator = null,
     ) {
     }
 }
