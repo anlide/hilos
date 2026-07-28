@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Push;
 
-use ErrorException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
@@ -14,6 +13,7 @@ use Hilos\Notification\Delivery\ChannelConfigResolver;
 use Hilos\Push\Delivery\PushDeliveryChannel;
 use Hilos\Push\Exception\PushConfigException;
 use Minishlink\WebPush\VAPID;
+use Throwable;
 
 /**
  * PushChannelConfig - the resolved VAPID application-server keys for a push send (HIL-199).
@@ -104,7 +104,10 @@ final class PushChannelConfig
                 'publicKey' => $this->publicKey,
                 'privateKey' => $this->privateKey,
             ]);
-        } catch (ErrorException $e) {
+        } catch (Throwable $e) {
+            // VAPID::validate signals a bad key either as an ErrorException (point length) or an
+            // InvalidArgumentException (malformed base64url); both are wrapped so the send settles
+            // as a permanent failure instead of escaping the agent tick loop.
             throw new PushConfigException('invalid VAPID configuration: ' . $e->getMessage(), previous: $e);
         }
     }
