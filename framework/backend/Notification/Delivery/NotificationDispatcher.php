@@ -13,6 +13,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
+use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Hilos;
@@ -126,19 +127,27 @@ class NotificationDispatcher
     }
 
     /**
-     * Whether a recipient's per-user preferences allow a non-mandatory channel (HIL-485 seam).
+     * Whether a recipient's per-user preferences allow a non-mandatory channel (HIL-485).
      *
-     * The framework default allows every channel; per-user notification channel
-     * preferences (HIL-485) override this to mute a channel for a recipient. A
-     * mandatory notification type never reaches this check.
+     * Reads the sparse opt-out table: a channel is allowed unless the recipient has
+     * a muted row for it. A mandatory notification type never reaches this check.
+     * When the preference collection is not configured (a project that activates
+     * channels but not the hilos_notification_preference table) the channel is
+     * allowed by default, so preferences are strictly additive.
      *
      * @param int $userId Recipient user id
      * @param string $channel Channel name
      * @return bool True when the recipient allows the channel
+     * @throws DatabaseException When the preference lookup query fails
      */
     protected function passesUserPreferences(int $userId, string $channel): bool
     {
-        return true;
+        $preferences = Hilos::$db?->getObjectCollection(HilosDbContext::notificationPreferences);
+        if (!$preferences instanceof ObjectNotificationPreferences) {
+            return true;
+        }
+
+        return $preferences->isAllowed($userId, $channel);
     }
 
     /**

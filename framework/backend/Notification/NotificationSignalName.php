@@ -19,4 +19,13 @@ final class NotificationSignalName
 
     /** One notification, or all of them, was marked read (badge/multi-device sync). */
     public const string READ = 'notification_read';
+
+    /**
+     * The recipient's per-user channel preferences changed (HIL-485).
+     *
+     * Fanned to the recipient's connections after a profile toggle so every device
+     * reflects the same opt in/out. Carries the full channel → allowed map (small
+     * set, so a full snapshot avoids cross-tab drift), not a delta.
+     */
+    public const string PREFERENCES_CHANGED = 'notification_preferences_changed';
 }
