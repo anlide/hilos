@@ -487,6 +487,27 @@ enum EnvConstants
     /** @var string Directory the stub provider writes .txt artifacts to; empty writes none. */
     case SMS_FILE_DIR;
 
+    // ── Web push (HIL-199) ───────────────────────────────────────────────────
+
+    /**
+     * @var string VAPID application-server public key (base64url, uncompressed P-256 point).
+     * Baked into every browser subscription; empty leaves the push channel unconfigured. Not a secret —
+     * it is served to the frontend so the browser can subscribe. Generate the pair once and keep it stable.
+     */
+    case VAPID_PUBLIC;
+
+    /**
+     * @var string VAPID application-server private key (base64url). Signs the push requests; empty leaves the
+     * push channel unconfigured. Env-only secret — never editable and never sent to the browser.
+     */
+    case VAPID_PRIVATE;
+
+    /**
+     * @var string Number of push agents in the sharded hilos_push pool; the shard key is
+     * 1 + user_id % this. Default 1.
+     */
+    case PUSH_WORKER_COUNT;
+
     // ── Log rotation (HIL-379) ───────────────────────────────────────────────
 
     /**
