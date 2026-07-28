@@ -70,6 +70,23 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Resolves the number of a user's first verified `sms` identity (HIL-285).
+     *
+     * SMS delivery-channel read accessor: delegates to the object collection's
+     * {@see ObjectIdentities::findVerifiedSmsByUser()} primitive, which answers "which proven
+     * number can an SMS reach?" for the recipient user. Null when the user has no verified
+     * `sms` identity.
+     *
+     * @param int $userId Owning user id
+     * @return ?string E.164 number of a verified `sms` identity, or null when none
+     * @throws DatabaseException On database error while resolving the identity
+     */
+    public function findVerifiedSmsByUser(int $userId): ?string
+    {
+        return $this->objectCollection->findVerifiedSmsByUser($userId);
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

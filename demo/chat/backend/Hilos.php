@@ -144,6 +144,8 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -318,6 +320,11 @@ final class Hilos extends \Hilos\Hilos
         MailDeliveryChannelAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        SmsDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
         ],
     ];

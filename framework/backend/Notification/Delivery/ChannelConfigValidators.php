@@ -66,4 +66,52 @@ final class ChannelConfigValidators
             ? null
             : 'Must be a valid email address';
     }
+
+    /**
+     * Validates an HTTP method is one accepted for an SMS gateway request (HIL-285).
+     *
+     * @param bool|float|int|string $value Coerced field value
+     * @return ?string Error phrase, or null when valid
+     */
+    public static function httpMethod(bool|float|int|string $value): ?string
+    {
+        $allowed = ['GET', 'POST'];
+
+        return in_array(strtoupper((string) $value), $allowed, true)
+            ? null
+            : 'HTTP method must be one of: ' . implode(', ', $allowed);
+    }
+
+    /**
+     * Validates an SMS gateway auth mode is one of the accepted values (HIL-285).
+     *
+     * @param bool|float|int|string $value Coerced field value
+     * @return ?string Error phrase, or null when valid
+     */
+    public static function smsAuthMode(bool|float|int|string $value): ?string
+    {
+        $allowed = ['none', 'query', 'header', 'basic'];
+
+        return in_array((string) $value, $allowed, true)
+            ? null
+            : 'Auth mode must be one of: ' . implode(', ', $allowed);
+    }
+
+    /**
+     * Validates an SMS field map is a JSON object of string entries (HIL-285).
+     *
+     * @param bool|float|int|string $value Coerced field value
+     * @return ?string Error phrase, or null when valid or empty
+     */
+    public static function jsonObject(bool|float|int|string $value): ?string
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? null : 'Must be a valid JSON object';
+    }
 }

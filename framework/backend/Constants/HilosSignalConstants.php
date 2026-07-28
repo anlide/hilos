@@ -319,4 +319,25 @@ final class HilosSignalConstants
      * intake uses the mail channel's own deliver signal instead.
      */
     public const string HILOS_MAIL_SEND = 'hilos_mail_send';
+
+    // ── SMS subsystem: facade → sharded hilos_sms agent pool (agent signal) ──
+    /**
+     * {@see \Hilos\Notification\Delivery\NotificationDispatcher} → sms agent pool: deliver one SMS notification.
+     *
+     * The notification-delivery intake of the SMS channel ({@see \Hilos\Sms\Delivery\SmsDeliveryChannel}),
+     * carried by {@see \Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData}; INDEX_FIELD is its
+     * `shardKey`, derived from the recipient number so it co-locates with the raw-send intake on one pool
+     * instance. The raw-send intake uses {@see HILOS_SMS_SEND} instead.
+     */
+    public const string HILOS_SMS_DELIVER = 'hilos_sms_deliver';
+
+    /**
+     * {@see \Hilos\Sms\HilosSmsSender::send()} → sms agent pool: raw-send one message.
+     *
+     * The raw-send intake (Auth login/add codes) carried by
+     * {@see \Hilos\Sms\DTO\SmsSendSignalData}; INDEX_FIELD is its `shardKey`, so the
+     * signal routes to one pool instance by recipient number. The notification-delivery
+     * intake uses the SMS channel's own deliver signal instead.
+     */
+    public const string HILOS_SMS_SEND = 'hilos_sms_send';
 }

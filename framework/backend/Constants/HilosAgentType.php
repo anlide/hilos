@@ -33,4 +33,7 @@ final class HilosAgentType
 
     /** @var string Hilos mail agent (sharded pool delivering the email channel and raw sends) */
     public const string HILOS_MAIL = 'hilos_mail';
+
+    /** @var string Hilos SMS agent (sharded pool delivering the SMS channel and raw sends) */
+    public const string HILOS_SMS = 'hilos_sms';
 }

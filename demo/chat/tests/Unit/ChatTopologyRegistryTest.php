@@ -28,6 +28,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -300,6 +301,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
             HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
+            HilosSignalConstants::HILOS_SMS_DELIVER => AgentType::HILOS_SMS,
+            HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -323,6 +326,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_AGENT_START => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
+            HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::shardKey,
+            HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::shardKey,
         ], Hilos::getAgentSignalIndexFields());
     }
 
@@ -360,6 +365,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,
+            HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::class,
+            HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }

@@ -31,6 +31,7 @@ use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Mail\HilosMailer;
+use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
@@ -175,6 +176,9 @@ abstract class Hilos
 
     /** @var ?HilosMailer Mail send seam singleton */
     public static ?HilosMailer $mail = null;
+
+    /** @var ?HilosSmsSender SMS send seam singleton */
+    public static ?HilosSmsSender $sms = null;
 
     /**
      * Returns the project's backup catalog provider class, or null when backup is unconfigured.
@@ -510,6 +514,10 @@ abstract class Hilos
             static::$mail = static::createMail();
         }
 
+        if (static::$sms === null) {
+            static::$sms = static::createSms();
+        }
+
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
             static::$rt?->configure();
@@ -681,6 +689,19 @@ abstract class Hilos
     protected static function createMail(): HilosMailer
     {
         return new HilosMailer();
+    }
+
+    /**
+     * Creates the SMS send seam.
+     *
+     * Override to return a project HilosSmsSender subclass (e.g. one that routes raw-send
+     * through a custom provider or records an audit trail).
+     *
+     * @return HilosSmsSender SMS send seam
+     */
+    protected static function createSms(): HilosSmsSender
+    {
+        return new HilosSmsSender();
     }
 
     /**

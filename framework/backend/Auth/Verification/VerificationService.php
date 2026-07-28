@@ -180,16 +180,17 @@ class VerificationService
     /**
      * Builds the deliverer used to hand off a freshly issued code.
      *
-     * Seam override point: the framework default is {@see MailVerificationDeliverer},
-     * which emails the code through {@see Hilos::$mail} (HIL-197). The dev-stub
-     * {@see LogVerificationDeliverer} stays in the tree for tests; a project overrides
-     * this to add another channel (e.g. SMS).
+     * Seam override point: the framework default is {@see NotificationVerificationDeliverer},
+     * which routes each type to its channel - email types through {@see Hilos::$mail}
+     * (HIL-197), the SMS types through {@see Hilos::$sms} (HIL-285). The dev-stub
+     * {@see LogVerificationDeliverer} stays in the tree for tests; a project overrides this to
+     * add or swap a channel.
      *
      * @return VerificationDeliverer Deliverer for the issued code
      */
     protected function createDeliverer(): VerificationDeliverer
     {
-        return new MailVerificationDeliverer();
+        return new NotificationVerificationDeliverer();
     }
 
     /**

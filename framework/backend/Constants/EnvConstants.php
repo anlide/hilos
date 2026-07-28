@@ -454,4 +454,36 @@ enum EnvConstants
 
     /** @var string Directory the file transport writes .eml artifacts to; empty writes none. */
     case MAIL_FILE_DIR;
+
+    // ── SMS (HIL-285) ────────────────────────────────────────────────────────
+
+    /**
+     * @var string Forced SMS provider: generic | stub. Empty auto-selects the stub whenever
+     * SMS_ENDPOINT_URL is empty, so a project with no gateway still writes a .txt artifact.
+     */
+    case SMS_PROVIDER;
+
+    /** @var string SMS gateway endpoint URL; empty (with no forced provider) auto-selects the stub. */
+    case SMS_ENDPOINT_URL;
+
+    /** @var string Sender id / from number applied to outgoing messages; empty sends none. */
+    case SMS_FROM;
+
+    /** @var string SMS gateway API key/token; empty for an unauthenticated gateway. Env-only secret. */
+    case SMS_API_KEY;
+
+    /** @var string SMS gateway API password (basic auth); empty for none. Env-only secret. */
+    case SMS_API_PASSWORD;
+
+    /** @var string Per-send timeout in milliseconds. Default 10000. */
+    case SMS_TIMEOUT_MS;
+
+    /**
+     * @var string Number of SMS agents in the sharded hilos_sms pool; the shard key is
+     * 1 + crc32(number) % this. Default 1.
+     */
+    case SMS_WORKER_COUNT;
+
+    /** @var string Directory the stub provider writes .txt artifacts to; empty writes none. */
+    case SMS_FILE_DIR;
 }

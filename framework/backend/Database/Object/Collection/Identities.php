@@ -486,6 +486,31 @@ final class Identities extends Objects
     }
 
     /**
+     * Resolves the number of a user's first verified `sms` identity (HIL-285).
+     *
+     * The SMS analogue of {@see findVerifiedEmailByUser()}: given the recipient user, it
+     * answers "which proven number can an SMS reach?" for the SMS delivery channel. Only a
+     * verified `sms` identity is an address - an unverified number is never used (SMS to an
+     * unproven number is both a leak and a cost). Returns the identifier (E.164) of the first
+     * verified `sms` identity, or null when the user has none.
+     *
+     * @param int $userId Owning user id
+     * @return ?string E.164 number of a verified `sms` identity, or null when none
+     * @throws DatabaseException If the database query fails
+     */
+    public function findVerifiedSmsByUser(int $userId): ?string
+    {
+        $entityIdentities = EntityIdentity::get([EntityIdentity::user_id => $userId]);
+        foreach ($entityIdentities as $entityIdentity) {
+            if ($entityIdentity->verified && $entityIdentity->type === IdentityType::SMS) {
+                return $entityIdentity->identifier;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id
