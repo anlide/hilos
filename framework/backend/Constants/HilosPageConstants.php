@@ -135,6 +135,9 @@ final class HilosPageConstants
     /** @var string Hilos — single user (view/edit) */
     public const string HILOS_USER = 'hilos_user';
 
+    /** @var string Hilos — current-user notification center (bell + list) */
+    public const string HILOS_NOTIFICATIONS = 'hilos_notifications';
+
     /** @var string Hilos — roles list */
     public const string HILOS_ROLES = 'hilos_roles';
 

@@ -6,6 +6,10 @@
 // wires and starts them.
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
+  bindNotificationsScope,
+  hilosNotifications,
+} from '../notifications/notificationCenter.js'
+import {
   browserNavigationEnvironment,
   createHilosRouter,
   type HilosRouter,
@@ -15,6 +19,7 @@ import { resolvePageTitle } from '../routing/pageTitle.js'
 import { type PageRouter } from '../routing/PageRouter.js'
 import {
   bindSessionScope,
+  sessionUserId,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
@@ -46,6 +51,14 @@ export interface BootHilosConfig {
   /** Current-user slot, entity-type, and name-field overrides. */
   session?: SessionScopeOptions
   /**
+   * Activate the notification center: bind the shared {@link hilosNotifications}
+   * store to the connection (join the per-user group, request the snapshot, react
+   * to live signals). Set only where the backend registers the framework
+   * notification page; a demo without it leaves this off so no `notification_sync`
+   * action routes to an unregistered page. Default off.
+   */
+  notifications?: boolean
+  /**
    * Browser binding for the navigator; defaults to the window-backed one. Tests
    * inject a fake to stay DOM-free.
    */
@@ -63,6 +76,13 @@ export interface BootHilosConfig {
  */
 export function bootHilos(config: BootHilosConfig): HilosRouter {
   bindSessionScope(config.connection, config.scopes, config.session)
+  if (config.notifications === true) {
+    bindNotificationsScope(
+      config.connection,
+      hilosNotifications,
+      sessionUserId(config.scopes, config.session),
+    )
+  }
   const pages = bindPageScope(config.connection, config.scopes, {
     entityTypes: config.pageEntityTypes,
   })

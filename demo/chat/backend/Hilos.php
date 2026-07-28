@@ -106,6 +106,7 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
+use Demo\Chat\Pages\Hilos\NotificationsPage;
 use Demo\Chat\Pages\Hilos\PrivacyPage;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
@@ -234,6 +235,7 @@ final class Hilos extends \Hilos\Hilos
         OperationsPage::PAGE => OperationsPage::class,
         HilosUsersPage::PAGE => HilosUsersPage::class,
         HilosUserPage::PAGE => HilosUserPage::class,
+        NotificationsPage::PAGE => NotificationsPage::class,
         RolesPage::PAGE => RolesPage::class,
         McpSkillsDashboardPage::PAGE => McpSkillsDashboardPage::class,
         McpSkillsMcpPage::PAGE => McpSkillsMcpPage::class,

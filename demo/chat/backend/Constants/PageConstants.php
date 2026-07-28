@@ -129,6 +129,8 @@ final class PageConstants
 
     public const string HILOS_USER = HilosPageConstants::HILOS_USER;
 
+    public const string HILOS_NOTIFICATIONS = HilosPageConstants::HILOS_NOTIFICATIONS;
+
     public const string HILOS_ROLES = HilosPageConstants::HILOS_ROLES;
 
     public const string HILOS_MCP_SKILLS = HilosPageConstants::HILOS_MCP_SKILLS;

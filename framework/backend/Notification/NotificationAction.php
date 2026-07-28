@@ -7,11 +7,14 @@ namespace Hilos\Notification;
 /**
  * NotificationAction - client → server action names of the notification center.
  *
- * The two write actions of the durable notification model (HIL-102). They are
- * declared here and mounted on the notification-center page in HIL-195, which
- * dispatches each to the matching Db action, tracks it as a loading operation for
- * the clicker, and fans {@see NotificationSignalName::READ} to the recipient's
- * other connections.
+ * The client → server actions mounted on the notification-center page in HIL-195.
+ * The two write actions ({@see MARK_READ} / {@see MARK_ALL_READ}) each dispatch to
+ * the matching Db action, are tracked as a loading operation for the clicker, and
+ * fan {@see NotificationSignalName::READ} to the recipient's other connections. The
+ * read action ({@see SYNC}) carries no payload and returns the recipient's snapshot;
+ * the client sends it once at connect (the notification center joins the per-user
+ * group for live updates but has no page subscription — see
+ * {@see \Hilos\Pages\AbstractHilosNotificationsPage}).
  */
 final class NotificationAction
 {
@@ -20,4 +23,7 @@ final class NotificationAction
 
     /** Mark every unread notification of the recipient read (no payload fields). */
     public const string MARK_ALL_READ = 'notification_mark_all_read';
+
+    /** Request the recipient's snapshot — recent rows + unread count (no payload fields). */
+    public const string SYNC = 'notification_sync';
 }

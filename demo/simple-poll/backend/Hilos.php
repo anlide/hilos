@@ -20,6 +20,7 @@ use Demo\SimplePoll\Pages\Hilos\LicensePage;
 use Demo\SimplePoll\Pages\Hilos\PrivacyPage;
 use Demo\SimplePoll\Pages\Hilos\SettingsPage;
 use Demo\SimplePoll\Pages\Hilos\TermsPage;
+use Demo\SimplePoll\Pages\Hilos\NotificationsPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UsersPage;
 use Demo\SimplePoll\Pages\MainPage;
@@ -66,6 +67,7 @@ final class Hilos extends \Hilos\Hilos
         SettingsPage::PAGE => SettingsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
+        NotificationsPage::PAGE => NotificationsPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,

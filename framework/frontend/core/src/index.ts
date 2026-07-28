@@ -100,6 +100,22 @@ export {
   SESSION_SIGNAL_SCHEMAS,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
+export {
+  bindNotificationsScope,
+  createHilosNotificationStore,
+  hilosNotifications,
+  notificationGroupName,
+  NOTIFICATION_ACTION_MARK_ALL_READ,
+  NOTIFICATION_ACTION_MARK_READ,
+  NOTIFICATION_ACTION_SYNC,
+  NOTIFICATION_SIGNAL_CREATED,
+  NOTIFICATION_SIGNAL_READ,
+  NOTIFICATION_SIGNAL_SCHEMAS,
+  NOTIFICATION_SIGNAL_SNAPSHOT,
+  type HilosNotification,
+  type HilosNotificationSnapshot,
+  type HilosNotificationStore,
+} from './notifications/notificationCenter.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export {
   createAuthGate,

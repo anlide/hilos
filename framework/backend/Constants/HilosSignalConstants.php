@@ -132,6 +132,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos single user page. */
     public const string SUBSCRIPTION_PAGE_HILOS_USER = 'subscription_page_hilos_user';
 
+    /** Subscription signal for the Hilos notification-center page (carries the snapshot). */
+    public const string SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS = 'subscription_page_hilos_notifications';
+
     /** Subscription signal for Hilos roles list. */
     public const string SUBSCRIPTION_PAGE_HILOS_ROLES = 'subscription_page_hilos_roles';
 

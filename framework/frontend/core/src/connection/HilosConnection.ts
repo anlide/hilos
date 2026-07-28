@@ -8,6 +8,7 @@ import {
   FIELD_FILTER,
   FIELD_LIMIT,
   FIELD_OFFSET,
+  FIELD_GROUP,
   FIELD_PAGE,
   FIELD_REQUEST_ID,
   FIELD_SORT,
@@ -15,6 +16,8 @@ import {
   FIELD_TYPE,
   KEEPALIVE_TEXT_PING,
   SIGNAL_TYPE_ACTION,
+  SIGNAL_TYPE_GROUP_SUBSCRIBE,
+  SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
   SIGNAL_TYPE_TABLE_VIEWPORT,
 } from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
@@ -267,6 +270,46 @@ export class HilosConnection {
     }
 
     return this.send(JSON.stringify(frame))
+  }
+
+  /**
+   * Send a group-subscribe frame — `{type:'group_subscribe', group}` — joining
+   * this connection to a server-side WebSocket group so it receives every signal
+   * the backend fans to that group. Returns false, sending nothing, unless the
+   * connection is `connected`, like {@link send}; a caller re-sends on the next
+   * `connected` transition (a fresh socket starts a fresh subscription set).
+   *
+   * Group membership is many-per-connection and independent of the single page
+   * subscription, so a live channel a connection keeps for its whole life (e.g.
+   * the notification center's per-user group) rides this rather than a page.
+   *
+   * @param group The group identifier to join.
+   */
+  subscribeToGroup(group: string): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_GROUP_SUBSCRIBE,
+        [FIELD_GROUP]: group,
+      }),
+    )
+  }
+
+  /**
+   * Send a group-unsubscribe frame — `{type:'group_unsubscribe', group}` —
+   * leaving a group this connection joined with {@link subscribeToGroup}. Returns
+   * false, sending nothing, unless the connection is `connected`, like
+   * {@link send}. Rarely needed for connection-lifetime groups: a dropped socket
+   * drops every membership server-side.
+   *
+   * @param group The group identifier to leave.
+   */
+  unsubscribeFromGroup(group: string): boolean {
+    return this.send(
+      JSON.stringify({
+        [FIELD_TYPE]: SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
+        [FIELD_GROUP]: group,
+      }),
+    )
   }
 
   /**

@@ -16,6 +16,12 @@ export const SIGNAL_TYPE_PAGE_RESPONSE = 'page_response'
 /** Server frame `type` reporting a page subscription error (PHP `SignalConstants::SUBSCRIPTION_PAGE_ERROR`). */
 export const SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR = 'subscription_page_error'
 
+/** Client frame `type` joining a WebSocket group (PHP `SignalTypeConstants::GROUP_SUBSCRIBE`). */
+export const SIGNAL_TYPE_GROUP_SUBSCRIBE = 'group_subscribe'
+
+/** Client frame `type` leaving a WebSocket group (PHP `SignalTypeConstants::GROUP_UNSUBSCRIBE`). */
+export const SIGNAL_TYPE_GROUP_UNSUBSCRIBE = 'group_unsubscribe'
+
 /** Client frame `type` invoking a page action (PHP `SignalTypeConstants::ACTION`). */
 export const SIGNAL_TYPE_ACTION = 'action'
 
@@ -45,6 +51,9 @@ export const FIELD_TYPE = 'type'
 
 /** Subscribe frame key carrying the page key (PHP `SignalPayloadConstants::FIELD_PAGE`). */
 export const FIELD_PAGE = 'page'
+
+/** Group frame key carrying the group identifier (PHP `SignalPayloadConstants::FIELD_GROUP`). */
+export const FIELD_GROUP = 'group'
 
 /** Subscribe frame key carrying the route params (PHP `SignalPayloadConstants::FIELD_PARAMS`). */
 export const FIELD_PARAMS = 'params'

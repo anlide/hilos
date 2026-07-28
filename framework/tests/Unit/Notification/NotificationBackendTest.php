@@ -9,6 +9,7 @@ use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationReadSignalData;
+use Hilos\Notification\DTO\NotificationSyncPayloadDTO;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationGroup;
@@ -133,6 +134,14 @@ final class NotificationBackendTest extends TestCase
         $dto = NotificationMarkAllReadPayloadDTO::fromArray([SignalPayloadConstants::FIELD_DATA => ['ignored' => 1]]);
 
         self::assertSame(NotificationAction::MARK_ALL_READ, $dto->getAction());
+        self::assertSame([], $dto->toArray());
+    }
+
+    public function testSyncPayloadCarriesNoFields(): void
+    {
+        $dto = NotificationSyncPayloadDTO::fromArray([SignalPayloadConstants::FIELD_DATA => ['ignored' => 1]]);
+
+        self::assertSame(NotificationAction::SYNC, $dto->getAction());
         self::assertSame([], $dto->toArray());
     }
 }

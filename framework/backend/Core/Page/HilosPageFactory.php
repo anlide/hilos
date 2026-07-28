@@ -71,6 +71,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_OPERATIONS => true,
         HilosPageConstants::HILOS_USERS => true,
         HilosPageConstants::HILOS_USER => true,
+        HilosPageConstants::HILOS_NOTIFICATIONS => true,
         HilosPageConstants::HILOS_ROLES => true,
         HilosPageConstants::HILOS_MCP_SKILLS => true,
         HilosPageConstants::HILOS_MCP_SKILLS_MCP => true,

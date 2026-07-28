@@ -20,6 +20,7 @@ use Demo\SimpleTodo\Pages\Hilos\LicensePage;
 use Demo\SimpleTodo\Pages\Hilos\PrivacyPage;
 use Demo\SimpleTodo\Pages\Hilos\SettingsPage;
 use Demo\SimpleTodo\Pages\Hilos\TermsPage;
+use Demo\SimpleTodo\Pages\Hilos\NotificationsPage;
 use Demo\SimpleTodo\Pages\Hilos\Users\UserPage;
 use Demo\SimpleTodo\Pages\Hilos\Users\UsersPage;
 use Demo\SimpleTodo\Pages\MainPage;
@@ -66,6 +67,7 @@ final class Hilos extends \Hilos\Hilos
         SettingsPage::PAGE => SettingsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
+        NotificationsPage::PAGE => NotificationsPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
