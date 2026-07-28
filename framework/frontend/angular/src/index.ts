@@ -37,6 +37,7 @@ export { HilosSettingsPage } from './admin/settings/HilosSettingsPage.js'
 export { HilosBackupPage } from './admin/backup/HilosBackupPage.js'
 export { HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.js'
 export { HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.js'
+export { HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.js'
 export {
   HilosUsersPage,
   type UsersRowActionsContext,

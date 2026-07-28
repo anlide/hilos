@@ -46,4 +46,5 @@ export { default as HilosSettingsPage } from './admin/settings/HilosSettingsPage
 export { default as HilosBackupPage } from './admin/backup/HilosBackupPage.vue'
 export { default as HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.vue'
 export { default as HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.vue'
+export { default as HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.vue'
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'

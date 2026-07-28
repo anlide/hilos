@@ -48,6 +48,48 @@ describe('TableViewportController', () => {
     })
   })
 
+  it('setFilter sets a domain filter entry, resets to page 0, and resends', () => {
+    const { controller, sent } = makeController()
+    controller.ingestWindow([], 50)
+    controller.setPage(2)
+    controller.setFilter('status', 'failed')
+
+    expect(sent.at(-1)).toEqual({
+      filter: { status: 'failed' },
+      sort: null,
+      offset: 0,
+      limit: 10,
+    })
+  })
+
+  it('setFilter keeps other filter entries and the search filter', () => {
+    const { controller, sent } = makeController()
+    controller.setSearch('mail')
+    controller.setFilter('status', 'failed')
+    controller.setFilter('channel', 'sms')
+
+    expect(sent.at(-1)).toEqual({
+      filter: { search: 'mail', status: 'failed', channel: 'sms' },
+      sort: null,
+      offset: 0,
+      limit: 10,
+    })
+  })
+
+  it('setFilter with an empty value drops just that entry', () => {
+    const { controller, sent } = makeController()
+    controller.setFilter('status', 'failed')
+    controller.setFilter('channel', 'sms')
+    controller.setFilter('status', '')
+
+    expect(sent.at(-1)).toEqual({
+      filter: { channel: 'sms' },
+      sort: null,
+      offset: 0,
+      limit: 10,
+    })
+  })
+
   it('setSort toggles the direction on the same field', () => {
     const { controller, sent } = makeController()
     controller.setSort('key')

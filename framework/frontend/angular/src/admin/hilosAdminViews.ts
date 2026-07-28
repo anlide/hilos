@@ -42,7 +42,6 @@ import { HilosI18nTranslateGroupPage } from './i18n/translate/HilosI18nTranslate
 import { HilosI18nTranslateGroupItemPage } from './i18n/translate/HilosI18nTranslateGroupItemPage.js'
 import { HilosI18nTranslateActionErrorPage } from './i18n/translate/HilosI18nTranslateActionErrorPage.js'
 import { HilosI18nTranslateEmailPage } from './i18n/translate/HilosI18nTranslateEmailPage.js'
-import { HilosCommunicationsDeliveriesPage } from './communications/HilosCommunicationsDeliveriesPage.js'
 import { HilosSecurityPage } from './security/HilosSecurityPage.js'
 import { HilosSecurity2faPage } from './security/HilosSecurity2faPage.js'
 import { HilosSecurityOauthPage } from './security/HilosSecurityOauthPage.js'
@@ -106,10 +105,10 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: HilosI18nTranslateGroupItemPage,
     [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: HilosI18nTranslateActionErrorPage,
     [HilosPages.I18N_TRANSLATE_EMAIL]: HilosI18nTranslateEmailPage,
-    // COMMUNICATIONS and COMMUNICATIONS_CHANNEL are real framework pages that need
-    // a project-supplied HilosCommunicationsContext (like settings / backup), so a
-    // project mounts them directly rather than through this context-free default map.
-    [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveriesPage,
+    // COMMUNICATIONS, COMMUNICATIONS_CHANNEL, and COMMUNICATIONS_DELIVERIES are real
+    // framework pages that need a project-supplied context (like settings / backup):
+    // the deliveries journal reads a live connection for its table, so a project
+    // mounts them directly rather than through this context-free default map.
     [HilosPages.SECURITY]: HilosSecurityPage,
     [HilosPages.SECURITY_2FA]: HilosSecurity2faPage,
     [HilosPages.SECURITY_OAUTH]: HilosSecurityOauthPage,

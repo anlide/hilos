@@ -237,6 +237,30 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /**
+   * Set one domain filter-map entry and return to the first page, discard pending
+   * (the new window is authoritative), then request the new window. A null /
+   * undefined / empty-string value clears the entry, so a "no filter" option maps
+   * to dropping the key rather than sending an empty value the backend must
+   * special-case. The free-text search box has its own {@link setSearch}; this
+   * drives the domain filters a page renders as its own controls (channel, status,
+   * period, …), which ride the same open filter map to the backend query.
+   *
+   * @param key The filter-map key (matches the backend TableQueryDTO filter key).
+   * @param value The new value, or null/undefined/'' to clear the key.
+   */
+  setFilter(key: string, value: unknown): void {
+    const filter = { ...this.filterSignal.get() }
+    if (value === null || value === undefined || value === '') {
+      delete filter[key]
+    } else {
+      filter[key] = value
+    }
+    this.filterSignal.set(filter)
+    this.pageSignal.set(0)
+    this.changeWindow()
+  }
+
+  /**
    * Sort by a field — first click ascending, clicking the active field again
    * flips the direction — return to the first page, then request the new window.
    *
