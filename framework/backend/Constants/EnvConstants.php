@@ -502,4 +502,20 @@ enum EnvConstants
      * 0 for both age and size preserves the start-only rotation behavior.
      */
     case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
+
+    // ── Log archive retention (HIL-381) ──────────────────────────────────────
+
+    /**
+     * @var string How many of the newest archived rotation batches are always kept, exempt
+     * from eviction regardless of age. Default 20; 0 disables the count criterion (with a
+     * 0 max-age too, nothing is ever a candidate).
+     */
+    case LOG_ARCHIVE_RETENTION_KEEP_BATCHES;
+
+    /**
+     * @var string Age in seconds beyond which an archived rotation batch becomes an eviction
+     * candidate, provided it is also outside the newest kept batches. Default 2592000 (30 days);
+     * 0 disables the age criterion (with a 0 keep-batches too, nothing is ever a candidate).
+     */
+    case LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS;
 }
