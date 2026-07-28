@@ -143,4 +143,20 @@ abstract class AbstractDeliveryChannel
     {
         return [];
     }
+
+    /**
+     * Public per-channel config the frontend opt-in UI needs, keyed by field name.
+     *
+     * A channel whose browser opt-in needs a server-held value overrides this to
+     * carry it in the profile notification section (HIL-485): push exposes its
+     * VAPID public key so the browser can subscribe with it. It is public config
+     * only - never a secret, which stays env-only and server-side. The framework
+     * default has none, so a channel without a browser opt-in adds nothing.
+     *
+     * @return array<string, string> Public config keyed by field name, empty by default
+     */
+    public function frontendSubscribeConfig(): array
+    {
+        return [];
+    }
 }

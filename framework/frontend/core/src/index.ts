@@ -128,6 +128,19 @@ export {
   type HilosNotificationPreferencesSection,
   type HilosNotificationPreferencesStore,
 } from './notifications/notificationPreferences.js'
+export {
+  createBrowserPushEnvironment,
+  createHilosPushSubscriptionStore,
+  hilosPushSubscription,
+  PUSH_ACTION_SUBSCRIBE,
+  PUSH_ACTION_UNSUBSCRIBE,
+  type BrowserPushEnvironmentOptions,
+  type HilosPushActionSender,
+  type HilosPushEnvironment,
+  type HilosPushPermission,
+  type HilosPushSubscriptionSnapshot,
+  type HilosPushSubscriptionStore,
+} from './notifications/pushSubscription.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export {
   createAuthGate,

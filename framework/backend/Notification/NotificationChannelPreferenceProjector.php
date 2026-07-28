@@ -61,8 +61,10 @@ final class NotificationChannelPreferenceProjector
      * Unlike {@see channelPreferenceMap()} (togglable channels only, feeding the
      * multi-device sync signal), the section lists every globally enabled channel —
      * including channels the recipient has no address for, so the frontend can show
-     * a disabled row with an "add an address" hint — and carries the mandatory-note
-     * flag read from the project's type registry.
+     * a disabled row with an "add an address" hint — carries each channel's public
+     * frontend config ({@see AbstractDeliveryChannel::frontendSubscribeConfig()}, e.g.
+     * push's VAPID public key), and carries the mandatory-note flag read from the
+     * project's type registry.
      *
      * @param int $userId Recipient user id
      * @return NotificationPreferencesSectionData Section payload for the profile subscription scope
@@ -82,6 +84,7 @@ final class NotificationChannelPreferenceProjector
                 label: $descriptor->label(),
                 allowed: ObjectNotificationPreferences::channelAllowed($muted, $name),
                 hasAddress: $descriptor->resolveAddress($userId) !== null,
+                config: $descriptor->frontendSubscribeConfig(),
             );
         }
 

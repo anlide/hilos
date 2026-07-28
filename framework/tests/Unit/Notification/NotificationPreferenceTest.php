@@ -182,6 +182,35 @@ final class NotificationPreferenceTest extends TestCase
             NotificationPreferencesSectionData::mandatoryNote => false,
         ], $section->toArray());
     }
+
+    public function testChannelStateSerializesFrontendConfigOnlyWhenPresent(): void
+    {
+        // A channel with a browser opt-in (push) carries its public config (the
+        // VAPID public key) in the row; a channel without one omits the key
+        // entirely, so existing rows stay unchanged on the wire.
+        $withConfig = new NotificationChannelState(
+            channel: 'push',
+            label: 'Push',
+            allowed: true,
+            hasAddress: false,
+            config: ['vapid_public' => 'BPk...'],
+        );
+        $withoutConfig = new NotificationChannelState(
+            channel: 'email',
+            label: 'Email',
+            allowed: true,
+            hasAddress: true,
+        );
+
+        self::assertSame([
+            NotificationChannelState::channel => 'push',
+            NotificationChannelState::label => 'Push',
+            NotificationChannelState::allowed => true,
+            NotificationChannelState::hasAddress => false,
+            NotificationChannelState::config => ['vapid_public' => 'BPk...'],
+        ], $withConfig->toArray());
+        self::assertArrayNotHasKey(NotificationChannelState::config, $withoutConfig->toArray());
+    }
 }
 
 /**

@@ -9,10 +9,13 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
+use Hilos\Push\PushChannelConfig;
 
 /**
  * PushDeliveryChannel - the web-push delivery channel descriptor (HIL-199).
@@ -133,5 +136,29 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
             new ChannelConfigField(self::FIELD_VAPID_PUBLIC, 'VAPID public key', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::VAPID_PUBLIC),
             new ChannelConfigField(self::FIELD_VAPID_PRIVATE, 'VAPID private key', SettingsCatalogConstants::TYPE_STRING, true, EnvConstants::VAPID_PRIVATE),
         ];
+    }
+
+    /**
+     * Exposes the VAPID public key so the browser can subscribe (HIL-199).
+     *
+     * The profile push toggle calls `pushManager.subscribe` with this key as the
+     * application-server key, and the delivery agent signs every send with the
+     * matching private key - so the browser must subscribe with exactly this
+     * value. Only the public key is exposed; the private key stays an env-only
+     * secret. Resolution failures degrade to none (like {@see resolveAddress()}
+     * returning null without DB), so the frontend shows push as unavailable
+     * rather than surfacing a config error.
+     *
+     * @return array<string, string> The VAPID public key keyed by its field, or empty when unconfigured
+     */
+    public function frontendSubscribeConfig(): array
+    {
+        try {
+            $config = PushChannelConfig::resolve($this);
+        } catch (DatabaseException | SettingException | EnvException) {
+            return [];
+        }
+
+        return $config->publicKey === '' ? [] : [self::FIELD_VAPID_PUBLIC => $config->publicKey];
     }
 }

@@ -39,13 +39,17 @@ export const NOTIFICATION_ACTION_CHANNEL_SET =
  * channel's registry name, its human label, whether the recipient currently allows
  * it (sparse opt-out — no muted row means allowed), and whether they have a
  * resolvable address for it. A row with no address is shown disabled with an
- * "add an address" hint rather than hidden.
+ * "add an address" hint rather than hidden. `config` carries the channel's public
+ * frontend opt-in config keyed by field — present only for a channel that needs
+ * one (push carries its `vapid_public` key so the browser can subscribe); it is
+ * never a secret.
  */
 const channelStateSchema = z.looseObject({
   channel: z.string(),
   label: z.string(),
   allowed: z.boolean(),
   hasAddress: z.boolean(),
+  config: z.record(z.string(), z.string()).optional(),
 })
 
 export type HilosNotificationChannelState = z.infer<typeof channelStateSchema>

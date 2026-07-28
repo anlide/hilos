@@ -116,6 +116,24 @@ describe('notification preferences store', () => {
 
     expect(parsed.channels).toHaveLength(1)
     expect(parsed.channels[0].channel).toBe('email')
+    expect(parsed.channels[0].config).toBeUndefined()
     expect(parsed.mandatoryNote).toBe(false)
+  })
+
+  it('parses a channel row carrying frontend opt-in config', () => {
+    const parsed = notificationPreferencesSectionSchema.parse({
+      channels: [
+        {
+          channel: 'push',
+          label: 'Push',
+          allowed: true,
+          hasAddress: false,
+          config: { vapid_public: 'BPk...' },
+        },
+      ],
+      mandatoryNote: false,
+    })
+
+    expect(parsed.channels[0].config).toEqual({ vapid_public: 'BPk...' })
   })
 })
