@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Mail\Delivery;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
@@ -80,5 +81,34 @@ final class MailDeliveryChannelTest extends TestCase
         self::assertSame(HilosMailer::shardKeyForAddress('User@Example.com'), $shard);
         self::assertGreaterThanOrEqual(1, $shard);
         self::assertLessThanOrEqual(8, $shard);
+    }
+
+    public function testConfigFieldsDeclareOperationalFieldsAndEnvOnlySecrets(): void
+    {
+        $fields = [];
+        foreach ((new MailDeliveryChannel())->configFields() as $field) {
+            $fields[$field->key] = $field;
+        }
+
+        self::assertSame(
+            [
+                MailDeliveryChannel::FIELD_FROM_ADDRESS,
+                MailDeliveryChannel::FIELD_FROM_NAME,
+                MailDeliveryChannel::FIELD_SMTP_HOST,
+                MailDeliveryChannel::FIELD_SMTP_PORT,
+                MailDeliveryChannel::FIELD_SMTP_SECURITY,
+                MailDeliveryChannel::FIELD_TIMEOUT_MS,
+                MailDeliveryChannel::FIELD_SMTP_USERNAME,
+                MailDeliveryChannel::FIELD_SMTP_PASSWORD,
+            ],
+            array_keys($fields),
+        );
+
+        self::assertFalse($fields[MailDeliveryChannel::FIELD_SMTP_PORT]->secret);
+        self::assertSame(587, $fields[MailDeliveryChannel::FIELD_SMTP_PORT]->default);
+        self::assertSame(EnvConstants::MAIL_SMTP_PORT, $fields[MailDeliveryChannel::FIELD_SMTP_PORT]->envKey);
+
+        self::assertTrue($fields[MailDeliveryChannel::FIELD_SMTP_PASSWORD]->secret);
+        self::assertTrue($fields[MailDeliveryChannel::FIELD_SMTP_USERNAME]->secret);
     }
 }

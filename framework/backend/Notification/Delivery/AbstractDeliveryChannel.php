@@ -100,4 +100,20 @@ abstract class AbstractDeliveryChannel
     {
         return DeliveryChannelSettings::enabledKey($this->name());
     }
+
+    /**
+     * The channel's declarative config fields for the admin channel-config page (HIL-200).
+     *
+     * A channel overrides this to expose its operational fields (host, port,
+     * from-address, timeout) and env-only secrets (password, API token). The admin
+     * page renders one row per field and {@see ChannelSettingsCatalog} derives a
+     * settings key per non-secret field, so a channel adds fields declaratively
+     * without any page edit. The framework default has none.
+     *
+     * @return list<ChannelConfigField> Config field descriptors, empty by default
+     */
+    public function configFields(): array
+    {
+        return [];
+    }
 }
