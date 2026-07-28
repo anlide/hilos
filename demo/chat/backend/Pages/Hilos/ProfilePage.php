@@ -44,6 +44,11 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Identity;
 use Hilos\HilosException;
+use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
+use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
+use Hilos\Notification\NotificationChannelPreferenceProjector;
+use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\AbstractHilosProfilePage;
 
 /**
@@ -74,6 +79,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatSignalConstants::ADD_SMS_CONFIRM => ConfirmSmsAddCodeActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
+        NotificationPreferenceAction::CHANNEL_SET => NotificationChannelPreferenceActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -90,9 +96,9 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), or an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code)
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code), or a notification channel toggle carries no channel name
      * @throws \Random\RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, or an SMS-add or add-password verification/identity query fails
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, an SMS-add or add-password verification/identity query fails, or a notification-preference write or channel-map read query fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -158,6 +164,14 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, ConfirmAddPasswordActionDTO::class, $dto);
                 }
                 $this->handleConfirmAddPassword($acceptKey, $dto);
+
+                break;
+
+            case NotificationPreferenceAction::CHANNEL_SET:
+                if (!$dto instanceof NotificationChannelPreferenceActionDTO) {
+                    throw new InvalidActionPayloadException($action, NotificationChannelPreferenceActionDTO::class, $dto);
+                }
+                $this->handleSetNotificationChannel($acceptKey, $dto);
 
                 break;
 
@@ -558,6 +572,48 @@ final class ProfilePage extends AbstractHilosProfilePage
                 ChatSignalConstants::PASSWORD_UPDATED,
                 $connection->acceptKey,
                 new PasswordUpdatedSignalData(PasswordUpdatedSignalData::MODE_ADDED),
+            );
+        }
+    }
+
+    /**
+     * Applies the signed-in user's opt in/out for one notification channel (HIL-485).
+     *
+     * Server-authoritative and self-only: the acting user is read from the session,
+     * never the payload, so a client can only ever change its own preferences. The
+     * write goes through the framework preferences action (enabling deletes the
+     * sparse muted row, muting upserts one); the new full channel → allowed map is
+     * then fanned as {@see NotificationSignalName::PREFERENCES_CHANGED} to every one
+     * of the user's connections so all their devices reflect the same state (as
+     * NOTIFICATION_READ does in HIL-102). A missing channel name is refused through
+     * the default framework action_error contract.
+     *
+     * @param string $acceptKey Accept key
+     * @param NotificationChannelPreferenceActionDTO $dto Channel toggle DTO (channel, desired state)
+     * @throws ValidationException When the channel name is missing
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws DatabaseException When the preference write or channel-map read query fails
+     */
+    private function handleSetNotificationChannel(string $acceptKey, NotificationChannelPreferenceActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            throw new ValidationException('Notification channel is required');
+        }
+
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        Hilos::$db->notificationPreferences->actions->setChannel($userId, $dto->channel, $dto->enabled);
+
+        $channels = (new NotificationChannelPreferenceProjector())->channelPreferenceMap($userId);
+        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
+            $this->sendToUser(
+                NotificationSignalName::PREFERENCES_CHANGED,
+                $connection->acceptKey,
+                new NotificationPreferencesChangedSignalData($channels),
             );
         }
     }
