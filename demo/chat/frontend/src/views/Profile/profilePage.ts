@@ -7,12 +7,20 @@
 // signals and never touches a raw store.
 import {
   computedSignal,
+  hilosNotificationPreferences,
+  NOTIFICATION_SIGNAL_PREFERENCES_CHANGED,
+  notificationPreferencesSectionSchema,
   OAUTH_GITHUB_AUTH_METHOD,
   readString,
+  subscribeSignal,
   type EntityRef,
+  type HilosNotificationPreferencesChanged,
+  type HilosNotificationPreferencesStore,
+  type ProjectSignal,
   type ReadonlySignal,
 } from '@hilos/core'
 
+import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'
 import { Identities } from '../../types'
 import { type IdentityItem } from './types/lists/IdentityItem'
@@ -147,10 +155,71 @@ export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
       profileIdentities
         .get()
         .map((identity) => identity.provider)
-        .filter((provider): provider is string => provider !== null && provider !== ''),
+        .filter(
+          (provider): provider is string =>
+            provider !== null && provider !== '',
+        ),
     )
 
     return LINKABLE_OAUTH_METHODS.filter(
       (method) => !linked.has(method.key),
     ).map((method) => ({ key: method.key, label: method.label }))
   })
+
+// The profile page-data slot carrying the notification-preferences section
+// snapshot (backend AbstractHilosProfilePage::NOTIFICATION_SECTION). Absent from
+// an anonymous or session-less subscription — the section has nothing to show.
+const NOTIFICATION_PREFERENCES_DATA = 'notificationPreferences'
+
+const notificationPreferencesData = scopes.pageDataSignal(
+  NOTIFICATION_PREFERENCES_DATA,
+)
+
+/**
+ * Feed the framework notification-preferences store (HIL-485) from the profile
+ * subscription this project owns: the section snapshot rides the page-data slot,
+ * and live multi-device toggles arrive as the notification_preferences_changed
+ * project signal, fanned to every one of the user's connections. The SDK section
+ * view renders the store; it is fed here because the profile page — where the
+ * section lives — is a project surface, not a framework-bound scope of its own.
+ *
+ * Applies the current snapshot at once, then keeps the store in sync until the
+ * returned teardown runs. The mounting view calls that teardown on unmount, which
+ * also clears the store so a section left behind never lingers with stale rows.
+ *
+ * @param store The preferences store to feed; defaults to the shared framework store.
+ * @returns Teardown that stops both feeds and clears the store.
+ */
+export function bindNotificationPreferences(
+  store: HilosNotificationPreferencesStore = hilosNotificationPreferences,
+): () => void {
+  function applySection(raw: unknown): void {
+    const parsed = notificationPreferencesSectionSchema.safeParse(raw)
+    if (parsed.success) {
+      store.applySection(parsed.data)
+    }
+  }
+
+  applySection(notificationPreferencesData.get())
+  const stopSection = subscribeSignal(notificationPreferencesData, applySection)
+
+  const stopChanged = connection.on(
+    'projectSignal',
+    (signal: ProjectSignal) => {
+      if (signal.type !== NOTIFICATION_SIGNAL_PREFERENCES_CHANGED) {
+        return
+      }
+      // Validated against the preferences-changed schema at the parse boundary
+      // (NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS, merged by createHilosConnection).
+      store.applyChangedMap(
+        (signal.data as HilosNotificationPreferencesChanged).channels,
+      )
+    },
+  )
+
+  return () => {
+    stopSection()
+    stopChanged()
+    store.clear()
+  }
+}

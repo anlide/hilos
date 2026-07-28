@@ -14,12 +14,14 @@ import {
   ConflictActions,
   ConflictHeader,
   HilosModal,
+  HilosNotificationPreferences,
   LoadingButton,
   useSignal,
 } from '@hilos/vue'
 
 import { describeOAuthError, startOAuthLink } from '../../auth/oauthLogin'
 import { runPasskeyRegister } from '../../auth/passkeyCeremony'
+import { connection } from '../../bootstrap/connection'
 import { currentUserId } from '../../bootstrap/session'
 import {
   clearRenameError,
@@ -38,6 +40,7 @@ import {
 } from './profileActions'
 import {
   availableProviders,
+  bindNotificationPreferences,
   committedName,
   passwordSection,
   profileDetail,
@@ -341,8 +344,15 @@ async function submitAddPasswordConfirm(): Promise<void> {
 // confirm it): clear the fields, release the button, and toast the outcome.
 // Registered once on mount so a reply to a submit lands; torn down on unmount so a
 // late signal cannot fire into a destroyed component.
+// Feed the framework notification-preferences store (HIL-485) from this profile's
+// subscription while the page is mounted: the section snapshot rides the page data,
+// live toggles from another device arrive as the changed signal. Torn down (and the
+// store cleared) on unmount so a late signal never lands in a destroyed section.
+let teardownNotificationPreferences: (() => void) | null = null
+
 let unsubscribePasswordUpdated: (() => void) | null = null
 onMounted(() => {
+  teardownNotificationPreferences = bindNotificationPreferences()
   clearSetPasswordError()
   unsubscribePasswordUpdated = subscribePasswordUpdated((data) => {
     currentPassword.value = ''
@@ -368,6 +378,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   unsubscribePasswordUpdated?.()
+  teardownNotificationPreferences?.()
 })
 
 function openEdit(): void {
@@ -814,6 +825,14 @@ function mergeBoth(): void {
         </div>
       </form>
     </div>
+
+    <!-- Notification channel preferences (HIL-485): one switch per globally-enabled
+    channel plus the always-on note for mandatory types. The framework SDK section
+    owns its own <h2> heading and renders the framework preference store, which this
+    view feeds from the profile subscription (bindNotificationPreferences on mount).
+    A toggle is tracked, never optimistic — the switch turns only when the server
+    fans the changed signal back to every one of the user's tabs. -->
+    <HilosNotificationPreferences class="mt-4" :connection="connection" />
 
     <HilosModal v-model="editing" :confirm-on-close="dirty">
       <template #header>
