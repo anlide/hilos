@@ -80,6 +80,10 @@ export {
   HilosNotificationBell,
   type HilosNotificationBellProps,
 } from './HilosNotificationBell.js'
+export {
+  HilosNotificationPreferences,
+  type HilosNotificationPreferencesProps,
+} from './HilosNotificationPreferences.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
 export { HilosToastHost, type HilosToastHostProps } from './HilosToastHost.js'
 export {
