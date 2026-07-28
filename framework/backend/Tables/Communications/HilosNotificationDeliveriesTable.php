@@ -57,7 +57,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     /** Filter-map key: inclusive lower bound on created_at (SQL datetime). */
     public const string FILTER_FROM = 'from';
 
-    /** Filter-map key: inclusive upper bound on created_at (SQL datetime). */
+    /** Filter-map key: inclusive upper bound on created_at (date or SQL datetime; a bare date covers the whole day). */
     public const string FILTER_TO = 'to';
 
     /** Delivery table alias in the windowed SQL. */
@@ -217,7 +217,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $to = $this->filterString($query, self::FILTER_TO);
         if ($to !== '') {
             $conditions[] = 'nd.' . EntityNotificationDelivery::created_at . ' <= ?';
-            $params[] = $to;
+            $params[] = $this->endOfDayBound($to);
         }
 
         $search = trim($query->search);
@@ -259,6 +259,23 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $direction = $query->orderDirection === TableConstants::ORDER_ASC ? 'ASC' : 'DESC';
 
         return ' ORDER BY ' . $column . ' ' . $direction . ', nd.' . EntityNotificationDelivery::id . ' DESC';
+    }
+
+    /**
+     * Widens a date-only upper bound to the end of that day so the whole day is included.
+     *
+     * The frontend period picker emits a bare `YYYY-MM-DD`, which MySQL reads as that
+     * day's midnight (`00:00:00`); a raw `created_at <= '2026-07-28'` would then drop
+     * every delivery made during the selected day. A date-only bound is widened to
+     * `... 23:59:59` (the schema stores whole-second datetimes); a value that already
+     * carries a time component is passed through untouched.
+     *
+     * @param string $to Upper-bound filter value (bare date or SQL datetime)
+     * @return string Datetime upper bound safe for an inclusive `<=` comparison
+     */
+    private function endOfDayBound(string $to): string
+    {
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) === 1 ? $to . ' 23:59:59' : $to;
     }
 
     /**

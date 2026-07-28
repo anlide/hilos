@@ -45,6 +45,33 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertSame(['email', 'failed', '2026-07-01 00:00:00', '2026-07-28 23:59:59'], $params);
     }
 
+    public function testDateOnlyToBoundIsWidenedToEndOfDay(): void
+    {
+        [$where, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(
+            filter: [
+                HilosNotificationDeliveriesTable::FILTER_FROM => '2026-07-01',
+                HilosNotificationDeliveriesTable::FILTER_TO => '2026-07-28',
+            ],
+        ));
+
+        self::assertSame(
+            ' WHERE nd.created_at >= ? AND nd.created_at <= ?',
+            $where,
+        );
+        // The bare `to` date is widened so the whole final day is included; `from` at
+        // midnight already covers its whole day, so it is left as-is.
+        self::assertSame(['2026-07-01', '2026-07-28 23:59:59'], $params);
+    }
+
+    public function testDatetimeToBoundIsLeftUntouched(): void
+    {
+        [, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(
+            filter: [HilosNotificationDeliveriesTable::FILTER_TO => '2026-07-28 12:30:00'],
+        ));
+
+        self::assertSame(['2026-07-28 12:30:00'], $params);
+    }
+
     public function testInvalidStatusFilterIsIgnored(): void
     {
         [$where, $params] = $this->table()->exposedBuildWhere(new TableQueryDTO(
