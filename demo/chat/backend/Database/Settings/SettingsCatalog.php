@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 
 /**
@@ -121,6 +122,6 @@ final class SettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
             ],
-        ], ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()));
+        ], ChannelSettingsCatalog::entriesFor(ChatDeliveryChannelRegistry::all()), DeliveryLogPruner::catalogFragment());
     }
 }

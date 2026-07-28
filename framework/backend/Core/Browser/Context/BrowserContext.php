@@ -255,9 +255,10 @@ abstract class BrowserContext
     /**
      * Builds the table query for a viewport descriptor.
      *
-     * Generic filter resolution: the `search` filter-map key maps to the query
-     * search term. A table with custom filters resolves them through its own hook
-     * in a later step.
+     * Generic filter resolution: the `search` filter-map key is lifted into the
+     * query search term, and the whole open filter map is carried through so a
+     * table with custom filters (the delivery-logs channel/status/period filters,
+     * HIL-201) resolves them into its own WHERE inside {@see TableDefinition::getPage()}.
      *
      * @param TableViewportSubscription $viewport Window descriptor
      * @return TableQueryDTO Table query for the window
@@ -272,6 +273,7 @@ abstract class BrowserContext
             orderDirection: $viewport->sortDirection,
             offset: $viewport->offset,
             limit: $viewport->limit,
+            filter: $viewport->filter,
         );
     }
 

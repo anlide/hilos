@@ -21,6 +21,7 @@ readonly class TableQueryDTO
      * @param string $orderDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
      * @param int $offset Zero-based offset for pagination
      * @param int $limit Page size (TableConstants::NO_LIMIT = all rows)
+     * @param array<string, mixed> $filter Open viewport filter map a concrete table resolves into its own WHERE (e.g. the delivery-logs channel/status/period filters, HIL-201); `search` is lifted out into {@see $search}
      */
     public function __construct(
         public string $search = '',
@@ -28,6 +29,7 @@ readonly class TableQueryDTO
         public string $orderDirection = TableConstants::ORDER_ASC,
         public int $offset = 0,
         public int $limit = TableConstants::NO_LIMIT,
+        public array $filter = [],
     ) {
     }
 }

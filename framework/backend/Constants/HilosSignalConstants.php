@@ -250,6 +250,14 @@ final class HilosSignalConstants
     /** Client → server: send a test notification narrowed to one channel. */
     public const string COMMUNICATIONS_CHANNEL_TEST = 'communications_channel_test';
 
+    /**
+     * Client → server: re-queue one failed channel delivery (HIL-201).
+     *
+     * Owned by the deliveries page; resets the failed delivery row to pending with
+     * zero attempts and re-queues the channel's deliver signal.
+     */
+    public const string COMMUNICATIONS_DELIVERY_RETRY = 'communications_delivery_retry';
+
     // ── Hilos OAuth login: async agent → initiating browser (WS_USER) ──
     /**
      * OAuth agent → initiating connection: the async login exchange failed or timed out.

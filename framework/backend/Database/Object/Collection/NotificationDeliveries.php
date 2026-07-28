@@ -147,6 +147,52 @@ final class NotificationDeliveries extends Objects
     }
 
     /**
+     * Loads a delivery row by its primary id, or null when absent.
+     *
+     * The admin retry re-entry point (HIL-201): the retry action carries the delivery
+     * id, and this resolves the single row to reset and re-queue.
+     *
+     * @param int $id Delivery row id
+     * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
+     * @throws DatabaseException If the database query fails
+     */
+    public function findById(int $id): ?ObjectNotificationDelivery
+    {
+        if (isset($this->objects[$id])) {
+            return $this->objects[$id];
+        }
+
+        $entity = EntityNotificationDelivery::getById($id);
+        if ($entity === null || $entity->id === null) {
+            return null;
+        }
+
+        $this->objects[$entity->id] = ObjectNotificationDelivery::fromEntity($entity);
+
+        return $this->objects[$entity->id];
+    }
+
+    /**
+     * Resets a failed delivery back to pending for a fresh channel attempt (HIL-201).
+     *
+     * Clears the terminal state so the channel agent that receives the re-queued
+     * deliver signal drives the row anew: status to pending, attempts to zero, and
+     * the last error and delivered time cleared.
+     *
+     * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
+     * @throws DatabaseException If the update query fails
+     */
+    public function resetForRetry(ObjectNotificationDelivery $delivery): void
+    {
+        $delivery->status = DeliveryStatus::PENDING;
+        $delivery->attempts = 0;
+        $delivery->lastError = null;
+        $delivery->deliveredAt = null;
+        $delivery->updatedAt = TimeHelper::getSqlDateTime();
+        $delivery->sync();
+    }
+
+    /**
      * Records a failed attempt, failing the row terminally once retries are exhausted.
      *
      * The bounded-retry decision: the row keeps its `pending` status (retried on a

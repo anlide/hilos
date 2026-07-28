@@ -11,8 +11,10 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 
@@ -82,6 +84,45 @@ class NotificationDispatcher
                 $descriptor->shardKeyFor($userId, $notificationId),
             );
         }
+    }
+
+    /**
+     * Re-queues a failed delivery for a fresh channel attempt (HIL-201).
+     *
+     * The admin retry mechanic: the row is reset to pending with zero attempts and
+     * the channel's deliver signal is queued again, exactly as an original dispatch
+     * would. No-op (the row is left as-is) when it cannot be delivered again — the
+     * channel is no longer registered or the underlying notification is gone.
+     *
+     * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
+     * @throws DatabaseException When the row reset fails
+     */
+    public function requeue(ObjectNotificationDelivery $delivery): void
+    {
+        $notificationId = $delivery->notificationId;
+        $channel = $delivery->channel;
+        if ($notificationId === null || $channel === '') {
+            return;
+        }
+
+        $descriptor = Hilos::notificationChannelRegistryClass()::get($channel);
+        if ($descriptor === null) {
+            return;
+        }
+
+        $notification = EntityNotification::getById($notificationId);
+        $userId = $notification?->user_id;
+        if ($userId === null) {
+            return;
+        }
+
+        $this->deliveries()->resetForRetry($delivery);
+        $this->queueDeliver(
+            $descriptor,
+            $notificationId,
+            $channel,
+            $descriptor->shardKeyFor($userId, $notificationId),
+        );
     }
 
     /**

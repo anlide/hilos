@@ -14,6 +14,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
+use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Hilos;
 use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationReadSignalData;
@@ -113,6 +114,22 @@ class HilosNotifier
             NotificationSignalName::READ,
             new NotificationReadSignalData($idOrAll),
         );
+    }
+
+    /**
+     * Re-queues a failed channel delivery for a fresh attempt (HIL-201).
+     *
+     * The emit-seam counterpart of {@see emit()} for the admin delivery journal: the
+     * deliveries page validates the row is failed, then hands it here to reset and
+     * re-dispatch through the same {@see NotificationDispatcher}. Best-effort — a row
+     * whose channel or notification no longer exists is left unchanged.
+     *
+     * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
+     * @throws DatabaseException When the row reset fails
+     */
+    public function retryDelivery(ObjectNotificationDelivery $delivery): void
+    {
+        $this->dispatcher->requeue($delivery);
     }
 
     /**
