@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Mail\SmtpSecurity;
 
 /**
  * Framework default catalog for environment variables.
@@ -231,6 +232,22 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'preferred', emptyIsMissing: true),
             EnvConstants::HILOS_WEBAUTHN_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60000, emptyIsMissing: true),
             EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_TRANSPORT->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_SMTP_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_SMTP_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 587, emptyIsMissing: true),
+            EnvConstants::MAIL_SMTP_SECURITY->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                SmtpSecurity::STARTTLS->value,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::MAIL_SMTP_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_FROM_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_FROM_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10000, emptyIsMissing: true),
+            EnvConstants::MAIL_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
+            EnvConstants::MAIL_MAX_CONCURRENT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 4, emptyIsMissing: true),
+            EnvConstants::MAIL_FILE_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
         ];
     }
 

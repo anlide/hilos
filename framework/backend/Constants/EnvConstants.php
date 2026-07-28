@@ -410,4 +410,48 @@ enum EnvConstants
      * long random value in any real deployment. Empty in dev (weak, dev-only signing).
      */
     case HILOS_WEBAUTHN_CHALLENGE_SECRET;
+
+    // ── Mail (HIL-197) ───────────────────────────────────────────────────────
+
+    /**
+     * @var string Forced mail driver: smtp | file. Empty auto-selects the file transport
+     * whenever MAIL_SMTP_HOST is empty, so a project with no relay still writes a .eml.
+     */
+    case MAIL_TRANSPORT;
+
+    /** @var string SMTP relay host; empty (with no forced driver) auto-selects the file transport. */
+    case MAIL_SMTP_HOST;
+
+    /** @var string SMTP relay port. Default 587 (STARTTLS submission). */
+    case MAIL_SMTP_PORT;
+
+    /** @var string SMTP transport security: starttls | tls | none. Default starttls. */
+    case MAIL_SMTP_SECURITY;
+
+    /** @var string SMTP AUTH username; empty for an unauthenticated relay. Env-only secret. */
+    case MAIL_SMTP_USERNAME;
+
+    /** @var string SMTP AUTH password; empty for an unauthenticated relay. Env-only secret. */
+    case MAIL_SMTP_PASSWORD;
+
+    /** @var string Envelope/From address applied when encoding an outgoing message. */
+    case MAIL_FROM_ADDRESS;
+
+    /** @var string Sender display name; empty sends the bare From address. */
+    case MAIL_FROM_NAME;
+
+    /** @var string Per-send timeout in milliseconds. Default 10000. */
+    case MAIL_TIMEOUT_MS;
+
+    /**
+     * @var string Number of mail agents in the sharded hilos_mail pool; the shard key is
+     * 1 + crc32(address) % this. Default 1.
+     */
+    case MAIL_WORKER_COUNT;
+
+    /** @var string Concurrent SMTP dialogs one mail agent runs at once. Default 4. */
+    case MAIL_MAX_CONCURRENT;
+
+    /** @var string Directory the file transport writes .eml artifacts to; empty writes none. */
+    case MAIL_FILE_DIR;
 }
