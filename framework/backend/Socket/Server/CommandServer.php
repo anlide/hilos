@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\SocketException;
 
 /**
  * CommandServer - socket server for the CLI command channel.
@@ -30,6 +32,9 @@ class CommandServer extends AbstractServer
 {
     /** @var array<string, CommandClient> Held command clients awaiting an agent reply, keyed by correlation id */
     private array $heldRequests = [];
+
+    /** @var ?ConnectionDropper Master seam that force-closes a WebSocket connection, wired at registration */
+    private ?ConnectionDropper $connectionDropper = null;
 
     /**
      * Called when a new command client connection is accepted.
@@ -88,6 +93,34 @@ class CommandServer extends AbstractServer
 
         unset($this->heldRequests[$correlationId]);
         $client->writeReply($reply);
+    }
+
+    /**
+     * Wires the master seam used to force-close a WebSocket connection.
+     *
+     * Set by {@see DaemonManager::registerServer()} so the test-only drop command can reach
+     * the master-owned WebSocket clients through the command channel.
+     *
+     * @param ConnectionDropper $connectionDropper Master seam that force-closes a connection
+     */
+    public function setConnectionDropper(ConnectionDropper $connectionDropper): void
+    {
+        $this->connectionDropper = $connectionDropper;
+    }
+
+    /**
+     * Force-closes the live WebSocket connection with the given acceptKey through the master seam.
+     *
+     * Returns false when no dropper is wired, so a command handler can report the request
+     * as a no-op rather than fail when the daemon exposes no WebSocket server.
+     *
+     * @param string $acceptKey Daemon-minted identifier of the connection to close
+     * @return bool True when a matching live connection was found and closed, false otherwise
+     * @throws SocketException When closing the matched connection's socket fails
+     */
+    public function dropWebSocketConnection(string $acceptKey): bool
+    {
+        return $this->connectionDropper?->dropWebSocketConnection($acceptKey) ?? false;
     }
 
     /**

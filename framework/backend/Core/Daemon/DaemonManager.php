@@ -63,6 +63,7 @@ use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -101,7 +102,7 @@ use Hilos\Utils\Logger;
  * and {@see onPlacementDegraded()} when failover cannot re-place an orphaned agent. The
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver
+abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper
 {
     /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
     private const array REQUIRED_FUNCTIONS = [
@@ -459,6 +460,51 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
     public function registerServer(ServerInterface $server): void
     {
         $this->servers[] = $server;
+
+        // The command channel needs the master to force-close a WebSocket connection for the
+        // test-only drop command; wire this manager in as the dropper so the handler stays
+        // decoupled from the concrete manager.
+        if ($server instanceof CommandServer) {
+            $server->setConnectionDropper($this);
+        }
+    }
+
+    /**
+     * Force-closes the live WebSocket connection whose acceptKey matches, if any.
+     *
+     * Mirrors the disconnect cleanup {@see onClientRead()} performs on a dead socket:
+     * unregister from the event loop before closing (so libevent drops its reference first),
+     * then close - which runs {@see WebSocketClient::onClose()} reconcile - and remove the
+     * client from its server.
+     *
+     * @param string $acceptKey Daemon-minted identifier of the connection to close
+     * @return bool True when a matching live connection was found and closed, false otherwise
+     * @throws SocketException When closing the matched connection's socket fails
+     */
+    public function dropWebSocketConnection(string $acceptKey): bool
+    {
+        foreach ($this->servers as $server) {
+            if (!$server instanceof WebSocketServer) {
+                continue;
+            }
+
+            foreach ($server->getClients() as $client) {
+                if (!$client instanceof WebSocketClient || $client->acceptKey !== $acceptKey) {
+                    continue;
+                }
+
+                $socket = $client->getSocket();
+                if ($socket !== null) {
+                    $this->eventLoop->unregister($socket);
+                }
+                $client->close();
+                $server->removeClient($client);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

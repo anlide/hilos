@@ -120,6 +120,28 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CommandConstants::COMMAND_CONNECTION_DROP) {
+                // Test-only: the master force-closes the live WebSocket connection with the
+                // given acceptKey (simulating an unplanned drop). A socket-close failure must
+                // reply an error, not throw inside the master loop.
+                $acceptKey = (string) ($request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? '');
+                if ($acceptKey === '') {
+                    $reply = CommandReplyDTO::error($request->correlationId, 'Missing acceptKey');
+                } else {
+                    try {
+                        $dropped = $this->server->dropWebSocketConnection($acceptKey);
+                        $reply = CommandReplyDTO::ok($request->correlationId, [
+                            CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
+                            CommandConstants::FIELD_DROPPED => $dropped,
+                        ]);
+                    } catch (HilosException $e) {
+                        $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                    }
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);

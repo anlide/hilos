@@ -13,6 +13,7 @@ use Hilos\Core\CLI\Commands\ClusterNodesCommand;
 use Hilos\Core\CLI\Commands\ClusterReloadCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
+use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
 use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
@@ -94,6 +95,7 @@ class CliManager
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
+        $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
 
         $this->registerProjectCommands();
 

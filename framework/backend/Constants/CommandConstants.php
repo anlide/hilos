@@ -30,6 +30,12 @@ final class CommandConstants
     /** @var string Payload key: human-readable error message on a failed reply */
     public const string FIELD_MESSAGE = 'message';
 
+    /** @var string Payload key: the daemon-minted connection identifier a drop request targets */
+    public const string FIELD_ACCEPT_KEY = 'acceptKey';
+
+    /** @var string Payload key: reply flag telling whether a live connection was found and dropped */
+    public const string FIELD_DROPPED = 'dropped';
+
     /** @var string Reply status: command handled successfully */
     public const string STATUS_OK = 'ok';
 
@@ -47,4 +53,7 @@ final class CommandConstants
 
     /** @var string Test-only command: the daemon answers synchronously with a rich cluster/consensus/placement snapshot */
     public const string COMMAND_CLUSTER_INSPECT = 'cluster:test:inspect';
+
+    /** @var string Test-only command: the master force-closes the live WebSocket connection with the given acceptKey */
+    public const string COMMAND_CONNECTION_DROP = 'connection:test:drop';
 }
