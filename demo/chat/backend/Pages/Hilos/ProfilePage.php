@@ -52,6 +52,9 @@ use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Push\DTO\PushUnsubscribeActionDTO;
+use Hilos\Push\PushSubscriptionAction;
 
 /**
  * Chat demo implementation of the framework current-user profile page.
@@ -82,6 +85,8 @@ final class ProfilePage extends AbstractHilosProfilePage
         ChatSignalConstants::ADD_PASSWORD_REQUEST => RequestAddPasswordActionDTO::class,
         ChatSignalConstants::ADD_PASSWORD_CONFIRM => ConfirmAddPasswordActionDTO::class,
         NotificationPreferenceAction::CHANNEL_SET => NotificationChannelPreferenceActionDTO::class,
+        PushSubscriptionAction::SUBSCRIBE => PushSubscribeActionDTO::class,
+        PushSubscriptionAction::UNSUBSCRIBE => PushUnsubscribeActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -98,9 +103,9 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code), or a notification channel toggle carries no channel name
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code), a notification channel toggle carries no channel name, or a push subscribe/unsubscribe carries no endpoint or key
      * @throws \Random\RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, an SMS-add or add-password verification/identity query fails, or a notification-preference write or channel-map read query fails
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, an SMS-add or add-password verification/identity query fails, a notification-preference write or channel-map read query fails, or a push subscription write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -174,6 +179,22 @@ final class ProfilePage extends AbstractHilosProfilePage
                     throw new InvalidActionPayloadException($action, NotificationChannelPreferenceActionDTO::class, $dto);
                 }
                 $this->handleSetNotificationChannel($acceptKey, $dto);
+
+                break;
+
+            case PushSubscriptionAction::SUBSCRIBE:
+                if (!$dto instanceof PushSubscribeActionDTO) {
+                    throw new InvalidActionPayloadException($action, PushSubscribeActionDTO::class, $dto);
+                }
+                $this->handlePushSubscribe($acceptKey, $dto);
+
+                break;
+
+            case PushSubscriptionAction::UNSUBSCRIBE:
+                if (!$dto instanceof PushUnsubscribeActionDTO) {
+                    throw new InvalidActionPayloadException($action, PushUnsubscribeActionDTO::class, $dto);
+                }
+                $this->handlePushUnsubscribe($acceptKey, $dto);
 
                 break;
 
@@ -647,6 +668,74 @@ final class ProfilePage extends AbstractHilosProfilePage
                 new NotificationPreferencesChangedSignalData($channels),
             );
         }
+    }
+
+    /**
+     * Registers the acting device's web-push subscription (HIL-199).
+     *
+     * Server-authoritative and self-only: the acting user is read from the session,
+     * never the payload, so a device can only ever subscribe for its own user. The
+     * write upserts by endpoint (rotated keys or a new owner reuse the same row). No
+     * signal is fanned - a subscription is per-device durable state the toggle reads
+     * back from the browser's own getSubscription(), not shared cross-connection state
+     * (unlike the channel preference in {@see handleSetNotificationChannel()}). A
+     * payload missing the endpoint or a key is refused through the default framework
+     * action_error contract.
+     *
+     * @param string $acceptKey Accept key
+     * @param PushSubscribeActionDTO $dto Subscription DTO (endpoint, keys, user agent)
+     * @throws ValidationException When the endpoint or a key is missing
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws DatabaseException When the subscription write query fails
+     * @throws EmptyValueException When the endpoint is empty
+     */
+    private function handlePushSubscribe(string $acceptKey, PushSubscribeActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            throw new ValidationException('Push subscription endpoint and keys are required');
+        }
+
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $userId = Hilos::$rt->selfConnection->userId;
+
+        Hilos::$db->pushSubscriptions->actions->subscribe(
+            $userId,
+            $dto->endpoint,
+            $dto->p256dh,
+            $dto->auth,
+            $dto->userAgent,
+        );
+    }
+
+    /**
+     * Removes the acting device's web-push subscription (HIL-199).
+     *
+     * The opt-out half of the toggle: the row is deleted by endpoint (endpoints are
+     * globally unique). Self-only - an authenticated session is required so an
+     * anonymous client cannot prune subscriptions - though the endpoint alone
+     * identifies the row. As with subscribe, no signal is fanned.
+     *
+     * @param string $acceptKey Accept key
+     * @param PushUnsubscribeActionDTO $dto Unsubscribe DTO (endpoint)
+     * @throws ValidationException When the endpoint is missing
+     * @throws ItemNotFoundForUpdateException When the user session is missing
+     * @throws DatabaseException When the subscription delete query fails
+     */
+    private function handlePushUnsubscribe(string $acceptKey, PushUnsubscribeActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            throw new ValidationException('Push subscription endpoint is required');
+        }
+
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
+        Hilos::$db->pushSubscriptions->actions->unsubscribe($dto->endpoint);
     }
 
     /**

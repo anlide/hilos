@@ -36,6 +36,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Push\PushSubscriptionAction;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
@@ -180,6 +181,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_REQUEST => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => PageConstants::HILOS_PROFILE,
             NotificationPreferenceAction::CHANNEL_SET => PageConstants::HILOS_PROFILE,
+            PushSubscriptionAction::SUBSCRIBE => PageConstants::HILOS_PROFILE,
+            PushSubscriptionAction::UNSUBSCRIBE => PageConstants::HILOS_PROFILE,
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::IMPERSONATE_START => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
@@ -241,6 +244,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ADD_PASSWORD_REQUEST => AgentType::CHAT,
             ChatSignalConstants::ADD_PASSWORD_CONFIRM => AgentType::CHAT,
             NotificationPreferenceAction::CHANNEL_SET => AgentType::CHAT,
+            PushSubscriptionAction::SUBSCRIBE => AgentType::CHAT,
+            PushSubscriptionAction::UNSUBSCRIBE => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
