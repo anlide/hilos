@@ -20,6 +20,8 @@
         "ext-ctype": "*",
         "ext-fileinfo": "*",
         "ext-openssl": "*",
+        "ext-curl": "*",
+        "minishlink/web-push": "^11.0",
         "spomky-labs/cbor-php": "^3.3"
     },
     "require-dev": {
