@@ -10,6 +10,7 @@ use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificatio
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
+use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -19,11 +20,13 @@ use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotific
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
+use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
+use Hilos\Database\Actions\Collection\PushSubscriptionsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Item\NotificationActions;
@@ -46,6 +49,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionNotifications $notifications
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
+ * @property-read DbCollectionPushSubscriptions $pushSubscriptions
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -65,20 +69,23 @@ abstract class HilosDbContext extends DbContext
     public const string notificationDelivery = 'notificationDelivery';
     public const string notificationPreferences = 'notificationPreferences';
     public const string notificationPreference = 'notificationPreference';
+    public const string pushSubscriptions = 'pushSubscriptions';
+    public const string pushSubscription = 'pushSubscription';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
-     * notification preferences).
+     * notification preferences, push subscriptions).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
-     * notification deliveries and notification preferences load by key (per-user /
-     * per-(type,identifier) / per-credential / per-token / per-recipient /
-     * per-(notification,channel) / per-(user,channel) lookups), never as a full
-     * set, so registering the collections stays inert for projects that do not
-     * activate the hilos_identity / hilos_user_verification /
+     * notification deliveries, notification preferences and push subscriptions load
+     * by key (per-user / per-(type,identifier) / per-credential / per-token /
+     * per-recipient / per-(notification,channel) / per-(user,channel) / per-endpoint
+     * lookups), never as a full set, so registering the collections stays inert for
+     * projects that do not activate the hilos_identity / hilos_user_verification /
      * hilos_passkey_credential / hilos_session / hilos_notification /
-     * hilos_notification_delivery / hilos_notification_preference tables.
+     * hilos_notification_delivery / hilos_notification_preference /
+     * hilos_push_subscription tables.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -107,5 +114,8 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::notificationPreferences] = ObjectNotificationPreferences::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::notificationPreferences, DbCollectionNotificationPreferences::class, NotificationPreferencesActions::class);
+
+        $this->_objectCollections[self::pushSubscriptions] = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::pushSubscriptions, DbCollectionPushSubscriptions::class, PushSubscriptionsActions::class);
     }
 }
