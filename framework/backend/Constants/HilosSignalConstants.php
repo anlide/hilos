@@ -271,4 +271,15 @@ final class HilosSignalConstants
 
     /** Page → BackupAgent: set the carried backup id's keep pin (sidecar rewrite). */
     public const string BACKUP_AGENT_SET_KEEP = 'backup_agent_set_keep';
+
+    // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
+    /**
+     * {@see \Hilos\Mail\HilosMailer::send()} → mail agent pool: raw-send one message.
+     *
+     * The raw-send intake (Auth codes, magic links) carried by
+     * {@see \Hilos\Mail\DTO\MailSendSignalData}; INDEX_FIELD is its `shardKey`, so the
+     * signal routes to one pool instance by recipient address. The notification-delivery
+     * intake uses the mail channel's own deliver signal instead.
+     */
+    public const string HILOS_MAIL_SEND = 'hilos_mail_send';
 }

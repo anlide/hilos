@@ -30,6 +30,7 @@ use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Mail\HilosMailer;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
@@ -171,6 +172,9 @@ abstract class Hilos
 
     /** @var ?HilosNotifier Durable notification emit seam singleton */
     public static ?HilosNotifier $notify = null;
+
+    /** @var ?HilosMailer Mail send seam singleton */
+    public static ?HilosMailer $mail = null;
 
     /**
      * Returns the project's backup catalog provider class, or null when backup is unconfigured.
@@ -502,6 +506,10 @@ abstract class Hilos
             static::$notify = static::createNotifier();
         }
 
+        if (static::$mail === null) {
+            static::$mail = static::createMail();
+        }
+
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
             static::$rt?->configure();
@@ -660,6 +668,19 @@ abstract class Hilos
     protected static function createNotifier(): HilosNotifier
     {
         return new HilosNotifier();
+    }
+
+    /**
+     * Creates the mail send seam.
+     *
+     * Override to return a project HilosMailer subclass (e.g. one that routes raw-send
+     * through a custom pool or records an audit trail).
+     *
+     * @return HilosMailer Mail send seam
+     */
+    protected static function createMail(): HilosMailer
+    {
+        return new HilosMailer();
     }
 
     /**
