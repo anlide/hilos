@@ -32,6 +32,33 @@ abstract class AbstractDeliveryChannel
     abstract public function name(): string;
 
     /**
+     * The channel's human label for the admin communications tables (HIL-200).
+     *
+     * The framework default title-cases {@see name()}; a channel overrides it for a
+     * nicer label. Shown in the channels hub row and used to head the channel page.
+     *
+     * @return string Human channel label (e.g. Email)
+     */
+    public function label(): string
+    {
+        return ucfirst($this->name());
+    }
+
+    /**
+     * The channel's transport/driver name for the admin channels hub row (HIL-200).
+     *
+     * The framework default is the channel name; a channel whose transport differs
+     * from its name (email over SMTP) overrides it. Purely informational — it never
+     * selects behavior.
+     *
+     * @return string Transport/driver name (e.g. smtp)
+     */
+    public function driver(): string
+    {
+        return $this->name();
+    }
+
+    /**
      * The agent signal that hands one delivery to this channel's agent.
      *
      * The channel leaf declares the matching route in its agent's AGENT_SIGNALS

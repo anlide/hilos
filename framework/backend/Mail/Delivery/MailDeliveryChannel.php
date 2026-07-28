@@ -53,6 +53,14 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     }
 
     /**
+     * @return string The `smtp` transport name shown in the admin channels hub (HIL-200)
+     */
+    public function driver(): string
+    {
+        return 'smtp';
+    }
+
+    /**
      * @return string The mail pool's notification-delivery agent signal
      */
     public function deliverSignalName(): string
