@@ -18,6 +18,7 @@ use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailConfigException;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
+use Hilos\Mail\FailedMailTransport;
 use Hilos\Mail\MailTransportConfig;
 use Hilos\Mail\MailTransportFactory;
 use Hilos\Mail\MailTransportInterface;
@@ -88,6 +89,15 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     /** Next op id for a queued raw send. */
     private int $rawNextId = 0;
+
+    /** Whether the static MAIL_* runtime config has been resolved from env yet. */
+    private bool $configResolved = false;
+
+    /** Resolved transport config, or null when MAIL_* is invalid (sends then fail permanently). */
+    private ?MailTransportConfig $transportConfig = null;
+
+    /** Resolved raw-pool concurrency ceiling, read from env once. */
+    private int $resolvedMaxConcurrent = self::DEFAULT_MAX_CONCURRENT;
 
     /**
      * Binds this pool instance to its shard index.
@@ -168,8 +178,6 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @return DeliveryAttempt The started email send
      * @throws MailTemplateNotInCatalogException When the generic notification template is absent from the catalog
      * @throws MailBusyException When the freshly built transport is not idle (never in practice)
-     * @throws EnvException When a MAIL_* transport env value is missing or has the wrong type
-     * @throws MailConfigException When MAIL_SMTP_SECURITY is not a recognized mode
      */
     protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt
     {
@@ -190,26 +198,60 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     /**
      * @return int Concurrency ceiling from MAIL_MAX_CONCURRENT, or the default
-     * @throws EnvException When MAIL_MAX_CONCURRENT is present but not an int
      */
     protected function maxConcurrent(): int
     {
-        return max(1, Hilos::$env?->int(EnvConstants::MAIL_MAX_CONCURRENT) ?? self::DEFAULT_MAX_CONCURRENT);
+        $this->resolveConfig();
+
+        return $this->resolvedMaxConcurrent;
     }
 
     /**
      * Builds the configured mail transport for one send.
      *
      * The transport seam: tests override it to inject a fake transport instead of opening
-     * a real SMTP or file send.
+     * a real SMTP or file send. When the static MAIL_* config is invalid it hands out a
+     * {@see FailedMailTransport} so the send settles as a permanent failure rather than
+     * throwing the misconfig out of the tick loop (see {@see resolveConfig()}).
      *
-     * @return MailTransportInterface A fresh transport built from the MAIL_* config
-     * @throws EnvException When a MAIL_* env value is missing or has the wrong type
-     * @throws MailConfigException When MAIL_SMTP_SECURITY is not a recognized mode
+     * @return MailTransportInterface A fresh transport built from the MAIL_* config, or a permanently failing one
      */
     protected function createTransport(): MailTransportInterface
     {
-        return (new MailTransportFactory())->create(MailTransportConfig::fromEnv());
+        $this->resolveConfig();
+        if ($this->transportConfig === null) {
+            return new FailedMailTransport();
+        }
+
+        return (new MailTransportFactory())->create($this->transportConfig);
+    }
+
+    /**
+     * Resolves the static MAIL_* runtime config once, latching an invalid config.
+     *
+     * Env is read a single time (fail fast on first use). An invalid MAIL_* value would
+     * otherwise throw from the tick loop on every send and crash-loop the worker, losing
+     * the in-memory raw pool; instead the failure is logged once (domain reason, no
+     * secrets), the transport config is left null, and each send is dropped as a permanent
+     * failure through {@see createTransport()}.
+     */
+    private function resolveConfig(): void
+    {
+        if ($this->configResolved) {
+            return;
+        }
+        $this->configResolved = true;
+
+        try {
+            $config = MailTransportConfig::fromEnv();
+            $this->resolvedMaxConcurrent = max(
+                1,
+                Hilos::$env?->int(EnvConstants::MAIL_MAX_CONCURRENT) ?? self::DEFAULT_MAX_CONCURRENT,
+            );
+            $this->transportConfig = $config;
+        } catch (EnvException | MailConfigException $e) {
+            $this->logAgentWarning('mail transport disabled by invalid MAIL_* config: ' . $e->getMessage());
+        }
     }
 
     /**

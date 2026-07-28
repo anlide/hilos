@@ -194,6 +194,18 @@ class SmtpMailTransport implements MailTransportInterface
     }
 
     /**
+     * Drives the TLS handshake on the open socket one non-blocking step.
+     *
+     * The crypto seam: tests override it to simulate the handshake without a real TLS peer.
+     *
+     * @return int|bool True once secured, 0 while the handshake needs more steps, false on failure
+     */
+    protected function enableCrypto(): int|bool
+    {
+        return @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+    }
+
+    /**
      * Advances the async connect; on completion enters the handshake or reads the greeting.
      */
     private function processConnecting(): void
@@ -226,7 +238,7 @@ class SmtpMailTransport implements MailTransportInterface
      */
     private function processHandshake(float $nowMs): void
     {
-        $enabled = @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        $enabled = $this->enableCrypto();
         if ($enabled === 0) {
             return;
         }
@@ -331,6 +343,10 @@ class SmtpMailTransport implements MailTransportInterface
                 break;
 
             case SmtpActionKind::START_TLS:
+                // Discard any bytes buffered before the TLS handshake: a MITM can inject
+                // plaintext after the "220 Ready" that would otherwise be parsed as the
+                // post-TLS EHLO reply (STARTTLS command injection, cf. CVE-2011-0411).
+                $this->readBuffer = '';
                 $this->handshakeIsStartTls = true;
                 $this->phase = SmtpConnectionPhase::HANDSHAKE;
                 break;

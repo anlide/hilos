@@ -40,7 +40,7 @@ final class MailMessageEncoder
             'To: ' . $this->formatAddress($message->to, $message->toName),
         ];
         if ($message->replyTo !== null) {
-            $headers[] = 'Reply-To: ' . $message->replyTo;
+            $headers[] = 'Reply-To: ' . $this->stripCrlf($message->replyTo);
         }
         $headers[] = 'Subject: ' . $this->encodeHeaderValue($message->subject);
         $headers[] = 'MIME-Version: 1.0';
@@ -108,11 +108,29 @@ final class MailMessageEncoder
      */
     private function formatAddress(string $address, ?string $name): string
     {
+        $address = $this->stripCrlf($address);
         if ($name === null || $name === '') {
             return $address;
         }
 
         return $this->encodeHeaderValue($name) . ' <' . $address . '>';
+    }
+
+    /**
+     * Strips CR and LF from a header value to prevent SMTP header injection.
+     *
+     * Address and Reply-To values reach the wire unencoded, unlike display names and
+     * subjects, which pass through {@see encodeHeaderValue} (a control character forces a
+     * safe RFC 2047 encoded-word). Input B carries an unverified registration address, so a
+     * "a@b\r\nBcc: victim@..." recipient would otherwise inject arbitrary headers into every
+     * verification mail; folding the newlines away neutralizes it.
+     *
+     * @param string $value Raw header value that reaches the wire unencoded
+     * @return string The value with every CR and LF removed
+     */
+    private function stripCrlf(string $value): string
+    {
+        return str_replace(["\r", "\n"], '', $value);
     }
 
     /**

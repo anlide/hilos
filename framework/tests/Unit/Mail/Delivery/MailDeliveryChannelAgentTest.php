@@ -6,11 +6,15 @@ namespace Hilos\Tests\Unit\Mail\Delivery;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
+use Hilos\Hilos;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
+use Hilos\Mail\FailedMailTransport;
 use Hilos\Mail\MailSendOutcome;
 use Hilos\Mail\MailTransportInterface;
 use Hilos\Mail\Template\MagicLinkMailTemplate;
@@ -183,6 +187,36 @@ final class MailDeliveryChannelAgentTest extends TestCase
         self::assertSame(0, $agent->createdCount);
     }
 
+    public function testInvalidMailConfigDropsRawSendInsteadOfCrashingTheTick(): void
+    {
+        $previousEnv = Hilos::$env;
+        putenv('MAIL_SMTP_SECURITY=quantum');
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+
+        try {
+            $agent = new ConfigProbingMailAgent('1');
+            // A bad MAIL_* value resolves to a permanently failing transport, not an exception.
+            self::assertInstanceOf(FailedMailTransport::class, $agent->buildTransport());
+
+            $agent->onSignalAgent(
+                new AgentSignalData(new MailSendSignalData(to: 'user@example.com', shardKey: 1, subject: 'Hi', text: 'Body')),
+                'src',
+                HilosSignalConstants::HILOS_MAIL_SEND,
+            );
+
+            // Start the send, settle its permanent failure, and drop it — the misconfig never
+            // escapes onTick to crash the worker, and the permanent failure is not retried.
+            for ($i = 0; $i < 3; $i++) {
+                $agent->onTick();
+            }
+
+            self::assertSame(2, $agent->transportsBuilt, 'the probe plus one attempt, no retry after a permanent failure');
+        } finally {
+            Hilos::$env = $previousEnv;
+            putenv('MAIL_SMTP_SECURITY');
+        }
+    }
+
     /**
      * Enqueues a raw send through the agent's input-B intake.
      *
@@ -192,6 +226,30 @@ final class MailDeliveryChannelAgentTest extends TestCase
     private function rawSend(TestableMailAgent $agent, MailSendSignalData $signal): void
     {
         $agent->onSignalAgent(new AgentSignalData($signal), 'src', HilosSignalConstants::HILOS_MAIL_SEND);
+    }
+}
+
+/**
+ * A mail agent using the real transport seam so a bad MAIL_* config is exercised end to end,
+ * counting how many transports it builds and exposing the seam for a direct assertion.
+ */
+final class ConfigProbingMailAgent extends MailDeliveryChannelAgent
+{
+    public int $transportsBuilt = 0;
+
+    /**
+     * @return MailTransportInterface The transport the real seam builds from the MAIL_* config
+     */
+    public function buildTransport(): MailTransportInterface
+    {
+        return $this->createTransport();
+    }
+
+    protected function createTransport(): MailTransportInterface
+    {
+        $this->transportsBuilt++;
+
+        return parent::createTransport();
     }
 }
 

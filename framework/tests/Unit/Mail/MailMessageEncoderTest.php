@@ -97,6 +97,28 @@ final class MailMessageEncoderTest extends TestCase
         $this->assertStringContainsString("Reply-To: reply@example.com\r\n", $encoded);
     }
 
+    public function testCrlfInRecipientAndReplyToIsStrippedToPreventHeaderInjection(): void
+    {
+        $encoded = $this->encoder->encode(
+            new EmailMessage(
+                to: "user@example.com\r\nBcc: victim@example.com",
+                subject: 'Hi',
+                text: 'body',
+                replyTo: "reply@example.com\r\nCc: victim@example.com",
+            ),
+            "from@example.com\r\nX-Evil: 1",
+        );
+
+        // No injected header line: the smuggled keys never begin a fresh CRLF-delimited line.
+        $this->assertStringNotContainsString("\r\nBcc:", $encoded);
+        $this->assertStringNotContainsString("\r\nCc: victim", $encoded);
+        $this->assertStringNotContainsString("\r\nX-Evil:", $encoded);
+        // The header line survives with the newlines folded away, so no extra header appears.
+        $this->assertStringContainsString('To: user@example.comBcc: victim@example.com', $encoded);
+        $this->assertStringContainsString('From: from@example.comX-Evil: 1', $encoded);
+        $this->assertStringContainsString('Reply-To: reply@example.comCc: victim@example.com', $encoded);
+    }
+
     public function testEncodingIsDeterministic(): void
     {
         $message = new EmailMessage(to: 'user@example.com', subject: 'Hi', text: 'body', html: '<i>x</i>');

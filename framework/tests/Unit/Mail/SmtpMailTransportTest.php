@@ -67,6 +67,54 @@ final class SmtpMailTransportTest extends TestCase
         $this->assertSame('SMTP send timed out', $outcome->errorDetail);
     }
 
+    public function testStartTlsDiscardsBytesBufferedBeforeTheHandshake(): void
+    {
+        $transport = new StartTlsScriptedSmtpMailTransport($this->startTlsConfig());
+        $transport->start(new EmailMessage(to: 'user@test.local', subject: 'Hi', text: 'Hello'), 0.0);
+
+        // The pre-TLS conversation, with a forged EHLO reply spliced into the cleartext right
+        // after "220 ready" — exactly what a MITM injects before the upgrade (CVE-2011-0411).
+        fwrite(
+            $transport->peer,
+            "220 mail.test ESMTP\r\n"
+            . "250-mail.test\r\n250 STARTTLS\r\n"
+            . "220 ready to start tls\r\n"
+            . "250 evil-injected.host\r\n",
+        );
+
+        $now = 0.0;
+        for ($i = 0; $i < 40; $i++) {
+            $now += 1.0;
+            $transport->tick($now);
+        }
+
+        $sentBeforeReply = (string)stream_get_contents($transport->peer);
+        // The client re-issued EHLO after the upgrade and is now waiting for the genuine
+        // post-TLS reply: the injected 250 was discarded, so the envelope has not advanced.
+        $this->assertFalse($transport->hasResult());
+        $this->assertTrue($transport->isBusy());
+        $this->assertSame(2, substr_count($sentBeforeReply, 'EHLO test.local'));
+        $this->assertStringNotContainsString('MAIL FROM', $sentBeforeReply);
+
+        // The real encrypted replies arrive and the send completes normally.
+        fwrite(
+            $transport->peer,
+            "250 mail.test\r\n"
+            . "250 sender ok\r\n"
+            . "250 recipient ok\r\n"
+            . "354 end data\r\n"
+            . "250 queued\r\n"
+            . "221 bye\r\n",
+        );
+        for ($i = 0; $i < 200 && !$transport->hasResult(); $i++) {
+            $now += 1.0;
+            $transport->tick($now);
+        }
+
+        $this->assertTrue($transport->hasResult());
+        $this->assertTrue($transport->consumeResult()->delivered);
+    }
+
     /**
      * Builds a plain-security SMTP config with the given timeout.
      *
@@ -83,6 +131,24 @@ final class SmtpMailTransportTest extends TestCase
             smtpPort: 25,
             security: SmtpSecurity::NONE,
             timeoutMs: $timeoutMs,
+        );
+    }
+
+    /**
+     * Builds a STARTTLS SMTP config with a generous timeout for the interactive handshake test.
+     *
+     * @return MailTransportConfig STARTTLS config targeting a stubbed host, no AUTH
+     */
+    private function startTlsConfig(): MailTransportConfig
+    {
+        return new MailTransportConfig(
+            fromAddress: 'from@test.local',
+            fileDir: sys_get_temp_dir(),
+            transport: 'smtp',
+            smtpHost: 'mail.test',
+            smtpPort: 587,
+            security: SmtpSecurity::STARTTLS,
+            timeoutMs: 100000,
         );
     }
 }
@@ -108,5 +174,38 @@ final class ScriptedSmtpMailTransport extends SmtpMailTransport
         $this->peer = $pair[1];
 
         return $pair[0];
+    }
+}
+
+/**
+ * SMTP transport over an in-memory pair whose TLS handshake is faked as instantly secured,
+ * so a test can drive the STARTTLS upgrade path without a real TLS peer.
+ */
+final class StartTlsScriptedSmtpMailTransport extends SmtpMailTransport
+{
+    /** @var resource The server end of the socket pair, written by the test. */
+    public $peer;
+
+    /**
+     * Returns the client end of a socket pair and keeps the server end for the test.
+     *
+     * @return resource The client end of the in-memory socket pair
+     */
+    protected function establishSocket()
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+        stream_set_blocking($pair[0], false);
+        stream_set_blocking($pair[1], false);
+        $this->peer = $pair[1];
+
+        return $pair[0];
+    }
+
+    /**
+     * @return int|bool Always true: the handshake is treated as instantly secured
+     */
+    protected function enableCrypto(): int|bool
+    {
+        return true;
     }
 }
