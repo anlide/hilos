@@ -274,6 +274,16 @@ final class HilosSignalConstants
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**
+     * {@see \Hilos\Notification\Delivery\NotificationDispatcher} → mail agent pool: deliver one email notification.
+     *
+     * The notification-delivery intake of the email channel ({@see \Hilos\Mail\Delivery\MailDeliveryChannel}),
+     * carried by {@see \Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData}; INDEX_FIELD is its
+     * `shardKey`, derived from the recipient address so it co-locates with the raw-send intake on one pool
+     * instance. The raw-send intake uses {@see HILOS_MAIL_SEND} instead.
+     */
+    public const string HILOS_MAIL_DELIVER = 'hilos_mail_deliver';
+
+    /**
      * {@see \Hilos\Mail\HilosMailer::send()} → mail agent pool: raw-send one message.
      *
      * The raw-send intake (Auth codes, magic links) carried by

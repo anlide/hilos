@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit\Mail\Delivery;
+
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
+use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\HilosMailer;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Tests the email channel descriptor: identity, address resolution, and shard co-location (HIL-197).
+ *
+ * The channel names the `email` channel and points at HILOS_MAIL_DELIVER; it is pooled
+ * and shards its delivery intake by the recipient address through
+ * {@see HilosMailer::shardKeyForAddress}, so a delivery lands on the same pool instance
+ * as a raw send to the same address. Without a DB context the address is unresolved and
+ * no shard is assigned.
+ */
+final class MailDeliveryChannelTest extends TestCase
+{
+    private ?EnvAccessor $previousEnv = null;
+    private ?HilosDbContext $previousDb = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousEnv = Hilos::$env;
+        $this->previousDb = Hilos::$db;
+        putenv('MAIL_WORKER_COUNT');
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$env = $this->previousEnv;
+        Hilos::$db = $this->previousDb;
+        putenv('MAIL_WORKER_COUNT');
+        parent::tearDown();
+    }
+
+    public function testChannelIdentityIsEmailAndPooled(): void
+    {
+        $channel = new MailDeliveryChannel();
+
+        self::assertSame('email', $channel->name());
+        self::assertSame(HilosSignalConstants::HILOS_MAIL_DELIVER, $channel->deliverSignalName());
+        self::assertTrue($channel->isPooled());
+        self::assertSame(NotificationDeliverSignalData::shardKey, $channel->indexField());
+        self::assertSame('notifications.channel.email.enabled', $channel->enabledSettingKey());
+    }
+
+    public function testAddressAndShardAreNullWithoutDbContext(): void
+    {
+        Hilos::$db = null;
+        $channel = new MailDeliveryChannel();
+
+        self::assertNull($channel->resolveAddress(7));
+        self::assertNull($channel->shardKeyFor(7, 42));
+    }
+
+    public function testShardKeyMatchesTheRawSendRuleForTheResolvedAddress(): void
+    {
+        putenv('MAIL_WORKER_COUNT=8');
+        $channel = new class extends MailDeliveryChannel {
+            public function resolveAddress(int $userId): ?string
+            {
+                return 'User@Example.com';
+            }
+        };
+
+        $shard = $channel->shardKeyFor(7, 42);
+
+        self::assertSame(HilosMailer::shardKeyForAddress('User@Example.com'), $shard);
+        self::assertGreaterThanOrEqual(1, $shard);
+        self::assertLessThanOrEqual(8, $shard);
+    }
+}

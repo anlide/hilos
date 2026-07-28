@@ -30,4 +30,7 @@ final class HilosAgentType
 
     /** @var string Hilos OAuth agent (pre-auth async owner of in-flight OAuth login exchanges) */
     public const string HILOS_OAUTH = 'hilos_oauth';
+
+    /** @var string Hilos mail agent (sharded pool delivering the email channel and raw sends) */
+    public const string HILOS_MAIL = 'hilos_mail';
 }
