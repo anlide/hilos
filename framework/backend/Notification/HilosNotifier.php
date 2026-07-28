@@ -17,6 +17,7 @@ use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Hilos;
 use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationReadSignalData;
+use Hilos\Notification\Delivery\NotificationDispatcher;
 
 /**
  * HilosNotifier - the emit seam of the durable notification model (HIL-102).
@@ -28,13 +29,24 @@ use Hilos\Notification\DTO\NotificationReadSignalData;
  * fan is a convenience the unread COUNT recovers from when the recipient was
  * offline at emit time.
  *
- * Channel delivery (email, Telegram, push) is out of scope here — it fans to a
- * pool of delivery agents in HIL-196+, deliberately not bottlenecked on one owner.
+ * Channel delivery (email, Telegram, push) is folded in through the
+ * {@see NotificationDispatcher} (HIL-196): after the durable write, the dispatcher
+ * fans the notification to every enabled channel — inserting a delivery row and
+ * queueing the channel's delivery agent — deliberately not bottlenecked on one
+ * owner. With no channel registered (the framework default) that fan is a no-op.
  */
 class HilosNotifier
 {
     /**
-     * Persists a notification and fans it live to the recipient's connections.
+     * @param NotificationDispatcher $dispatcher Channel-delivery dispatcher folded into the emit seam
+     */
+    public function __construct(
+        private readonly NotificationDispatcher $dispatcher = new NotificationDispatcher(),
+    ) {
+    }
+
+    /**
+     * Persists a notification, fans it live to the recipient's connections, and dispatches channels.
      *
      * @param NotificationDraft $draft The notification to persist and deliver
      * @return int The persisted notification id
@@ -77,6 +89,8 @@ class HilosNotifier
                 createdAt: $notification->createdAt,
             ),
         );
+
+        $this->dispatcher->dispatch($notification, $draft->channels);
 
         return $id;
     }

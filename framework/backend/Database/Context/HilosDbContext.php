@@ -6,6 +6,7 @@ namespace Hilos\Database\Context;
 
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
@@ -13,6 +14,7 @@ use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
+use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
@@ -39,6 +41,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  * @property-read DbCollectionSessions $sessions
  * @property-read DbCollectionNotifications $notifications
+ * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -54,17 +57,20 @@ abstract class HilosDbContext extends DbContext
     public const string session = 'session';
     public const string notifications = 'notifications';
     public const string notification = 'notification';
+    public const string notificationDeliveries = 'notificationDeliveries';
+    public const string notificationDelivery = 'notificationDelivery';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
-     * passkey credentials, sessions, notifications).
+     * passkey credentials, sessions, notifications, notification deliveries).
      *
-     * Identities, verifications, passkey credentials, sessions and notifications
-     * load by key (per-user / per-(type,identifier) / per-credential / per-token /
-     * per-recipient lookups), never as a full set, so registering the collections
-     * stays inert for projects that do not activate the hilos_identity /
-     * hilos_user_verification / hilos_passkey_credential / hilos_session /
-     * hilos_notification tables.
+     * Identities, verifications, passkey credentials, sessions, notifications and
+     * notification deliveries load by key (per-user / per-(type,identifier) /
+     * per-credential / per-token / per-recipient / per-(notification,channel)
+     * lookups), never as a full set, so registering the collections stays inert for
+     * projects that do not activate the hilos_identity / hilos_user_verification /
+     * hilos_passkey_credential / hilos_session / hilos_notification /
+     * hilos_notification_delivery tables.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -87,5 +93,8 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::notifications] = ObjectNotifications::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::notifications, DbCollectionNotifications::class, NotificationsActions::class, NotificationActions::class);
+
+        $this->_objectCollections[self::notificationDeliveries] = ObjectNotificationDeliveries::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::notificationDeliveries, DbCollectionNotificationDeliveries::class);
     }
 }

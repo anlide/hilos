@@ -30,7 +30,9 @@ use Hilos\LLM\Routing\LlmProfileOverrideSource;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\NotificationTypeRegistry;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -72,6 +74,30 @@ abstract class Hilos
      * @var ?class-string<CatalogProviderInterface>
      */
     protected const ?string BACKUP_CATALOG = null;
+
+    /**
+     * Delivery-channel registry class (HIL-196).
+     *
+     * The dispatcher folded into {@see HilosNotifier::emit()} reads the enabled
+     * delivery channels through this class. The framework default is the empty base,
+     * so no channel delivers until a project points this at its own subclass; the
+     * project adds channels by overriding the registry's channel map.
+     *
+     * @var class-string<DeliveryChannelRegistry>
+     */
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = DeliveryChannelRegistry::class;
+
+    /**
+     * Notification-type registry class (HIL-485).
+     *
+     * The dispatcher reads whether a notification type is mandatory (bypasses
+     * per-user channel preferences) through this class. The framework default is the
+     * empty base, treating every type as non-mandatory; a project points this at its
+     * own subclass to declare mandatory types.
+     *
+     * @var class-string<NotificationTypeRegistry>
+     */
+    protected const string NOTIFICATION_TYPE_REGISTRY = NotificationTypeRegistry::class;
 
     /** Page classes keyed by page name. */
     public const array PAGES = [];
@@ -158,6 +184,26 @@ abstract class Hilos
     public static function getBackupCatalogClass(): ?string
     {
         return static::BACKUP_CATALOG;
+    }
+
+    /**
+     * Returns the project's delivery-channel registry class (HIL-196).
+     *
+     * @return class-string<DeliveryChannelRegistry> Delivery-channel registry class
+     */
+    public static function notificationChannelRegistryClass(): string
+    {
+        return static::NOTIFICATION_CHANNEL_REGISTRY;
+    }
+
+    /**
+     * Returns the project's notification-type registry class (HIL-485).
+     *
+     * @return class-string<NotificationTypeRegistry> Notification-type registry class
+     */
+    public static function notificationTypeRegistryClass(): string
+    {
+        return static::NOTIFICATION_TYPE_REGISTRY;
     }
 
     /**

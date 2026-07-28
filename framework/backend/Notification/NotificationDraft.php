@@ -12,6 +12,13 @@ namespace Hilos\Notification;
  * optional structured `data` a later i18n pass can re-render from. It is a plain
  * input VO — persistence, id assignment, and the live signal fan are the
  * notifier's job.
+ *
+ * {@see $channels} optionally narrows channel delivery (HIL-196): null delivers to
+ * every enabled channel (the default), while a non-empty list restricts delivery to
+ * the named channels — the "test send" on the admin channel page (HIL-200) uses it
+ * to exercise exactly one channel. The narrowing only subtracts from the
+ * dispatcher's own resolve (globally enabled and a resolvable address); it never
+ * forces a disabled or address-less channel.
  */
 final class NotificationDraft
 {
@@ -22,6 +29,7 @@ final class NotificationDraft
      * @param string $severity Severity level (see NotificationSeverity; defaults to info)
      * @param ?string $body Rendered body, or null
      * @param ?array<string, mixed> $data Structured context, or null
+     * @param ?list<string> $channels Channel narrowing: null = all enabled channels, a non-empty list restricts to the named channels
      */
     public function __construct(
         public readonly int $userId,
@@ -30,6 +38,7 @@ final class NotificationDraft
         public readonly string $severity = NotificationSeverity::INFO,
         public readonly ?string $body = null,
         public readonly ?array $data = null,
+        public readonly ?array $channels = null,
     ) {
     }
 }
