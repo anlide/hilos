@@ -5,11 +5,13 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings / backup pages are intentionally absent: they are real
-// framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage / HilosBackupPage) that
-// require a project-supplied context, so a project mounts them directly rather
-// than through this default map. The dashboard is the real HilosDashboardPage
-// (self-contained, no project context), reused here as its own default.
+// The users / user / settings / backup and communications hub / channel pages are
+// intentionally absent: they are real framework pages (HilosUsersPage / HilosUserPage /
+// HilosSettingsPage / HilosBackupPage / HilosCommunicationsPage /
+// HilosCommunicationsChannelPage) that require a project-supplied context, so a
+// project mounts them directly rather than through this default map. The dashboard
+// is the real HilosDashboardPage (self-contained, no project context), reused here
+// as its own default.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -40,8 +42,6 @@ import { HilosI18nTranslateGroupPage } from './i18n/translate/HilosI18nTranslate
 import { HilosI18nTranslateGroupItemPage } from './i18n/translate/HilosI18nTranslateGroupItemPage.js'
 import { HilosI18nTranslateActionErrorPage } from './i18n/translate/HilosI18nTranslateActionErrorPage.js'
 import { HilosI18nTranslateEmailPage } from './i18n/translate/HilosI18nTranslateEmailPage.js'
-import { HilosCommunicationsPage } from './communications/HilosCommunicationsPage.js'
-import { HilosCommunicationsChannelPage } from './communications/HilosCommunicationsChannelPage.js'
 import { HilosCommunicationsDeliveriesPage } from './communications/HilosCommunicationsDeliveriesPage.js'
 import { HilosSecurityPage } from './security/HilosSecurityPage.js'
 import { HilosSecurity2faPage } from './security/HilosSecurity2faPage.js'
@@ -106,8 +106,9 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: HilosI18nTranslateGroupItemPage,
     [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: HilosI18nTranslateActionErrorPage,
     [HilosPages.I18N_TRANSLATE_EMAIL]: HilosI18nTranslateEmailPage,
-    [HilosPages.COMMUNICATIONS]: HilosCommunicationsPage,
-    [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannelPage,
+    // COMMUNICATIONS and COMMUNICATIONS_CHANNEL are real framework pages that need
+    // a project-supplied HilosCommunicationsContext (like settings / backup), so a
+    // project mounts them directly rather than through this context-free default map.
     [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveriesPage,
     [HilosPages.SECURITY]: HilosSecurityPage,
     [HilosPages.SECURITY_2FA]: HilosSecurity2faPage,

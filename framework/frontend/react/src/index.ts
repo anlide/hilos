@@ -57,6 +57,14 @@ export {
   type HilosBackupPageProps,
 } from './admin/backup/HilosBackupPage.js'
 export {
+  HilosCommunicationsPage,
+  type HilosCommunicationsPageProps,
+} from './admin/communications/HilosCommunicationsPage.js'
+export {
+  HilosCommunicationsChannelPage,
+  type HilosCommunicationsChannelPageProps,
+} from './admin/communications/HilosCommunicationsChannelPage.js'
+export {
   HilosUsersPage,
   type HilosUsersPageProps,
 } from './admin/users/HilosUsersPage.js'

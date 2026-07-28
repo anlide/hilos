@@ -35,6 +35,8 @@ export { hilosAdminViews } from './admin/hilosAdminViews.js'
 export { HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.js'
 export { HilosSettingsPage } from './admin/settings/HilosSettingsPage.js'
 export { HilosBackupPage } from './admin/backup/HilosBackupPage.js'
+export { HilosCommunicationsPage } from './admin/communications/HilosCommunicationsPage.js'
+export { HilosCommunicationsChannelPage } from './admin/communications/HilosCommunicationsChannelPage.js'
 export {
   HilosUsersPage,
   type UsersRowActionsContext,
