@@ -4,7 +4,12 @@
 // gear move between the main page and the framework dashboard with no refresh.
 // The live connection state is the shell's own indicator (an extra status
 // surface allowed by docs/agents/frontend/core-and-connection.md).
-import { HilosLayout, HilosView, hilosAdminViews } from '@hilos/react'
+import {
+  HilosLayout,
+  HilosNotificationBell,
+  HilosView,
+  hilosAdminViews,
+} from '@hilos/react'
 import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
@@ -46,7 +51,11 @@ const pages: Record<string, ComponentType> = {
 
 export default function App() {
   return (
-    <HilosLayout connection={connection} brand="Hilos Todo">
+    <HilosLayout
+      connection={connection}
+      brand="Hilos Todo"
+      user={<HilosNotificationBell connection={connection} />}
+    >
       <HilosView pages={pages} />
     </HilosLayout>
   )

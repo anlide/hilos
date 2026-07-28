@@ -5,7 +5,12 @@
 // The live connection state is the shell's own indicator.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import type { Type } from '@angular/core'
-import { HilosLayout, HilosView, hilosAdminViews } from '@hilos/angular'
+import {
+  HilosLayout,
+  HilosNotificationBell,
+  HilosView,
+  hilosAdminViews,
+} from '@hilos/angular'
 import { HilosPages } from '@hilos/core'
 
 import { connection } from './bootstrap/connection'
@@ -22,9 +27,10 @@ import { Users } from './views/hilos/users/users'
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosLayout, HilosView],
+  imports: [HilosLayout, HilosNotificationBell, HilosView],
   template: `<hilos-layout [connection]="connection">
     <span brand>Hilos Poll</span>
+    <hilos-notification-bell user [connection]="connection" />
     <hilos-view [pages]="pages" />
   </hilos-layout>`,
 })

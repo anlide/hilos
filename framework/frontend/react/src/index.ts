@@ -64,6 +64,10 @@ export {
   HilosUserPage,
   type HilosUserPageProps,
 } from './admin/users/HilosUserPage.js'
+export {
+  HilosNotificationBell,
+  type HilosNotificationBellProps,
+} from './HilosNotificationBell.js'
 export { HilosModal, type HilosModalProps } from './HilosModal.js'
 export { HilosToastHost, type HilosToastHostProps } from './HilosToastHost.js'
 export {

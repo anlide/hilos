@@ -40,6 +40,7 @@ export {
   type UsersRowActionsContext,
 } from './admin/users/HilosUsersPage.js'
 export { HilosUserPage } from './admin/users/HilosUserPage.js'
+export { HilosNotificationBell } from './HilosNotificationBell.js'
 export { HilosModal, type ModalActionsContext } from './HilosModal.js'
 export { HilosToastHost } from './HilosToastHost.js'
 export {

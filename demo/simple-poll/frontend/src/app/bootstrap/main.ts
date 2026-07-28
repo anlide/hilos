@@ -23,6 +23,10 @@ const hilosRouter = bootHilos({
   pageEntityTypes,
   pageTitles,
   appName,
+  // Register the notification center so the bell in the shell's user slot fills
+  // once a user is known; this demo is anonymous, so it stays an empty no-op
+  // until auth arrives, exercising the wiring end-to-end all the same.
+  notifications: true,
 })
 
 bootstrapApplication(

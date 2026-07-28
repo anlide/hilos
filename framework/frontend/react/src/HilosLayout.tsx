@@ -39,6 +39,12 @@ export interface HilosLayoutProps {
   brand?: ReactNode
   /** The navigation region placed next to the brand. */
   nav?: ReactNode
+  /**
+   * The right-aligned user region placed before the admin gear (the Vue shell's
+   * `#user` slot): the profile link, the notification bell, sign-out. Additive —
+   * omit it and the nav bar is unchanged.
+   */
+  user?: ReactNode
   /** The routed page content rendered in the shell body. */
   children?: ReactNode
 }
@@ -73,6 +79,7 @@ export function HilosLayout({
   connection,
   brand = 'Hilos',
   nav,
+  user,
   children,
 }: HilosLayoutProps) {
   const connectionState = useConnectionState(connection)
@@ -124,6 +131,7 @@ export function HilosLayout({
           </HilosLink>
           <div className="navbar-nav me-auto">{nav}</div>
           <div className="d-flex align-items-center gap-3">
+            {user}
             <HilosLink
               className="nav-link d-inline-flex align-items-center p-0 fs-5"
               to={ADMIN_HREF}

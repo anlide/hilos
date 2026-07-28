@@ -9,6 +9,7 @@ import { computed, inject, ref, watch } from 'vue'
 import {
   HilosLayout,
   HilosLink,
+  HilosNotificationBell,
   HilosView,
   hilosAdminViews,
   hilosRouterKey,
@@ -236,6 +237,7 @@ watch(isImpersonating, (value) => {
       </div>
     </template>
     <template #user>
+      <HilosNotificationBell v-if="userName" :connection="connection" />
       <HilosLink
         v-if="userName"
         :to="profileHref"

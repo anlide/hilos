@@ -79,6 +79,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
             <ng-content select="[nav]" />
           </div>
           <div class="d-flex align-items-center gap-3">
+            <ng-content select="[user]" />
             <a
               [hilosLink]="adminHref"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
