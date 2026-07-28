@@ -17,13 +17,16 @@
 // only.
 import {
   hilosNotificationPreferences,
+  hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
+  type HilosPushSubscriptionStore,
 } from '@hilos/core'
 import { useId } from 'react'
 
+import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosNotificationPreferences}. */
@@ -32,6 +35,8 @@ export interface HilosNotificationPreferencesProps {
   connection: HilosConnection
   /** The store the section renders; defaults to the shared framework store. */
   store?: HilosNotificationPreferencesStore
+  /** The per-device push store the push channel's toggle renders. */
+  pushStore?: HilosPushSubscriptionStore
 }
 
 /**
@@ -43,6 +48,7 @@ export interface HilosNotificationPreferencesProps {
 export function HilosNotificationPreferences({
   connection,
   store = hilosNotificationPreferences,
+  pushStore = hilosPushSubscription,
 }: HilosNotificationPreferencesProps) {
   const channels = useSignal(store.channels)
   const mandatoryNote = useSignal(store.mandatoryNote)
@@ -87,6 +93,24 @@ export function HilosNotificationPreferences({
         </p>
       )}
       {channels.map((row) => {
+        // A web-push channel ships its VAPID public key as the row's `config`;
+        // that key both marks the row as the per-device push toggle and is what
+        // the browser subscribes with. Such a row renders the device toggle
+        // instead of the ordinary preference switch.
+        const vapidPublicKey = row.config?.vapid_public
+        if (vapidPublicKey !== undefined) {
+          return (
+            <HilosPushDeviceToggle
+              key={row.channel}
+              connection={connection}
+              channel={row.channel}
+              label={row.label}
+              vapidPublicKey={vapidPublicKey}
+              store={pushStore}
+            />
+          )
+        }
+
         const id = `${baseId}-${row.channel}`
         const isPending = pending.has(row.channel)
 

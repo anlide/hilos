@@ -16,13 +16,16 @@ row means allowed. Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
   hilosNotificationPreferences,
+  hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
+  type HilosPushSubscriptionStore,
 } from '@hilos/core'
 import { useId } from 'vue'
 
+import HilosPushDeviceToggle from './HilosPushDeviceToggle.vue'
 import { useSignal } from './useSignal.js'
 
 const props = withDefaults(
@@ -31,8 +34,13 @@ const props = withDefaults(
     connection: HilosConnection
     /** The store the section renders; defaults to the shared framework store. */
     store?: HilosNotificationPreferencesStore
+    /** The per-device push store the push channel's toggle renders. */
+    pushStore?: HilosPushSubscriptionStore
   }>(),
-  { store: () => hilosNotificationPreferences },
+  {
+    store: () => hilosNotificationPreferences,
+    pushStore: () => hilosPushSubscription,
+  },
 )
 
 const channels = useSignal(props.store.channels)
@@ -44,6 +52,13 @@ const baseId = useId()
 
 function rowId(channel: string): string {
   return `${baseId}-${channel}`
+}
+
+// A web-push channel ships its VAPID public key as the row's `config`; that key
+// both marks the row as the per-device push toggle and is what the browser
+// subscribes with. A channel without it renders the ordinary preference switch.
+function pushKey(row: HilosNotificationChannelState): string | undefined {
+  return row.config?.vapid_public
 }
 
 // Toggling is tracked, not optimistic: mark the row pending, send the action,
@@ -76,45 +91,54 @@ function toggle(row: HilosNotificationChannelState, event: Event): void {
     >
       No notification channels are available.
     </p>
-    <div
-      v-for="row in channels"
-      :key="row.channel"
-      class="form-check form-switch mb-2"
-      :data-id="`hilos-notification-preference-${row.channel}`"
-    >
-      <input
-        :id="rowId(row.channel)"
-        class="form-check-input"
-        type="checkbox"
-        role="switch"
-        :checked="row.allowed"
-        :disabled="!row.hasAddress || pending.has(row.channel)"
-        :aria-describedby="
-          row.hasAddress ? undefined : `${rowId(row.channel)}-hint`
-        "
-        :aria-busy="pending.has(row.channel)"
-        :data-id="`hilos-notification-preference-toggle-${row.channel}`"
-        @change="toggle(row, $event)"
+    <template v-for="row in channels" :key="row.channel">
+      <HilosPushDeviceToggle
+        v-if="pushKey(row) !== undefined"
+        :connection="connection"
+        :channel="row.channel"
+        :label="row.label"
+        :vapid-public-key="pushKey(row)!"
+        :store="pushStore"
       />
-      <label class="form-check-label" :for="rowId(row.channel)">
-        {{ row.label }}
-      </label>
-      <span
-        v-if="pending.has(row.channel)"
-        class="spinner-border spinner-border-sm ms-2 align-middle"
-        role="status"
-        :data-id="`hilos-notification-preference-pending-${row.channel}`"
-        ><span class="visually-hidden">Saving…</span></span
-      >
       <div
-        v-if="!row.hasAddress"
-        :id="`${rowId(row.channel)}-hint`"
-        class="form-text mt-0"
-        :data-id="`hilos-notification-preference-hint-${row.channel}`"
+        v-else
+        class="form-check form-switch mb-2"
+        :data-id="`hilos-notification-preference-${row.channel}`"
       >
-        Add an address in your profile to enable this channel.
+        <input
+          :id="rowId(row.channel)"
+          class="form-check-input"
+          type="checkbox"
+          role="switch"
+          :checked="row.allowed"
+          :disabled="!row.hasAddress || pending.has(row.channel)"
+          :aria-describedby="
+            row.hasAddress ? undefined : `${rowId(row.channel)}-hint`
+          "
+          :aria-busy="pending.has(row.channel)"
+          :data-id="`hilos-notification-preference-toggle-${row.channel}`"
+          @change="toggle(row, $event)"
+        />
+        <label class="form-check-label" :for="rowId(row.channel)">
+          {{ row.label }}
+        </label>
+        <span
+          v-if="pending.has(row.channel)"
+          class="spinner-border spinner-border-sm ms-2 align-middle"
+          role="status"
+          :data-id="`hilos-notification-preference-pending-${row.channel}`"
+          ><span class="visually-hidden">Saving…</span></span
+        >
+        <div
+          v-if="!row.hasAddress"
+          :id="`${rowId(row.channel)}-hint`"
+          class="form-text mt-0"
+          :data-id="`hilos-notification-preference-hint-${row.channel}`"
+        >
+          Add an address in your profile to enable this channel.
+        </div>
       </div>
-    </div>
+    </template>
     <p
       v-if="mandatoryNote"
       class="text-body-secondary small mb-0 mt-2"
