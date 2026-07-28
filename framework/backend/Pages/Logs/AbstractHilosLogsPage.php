@@ -6,12 +6,10 @@ namespace Hilos\Pages\Logs;
 
 use DateTimeImmutable;
 use DateTimeInterface;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Page\AbstractHilosPage;
@@ -19,24 +17,22 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\LogKeySummary;
+use Hilos\Log\LogStoreReader;
+use Hilos\Log\LogStoreSnapshot;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
-use Hilos\Utils\Helpers\FileSystemHelper;
 use JsonException;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
  * Abstract Hilos admin page: logs overview (rotation batch metrics under the daemon log archive).
  *
- * Scans `{@link LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME}` under `dirname(DAEMON_LOG_FILE)` for
- * subdirectories named with {@link LogRotationConstants::TIMESTAMP_FORMAT}, matching the layout produced
- * by DockerManager::rotateLogs() (same timestamp folder naming).
- *
- * Raw file weights are kept in private static structures (per-process). A full archive walk runs once per worker
- * process while {@see self::$logsOverviewMetricsInitialized} is false ({@see self::onSubscribe()}); further
- * subscribes and ticks use incremental rescans. Live updates are pushed while at least one subscriber is connected
- * ({@see self::onAgentTick()}), invoked from {@see AbstractHilosLogsAgent}.
+ * Delegates the log-store walk to the stateless {@see LogStoreReader} service (single source of truth,
+ * shared with the drill-down pages) and keeps only the overview scalars derived from its snapshot. Each
+ * refresh does a full walk; the page owns the caching around it — a ~100ms throttle plus a payload
+ * fingerprint so unchanged snapshots are not rebroadcast. Live updates are pushed while at least one
+ * subscriber is connected ({@see self::onAgentTick()}), invoked from {@see AbstractHilosLogsAgent}.
  *
  * Projects register a concrete empty subclass in the page factory (wiring only).
  */
@@ -51,11 +47,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $logsOverviewSubscribers = [];
 
-    /** @var bool Whether scalar overview maps have been populated with a full archive + live scan in this worker. */
-    private static bool $logsOverviewMetricsInitialized = false;
-
     /**
-     * Last wall time ({@see microtime()}) when an incremental refresh ran; used for ~100ms throttle in
+     * Last wall time ({@see microtime()}) when a refresh ran; used for ~100ms throttle in
      * {@see self::onAgentTick()}.
      */
     private static ?float $lastIncrementalScanAt = null;
@@ -87,24 +80,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     private static ?int $totalWeightWorkerKeysBytes = null;
 
     /**
-     * Per rotation batch: Unix timestamp of the folder → classified log basenames → file size in bytes.
-     *
-     * @var array<int, array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}>
-     */
-    private static array $archiveLogWeightsByTimestamp = [];
-
-    /**
-     * Live `*.log` files in the daemon log root (not under archive), same classification shape as archive batches.
-     *
-     * @var array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
-     */
-    private static array $currentLiveLogWeights = [
-        'agent' => [],
-        'worker' => [],
-        'workerMonopolistic' => [],
-    ];
-
-    /**
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
      * is already torn down (safety net; idempotent with {@see self::onUnsubscribe()}).
      *
@@ -134,7 +109,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         }
         self::$lastIncrementalScanAt = $now;
 
-        self::refreshOverviewIncremental();
+        self::refreshOverview();
 
         $fp = self::overviewFingerprint();
         if ($fp === self::$lastOverviewFingerprint) {
@@ -148,10 +123,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Register subscriber and send the current overview snapshot over the WebSocket.
      *
-     * Full archive scan ({@see self::refreshOverviewFull()}) runs while {@see self::$logsOverviewMetricsInitialized}
-     * is false (first subscribe in this worker process). Additional subscribers get {@see self::refreshOverviewIncremental()}
-     * so the whole archive tree is not rescanned on every tab.
-     *
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
      */
@@ -159,12 +130,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     {
         $this->logAgentInfo("hilos_logs onSubscribe acceptKey={$acceptKey}");
         self::$logsOverviewSubscribers[$acceptKey] = true;
-        if (!self::$logsOverviewMetricsInitialized) {
-            self::refreshOverviewFull();
-            self::$logsOverviewMetricsInitialized = true;
-        } else {
-            self::refreshOverviewIncremental();
-        }
+        self::refreshOverview();
         self::$lastOverviewFingerprint = self::overviewFingerprint();
 
         $this->sendToUser(
@@ -186,159 +152,62 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Full rescan of archive batches and live log directory; used on {@see self::onSubscribe()}.
+     * Refresh the overview scalars from a fresh {@see LogStoreReader} walk.
      *
-     * Logs wall duration with 0.001s precision via {@see self::logAgentInfoForId()}.
+     * Every call does a full walk; the throttle and fingerprint in {@see self::onAgentTick()} keep the
+     * cost bounded. Unreadable stores ({@see LogStoreSnapshot::$available} false) collapse to
+     * {@see self::setUnavailableState()}. Logs wall duration with 0.001s precision via
+     * {@see self::logAgentInfoForId()}.
      */
-    private static function refreshOverviewFull(): void
+    private static function refreshOverview(): void
     {
         $t0 = microtime(true);
         try {
-            $logRoot = self::tryResolveLogRoot();
-            if ($logRoot === null) {
+            $snapshot = LogStoreReader::fromEnv()->read();
+            if (!$snapshot->available) {
                 self::setUnavailableState();
 
                 return;
-            }
-
-            $archivePath = $logRoot . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-            self::$archiveLogWeightsByTimestamp = [];
-
-            if (!is_dir($archivePath)) {
-                self::$logsOverviewAvailable = true;
-            } else {
-                $entries = FileSystemHelper::scandirOrFalse($archivePath);
-                if ($entries === false) {
-                    self::setUnavailableState();
-
-                    return;
-                }
-                foreach ($entries as $name) {
-                    if ($name === '.' || $name === '..') {
-                        continue;
-                    }
-                    $full = $archivePath . DIRECTORY_SEPARATOR . $name;
-                    if (!is_dir($full)) {
-                        continue;
-                    }
-                    if (preg_match(LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN, $name) !== 1) {
-                        continue;
-                    }
-                    $ts = self::timestampDirNameToUnix($name);
-                    if ($ts === null) {
-                        continue;
-                    }
-                    self::$archiveLogWeightsByTimestamp[$ts] = self::scanLogFilesInDirectory($full);
-                }
-                self::$logsOverviewAvailable = true;
-            }
-
-            self::$currentLiveLogWeights = self::scanLogFilesInDirectory($logRoot);
-            self::updateRotationScalarsFromArchive();
-            self::computeKeyAggregates();
-        } finally {
-            $elapsed = microtime(true) - $t0;
-            self::logAgentInfoForId(
-                HilosAgentType::HILOS_LOGS,
-                sprintf('hilos_logs refreshOverviewFull duration_s=%.3f', $elapsed),
-            );
-        }
-    }
-
-    /**
-     * Incremental rescan: always refresh live files; add/remove archive batch entries when folders appear or disappear.
-     *
-     * Logs wall duration with 0.001s precision via {@see self::logAgentInfoForId()}.
-     */
-    private static function refreshOverviewIncremental(): void
-    {
-        $t0 = microtime(true);
-        try {
-            $logRoot = self::tryResolveLogRoot();
-            if ($logRoot === null) {
-                self::setUnavailableState();
-
-                return;
-            }
-
-            $archivePath = $logRoot . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-
-            if (!is_dir($archivePath)) {
-                self::$archiveLogWeightsByTimestamp = [];
-                self::$logsOverviewAvailable = true;
-                self::$currentLiveLogWeights = self::scanLogFilesInDirectory($logRoot);
-                self::updateRotationScalarsFromArchive();
-                self::computeKeyAggregates();
-
-                return;
-            }
-
-            $entries = FileSystemHelper::scandirOrFalse($archivePath);
-            if ($entries === false) {
-                self::setUnavailableState();
-
-                return;
-            }
-
-            $seenTimestamps = [];
-            foreach ($entries as $name) {
-                if ($name === '.' || $name === '..') {
-                    continue;
-                }
-                $full = $archivePath . DIRECTORY_SEPARATOR . $name;
-                if (!is_dir($full)) {
-                    continue;
-                }
-                if (preg_match(LogRotationConstants::TIMESTAMP_DIR_NAME_PATTERN, $name) !== 1) {
-                    continue;
-                }
-                $ts = self::timestampDirNameToUnix($name);
-                if ($ts === null) {
-                    continue;
-                }
-                $seenTimestamps[$ts] = true;
-                if (!isset(self::$archiveLogWeightsByTimestamp[$ts])) {
-                    self::$archiveLogWeightsByTimestamp[$ts] = self::scanLogFilesInDirectory($full);
-                }
-            }
-
-            foreach (array_keys(self::$archiveLogWeightsByTimestamp) as $ts) {
-                if (!isset($seenTimestamps[$ts])) {
-                    unset(self::$archiveLogWeightsByTimestamp[$ts]);
-                }
             }
 
             self::$logsOverviewAvailable = true;
-            self::$currentLiveLogWeights = self::scanLogFilesInDirectory($logRoot);
-            self::updateRotationScalarsFromArchive();
-            self::computeKeyAggregates();
+
+            $batches = $snapshot->batches();
+            self::$logsOverviewTotalRotationsAllTime = count($batches);
+            self::$logsOverviewLastRotationAt = $batches === []
+                ? null
+                : (new DateTimeImmutable())
+                    ->setTimestamp($batches[array_key_last($batches)]->timestamp)
+                    ->format(DateTimeInterface::ATOM);
+
+            $agentKeys = 0;
+            $agentBytes = 0;
+            $workerKeys = 0;
+            $workerBytes = 0;
+            foreach ($snapshot->keys() as $key) {
+                if ($key->class === LogKeySummary::CLASS_AGENT) {
+                    $agentKeys++;
+                    $agentBytes += $key->totalBytes;
+                } else {
+                    $workerKeys++;
+                    $workerBytes += $key->totalBytes;
+                }
+            }
+            self::$logKeysPerAgent = $agentKeys;
+            self::$totalWeightAgentKeysBytes = $agentBytes;
+            self::$logKeysPerWorker = $workerKeys;
+            self::$totalWeightWorkerKeysBytes = $workerBytes;
         } finally {
             $elapsed = microtime(true) - $t0;
             self::logAgentInfoForId(
                 HilosAgentType::HILOS_LOGS,
-                sprintf('hilos_logs refreshOverviewIncremental duration_s=%.3f', $elapsed),
+                sprintf('hilos_logs refreshOverview duration_s=%.3f', $elapsed),
             );
         }
     }
 
     /**
-     * Resolve the daemon log directory from {@see EnvConstants::DAEMON_LOG_FILE}.
-     *
-     * @return ?string Absolute log root path, or null if env is missing or invalid
-     */
-    private static function tryResolveLogRoot(): ?string
-    {
-        try {
-            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
-        } catch (EnvException) {
-            return null;
-        }
-
-        return dirname($daemonLogFile);
-    }
-
-    /**
-     * Reset overview scalars and maps when paths cannot be read or env is missing.
+     * Reset overview scalars when the log store cannot be read or env is missing.
      */
     private static function setUnavailableState(): void
     {
@@ -349,154 +218,6 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         self::$totalWeightAgentKeysBytes = null;
         self::$logKeysPerWorker = null;
         self::$totalWeightWorkerKeysBytes = null;
-        self::$archiveLogWeightsByTimestamp = [];
-        self::$currentLiveLogWeights = [
-            'agent' => [],
-            'worker' => [],
-            'workerMonopolistic' => [],
-        ];
-    }
-
-    /**
-     * Parse a rotation folder name into a Unix timestamp.
-     *
-     * @param string $name Directory basename matching {@link LogRotationConstants::TIMESTAMP_FORMAT}
-     *
-     * @return ?int Unix timestamp, or null if the name does not parse
-     */
-    private static function timestampDirNameToUnix(string $name): ?int
-    {
-        $dt = DateTimeImmutable::createFromFormat(LogRotationConstants::TIMESTAMP_FORMAT, $name);
-        if ($dt === false) {
-            return null;
-        }
-
-        return $dt->getTimestamp();
-    }
-
-    /**
-     * Scan one directory for `*.log` files and classify by filename prefix.
-     *
-     * Order: `worker-monopolistic-` before `worker-` before `agent-` so prefixes do not overlap incorrectly.
-     *
-     * @param string $dir Absolute directory path (log root or one archive batch folder)
-     *
-     * @return array{agent: array<string, int>, worker: array<string, int>, workerMonopolistic: array<string, int>}
-     *         Basename → size in bytes (0 if stat failed)
-     */
-    private static function scanLogFilesInDirectory(string $dir): array
-    {
-        $agent = [];
-        $worker = [];
-        $workerMonopolistic = [];
-
-        $pattern = $dir . DIRECTORY_SEPARATOR . '*.log';
-        $files = glob($pattern);
-        if ($files === false) {
-            return [
-                'agent' => [],
-                'worker' => [],
-                'workerMonopolistic' => [],
-            ];
-        }
-
-        foreach ($files as $path) {
-            if (!is_file($path)) {
-                continue;
-            }
-            $name = basename($path);
-            $size = @filesize($path);
-            if ($size === false) {
-                $size = 0;
-            }
-            if (str_starts_with($name, 'worker-monopolistic-')) {
-                $workerMonopolistic[$name] = $size;
-            } elseif (str_starts_with($name, 'worker-')) {
-                $worker[$name] = $size;
-            } elseif (str_starts_with($name, 'agent-')) {
-                $agent[$name] = $size;
-            }
-        }
-
-        return [
-            'agent' => $agent,
-            'worker' => $worker,
-            'workerMonopolistic' => $workerMonopolistic,
-        ];
-    }
-
-    /**
-     * Set rotation count and last rotation ISO time from {@see self::$archiveLogWeightsByTimestamp} keys.
-     */
-    private static function updateRotationScalarsFromArchive(): void
-    {
-        $keys = array_keys(self::$archiveLogWeightsByTimestamp);
-        sort($keys);
-        $count = count($keys);
-        self::$logsOverviewTotalRotationsAllTime = $count;
-
-        if ($count === 0) {
-            self::$logsOverviewLastRotationAt = null;
-
-            return;
-        }
-
-        $maxTs = $keys[$count - 1];
-        $dt = (new DateTimeImmutable())->setTimestamp($maxTs);
-        self::$logsOverviewLastRotationAt = $dt->format(DateTimeInterface::ATOM);
-    }
-
-    /**
-     * Compute distinct key counts and total byte weights for agent vs worker groups from archive + live maps.
-     */
-    private static function computeKeyAggregates(): void
-    {
-        if (!self::$logsOverviewAvailable) {
-            self::$logKeysPerAgent = null;
-            self::$totalWeightAgentKeysBytes = null;
-            self::$logKeysPerWorker = null;
-            self::$totalWeightWorkerKeysBytes = null;
-
-            return;
-        }
-
-        $agentUnique = [];
-        $agentTotal = 0;
-        foreach (self::$archiveLogWeightsByTimestamp as $maps) {
-            foreach ($maps['agent'] as $name => $sz) {
-                $agentUnique[$name] = true;
-                $agentTotal += $sz;
-            }
-        }
-        foreach (self::$currentLiveLogWeights['agent'] as $name => $sz) {
-            $agentUnique[$name] = true;
-            $agentTotal += $sz;
-        }
-        self::$logKeysPerAgent = count($agentUnique);
-        self::$totalWeightAgentKeysBytes = $agentTotal;
-
-        $workerUnique = [];
-        $workerTotal = 0;
-        foreach (self::$archiveLogWeightsByTimestamp as $maps) {
-            foreach ($maps['worker'] as $name => $sz) {
-                $workerUnique[$name] = true;
-                $workerTotal += $sz;
-            }
-            foreach ($maps['workerMonopolistic'] as $name => $sz) {
-                $workerUnique[$name] = true;
-                $workerTotal += $sz;
-            }
-        }
-        foreach (self::$currentLiveLogWeights['worker'] as $name => $sz) {
-            $workerUnique[$name] = true;
-            $workerTotal += $sz;
-        }
-        foreach (self::$currentLiveLogWeights['workerMonopolistic'] as $name => $sz) {
-            $workerUnique[$name] = true;
-            $workerTotal += $sz;
-        }
-        self::$logKeysPerWorker = count($workerUnique);
-        self::$totalWeightWorkerKeysBytes = $workerTotal;
     }
 
     /**
