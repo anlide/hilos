@@ -142,6 +142,8 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Log\LogRotationAgent;
+use Hilos\Log\LogRotationAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
@@ -326,6 +328,10 @@ final class Hilos extends \Hilos\Hilos
             AgentRegistryKey::WORKER => SmsDeliveryChannelAgent::class,
             AgentRegistryKey::DAEMON => SmsDeliveryChannelAgentDaemon::class,
             AgentRegistryKey::INDEXED => true,
+        ],
+        LogRotationAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LogRotationAgent::class,
+            AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
         ],
     ];
 

@@ -256,6 +256,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::SMS_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10000, emptyIsMissing: true),
             EnvConstants::SMS_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::SMS_FILE_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
+            EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
         ];
     }
 

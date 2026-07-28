@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
@@ -19,6 +18,7 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\LogRotator;
 use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
 
@@ -368,64 +368,15 @@ class DockerManager extends BaseManager
     /**
      * Rotate log files — move all existing logs under the log root into the archive.
      *
-     * Creates `{@see LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME}/{@see LogRotationConstants::TIMESTAMP_FORMAT}/`
-     * and moves each `*.log` file there. Invoked before starting processes so the live log directory is clean.
+     * Delegates to {@see LogRotator}, which creates the timestamped archive batch and moves each
+     * live `*.log` file there. Invoked before starting processes so the live log directory is
+     * clean; the same rotator serves the runtime {@see \Hilos\Log\LogRotationAgent}.
      *
      * @throws LogRotationException If log directory operations fail
      */
     private function rotateLogs(): void
     {
-        // Determine log directory from daemon log file path
-        // DAEMON_LOG_FILE must be set in environment configuration
-        $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
-        $logDirectory = dirname($daemonLogFile);
-
-        // If log directory doesn't exist, nothing to rotate
-        if (!is_dir($logDirectory)) {
-            return;
-        }
-
-        // Find all .log files in the log directory
-        $logFiles = glob($logDirectory . '/*.log');
-
-        // If no log files found, nothing to rotate
-        if (empty($logFiles)) {
-            return;
-        }
-
-        // Create archive directory structure
-        $archiveDir = $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-        if (!is_dir($archiveDir)) {
-            if (!mkdir($archiveDir, 0755, true)) {
-                throw new LogRotationException("Cannot create archive directory: $archiveDir");
-            }
-        }
-
-        // Create timestamp directory (see LogRotationConstants::TIMESTAMP_FORMAT)
-        $timestamp = date(LogRotationConstants::TIMESTAMP_FORMAT);
-        $timestampDir = $archiveDir . DIRECTORY_SEPARATOR . $timestamp;
-        if (!mkdir($timestampDir, 0755, true)) {
-            throw new LogRotationException("Cannot create timestamp directory: $timestampDir");
-        }
-
-        // Move all log files to archive
-        $movedCount = 0;
-        foreach ($logFiles as $logFile) {
-            $filename = basename($logFile);
-            $targetPath = $timestampDir . DIRECTORY_SEPARATOR . $filename;
-
-            if (!rename($logFile, $targetPath)) {
-                Logger::errorLog("Failed to move log file: $logFile to $targetPath");
-                continue;
-            }
-
-            $movedCount++;
-        }
-
-        if ($movedCount > 0) {
-            $archiveName = LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
-            Logger::info("Log rotation: moved $movedCount log file(s) to {$archiveName}/$timestamp/");
-        }
+        LogRotator::fromEnv()->rotate();
     }
 
     /**

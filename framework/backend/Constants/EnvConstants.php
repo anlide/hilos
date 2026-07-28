@@ -486,4 +486,20 @@ enum EnvConstants
 
     /** @var string Directory the stub provider writes .txt artifacts to; empty writes none. */
     case SMS_FILE_DIR;
+
+    // ── Log rotation (HIL-379) ───────────────────────────────────────────────
+
+    /**
+     * @var string Seconds of elapsed time since the last rotation after which the per-node
+     * LogRotationAgent rotates the live logs into the archive. Default 0 disables the age
+     * criterion; 0 for both age and size preserves the start-only rotation behavior.
+     */
+    case LOG_ROTATION_MAX_AGE_SECONDS;
+
+    /**
+     * @var string Summed size in bytes of the live *.log files above which the per-node
+     * LogRotationAgent rotates them into the archive. Default 0 disables the size criterion;
+     * 0 for both age and size preserves the start-only rotation behavior.
+     */
+    case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
 }
