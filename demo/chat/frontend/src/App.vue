@@ -52,6 +52,8 @@ import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
+import HilosCommunications from './views/Hilos/Communications/Communications.vue'
+import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -82,6 +84,8 @@ const pages: Record<string, Component> = {
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
   [HilosPages.BACKUP]: HilosBackup,
+  [HilosPages.COMMUNICATIONS]: HilosCommunications,
+  [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
 }
 
 // The magic-link confirm route (HIL-283). It carries no page of its own — the

@@ -319,3 +319,18 @@ export {
   type HilosBackupsActions,
   type HilosBackupScopeOption,
 } from './admin/backup/hilosBackups.js'
+export {
+  resolveHilosChannelRow,
+  resolveHilosChannelFieldRow,
+  createHilosChannelsTable,
+  createHilosChannelFields,
+  createHilosCommunicationsActions,
+  CHANNEL_ENABLED_FIELD,
+  type HilosChannelRow,
+  type HilosChannelFieldRow,
+  type ChannelValueSource,
+  type HilosCommunicationsContext,
+  type HilosCommunicationsActions,
+  type HilosChannelsTable,
+  type HilosChannelFields,
+} from './admin/communications/hilosCommunications.js'

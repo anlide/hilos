@@ -5,10 +5,11 @@
 // its own content. A project spreads this map into its app page map, then
 // overrides only the keys it implements itself.
 //
-// The users / user / settings / backup pages are intentionally absent: they are
-// real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
-// HilosBackupPage) that require a project-supplied context, so a project mounts
-// them directly rather than through this default map.
+// The users / user / settings / backup and communications hub / channel pages are
+// intentionally absent: they are real framework pages (HilosUsersPage /
+// HilosUserPage / HilosSettingsPage / HilosBackupPage / HilosCommunicationsPage /
+// HilosCommunicationsChannelPage) that require a project-supplied context, so a
+// project mounts them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -40,8 +41,6 @@ import HilosI18nTranslateGroupPage from './i18n/translate/HilosI18nTranslateGrou
 import HilosI18nTranslateGroupItemPage from './i18n/translate/HilosI18nTranslateGroupItemPage.vue'
 import HilosI18nTranslateActionErrorPage from './i18n/translate/HilosI18nTranslateActionErrorPage.vue'
 import HilosI18nTranslateEmailPage from './i18n/translate/HilosI18nTranslateEmailPage.vue'
-import HilosCommunicationsPage from './communications/HilosCommunicationsPage.vue'
-import HilosCommunicationsChannelPage from './communications/HilosCommunicationsChannelPage.vue'
 import HilosCommunicationsDeliveriesPage from './communications/HilosCommunicationsDeliveriesPage.vue'
 import HilosSecurityPage from './security/HilosSecurityPage.vue'
 import HilosSecurity2faPage from './security/HilosSecurity2faPage.vue'
@@ -106,8 +105,9 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.I18N_TRANSLATE_GROUP_ITEM]: HilosI18nTranslateGroupItemPage,
     [HilosPages.I18N_TRANSLATE_ACTION_ERROR]: HilosI18nTranslateActionErrorPage,
     [HilosPages.I18N_TRANSLATE_EMAIL]: HilosI18nTranslateEmailPage,
-    [HilosPages.COMMUNICATIONS]: HilosCommunicationsPage,
-    [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannelPage,
+    // COMMUNICATIONS and COMMUNICATIONS_CHANNEL are real framework pages that need
+    // a project-supplied HilosCommunicationsContext (like settings / backup), so a
+    // project mounts them directly rather than through this context-free default map.
     [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveriesPage,
     [HilosPages.SECURITY]: HilosSecurityPage,
     [HilosPages.SECURITY_2FA]: HilosSecurity2faPage,
