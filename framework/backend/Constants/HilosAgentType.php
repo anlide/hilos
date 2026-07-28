@@ -37,6 +37,9 @@ final class HilosAgentType
     /** @var string Hilos SMS agent (sharded pool delivering the SMS channel and raw sends) */
     public const string HILOS_SMS = 'hilos_sms';
 
+    /** @var string Hilos web-push agent (sharded pool delivering the push channel to a recipient's device endpoints) */
+    public const string HILOS_PUSH = 'hilos_push';
+
     /** @var string Hilos log rotation agent (per-node worker owner of the time/size log rotation trigger) */
     public const string HILOS_LOG_ROTATION = 'hilos_log_rotation';
 }

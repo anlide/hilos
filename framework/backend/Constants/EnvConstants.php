@@ -503,6 +503,13 @@ enum EnvConstants
     case VAPID_PRIVATE;
 
     /**
+     * @var string VAPID contact subject carried in the signed request JWT: a `mailto:` address or an operator URL.
+     * The push service uses it to reach the operator about a misbehaving application server; empty leaves the push
+     * channel unconfigured. Not a secret, but not served to the browser either.
+     */
+    case VAPID_SUBJECT;
+
+    /**
      * @var string Number of push agents in the sharded hilos_push pool; the shard key is
      * 1 + user_id % this. Default 1.
      */
