@@ -26,6 +26,8 @@ use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -281,6 +283,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
+            HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
+            HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -302,6 +306,8 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::BOT_AGENT_START => 'botId',
+            HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
+            HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
         ], Hilos::getAgentSignalIndexFields());
     }
 
@@ -337,6 +343,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
+            HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
+            HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }

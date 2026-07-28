@@ -140,6 +140,8 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -304,6 +306,11 @@ final class Hilos extends \Hilos\Hilos
         OAuthAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OAuthAgent::class,
             AgentRegistryKey::DAEMON => OAuthAgentDaemon::class,
+        ],
+        MailDeliveryChannelAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class,
+            AgentRegistryKey::DAEMON => MailDeliveryChannelAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
         ],
     ];
 

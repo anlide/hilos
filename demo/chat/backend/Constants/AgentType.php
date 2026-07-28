@@ -49,4 +49,7 @@ final class AgentType
 
     /** @var string Hilos OAuth login agent type (monopolistic, leader-pinned) */
     public const string HILOS_OAUTH = HilosAgentType::HILOS_OAUTH;
+
+    /** @var string Hilos mail delivery agent type (indexed pool, cluster-global) */
+    public const string HILOS_MAIL = HilosAgentType::HILOS_MAIL;
 }
