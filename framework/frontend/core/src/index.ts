@@ -116,6 +116,18 @@ export {
   type HilosNotificationSnapshot,
   type HilosNotificationStore,
 } from './notifications/notificationCenter.js'
+export {
+  createHilosNotificationPreferencesStore,
+  hilosNotificationPreferences,
+  notificationPreferencesSectionSchema,
+  NOTIFICATION_ACTION_CHANNEL_SET,
+  NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
+  NOTIFICATION_SIGNAL_PREFERENCES_CHANGED,
+  type HilosNotificationChannelState,
+  type HilosNotificationPreferencesChanged,
+  type HilosNotificationPreferencesSection,
+  type HilosNotificationPreferencesStore,
+} from './notifications/notificationPreferences.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
 export {
   createAuthGate,
