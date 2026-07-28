@@ -79,6 +79,19 @@ final class MailDeliveryAttempt implements DeliveryAttempt
     }
 
     /**
+     * Reports whether the settled failure is terminal and must not be retried.
+     *
+     * Used by the raw-send pool, which owns its own retry policy; the notification
+     * delivery pipeline ignores it (its retry ceiling lives in the base agent).
+     *
+     * @return bool True when the send settled as a permanent (non-retryable) failure
+     */
+    public function isPermanentFailure(): bool
+    {
+        return $this->outcome !== null && !$this->outcome->delivered && $this->outcome->permanent;
+    }
+
+    /**
      * Releases the underlying transport (socket, handle).
      */
     public function close(): void
