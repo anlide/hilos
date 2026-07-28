@@ -32,6 +32,9 @@ abstract class AbstractHilosProfilePage extends AbstractPage
 {
     public const string PAGE = HilosPageConstants::HILOS_PROFILE;
 
+    /** Page-data section slot carrying the per-user notification preferences (HIL-485). */
+    public const string NOTIFICATION_SECTION = 'notificationPreferences';
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE,
         BrowserConfigKey::GUARDS => [

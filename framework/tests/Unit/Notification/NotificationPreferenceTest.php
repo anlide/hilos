@@ -7,7 +7,9 @@ namespace Hilos\Tests\Unit\Notification;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
+use Hilos\Notification\DTO\NotificationChannelState;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
+use Hilos\Notification\DTO\NotificationPreferencesSectionData;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Notification\NotificationTypeDescriptor;
@@ -114,6 +116,53 @@ final class NotificationPreferenceTest extends TestCase
     {
         self::assertSame('profile_notification_channel_set', NotificationPreferenceAction::CHANNEL_SET);
         self::assertSame('notification_preferences_changed', NotificationSignalName::PREFERENCES_CHANGED);
+    }
+
+    public function testTypeRegistryReportsMandatoryPresence(): void
+    {
+        // The profile section renders its always-on note only when the project
+        // declares a mandatory type; the empty framework base declares none.
+        self::assertFalse(NotificationTypeRegistry::hasMandatory());
+        self::assertTrue(NotificationPreferenceTestTypeRegistry::hasMandatory());
+    }
+
+    public function testSectionDataSerializesChannelsAndMandatoryNote(): void
+    {
+        $section = new NotificationPreferencesSectionData(
+            [
+                new NotificationChannelState(channel: 'email', label: 'Email', allowed: true, hasAddress: true),
+                new NotificationChannelState(channel: 'sms', label: 'SMS', allowed: false, hasAddress: false),
+            ],
+            mandatoryNote: true,
+        );
+
+        self::assertSame([
+            NotificationPreferencesSectionData::channels => [
+                [
+                    NotificationChannelState::channel => 'email',
+                    NotificationChannelState::label => 'Email',
+                    NotificationChannelState::allowed => true,
+                    NotificationChannelState::hasAddress => true,
+                ],
+                [
+                    NotificationChannelState::channel => 'sms',
+                    NotificationChannelState::label => 'SMS',
+                    NotificationChannelState::allowed => false,
+                    NotificationChannelState::hasAddress => false,
+                ],
+            ],
+            NotificationPreferencesSectionData::mandatoryNote => true,
+        ], $section->toArray());
+    }
+
+    public function testSectionDataSerializesEmptyChannelList(): void
+    {
+        $section = new NotificationPreferencesSectionData([], mandatoryNote: false);
+
+        self::assertSame([
+            NotificationPreferencesSectionData::channels => [],
+            NotificationPreferencesSectionData::mandatoryNote => false,
+        ], $section->toArray());
     }
 }
 

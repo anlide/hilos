@@ -9,6 +9,8 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
+use Hilos\Notification\DTO\NotificationChannelState;
+use Hilos\Notification\DTO\NotificationPreferencesSectionData;
 
 /**
  * NotificationChannelPreferenceProjector - the profile section's channel → allowed view (HIL-485).
@@ -51,6 +53,42 @@ final class NotificationChannelPreferenceProjector
         }
 
         return $map;
+    }
+
+    /**
+     * Builds the profile "Notifications" section for a recipient (HIL-485).
+     *
+     * Unlike {@see channelPreferenceMap()} (togglable channels only, feeding the
+     * multi-device sync signal), the section lists every globally enabled channel —
+     * including channels the recipient has no address for, so the frontend can show
+     * a disabled row with an "add an address" hint — and carries the mandatory-note
+     * flag read from the project's type registry.
+     *
+     * @param int $userId Recipient user id
+     * @return NotificationPreferencesSectionData Section payload for the profile subscription scope
+     * @throws DatabaseException When a preference or address lookup query fails
+     */
+    public function sectionData(int $userId): NotificationPreferencesSectionData
+    {
+        $muted = $this->mutedChannels($userId);
+
+        $channels = [];
+        foreach (Hilos::notificationChannelRegistryClass()::all() as $name => $descriptor) {
+            if (!$this->isGloballyEnabled($descriptor)) {
+                continue;
+            }
+            $channels[] = new NotificationChannelState(
+                channel: $name,
+                label: $descriptor->label(),
+                allowed: ObjectNotificationPreferences::channelAllowed($muted, $name),
+                hasAddress: $descriptor->resolveAddress($userId) !== null,
+            );
+        }
+
+        return new NotificationPreferencesSectionData(
+            $channels,
+            Hilos::notificationTypeRegistryClass()::hasMandatory(),
+        );
     }
 
     /**

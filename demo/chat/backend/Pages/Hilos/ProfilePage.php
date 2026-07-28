@@ -36,6 +36,8 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -209,6 +211,35 @@ final class ProfilePage extends AbstractHilosProfilePage
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Contributes the signed-in user's notification preferences as the profile's
+     * page-data section (HIL-485).
+     *
+     * The profile is a self-only surface with no route params: the recipient is the
+     * session user, read from the self-connection (never a client value), so an
+     * anonymous or session-less subscribe contributes no section and leaves the
+     * browser identities snapshot to run alone. The section is a computed projection
+     * ({@see NotificationChannelPreferenceProjector::sectionData()}), not a browser
+     * snapshot, so it rides the one-shot subscription payload rather than the
+     * reactive browser data.
+     *
+     * @param PageRouteParams $params Route params for the profile subscription (unused; profile has none)
+     * @return ?PagePayload Notification-section payload, or null outside a signed-in session
+     * @throws DatabaseException When a preference or address lookup query fails
+     */
+    protected function buildPagePayload(PageRouteParams $params): ?PagePayload
+    {
+        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+            return null;
+        }
+
+        return new PagePayload(data: [
+            self::NOTIFICATION_SECTION => (new NotificationChannelPreferenceProjector())
+                ->sectionData(Hilos::$rt->selfConnection->userId)
+                ->toArray(),
+        ]);
     }
 
     /**

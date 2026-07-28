@@ -60,4 +60,23 @@ abstract class NotificationTypeRegistry
     {
         return static::get($type)?->mandatory ?? false;
     }
+
+    /**
+     * Whether the project declares at least one mandatory type.
+     *
+     * The profile notification section (HIL-485) reads this to decide whether to
+     * render its always-on note; when no mandatory type exists the note is omitted.
+     *
+     * @return bool True when any registered type is mandatory
+     */
+    public static function hasMandatory(): bool
+    {
+        foreach (static::types() as $descriptor) {
+            if ($descriptor->mandatory) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
