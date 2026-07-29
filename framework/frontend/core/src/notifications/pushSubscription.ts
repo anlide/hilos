@@ -191,7 +191,14 @@ export function createHilosPushSubscriptionStore(
       }
       supported.set(true)
       permission.set(environment.permission())
-      subscribed.set((await environment.getSubscription()) !== null)
+      try {
+        subscribed.set((await environment.getSubscription()) !== null)
+      } catch {
+        // The browser's getSubscription() rejected (the push service is unreachable);
+        // report not-subscribed rather than leaking an unhandled rejection, and let a
+        // later refresh reconcile.
+        subscribed.set(false)
+      }
     },
     async enable(connection, vapidPublicKey) {
       if (!environment.isSupported()) {
@@ -226,6 +233,14 @@ export function createHilosPushSubscriptionStore(
         subscribed.set(true)
 
         return true
+      } catch {
+        // A browser push API rejected mid opt-in (permission prompt, subscribe, or the
+        // rollback unsubscribe) - e.g. the push service is unreachable or the key was
+        // refused. Leave the device unsubscribed and report failure instead of surfacing
+        // an unhandled rejection; a later refresh reconciles the real browser state.
+        subscribed.set(false)
+
+        return false
       } finally {
         busy.set(false)
       }
@@ -246,6 +261,11 @@ export function createHilosPushSubscriptionStore(
         }
 
         return true
+      } catch {
+        // getSubscription()/unsubscribe() rejected; report failure without an unhandled
+        // rejection. The subscription signal is left untouched (the real state is now
+        // unknown) and reconciles on the next refresh.
+        return false
       } finally {
         busy.set(false)
       }

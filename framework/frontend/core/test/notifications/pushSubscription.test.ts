@@ -21,6 +21,9 @@ interface FakeEnvironmentOptions {
   permission?: HilosPushPermission
   grant?: HilosPushPermission
   existing?: HilosPushSubscriptionSnapshot | null
+  rejectSubscribe?: boolean
+  rejectUnsubscribe?: boolean
+  rejectGetSubscription?: boolean
 }
 
 /** A fake browser push surface recording the calls the store makes. */
@@ -42,15 +45,27 @@ function fakeEnvironment(options: FakeEnvironmentOptions = {}) {
 
       return options.grant ?? 'granted'
     },
-    getSubscription: async () => current,
+    getSubscription: async () => {
+      if (options.rejectGetSubscription === true) {
+        throw new Error('push service unreachable')
+      }
+
+      return current
+    },
     subscribe: async (key) => {
       calls.subscribe.push(key)
+      if (options.rejectSubscribe === true) {
+        throw new Error('push service refused the subscription')
+      }
       current = SNAPSHOT
 
       return SNAPSHOT
     },
     unsubscribe: async () => {
       calls.unsubscribe += 1
+      if (options.rejectUnsubscribe === true) {
+        throw new Error('push service unreachable')
+      }
       current = null
     },
   }
@@ -149,6 +164,51 @@ describe('push subscription store', () => {
     expect(store.subscribed.get()).toBe(false)
     expect(calls.subscribe).toEqual(['vapid-public'])
     expect(calls.unsubscribe).toBe(1)
+  })
+
+  it('reports failure without throwing when the browser subscribe rejects', async () => {
+    const { environment } = fakeEnvironment({
+      grant: 'granted',
+      rejectSubscribe: true,
+    })
+    const { sender, sent } = fakeSender(true)
+    const store = createHilosPushSubscriptionStore(environment)
+
+    const ok = await store.enable(sender, 'vapid-public')
+
+    expect(ok).toBe(false)
+    expect(store.subscribed.get()).toBe(false)
+    expect(store.busy.get()).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it('reports failure without throwing when the browser unsubscribe rejects on disable', async () => {
+    const { environment } = fakeEnvironment({
+      existing: SNAPSHOT,
+      rejectUnsubscribe: true,
+    })
+    const { sender, sent } = fakeSender(true)
+    const store = createHilosPushSubscriptionStore(environment)
+
+    const ok = await store.disable(sender)
+
+    expect(ok).toBe(false)
+    expect(store.busy.get()).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it('refreshes to not-subscribed without throwing when getSubscription rejects', async () => {
+    const { environment } = fakeEnvironment({
+      permission: 'granted',
+      rejectGetSubscription: true,
+    })
+    const store = createHilosPushSubscriptionStore(environment)
+
+    await store.refresh()
+
+    expect(store.supported.get()).toBe(true)
+    expect(store.permission.get()).toBe('granted')
+    expect(store.subscribed.get()).toBe(false)
   })
 
   it('refuses to enable without a VAPID key', async () => {

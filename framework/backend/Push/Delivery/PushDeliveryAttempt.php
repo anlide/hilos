@@ -49,11 +49,13 @@ final class PushDeliveryAttempt implements DeliveryAttempt
             return;
         }
 
+        $busy = false;
         foreach ($this->sends as $send) {
             $send->tick($nowMs);
-            if ($send->isBusy()) {
-                return;
-            }
+            $busy = $busy || $send->isBusy();
+        }
+        if ($busy) {
+            return;
         }
 
         $this->settle();

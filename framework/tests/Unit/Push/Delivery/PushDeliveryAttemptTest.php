@@ -94,6 +94,28 @@ final class PushDeliveryAttemptTest extends TestCase
         self::assertFalse($attempt->isDelivered());
     }
 
+    public function testTicksEveryEndpointEvenWhileAnEarlierOneIsStillBusy(): void
+    {
+        // The fan-out must pump every device each tick, not stop at the first that is
+        // still in flight - otherwise one slow endpoint stalls the rest for N x timeout.
+        $busyClient = $this->createMock(AsyncHttpClient::class);
+        $busyClient->method('isBusy')->willReturn(true);
+
+        $laterClient = $this->createMock(AsyncHttpClient::class);
+        $laterClient->expects(self::once())->method('tick');
+        $laterClient->method('isBusy')->willReturn(true);
+
+        $attempt = new PushDeliveryAttempt([
+            new PushEndpointSend('https://push.example/busy', $busyClient),
+            new PushEndpointSend('https://push.example/later', $laterClient),
+        ]);
+
+        $attempt->tick(1.0);
+
+        self::assertTrue($attempt->isBusy());
+        self::assertFalse($attempt->isDelivered());
+    }
+
     public function testGoneEndpointSettlesWithoutPruningWhenNoDbContext(): void
     {
         $goneClient = $this->createMock(AsyncHttpClient::class);
