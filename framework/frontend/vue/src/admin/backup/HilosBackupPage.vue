@@ -286,9 +286,7 @@ async function submitDelete(): Promise<void> {
 
     <HilosModal
       v-model="detailsOpen"
-      :title="
-        detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'
-      "
+      :title="detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'"
     >
       <pre
         class="mb-0 small text-break"

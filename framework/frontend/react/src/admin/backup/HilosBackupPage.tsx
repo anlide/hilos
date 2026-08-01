@@ -306,7 +306,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
 
       <HilosModal
         open={detailsOpen}
-        title={detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'}
+        title={
+          detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'
+        }
         onClose={closeDetails}
         actions={({ requestClose }) => (
           <button
