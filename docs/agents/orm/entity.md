@@ -46,8 +46,10 @@ class MyEntity extends Entity {
 
 ## Schema consistency
 
-Entity fields must match the DB schema. If you change the schema, update the Entity.
-Use `db:entity:diff` (see `cli/commands.md`) to check for mismatches.
+Entity fields must match the DB schema. Migrations are the source of truth: edit the
+Entity's `_columns` / `_types` / `_indexes` / `_foreign` metadata in the same commit as
+the migration that changes the schema. A mismatch between the two is a bug to fix, not a
+condition to diagnose at runtime.
 
 ## Settings Entity (special case)
 

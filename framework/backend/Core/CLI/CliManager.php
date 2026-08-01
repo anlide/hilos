@@ -14,7 +14,6 @@ use Hilos\Core\CLI\Commands\ClusterReloadCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
-use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\DbWaitCommand;
@@ -88,7 +87,6 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
         $this->commands[CliCommands::SEED_APPLY] = new SeedApplyCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
-        $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();

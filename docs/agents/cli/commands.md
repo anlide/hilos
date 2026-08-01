@@ -16,7 +16,6 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 | Command | Description |
 |---|---|
 | `db:schema:status` | Check DB schema vs expected structure |
-| `db:entity:diff` | Diff Entity class fields vs actual DB columns (deprecated — do not rely on it) |
 
 ## Seed commands
 

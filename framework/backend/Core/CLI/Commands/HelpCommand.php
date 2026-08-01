@@ -112,7 +112,6 @@ HELP;
             ],
             'Database Schema' => [
                 CliCommands::DB_SCHEMA_STATUS,
-                CliCommands::DB_ENTITY_DIFF,
             ],
             'Help' => [
                 CliCommands::HELP,
