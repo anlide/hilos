@@ -20,7 +20,9 @@ services:
     image: mariadb:11.4
     container_name: chat-mysql-local
     ports:
-      - "${MYSQL_HOST_PORT:-33060}:3306"
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_HOST_PORT:-33060}:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
@@ -52,7 +54,7 @@ services:
     depends_on:
       - mysql-local
     ports:
-      - "${PHPMYADMIN_PORT:-8080}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${PHPMYADMIN_PORT:-8080}:80"
     restart: unless-stopped
     networks:
       - hilos-demo-chat-local-network
@@ -100,10 +102,10 @@ services:
       - mysql-local
     ports:
       # Expose ports to host for local frontend access
-      - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
-      - "${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
-      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
-      - "${FRONTEND_HTML_PORT:-8093}:${FRONTEND_HTML_PORT:-8093}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_HTML_PORT:-8093}:${FRONTEND_HTML_PORT:-8093}"
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
@@ -173,7 +175,7 @@ services:
       # HTTPS only. The container's own :80 vhost stays unpublished on purpose —
       # it 301s to https://$host with the port dropped, which lands on whatever
       # holds 443 (another demo's stack), not here. Reach this stack over HTTPS.
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_HTTPS_PORT:-443}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=chat-local
     depends_on:
@@ -206,7 +208,7 @@ services:
       VITE_ATTACHMENT_TARGET: "http://chat-local:8090"
     command: sh -c "npm install && npm run dev"
     ports:
-      - "${FRONTEND_DEV_PORT:-5173}:5173"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_DEV_PORT:-5173}:5173"
     restart: unless-stopped
     networks:
       - hilos-demo-chat-local-network

@@ -61,6 +61,48 @@ needs no setup step. The same split holds across all three reference demos
 (simple-poll, simple-todo, chat); `docker/.env` is also where a host keeps other
 non-committable interpolation overrides (e.g. the chat demo's `LLM_LOCAL_URL`).
 
+## Published ports bind to loopback (the bind-host knob)
+
+Every host publish in the dev, test, and framework stacks binds to `127.0.0.1`
+by default, so a fresh clone on any machine — including a public dev box — starts
+closed: MySQL (root, with a repo-published dev password), phpMyAdmin, the daemon
+status/worker/ws ports, the Vite/Angular dev server and the local/test nginx are
+reachable only from that machine. The bind address is a single knob per stack,
+`${HILOS_BIND_HOST:-127.0.0.1}` prefixed onto every publish; a host that must
+expose the stack to a LAN or tailnet sets `HILOS_BIND_HOST` in its gitignored
+`docker/.env` (the same interpolation seam as the port knobs above) instead of
+editing the repo. One value is one address — docker takes a single bind per
+publish, and a bogus one fails at `up` with docker's own "bind: cannot assign
+requested address".
+
+Only two surfaces face outward on purpose and keep no knob: prod `nginx`
+(`docker-compose.prod.yml`), which is the public front door, and the preview
+lane's Caddy (`framework/docker`, host-network), which fronts `*.hilos`. The
+`hilos-preview-control` service stays hardcoded on `127.0.0.1` so Caddy is its
+sole entry.
+
+Ollama is the one carve-out: its consumer is the chat daemon in **another**
+compose project, reached across the docker bridge rather than over loopback, so
+it has its own `HILOS_OLLAMA_BIND_HOST` (same `127.0.0.1` default) on the
+`x-ollama-base` anchor shared by the three GPU variants. A host that serves the
+LLM to demo stacks sets it to `172.17.0.1` — the docker0 gateway, reachable from
+any bridge network and stable across demo network re-creation — and points the
+chat demo's `LLM_LOCAL_URL` at the same address.
+
+**Reaching a stack from another machine** keeps the loopback default and tunnels:
+
+- HTTP surfaces (vite, phpMyAdmin, daemon status, ws) are already reachable over
+  the preview lane `*.hilos` on Tailscale — Caddy runs host-network and proxies
+  host loopback, so nothing needs to move off `127.0.0.1`.
+- MySQL and the local/test nginx ports have no proxy; reach them by SSH tunnel
+  over Tailscale.
+
+**On a preview host, leave the knob alone.** Caddy proxies hardcoded `127.0.0.1`
+targets, so moving `HILOS_BIND_HOST` off loopback there silently breaks `*.hilos`.
+The Caddyfile stays unparameterised on purpose: a second knob nobody remembers is
+worse than one explicit rule — on a host running the preview lane, reach the stack
+through `*.hilos`, not by rebinding the ports.
+
 ## One build for e2e, staging, and prod
 
 A single `vite build` produces the artifact that e2e, staging, and prod all run:

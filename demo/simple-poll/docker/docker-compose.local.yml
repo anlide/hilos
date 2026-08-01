@@ -26,7 +26,9 @@ services:
     image: mariadb:11.4
     container_name: poll-mysql-local
     ports:
-      - "${MYSQL_HOST_PORT:-33065}:3306"
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_HOST_PORT:-33065}:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-simple-poll}
@@ -58,7 +60,7 @@ services:
     depends_on:
       - poll-mysql-local
     ports:
-      - "${PHPMYADMIN_PORT:-8082}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${PHPMYADMIN_PORT:-8082}:80"
     restart: unless-stopped
     networks:
       - hilos-simple-poll-local-network
@@ -105,9 +107,9 @@ services:
     ports:
       # Host-side publishes: container ports stay fixed, the host side shifts
       # per the demo port plan so several stacks run side by side.
-      - "${HTTP_STATUS_HOST_PORT:-8104}:8090"
-      - "${WORKER_COMM_HOST_PORT:-8105}:8091"
-      - "${WEBSOCKET_HOST_PORT:-8106}:8092"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_HOST_PORT:-8104}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_COMM_HOST_PORT:-8105}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_HOST_PORT:-8106}:8092"
     restart: unless-stopped
     networks:
       hilos-simple-poll-local-network:
@@ -163,7 +165,7 @@ services:
       # vhost stays unpublished on purpose — it 301s to https://$host with the
       # port dropped, which lands on whatever holds 443 (another demo's stack),
       # not here. Reach this stack at https://localhost:8445.
-      - "${NGINX_HTTPS_PORT:-8445}:443"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_HTTPS_PORT:-8445}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=poll-daemon-local
     depends_on:
@@ -194,7 +196,7 @@ services:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     command: sh -c "npm install && npm run dev"
     ports:
-      - "${FRONTEND_DEV_PORT:-5175}:5173"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${FRONTEND_DEV_PORT:-5175}:5173"
     restart: unless-stopped
     networks:
       - hilos-simple-poll-local-network

@@ -29,7 +29,9 @@ x-ollama-base: &ollama-base
   environment:
     - OLLAMA_HOST=0.0.0.0:11434
   ports:
-    - "${OLLAMA_HOST_PORT:-11434}:11434"
+    # Loopback-only by default; a host that serves the LLM to demo stacks sets
+    # HILOS_OLLAMA_BIND_HOST in docker/.env to 172.17.0.1 (the docker0 gateway).
+    - "${HILOS_OLLAMA_BIND_HOST:-127.0.0.1}:${OLLAMA_HOST_PORT:-11434}:11434"
   restart: unless-stopped
 
 services:
@@ -99,7 +101,7 @@ services:
       - ../..:/workspace:ro
       - agent-host-local-data:/data
     ports:
-      - "${AGENT_PORT:-9309}:${AGENT_PORT:-9309}"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${AGENT_PORT:-9309}:${AGENT_PORT:-9309}"
     restart: unless-stopped
     profiles: [agent-host]
 
@@ -176,7 +178,7 @@ services:
     image: mariadb:11.4
     container_name: hilos-mysql-framework-test
     ports:
-      - "${MYSQL_FRAMEWORK_TEST_HOST_PORT:-33062}:3306"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_FRAMEWORK_TEST_HOST_PORT:-33062}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       MYSQL_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}

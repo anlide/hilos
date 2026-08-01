@@ -15,7 +15,9 @@ services:
     image: mariadb:11.4
     container_name: poll-mysql-test
     ports:
-      - "${MYSQL_TEST_HOST_PORT:-33066}:3306"
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_TEST_HOST_PORT:-33066}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-simple-poll-test}
@@ -71,9 +73,9 @@ services:
       poll-mysql-test:
         condition: service_healthy
     ports:
-      - "${HTTP_TEST_PORT:-8107}:8090"
-      - "${WORKER_TEST_PORT:-8108}:8091"
-      - "${WEBSOCKET_TEST_PORT:-8109}:8092"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8107}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_TEST_PORT:-8108}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_TEST_PORT:-8109}:8092"
     networks:
       - hilos-simple-poll-test-network
 
@@ -114,8 +116,8 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - nginx-ssl-test:/etc/nginx/ssl
     ports:
-      - "${NGINX_TEST_HTTP_PORT:-8088}:80"
-      - "${NGINX_TEST_HTTPS_PORT:-8448}:443"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTP_PORT:-8088}:80"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${NGINX_TEST_HTTPS_PORT:-8448}:443"
     environment:
       - FRONTEND_HTML_UPSTREAM=poll-daemon-test
     depends_on:
