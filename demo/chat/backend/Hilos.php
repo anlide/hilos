@@ -339,6 +339,7 @@ final class Hilos extends \Hilos\Hilos
         LogRotationAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogRotationAgent::class,
             AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => true,
         ],
     ];
 

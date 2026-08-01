@@ -33,4 +33,11 @@ final class AgentRegistryKey
      * When true, worker and daemon instances require a non-null agentIndex at creation.
      */
     public const string INDEXED = 'indexed';
+
+    /**
+     * When true, the agent is started once on every node as its workers become ready, rather than
+     * only on the cluster leader. Mutually exclusive with {@see self::INDEXED}: a sharded pool needs
+     * an index, an every-node singleton has none.
+     */
+    public const string PER_NODE = 'per_node';
 }

@@ -531,6 +531,14 @@ enum EnvConstants
      */
     case LOG_ROTATION_MAX_LIVE_SIZE_BYTES;
 
+    /**
+     * @var string Five-field cron expression (server timezone) on which the per-node
+     * LogRotationAgent rotates the live logs — the planned-rotation axis alongside the age and
+     * size axes. Empty disables the schedule axis; an unparseable expression is logged and also
+     * leaves it disabled. A missed window is not caught up (the state is worker-process-local).
+     */
+    case LOG_ROTATION_CRON;
+
     // ── Log archive retention (HIL-381) ──────────────────────────────────────
 
     /**

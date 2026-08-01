@@ -34,7 +34,13 @@ class MyAgentDaemon extends AbstractAgentDaemon {
 ## 4. Register in Hilos topology
 
 Declare worker and daemon classes in `Hilos::AGENTS`. Use `AgentRegistryKey::INDEXED`
-when the agent requires `agentIndex` at creation (for example one bot per index):
+when the agent requires `agentIndex` at creation (for example one bot per index), or
+`AgentRegistryKey::PER_NODE` for an every-node singleton that must run on each node
+(for example the per-node log rotation agent, whose daemon returns
+`requiresClusterLeadership() = false`); such agents are started automatically by
+`WorkerServer::onInitialWorkersReady()` once a node's workers are ready. The two
+placement flags are mutually exclusive — a sharded pool needs an index, an every-node
+singleton has none:
 
 ```php
 // backend/Hilos.php
@@ -49,6 +55,11 @@ public const array AGENTS = [
         AgentRegistryKey::WORKER => BotAgent::class,
         AgentRegistryKey::DAEMON => BotAgentDaemon::class,
         AgentRegistryKey::INDEXED => true,
+    ],
+    LogRotationAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => LogRotationAgent::class,
+        AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
+        AgentRegistryKey::PER_NODE => true,
     ],
 ];
 ```
@@ -120,7 +131,7 @@ class MyPage extends AbstractPage {
 ## Checklist
 
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
-- [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, and `INDEXED` when needed
+- [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, and `INDEXED` or `PER_NODE` when needed
 - [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook

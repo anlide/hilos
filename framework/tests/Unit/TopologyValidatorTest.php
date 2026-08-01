@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -349,6 +350,31 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('unknown_key');
 
         TopologyIndexedAgentUnknownConfigKeyHilos::validateTopology();
+    }
+
+    public function testPerNodeAgentPassesValidation(): void
+    {
+        TopologyPerNodeAgentHilos::validateTopology();
+
+        $this->assertTrue(
+            AgentRegistry::startsOnEveryNode(TopologyPerNodeAgentHilos::AGENTS[TopologyValidAgent::AGENT_TYPE]),
+        );
+    }
+
+    public function testPerNodeMustBeBoolean(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(AgentRegistryKey::PER_NODE . '] must be a boolean');
+
+        TopologyPerNodeNonBooleanHilos::validateTopology();
+    }
+
+    public function testPerNodeCannotCombineWithIndexed(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('cannot combine ' . AgentRegistryKey::PER_NODE . ' with ' . AgentRegistryKey::INDEXED);
+
+        TopologyPerNodeIndexedHilos::validateTopology();
     }
 
     public function testPageTablesRejectUnknownPages(): void
@@ -789,6 +815,70 @@ final class TopologyValidHilos extends HilosFacade
         TopologyValidPage::PAGE => [
             'valid_table' => [],
             TopologyValidBrowserTable::TABLE => [],
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerNodeAgentHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => true,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerNodeNonBooleanHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => 'yes',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPerNodeIndexedHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => true,
+            AgentRegistryKey::INDEXED => true,
         ],
     ];
 

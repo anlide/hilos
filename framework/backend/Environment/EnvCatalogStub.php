@@ -262,6 +262,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::PUSH_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
             EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
+            EnvConstants::LOG_ROTATION_CRON->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', emptyIsMissing: true),
             EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 20, emptyIsMissing: true),
             EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 2592000, emptyIsMissing: true),
         ];

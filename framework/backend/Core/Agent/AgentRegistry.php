@@ -17,6 +17,7 @@ final class AgentRegistry
         AgentRegistryKey::WORKER,
         AgentRegistryKey::DAEMON,
         AgentRegistryKey::INDEXED,
+        AgentRegistryKey::PER_NODE,
     ];
 
     /**
@@ -54,5 +55,20 @@ final class AgentRegistry
         }
 
         return ($registryEntry[AgentRegistryKey::INDEXED] ?? false) === true;
+    }
+
+    /**
+     * Whether the entry opts into an every-node start pass rather than leader-only placement.
+     *
+     * @param mixed $registryEntry Raw Hilos::AGENTS entry for one agent type
+     * @return bool True when the entry sets {@see AgentRegistryKey::PER_NODE} to true
+     */
+    public static function startsOnEveryNode(mixed $registryEntry): bool
+    {
+        if (!is_array($registryEntry)) {
+            return false;
+        }
+
+        return ($registryEntry[AgentRegistryKey::PER_NODE] ?? false) === true;
     }
 }

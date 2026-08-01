@@ -291,6 +291,15 @@ final class TopologyValidator
             if ($indexed !== false && !is_bool($indexed)) {
                 $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::INDEXED . '] must be a boolean';
             }
+
+            $perNode = $registryEntry[AgentRegistryKey::PER_NODE] ?? false;
+            if ($perNode !== false && !is_bool($perNode)) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::PER_NODE . '] must be a boolean';
+            } elseif ($perNode === true && $indexed === true) {
+                $errors[] = 'AGENTS[' . $agentType . '] cannot combine '
+                    . AgentRegistryKey::PER_NODE . ' with ' . AgentRegistryKey::INDEXED
+                    . ': a sharded pool needs an index, an every-node singleton has none';
+            }
         }
     }
 
