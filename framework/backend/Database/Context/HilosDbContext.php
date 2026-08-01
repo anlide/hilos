@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Context;
 
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
+use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
@@ -15,6 +16,7 @@ use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -50,6 +52,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionNotificationDeliveries $notificationDeliveries
  * @property-read DbCollectionNotificationPreferences $notificationPreferences
  * @property-read DbCollectionPushSubscriptions $pushSubscriptions
+ * @property-read DbCollectionAuthBlocks $authBlocks
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -71,21 +74,23 @@ abstract class HilosDbContext extends DbContext
     public const string notificationPreference = 'notificationPreference';
     public const string pushSubscriptions = 'pushSubscriptions';
     public const string pushSubscription = 'pushSubscription';
+    public const string authBlocks = 'authBlocks';
+    public const string authBlock = 'authBlock';
 
     /**
      * Configures Hilos-level collections (settings, identities, verifications,
      * passkey credentials, sessions, notifications, notification deliveries,
-     * notification preferences, push subscriptions).
+     * notification preferences, push subscriptions, auth blocks).
      *
      * Identities, verifications, passkey credentials, sessions, notifications,
-     * notification deliveries, notification preferences and push subscriptions load
-     * by key (per-user / per-(type,identifier) / per-credential / per-token /
-     * per-recipient / per-(notification,channel) / per-(user,channel) / per-endpoint
-     * lookups), never as a full set, so registering the collections stays inert for
-     * projects that do not activate the hilos_identity / hilos_user_verification /
-     * hilos_passkey_credential / hilos_session / hilos_notification /
-     * hilos_notification_delivery / hilos_notification_preference /
-     * hilos_push_subscription tables.
+     * notification deliveries, notification preferences, push subscriptions and auth
+     * blocks load by key (per-user / per-(type,identifier) / per-credential / per-token /
+     * per-recipient / per-(notification,channel) / per-(user,channel) / per-endpoint /
+     * per-(scope,identity,action) lookups), never as a full set, so registering the
+     * collections stays inert for projects that do not activate the hilos_identity /
+     * hilos_user_verification / hilos_passkey_credential / hilos_session /
+     * hilos_notification / hilos_notification_delivery / hilos_notification_preference /
+     * hilos_push_subscription / hilos_auth_block tables.
      *
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      */
@@ -117,5 +122,8 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::pushSubscriptions] = ObjectPushSubscriptions::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::pushSubscriptions, DbCollectionPushSubscriptions::class, PushSubscriptionsActions::class);
+
+        $this->_objectCollections[self::authBlocks] = ObjectAuthBlocks::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::authBlocks, DbCollectionAuthBlocks::class);
     }
 }
