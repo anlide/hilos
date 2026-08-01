@@ -138,6 +138,18 @@ abstract class Hilos
     /** Conventional name of the project-level persistent-data directory. */
     public const string DATA_DIR = 'data';
 
+    /**
+     * Concrete project facade class captured at init.
+     *
+     * Bare `Hilos::` accessor calls made from framework code lose late static
+     * binding to the project subclass, so `static::` there reads base constants
+     * instead of the project override. Accessors that must resolve
+     * project-overridden topology constants read {@see appClass()} instead.
+     *
+     * @var class-string<Hilos> Concrete project facade class, or the base when uninitialized
+     */
+    private static string $appClass = self::class;
+
     /** @var ?EnvAccessor Catalog-backed environment accessor */
     public static ?EnvAccessor $env = null;
 
@@ -195,13 +207,27 @@ abstract class Hilos
     }
 
     /**
+     * Returns the concrete project facade class captured at init.
+     *
+     * Framework code reaches project-overridden topology constants through this
+     * class rather than `static::`, which bare `Hilos::` call-sites bind to the
+     * base facade instead of the project subclass.
+     *
+     * @return class-string<Hilos> Concrete project facade class, or the base when uninitialized
+     */
+    public static function appClass(): string
+    {
+        return static::$appClass;
+    }
+
+    /**
      * Returns the project's delivery-channel registry class (HIL-196).
      *
      * @return class-string<DeliveryChannelRegistry> Delivery-channel registry class
      */
     public static function notificationChannelRegistryClass(): string
     {
-        return static::NOTIFICATION_CHANNEL_REGISTRY;
+        return static::appClass()::NOTIFICATION_CHANNEL_REGISTRY;
     }
 
     /**
@@ -211,7 +237,7 @@ abstract class Hilos
      */
     public static function notificationTypeRegistryClass(): string
     {
-        return static::NOTIFICATION_TYPE_REGISTRY;
+        return static::appClass()::NOTIFICATION_TYPE_REGISTRY;
     }
 
     /**
@@ -652,9 +678,14 @@ abstract class Hilos
 
     /**
      * Gives the active browser context access to this project facade topology.
+     *
+     * Also captures the concrete project facade class so framework code can
+     * resolve project-overridden topology constants through {@see appClass()}
+     * from bare `Hilos::` call-sites that lose late static binding.
      */
     private static function bindBrowserContext(): void
     {
+        static::$appClass = static::class;
         static::$browser?->bindHilosFacade(static::class);
     }
 
