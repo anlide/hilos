@@ -40,12 +40,14 @@ export type HandshakeSignalData = z.infer<typeof handshakeSignalDataSchema>
  * by the core parse boundary (action_error is a framework signal, not a project
  * schema); the request-correlated acknowledgement lifecycle (ActionLifecycle)
  * consumes the echoed requestId, and the auth gate reads `errorCode` to open the
- * sign-in surface on an action-level 401.
+ * sign-in surface on an action-level 401. A `rate_limited` failure additionally
+ * carries `retryAfter` (seconds to wait before retrying).
  */
 export const actionErrorSignalDataSchema = z.looseObject({
   action: z.string(),
   reason: z.string(),
   errorCode: z.string().optional(),
+  retryAfter: z.number().int().optional(),
 })
 
 export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>
