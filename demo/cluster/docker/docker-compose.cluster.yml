@@ -74,7 +74,7 @@ services:
       start_period: 10s
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.10
+        ipv4_address: 10.185.0.10
 
   cluster-m1:
     <<: *node-base
@@ -85,8 +85,8 @@ services:
       CLUSTER_NODE_ID: m1
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "172.31.0.11:8095"
-      CLUSTER_SEEDS: "172.31.0.12:8095,172.31.0.13:8095,172.31.0.14:8095,172.31.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.185.0.11:8095"
+      CLUSTER_SEEDS: "10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -96,7 +96,7 @@ services:
       - ../data/logs/m1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.11
+        ipv4_address: 10.185.0.11
 
   cluster-m2:
     <<: *node-base
@@ -107,8 +107,8 @@ services:
       CLUSTER_NODE_ID: m2
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "172.31.0.12:8095"
-      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.13:8095,172.31.0.14:8095,172.31.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.185.0.12:8095"
+      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.13:8095,10.185.0.14:8095,10.185.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -118,7 +118,7 @@ services:
       - ../data/logs/m2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.12
+        ipv4_address: 10.185.0.12
 
   cluster-m3:
     <<: *node-base
@@ -129,8 +129,8 @@ services:
       CLUSTER_NODE_ID: m3
       CLUSTER_NODE_ROLE: master
       CLUSTER_NODE_CAPABILITIES: ""
-      CLUSTER_PEER_ADVERTISE: "172.31.0.13:8095"
-      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.14:8095,172.31.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.185.0.13:8095"
+      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.14:8095,10.185.0.15:8095"
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
@@ -140,7 +140,7 @@ services:
       - ../data/logs/m3:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.13
+        ipv4_address: 10.185.0.13
 
   cluster-s1:
     <<: *node-base
@@ -151,8 +151,8 @@ services:
       CLUSTER_NODE_ID: s1
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
-      CLUSTER_PEER_ADVERTISE: "172.31.0.14:8095"
-      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.15:8095"
+      CLUSTER_PEER_ADVERTISE: "10.185.0.14:8095"
+      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.15:8095"
       # Fleet members share these regular workers. A member's synthetic job blocks its
       # worker, so several of them keep the whole fleet ticking even when one node holds
       # it all after a failover.
@@ -166,7 +166,7 @@ services:
       - ../data/logs/s1:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.14
+        ipv4_address: 10.185.0.14
 
   cluster-s2:
     <<: *node-base
@@ -177,8 +177,8 @@ services:
       CLUSTER_NODE_ID: s2
       CLUSTER_NODE_ROLE: slave
       CLUSTER_NODE_CAPABILITIES: "worker"
-      CLUSTER_PEER_ADVERTISE: "172.31.0.15:8095"
-      CLUSTER_SEEDS: "172.31.0.11:8095,172.31.0.12:8095,172.31.0.13:8095,172.31.0.14:8095"
+      CLUSTER_PEER_ADVERTISE: "10.185.0.15:8095"
+      CLUSTER_SEEDS: "10.185.0.11:8095,10.185.0.12:8095,10.185.0.13:8095,10.185.0.14:8095"
       # Regular workers the fleet members share on this node; see s1.
       WORKER_MIN_REGULAR: "5"
       WORKER_MAX_REGULAR: "5"
@@ -190,7 +190,7 @@ services:
       - ../data/logs/s2:/var/log/hilos
     networks:
       cluster-net:
-        ipv4_address: 172.31.0.15
+        ipv4_address: 10.185.0.15
 
   # Long-lived CLI container the harness `docker exec`s for cluster:test:inspect,
   # and the one-shot runner for composer/phpunit (profile cli, so it never joins a
@@ -231,4 +231,11 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.31.0.0/16
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 — Docker's default
+        # address pools. The nodes need fixed addresses (peers advertise them, and
+        # `cluster heal` reconnects a partitioned node on its original IP), so this
+        # subnet is claimed, not assigned. Inside a default pool that claim loses a
+        # race: any other stack whose network came up first may already hold the
+        # range, and then the whole cluster fails to start with "Pool overlaps with
+        # other one on this address space". 10.0.0.0/8 is never auto-assigned.
+        - subnet: 10.185.0.0/16
