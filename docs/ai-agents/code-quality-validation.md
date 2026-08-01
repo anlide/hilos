@@ -25,7 +25,7 @@ Instructions for AI agents to validate code quality. Use these rules to:
    - Import hygiene
 
 3. **ORM validation**
-   - Entity ↔ schema consistency (run `db:entity:diff`)
+   - Entity ↔ schema consistency
    - Object ↔ Entity consistency
    - Db ↔ Object consistency
    - No Repository/Service on top of DbCollection
@@ -37,5 +37,4 @@ Instructions for AI agents to validate code quality. Use these rules to:
    - See [quality.md](/docs/quality.md) for application quality
 
 5. **Automation hints**
-   - Commands: `db:entity:diff`
    - Linters, formatters (if configured)

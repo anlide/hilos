@@ -58,7 +58,6 @@
         "db:migration:retry": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:migration:retry",
         "db:seed:apply": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:seed:apply",
         "db:schema:status": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:schema:status",
-        "db:entity:diff": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-cli-local php backend/Bootstrap/cli.php db:entity:diff",
         "pma": "docker compose -f docker/docker-compose.local.yml up -d poll-phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8082",
         "pma-stop": "docker compose -f docker/docker-compose.local.yml stop poll-phpmyadmin-local",
         "frontend:install": "docker compose -f docker/docker-compose.local.yml --profile cli run --rm poll-frontend-cli-local npm install",

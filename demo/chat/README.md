@@ -129,7 +129,6 @@ prerender are not finalized here yet.
 | `composer run db:migration:up` / `down` / `status` / `retry` | migrations |
 | `composer run db:seed:apply -- <NNN>` | apply seed `NNN` (e.g. `001`) |
 | `composer run db:schema:status` | schema status |
-| `composer run db:entity:diff` | entity ↔ schema diff |
 
 ### Frontend (Node, in container)
 

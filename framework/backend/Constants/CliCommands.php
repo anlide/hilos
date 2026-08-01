@@ -51,9 +51,6 @@ final class CliCommands
     /** @var string Command: Show database schema status */
     public const string DB_SCHEMA_STATUS = 'db:schema:status';
 
-    /** @var string Command: Compare Entity files with database schema */
-    public const string DB_ENTITY_DIFF = 'db:entity:diff';
-
     /** @var string Command: Wait for MySQL to become ready */
     public const string DB_WAIT = 'db:wait';
 

@@ -31,7 +31,6 @@ php cli.php db:migration:retry <version> [options] # Retry failed migration
 
 ```bash
 php cli.php db:schema:status [options]  # Show schema status (tables, columns, indexes)
-php cli.php db:entity:diff [options]    # Compare Entity files with database schema
 ```
 
 ### db:schema:status options
@@ -40,14 +39,6 @@ php cli.php db:entity:diff [options]    # Compare Entity files with database sch
 |--------|-------------|
 | `--table=<name>` | Show details for specific table only |
 | `--verbose` | Show detailed column and index information |
-
-### db:entity:diff options
-
-| Option | Description |
-|--------|-------------|
-| `--entity-dir=<path>` | Entity files directory (default: auto-detect) |
-| `--entity-ns=<ns>` | Entity namespace prefix (default: auto-detect) |
-| `--table=<name>` | Show diff for specific table only |
 
 ## Project-level Composer Scripts (demo example)
 
@@ -77,7 +68,6 @@ composer run db:migration:retry
 
 # Database schema & ORM
 composer run db:schema:status
-composer run db:entity:diff
 
 # phpMyAdmin (optional)
 composer run pma                 # Start phpMyAdmin at http://localhost:8080
