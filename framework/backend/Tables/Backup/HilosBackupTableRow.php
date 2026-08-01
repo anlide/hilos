@@ -41,6 +41,7 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string keep = 'keep';
     public const string status = 'status';
     public const string finished = 'finished';
+    public const string failureReason = 'failureReason';
 
     /**
      * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
@@ -52,6 +53,7 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param bool $keep Whether the backup is pinned out of rotation
      * @param string $status Status value
      * @param ?bool $finished true completed, false in progress, null failed/incomplete
+     * @param ?string $failureReason Why the run failed (error rows only); null otherwise
      */
     public function __construct(
         public string $rowKey,
@@ -63,6 +65,7 @@ final class HilosBackupTableRow extends AbstractTableRow
         public bool $keep,
         public string $status,
         public ?bool $finished,
+        public ?string $failureReason,
     ) {
     }
 
@@ -95,6 +98,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::keep => $this->keep,
             self::status => $this->status,
             self::finished => $this->finished,
+            self::failureReason => $this->failureReason,
         ];
     }
 
@@ -116,6 +120,7 @@ final class HilosBackupTableRow extends AbstractTableRow
             keep: (bool) ($data[self::keep] ?? false),
             status: (string) ($data[self::status] ?? ''),
             finished: array_key_exists(self::finished, $data) ? self::toTriState($data[self::finished]) : null,
+            failureReason: isset($data[self::failureReason]) ? (string) $data[self::failureReason] : null,
         );
     }
 

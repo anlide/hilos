@@ -55,6 +55,7 @@ final class BackupHistoryStateTest extends TestCase
             durationSeconds: 6,
             keep: false,
             status: BackupStatus::ERROR,
+            failureReason: 'child exited with code 1',
         ));
 
         $restored = BackupHistory::fromRow($history->toArray());
@@ -63,9 +64,34 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertSame('full', $restored->scope);
         $this->assertSame('error', $restored->status);
         $this->assertSame(6, $restored->durationSeconds);
+        $this->assertSame('child exited with code 1', $restored->failureReason);
         $this->assertCount(1, $restored->connections);
         $this->assertSame(1, $restored->connections[0]->index);
         $this->assertSame('db1', $restored->connections[0]->database);
+    }
+
+    public function testFailureReasonTransfersFromMetadataAndUpdatesViaDiff(): void
+    {
+        $history = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'err-1',
+            createdAt: '2026-07-20T09:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 0,
+            durationSeconds: 2,
+            keep: false,
+            status: BackupStatus::ERROR,
+            failureReason: 'timed out after 30s',
+        ));
+        $this->assertSame('timed out after 30s', $history->failureReason);
+
+        $history->applyDiff([BackupHistory::failureReason => 'child exited with code 1']);
+        $this->assertSame('child exited with code 1', $history->failureReason);
+
+        // Re-projecting an error row as a success clears the reason: a null diff must apply.
+        $history->applyDiff([BackupHistory::failureReason => null]);
+        $this->assertNull($history->failureReason);
     }
 
     public function testHistoriesCollectionLookup(): void

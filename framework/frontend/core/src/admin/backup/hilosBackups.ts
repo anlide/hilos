@@ -51,6 +51,12 @@ export interface HilosBackupRow {
    * progress indicator), null a recorded failure.
    */
   readonly finished: boolean | null
+  /**
+   * Why the run failed — the persisted diagnostic shown in the failure-detail
+   * modal. Present on error rows only; null for success, the in-progress row, and
+   * legacy records saved before the reason was recorded.
+   */
+  readonly failureReason: string | null
 }
 
 // Wire keys: the framework backup table and its single inline `backup` slot (the
@@ -148,6 +154,17 @@ function toFinished(value: unknown): boolean | null {
 }
 
 /**
+ * Narrow a raw `failureReason` slot value to the view-model field. A non-empty
+ * string is the persisted reason; missing, non-string, or empty input is no detail
+ * (null), so a reader tells "no reason recorded" from an empty string.
+ *
+ * @param value The raw `failureReason` value from a payload slot.
+ */
+function toFailureReason(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
  * Resolve one raw backup table row into its view-model. The merged runtime fields
  * ride a single inline `backup` slot (no entity reference — a backup row is
  * page-scoped, keyed by its id), so this reads the slot as a plain record.
@@ -170,6 +187,7 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     keep: readBoolean(slot, 'keep'),
     status: readString(slot, 'status'),
     finished: toFinished(slot['finished']),
+    failureReason: toFailureReason(slot['failureReason']),
   }
 }
 
@@ -231,6 +249,16 @@ export function isBackupDeletable(row: HilosBackupRow): boolean {
 /** A successfully completed backup — the only kind whose keep pin can be toggled. */
 export function isBackupKeepable(row: HilosBackupRow): boolean {
   return row.finished === true
+}
+
+/**
+ * A failed backup that carries a recorded reason — the only kind that shows a
+ * failure-detail button. The single source the three views share, so the button's
+ * visibility cannot drift between them. A failure without a stored reason (a legacy
+ * record) shows nothing, since there is nothing to open.
+ */
+export function hasBackupFailureDetail(row: HilosBackupRow): boolean {
+  return row.finished === null && row.failureReason !== null
 }
 
 /** The backup table handle a backup view drives: the controller plus its mount lifecycle. */

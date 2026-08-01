@@ -91,6 +91,35 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame([], BackupMetadata::fromArray([BackupMetadata::id => 'x'])->warnings);
     }
 
+    public function testFailureReasonRoundTripsAndDefaultsToNull(): void
+    {
+        $errorMeta = new BackupMetadata(
+            id: 'e1',
+            createdAt: '2026-07-20T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 0,
+            durationSeconds: 3,
+            keep: false,
+            status: BackupStatus::ERROR,
+            failureReason: 'child exited with code 2: mysqldump: connection refused',
+        );
+
+        $restored = BackupMetadata::fromArray($errorMeta->toArray());
+        $this->assertSame(
+            'child exited with code 2: mysqldump: connection refused',
+            $restored->failureReason,
+        );
+
+        // The key is always written, even when null, so an error sidecar can key off it.
+        $successArray = $errorMeta->toArray();
+        $this->assertArrayHasKey(BackupMetadata::failureReason, $successArray);
+
+        // A legacy sidecar written before the field existed carries no key and reads back as null.
+        $this->assertNull(BackupMetadata::fromArray([BackupMetadata::id => 'x'])->failureReason);
+    }
+
     public function testUnknownScopeAndStatusFallBackToDefaults(): void
     {
         $metadata = BackupMetadata::fromArray([

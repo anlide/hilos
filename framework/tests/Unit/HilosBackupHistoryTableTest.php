@@ -46,6 +46,8 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertSame('running', $mutation->row->status);
         $this->assertSame('full', $mutation->row->scope);
         $this->assertSame('2026-07-20T11:00:00+00:00', $mutation->row->createdAt);
+        // The in-progress row has no failure — the reason exists only on a completed failure.
+        $this->assertNull($mutation->row->failureReason);
     }
 
     public function testRuntimeIdleDeletesRunningRow(): void
@@ -105,6 +107,24 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertNull($mutation->row?->finished);
     }
 
+    public function testFailedBackupCarriesItsStoredReason(): void
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'b3',
+                BackupHistory::status => 'error',
+                BackupHistory::failureReason => 'timed out after 30s',
+            ]),
+        ));
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b3', []),
+        );
+
+        $this->assertNotNull($mutation);
+        $this->assertSame('timed out after 30s', $mutation->row?->failureReason);
+    }
+
     public function testMissingStoredBackupDeletesRow(): void
     {
         $mutation = $this->table()->buildMutationForSourceEvent(
@@ -149,6 +169,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             keep: false,
             status: 'success',
             finished: true,
+            failureReason: null,
         );
 
         $this->assertSame(
@@ -165,6 +186,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::keep => false,
                         HilosBackupTableRow::status => 'success',
                         HilosBackupTableRow::finished => true,
+                        HilosBackupTableRow::failureReason => null,
                     ],
                 ],
             ],
@@ -214,6 +236,7 @@ final class HilosBackupHistoryTableTest extends TestCase
             keep: false,
             status: 'success',
             finished: true,
+            failureReason: null,
         );
 
         // The frontend normalizer ingests any slot payload bearing an `id` as an entity

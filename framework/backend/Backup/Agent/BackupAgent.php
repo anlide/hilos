@@ -694,7 +694,7 @@ final class BackupAgent extends AbstractAgent
             $this->logAgentError("Backup {$id} failed: {$detail}");
             $this->notifyInitiatorOfFailure($id, $detail);
             if ($scope !== null) {
-                $this->recordFailure($id, $scope, $durationSeconds);
+                $this->recordFailure($id, $scope, $durationSeconds, $detail);
             }
         }
 
@@ -788,11 +788,12 @@ final class BackupAgent extends AbstractAgent
      * @param string $id Backup id
      * @param BackupScope $scope Backup scope
      * @param int $durationSeconds Wall-clock time consumed before failing
+     * @param ?string $failureReason Assembled failure detail (reason + child stderr), stored on the error record
      */
-    private function recordFailure(string $id, BackupScope $scope, int $durationSeconds): void
+    private function recordFailure(string $id, BackupScope $scope, int $durationSeconds, ?string $failureReason): void
     {
         try {
-            (new BackupCreator())->recordFailure($id, $scope, $durationSeconds);
+            (new BackupCreator())->recordFailure($id, $scope, $durationSeconds, $failureReason);
         } catch (Throwable $e) {
             $this->logAgentError("Failed to record backup failure for {$id}: " . $e->getMessage());
         }

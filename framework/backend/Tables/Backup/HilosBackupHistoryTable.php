@@ -181,6 +181,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             keep: $history->keep,
             status: $history->status,
             finished: $history->status === BackupStatus::SUCCESS->value ? true : null,
+            failureReason: $history->failureReason,
         );
     }
 
@@ -206,6 +207,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             keep: false,
             status: self::RUNNING_STATUS,
             finished: false,
+            failureReason: null,
         );
     }
 

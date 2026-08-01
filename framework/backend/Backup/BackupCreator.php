@@ -62,6 +62,9 @@ final class BackupCreator
     private const string ARCHIVE_EXTENSION = '.tar.gz';
     private const string SIDECAR_EXTENSION = '.json';
 
+    /** Longest failure reason kept in an error sidecar; a killed dump's stderr can be a wall of text. */
+    private const int FAILURE_REASON_LIMIT = 2000;
+
     /** Recorded when schema-seed runs but the reference registry declares no tables for any connection. */
     private const string WARNING_EMPTY_REFERENCE_REGISTRY =
         'schema-seed found no reference tables: captured schema only, seed data is empty';
@@ -146,10 +149,11 @@ final class BackupCreator
      * @param string $id Backup id and sidecar base name (a filesystem-safe stem)
      * @param BackupScope $scope Scope of the failed run; also its storage subdirectory
      * @param int $durationSeconds Wall-clock time the run consumed before failing
+     * @param ?string $failureReason Why the run failed; trimmed, capped, and empty-to-null before storage
      * @throws BackupException When the id or backup directory is invalid
      * @throws BackupDumpFailedException When the error sidecar cannot be written
      */
-    public function recordFailure(string $id, BackupScope $scope, int $durationSeconds): void
+    public function recordFailure(string $id, BackupScope $scope, int $durationSeconds, ?string $failureReason): void
     {
         if (preg_match(self::ID_PATTERN, $id) !== 1) {
             throw new BackupException("Invalid backup id: {$id}");
@@ -166,10 +170,42 @@ final class BackupCreator
         $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
         $this->sweepPartialTemp($scopeDir, $base);
 
-        $metadata = $this->buildMetadata($id, $scope, [], 0, $durationSeconds, BackupStatus::ERROR);
+        $metadata = $this->buildMetadata(
+            $id,
+            $scope,
+            [],
+            0,
+            $durationSeconds,
+            BackupStatus::ERROR,
+            failureReason: $this->capFailureReason($failureReason),
+        );
         $tmpSidecar = $scopeDir . '/.tmp-err-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
         $this->writeJson($tmpSidecar, $metadata->toArray());
         $this->publish($tmpSidecar, $scopeDir . '/' . $base . self::SIDECAR_EXTENSION);
+    }
+
+    /**
+     * Trims a raw failure reason, caps it, and collapses an empty result to null.
+     *
+     * The reason carries a killed child's stderr, which can be a wall of text, so the tail is
+     * cut past the cap with an ellipsis (the useful part is at the front, per the
+     * NotificationDeliveries::recordFailure precedent). A blank reason is stored as null, so a
+     * reader tells "no detail" from an empty string.
+     *
+     * @param ?string $failureReason Raw failure reason
+     * @return ?string Capped reason, or null when there is nothing to record
+     */
+    private function capFailureReason(?string $failureReason): ?string
+    {
+        $trimmed = trim((string)$failureReason);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (mb_strlen($trimmed) > self::FAILURE_REASON_LIMIT) {
+            return mb_substr($trimmed, 0, self::FAILURE_REASON_LIMIT - 1) . '…';
+        }
+
+        return $trimmed;
     }
 
     /**
@@ -217,6 +253,7 @@ final class BackupCreator
             $keep,
             $metadata->status,
             $metadata->warnings,
+            $metadata->failureReason,
         );
 
         $tmpSidecar = $scopeDir . '/.tmp-keep-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
@@ -487,6 +524,7 @@ final class BackupCreator
      * @param int $durationSeconds Wall-clock capture duration
      * @param BackupStatus $status Terminal outcome recorded in the sidecar
      * @param list<string> $warnings Non-fatal warnings recorded in the sidecar
+     * @param ?string $failureReason Failure reason recorded in the sidecar (error records only)
      * @return BackupMetadata Assembled metadata
      */
     private function buildMetadata(
@@ -497,6 +535,7 @@ final class BackupCreator
         int $durationSeconds,
         BackupStatus $status = BackupStatus::SUCCESS,
         array $warnings = [],
+        ?string $failureReason = null,
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
@@ -509,6 +548,7 @@ final class BackupCreator
             false,
             $status,
             $warnings,
+            $failureReason,
         );
     }
 

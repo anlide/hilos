@@ -337,6 +337,7 @@ export {
   isBackupInProgress,
   isBackupDeletable,
   isBackupKeepable,
+  hasBackupFailureDetail,
   HILOS_BACKUP_SCOPES,
   type HilosBackupRow,
   type HilosBackupsContext,

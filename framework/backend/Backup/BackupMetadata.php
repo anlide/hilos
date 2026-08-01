@@ -25,6 +25,7 @@ final class BackupMetadata extends BaseDTO
     public const string keep = 'keep';
     public const string status = 'status';
     public const string warnings = 'warnings';
+    public const string failureReason = 'failureReason';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -37,6 +38,7 @@ final class BackupMetadata extends BaseDTO
      * @param bool $keep Retention pin: true excludes the backup from rotation
      * @param BackupStatus $status Terminal outcome
      * @param list<string> $warnings Non-fatal notes about the run (e.g. schema-seed found no reference tables)
+     * @param ?string $failureReason Why the run failed (error records only); null for success and legacy sidecars
      */
     public function __construct(
         public readonly string $id,
@@ -49,6 +51,7 @@ final class BackupMetadata extends BaseDTO
         public readonly bool $keep,
         public readonly BackupStatus $status,
         public readonly array $warnings = [],
+        public readonly ?string $failureReason = null,
     ) {
     }
 
@@ -81,6 +84,7 @@ final class BackupMetadata extends BaseDTO
             (bool)($data[self::keep] ?? false),
             BackupStatus::fromString((string)($data[self::status] ?? '')) ?? BackupStatus::SUCCESS,
             $warnings,
+            isset($data[self::failureReason]) ? (string)$data[self::failureReason] : null,
         );
     }
 
@@ -103,6 +107,9 @@ final class BackupMetadata extends BaseDTO
             self::keep => $this->keep,
             self::status => $this->status->value,
             self::warnings => $this->warnings,
+            // Always written, including null: an error sidecar keys off it, and a null on a
+            // success record makes the field's absence explicit rather than ambiguous.
+            self::failureReason => $this->failureReason,
         ];
     }
 }

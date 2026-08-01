@@ -12,6 +12,9 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Database\DatabaseConnectionConfig;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
+use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
 
@@ -24,6 +27,26 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackupCreatorTest extends TestCase
 {
+    private ?EnvAccessor $previousEnv = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // recordFailure reads BACKUP_DIR (storage root) and APP_ENV (sidecar base name) off the
+        // env facade; a stub-backed accessor lets the failure-record tests run without a live env.
+        $this->previousEnv = Hilos::$env;
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+        putenv('APP_ENV=test');
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$env = $this->previousEnv;
+        putenv('APP_ENV');
+        putenv('BACKUP_DIR');
+        parent::tearDown();
+    }
+
     public function testABackupIsDatedByItsStartNotItsFinish(): void
     {
         // The id is minted when the run starts, so the record must read the same instant back:
@@ -119,6 +142,56 @@ final class BackupCreatorTest extends TestCase
         $this->expectException(BackupException::class);
 
         (new BackupCreator())->create('../escape', BackupScope::FULL);
+    }
+
+    public function testRecordFailurePublishesAnErrorSidecarCarryingTheReason(): void
+    {
+        $root = $this->makeRoot();
+        putenv('BACKUP_DIR=' . $root);
+
+        (new BackupCreator())->recordFailure(
+            '2026-07-19_10-30-00',
+            BackupScope::FULL,
+            5,
+            'child exited with code 2: mysqldump: connection refused',
+        );
+
+        $sidecar = $this->readErrorSidecar($root, '2026-07-19_10-30-00', BackupScope::FULL);
+        $this->assertSame(BackupStatus::ERROR, $sidecar->status);
+        $this->assertSame(5, $sidecar->durationSeconds);
+        $this->assertSame(
+            'child exited with code 2: mysqldump: connection refused',
+            $sidecar->failureReason,
+        );
+    }
+
+    public function testRecordFailureCapsALongReasonToTheLimitWithAnEllipsis(): void
+    {
+        $root = $this->makeRoot();
+        putenv('BACKUP_DIR=' . $root);
+
+        // A killed dump's stderr can be a wall of text; the tail is cut past the 2000-char cap.
+        (new BackupCreator())->recordFailure('2026-07-19_10-30-01', BackupScope::FULL, 1, str_repeat('x', 2500));
+
+        $reason = $this->readErrorSidecar($root, '2026-07-19_10-30-01', BackupScope::FULL)->failureReason;
+        $this->assertNotNull($reason);
+        $this->assertSame(2000, mb_strlen($reason));
+        $this->assertStringEndsWith('…', $reason);
+    }
+
+    public function testRecordFailureStoresNullWhenThereIsNoReason(): void
+    {
+        $root = $this->makeRoot();
+        putenv('BACKUP_DIR=' . $root);
+
+        (new BackupCreator())->recordFailure('2026-07-19_10-30-02', BackupScope::FULL, 0, null);
+        (new BackupCreator())->recordFailure('2026-07-19_10-30-03', BackupScope::SCHEMA_ONLY, 0, '   ');
+
+        // A blank reason is null, not an empty string, so a reader tells "no detail" apart.
+        $this->assertNull($this->readErrorSidecar($root, '2026-07-19_10-30-02', BackupScope::FULL)->failureReason);
+        $this->assertNull(
+            $this->readErrorSidecar($root, '2026-07-19_10-30-03', BackupScope::SCHEMA_ONLY)->failureReason,
+        );
     }
 
     public function testSetStoredKeepPinsTheSidecarAndPreservesEveryOtherField(): void
@@ -256,6 +329,21 @@ final class BackupCreatorTest extends TestCase
     {
         $path = $root . '/' . $metadata->scope->value . '/'
             . BackupCreator::archiveBaseName($metadata->id, $metadata->env, $metadata->scope) . '.json';
+
+        return BackupMetadata::fromArray(json_decode((string)file_get_contents($path), true));
+    }
+
+    /**
+     * Reads back the error sidecar recordFailure published under the test env.
+     *
+     * @param string $root Backup storage root
+     * @param string $id Backup id the failure was recorded under
+     * @param BackupScope $scope Scope of the failed run
+     * @return BackupMetadata Reloaded error sidecar metadata
+     */
+    private function readErrorSidecar(string $root, string $id, BackupScope $scope): BackupMetadata
+    {
+        $path = $root . '/' . $scope->value . '/' . BackupCreator::archiveBaseName($id, 'test', $scope) . '.json';
 
         return BackupMetadata::fromArray(json_decode((string)file_get_contents($path), true));
     }

@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   formatBackupDuration,
   formatBackupSize,
+  hasBackupFailureDetail,
+  resolveHilosBackupRow,
   type HilosBackupRow,
 } from '../../src/admin/backup/hilosBackups.js'
+import { type TableRow } from '../../src/state/TableRowsStore.js'
 
 function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
   return {
@@ -17,8 +20,16 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     keep: false,
     status: 'success',
     finished: true,
+    failureReason: null,
     ...overrides,
   }
+}
+
+function backupTableRow(
+  rowKey: string,
+  slot: Record<string, unknown> | undefined,
+): TableRow {
+  return { rowKey, slots: slot === undefined ? {} : { backup: slot } }
 }
 
 describe('formatBackupDuration', () => {
@@ -61,5 +72,61 @@ describe('formatBackupSize', () => {
   it('dashes a row with no archive — in progress, or a failure', () => {
     expect(formatBackupSize(row({ finished: false, sizeBytes: 0 }))).toBe('—')
     expect(formatBackupSize(row({ finished: null, sizeBytes: 0 }))).toBe('—')
+  })
+})
+
+describe('resolveHilosBackupRow', () => {
+  it('reads a failure reason from the slot', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        status: 'error',
+        finished: null,
+        failureReason: 'timed out after 30s',
+      }),
+    )
+
+    expect(resolved.failureReason).toBe('timed out after 30s')
+  })
+
+  it('reads a missing reason as null', () => {
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', { status: 'success' }))
+        .failureReason,
+    ).toBeNull()
+  })
+
+  it('reads an empty-string reason as null, so "no detail" is unambiguous', () => {
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', { failureReason: '' }))
+        .failureReason,
+    ).toBeNull()
+  })
+})
+
+describe('hasBackupFailureDetail', () => {
+  it('is true only for a failed backup that carries a reason', () => {
+    expect(
+      hasBackupFailureDetail(
+        row({ finished: null, status: 'error', failureReason: 'boom' }),
+      ),
+    ).toBe(true)
+  })
+
+  it('is false for a failure with no stored reason (a legacy record)', () => {
+    expect(
+      hasBackupFailureDetail(
+        row({ finished: null, status: 'error', failureReason: null }),
+      ),
+    ).toBe(false)
+  })
+
+  it('is false for a successful backup', () => {
+    expect(hasBackupFailureDetail(row({ finished: true }))).toBe(false)
+  })
+
+  it('is false for the in-progress row', () => {
+    expect(
+      hasBackupFailureDetail(row({ finished: false, status: 'running' })),
+    ).toBe(false)
   })
 })
