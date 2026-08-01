@@ -168,8 +168,57 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
     }
 
-    public function testInitiatorNodeRelaysReadyToItsAgent(): void
+    public function testFollowerIgnoresLiftFromANodeOtherThanItsFreezingLeader(): void
     {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onLift('node-y');
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testFollowerIgnoresARepeatQuiesceWhileAlreadyFrozen(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-x', $freeze);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testInitiatorNodeRelaysReadyToItsAgentOnceItsFreezingLeaderConfirms(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onReady('node-x');
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testInitiatorNodeIgnoresReadyFromANodeOtherThanItsFreezingLeader(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->executor->calls = [];
+
+        $this->coordinator->onReady('node-y');
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testInitiatorNodeRelaysReadyOnlyOnceForRepeatedConfirmations(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->executor->calls = [];
+
+        $this->coordinator->onReady('node-x');
         $this->coordinator->onReady('node-x');
 
         $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);

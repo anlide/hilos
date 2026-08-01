@@ -58,6 +58,9 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
     /** @var ?string Node id of the leader that ordered this node's freeze, or null when not frozen */
     private ?string $freezingLeaderId = null;
 
+    /** @var bool True once this node has relayed the current freeze's ready to its initiator agent */
+    private bool $readyRelayed = false;
+
     /**
      * @param string $selfNodeId Id of the node this coordinator runs on
      * @param ProtectedModeMesh $mesh Outbound peer port for the freeze frames
@@ -206,31 +209,67 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
     }
 
     /**
+     * Freezes this follower node and reports back, ignoring a repeat while already frozen.
+     *
+     * A duplicate quiesce is dropped rather than re-run: re-entering {@see ProtectedModeExecutor::enterActivating}
+     * re-rolls the stopped-agent set the lift will resume against an already-emptied roster, so the second
+     * pass would shrink it and strand agents. Mirrors the in-flight guard on {@see onEnable()}.
+     *
      * @param string $fromNodeId Node id of the leader that ordered the freeze
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
+        if ($this->freezingLeaderId !== null) {
+            Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}' — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
+            return;
+        }
+
         $this->freezingLeaderId = $fromNodeId;
+        $this->readyRelayed = false;
         $this->executor->enterActivating($data, null);
         $this->mesh->sendQuiesced($fromNodeId);
     }
 
     /**
+     * Relays the leader's ready to this node's initiator agent, exactly once per freeze.
+     *
+     * Only the leader that froze this node may confirm it, and only the first confirmation runs:
+     * {@see ProtectedModeExecutor::notifyInitiatorReady} lets the initiator start its destructive
+     * operation, so a stray or duplicate ready must not re-fire it.
+     *
      * @param string $fromNodeId Node id of the leader that confirmed the freeze
      */
     public function onReady(string $fromNodeId): void
     {
+        if ($this->freezingLeaderId === null || $fromNodeId !== $this->freezingLeaderId) {
+            Logger::warning("Protected mode: dropping ready from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
+            return;
+        }
+        if ($this->readyRelayed) {
+            return;
+        }
+
+        $this->readyRelayed = true;
         $this->executor->notifyInitiatorReady();
     }
 
     /**
+     * Releases this follower node, but only when the leader that froze it orders the lift.
+     *
+     * Symmetric with the initiator check on {@see onDisable()}: a stray or stale lift from any other
+     * handshaked peer must not thaw the node mid-operation.
+     *
      * @param string $fromNodeId Node id of the leader that lifted the freeze
      */
     public function onLift(string $fromNodeId): void
     {
         if ($this->freezingLeaderId === null) {
             Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen");
+            return;
+        }
+        if ($fromNodeId !== $this->freezingLeaderId) {
+            Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — freeze was ordered by '{$this->freezingLeaderId}'");
             return;
         }
 
