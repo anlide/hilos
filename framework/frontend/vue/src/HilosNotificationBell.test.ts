@@ -15,7 +15,10 @@ function fakeConnection(): {
   sendAction: ReturnType<typeof vi.fn>
 } {
   const sendAction = vi.fn().mockReturnValue(true)
-  return { connection: { sendAction } as unknown as HilosConnection, sendAction }
+  return {
+    connection: { sendAction } as unknown as HilosConnection,
+    sendAction,
+  }
 }
 
 function storeWith(unread: number) {
@@ -78,9 +81,9 @@ describe('HilosNotificationBell', () => {
       props: { connection, store: createHilosNotificationStore() },
     })
 
-    expect(
-      wrapper.find('[data-id="hilos-notification-empty"]').exists(),
-    ).toBe(true)
+    expect(wrapper.find('[data-id="hilos-notification-empty"]').exists()).toBe(
+      true,
+    )
   })
 
   it('marks one read by sending the mark-read action (no optimistic update)', async () => {
@@ -90,9 +93,9 @@ describe('HilosNotificationBell', () => {
       props: { connection, store },
     })
 
-    await wrapper.find('[data-id="hilos-notification-mark-read-1"]').trigger(
-      'click',
-    )
+    await wrapper
+      .find('[data-id="hilos-notification-mark-read-1"]')
+      .trigger('click')
 
     expect(sendAction).toHaveBeenCalledWith(NOTIFICATION_ACTION_MARK_READ, {
       id: 1,
@@ -107,10 +110,13 @@ describe('HilosNotificationBell', () => {
       props: { connection, store: storeWith(1) },
     })
 
-    await wrapper.find('[data-id="hilos-notification-mark-all"]').trigger(
-      'click',
-    )
+    await wrapper
+      .find('[data-id="hilos-notification-mark-all"]')
+      .trigger('click')
 
-    expect(sendAction).toHaveBeenCalledWith(NOTIFICATION_ACTION_MARK_ALL_READ, {})
+    expect(sendAction).toHaveBeenCalledWith(
+      NOTIFICATION_ACTION_MARK_ALL_READ,
+      {},
+    )
   })
 })

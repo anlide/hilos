@@ -120,7 +120,9 @@ let bellMenuSeq = 0
                       }
                     </div>
                     @if (row.body) {
-                      <div class="small text-body-secondary">{{ row.body }}</div>
+                      <div class="small text-body-secondary">
+                        {{ row.body }}
+                      </div>
                     }
                     <div class="small text-body-tertiary">
                       {{ formatTime(row) }}
@@ -185,7 +187,10 @@ export class HilosNotificationBell {
   // JS, so the dropdown owns its own dismissal like HilosDropdown / HilosModal).
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
-    if (this.open() && !this.host.nativeElement.contains(event.target as Node)) {
+    if (
+      this.open() &&
+      !this.host.nativeElement.contains(event.target as Node)
+    ) {
       this.open.set(false)
     }
   }

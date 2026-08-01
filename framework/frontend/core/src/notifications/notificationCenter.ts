@@ -24,7 +24,8 @@ export const NOTIFICATION_SIGNAL_CREATED = 'notification_created'
 export const NOTIFICATION_SIGNAL_READ = 'notification_read'
 
 /** Server→client signal `type` carrying the snapshot reply (PHP `HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS`). */
-export const NOTIFICATION_SIGNAL_SNAPSHOT = 'subscription_page_hilos_notifications'
+export const NOTIFICATION_SIGNAL_SNAPSHOT =
+  'subscription_page_hilos_notifications'
 
 /** Client→server action requesting the recipient's snapshot (PHP `NotificationAction::SYNC`). */
 export const NOTIFICATION_ACTION_SYNC = 'notification_sync'
@@ -82,7 +83,9 @@ const notificationSnapshotSchema = z.looseObject({
   unreadCount: z.number().int(),
 })
 
-export type HilosNotificationSnapshot = z.infer<typeof notificationSnapshotSchema>
+export type HilosNotificationSnapshot = z.infer<
+  typeof notificationSnapshotSchema
+>
 
 /**
  * The notification signal schemas keyed for a connection's `projectSchemas`, so

@@ -121,7 +121,10 @@ describe('notification store', () => {
 
   it('marks one row read and decrements the count once', () => {
     const store = createHilosNotificationStore()
-    store.ingestSnapshot({ recent: [row({ id: 1 }), row({ id: 2 })], unreadCount: 2 })
+    store.ingestSnapshot({
+      recent: [row({ id: 1 }), row({ id: 2 })],
+      unreadCount: 2,
+    })
 
     store.onRead(1)
     expect(store.notifications.get()[0]?.readAt).not.toBeNull()
@@ -134,7 +137,10 @@ describe('notification store', () => {
 
   it('marks all rows read and zeroes the count', () => {
     const store = createHilosNotificationStore()
-    store.ingestSnapshot({ recent: [row({ id: 1 }), row({ id: 2 })], unreadCount: 2 })
+    store.ingestSnapshot({
+      recent: [row({ id: 1 }), row({ id: 2 })],
+      unreadCount: 2,
+    })
 
     store.onRead('all')
 
@@ -170,7 +176,10 @@ describe('notification binder', () => {
   function sentFrames(): { type: string; group?: string; action?: string }[] {
     return MockWebSocket.last.sent
       .filter((raw) => raw !== 'ping')
-      .map((raw) => JSON.parse(raw) as { type: string; group?: string; action?: string })
+      .map(
+        (raw) =>
+          JSON.parse(raw) as { type: string; group?: string; action?: string },
+      )
   }
 
   it('joins the per-user group and requests a snapshot once the user id lands', () => {
@@ -189,7 +198,9 @@ describe('notification binder', () => {
       group: notificationGroupName(42),
     })
     expect(
-      frames.some((f) => f.type === 'action' && f.action === NOTIFICATION_ACTION_SYNC),
+      frames.some(
+        (f) => f.type === 'action' && f.action === NOTIFICATION_ACTION_SYNC,
+      ),
     ).toBe(true)
   })
 

@@ -247,8 +247,9 @@ export class HilosCommunicationsChannelPage {
     }
 
     return (
-      (this.router.currentRoute.get().params.channelId as string | undefined) ??
-      ''
+      (this.router.currentRoute.get().params['channelId'] as
+        | string
+        | undefined) ?? ''
     )
   })
   protected readonly channel = hilosSignal(this.channelSignal)
