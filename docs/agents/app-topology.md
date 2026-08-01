@@ -19,8 +19,11 @@ table contexts when they can read the project registry.
   value.
 - `Hilos::AGENTS` registers agent runtime bindings keyed by each worker class
   `::AGENT_TYPE` value. Each entry declares `AgentRegistryKey::WORKER`,
-  `AgentRegistryKey::DAEMON`, and optional `AgentRegistryKey::INDEXED`.
-  `TopologyAgentFactory` creates worker and daemon instances from this registry.
+  `AgentRegistryKey::DAEMON`, and optionally `AgentRegistryKey::INDEXED` (a
+  sharded pool keyed by `agentIndex`) or `AgentRegistryKey::PER_NODE` (an
+  every-node singleton started on each node as its workers become ready). The
+  two placement flags are mutually exclusive. `TopologyAgentFactory` creates
+  worker and daemon instances from this registry.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.
@@ -96,7 +99,10 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
    routing-only strings when the page handler needs a typed inner payload.
 6. For a new agent, add worker and daemon classes to `Hilos::AGENTS` using
    `SomeAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => SomeAgent::class, AgentRegistryKey::DAEMON => SomeAgentDaemon::class]`.
-   Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`.
+   Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`,
+   or `AgentRegistryKey::PER_NODE => true` for an every-node singleton (started
+   on each node via `WorkerServer::onInitialWorkersReady()`, e.g. the per-node
+   log rotation agent). The two flags cannot be combined.
 7. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
    `signal name => SignalDataInterface` class for singleton typed signals. For

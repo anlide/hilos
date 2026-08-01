@@ -15,6 +15,8 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -212,14 +214,28 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * This is a per-node hook: it fires on every node when the minimum number of
      * registered workers (both regular and monopolistic) has been reached, whether
-     * or not the node is the cluster leader. It no longer starts cluster-singleton
+     * or not the node is the cluster leader. It does not start cluster-singleton
      * agents — that is the leader-gated {@see onBecameSingletonHost()}, driven by the
-     * daemon's ensure-once. The base is a no-op, reserved for future per-node agents;
-     * child classes may override for local, non-singleton setup.
+     * daemon's ensure-once. The base starts every agent flagged
+     * {@see AgentRegistryKey::PER_NODE} in the project registry (an empty per-node set
+     * is a normal no-op); a per-agent start failure is contained and logged so it never
+     * strands the others. Child classes may override for local, non-singleton setup,
+     * calling parent::onInitialWorkersReady() first.
      */
     protected function onInitialWorkersReady(): void
     {
-        // No-op: cluster-singleton agents start in onBecameSingletonHost() on the leader.
+        foreach (Hilos::appClass()::AGENTS as $agentType => $registryEntry) {
+            if (!AgentRegistry::startsOnEveryNode($registryEntry)) {
+                continue;
+            }
+
+            try {
+                $this->startAgent($agentType, null);
+            } catch (\Throwable $throwable) {
+                // Contain a per-node start failure so the remaining per-node agents still start.
+                Logger::error("Failed to start per-node agent {$agentType}: " . $throwable->getMessage());
+            }
+        }
     }
 
     /**
