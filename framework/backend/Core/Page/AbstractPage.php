@@ -11,6 +11,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
@@ -51,6 +52,18 @@ abstract class AbstractPage
      * ({@see \Hilos\Core\Browser\Context\BrowserContext::resolveActionUserId}).
      */
     public const array AUTH_ACTIONS = [];
+
+    /**
+     * Action names on this page that the anti-abuse layer rate-limits (HIL-420).
+     *
+     * The action dispatcher counts attempts per (scope, identity, action) on a
+     * listed action and, once the caller trips the window ladder or sits under a
+     * durable block, denies it with an {@see ActionRateLimitedException} before
+     * onAction runs — the framework never sleeps a single-threaded worker. A page
+     * declares its expensive auth/detection actions here; the throttle is
+     * framework-owned and activatable, so an empty list opts the page out.
+     */
+    public const array THROTTLED_ACTIONS = [];
 
     /**
      * Non-action signal routes owned by this page, keyed by signal type.
@@ -302,6 +315,7 @@ abstract class AbstractPage
      * @param string $requestId Client-minted request id to echo back for correlation
      * @param string $reason Human-readable error message exposed to the client
      * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null when unclassified
+     * @param ?int $retryAfter Seconds the caller should wait before retrying (rate_limited failures), or null
      */
     public function sendActionFail(
         string $acceptKey,
@@ -309,13 +323,14 @@ abstract class AbstractPage
         string $requestId,
         string $reason,
         ?string $errorCode = null,
+        ?int $retryAfter = null,
     ): void {
         // A failed action carries no success text; drop any the handler set before throwing.
         $this->pendingActionSuccessMessage = null;
         $this->sendToUser(
             SignalConstants::ACTION_ERROR,
             $acceptKey,
-            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode),
+            new PageActionErrorSignalData($action, $reason, $requestId, $errorCode, $retryAfter),
         );
     }
 

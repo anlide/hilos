@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -241,7 +242,12 @@ class PageSignalRouter
                 ],
             );
 
-            $errorCode = $e instanceof ActionUnauthorizedException ? $e->errorCode : null;
+            $errorCode = match (true) {
+                $e instanceof ActionRateLimitedException => $e->errorCode,
+                $e instanceof ActionUnauthorizedException => $e->errorCode,
+                default => null,
+            };
+            $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
             if ($data->requestId !== null) {
                 $pageInstance->sendActionFail(
                     $data->acceptKey,
@@ -249,6 +255,7 @@ class PageSignalRouter
                     $data->requestId,
                     self::clientReason($e),
                     $errorCode,
+                    $retryAfter,
                 );
             } else {
                 $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
