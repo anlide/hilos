@@ -14,6 +14,7 @@ import {
   createHilosBackupsTable,
   formatBackupDuration,
   formatBackupSize,
+  hasBackupFailureDetail,
   HILOS_BACKUP_SCOPES,
   HilosPages,
   isBackupDeletable,
@@ -109,6 +110,17 @@ function openDelete(row: HilosBackupRow): void {
 
 function closeDelete(): void {
   deleteOpen.value = false
+}
+
+// Failure-detail dialog: a read-only view of a failed backup's stored reason. It
+// holds a snapshot of the row it opened on, so a parallel delete or rotation does
+// not close it; the text is already in the row, so there is no server request.
+const detailsOpen = ref(false)
+const detailsRow = ref<HilosBackupRow | null>(null)
+
+function openDetails(row: HilosBackupRow): void {
+  detailsRow.value = row
+  detailsOpen.value = true
 }
 
 async function submitDelete(): Promise<void> {
@@ -213,6 +225,17 @@ async function submitDelete(): Promise<void> {
         </td>
         <td class="text-end">
           <button
+            v-if="hasBackupFailureDetail(row)"
+            type="button"
+            class="btn btn-sm btn-outline-secondary me-1"
+            title="Show failure reason"
+            aria-label="Show failure reason"
+            :data-id="`hilos-backup-details-${row.id}`"
+            @click="openDetails(row)"
+          >
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+          </button>
+          <button
             v-if="isBackupDeletable(row)"
             type="button"
             class="btn btn-sm btn-outline-danger"
@@ -258,6 +281,28 @@ async function submitDelete(): Promise<void> {
         >
           Delete
         </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="detailsOpen"
+      :title="detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'"
+    >
+      <pre
+        class="mb-0 small text-break"
+        style="max-height: 60vh; overflow-y: auto"
+        data-id="hilos-backup-details-text"
+        >{{ detailsRow?.failureReason }}</pre
+      >
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-id="hilos-backup-details-close"
+          @click="requestClose"
+        >
+          Close
+        </button>
       </template>
     </HilosModal>
   </HilosAdminPage>

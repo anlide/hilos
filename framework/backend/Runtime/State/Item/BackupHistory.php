@@ -30,6 +30,7 @@ final class BackupHistory extends RtState
     public const string durationSeconds = 'durationSeconds';
     public const string keep = 'keep';
     public const string status = 'status';
+    public const string failureReason = 'failureReason';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -58,6 +59,9 @@ final class BackupHistory extends RtState
     /** Status value ({@see \Hilos\Backup\BackupStatus}). */
     public string $status = '';
 
+    /** Why the run failed (error rows only); null for success rows and legacy sidecars. */
+    public ?string $failureReason = null;
+
     /**
      * Builds a history row from a scanned sidecar's metadata.
      *
@@ -76,6 +80,7 @@ final class BackupHistory extends RtState
         $instance->durationSeconds = $metadata->durationSeconds;
         $instance->keep = $metadata->keep;
         $instance->status = $metadata->status->value;
+        $instance->failureReason = $metadata->failureReason;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -103,6 +108,7 @@ final class BackupHistory extends RtState
         $instance->durationSeconds = (int)($row[self::durationSeconds] ?? 0);
         $instance->keep = (bool)($row[self::keep] ?? false);
         $instance->status = (string)($row[self::status] ?? '');
+        $instance->failureReason = isset($row[self::failureReason]) ? (string)$row[self::failureReason] : null;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -148,6 +154,9 @@ final class BackupHistory extends RtState
         if (array_key_exists(self::status, $diff)) {
             $this->status = (string)$diff[self::status];
         }
+        if (array_key_exists(self::failureReason, $diff)) {
+            $this->failureReason = $diff[self::failureReason] === null ? null : (string)$diff[self::failureReason];
+        }
     }
 
     /**
@@ -184,6 +193,7 @@ final class BackupHistory extends RtState
             self::durationSeconds => $this->durationSeconds,
             self::keep => $this->keep,
             self::status => $this->status,
+            self::failureReason => $this->failureReason,
         ];
     }
 }

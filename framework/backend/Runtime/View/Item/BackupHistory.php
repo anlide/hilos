@@ -29,6 +29,7 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read int $durationSeconds Wall-clock capture duration in seconds
  * @property-read bool $keep Retention pin: true excludes the backup from rotation
  * @property-read string $status Status value
+ * @property-read ?string $failureReason Why the run failed (error rows only); null otherwise
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -43,11 +44,11 @@ final class BackupHistory extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|bool|array<int, BackupConnectionMeta>|BackupHistoryActions Property value
+     * @return string|int|bool|array<int, BackupConnectionMeta>|BackupHistoryActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|bool|array|BackupHistoryActions
+    public function __get(string $name): string|int|bool|array|BackupHistoryActions|null
     {
         return match ($name) {
             StateBackupHistory::id => $this->_state->id,
@@ -59,6 +60,7 @@ final class BackupHistory extends RtItem
             StateBackupHistory::durationSeconds => $this->_state->durationSeconds,
             StateBackupHistory::keep => $this->_state->keep,
             StateBackupHistory::status => $this->_state->status,
+            StateBackupHistory::failureReason => $this->_state->failureReason,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

@@ -17,6 +17,7 @@ import {
   createHilosBackupsTable,
   formatBackupDuration,
   formatBackupSize,
+  hasBackupFailureDetail,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -145,6 +146,21 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     }
   }
 
+  // Failure-detail dialog: a read-only view of a failed backup's stored reason. It
+  // holds a snapshot of the row it opened on, so a parallel delete or rotation does
+  // not close it; the text is already in the row, so there is no server request.
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [detailsRow, setDetailsRow] = useState<HilosBackupRow | null>(null)
+
+  function openDetails(row: HilosBackupRow): void {
+    setDetailsRow(row)
+    setDetailsOpen(true)
+  }
+
+  function closeDetails(): void {
+    setDetailsOpen(false)
+  }
+
   return (
     <HilosAdminPage page={HilosPages.BACKUP}>
       <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
@@ -221,6 +237,18 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               )}
             </td>
             <td className="text-end">
+              {hasBackupFailureDetail(row) ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary me-1"
+                  title="Show failure reason"
+                  aria-label="Show failure reason"
+                  data-id={`hilos-backup-details-${row.id}`}
+                  onClick={() => openDetails(row)}
+                >
+                  <i className="bi bi-exclamation-circle" aria-hidden="true" />
+                </button>
+              ) : null}
               {isBackupDeletable(row) ? (
                 <button
                   type="button"
@@ -274,6 +302,32 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             <code>{deleteRow.id}</code>
           </p>
         ) : null}
+      </HilosModal>
+
+      <HilosModal
+        open={detailsOpen}
+        title={
+          detailsRow ? `Backup failed · ${detailsRow.id}` : 'Backup failed'
+        }
+        onClose={closeDetails}
+        actions={({ requestClose }) => (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            data-id="hilos-backup-details-close"
+            onClick={requestClose}
+          >
+            Close
+          </button>
+        )}
+      >
+        <pre
+          className="mb-0 small text-break"
+          style={{ maxHeight: '60vh', overflowY: 'auto' }}
+          data-id="hilos-backup-details-text"
+        >
+          {detailsRow?.failureReason}
+        </pre>
       </HilosModal>
     </HilosAdminPage>
   )

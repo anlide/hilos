@@ -24,6 +24,7 @@ import {
   createHilosBackupsTable,
   formatBackupDuration,
   formatBackupSize,
+  hasBackupFailureDetail,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -153,6 +154,18 @@ const COLUMNS: HilosTableColumn[] = [
             }
           </td>
           <td class="text-end">
+            @if (hasFailureDetail(row)) {
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary me-1"
+                title="Show failure reason"
+                aria-label="Show failure reason"
+                [attr.data-id]="'hilos-backup-details-' + row.id"
+                (click)="openDetails(row)"
+              >
+                <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+              </button>
+            }
             @if (isDeletable(row)) {
               <button
                 type="button"
@@ -205,6 +218,29 @@ const COLUMNS: HilosTableColumn[] = [
           </button>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="detailsOpen()"
+        (openChange)="detailsOpen.set($event)"
+        [title]="detailsTitle()"
+      >
+        <pre
+          class="mb-0 small text-break"
+          style="max-height: 60vh; overflow-y: auto"
+          data-id="hilos-backup-details-text"
+          >{{ detailsRow()?.failureReason }}</pre
+        >
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="hilos-backup-details-close"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -217,6 +253,7 @@ export class HilosBackupPage {
   protected readonly scopes = HILOS_BACKUP_SCOPES
   protected readonly isKeepable = isBackupKeepable
   protected readonly isDeletable = isBackupDeletable
+  protected readonly hasFailureDetail = hasBackupFailureDetail
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context()),
@@ -243,6 +280,17 @@ export class HilosBackupPage {
     const row = this.deleteRow()
 
     return row ? `Delete · ${row.id}` : 'Delete backup'
+  })
+
+  // Failure-detail dialog: a read-only view of a failed backup's stored reason. It
+  // holds a snapshot of the row it opened on, so a parallel delete or rotation does
+  // not close it; the text is already in the row, so there is no server request.
+  protected readonly detailsOpen = signal(false)
+  protected readonly detailsRow = signal<HilosBackupRow | null>(null)
+  protected readonly detailsTitle = computed(() => {
+    const row = this.detailsRow()
+
+    return row ? `Backup failed · ${row.id}` : 'Backup failed'
   })
 
   constructor() {
@@ -279,6 +327,11 @@ export class HilosBackupPage {
     this.del.clearError()
     this.deleteRow.set(row)
     this.deleteOpen.set(true)
+  }
+
+  protected openDetails(row: HilosBackupRow): void {
+    this.detailsRow.set(row)
+    this.detailsOpen.set(true)
   }
 
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
