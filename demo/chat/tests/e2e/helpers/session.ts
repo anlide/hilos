@@ -8,7 +8,10 @@ import { expect, type Locator, type Page } from '@playwright/test'
 // auto-registration that no longer happens. The auth surface itself is exercised
 // end to end by auth.spec.ts; here it is only the means to a signed-in session.
 
-/** A valid password (>= the 8-char minimum the surface and backend enforce). */
+/** A valid password (>= the 8-char minimum the surface and backend enforce). This same
+ * value is the default password of the `test:user:seed` CLI (DEFAULT_PASSWORD in
+ * UserTestSeedCommand), so a spec can log in as any seeded fixture user with it — the
+ * way settings.spec.ts pins the e2e_orphan_delete key to its seed command. */
 export const PASSWORD = 'correct horse battery'
 
 /** A fresh, globally-unique email so parallel specs and retries never collide on

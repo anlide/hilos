@@ -187,6 +187,46 @@ final class Identities extends DbCollection
     }
 
     /**
+     * Creates an unverified `password`-type identity from a precomputed hash (HIL-327).
+     *
+     * Bulk-seed write path of {@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}: the
+     * read-facing sibling of {@see createPasswordIdentity()} that lets a fixture seeding
+     * many users pay the bcrypt cost once and reuse the hash. Delegates the hash-at-rest
+     * insert to the object collection's
+     * {@see ObjectIdentities::createPasswordIdentityWithHash()} primitive and returns the
+     * read-facing view item for the new row. The hash is passed straight through and
+     * never re-crosses this boundary, mirroring the delegation in
+     * {@see createPasswordIdentity()}.
+     *
+     * @param int $userId Owning user id
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param string $passwordHash Precomputed `password_hash()` value to store as the secret
+     * @return Identity The created identity's read-facing Db item
+     * @throws EmptyValueException When identifier is empty
+     * @throws DuplicateValueException When an identity already exists for (password, identifier)
+     * @throws DatabaseException On database error while creating the identity
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): Identity
+    {
+        $objectIdentity = $this->objectCollection->createPasswordIdentityWithHash($userId, $identifier, $passwordHash);
+
+        $id = $objectIdentity->id;
+        if ($id === null) {
+            throw new DatabaseException('Identity insert did not assign an id');
+        }
+
+        /** @var ?Identity $identity */
+        $identity = $this->getItemForKey($id);
+        if ($identity === null) {
+            throw new DatabaseException('Created identity is not available on the read-facing collection');
+        }
+
+        return $identity;
+    }
+
+    /**
      * Creates a verified `oauth`-type identity for a user (HIL-281).
      *
      * External-login write path of the identity layer: delegates the

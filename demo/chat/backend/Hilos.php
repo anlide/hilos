@@ -138,10 +138,12 @@ use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\HilosException;
 use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotationAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
@@ -472,6 +474,25 @@ final class Hilos extends \Hilos\Hilos
             ],
         ],
     ];
+
+    /**
+     * Creates a fixture user in the chat users collection and returns its id.
+     *
+     * Project side of the {@see \Hilos\Hilos::createFixtureUser()} seam (test-only user
+     * seeding): the framework does not know the project's users collection, so this
+     * registers that collection as a truth source (the CLI has no agent) and creates the
+     * row through the existing name-only create path.
+     *
+     * @param string $displayName Display name for the seeded user
+     * @return ?int Created user id
+     * @throws HilosException When the user write fails
+     */
+    public static function createFixtureUser(string $displayName): ?int
+    {
+        TruthSourceRegistry::register(ChatDbContext::users, true, 'test-cli');
+
+        return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
+    }
 
     /**
      * Creates the chat database context.

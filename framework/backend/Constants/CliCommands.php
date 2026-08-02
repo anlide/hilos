@@ -74,4 +74,7 @@ final class CliCommands
 
     /** @var string Command: Resolve an LLM profile and optionally probe its endpoint */
     public const string LLM_PING = 'llm:ping';
+
+    /** @var string Command: Bulk-seed N fixture users with password identities (test-only) */
+    public const string USER_TEST_SEED = 'test:user:seed';
 }

@@ -71,16 +71,11 @@ final class Identities extends Objects
     /**
      * Creates a `password`-type identity for a user with a freshly hashed secret.
      *
-     * Register write path of the identity layer (HIL-164), symmetric with the
-     * verify/rehash primitives on {@see ObjectIdentity}: the plaintext is hashed
-     * here and the hash is written with a targeted query, so the secret is minted
-     * and stored entirely inside the layer and never reaches the ORM columns, the
-     * object/view surface, or the cross-worker sync bus. Uniqueness is per
-     * (type, identifier); a caller must lowercase the email before calling.
-     *
-     * The row is first inserted through the ORM (which carries the non-secret
-     * columns and assigns the id) and the hash is then set with a follow-up
-     * UPDATE, the same split the rehash primitive uses.
+     * Register write path of the identity layer (HIL-164): a thin wrapper that hashes
+     * the plaintext with {@see PASSWORD_DEFAULT} and delegates to
+     * {@see createPasswordIdentityWithHash()}, which owns the write. Existing callers
+     * (registration, etc.) keep their contract — secret in, hashed and stored inside
+     * the layer. A caller must lowercase the email before calling.
      *
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
@@ -92,8 +87,40 @@ final class Identities extends Objects
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): ObjectIdentity
     {
-        if ($identifier === '' || $plainSecret === '') {
+        if ($plainSecret === '') {
             throw new EmptyValueException('Identity identifier and secret are required');
+        }
+
+        return $this->createPasswordIdentityWithHash($userId, $identifier, password_hash($plainSecret, PASSWORD_DEFAULT));
+    }
+
+    /**
+     * Creates an unverified `password`-type identity from a precomputed hash.
+     *
+     * Bulk-seed write path ({@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}):
+     * identical to {@see createPasswordIdentity()} except the caller supplies the
+     * already-computed `password_hash()` value, so a fixture that seeds many users pays
+     * the bcrypt cost once and reuses the hash for all of them. Symmetric with the
+     * verify/rehash primitives on {@see ObjectIdentity}: the row is first inserted
+     * through the ORM (which carries the non-secret columns and assigns the id) and the
+     * hash is then written with a follow-up parameterized UPDATE, the same split the
+     * rehash primitive uses, so the secret never reaches the ORM columns, the
+     * object/view surface, or the cross-worker sync bus. `verified` stays false, exactly
+     * as after a real password registration. Uniqueness is per (type, identifier); a
+     * caller must lowercase the email before calling.
+     *
+     * @param int $userId Owning user id
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param string $passwordHash Precomputed `password_hash()` value to store as the secret
+     * @return ObjectIdentity The created identity object
+     * @throws EmptyValueException When identifier is empty
+     * @throws DuplicateValueException When an identity already exists for (password, identifier)
+     * @throws DatabaseException If the insert or secret write query fails
+     */
+    public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): ObjectIdentity
+    {
+        if ($identifier === '') {
+            throw new EmptyValueException('Identity identifier is required');
         }
 
         if ($this->findByIdentity(IdentityType::PASSWORD, $identifier) !== null) {
@@ -113,7 +140,7 @@ final class Identities extends Objects
         }
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string(password_hash($plainSecret, PASSWORD_DEFAULT)));
+        $params->add(SqlParam::string($passwordHash));
         $params->add(SqlParam::int($id));
         Database::sql(
             'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',

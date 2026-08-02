@@ -207,6 +207,28 @@ abstract class Hilos
     }
 
     /**
+     * Creates a fixture user with the given display name and returns its id, or null
+     * when the project does not support seeding users.
+     *
+     * Minimal seam for the test-only {@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}:
+     * the user table is still project-owned, so the framework cannot create a user row
+     * itself. The base returns null — a project that never wired the seam (a demo with
+     * no user table) cannot be seeded, and the command reports that instead of failing.
+     * A project overrides this to register its users collection as a truth source and
+     * create the row. Kept deliberately narrow (one display name in, an id out) so it
+     * dissolves in a single line once the user table moves into the framework, rather
+     * than growing into an API. Resolve through {@see appClass()} so a bare `Hilos::`
+     * call-site reaches the project override.
+     *
+     * @param string $displayName Display name for the seeded user
+     * @return ?int Created user id, or null when the project does not support fixture users
+     */
+    public static function createFixtureUser(string $displayName): ?int
+    {
+        return null;
+    }
+
+    /**
      * Returns the concrete project facade class captured at init.
      *
      * Framework code reaches project-overridden topology constants through this

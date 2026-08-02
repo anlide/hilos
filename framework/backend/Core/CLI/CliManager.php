@@ -27,6 +27,7 @@ use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
 use Hilos\Database\DatabaseException;
 
@@ -91,6 +92,7 @@ class CliManager
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
+        $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
