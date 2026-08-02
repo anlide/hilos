@@ -31,6 +31,7 @@ final class BackupHistory extends RtState
     public const string keep = 'keep';
     public const string status = 'status';
     public const string failureReason = 'failureReason';
+    public const string dumpBytes = 'dumpBytes';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -63,6 +64,13 @@ final class BackupHistory extends RtState
     public ?string $failureReason = null;
 
     /**
+     * Uncompressed dump volume in bytes; 0 for error rows and legacy sidecars. The field must
+     * reach runtime because the space guard estimates a run's size from the index, not from the
+     * sidecars on disk. Not carried into the browser table: the operator sees the archive size.
+     */
+    public int $dumpBytes = 0;
+
+    /**
      * Builds a history row from a scanned sidecar's metadata.
      *
      * @param BackupMetadata $metadata Sidecar metadata
@@ -81,6 +89,7 @@ final class BackupHistory extends RtState
         $instance->keep = $metadata->keep;
         $instance->status = $metadata->status->value;
         $instance->failureReason = $metadata->failureReason;
+        $instance->dumpBytes = $metadata->dumpBytes;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -109,6 +118,7 @@ final class BackupHistory extends RtState
         $instance->keep = (bool)($row[self::keep] ?? false);
         $instance->status = (string)($row[self::status] ?? '');
         $instance->failureReason = isset($row[self::failureReason]) ? (string)$row[self::failureReason] : null;
+        $instance->dumpBytes = (int)($row[self::dumpBytes] ?? 0);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -157,6 +167,9 @@ final class BackupHistory extends RtState
         if (array_key_exists(self::failureReason, $diff)) {
             $this->failureReason = $diff[self::failureReason] === null ? null : (string)$diff[self::failureReason];
         }
+        if (array_key_exists(self::dumpBytes, $diff)) {
+            $this->dumpBytes = (int)$diff[self::dumpBytes];
+        }
     }
 
     /**
@@ -194,6 +207,7 @@ final class BackupHistory extends RtState
             self::keep => $this->keep,
             self::status => $this->status,
             self::failureReason => $this->failureReason,
+            self::dumpBytes => $this->dumpBytes,
         ];
     }
 }

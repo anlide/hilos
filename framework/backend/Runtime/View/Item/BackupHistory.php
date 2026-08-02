@@ -30,6 +30,7 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read bool $keep Retention pin: true excludes the backup from rotation
  * @property-read string $status Status value
  * @property-read ?string $failureReason Why the run failed (error rows only); null otherwise
+ * @property-read int $dumpBytes Uncompressed dump volume in bytes; 0 for error and legacy rows
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -61,6 +62,7 @@ final class BackupHistory extends RtItem
             StateBackupHistory::keep => $this->_state->keep,
             StateBackupHistory::status => $this->_state->status,
             StateBackupHistory::failureReason => $this->_state->failureReason,
+            StateBackupHistory::dumpBytes => $this->_state->dumpBytes,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

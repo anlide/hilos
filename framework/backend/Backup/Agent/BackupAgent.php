@@ -18,6 +18,9 @@ use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupSpaceDecision;
+use Hilos\Backup\BackupSpaceGuard;
+use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Constants\EnvConstants;
@@ -511,11 +514,22 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
         $cliEntry = Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY);
-        $missing = self::missingCreateConfig(Hilos::$env->string(EnvConstants::BACKUP_DIR), $cliEntry);
+        $missing = self::missingCreateConfig($root, $cliEntry);
         if ($missing !== []) {
             $this->logAgentError('Cannot start backup: missing configuration (' . implode(', ', $missing) . ')');
 
+            return;
+        }
+
+        // A backup must not fill the disk it protects. Prune first so space freed by rotation counts
+        // toward this run (rotation ran only after a successful run before, a deadlock when the disk
+        // was already full), then refuse up front a run that will not fit. A refusal is recorded like
+        // a failure below and spawns no child. Prune is swallow-and-log; the gate never crashes the
+        // tick (an unmeasurable filesystem or an unreadable policy proceeds).
+        $this->pruneHistory();
+        if (!$this->admitBySpace($scope, $root, $initiatorAcceptKey)) {
             return;
         }
 
@@ -572,6 +586,104 @@ final class BackupAgent extends AbstractAgent
         }
 
         return $missing;
+    }
+
+    /**
+     * Decides whether a run may proceed against free space, recording a refusal as a failure.
+     *
+     * Measures free space, asks the pure {@see BackupSpaceGuard} to admit or refuse, and on a
+     * refusal allocates an id and writes an error record ({@see refuseBackup()}) so the run
+     * explains itself in the backup list rather than vanishing. Two states never stop a backup,
+     * matching the "keep taking backups" bias: a filesystem whose free space cannot be measured,
+     * and an unreadable space policy - both are logged and treated as admit. Returns true when the
+     * caller should go on to spawn the child.
+     *
+     * @param BackupScope $scope Scope of the run being decided
+     * @param string $root Backup storage root (its filesystem is the one measured)
+     * @param ?string $initiator Connection to tell when a refusal is recorded, or null when unattended
+     * @return bool True to proceed with the run; false when it was refused and recorded
+     */
+    private function admitBySpace(BackupScope $scope, string $root, ?string $initiator): bool
+    {
+        $freeBytes = $this->freeSpaceAt($root);
+        if ($freeBytes === false) {
+            $this->logAgentError("Cannot measure free space at {$root}; proceeding with backup");
+
+            return true;
+        }
+
+        try {
+            $decision = new BackupSpaceGuard()->decide(
+                $freeBytes,
+                $this->indexRows(),
+                $scope,
+                BackupSpacePolicy::fromEnv(),
+            );
+        } catch (Throwable $e) {
+            $this->logAgentError('Cannot evaluate backup space policy; proceeding with backup: ' . $e->getMessage());
+
+            return true;
+        }
+
+        if ($decision->allowed) {
+            return true;
+        }
+
+        $this->refuseBackup($scope, $initiator, $decision);
+
+        return false;
+    }
+
+    /**
+     * Records a refused run: allocates an id and writes an error sidecar with the guard's reason.
+     *
+     * Takes the same recording path a real failure does ({@see recordFailure()}), with a zero
+     * duration and no child, so the refusal is a bounded error row that explains itself through the
+     * HIL-429 failure-detail modal. A manual initiator still gets the one-line ACTION_ERROR toast.
+     *
+     * @param BackupScope $scope Scope of the refused run
+     * @param ?string $initiator Connection to tell, or null when the run was unattended
+     * @param BackupSpaceDecision $decision Refusal verdict carrying the ready-made reason
+     */
+    private function refuseBackup(BackupScope $scope, ?string $initiator, BackupSpaceDecision $decision): void
+    {
+        $id = self::generateBackupId(new DateTimeImmutable());
+        $reason = $decision->reason ?? 'insufficient free space';
+        $this->logAgentError("Backup {$id} refused: {$reason}");
+        $this->sendFailureNotice($initiator, $id, $reason);
+        $this->recordFailure($id, $scope, 0, $reason);
+        // Index the error sidecar just written so the refusal appears in the backup list at once.
+        $this->refreshHistory();
+    }
+
+    /**
+     * Free bytes on the filesystem holding the backup root, or false when it cannot be measured.
+     *
+     * Walks up to the nearest existing ancestor when the root has not been created yet (a first
+     * backup on a fresh install), because `disk_free_space()` needs an existing path. A false
+     * result is "cannot measure", which the caller treats as proceed, not stop.
+     *
+     * @param string $path Backup storage root
+     * @return int|false Free bytes, or false when no existing ancestor can be measured
+     */
+    private function freeSpaceAt(string $path): int|false
+    {
+        $dir = $path;
+        while ($dir !== '' && !is_dir($dir)) {
+            $parent = dirname($dir);
+            if ($parent === $dir) {
+                break;
+            }
+            $dir = $parent;
+        }
+
+        if ($dir === '' || !is_dir($dir)) {
+            return false;
+        }
+
+        $free = @disk_free_space($dir);
+
+        return $free === false ? false : (int)$free;
     }
 
     /**
@@ -747,13 +859,28 @@ final class BackupAgent extends AbstractAgent
      */
     private function notifyInitiatorOfFailure(string $id, string $detail): void
     {
-        if ($this->currentInitiator === null) {
+        $this->sendFailureNotice($this->currentInitiator, $id, $detail);
+    }
+
+    /**
+     * Sends the addressed create-failure toast to an initiator, if there is one.
+     *
+     * Shared by a failed run ({@see notifyInitiatorOfFailure()}) and an up-front refusal
+     * ({@see refuseBackup()}). An unattended run (schedule, CLI) has no initiator and tells nobody.
+     *
+     * @param ?string $initiator Connection to tell, or null when the run was unattended
+     * @param string $id Backup id the notice is about
+     * @param string $detail Failure detail (first line is shown, capped)
+     */
+    private function sendFailureNotice(?string $initiator, string $id, string $detail): void
+    {
+        if ($initiator === null) {
             return;
         }
 
         $this->sendToUser(
             SignalConstants::ACTION_ERROR,
-            $this->currentInitiator,
+            $initiator,
             new PageActionErrorSignalData(
                 HilosSignalConstants::BACKUP_CREATE,
                 self::failureNotice($id, $detail),
@@ -879,6 +1006,32 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Snapshots the runtime backup index as a plain list of state rows.
+     *
+     * The single reader used by both rotation ({@see pruneHistory()}) and the space estimate
+     * ({@see admitBySpace()}): the RT collection is walked once, non-backup entries skipped, so
+     * both consumers see the same set. Empty when runtime state or the collection is unavailable.
+     *
+     * @return list<BackupHistory> Current backup index rows
+     */
+    private function indexRows(): array
+    {
+        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
+        if (!$histories instanceof BackupHistories) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($histories as $row) {
+            if ($row instanceof BackupHistory) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * Applies the retention policy to the runtime index: deletes pruned backups and their rows.
      *
      * Runs against the just-rebuilt index (files=truth, RT=index): {@see BackupPruner} plans the
@@ -896,16 +1049,9 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            $rows = [];
-            foreach ($histories as $row) {
-                if ($row instanceof BackupHistory) {
-                    $rows[] = $row;
-                }
-            }
-
             $pruner = new BackupPruner();
             $doomed = $pruner->selectForDeletion(
-                $rows,
+                $this->indexRows(),
                 BackupRetentionPolicy::fromEnv(),
                 new DateTimeZone(date_default_timezone_get()),
                 new DateTimeImmutable(),

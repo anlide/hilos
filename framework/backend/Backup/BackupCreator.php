@@ -108,15 +108,31 @@ final class BackupCreator
             $connections = $this->dumpAllConnections($scope, $workDir, $references);
             $warnings = $this->collectWarnings($scope, $references);
 
-            // In-archive metadata copy (size is only known after the archive exists).
+            // In-archive metadata copy (size is only known after the archive exists); its
+            // dumpBytes stays 0, exactly as its sizeBytes does, so the in-archive copy is a
+            // stable stub and the true numbers live only in the published sidecar.
             $inArchiveMeta = $this->buildMetadata($id, $scope, $connections, 0, 0, warnings: $warnings);
             $this->writeJson($workDir . '/' . self::METADATA_FILENAME, $inArchiveMeta->toArray());
+
+            // The uncompressed dump peak (db-*.sql plus the in-archive metadata copy), measured
+            // before the tar exists: the expanded dump and the growing archive coexist during
+            // archiving, so this sum - not the archive size - is what the space guard sizes
+            // future runs from (a multiplier on the archive size would systematically under-estimate).
+            $dumpBytes = self::measureWorkDir($workDir);
 
             $this->archive($workDir, $tmpArchive);
 
             $sizeBytes = $this->fileSize($tmpArchive);
             $durationSeconds = (int)round(microtime(true) - $startedAt);
-            $metadata = $this->buildMetadata($id, $scope, $connections, $sizeBytes, $durationSeconds, warnings: $warnings);
+            $metadata = $this->buildMetadata(
+                $id,
+                $scope,
+                $connections,
+                $sizeBytes,
+                $durationSeconds,
+                warnings: $warnings,
+                dumpBytes: $dumpBytes,
+            );
 
             $this->writeJson($tmpSidecar, $metadata->toArray());
 
@@ -254,6 +270,7 @@ final class BackupCreator
             $metadata->status,
             $metadata->warnings,
             $metadata->failureReason,
+            $metadata->dumpBytes,
         );
 
         $tmpSidecar = $scopeDir . '/.tmp-keep-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
@@ -525,6 +542,8 @@ final class BackupCreator
      * @param BackupStatus $status Terminal outcome recorded in the sidecar
      * @param list<string> $warnings Non-fatal warnings recorded in the sidecar
      * @param ?string $failureReason Failure reason recorded in the sidecar (error records only)
+     * @param int $dumpBytes Uncompressed dump volume recorded in the sidecar (0 for the in-archive
+     *     copy and for error records, which capture nothing)
      * @return BackupMetadata Assembled metadata
      */
     private function buildMetadata(
@@ -536,6 +555,7 @@ final class BackupCreator
         BackupStatus $status = BackupStatus::SUCCESS,
         array $warnings = [],
         ?string $failureReason = null,
+        int $dumpBytes = 0,
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
@@ -549,7 +569,36 @@ final class BackupCreator
             $status,
             $warnings,
             $failureReason,
+            $dumpBytes,
         );
+    }
+
+    /**
+     * Sums the byte size of every file directly in the backup work directory.
+     *
+     * This is the uncompressed dump peak {@see \Hilos\Backup\BackupSpaceGuard} sizes future runs
+     * from: the per-connection `db-*.sql` files plus the in-archive `metadata.json` copy, measured
+     * once the dumps are written and before the tar exists. Subdirectories and unreadable entries
+     * are skipped, and a work directory that cannot be listed sums to 0 - "no measurement", not a
+     * failure, so measurement never aborts an otherwise good backup.
+     *
+     * @param string $workDir Temp working directory holding the dump files
+     * @return int Total uncompressed byte size of the dump files
+     */
+    public static function measureWorkDir(string $workDir): int
+    {
+        $total = 0;
+        foreach (glob($workDir . '/*') ?: [] as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+            $size = @filesize($path);
+            if ($size !== false) {
+                $total += $size;
+            }
+        }
+
+        return $total;
     }
 
     /**
