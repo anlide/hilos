@@ -94,7 +94,7 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
     {
         Hilos::$rt->connections->actions->register('poll-ak-1', 7);
 
-        (new PollAgent())->onSignalConnectionClose(new WebSocketCloseSignalDTO('poll-ak-1'), '', '');
+        new PollAgent()->onSignalConnectionClose(new WebSocketCloseSignalDTO('poll-ak-1'), '', '');
 
         $this->assertNull(Hilos::$rt->connections['poll-ak-1']);
     }
@@ -112,7 +112,7 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
             $token = RandomHelper::hex(16);
             $user = Hilos::$db->users->actions->register($token);
 
-            (new PollAgent())->onSignalHandshake(
+            new PollAgent()->onSignalHandshake(
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'poll-ak-handshake',

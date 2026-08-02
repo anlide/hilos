@@ -16,7 +16,7 @@ final class TableViewportAppendDTOTest extends TestCase
     {
         $row = ['rowKey' => 'a', 'slots' => ['settings' => ['key' => 'a']]];
         $restored = TableViewportAppendDTO::fromArray(
-            (new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, 1))->toArray(),
+            new TableViewportAppendDTO('hilos_settings', 'settings', $row, 91, 1)->toArray(),
         );
 
         $this->assertSame('hilos_settings', $restored->page);

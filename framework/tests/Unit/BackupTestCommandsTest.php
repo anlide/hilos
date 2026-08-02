@@ -20,9 +20,9 @@ final class BackupTestCommandsTest extends TestCase
 {
     public function testCommandsExposeTheirCliNames(): void
     {
-        $this->assertSame(CliCommands::BACKUP_TEST_AGE, (new BackupTestAgeCommand())->getName());
-        $this->assertSame(CliCommands::BACKUP_TEST_PRUNE, (new BackupTestPruneCommand())->getName());
-        $this->assertSame(CliCommands::BACKUP_TEST_RUN_SCHEDULE, (new BackupTestRunScheduleCommand())->getName());
+        $this->assertSame(CliCommands::BACKUP_TEST_AGE, new BackupTestAgeCommand()->getName());
+        $this->assertSame(CliCommands::BACKUP_TEST_PRUNE, new BackupTestPruneCommand()->getName());
+        $this->assertSame(CliCommands::BACKUP_TEST_RUN_SCHEDULE, new BackupTestRunScheduleCommand()->getName());
     }
 
     public function testCommandsAreTestOnly(): void

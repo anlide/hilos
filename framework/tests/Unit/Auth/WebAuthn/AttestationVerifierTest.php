@@ -39,7 +39,7 @@ final class AttestationVerifierTest extends TestCase
         );
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
 
-        $result = (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+        $result = new AttestationVerifier($this->config())->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
 
         self::assertSame(Base64Url::encode($credentialId), $result->credentialId);
         self::assertSame(7, $result->signCount);
@@ -57,7 +57,7 @@ final class AttestationVerifierTest extends TestCase
         $clientDataJson = $vectors->clientDataJson('a-different-challenge', self::ORIGIN);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+        new AttestationVerifier($this->config())->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
     }
 
     /**
@@ -70,7 +70,7 @@ final class AttestationVerifierTest extends TestCase
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, 'http://evil.example');
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+        new AttestationVerifier($this->config())->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
     }
 
     /**
@@ -85,7 +85,7 @@ final class AttestationVerifierTest extends TestCase
         $config = $this->config(rpId: 'other.example');
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AttestationVerifier($config))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+        new AttestationVerifier($config)->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
     }
 
     /**
@@ -102,7 +102,7 @@ final class AttestationVerifierTest extends TestCase
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AttestationVerifier($this->config()))->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
+        new AttestationVerifier($this->config())->verify(self::CHALLENGE, $clientDataJson, $vectors->attestationObject($authData));
     }
 
     /**

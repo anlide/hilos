@@ -635,7 +635,7 @@ final class MainPage extends AbstractPage
             return;
         }
 
-        (new VerificationService())->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
+        new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
     }
 
     /**
@@ -659,7 +659,7 @@ final class MainPage extends AbstractPage
         }
 
         $email = strtolower($dto->email);
-        $userId = (new VerificationService())->verify(VerificationType::PASSWORD_RESET, $email, $dto->code);
+        $userId = new VerificationService()->verify(VerificationType::PASSWORD_RESET, $email, $dto->code);
         if ($userId === null) {
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
@@ -694,7 +694,7 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_PHONE_MESSAGE);
         }
 
-        (new VerificationService())->issue(VerificationType::SMS_LOGIN, $phone, null);
+        new VerificationService()->issue(VerificationType::SMS_LOGIN, $phone, null);
     }
 
     /**
@@ -721,7 +721,7 @@ final class MainPage extends AbstractPage
 
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null
-            || !(new VerificationService())->verifyCode(VerificationType::SMS_LOGIN, $phone, $dto->code)) {
+            || !new VerificationService()->verifyCode(VerificationType::SMS_LOGIN, $phone, $dto->code)) {
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
@@ -764,7 +764,7 @@ final class MainPage extends AbstractPage
             return;
         }
 
-        (new VerificationService())->issue(VerificationType::MAGIC_LINK, $email, $userId);
+        new VerificationService()->issue(VerificationType::MAGIC_LINK, $email, $userId);
     }
 
     /**
@@ -791,7 +791,7 @@ final class MainPage extends AbstractPage
 
         $email = strtolower($dto->email);
         $userId = $email !== ''
-            ? (new VerificationService())->verify(VerificationType::MAGIC_LINK, $email, $dto->token)
+            ? new VerificationService()->verify(VerificationType::MAGIC_LINK, $email, $dto->token)
             : null;
         if ($userId === null) {
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
@@ -825,7 +825,7 @@ final class MainPage extends AbstractPage
             return;
         }
 
-        (new VerificationService())->issue(VerificationType::REGISTER_CONFIRM, $identity->identifier, $userId);
+        new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $identity->identifier, $userId);
     }
 
     /**
@@ -852,7 +852,7 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
-        $userId = (new VerificationService())->verify(VerificationType::REGISTER_CONFIRM, $identity->identifier, $dto->code);
+        $userId = new VerificationService()->verify(VerificationType::REGISTER_CONFIRM, $identity->identifier, $dto->code);
         if ($userId === null) {
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
@@ -1037,7 +1037,7 @@ final class MainPage extends AbstractPage
         $userId = $connection->userId;
 
         $config = WebAuthnConfig::fromEnv();
-        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+        $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
             WebAuthnChallengeSigner::PURPOSE_REGISTER,
             $connection->sessionToken,
             $userId,
@@ -1090,7 +1090,7 @@ final class MainPage extends AbstractPage
 
         $config = WebAuthnConfig::fromEnv();
         try {
-            $claims = (new WebAuthnChallengeSigner($config->challengeSecret))->verify(
+            $claims = new WebAuthnChallengeSigner($config->challengeSecret)->verify(
                 $dto->signedChallenge,
                 WebAuthnChallengeSigner::PURPOSE_REGISTER,
                 $connection->sessionToken,
@@ -1109,7 +1109,7 @@ final class MainPage extends AbstractPage
         }
 
         try {
-            $result = (new AttestationVerifier($config))->verify($claims->challenge, $clientDataJson, $attestationObject);
+            $result = new AttestationVerifier($config)->verify($claims->challenge, $clientDataJson, $attestationObject);
         } catch (WebAuthnVerificationException $e) {
             throw new ValidationException('Passkey registration failed: ' . $e->getMessage());
         }
@@ -1160,7 +1160,7 @@ final class MainPage extends AbstractPage
         $connection = Hilos::$rt->selfConnection;
 
         $config = WebAuthnConfig::fromEnv();
-        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+        $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
             WebAuthnChallengeSigner::PURPOSE_LOGIN,
             $connection->sessionToken,
             null,
@@ -1226,7 +1226,7 @@ final class MainPage extends AbstractPage
         $connection = Hilos::$rt->selfConnection;
 
         $config = WebAuthnConfig::fromEnv();
-        $challenge = (new WebAuthnChallengeSigner($config->challengeSecret))->issue(
+        $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
             WebAuthnChallengeSigner::PURPOSE_LOGIN,
             $connection->sessionToken,
             null,
@@ -1287,7 +1287,7 @@ final class MainPage extends AbstractPage
 
         $config = WebAuthnConfig::fromEnv();
         try {
-            $claims = (new WebAuthnChallengeSigner($config->challengeSecret))->verify(
+            $claims = new WebAuthnChallengeSigner($config->challengeSecret)->verify(
                 $dto->signedChallenge,
                 WebAuthnChallengeSigner::PURPOSE_LOGIN,
                 $connection->sessionToken,

@@ -297,7 +297,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('2', 'Grace'));
 
-        (new BrowserContextEmitSignalsTestContext())->subscribeSnapshot(
+        new BrowserContextEmitSignalsTestContext()->subscribeSnapshot(
             BrowserContextEmitSignalsTestContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -354,7 +354,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt->configure();
         Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
 
-        (new BrowserContextTopologyHooksTestContext())->subscribeSnapshot(
+        new BrowserContextTopologyHooksTestContext()->subscribeSnapshot(
             BrowserContextTopologyHooksTestContext::PAGE,
             'ak-1',
             new PageRouteParams([]),

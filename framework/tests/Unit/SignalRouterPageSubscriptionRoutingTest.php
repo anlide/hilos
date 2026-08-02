@@ -38,7 +38,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(
+            new SignalRouterTopologyTestRouter()->getDestinations(
                 $this->pageSubscribeSignal(SignalRouterTopologyTestPage::PAGE),
             ),
         );
@@ -50,7 +50,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
                 new SignalName(SignalRouterTopologyTestPage::PAGE),
@@ -65,7 +65,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
                 new SignalName(SignalName::EMPTY),
@@ -80,7 +80,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::AGENT),
                 new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName(SignalRouterTopologyTestPage::PAGE_AGENT_SIGNAL),
@@ -93,7 +93,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
     {
         $this->assertEquals(
             [],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::DAEMON),
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
                 new SignalName(SignalName::EMPTY),
@@ -108,7 +108,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::DAEMON),
                 new SignalType(SignalTypeConstants::CRON),
                 new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
@@ -121,7 +121,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
     {
         $this->assertEquals(
             [],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::CRON),
                 new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
@@ -136,7 +136,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::ACTION),
                 new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_ACTION),
@@ -151,7 +151,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologySignalTestAgent::AGENT_TYPE),
             ],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::AGENT),
                 new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName(SignalRouterTopologySignalTestAgent::TOPOLOGY_AGENT_SIGNAL),
@@ -164,7 +164,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
     {
         $this->assertEquals(
             [],
-            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName(SignalRouterTopologySignalTestAgent::TOPOLOGY_AGENT_SIGNAL),
@@ -179,7 +179,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE),
             ],
-            (new SignalRouterTopologyFallbackTestRouter())->getDestinations(
+            new SignalRouterTopologyFallbackTestRouter()->getDestinations(
                 $this->pageSubscribeSignal('unregistered_page'),
             ),
         );
@@ -189,7 +189,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
     {
         $this->assertEquals(
             [],
-            (new SignalRouter())->getDestinations($this->pageSubscribeSignal('unregistered_page')),
+            new SignalRouter()->getDestinations($this->pageSubscribeSignal('unregistered_page')),
         );
     }
 

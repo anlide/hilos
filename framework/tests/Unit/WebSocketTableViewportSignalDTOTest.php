@@ -40,12 +40,12 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
 
     public function testSortRidesAsNestedFieldDirection(): void
     {
-        $array = (new WebSocketTableViewportSignalDTO(
+        $array = new WebSocketTableViewportSignalDTO(
             acceptKey: 'ak',
             tableKey: 't',
             sortField: 'name',
             sortDirection: TableConstants::ORDER_ASC,
-        ))->toArray();
+        )->toArray();
 
         $this->assertSame(
             ['field' => 'name', 'direction' => TableConstants::ORDER_ASC],
@@ -55,7 +55,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
 
     public function testNoSortKeyWithoutASortField(): void
     {
-        $array = (new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't'))->toArray();
+        $array = new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't')->toArray();
 
         $this->assertArrayNotHasKey(WebSocketTableViewportSignalDTO::SORT, $array);
     }
@@ -75,6 +75,6 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
 
     public function testGetAcceptKey(): void
     {
-        $this->assertSame('ak', (new WebSocketTableViewportSignalDTO(acceptKey: 'ak'))->getAcceptKey());
+        $this->assertSame('ak', new WebSocketTableViewportSignalDTO(acceptKey: 'ak')->getAcceptKey());
     }
 }

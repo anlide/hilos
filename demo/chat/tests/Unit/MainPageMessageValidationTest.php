@@ -45,7 +45,7 @@ final class MainPageMessageValidationTest extends TestCase
     {
         $this->expectException(ItemNotFoundForUpdateException::class);
 
-        (new MainPage(new ChatAgent()))->onAction(
+        new MainPage(new ChatAgent())->onAction(
             'missing-ak',
             ChatSignalConstants::MESSAGE,
             new MessageActionDTO(''),
@@ -56,7 +56,7 @@ final class MainPageMessageValidationTest extends TestCase
     {
         $this->expectException(ItemNotFoundForUpdateException::class);
 
-        (new MainPage(new ChatAgent()))->onAction(
+        new MainPage(new ChatAgent())->onAction(
             'missing-ak',
             ChatSignalConstants::MESSAGE,
             new MessageActionDTO('   '),
@@ -75,7 +75,7 @@ final class MainPageMessageValidationTest extends TestCase
 
         $this->expectException(ItemNotFoundForDeleteException::class);
 
-        (new MainPage(new ChatAgent()))->onAction(
+        new MainPage(new ChatAgent())->onAction(
             'draft-ak',
             ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
             new AttachmentDraftDeleteActionDTO('missing-draft'),

@@ -418,7 +418,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            (new BackupPruner())->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
+            new BackupPruner()->deleteStored($row, Hilos::$env->string(EnvConstants::BACKUP_DIR));
             // Stamp the requester as the origin of the index write so its own row
             // removal applies at once while other tabs keep the pending gate.
             ExecutionContext::withAcceptKey(
@@ -469,7 +469,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
-            (new BackupCreator())->setStoredKeep($row, Hilos::$env->string(EnvConstants::BACKUP_DIR), $data->keep);
+            new BackupCreator()->setStoredKeep($row, Hilos::$env->string(EnvConstants::BACKUP_DIR), $data->keep);
             // Re-mirror the index from the rewritten sidecar (files=truth): the cleared +
             // recreated rows carry the new keep pin to every reader over RT sync. Stamp the
             // requester as the origin so its own row update applies at once, other tabs gate.
@@ -793,7 +793,7 @@ final class BackupAgent extends AbstractAgent
     private function recordFailure(string $id, BackupScope $scope, int $durationSeconds, ?string $failureReason): void
     {
         try {
-            (new BackupCreator())->recordFailure($id, $scope, $durationSeconds, $failureReason);
+            new BackupCreator()->recordFailure($id, $scope, $durationSeconds, $failureReason);
         } catch (Throwable $e) {
             $this->logAgentError("Failed to record backup failure for {$id}: " . $e->getMessage());
         }
@@ -828,7 +828,7 @@ final class BackupAgent extends AbstractAgent
         $state->running = true;
         $state->currentBackupId = $id;
         $state->scope = $scope->value;
-        $state->startedAt = (new DateTimeImmutable())->format(DateTimeInterface::ATOM);
+        $state->startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
         $state->sync();
     }
 
@@ -866,7 +866,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function refreshHistory(): void
     {
-        $result = (new BackupHistoryScanner())->scan(Hilos::$env->string(EnvConstants::BACKUP_DIR));
+        $result = new BackupHistoryScanner()->scan(Hilos::$env->string(EnvConstants::BACKUP_DIR));
         $changes = $this->historiesView()?->actions->syncToScan($result->metadatas) ?? 0;
         $this->reportAnomalies($result);
 

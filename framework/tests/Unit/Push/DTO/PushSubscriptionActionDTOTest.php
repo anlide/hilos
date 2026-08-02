@@ -59,9 +59,9 @@ final class PushSubscriptionActionDTOTest extends TestCase
 
     public function testSubscribeIsInvalidWhenAddressMaterialIsMissing(): void
     {
-        self::assertFalse((new PushSubscribeActionDTO('', 'pk', 'auth', null))->isValid());
-        self::assertFalse((new PushSubscribeActionDTO('https://push.example/a', '', 'auth', null))->isValid());
-        self::assertFalse((new PushSubscribeActionDTO('https://push.example/a', 'pk', '', null))->isValid());
+        self::assertFalse(new PushSubscribeActionDTO('', 'pk', 'auth', null)->isValid());
+        self::assertFalse(new PushSubscribeActionDTO('https://push.example/a', '', 'auth', null)->isValid());
+        self::assertFalse(new PushSubscribeActionDTO('https://push.example/a', 'pk', '', null)->isValid());
     }
 
     public function testUnsubscribeRoundTripsAndNamesItsAction(): void
@@ -88,6 +88,6 @@ final class PushSubscriptionActionDTOTest extends TestCase
 
     public function testUnsubscribeIsInvalidWithoutAnEndpoint(): void
     {
-        self::assertFalse((new PushUnsubscribeActionDTO(''))->isValid());
+        self::assertFalse(new PushUnsubscribeActionDTO('')->isValid());
     }
 }

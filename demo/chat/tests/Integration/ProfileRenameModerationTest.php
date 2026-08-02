@@ -46,7 +46,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             Hilos::initSignalRouter(new ChatSignalRouter());
             ExecutionContext::setCurrentAcceptKey('rename-start-ak');
-            (new ProfilePage(new ChatAgent()))->onAction(
+            new ProfilePage(new ChatAgent())->onAction(
                 'rename-start-ak',
                 ChatSignalConstants::RENAME,
                 new RenameActionDTO('Alice'),

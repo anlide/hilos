@@ -170,8 +170,8 @@ final class ProtectedModeContractTest extends TestCase
 
     public function testReadyAndDisableSignalDataAreEmptyPayloads(): void
     {
-        $this->assertSame([], (new ProtectedModeReadySignalData())->toArray());
-        $this->assertSame([], (new ProtectedModeDisableSignalData())->toArray());
+        $this->assertSame([], new ProtectedModeReadySignalData()->toArray());
+        $this->assertSame([], new ProtectedModeDisableSignalData()->toArray());
         $this->assertInstanceOf(
             ProtectedModeReadySignalData::class,
             ProtectedModeReadySignalData::fromArray([]),

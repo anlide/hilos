@@ -209,7 +209,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $this->drainSignals();
 
         try {
-            (new AdminUsersPage($agent))->onAction(
+            new AdminUsersPage($agent)->onAction(
                 'page-ak',
                 ChatSignalConstants::IMPERSONATE_START,
                 new ImpersonateStartActionDTO($targetId),

@@ -40,6 +40,6 @@ final class SignalRouterTableViewportTest extends TestCase
 
     public function testGetTableViewportReturnsNullWhenAbsent(): void
     {
-        $this->assertNull((new SignalRouter())->getTableViewport('ak', 'settings'));
+        $this->assertNull(new SignalRouter()->getTableViewport('ak', 'settings'));
     }
 }

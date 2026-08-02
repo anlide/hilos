@@ -193,7 +193,7 @@ final class MainPageLoginTest extends IntegrationTestCase
      */
     private function login(ChatAgent $agent, string $acceptKey, string $email, string $password): void
     {
-        (new MainPage($agent))->onAction(
+        new MainPage($agent)->onAction(
             $acceptKey,
             ChatSignalConstants::LOGIN,
             new LoginActionDTO($email, $password),

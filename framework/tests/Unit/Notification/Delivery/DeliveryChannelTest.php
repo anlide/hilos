@@ -104,7 +104,7 @@ final class DeliveryChannelTest extends TestCase
     {
         self::assertFalse(NotificationTypeRegistry::isMandatory('anything'));
         self::assertNull(NotificationTypeRegistry::get('anything'));
-        self::assertFalse((new NotificationTypeDescriptor())->mandatory);
+        self::assertFalse(new NotificationTypeDescriptor()->mandatory);
     }
 
     public function testTypeRegistrySubclassDeclaresMandatoryTypes(): void

@@ -30,7 +30,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterGroupTopologyTestRouter())->getDestinations(
+            new SignalRouterGroupTopologyTestRouter()->getDestinations(
                 $this->groupSubscribeSignal(SignalRouterTopologyTestGroup::GROUP),
             ),
         );
@@ -42,7 +42,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterGroupTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION),
                 new SignalName(SignalRouterTopologyTestGroup::GROUP),
@@ -57,7 +57,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE),
             ],
-            (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
+            new SignalRouterGroupTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::GROUP_UNSUBSCRIBE),
                 new SignalName(SignalRouterTopologyTestGroup::GROUP),
@@ -72,7 +72,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
             [
                 new AgentDestination(SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE),
             ],
-            (new SignalRouterGroupTopologyFallbackTestRouter())->getDestinations(
+            new SignalRouterGroupTopologyFallbackTestRouter()->getDestinations(
                 $this->groupSubscribeSignal('unregistered_group'),
             ),
         );
@@ -82,7 +82,7 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
     {
         $this->assertEquals(
             [],
-            (new SignalRouter())->getDestinations($this->groupSubscribeSignal('unregistered_group')),
+            new SignalRouter()->getDestinations($this->groupSubscribeSignal('unregistered_group')),
         );
     }
 

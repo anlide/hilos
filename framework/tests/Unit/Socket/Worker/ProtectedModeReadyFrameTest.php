@@ -31,7 +31,7 @@ final class ProtectedModeReadyFrameTest extends TestCase
 
     public function testFactoryDispatchesReadyFrameToItsClass(): void
     {
-        $restored = WorkerDTO::factoryWorkerDTO((new ProtectedModeReadyDTO('backup:0'))->toJson());
+        $restored = WorkerDTO::factoryWorkerDTO(new ProtectedModeReadyDTO('backup:0')->toJson());
 
         $this->assertInstanceOf(ProtectedModeReadyDTO::class, $restored);
         $this->assertSame('backup:0', $restored->agentId);

@@ -111,14 +111,14 @@ final class ProtectedModePeerFrameTest extends TestCase
 
     public function testReadyFrameDispatchesThroughTheSharedWireParser(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerProtectedModeReadyDTO())->toJson());
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeReadyDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeReadyDTO::class, $parsed);
     }
 
     public function testDisableFrameDispatchesThroughTheSharedWireParser(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerProtectedModeDisableDTO())->toJson());
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeDisableDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeDisableDTO::class, $parsed);
     }
@@ -166,14 +166,14 @@ final class ProtectedModePeerFrameTest extends TestCase
 
     public function testQuiescedFrameRoundTripsAsEmptyPayload(): void
     {
-        $restored = PeerProtectedModeQuiescedDTO::fromJson((new PeerProtectedModeQuiescedDTO())->toJson());
+        $restored = PeerProtectedModeQuiescedDTO::fromJson(new PeerProtectedModeQuiescedDTO()->toJson());
 
         $this->assertSame(PeerProtectedModeQuiescedDTO::MESSAGE_TYPE, $restored->getType());
     }
 
     public function testLiftFrameRoundTripsAsEmptyPayload(): void
     {
-        $restored = PeerProtectedModeLiftDTO::fromJson((new PeerProtectedModeLiftDTO())->toJson());
+        $restored = PeerProtectedModeLiftDTO::fromJson(new PeerProtectedModeLiftDTO()->toJson());
 
         $this->assertSame(PeerProtectedModeLiftDTO::MESSAGE_TYPE, $restored->getType());
     }
@@ -197,14 +197,14 @@ final class ProtectedModePeerFrameTest extends TestCase
 
     public function testQuiescedFrameDispatchesThroughTheSharedWireParser(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerProtectedModeQuiescedDTO())->toJson());
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeQuiescedDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeQuiescedDTO::class, $parsed);
     }
 
     public function testLiftFrameDispatchesThroughTheSharedWireParser(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerProtectedModeLiftDTO())->toJson());
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeLiftDTO()->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeLiftDTO::class, $parsed);
     }

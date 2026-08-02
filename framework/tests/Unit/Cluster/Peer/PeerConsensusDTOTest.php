@@ -49,7 +49,7 @@ final class PeerConsensusDTOTest extends TestCase
 
     public function testVoteReplyPreservesADeniedVote(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerVoteReplyDTO(3, false, 'node-c'))->toJson());
+        $parsed = PeerDTO::fromWire(new PeerVoteReplyDTO(3, false, 'node-c')->toJson());
 
         $this->assertInstanceOf(PeerVoteReplyDTO::class, $parsed);
         $this->assertFalse($parsed->voteGranted);

@@ -64,7 +64,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testAnonymousRoundtripStaysAnonymous(): void
     {
-        $restored = HandshakeResponseSignalData::fromArray((new HandshakeResponseSignalData())->toArray());
+        $restored = HandshakeResponseSignalData::fromArray(new HandshakeResponseSignalData()->toArray());
 
         $this->assertNull($restored->selfId);
         $this->assertNull($restored->selfName);

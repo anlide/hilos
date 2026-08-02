@@ -46,7 +46,7 @@ final class VerificationTestExpireCommandTest extends TestCase
         $this->expectOutputRegex('/Usage/');
         self::assertSame(
             ExitCode::INVALID_ARGUMENT,
-            (new VerificationTestExpireCommand())->execute([], ['not_a_type', 'user@example.com']),
+            new VerificationTestExpireCommand()->execute([], ['not_a_type', 'user@example.com']),
         );
     }
 
@@ -55,7 +55,7 @@ final class VerificationTestExpireCommandTest extends TestCase
         $this->expectOutputRegex('/Usage/');
         self::assertSame(
             ExitCode::INVALID_ARGUMENT,
-            (new VerificationTestExpireCommand())->execute([], [VerificationType::PASSWORD_RESET]),
+            new VerificationTestExpireCommand()->execute([], [VerificationType::PASSWORD_RESET]),
         );
     }
 
@@ -66,7 +66,7 @@ final class VerificationTestExpireCommandTest extends TestCase
         $this->expectOutputRegex('/not available/');
         self::assertSame(
             ExitCode::CONFIG_ERROR,
-            (new VerificationTestExpireCommand())->execute([], [VerificationType::PASSWORD_RESET, 'user@example.com']),
+            new VerificationTestExpireCommand()->execute([], [VerificationType::PASSWORD_RESET, 'user@example.com']),
         );
     }
 }

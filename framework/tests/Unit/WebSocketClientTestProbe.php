@@ -49,7 +49,7 @@ final class WebSocketClientTestProbe extends WebSocketClient
     public static function createSocketless(): self
     {
         try {
-            return (new ReflectionClass(self::class))->newInstanceWithoutConstructor();
+            return new ReflectionClass(self::class)->newInstanceWithoutConstructor();
         } catch (ReflectionException $exception) {
             throw new InvalidStateException('Cannot instantiate the socketless probe', 0, $exception);
         }

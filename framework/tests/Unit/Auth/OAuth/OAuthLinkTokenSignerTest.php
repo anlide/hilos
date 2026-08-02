@@ -43,9 +43,9 @@ final class OAuthLinkTokenSignerTest extends TestCase
 
     public function testVerifyRejectsADifferentSecret(): void
     {
-        $token = (new OAuthLinkTokenSigner(self::SECRET))->issue('oauth:github', '4242', 'user@example.com', 600);
+        $token = new OAuthLinkTokenSigner(self::SECRET)->issue('oauth:github', '4242', 'user@example.com', 600);
 
-        self::assertNull((new OAuthLinkTokenSigner('other-secret'))->verify($token));
+        self::assertNull(new OAuthLinkTokenSigner('other-secret')->verify($token));
     }
 
     public function testVerifyRejectsAnExpiredToken(): void
@@ -79,8 +79,8 @@ final class OAuthLinkTokenSignerTest extends TestCase
      */
     public function testVerifyRejectsAStateTokenSharingTheSecret(): void
     {
-        $stateToken = (new OAuthStateSigner(self::SECRET))->issue('session-token', 600);
+        $stateToken = new OAuthStateSigner(self::SECRET)->issue('session-token', 600);
 
-        self::assertNull((new OAuthLinkTokenSigner(self::SECRET))->verify($stateToken));
+        self::assertNull(new OAuthLinkTokenSigner(self::SECRET)->verify($stateToken));
     }
 }

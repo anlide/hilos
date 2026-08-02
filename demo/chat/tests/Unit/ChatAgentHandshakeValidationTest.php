@@ -25,7 +25,7 @@ final class ChatAgentHandshakeValidationTest extends TestCase
         $this->expectException(EmptyValueException::class);
         $this->expectExceptionMessage('session token is required');
 
-        (new ChatAgent())->onSignalHandshake(
+        new ChatAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
                 acceptKey: 'unit-ak',
@@ -43,7 +43,7 @@ final class ChatAgentHandshakeValidationTest extends TestCase
         $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('session token must be a 32-character lowercase hex token');
 
-        (new ChatAgent())->onSignalHandshake(
+        new ChatAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
                 acceptKey: 'unit-ak',

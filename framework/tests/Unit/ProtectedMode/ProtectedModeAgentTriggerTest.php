@@ -67,7 +67,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
     {
         $this->enableCluster();
 
-        (new ProtectedModeTriggerTestAgent('7'))->enable('restore', 'accept-key-1');
+        new ProtectedModeTriggerTestAgent('7')->enable('restore', 'accept-key-1');
 
         $signal = Hilos::$sr->getNextQueuedSignal();
         $this->assertNotNull($signal, 'Enable queues one worker-drained signal');
@@ -85,7 +85,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
     {
         $this->enableCluster();
 
-        (new ProtectedModeTriggerTestAgent(null))->enable('restore', 'accept-key-2');
+        new ProtectedModeTriggerTestAgent(null)->enable('restore', 'accept-key-2');
 
         $signal = Hilos::$sr->getNextQueuedSignal();
         $this->assertNotNull($signal);
@@ -97,7 +97,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
     {
         $this->enableCluster();
 
-        (new ProtectedModeTriggerTestAgent('7'))->disable();
+        new ProtectedModeTriggerTestAgent('7')->disable();
 
         $signal = Hilos::$sr->getNextQueuedSignal();
         $this->assertNotNull($signal, 'Disable queues one worker-drained signal');
@@ -111,7 +111,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
 
-        (new ProtectedModeTriggerTestAgent('7'))->enable('restore', 'accept-key-3');
+        new ProtectedModeTriggerTestAgent('7')->enable('restore', 'accept-key-3');
 
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A non-clustered node has no cluster to freeze');
     }
@@ -121,7 +121,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
 
-        (new ProtectedModeTriggerTestAgent('7'))->disable();
+        new ProtectedModeTriggerTestAgent('7')->disable();
 
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A non-clustered node has nothing to release');
     }

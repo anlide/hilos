@@ -47,7 +47,7 @@ final class MailTemplateRegistryTest extends TestCase
 
     public function testMagicLinkTemplateEmbedsLink(): void
     {
-        $content = (new MailTemplateRegistry())->render(
+        $content = new MailTemplateRegistry()->render(
             MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
             [MagicLinkMailTemplate::PARAM_LINK => 'https://app.example/sign-in?t=abc'],
             null,
@@ -59,7 +59,7 @@ final class MailTemplateRegistryTest extends TestCase
 
     public function testGenericNotificationPassesThroughTitleAndBody(): void
     {
-        $content = (new MailTemplateRegistry())->render(
+        $content = new MailTemplateRegistry()->render(
             MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
             [
                 GenericNotificationMailTemplate::PARAM_TITLE => 'New message',
@@ -102,12 +102,12 @@ final class MailTemplateRegistryTest extends TestCase
     {
         $this->expectException(MailTemplateNotInCatalogException::class);
 
-        (new MailTemplateRegistry())->render('auth.no_such_template', [], null);
+        new MailTemplateRegistry()->render('auth.no_such_template', [], null);
     }
 
     public function testProjectCatalogOverrideResolvesCustomTemplate(): void
     {
-        $content = (new MailTemplateRegistry(ProjectMailTemplateCatalog::class))->render(
+        $content = new MailTemplateRegistry(ProjectMailTemplateCatalog::class)->render(
             'project.welcome',
             [],
             null,

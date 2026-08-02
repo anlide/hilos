@@ -113,7 +113,7 @@ final class PeerServerAddressChurnTest extends TestCase
      */
     private function reconcile(PeerServer $server): void
     {
-        (new \ReflectionMethod($server, 'reconcilePeerDials'))->invoke($server);
+        new \ReflectionMethod($server, 'reconcilePeerDials')->invoke($server);
     }
 
     /**
@@ -124,7 +124,7 @@ final class PeerServerAddressChurnTest extends TestCase
      */
     private function peerDials(PeerServer $server): array
     {
-        return (new \ReflectionProperty($server, 'peerDials'))->getValue($server);
+        return new \ReflectionProperty($server, 'peerDials')->getValue($server);
     }
 
     /**

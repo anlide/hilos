@@ -88,7 +88,7 @@ final class PushDeliveryChannelTest extends TestCase
     public function testConfigFieldsDeclareThePublicFieldAndTheEnvOnlyPrivateSecret(): void
     {
         $fields = [];
-        foreach ((new PushDeliveryChannel())->configFields() as $field) {
+        foreach (new PushDeliveryChannel()->configFields() as $field) {
             $fields[$field->key] = $field;
         }
 

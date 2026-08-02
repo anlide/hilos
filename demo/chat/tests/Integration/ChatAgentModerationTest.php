@@ -203,7 +203,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $this->expectException(ValidationException::class);
 
             ExecutionContext::setCurrentAcceptKey('rate-ak');
-            (new MainPage(new ChatAgent()))->onAction(
+            new MainPage(new ChatAgent())->onAction(
                 'rate-ak',
                 ChatSignalConstants::MESSAGE,
                 new MessageActionDTO('too soon'),
@@ -223,7 +223,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $bot = Hilos::$db->bots->actions->create('Signal Bot', active: true);
 
-            (new ChatAgent())->onSignalAgent(
+            new ChatAgent()->onSignalAgent(
                 new AgentSignalData(new BotMessageSignalData(botId: (int) $bot->id, message: 'bot says hi')),
                 '',
                 ChatSignalConstants::BOT_MESSAGE,

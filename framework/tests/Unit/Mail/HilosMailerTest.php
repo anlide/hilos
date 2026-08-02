@@ -75,7 +75,7 @@ final class HilosMailerTest extends TestCase
         $router = new HilosMailerTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new HilosMailer())->send(new EmailMessage(
+        new HilosMailer()->send(new EmailMessage(
             to: 'user@example.com',
             subject: 'Hello',
             text: 'Body text',
@@ -105,7 +105,7 @@ final class HilosMailerTest extends TestCase
         $router = new HilosMailerTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new HilosMailer())->send(new MailSendSignalData(
+        new HilosMailer()->send(new MailSendSignalData(
             to: 'code@example.com',
             shardKey: 3,
             templateKey: 'auth.magic_link',
@@ -125,7 +125,7 @@ final class HilosMailerTest extends TestCase
         Hilos::$sr = null;
 
         $this->expectNotToPerformAssertions();
-        (new HilosMailer())->send(new EmailMessage(to: 'a@example.com', subject: 's', text: 't'));
+        new HilosMailer()->send(new EmailMessage(to: 'a@example.com', subject: 's', text: 't'));
     }
 }
 

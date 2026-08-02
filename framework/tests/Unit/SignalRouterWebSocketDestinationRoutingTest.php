@@ -26,7 +26,7 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
             [
                 new AllClientsDestination('sender-key'),
             ],
-            (new SignalRouter())->getDestinations($this->broadcastSignal('sender-key')),
+            new SignalRouter()->getDestinations($this->broadcastSignal('sender-key')),
         );
     }
 
@@ -36,7 +36,7 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
             [
                 new AllClientsDestination(null),
             ],
-            (new SignalRouter())->getDestinations($this->broadcastSignal(null)),
+            new SignalRouter()->getDestinations($this->broadcastSignal(null)),
         );
     }
 

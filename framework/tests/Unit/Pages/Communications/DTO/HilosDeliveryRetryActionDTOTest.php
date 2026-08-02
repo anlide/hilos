@@ -45,7 +45,7 @@ final class HilosDeliveryRetryActionDTOTest extends TestCase
     {
         self::assertSame(
             HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
-            (new HilosDeliveryRetryActionDTO(1))->getAction(),
+            new HilosDeliveryRetryActionDTO(1)->getAction(),
         );
     }
 
@@ -53,7 +53,7 @@ final class HilosDeliveryRetryActionDTOTest extends TestCase
     {
         self::assertSame(
             [HilosDeliveryRetryActionDTO::deliveryId => 99],
-            (new HilosDeliveryRetryActionDTO(99))->toArray(),
+            new HilosDeliveryRetryActionDTO(99)->toArray(),
         );
     }
 }

@@ -39,7 +39,7 @@ final class ProfileAddSmsActionDTOTest extends TestCase
      */
     public function testRequestToArrayShape(): void
     {
-        $this->assertSame(['phone' => '+15551234'], (new RequestSmsAddCodeActionDTO('+15551234'))->toArray());
+        $this->assertSame(['phone' => '+15551234'], new RequestSmsAddCodeActionDTO('+15551234')->toArray());
     }
 
     /**
@@ -73,7 +73,7 @@ final class ProfileAddSmsActionDTOTest extends TestCase
     {
         $this->assertSame(
             ['phone' => '+15551234', 'code' => '123456'],
-            (new ConfirmSmsAddCodeActionDTO('+15551234', '123456'))->toArray(),
+            new ConfirmSmsAddCodeActionDTO('+15551234', '123456')->toArray(),
         );
     }
 }

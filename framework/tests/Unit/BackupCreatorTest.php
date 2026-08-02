@@ -53,7 +53,7 @@ final class BackupCreatorTest extends TestCase
         // dating by "now" would put a long dump's finish time on a row whose id says otherwise.
         // Built through the same default timezone the supervisor mints ids in, so the case does
         // not depend on where the suite runs.
-        $expected = (new DateTimeImmutable('2026-07-19 10:30:00'))->format(DateTimeInterface::ATOM);
+        $expected = new DateTimeImmutable('2026-07-19 10:30:00')->format(DateTimeInterface::ATOM);
 
         $this->assertSame($expected, BackupCreator::startedAtFromId('2026-07-19_10-30-00'));
     }
@@ -141,7 +141,7 @@ final class BackupCreatorTest extends TestCase
     {
         $this->expectException(BackupException::class);
 
-        (new BackupCreator())->create('../escape', BackupScope::FULL);
+        new BackupCreator()->create('../escape', BackupScope::FULL);
     }
 
     public function testRecordFailurePublishesAnErrorSidecarCarryingTheReason(): void
@@ -149,7 +149,7 @@ final class BackupCreatorTest extends TestCase
         $root = $this->makeRoot();
         putenv('BACKUP_DIR=' . $root);
 
-        (new BackupCreator())->recordFailure(
+        new BackupCreator()->recordFailure(
             '2026-07-19_10-30-00',
             BackupScope::FULL,
             5,
@@ -171,7 +171,7 @@ final class BackupCreatorTest extends TestCase
         putenv('BACKUP_DIR=' . $root);
 
         // A killed dump's stderr can be a wall of text; the tail is cut past the 2000-char cap.
-        (new BackupCreator())->recordFailure('2026-07-19_10-30-01', BackupScope::FULL, 1, str_repeat('x', 2500));
+        new BackupCreator()->recordFailure('2026-07-19_10-30-01', BackupScope::FULL, 1, str_repeat('x', 2500));
 
         $reason = $this->readErrorSidecar($root, '2026-07-19_10-30-01', BackupScope::FULL)->failureReason;
         $this->assertNotNull($reason);
@@ -184,8 +184,8 @@ final class BackupCreatorTest extends TestCase
         $root = $this->makeRoot();
         putenv('BACKUP_DIR=' . $root);
 
-        (new BackupCreator())->recordFailure('2026-07-19_10-30-02', BackupScope::FULL, 0, null);
-        (new BackupCreator())->recordFailure('2026-07-19_10-30-03', BackupScope::SCHEMA_ONLY, 0, '   ');
+        new BackupCreator()->recordFailure('2026-07-19_10-30-02', BackupScope::FULL, 0, null);
+        new BackupCreator()->recordFailure('2026-07-19_10-30-03', BackupScope::SCHEMA_ONLY, 0, '   ');
 
         // A blank reason is null, not an empty string, so a reader tells "no detail" apart.
         $this->assertNull($this->readErrorSidecar($root, '2026-07-19_10-30-02', BackupScope::FULL)->failureReason);
@@ -211,7 +211,7 @@ final class BackupCreatorTest extends TestCase
         );
         $this->writeSidecar($root, $original);
 
-        (new BackupCreator())->setStoredKeep($this->rowFor($original), $root, true);
+        new BackupCreator()->setStoredKeep($this->rowFor($original), $root, true);
 
         $reloaded = $this->readSidecar($root, $original);
         $this->assertTrue($reloaded->keep);
@@ -229,7 +229,7 @@ final class BackupCreatorTest extends TestCase
         $original = $this->metadata(keep: true);
         $this->writeSidecar($root, $original);
 
-        (new BackupCreator())->setStoredKeep($this->rowFor($original), $root, false);
+        new BackupCreator()->setStoredKeep($this->rowFor($original), $root, false);
 
         $this->assertFalse($this->readSidecar($root, $original)->keep);
     }
@@ -243,7 +243,7 @@ final class BackupCreatorTest extends TestCase
 
         // A no-change target must not rewrite the sidecar at all.
         clearstatcache();
-        (new BackupCreator())->setStoredKeep($this->rowFor($original), $root, true);
+        new BackupCreator()->setStoredKeep($this->rowFor($original), $root, true);
 
         clearstatcache();
         $this->assertSame($mtimeBefore, filemtime($path));
@@ -254,7 +254,7 @@ final class BackupCreatorTest extends TestCase
     {
         $this->expectException(BackupException::class);
 
-        (new BackupCreator())->setStoredKeep($this->rowFor($this->metadata()), $this->makeRoot(), true);
+        new BackupCreator()->setStoredKeep($this->rowFor($this->metadata()), $this->makeRoot(), true);
     }
 
     /**

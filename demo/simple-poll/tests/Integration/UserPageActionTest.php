@@ -54,7 +54,7 @@ final class UserPageActionTest extends IntegrationTestCase
         $userId = (int) $user->id;
         $originalName = (string) $user->name;
 
-        (new UserPage(new DemoHilosAgent()))->onAction(
+        new UserPage(new DemoHilosAgent())->onAction(
             'poll-ak',
             HilosSignalConstants::HILOS_USER_UPDATE,
             new HilosUserUpdateActionDTO($userId, 'Renamed'),
@@ -77,6 +77,6 @@ final class UserPageActionTest extends IntegrationTestCase
     {
         $this->expectException(AgentUnknownActionException::class);
 
-        (new UserPage(new DemoHilosAgent()))->onAction('poll-ak', 'nope', new HilosUserUpdateActionDTO(1, 'x'));
+        new UserPage(new DemoHilosAgent())->onAction('poll-ak', 'nope', new HilosUserUpdateActionDTO(1, 'x'));
     }
 }

@@ -63,7 +63,7 @@ final class MailVerificationDelivererTest extends TestCase
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new MailVerificationDeliverer())->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '123456');
+        new MailVerificationDeliverer()->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '123456');
 
         self::assertCount(1, $router->captured);
         $signal = $router->captured[0];
@@ -108,7 +108,7 @@ final class MailVerificationDelivererTest extends TestCase
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new MailVerificationDeliverer())->deliver('user@example.com', VerificationType::MAGIC_LINK, 'deadbeeftoken');
+        new MailVerificationDeliverer()->deliver('user@example.com', VerificationType::MAGIC_LINK, 'deadbeeftoken');
 
         self::assertCount(1, $router->captured);
         $payload = $router->captured[0]['data']->data;
@@ -122,7 +122,7 @@ final class MailVerificationDelivererTest extends TestCase
         $router = new MailVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new MailVerificationDeliverer())->deliver('+15551234567', VerificationType::SMS_LOGIN, '654321');
+        new MailVerificationDeliverer()->deliver('+15551234567', VerificationType::SMS_LOGIN, '654321');
 
         self::assertCount(0, $router->captured);
     }

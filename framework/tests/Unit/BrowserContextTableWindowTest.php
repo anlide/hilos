@@ -58,7 +58,7 @@ final class BrowserContextTableWindowTest extends TestCase
         Hilos::$table->configure();
 
         $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 1, limit: 1);
-        (new TableWindowUnitBrowserContext())->sendTableWindow(
+        new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             $viewport,
@@ -101,7 +101,7 @@ final class BrowserContextTableWindowTest extends TestCase
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
-        (new TableWindowUnitBrowserContext())->sendTableWindow(
+        new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: 'no_such_table'),
@@ -129,7 +129,7 @@ final class BrowserContextTableWindowTest extends TestCase
             ),
         );
 
-        (new TableWindowGuardUnitBrowserContext())->sendTableWindow(
+        new TableWindowGuardUnitBrowserContext()->sendTableWindow(
             TableWindowGuardUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),

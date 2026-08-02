@@ -43,7 +43,7 @@ final class ChatWebSocketClientActionValidationTest extends TestCase
      */
     private function clientWithoutSocket(): ChatWebSocketClient
     {
-        return (new ReflectionClass(ChatWebSocketClient::class))->newInstanceWithoutConstructor();
+        return new ReflectionClass(ChatWebSocketClient::class)->newInstanceWithoutConstructor();
     }
 
     /**

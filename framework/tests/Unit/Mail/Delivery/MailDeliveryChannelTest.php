@@ -86,7 +86,7 @@ final class MailDeliveryChannelTest extends TestCase
     public function testConfigFieldsDeclareOperationalFieldsAndEnvOnlySecrets(): void
     {
         $fields = [];
-        foreach ((new MailDeliveryChannel())->configFields() as $field) {
+        foreach (new MailDeliveryChannel()->configFields() as $field) {
             $fields[$field->key] = $field;
         }
 
@@ -115,7 +115,7 @@ final class MailDeliveryChannelTest extends TestCase
     public function testOperationalFieldsCarryValidatorsThatEnforceTheirRules(): void
     {
         $fields = [];
-        foreach ((new MailDeliveryChannel())->configFields() as $field) {
+        foreach (new MailDeliveryChannel()->configFields() as $field) {
             $fields[$field->key] = $field;
         }
 

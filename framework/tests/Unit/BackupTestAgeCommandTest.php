@@ -43,7 +43,7 @@ final class BackupTestAgeCommandTest extends TestCase
         $this->writeSidecar($id, BackupScope::FULL, '2026-07-19T10:30:00+00:00', keep: true);
 
         $newInstant = new DateTimeImmutable('2026-01-01T00:00:00+00:00');
-        $path = (new BackupTestAgeCommand())->retimeSidecar($this->root, $id, null, $newInstant);
+        $path = new BackupTestAgeCommand()->retimeSidecar($this->root, $id, null, $newInstant);
 
         $rewritten = $this->readSidecar($path);
         $this->assertSame($newInstant->format(DateTimeInterface::ATOM), $rewritten->createdAt);
@@ -61,19 +61,19 @@ final class BackupTestAgeCommandTest extends TestCase
 
         // The command computes createdAt from now minus N days; assert the sidecar moved back.
         $before = new DateTimeImmutable('-40 days');
-        (new BackupTestAgeCommand())->retimeSidecar($this->root, $id, BackupScope::FULL, $before);
+        new BackupTestAgeCommand()->retimeSidecar($this->root, $id, BackupScope::FULL, $before);
 
         $rewritten = $this->readSidecar($this->sidecarPath($id, BackupScope::FULL));
         $this->assertLessThan(
-            (new DateTimeImmutable('-30 days'))->getTimestamp(),
-            (new DateTimeImmutable($rewritten->createdAt))->getTimestamp(),
+            new DateTimeImmutable('-30 days')->getTimestamp(),
+            new DateTimeImmutable($rewritten->createdAt)->getTimestamp(),
         );
     }
 
     public function testRetimeThrowsWhenNoSidecarMatches(): void
     {
         $this->expectException(BackupException::class);
-        (new BackupTestAgeCommand())->retimeSidecar($this->root, 'missing-id', null, new DateTimeImmutable());
+        new BackupTestAgeCommand()->retimeSidecar($this->root, 'missing-id', null, new DateTimeImmutable());
     }
 
     public function testRetimeThrowsWhenIdIsAmbiguousAcrossScopes(): void
@@ -83,7 +83,7 @@ final class BackupTestAgeCommandTest extends TestCase
         $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00+00:00');
 
         $this->expectException(BackupException::class);
-        (new BackupTestAgeCommand())->retimeSidecar($this->root, $id, null, new DateTimeImmutable());
+        new BackupTestAgeCommand()->retimeSidecar($this->root, $id, null, new DateTimeImmutable());
     }
 
     public function testScopeNarrowsAnAmbiguousIdToOneMatch(): void
@@ -93,7 +93,7 @@ final class BackupTestAgeCommandTest extends TestCase
         $this->writeSidecar($id, BackupScope::SCHEMA_ONLY, '2026-07-19T10:30:00+00:00');
 
         $newInstant = new DateTimeImmutable('2025-01-01T00:00:00+00:00');
-        $path = (new BackupTestAgeCommand())->retimeSidecar($this->root, $id, BackupScope::SCHEMA_ONLY, $newInstant);
+        $path = new BackupTestAgeCommand()->retimeSidecar($this->root, $id, BackupScope::SCHEMA_ONLY, $newInstant);
 
         // Only the schema-only sidecar moved; the full sidecar is untouched.
         $this->assertSame($this->sidecarPath($id, BackupScope::SCHEMA_ONLY), $path);

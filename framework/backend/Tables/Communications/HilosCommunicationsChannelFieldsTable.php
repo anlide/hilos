@@ -158,7 +158,7 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
         AbstractDeliveryChannel $descriptor,
         ChannelConfigField $field,
     ): HilosCommunicationsChannelFieldsTableRow {
-        $resolved = (new ChannelConfigResolver())->resolve($descriptor->name(), $field);
+        $resolved = new ChannelConfigResolver()->resolve($descriptor->name(), $field);
 
         return new HilosCommunicationsChannelFieldsTableRow(
             rowKey: DeliveryChannelSettings::fieldKey($descriptor->name(), $field->key),

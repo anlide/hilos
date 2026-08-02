@@ -29,7 +29,7 @@ final class HilosSettingsTableTest extends TestCase
             persisted: true,
         );
 
-        $browserRow = (new HilosSettingsTable())->browserRow($row);
+        $browserRow = new HilosSettingsTable()->browserRow($row);
 
         $this->assertSame('feature_flag', $browserRow[BrowserPageSignalData::rowKey]);
 

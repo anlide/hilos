@@ -44,7 +44,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
     public function testRowFromUserMergesProfileAndOfflinePresence(): void
     {
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-        $row = (new HilosUsersTable())->rowFromUser(Hilos::$db->users[$user->id]);
+        $row = new HilosUsersTable()->rowFromUser(Hilos::$db->users[$user->id]);
 
         $this->assertSame((int) $user->id, $row->id);
         $this->assertSame($user->name, $row->name);
@@ -66,7 +66,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register('poll-ak-a', $userId);
         Hilos::$rt->connections->actions->register('poll-ak-b', $userId);
 
-        $row = (new HilosUsersTable())->rowFromUser(Hilos::$db->users[$userId]);
+        $row = new HilosUsersTable()->rowFromUser(Hilos::$db->users[$userId]);
 
         $this->assertSame(2, $row->onlineSessionCount);
         $this->assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $row->presence);
@@ -89,6 +89,6 @@ final class HilosUsersTableTest extends IntegrationTestCase
             [ConnectionState::userId => $userId],
         );
 
-        $this->assertNotNull((new HilosUsersTable())->buildMutationForSourceEvent($change));
+        $this->assertNotNull(new HilosUsersTable()->buildMutationForSourceEvent($change));
     }
 }

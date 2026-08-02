@@ -88,7 +88,7 @@ final class WorkerServerLeadershipGateTest extends TestCase
     {
         // Skip the constructor: it reads worker env and creates a log directory that
         // this gate test does not exercise. Only the agent manager is needed.
-        $server = (new ReflectionClass(GateTestWorkerServer::class))->newInstanceWithoutConstructor();
+        $server = new ReflectionClass(GateTestWorkerServer::class)->newInstanceWithoutConstructor();
 
         $property = new ReflectionProperty(WorkerServer::class, 'agentManager');
         $property->setValue($server, $manager);

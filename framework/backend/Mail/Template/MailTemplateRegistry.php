@@ -49,6 +49,6 @@ class MailTemplateRegistry
         /** @var class-string<MailTemplate> $templateClass */
         $templateClass = $catalog[$key][MailTemplateCatalogConstants::TEMPLATE_CLASS];
 
-        return (new $templateClass())->render($params, $locale);
+        return new $templateClass()->render($params, $locale);
     }
 }

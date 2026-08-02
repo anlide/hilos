@@ -176,7 +176,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             self::$logsOverviewTotalRotationsAllTime = count($batches);
             self::$logsOverviewLastRotationAt = $batches === []
                 ? null
-                : (new DateTimeImmutable())
+                : new DateTimeImmutable()
                     ->setTimestamp($batches[array_key_last($batches)]->timestamp)
                     ->format(DateTimeInterface::ATOM);
 

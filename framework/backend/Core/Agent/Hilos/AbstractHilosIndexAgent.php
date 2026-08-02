@@ -70,7 +70,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
                 return;
             }
 
-            $deleted = (new DeliveryLogPruner())->prune(
+            $deleted = new DeliveryLogPruner()->prune(
                 $setting[DeliveryLogPruner::RETENTION_SETTING_KEY]->int(),
                 new DateTimeImmutable(),
             );
