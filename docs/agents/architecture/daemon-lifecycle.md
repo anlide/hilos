@@ -9,6 +9,46 @@
 3. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
 4. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
 
+## Container watchdog and crash recovery (HIL-450)
+
+In Docker the daemon is not PID 1 — `Bootstrap/docker.php` is. It runs migrations and
+then supervises `daemon.php` through `DockerManager`, restarting it whenever it dies.
+Two rules make that supervision survive a *crash* rather than only a clean exit:
+
+- **Sweep before every start.** Workers are spawned with `proc_open` and inherit the
+  daemon's listening sockets (no `FD_CLOEXEC`). A daemon that dies without stopping them
+  leaves them holding its ports, and — because a hung worker cannot decide to exit on its
+  own — the next daemon can never bind: the node restarts every
+  `DAEMON_MIN_RESTART_INTERVAL` seconds forever. So `startDaemon()` first calls
+  `OrphanReaper::reap()`: SIGTERM to every live child of this process, polled at 100ms,
+  SIGKILL to whatever survives 5s. On a healthy restart it finds nothing and says nothing —
+  `WorkerServer::prepareShutdown()` already stopped the workers — so anything it *does*
+  find is by definition leftover. The invariant it buys is **"a daemon starts alone"**,
+  which is why no bind-retry or error-text parsing is needed anywhere.
+  - The reaper scans `/proc` for processes whose PPID is this process, rather than calling
+    `kill(-1)`. Re-parenting is flat: orphaned workers *and* their own grandchildren
+    (mysqldump, an LLM call) all land directly on PID 1, so the PPID scan sees the whole
+    tree. Where the watchdog is *not* PID 1 the scan simply finds nothing, whereas
+    `kill(-1)` would take out processes that were never ours.
+  - It skips zombies and reaps exited children with `pcntl_waitpid(..., WNOHANG)`. A child
+    killed by SIGTERM stays in `/proc` as a zombie until its parent waits for it, and that
+    parent is the watchdog itself — without the skip, every single restart would wait out
+    the full 5s grace and then SIGKILL a corpse.
+- **Shout, but keep trying.** A start that dies before reaching
+  `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Once the
+  run of failures hits `DAEMON_FAILED_START_THRESHOLD` (default 3) the watchdog logs an
+  error with the count, the last attempt's uptime, and the tail of
+  `DAEMON_ERROR_LOG_FILE`. It does **not** give up or exit: the cause may be external and
+  temporary (a database still coming up, memory pressure), and the compose restart policy
+  is deliberately left alone. The reason comes from the error-log file and not from
+  `Process::getStdErr()` — the daemon's stderr is redirected to that file, so the process
+  has no stderr pipe to read.
+
+The cluster harness guards this end to end: `cluster start <node>` reuses the existing
+container instead of recreating it, and scenario 9 (`cluster_e2e.py`) SIGKILLs the daemon
+inside a live container and requires the node to rebind, rejoin the roster, and accept
+placements again — with the same container id.
+
 ## WebSocket readiness gate
 
 The WebSocket server opens only after the agents a project declares in

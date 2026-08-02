@@ -118,6 +118,9 @@ enum EnvConstants
     /** @var string Minimum interval between daemon restarts after errors (in seconds) */
     case DAEMON_MIN_RESTART_INTERVAL;
 
+    /** @var string Consecutive failed daemon starts after which the watchdog logs an error */
+    case DAEMON_FAILED_START_THRESHOLD;
+
     // ── LLM ────────────────────────────────────────────────────────────────
 
     /** @var string LLM chat provider: local | external */

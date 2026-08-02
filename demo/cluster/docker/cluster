@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
 # cluster - host-side controller for the multi-node daemon-cluster e2e harness
-# (HIL-185). Preview-style: a thin orchestrator over `docker compose` plus the two
-# fault switches the scenarios need — `docker kill -9` (node-down / failover) and
-# `docker network disconnect` (partition / split-brain). Assertions live in the
-# Python scenario driver (cluster_e2e.py), which reads each node's
-# `cluster:test:inspect` reply and compares against the expected invariants.
+# (HIL-185). Preview-style: a thin orchestrator over `docker compose` plus the three
+# fault switches the scenarios need — `docker kill -9` (node-down / failover),
+# `docker network disconnect` (partition / split-brain), and a SIGKILL of the daemon
+# inside a live container (crash recovery). Assertions live in the Python scenario
+# driver (cluster_e2e.py), which reads each node's `cluster:test:inspect` reply and
+# compares against the expected invariants.
 #
 # Usage:
 #   cluster up                 build + start mysql, the 5 nodes, and the cli container
@@ -13,11 +14,14 @@
 #   cluster status             docker ps for the stack + a one-line inspect per node
 #   cluster inspect <node>     print a node's cluster:test:inspect JSON (m1..m3,s1,s2)
 #   cluster kill <node>        docker kill -9 a node container (simulate node-down)
-#   cluster start <node>       (re)start a node container
+#   cluster start <node>       (re)start a node container, reusing it as it is
+#   cluster recreate <node>    replace a node with a pristine container
+#   cluster crash-daemon <n>   SIGKILL the daemon inside a live node container
+#   cluster container-id <n>   print a node's docker container id
 #   cluster partition <node>   disconnect a node from the cluster network
 #   cluster heal <node>        reconnect a node to the cluster network (static IP)
 #   cluster logs <node>        follow a node's container logs
-#   cluster scenarios          run the full 8-scenario matrix (drives cluster_e2e.py)
+#   cluster scenarios          run the full 9-scenario matrix (drives cluster_e2e.py)
 
 set -euo pipefail
 
@@ -159,10 +163,58 @@ PY
 cmd_restart() { cmd_down; cmd_up; }
 
 cmd_kill() { local n="${1:-}"; valid_node "$n"; docker kill "cluster-$n" >/dev/null && echo "cluster: killed cluster-$n"; }
-# Force-recreate on restart so a killed node comes back as a pristine container with
-# no processes left over from before (a daemon that crashed internally can orphan
-# workers that keep holding its ports).
-cmd_start() { local n="${1:-}"; valid_node "$n"; dc up -d --force-recreate "cluster-$n" >/dev/null && echo "cluster: started cluster-$n"; }
+# Restart the EXISTING container instead of recreating it: a node has to come back on
+# its own hardware, leftovers and all. A daemon that crashed internally orphans workers
+# that keep holding its ports, and the watchdog now sweeps them before the next daemon
+# binds (Hilos\Core\Daemon\OrphanReaper) — so `--force-recreate` here would hide exactly
+# what scenario 9 guards.
+cmd_start() { local n="${1:-}"; valid_node "$n"; dc up -d "cluster-$n" >/dev/null && echo "cluster: started cluster-$n"; }
+# Replace a node with a pristine container. For the one case that genuinely needs a
+# fresh socket stack — healing a partition, where reconnecting the interface would
+# leave half-open sockets on both sides — and never for an ordinary restart.
+cmd_recreate() { local n="${1:-}"; valid_node "$n"; dc up -d --force-recreate "cluster-$n" >/dev/null && echo "cluster: recreated cluster-$n"; }
+cmd_container_id() { local n="${1:-}"; valid_node "$n"; docker inspect -f '{{.Id}}' "cluster-$n"; }
+
+# Kill the daemon INSIDE a running container, leaving the watchdog (PID 1) and the
+# daemon's workers alive: the workers are re-parented onto the watchdog and keep the
+# daemon's listening sockets, which is the state a real internal crash produces.
+# The lookup runs in PHP because the image carries no procps (no pgrep/pkill) and PHP
+# is the one interpreter guaranteed to be there; `display_errors=stderr` keeps a warning
+# about a process that exited mid-scan out of the pid on stdout.
+# It skips its own pid first, exactly as OrphanReaper::findChildren() does: this script
+# is passed with `-r`, so its source — needle included — is its own command line, and
+# /proc listed lexicographically puts a two-digit pid ahead of the daemon's one-digit
+# one. Without the skip the helper SIGKILLs itself and never reaches the daemon.
+crash_daemon_php='
+$self = getmypid();
+$pid = null;
+foreach (glob("/proc/[0-9]*/cmdline") ?: [] as $file) {
+    $candidate = (int)basename(dirname($file));
+    if ($candidate === $self) {
+        continue;
+    }
+    $cmdline = file_get_contents($file);
+    if ($cmdline === false || !str_contains($cmdline, "Bootstrap/daemon.php")) {
+        continue;
+    }
+    $pid = $candidate;
+    break;
+}
+if ($pid === null) {
+    fwrite(STDERR, "no daemon process found" . PHP_EOL);
+    exit(1);
+}
+posix_kill($pid, SIGKILL);
+echo $pid, PHP_EOL;
+'
+cmd_crash_daemon() {
+  local n="${1:-}"; valid_node "$n"
+  local pid
+  pid="$(docker exec "cluster-$n" php -d display_errors=stderr -r "$crash_daemon_php")" \
+    || die "no daemon process to kill inside cluster-$n"
+  echo "cluster: SIGKILLed daemon pid $pid inside cluster-$n"
+}
+
 cmd_partition() { local n="${1:-}"; valid_node "$n"; docker network disconnect "$net" "cluster-$n" && echo "cluster: partitioned cluster-$n"; }
 cmd_heal() { local n="${1:-}"; valid_node "$n"; docker network connect --ip "${NODE_IP[$n]}" "$net" "cluster-$n" && echo "cluster: reconnected cluster-$n"; }
 cmd_logs() { local n="${1:-}"; valid_node "$n"; dc logs -f "cluster-$n"; }
@@ -185,9 +237,12 @@ case "${1:-}" in
   inspect-local) shift; cmd_inspect_local "$@" ;;
   kill)      shift; cmd_kill "$@" ;;
   start)     shift; cmd_start "$@" ;;
+  recreate)  shift; cmd_recreate "$@" ;;
+  crash-daemon) shift; cmd_crash_daemon "$@" ;;
+  container-id) shift; cmd_container_id "$@" ;;
   partition) shift; cmd_partition "$@" ;;
   heal)      shift; cmd_heal "$@" ;;
   logs)      shift; cmd_logs "$@" ;;
   scenarios) shift; cmd_scenarios ;;
-  *)         die "usage: cluster {up|down|restart|status|inspect|kill|start|partition|heal|logs|scenarios} [args]" ;;
+  *)         die "usage: cluster {up|down|restart|status|inspect|kill|start|recreate|crash-daemon|container-id|partition|heal|logs|scenarios} [args]" ;;
 esac

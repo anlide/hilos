@@ -82,6 +82,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 20,
                 emptyIsMissing: true,
             ),
+            EnvConstants::DAEMON_FAILED_START_THRESHOLD->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                3,
+                emptyIsMissing: true,
+            ),
             EnvConstants::LLM_CHAT_PROVIDER->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::PROVIDER_LOCAL,

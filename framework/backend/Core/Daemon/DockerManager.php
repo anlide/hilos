@@ -38,6 +38,9 @@ class DockerManager extends BaseManager
         'proc_terminate',
     ];
 
+    /** How much of the daemon error log the failed-start escalation quotes. */
+    private const int ERROR_LOG_TAIL_BYTES = 2000;
+
     /** @var bool Flag for daemon restart mode */
     private bool $shouldRestart = false;
 
@@ -52,6 +55,9 @@ class DockerManager extends BaseManager
 
     /** @var bool Flag to track if restart interval message was logged for current restart */
     private bool $restartIntervalLogged = false;
+
+    /** @var int Daemon starts that died before reaching the minimum uptime, in a row */
+    private int $consecutiveFailedStarts = 0;
 
     /**
      * Run Docker watchdog - main method
@@ -164,7 +170,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws EnvException If restart interval env value is missing or invalid
+     * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
      */
     private function tickDaemon(): void
     {
@@ -186,6 +192,7 @@ class DockerManager extends BaseManager
         // Check if the daemon is running
         $status = $this->process->getStatus();
         if ($status[Process::STATUS_RUNNING] !== true) {
+            $uptime = $this->processStartTime === null ? 0.0 : microtime(true) - $this->processStartTime;
             $this->process = null;
             $this->processStartTime = null;
 
@@ -199,6 +206,7 @@ class DockerManager extends BaseManager
                     $this->lastErrorRestartTime = microtime(true);
                     $this->restartIntervalLogged = false;
                     Logger::error("Daemon process has stopped unexpectedly");
+                    $this->recordFailedStart($uptime);
                 }
             }
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
@@ -210,8 +218,64 @@ class DockerManager extends BaseManager
                 // Process has been running successfully for minimum interval - reset restart protection
                 $this->lastErrorRestartTime = null;
                 $this->restartIntervalLogged = false;
+                $this->consecutiveFailedStarts = 0;
             }
         }
+    }
+
+    /**
+     * Counts a daemon start that died early and shouts once the run of failures gets long.
+     *
+     * The watchdog deliberately keeps retrying — the cause may be external and temporary
+     * (a full disk, a database that is not up yet) — so the escalation is a loud log
+     * record rather than giving up. Without it a node can restart every
+     * {@see EnvConstants::DAEMON_MIN_RESTART_INTERVAL} seconds forever while staying
+     * silent about it.
+     *
+     * @param float $uptime How long the failed start survived, in seconds
+     * @throws EnvException If the failed-start threshold env value is missing or invalid
+     */
+    private function recordFailedStart(float $uptime): void
+    {
+        $this->consecutiveFailedStarts++;
+        $threshold = Hilos::$env->int(EnvConstants::DAEMON_FAILED_START_THRESHOLD);
+        if ($threshold <= 0 || $this->consecutiveFailedStarts < $threshold) {
+            return;
+        }
+
+        Logger::error(
+            "Daemon failed to start {$this->consecutiveFailedStarts} times in a row"
+            . ' (last attempt survived ' . number_format($uptime, 2) . 's).'
+            . ' Watchdog keeps retrying. Last daemon errors: ' . $this->readErrorLogTail(),
+        );
+    }
+
+    /**
+     * Reads the tail of the daemon error log for the escalation record.
+     *
+     * The daemon's stderr is redirected straight to that file rather than to a pipe,
+     * so the watchdog cannot read it from the process: {@see Process::getStdErr()} only
+     * returns what a pipe descriptor buffered. Reading the file is what actually puts
+     * the reason in front of whoever sees the escalation.
+     *
+     * @return string Tail of the error log, or a note when it cannot be read
+     * @throws EnvException If the daemon error log env value is missing or invalid
+     */
+    private function readErrorLogTail(): string
+    {
+        $path = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE];
+        $size = @filesize($path);
+        if ($size === false) {
+            return '(error log is not readable)';
+        }
+
+        $offset = max(0, $size - self::ERROR_LOG_TAIL_BYTES);
+        $tail = @file_get_contents($path, false, null, $offset);
+        if ($tail === false || trim($tail) === '') {
+            return '(error log is empty)';
+        }
+
+        return trim($tail);
     }
 
     /**
@@ -227,6 +291,12 @@ class DockerManager extends BaseManager
     {
         Logger::info("Starting daemon process...");
         $startTime = microtime(true);
+
+        // A daemon that died without stopping its workers leaves them holding its
+        // listening sockets, and the next daemon then cannot bind. Orphans are
+        // re-parented to PID 1 — this watchdog — so sweeping our own children first
+        // makes "the daemon starts alone" an invariant instead of a race.
+        new OrphanReaper()->reap();
 
         // Create log directories if they don't exist
         $logDir = dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);

@@ -31,7 +31,7 @@ composer -d demo/cluster run install-deps      # generate the lock (once)
 composer -d demo/cluster run test:unit         # topology + placement-contract unit tests
 demo/cluster/docker/cluster up                 # build + start mysql, 5 nodes, cli
 demo/cluster/docker/cluster status             # roster + leader + placements per node
-demo/cluster/docker/cluster scenarios          # the 8-scenario matrix
+demo/cluster/docker/cluster scenarios          # the 9-scenario matrix
 demo/cluster/docker/cluster down --volumes     # tear everything down
 ```
 
@@ -48,6 +48,8 @@ scenario matrix. From the repo root: `composer run test:cluster:all`.
 6. hot-join — a returning node is admitted; inspect shows the full roster
 7. quorum-loss — an isolated minority master stops leading; no new leader
 8. split-brain prevention — the majority keeps one leader; the minority steps down
+9. daemon-crash self-heal — a node whose daemon is SIGKILLed rebinds and rejoins
+   inside the *same* container, then takes the whole fleet (HIL-450)
 
 ### Timing on a loaded host (HIL-367)
 

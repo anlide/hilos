@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-cluster_e2e.py - the 8-scenario assertion matrix for the daemon-cluster e2e
+cluster_e2e.py - the 9-scenario assertion matrix for the daemon-cluster e2e
 harness (HIL-185).
 
 It assumes the stack is already up (via `cluster up`) and drives it: for each
 scenario it perturbs the cluster through the sibling `cluster` bash controller
-(docker kill -9 for node-down, docker network disconnect for partition), polls
-each node's `cluster:test:inspect` reply until the topology converges (bounded by
-a hard cap), and asserts the expected invariants against the machine-readable
-reply. Destructive scenarios restore the cluster and re-converge before the next.
+(docker kill -9 for node-down, docker network disconnect for partition, a SIGKILL
+of the daemon inside a live container for an internal crash), polls each node's
+`cluster:test:inspect` reply until the topology converges (bounded by a hard cap),
+and asserts the expected invariants against the machine-readable reply. Destructive
+scenarios restore the cluster and re-converge before the next.
 
 Timing on a loaded host (HIL-367): the convergence caps below are sized for an
 adequately-provisioned stand (nova-lt / HIL-348). On a resource-constrained host
@@ -32,6 +33,10 @@ Covers the full spike-HIL-176 matrix:
   6 hot-join                   a returning node is admitted; full roster
   7 quorum-loss                a minority stops leading; no new leader
   8 split-brain prevention     the majority keeps one leader; the minority steps down
+
+Plus one scenario beyond that matrix:
+  9 daemon-crash self-heal     a node whose daemon is SIGKILLed rebinds and rejoins
+                               inside the same container (HIL-450)
 
 Exit code 0 when every scenario passes, 1 otherwise.
 """
@@ -116,14 +121,29 @@ CONVERGE_TIMEOUT = 60.0 * TIMEOUT_SCALE
 FAILOVER_TIMEOUT = 40.0 * TIMEOUT_SCALE
 ELECTION_TIMEOUT = 30.0 * TIMEOUT_SCALE
 QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
+# Recovering from a daemon crash is deliberately slower than any of the above: the
+# watchdog rate-limits an error restart to DAEMON_MIN_RESTART_INTERVAL (20s), and only
+# then does the new daemon sweep the orphans, bind, and gossip its way back in.
+CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
 
 
 # --------------------------------------------------------------------------- io
 
 def ctl(*args):
-    """Run the sibling bash controller (kill/start/partition/heal)."""
+    """Run the sibling bash controller (kill/start/recreate/partition/heal)."""
     subprocess.run([CLUSTER, *args], check=False,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def ctl_out(*args):
+    """Run the controller for a value: its stdout stripped, or '' when it failed."""
+    proc = subprocess.run([CLUSTER, *args], capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def container_id(node):
+    """Docker id of a node's container, or '' when there is none."""
+    return ctl_out("container-id", node)
 
 
 def _inspect(subcmd, node):
@@ -177,6 +197,14 @@ def worker_placements(views):
     prefix = WORKER_AGENT_TYPE + ":"
     return {row["agentId"]: row for row in leader_placements(views)
             if str(row.get("agentId", "")).startswith(prefix)}
+
+
+def node_online(views, node):
+    """Predicate: a single leader is in charge and its roster lists a node as online."""
+    ls = leaders(views)
+    if len(ls) != 1:
+        return False
+    return any(n["nodeId"] == node and n.get("online") for n in views[ls[0]].get("nodes", []))
 
 
 def hosted_by(views, node):
@@ -328,16 +356,12 @@ def scenario_6_hot_join():
     joiner = "s2"
     print(f"    taking {joiner} down, then hot-joining it back")
     ctl("kill", joiner)
-    wait_until(
-        lambda v: (lambda ls: len(ls) == 1 and not any(
-            n["nodeId"] == joiner and n.get("online") for n in v[ls[0]].get("nodes", [])
-        ))(leaders(v)),
-        CONVERGE_TIMEOUT, f"{joiner} seen offline in the roster",
-        nodes=[n for n in ALL_NODES if n != joiner])
+    wait_until(lambda v: not node_online(v, joiner),
+               CONVERGE_TIMEOUT, f"{joiner} seen offline in the roster",
+               nodes=[n for n in ALL_NODES if n != joiner])
     ctl("start", joiner)
-    wait_until(
-        lambda v: (lambda ls: len(ls) == 1 and {n["nodeId"] for n in v[ls[0]].get("nodes", []) if n.get("online")} >= set(ALL_NODES))(leaders(v)),
-        CONVERGE_TIMEOUT, f"{joiner} re-admitted; full roster of {len(ALL_NODES)}")
+    wait_until(converged(ALL_NODES), CONVERGE_TIMEOUT,
+               f"{joiner} re-admitted; full roster of {len(ALL_NODES)}")
     return f"{joiner} hot-joined; gossip shows the full roster"
 
 
@@ -390,7 +414,59 @@ def scenario_8_split_brain():
         # (no RST), which is not how a real partition heals — a recovering node comes back
         # clean. A recreate gives m3 a fresh socket stack, and the survivors reset their
         # stale links to it on the next write and re-dial, so the mesh reconverges.
-        ctl("start", "m3")
+        # This is the one place that asks for a pristine container, hence `recreate` and
+        # not `start` — `start` deliberately reuses the container (see scenario 9).
+        ctl("recreate", "m3")
+        wait_converge(ALL_NODES)
+
+
+def scenario_9_daemon_crash_selfheal():
+    """A daemon killed inside a live container must come back on its own (HIL-450).
+
+    This is the crash the harness used to paper over with `--force-recreate`: the
+    daemon dies, its workers survive as orphans on the watchdog and keep holding its
+    listening sockets, and without a sweep every restart fails to bind forever. The
+    container is deliberately NOT replaced, so the only way back is the watchdog
+    reaping its own children before the next daemon start.
+    """
+    victim = "s1"
+    wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the crash")
+    before = container_id(victim)
+    assert before, f"could not read the container id of {victim}"
+
+    killed = ctl_out("crash-daemon", victim)
+    assert "SIGKILLed" in killed, f"could not kill the daemon inside {victim}: {killed or '(no output)'}"
+    print(f"    {killed.removeprefix('cluster: ')}; its workers stay behind holding the ports")
+
+    survivors = [n for n in ALL_NODES if n != victim]
+    try:
+        wait_until(lambda v: not node_online(v, victim), CONVERGE_TIMEOUT,
+                   f"{victim} seen offline after its daemon died", nodes=survivors)
+        wait_until(converged(ALL_NODES), CRASH_RECOVERY_TIMEOUT,
+                   f"{victim} rebound its ports and rejoined the roster on its own")
+        after = container_id(victim)
+        assert after == before, \
+            f"{victim} came back as a NEW container ({after[:12]} != {before[:12]}); " \
+            "it was recreated instead of self-healing"
+
+        # Back in the roster is not the same as fit for work: leave the recovered node
+        # as the only capable target and require the whole fleet to land on it.
+        other = next(s for s in SLAVES if s != victim)
+        print(f"    killing {other} so the recovered {victim} is the only placement target")
+        ctl("kill", other)
+        try:
+            wait_until(lambda v: len(hosted_by(v, victim)) == WORKER_FLEET_SIZE,
+                       FAILOVER_TIMEOUT, f"the whole fleet placed onto the recovered {victim}",
+                       nodes=[n for n in ALL_NODES if n != other])
+        finally:
+            ctl("start", other)
+        return (f"{victim} self-healed in the same container ({before[:12]}) "
+                f"and then took all {WORKER_FLEET_SIZE} workers")
+    finally:
+        # Recreate rather than start: a node that did NOT self-heal is still running, so
+        # `start` would be a no-op on it and every later attempt would inherit the wedge.
+        # Replacing the container is the only way back, and after a pass it is a cheap reset.
+        ctl("recreate", victim)
         wait_converge(ALL_NODES)
 
 
@@ -403,6 +479,7 @@ SCENARIOS = [
     ("6 hot-join", scenario_6_hot_join),
     ("7 quorum-loss", scenario_7_quorum_loss),
     ("8 split-brain prevention", scenario_8_split_brain),
+    ("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
