@@ -13,6 +13,7 @@ use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
+use Hilos\Database\SqlSortDirection;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -108,7 +109,7 @@ final class NotificationDeliveries extends Objects
                 EntityNotificationDelivery::channel => $channel,
             ],
             [],
-            [EntityNotificationDelivery::id => 'ASC'],
+            [EntityNotificationDelivery::id => SqlSortDirection::ASC],
         );
 
         foreach ($entities as $entity) {

@@ -17,6 +17,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\SqlSortDirection;
 use Hilos\Notification\Delivery\DeliveryStatus;
 
 /**
@@ -253,12 +254,16 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     {
         $column = self::SORTABLE[$query->orderBy] ?? null;
         if ($column === null) {
-            return ' ORDER BY nd.' . EntityNotificationDelivery::created_at . ' DESC, nd.' . EntityNotificationDelivery::id . ' DESC';
+            return ' ORDER BY nd.' . EntityNotificationDelivery::created_at . ' ' . SqlSortDirection::DESC
+                . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;
         }
 
-        $direction = $query->orderDirection === TableConstants::ORDER_ASC ? 'ASC' : 'DESC';
+        $direction = $query->orderDirection === TableConstants::ORDER_ASC
+            ? SqlSortDirection::ASC
+            : SqlSortDirection::DESC;
 
-        return ' ORDER BY ' . $column . ' ' . $direction . ', nd.' . EntityNotificationDelivery::id . ' DESC';
+        return ' ORDER BY ' . $column . ' ' . $direction
+            . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;
     }
 
     /**

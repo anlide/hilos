@@ -16,6 +16,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Database\SqlSortDirection;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -112,7 +113,7 @@ final class Notifications extends Objects
         $entities = EntityNotification::get(
             [EntityNotification::user_id => $userId],
             [],
-            [EntityNotification::id => 'DESC'],
+            [EntityNotification::id => SqlSortDirection::DESC],
         );
 
         $result = [];
