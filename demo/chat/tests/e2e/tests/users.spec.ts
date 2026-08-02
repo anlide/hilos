@@ -129,10 +129,22 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   await expect(pageIndicator).toHaveText(/^\s*1 \/ \d+\s*$/)
 
   // Server search filters the whole selection, not just the loaded window: the shared
-  // prefix matches exactly the 25 seeded users, and the window still caps at 10 rows.
+  // `seed-` prefix matches exactly the 25 seeded users, and the window still caps at 10.
+  //
+  // The total is polled to its settled value, not asserted once. On a freshly brought-up
+  // shared stand the viewport count can briefly under-report by one while the burst of
+  // window responses from typing settles over the socket (observed a stable "24 total"
+  // for the default expect timeout, then "25 total" once a later window/count signal
+  // landed). Polling waits for the true total to arrive; it does NOT paper over a lost
+  // row — a genuine missing seed would never reach 25 and would time out here.
   const search = page.getByTestId('hilos-table-search')
   await search.fill('')
   await search.pressSequentially('seed-', { delay: 10 })
+  await expect
+    .poll(async () => Number((await count.textContent())?.replace(/\D/g, '')), {
+      timeout: 15000,
+    })
+    .toBe(25)
   await expect(count).toHaveText('25 total')
   await expect(rows).toHaveCount(10)
 })
