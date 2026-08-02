@@ -5,6 +5,7 @@ namespace Hilos\Database\Schema;
 use Hilos\Database\ColumnType;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\SqlParamCollection;
 
 /**
@@ -265,6 +266,24 @@ class Schema
         }
 
         return self::$tables[$index][$tableName];
+    }
+
+    /**
+     * Asserts that a framework table is activated in the project schema.
+     *
+     * Framework subsystems ship their tables as migration stubs, so a caller that
+     * owns such a table checks activation before touching it and gets a message
+     * naming the stub to copy instead of a driver-level "table doesn't exist".
+     *
+     * @param string $table Table the caller is about to read or write
+     * @param ?int $index Connection index
+     * @throws TableNotActivatedException When the project has not activated the table
+     */
+    public static function requireTable(string $table, ?int $index = null): void
+    {
+        if (self::getTable($table, $index) === null) {
+            throw new TableNotActivatedException($table);
+        }
     }
 
     /**

@@ -9,8 +9,10 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificationDeliveries;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\Schema;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -39,6 +41,9 @@ final class NotificationDeliveries extends Objects
     /** Longest failure detail kept in `last_error` (column is VARCHAR(255)). */
     private const int LAST_ERROR_LIMIT = 255;
 
+    /** Whether the activation of the delivery table has already been confirmed. */
+    private bool $tableActivationConfirmed = false;
+
     /**
      * Persists a pending delivery row for one channel of one notification.
      *
@@ -50,10 +55,13 @@ final class NotificationDeliveries extends Objects
      * @param string $channel Target channel name
      * @return ObjectNotificationDelivery The created delivery object
      * @throws EmptyValueException When the channel name is empty
+     * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the insert query fails
      */
     public function createPending(int $notificationId, string $channel): ObjectNotificationDelivery
     {
+        $this->requireActivatedTable();
+
         if ($channel === '') {
             throw new EmptyValueException('Notification delivery channel is required');
         }
@@ -87,10 +95,13 @@ final class NotificationDeliveries extends Objects
      * @param int $notificationId Notification id
      * @param string $channel Channel name
      * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
+     * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the database query fails
      */
     public function findFor(int $notificationId, string $channel): ?ObjectNotificationDelivery
     {
+        $this->requireActivatedTable();
+
         $entities = EntityNotificationDelivery::get(
             [
                 EntityNotificationDelivery::notification_id => $notificationId,
@@ -154,6 +165,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param int $id Delivery row id
      * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
+     * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the database query fails
      */
     public function findById(int $id): ?ObjectNotificationDelivery
@@ -161,6 +173,8 @@ final class NotificationDeliveries extends Objects
         if (isset($this->objects[$id])) {
             return $this->objects[$id];
         }
+
+        $this->requireActivatedTable();
 
         $entity = EntityNotificationDelivery::getById($id);
         if ($entity === null || $entity->id === null) {
@@ -212,5 +226,26 @@ final class NotificationDeliveries extends Objects
         }
         $delivery->updatedAt = TimeHelper::getSqlDateTime();
         $delivery->sync();
+    }
+
+    /**
+     * Asserts once per collection that the project activated the delivery table.
+     *
+     * The schema is loaded once per process, so a confirmed activation cannot become
+     * false again and the check is remembered instead of repeated on every dispatch.
+     * Only success is remembered: a project that activates the table later in the same
+     * process (a migration run followed by a fresh schema load) is picked up by the
+     * next call.
+     *
+     * @throws TableNotActivatedException When the project has not activated the table
+     */
+    private function requireActivatedTable(): void
+    {
+        if ($this->tableActivationConfirmed) {
+            return;
+        }
+
+        Schema::requireTable(EntityNotificationDelivery::_table);
+        $this->tableActivationConfirmed = true;
     }
 }

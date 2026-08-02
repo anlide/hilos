@@ -10,8 +10,10 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Notifications as EntityNotifications;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
+use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -39,6 +41,9 @@ final class Notifications extends Objects
     public const string ENTITY_COLLECTION_CLASS = EntityNotifications::class;
     public const string COLLECTION_KEY = HilosDbContext::notifications;
 
+    /** Whether the activation of the notification table has already been confirmed. */
+    private bool $tableActivationConfirmed = false;
+
     /**
      * Persists a new notification for a recipient.
      *
@@ -54,6 +59,7 @@ final class Notifications extends Objects
      * @param ?string $data Structured context as a JSON string, or null
      * @return ObjectNotification The created notification object
      * @throws EmptyValueException When type or title is empty
+     * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the insert query fails
      */
     public function createFor(
@@ -64,6 +70,8 @@ final class Notifications extends Objects
         ?string $body,
         ?string $data,
     ): ObjectNotification {
+        $this->requireActivatedTable();
+
         if ($type === '' || $title === '') {
             throw new EmptyValueException('Notification type and title are required');
         }
@@ -94,10 +102,13 @@ final class Notifications extends Objects
      * @param int $userId Recipient user id
      * @param int $limit Maximum rows to return (defensive upper bound on the page)
      * @return list<ObjectNotification> Notifications newest-first (empty when none)
+     * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the database query fails
      */
     public function listForUser(int $userId, int $limit = 100): array
     {
+        $this->requireActivatedTable();
+
         $entities = EntityNotification::get(
             [EntityNotification::user_id => $userId],
             [],
@@ -130,10 +141,13 @@ final class Notifications extends Objects
      *
      * @param int $userId Recipient user id
      * @return int Number of unread notifications for the user
+     * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the count query fails
      */
     public function countUnreadForUser(int $userId): int
     {
+        $this->requireActivatedTable();
+
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($userId));
         $resultSet = Database::sql(
@@ -160,10 +174,13 @@ final class Notifications extends Objects
      *
      * @param int $userId Recipient user id
      * @return int Number of rows marked read
+     * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the update query fails
      */
     public function markAllReadForUser(int $userId): int
     {
+        $this->requireActivatedTable();
+
         $now = TimeHelper::getSqlDateTime();
 
         $params = SqlParamCollection::empty();
@@ -180,6 +197,27 @@ final class Notifications extends Objects
         $this->invalidateLoadedForUser($userId, $now);
 
         return Database::affectedRows();
+    }
+
+    /**
+     * Asserts once per collection that the project activated the notification table.
+     *
+     * The schema is loaded once per process, so a confirmed activation cannot become
+     * false again and the check is remembered instead of repeated on every read and
+     * write. Only success is remembered: a project that activates the table later in
+     * the same process (a migration run followed by a fresh schema load) is picked up
+     * by the next call.
+     *
+     * @throws TableNotActivatedException When the project has not activated the table
+     */
+    private function requireActivatedTable(): void
+    {
+        if ($this->tableActivationConfirmed) {
+            return;
+        }
+
+        Schema::requireTable(EntityNotification::_table);
+        $this->tableActivationConfirmed = true;
     }
 
     /**
