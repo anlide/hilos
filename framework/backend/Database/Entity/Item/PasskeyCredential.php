@@ -60,13 +60,13 @@ final class PasskeyCredential extends Entity
         self::identity_id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
         self::credential_id => PhpType::STRING->value,
-        self::public_key => PhpType::STRING->value,
+        self::public_key => PhpType::TEXT->value,
         self::sign_count => PhpType::INTEGER->value,
         self::transports => PhpType::STRING->value,
         self::aaguid => PhpType::STRING->value,
-        self::user_handle => PhpType::STRING->value,
+        self::user_handle => PhpType::BINARY->value,
         self::label => PhpType::STRING->value,
-        self::last_used_at => PhpType::STRING->value,
+        self::last_used_at => PhpType::DATETIME->value,
     ];
 
     public const array _indexes = [

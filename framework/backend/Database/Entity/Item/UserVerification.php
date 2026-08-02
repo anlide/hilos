@@ -58,8 +58,8 @@ final class UserVerification extends Entity
         self::type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
-        self::expires_at => PhpType::STRING->value,
-        self::consumed_at => PhpType::STRING->value,
+        self::expires_at => PhpType::DATETIME->value,
+        self::consumed_at => PhpType::DATETIME->value,
     ];
 
     public const array _indexes = [
