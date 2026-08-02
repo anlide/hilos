@@ -18,4 +18,12 @@ interface SignalDataInterface
      * @return array<string, mixed> Signal payload
      */
     public function toArray(): array;
+
+    /**
+     * Restores a signal payload from its transport array.
+     *
+     * @param array<string, mixed> $data Signal payload
+     * @return static Restored signal payload
+     */
+    public static function fromArray(array $data): static;
 }

@@ -45,6 +45,19 @@ final class CommandPayloadDtoTest extends TestCase
         $this->expectException(InvalidCommandPayloadException::class);
         new CommandPayloadTestRouter()->createCommandPayloadDTO('typed', $request);
     }
+
+    public function testHydrationFailureCarriesItsCause(): void
+    {
+        $request = new CommandRequestDTO('corr-4', 'typed', []);
+
+        try {
+            new CommandPayloadTestRouter()->createCommandPayloadDTO('typed', $request);
+            $this->fail('Expected InvalidCommandPayloadException');
+        } catch (InvalidCommandPayloadException $e) {
+            $this->assertInstanceOf(\InvalidArgumentException::class, $e->getPrevious());
+            $this->assertStringContainsString('value is required', $e->getMessage());
+        }
+    }
 }
 
 /**
@@ -69,16 +82,16 @@ final class RequireFieldCommandData implements SignalDataInterface
 
     /**
      * @param array<string, mixed> $data Wire payload
-     * @return self Restored payload
+     * @return static Restored payload
      */
-    public static function fromArray(array $data): self
+    public static function fromArray(array $data): static
     {
         $value = $data['value'] ?? null;
         if (!is_string($value) || $value === '') {
             throw new \InvalidArgumentException('value is required');
         }
 
-        return new self($value);
+        return new static($value);
     }
 }
 

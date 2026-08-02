@@ -1453,6 +1453,14 @@ final class TopologyTestPageSignalData implements SignalDataInterface
     {
         return [];
     }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
+    }
 }
 
 final class TopologyTestAgentSignalData implements SignalDataInterface
@@ -1464,6 +1472,14 @@ final class TopologyTestAgentSignalData implements SignalDataInterface
     {
         return [];
     }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
+    }
 }
 
 final class TopologyTestIndexedAgentSignalData implements SignalDataInterface
@@ -1474,6 +1490,14 @@ final class TopologyTestIndexedAgentSignalData implements SignalDataInterface
     public function toArray(): array
     {
         return [];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static();
     }
 }
 

@@ -12,7 +12,7 @@ Every signal carries a payload object implementing `SignalDataInterface`.
 ## Creating a signal DTO
 
 ```php
-// Implement SignalDataInterface (or extend BaseDTO for toArray/fromArray)
+// SignalDataInterface requires toArray() and static fromArray(); BaseDTO adds toJson()/fromJson()
 final class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface {
     public function __construct(
         public readonly string $message,
