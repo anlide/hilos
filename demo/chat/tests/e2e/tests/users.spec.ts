@@ -94,3 +94,45 @@ test('shows the connected user as online with a live session', async ({
     page.locator('[data-id="hilos-user-detail"] .badge'),
   ).toHaveText('online')
 })
+
+// HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
+// deterministic `seed-###` users on stand bring-up, so window paging and server search
+// run against more than one page — the case a single registered user can never reach.
+test('windows, paginates, and searches the seeded users', async ({ page }) => {
+  await signUp(page)
+  await page.goto('/hilos/users')
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+
+  // The window holds exactly one page of rows regardless of how large the table is.
+  const rows = page.locator('[data-id^="hilos-table-row-"]')
+  await expect(rows).toHaveCount(10)
+
+  // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
+  // is asserted by shape and lower bound, not an exact number on the shared database.
+  const count = page.getByTestId('hilos-table-count')
+  await expect(count).toHaveText(/^\d+ total$/)
+  const total = Number((await count.textContent())?.replace(/\D/g, ''))
+  expect(total).toBeGreaterThanOrEqual(26)
+
+  // The page indicator starts at page 1 of a multi-page set.
+  const pageIndicator = page.getByTestId('hilos-table-page')
+  await expect(pageIndicator).toHaveText(/^1 \/ \d+$/)
+
+  // Next advances the window to a different set of rows; prev restores it.
+  const rowKeys = async () =>
+    rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
+  const firstKeys = JSON.stringify(await rowKeys())
+  await page.getByTestId('hilos-table-next').click()
+  await expect(pageIndicator).toHaveText(/^2 \/ \d+$/)
+  await expect.poll(async () => JSON.stringify(await rowKeys())).not.toBe(firstKeys)
+  await page.getByTestId('hilos-table-prev').click()
+  await expect(pageIndicator).toHaveText(/^1 \/ \d+$/)
+
+  // Server search filters the whole selection, not just the loaded window: the shared
+  // prefix matches exactly the 25 seeded users, and the window still caps at 10 rows.
+  const search = page.getByTestId('hilos-table-search')
+  await search.fill('')
+  await search.pressSequentially('seed-', { delay: 10 })
+  await expect(count).toHaveText('25 total')
+  await expect(rows).toHaveCount(10)
+})
