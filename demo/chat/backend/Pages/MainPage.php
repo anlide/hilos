@@ -73,6 +73,7 @@ use Hilos\Database\View\Item\Identity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
@@ -206,8 +207,9 @@ final class MainPage extends AbstractPage
      * @throws ValidationException When a routed handler rejects the action
      * @throws \Random\RandomException When issuing a verification code cannot draw from the CSPRNG
      * @throws HilosException When a routed handler exposes storage, settings, database, or runtime failure
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case ChatSignalConstants::MESSAGE:
@@ -381,6 +383,8 @@ final class MainPage extends AbstractPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

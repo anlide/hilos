@@ -60,4 +60,60 @@ final class PageActionSuccessSignalDataTest extends TestCase
         $this->assertSame('req-3', $restored->getEnvelopeRequestId());
         $this->assertNull($restored->getEnvelopeTime());
     }
+
+    public function testOmitsReplyWhenAbsent(): void
+    {
+        $data = new PageActionSuccessSignalData('moderator_piece_update', 'req-3');
+
+        $this->assertNull($data->reply);
+        $this->assertArrayNotHasKey('reply', $data->toArray());
+    }
+
+    public function testCarriesDomainReplyWhenSet(): void
+    {
+        $data = new PageActionSuccessSignalData(
+            'moderator_piece_update',
+            'req-3',
+            null,
+            ['token' => 'abc'],
+        );
+
+        $this->assertSame(['token' => 'abc'], $data->reply);
+        $this->assertSame([
+            'action' => 'moderator_piece_update',
+            'requestId' => 'req-3',
+            'reply' => ['token' => 'abc'],
+        ], $data->toArray());
+    }
+
+    public function testMessageAndReplyCoexist(): void
+    {
+        $data = new PageActionSuccessSignalData(
+            'moderator_piece_update',
+            'req-3',
+            'Piece approved.',
+            ['token' => 'abc'],
+        );
+
+        $this->assertSame([
+            'action' => 'moderator_piece_update',
+            'requestId' => 'req-3',
+            'message' => 'Piece approved.',
+            'reply' => ['token' => 'abc'],
+        ], $data->toArray());
+    }
+
+    public function testRoundtripPreservesTheDomainReply(): void
+    {
+        $original = new PageActionSuccessSignalData(
+            'moderator_piece_update',
+            'req-3',
+            'Piece approved.',
+            ['token' => 'abc'],
+        );
+        $restored = PageActionSuccessSignalData::fromArray($original->toArray());
+
+        $this->assertSame(['token' => 'abc'], $restored->reply);
+        $this->assertSame('Piece approved.', $restored->message);
+    }
 }

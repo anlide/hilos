@@ -75,9 +75,9 @@ export function createHilosTrackedAction(
       loading.set(next),
     )
     try {
-      const message = await handle.done
+      const result = await handle.done
       if (options.toast !== false) {
-        hilosToasts.push(message ?? DEFAULT_SUCCESS_MESSAGE, {
+        hilosToasts.push(result.message ?? DEFAULT_SUCCESS_MESSAGE, {
           severity: 'success',
         })
       }

@@ -16,6 +16,7 @@ use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
@@ -231,9 +232,10 @@ abstract class AbstractPage
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      * @throws AgentUnknownActionException When the page does not support the action
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         throw new AgentUnknownActionException("Unknown action: {$action}");
     }
@@ -253,6 +255,20 @@ abstract class AbstractPage
     protected function setActionSuccessMessage(string $message): void
     {
         $this->pendingActionSuccessMessage = $message;
+    }
+
+    /**
+     * Resets the per-action success slot at the start of an action dispatch.
+     *
+     * Called by PageSignalRouter before onAction() runs. The success message slot
+     * is otherwise cleared only in sendActionSuccess()/sendActionFail(), neither of
+     * which fires on the untracked path — so a message set by an untracked action
+     * would survive and surface on the next action's ack. Clearing it up front
+     * scopes the message to the action that set it.
+     */
+    public function beginActionDispatch(): void
+    {
+        $this->pendingActionSuccessMessage = null;
     }
 
     /**
@@ -287,19 +303,25 @@ abstract class AbstractPage
      * loading state and resolves its request on the client, correlated by the
      * echoed requestId, and consumes any success sentence the handler set via
      * {@see AbstractPage::setActionSuccessMessage()} so the frontend can toast it.
+     * The optional $reply the handler returned rides the same ack as domain data.
      *
      * @param string $acceptKey WebSocket accept key of the initiating client
      * @param string $action Action name that committed
      * @param string $requestId Client-minted request id to echo back for correlation
+     * @param ?ActionReplyDTO $reply Domain reply the handler returned, or null when the action answered with nothing
      */
-    public function sendActionSuccess(string $acceptKey, string $action, string $requestId): void
-    {
+    public function sendActionSuccess(
+        string $acceptKey,
+        string $action,
+        string $requestId,
+        ?ActionReplyDTO $reply = null,
+    ): void {
         $message = $this->pendingActionSuccessMessage;
         $this->pendingActionSuccessMessage = null;
         $this->sendToUser(
             SignalConstants::ACTION_SUCCESS,
             $acceptKey,
-            new PageActionSuccessSignalData($action, $requestId, $message),
+            new PageActionSuccessSignalData($action, $requestId, $message, $reply?->toArray()),
         );
     }
 

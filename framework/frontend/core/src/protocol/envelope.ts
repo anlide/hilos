@@ -57,13 +57,17 @@ export type ActionErrorSignalData = z.infer<typeof actionErrorSignalDataSchema>
  * `PageActionSuccessSignalData`): the committed action's name and an optional
  * backend-authored `message` — the outcome sentence the frontend surfaces as a
  * success toast (present only when the handler set one; the driver falls back to
- * a generic string otherwise). The real state arrives over the page payload, and
- * the correlating `requestId` plus the `outcome: 'success'` marker ride the
- * envelope, not this payload.
+ * a generic string otherwise). It may also carry an optional domain `reply` — the
+ * array form of the reply DTO the handler returned — which the action lifecycle
+ * validates against the caller's optional schema and resolves the request with;
+ * absent entirely when the handler answered with nothing. The real state arrives
+ * over the page payload, and the correlating `requestId` plus the
+ * `outcome: 'success'` marker ride the envelope, not this payload.
  */
 export const actionSuccessSignalDataSchema = z.looseObject({
   action: z.string(),
   message: z.string().optional(),
+  reply: z.unknown().optional(),
 })
 
 export type ActionSuccessSignalData = z.infer<

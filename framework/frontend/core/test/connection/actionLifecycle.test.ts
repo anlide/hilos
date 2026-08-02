@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   ActionError,
   ActionLifecycle,
@@ -43,12 +44,14 @@ class FakeSource implements ActionLifecycleSource {
     action: string,
     requestId: string | undefined,
     message?: string,
+    reply?: unknown,
   ): void {
     for (const listener of this.listeners.actionSuccess) {
       listener({
         kind: 'actionSuccess',
         action,
         message,
+        reply,
         requestId,
         envelope: { type: 'action_success', data: {} },
       })
@@ -97,7 +100,10 @@ describe('ActionLifecycle', () => {
     expect(source.sent[0]?.requestId).toBe(handle.requestId)
 
     source.success('moderator_piece_update', handle.requestId)
-    await expect(handle.done).resolves.toBeUndefined()
+    await expect(handle.done).resolves.toEqual({
+      message: undefined,
+      reply: undefined,
+    })
     expect(handle.loading.get()).toBe(false)
   })
 
@@ -111,7 +117,57 @@ describe('ActionLifecycle', () => {
       handle.requestId,
       'Piece approved.',
     )
-    await expect(handle.done).resolves.toBe('Piece approved.')
+    await expect(handle.done).resolves.toMatchObject({
+      message: 'Piece approved.',
+    })
+  })
+
+  it('resolves with the raw reply when no schema is given', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch('a', {})
+    source.success('a', handle.requestId, undefined, { token: 'abc' })
+    await expect(handle.done).resolves.toEqual({
+      message: undefined,
+      reply: { token: 'abc' },
+    })
+  })
+
+  it('resolves with the parsed reply when a schema is given', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch(
+      'a',
+      {},
+      {
+        replySchema: z.object({ token: z.string() }),
+      },
+    )
+    source.success('a', handle.requestId, undefined, { token: 'abc' })
+    await expect(handle.done).resolves.toEqual({
+      message: undefined,
+      reply: { token: 'abc' },
+    })
+  })
+
+  it('rejects with invalid-reply when the reply fails the schema', async () => {
+    const source = new FakeSource()
+    const lifecycle = new ActionLifecycle(source)
+
+    const handle = lifecycle.dispatch(
+      'a',
+      {},
+      {
+        replySchema: z.object({ token: z.string() }),
+      },
+    )
+    source.success('a', handle.requestId, undefined, { token: 42 })
+    await expect(handle.done).rejects.toMatchObject({
+      outcome: 'invalid-reply',
+    })
+    expect(handle.loading.get()).toBe(false)
   })
 
   it('shows loading only after the deferral while pending', async () => {
@@ -184,6 +240,9 @@ describe('ActionLifecycle', () => {
     const handle = lifecycle.dispatch('a', {})
     source.success('a', undefined)
     source.success('a', handle.requestId)
-    await expect(handle.done).resolves.toBeUndefined()
+    await expect(handle.done).resolves.toEqual({
+      message: undefined,
+      reply: undefined,
+    })
   })
 })

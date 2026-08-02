@@ -20,6 +20,7 @@ use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -65,8 +66,9 @@ final class AdminUsersPage extends AbstractPage
      * @throws TableActionException When the target user is invalid or missing, or the impersonation caller has no session
      * @throws ValidationException When an impersonation guard rejects the request
      * @throws HilosException When user update or audit event persistence fails
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case ChatSignalConstants::USER_UPDATE:
@@ -88,6 +90,8 @@ final class AdminUsersPage extends AbstractPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

@@ -11,6 +11,7 @@
 // correlation); this is the full request-correlated lifecycle the modals'
 // authoritative-backend close depends on.
 
+import { type ZodType } from 'zod'
 import {
   type ActionErrorSignal,
   type ActionSuccessSignal,
@@ -29,7 +30,11 @@ const DEFAULT_DEFERRED_LOADING_MS = 300
 const DEFAULT_TIMEOUT_MS = 30000
 
 /** Why a dispatched action settled, other than a plain success. */
-export type ActionFailureOutcome = 'fail' | 'timeout' | 'disconnected'
+export type ActionFailureOutcome =
+  | 'fail'
+  | 'timeout'
+  | 'disconnected'
+  | 'invalid-reply'
 
 /** A failure of a dispatched action: the action name, the outcome, and the reason. */
 export class ActionError extends Error {
@@ -43,18 +48,32 @@ export class ActionError extends Error {
   }
 }
 
+/**
+ * What a tracked action resolves with on success: the optional backend-authored
+ * toast `message` and the optional domain `reply` — parsed against the caller's
+ * schema when one was passed to {@link ActionLifecycle.dispatch}, else the raw
+ * `unknown` reply value. Either field is absent when the action did not carry it.
+ */
+export interface ActionResult<T = unknown> {
+  /** Backend-authored success sentence for a toast, or undefined for the generic fallback. */
+  readonly message?: string
+  /** Domain reply the action returned, or undefined when it answered with nothing. */
+  readonly reply?: T
+}
+
 /** The live handle {@link ActionLifecycle.dispatch} returns for one tracked action. */
-export interface ActionHandle {
+export interface ActionHandle<T = unknown> {
   /** The client-minted id correlating this action with its reply. */
   readonly requestId: string
   /** Loading: stays false until the deferral elapses while the action is still pending. */
   readonly loading: ReadonlySignal<boolean>
   /**
-   * Resolves on `::success` with the backend-authored success message when the
-   * reply carried one (else undefined); rejects with an {@link ActionError} on
-   * fail, timeout, or disconnect.
+   * Resolves on `::success` with the action's {@link ActionResult} (the success
+   * message and/or domain reply, each absent when not carried); rejects with an
+   * {@link ActionError} on fail, timeout, disconnect, or a reply that failed the
+   * caller's schema (`invalid-reply`).
    */
-  readonly done: Promise<string | undefined>
+  readonly done: Promise<ActionResult<T>>
 }
 
 /** The connection events {@link ActionLifecycle} subscribes to. */
@@ -94,10 +113,12 @@ export interface ActionLifecycleSource {
 interface PendingAction {
   readonly action: string
   readonly loading: WritableSignal<boolean>
-  readonly resolve: (message?: string) => void
+  readonly resolve: (result: ActionResult) => void
   readonly reject: (error: ActionError) => void
   readonly deferredTimer: ReturnType<typeof setTimeout>
   readonly timeoutTimer: ReturnType<typeof setTimeout>
+  /** Caller's optional reply schema; the success reply is parsed against it when set. */
+  readonly replySchema: ZodType | undefined
 }
 
 /** Tuning + the late-reply hook for {@link ActionLifecycle}. */
@@ -147,7 +168,13 @@ export class ActionLifecycle {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.onLateReply = options.onLateReply
     source.on('actionSuccess', (signal) =>
-      this.onReply(signal.requestId, signal.action, 'success', signal.message),
+      this.onReply(
+        signal.requestId,
+        signal.action,
+        'success',
+        signal.message,
+        signal.reply,
+      ),
     )
     source.on('actionError', (signal) =>
       this.onReply(signal.requestId, signal.action, 'fail', signal.reason),
@@ -165,13 +192,18 @@ export class ActionLifecycle {
    *
    * @param action The action name the subscribed page routes on.
    * @param data The action payload.
+   * @param options Optional `replySchema` the success reply is validated against; when set, `done`'s `reply` is the parsed value and a reply that fails the schema rejects with `invalid-reply`.
    */
-  dispatch(action: string, data: unknown): ActionHandle {
+  dispatch<T = unknown>(
+    action: string,
+    data: unknown,
+    options: { replySchema?: ZodType<T> } = {},
+  ): ActionHandle<T> {
     const requestId = String(++this.sequence)
     const loading = createSignal(false)
-    let resolve!: (message?: string) => void
+    let resolve!: (result: ActionResult<T>) => void
     let reject!: (error: ActionError) => void
-    const done = new Promise<string | undefined>((resolveFn, rejectFn) => {
+    const done = new Promise<ActionResult<T>>((resolveFn, rejectFn) => {
       resolve = resolveFn
       reject = rejectFn
     })
@@ -191,10 +223,11 @@ export class ActionLifecycle {
     this.pending.set(requestId, {
       action,
       loading,
-      resolve,
+      resolve: resolve as (result: ActionResult) => void,
       reject,
       deferredTimer,
       timeoutTimer,
+      replySchema: options.replySchema,
     })
 
     return { requestId, loading, done }
@@ -208,12 +241,14 @@ export class ActionLifecycle {
    * @param action The action name the reply answers.
    * @param outcome Whether the reply was a success or a failure.
    * @param detail The success message on a success reply, or the failure reason on a fail reply; undefined when absent.
+   * @param reply The domain reply on a success reply, or undefined; parsed against the pending action's schema when one was set.
    */
   private onReply(
     requestId: string | undefined,
     action: string,
     outcome: 'success' | 'fail',
     detail?: string,
+    reply?: unknown,
   ): void {
     if (requestId === undefined) {
       return
@@ -227,14 +262,27 @@ export class ActionLifecycle {
       return
     }
     this.settle(requestId, pending)
-    if (outcome === 'success') {
-      pending.resolve(detail)
+    if (outcome !== 'success') {
+      pending.reject(
+        new ActionError(action, 'fail', detail ?? 'The action failed.'),
+      )
 
       return
     }
-    pending.reject(
-      new ActionError(action, 'fail', detail ?? 'The action failed.'),
-    )
+    if (pending.replySchema === undefined) {
+      pending.resolve({ message: detail, reply })
+
+      return
+    }
+    const parsed = pending.replySchema.safeParse(reply)
+    if (!parsed.success) {
+      pending.reject(
+        new ActionError(action, 'invalid-reply', parsed.error.message),
+      )
+
+      return
+    }
+    pending.resolve({ message: detail, reply: parsed.data })
   }
 
   /**
