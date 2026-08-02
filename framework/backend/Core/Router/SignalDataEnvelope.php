@@ -6,6 +6,7 @@ namespace Hilos\Core\Router;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Utils\Logger;
 
 /**
  * Shared `{data, dataType}` envelope for signal payload wrappers.
@@ -46,8 +47,12 @@ final class SignalDataEnvelope
         if (is_string($dataType) && class_exists($dataType) && is_a($dataType, SignalDataInterface::class, true)) {
             try {
                 return $dataType::fromArray($dataArray);
-            } catch (\Throwable) {
-                // Fall through to the SignalData fallback below.
+            } catch (\Throwable $e) {
+                // Fall through to the SignalData fallback below, but say why the concrete type was lost.
+                Logger::warning(
+                    "Signal payload {$dataType} failed to deserialize: "
+                    . get_class($e) . ': ' . $e->getMessage(),
+                );
             }
         }
 

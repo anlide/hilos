@@ -1075,12 +1075,8 @@ class SignalRouter
 
         try {
             $parsed = $dtoClass::fromArray($dataArray);
-        } catch (\Throwable) {
-            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
-        }
-
-        if (!$parsed instanceof $dtoClass) {
-            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        } catch (\Throwable $e) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
 
         return new AgentSignalData($parsed);
@@ -1108,12 +1104,8 @@ class SignalRouter
 
         try {
             $parsed = $dtoClass::fromArray($data->payload);
-        } catch (\Throwable) {
-            throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload);
-        }
-
-        if (!$parsed instanceof $dtoClass) {
-            throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload);
+        } catch (\Throwable $e) {
+            throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload, $e);
         }
 
         return new CommandRequestDTO(

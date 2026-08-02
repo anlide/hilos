@@ -151,6 +151,22 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         );
     }
 
+    public function testInvalidAgentSignalPayloadCarriesItsCause(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+
+        try {
+            $router->createAgentSignalPayloadDTO(
+                IndexedAgentSignalDtoTestAgent::TYPED_SIGNAL,
+                new AgentSignalData(new IndexedAgentSignalTestPayload(['entityId' => 42])),
+            );
+            $this->fail('Expected InvalidAgentSignalPayloadException');
+        } catch (InvalidAgentSignalPayloadException $e) {
+            $this->assertInstanceOf(InvalidArgumentException::class, $e->getPrevious());
+            $this->assertStringContainsString('Missing message', $e->getMessage());
+        }
+    }
+
     public function testIndexedSignalRoutesWithDeclaredDto(): void
     {
         $destinations = new IndexedAgentSignalDtoTestRouter()->getDestinations(

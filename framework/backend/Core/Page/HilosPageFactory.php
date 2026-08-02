@@ -197,12 +197,8 @@ class HilosPageFactory extends AbstractPageFactory
 
         try {
             $parsed = $dtoClass::fromArray($dataArray);
-        } catch (\Throwable) {
-            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
-        }
-
-        if (!$parsed instanceof $dtoClass) {
-            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        } catch (\Throwable $e) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
 
         return $parsed;
