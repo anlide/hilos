@@ -13,6 +13,7 @@ use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\DatabaseException;
@@ -93,8 +94,9 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
      * @throws HilosException When settings catalog validation or persistence fails
      * @throws EmptyValueException When the test notification draft is empty
      * @throws LogicException When the notifications collection is unavailable during a test send
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET:
@@ -124,6 +126,8 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

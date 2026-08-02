@@ -197,9 +197,11 @@ class PageSignalRouter
      *
      * When the action carried a client-minted requestId (a tracked action) the
      * framework replies with the action-success ack on success or the
-     * action-error ack on failure, both correlated by that requestId. An
-     * untracked action keeps the legacy path: silent on success,
-     * onActionException() on failure.
+     * action-error ack on failure, both correlated by that requestId. The ack
+     * carries the domain reply the handler returned, when any. An untracked
+     * action keeps the legacy path: silent on success, onActionException() on
+     * failure — and a reply it returns is undeliverable, so it is dropped with a
+     * warning.
      *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
@@ -223,9 +225,18 @@ class PageSignalRouter
 
         try {
             $this->assertActionAuthorized($pageInstance, $data->action, $data->acceptKey);
-            $pageInstance->onAction($data->acceptKey, $data->action, $dto);
+            $pageInstance->beginActionDispatch();
+            $reply = $pageInstance->onAction($data->acceptKey, $data->action, $dto);
             if ($data->requestId !== null) {
-                $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId);
+                $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId, $reply);
+            } elseif ($reply !== null) {
+                // An untracked action has no requestId to correlate a reply to, so a
+                // returned reply cannot be delivered. Almost always an integration
+                // mistake on an answering action; drop it and log rather than fail.
+                Logger::warning(
+                    "Action reply dropped: untracked action returned a reply, "
+                        . "page={$page}, action={$data->action}",
+                );
             }
         } catch (Throwable $e) {
             // The client is told an action failed, never why: the frontend shows a

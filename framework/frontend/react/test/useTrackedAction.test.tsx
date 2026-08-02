@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ActionError, createSignal, hilosToasts } from '@hilos/core'
-import type { ActionHandle } from '@hilos/core'
+import type { ActionHandle, ActionResult } from '@hilos/core'
 
 import { useTrackedAction } from '../src/useTrackedAction.js'
 
 // A handle stand-in: the lifecycle's loading signal plus a settled `done` promise
 // — enough to drive the hook without a real connection.
-function handle(done: Promise<string | undefined>): ActionHandle {
+function handle(done: Promise<ActionResult>): ActionHandle {
   return { requestId: '1', loading: createSignal(false), done }
 }
 
@@ -18,7 +18,7 @@ function Probe({
   onResult,
   toast,
 }: {
-  make: () => Promise<string | undefined>
+  make: () => Promise<ActionResult>
   onResult: (ok: boolean) => void
   toast?: boolean
 }) {
@@ -55,7 +55,7 @@ describe('useTrackedAction', () => {
     let result: boolean | undefined
     render(
       <Probe
-        make={() => Promise.resolve(undefined)}
+        make={() => Promise.resolve({})}
         onResult={(ok) => (result = ok)}
       />,
     )
@@ -68,7 +68,12 @@ describe('useTrackedAction', () => {
   })
 
   it('toasts the backend success message on success', async () => {
-    render(<Probe make={() => Promise.resolve('Saved.')} onResult={() => {}} />)
+    render(
+      <Probe
+        make={() => Promise.resolve({ message: 'Saved.' })}
+        onResult={() => {}}
+      />,
+    )
     await act(async () => {
       fireEvent.click(screen.getByTestId('go'))
     })
@@ -76,9 +81,7 @@ describe('useTrackedAction', () => {
   })
 
   it('toasts a generic fallback when the backend sent no message', async () => {
-    render(
-      <Probe make={() => Promise.resolve(undefined)} onResult={() => {}} />,
-    )
+    render(<Probe make={() => Promise.resolve({})} onResult={() => {}} />)
     await act(async () => {
       fireEvent.click(screen.getByTestId('go'))
     })
@@ -88,7 +91,7 @@ describe('useTrackedAction', () => {
   it('suppresses the success toast when toast is false', async () => {
     render(
       <Probe
-        make={() => Promise.resolve('Saved.')}
+        make={() => Promise.resolve({ message: 'Saved.' })}
         onResult={() => {}}
         toast={false}
       />,

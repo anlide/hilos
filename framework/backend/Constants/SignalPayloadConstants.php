@@ -30,6 +30,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for a backend-authored action outcome sentence (success toast text) */
     public const string FIELD_MESSAGE = 'message';
 
+    /** @var string Payload field key for a tracked action's optional domain reply (named reply, not data: data holds the signal body in the envelope) */
+    public const string FIELD_REPLY = 'reply';
+
     /** @var string Payload field key for data payload */
     public const string FIELD_DATA = 'data';
 

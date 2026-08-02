@@ -12,6 +12,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -83,8 +84,9 @@ abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
      * @throws LogicException When the notifications object collection is not configured
      * @throws DatabaseException When the snapshot list or unread count query fails
      * @throws HilosException When a routed mark-read mutation fails
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case NotificationAction::MARK_READ:
@@ -114,6 +116,8 @@ abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

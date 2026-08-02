@@ -12,6 +12,7 @@ use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Context\HilosDbContext;
@@ -66,8 +67,9 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the delivery is unknown or not in a retryable state
      * @throws DatabaseException When the delivery lookup or re-queue fails
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY:
@@ -81,6 +83,8 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

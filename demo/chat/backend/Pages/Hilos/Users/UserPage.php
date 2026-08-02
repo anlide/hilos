@@ -25,6 +25,7 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
@@ -73,8 +74,9 @@ final class UserPage extends AbstractHilosUserPage
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ItemNotFoundForUpdateException When the target user is missing
      * @throws HilosException When user update, audit event persistence, or success ack fails
+     * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         switch ($action) {
             case HilosSignalConstants::HILOS_USER_UPDATE:
@@ -96,6 +98,8 @@ final class UserPage extends AbstractHilosUserPage
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+
+        return null;
     }
 
     /**

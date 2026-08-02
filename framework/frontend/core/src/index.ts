@@ -275,6 +275,7 @@ export {
   ActionLifecycle,
   ActionError,
   type ActionHandle,
+  type ActionResult,
   type ActionFailureOutcome,
   type ActionLifecycleSource,
   type ActionLifecycleOptions,

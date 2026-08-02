@@ -13,6 +13,7 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Hilos as HilosFacade;
@@ -112,10 +113,13 @@ final class ActionAuthGuardTestPage extends AbstractPage
      * @param string $acceptKey WebSocket accept key (unused)
      * @param string $action Action name (unused)
      * @param ActionPayloadDTO $dto Action payload (unused)
+     * @return ?ActionReplyDTO Always null; the fixture only records that it ran
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         $this->handled = true;
+
+        return null;
     }
 
     /**
