@@ -134,7 +134,18 @@ also registers those. Generate, in any order:
    (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
    in its own unit, at which that granularity starts applying, so a backup younger
    than `BACKUP_RETENTION_DAILY` days is never thinned), and
-   `BACKUP_ERROR_RETENTION_COUNT`. These are framework `EnvConstants` keys the
+   `BACKUP_ERROR_RETENTION_COUNT`, and the free-space gate
+   (`BACKUP_SPACE_MARGIN` — the multiplier on the estimated uncompressed peak,
+   default 1.5; `BACKUP_MIN_FREE_BYTES` — an absolute free-space floor checked on
+   every run, default 1 GiB; `BACKUP_REFUSE_WITHOUT_ESTIMATE` — whether to refuse a
+   run of a scope that has no prior successful run to size from, default false so a
+   first backup is never blocked). The gate lives in `BackupAgent::startBackup()`,
+   the single start point for every source: it prunes first (so rotation frees space
+   that counts toward the current run), measures free space, and refuses up front a
+   run that will not fit — recording the refusal as an error row (`recordFailure()`,
+   no child spawned) that explains itself through the HIL-429 detail modal. An
+   unmeasurable filesystem or an unreadable policy proceeds rather than stops. These
+   are framework `EnvConstants` keys the
    agent and pruner read from `Hilos::$env`; the project supplies values, never new
    keys. `BACKUP_DIR` and `BACKUP_CLI_ENTRY` are what the create path *needs*:
    without either, every create is refused up front

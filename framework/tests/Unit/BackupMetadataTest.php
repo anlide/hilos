@@ -120,6 +120,29 @@ final class BackupMetadataTest extends TestCase
         $this->assertNull(BackupMetadata::fromArray([BackupMetadata::id => 'x'])->failureReason);
     }
 
+    public function testDumpBytesRoundTripsAndLegacySidecarReadsZero(): void
+    {
+        $metadata = new BackupMetadata(
+            id: 'd1',
+            createdAt: '2026-08-01T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 3,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            dumpBytes: 262144,
+        );
+
+        $restored = BackupMetadata::fromArray($metadata->toArray());
+        $this->assertSame(262144, $restored->dumpBytes);
+        $this->assertArrayHasKey(BackupMetadata::dumpBytes, $metadata->toArray());
+
+        // A legacy sidecar written before the field existed carries no key and reads back as 0.
+        $this->assertSame(0, BackupMetadata::fromArray([BackupMetadata::id => 'x'])->dumpBytes);
+    }
+
     public function testUnknownScopeAndStatusFallBackToDefaults(): void
     {
         $metadata = BackupMetadata::fromArray([

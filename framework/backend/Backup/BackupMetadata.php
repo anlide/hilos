@@ -26,6 +26,7 @@ final class BackupMetadata extends BaseDTO
     public const string status = 'status';
     public const string warnings = 'warnings';
     public const string failureReason = 'failureReason';
+    public const string dumpBytes = 'dumpBytes';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -39,6 +40,8 @@ final class BackupMetadata extends BaseDTO
      * @param BackupStatus $status Terminal outcome
      * @param list<string> $warnings Non-fatal notes about the run (e.g. schema-seed found no reference tables)
      * @param ?string $failureReason Why the run failed (error records only); null for success and legacy sidecars
+     * @param int $dumpBytes Uncompressed dump volume in bytes (the true peak the space guard sizes runs
+     *     from); 0 means "no data" for error records and legacy sidecars written before the field existed
      */
     public function __construct(
         public readonly string $id,
@@ -52,6 +55,7 @@ final class BackupMetadata extends BaseDTO
         public readonly BackupStatus $status,
         public readonly array $warnings = [],
         public readonly ?string $failureReason = null,
+        public readonly int $dumpBytes = 0,
     ) {
     }
 
@@ -85,6 +89,7 @@ final class BackupMetadata extends BaseDTO
             BackupStatus::fromString((string)($data[self::status] ?? '')) ?? BackupStatus::SUCCESS,
             $warnings,
             isset($data[self::failureReason]) ? (string)$data[self::failureReason] : null,
+            (int)($data[self::dumpBytes] ?? 0),
         );
     }
 
@@ -110,6 +115,7 @@ final class BackupMetadata extends BaseDTO
             // Always written, including null: an error sidecar keys off it, and a null on a
             // success record makes the field's absence explicit rather than ambiguous.
             self::failureReason => $this->failureReason,
+            self::dumpBytes => $this->dumpBytes,
         ];
     }
 }

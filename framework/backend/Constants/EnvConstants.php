@@ -302,6 +302,27 @@ enum EnvConstants
      */
     case BACKUP_ERROR_RETENTION_COUNT;
 
+    /**
+     * Multiplier the space guard applies to the estimated uncompressed peak before comparing
+     * it to free space, so a run is refused with headroom rather than at the exact edge.
+     * Float, default 1.5.
+     */
+    case BACKUP_SPACE_MARGIN;
+
+    /**
+     * Absolute free-space floor in bytes: a run is refused when free space is below it, checked
+     * on every run whether or not an estimate exists. It also covers a database that grew
+     * sharply since the last measured runs. Default 1073741824 (1 GiB).
+     */
+    case BACKUP_MIN_FREE_BYTES;
+
+    /**
+     * What to do when no prior successful run of the scope carries a dump size to estimate from:
+     * false proceeds (the default, so a first backup on a clean install is never blocked), true
+     * refuses. Default false.
+     */
+    case BACKUP_REFUSE_WITHOUT_ESTIMATE;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**

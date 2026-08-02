@@ -94,6 +94,33 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($history->failureReason);
     }
 
+    public function testDumpBytesTransfersFromMetadataRoundTripsAndUpdatesViaDiff(): void
+    {
+        $history = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'dump-1',
+            createdAt: '2026-08-01T09:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 2,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            dumpBytes: 262144,
+        ));
+        $this->assertSame(262144, $history->dumpBytes);
+
+        // The field must survive a runtime row round-trip: the space guard reads it off the index.
+        $this->assertSame(262144, BackupHistory::fromRow($history->toArray())->dumpBytes);
+
+        // And a synced update must land, or every worker but the writer keeps a stale estimate input.
+        $history->applyDiff([BackupHistory::dumpBytes => 524288]);
+        $this->assertSame(524288, $history->dumpBytes);
+
+        // A legacy row without the key reads back as 0 ("no data"), never a throw.
+        $this->assertSame(0, BackupHistory::fromRow([BackupHistory::id => 'legacy'])->dumpBytes);
+    }
+
     public function testHistoriesCollectionLookup(): void
     {
         $histories = BackupHistories::init();

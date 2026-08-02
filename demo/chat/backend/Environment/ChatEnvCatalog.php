@@ -68,6 +68,9 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             EnvConstants::BACKUP_RETENTION_MONTHLY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_RETENTION_YEARLY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_ERROR_RETENTION_COUNT->name => self::intEntry(20, emptyIsMissing: true),
+            EnvConstants::BACKUP_SPACE_MARGIN->name => self::floatEntry(1.5, emptyIsMissing: true),
+            EnvConstants::BACKUP_MIN_FREE_BYTES->name => self::intEntry(1073741824, emptyIsMissing: true),
+            EnvConstants::BACKUP_REFUSE_WITHOUT_ESTIMATE->name => self::boolEntry(false, emptyIsMissing: true),
             ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR => self::stringEntry(''),
             ChatEnvConstants::CHAT_FILES_XACCEL_LOCATION => self::stringEntry(''),
@@ -138,6 +141,21 @@ final class ChatEnvCatalog implements CatalogProviderInterface
     {
         return [
             EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_INTEGER,
+            EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
+            EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
+            EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,
+        ];
+    }
+
+    /**
+     * @param float $default Default value
+     * @param bool $emptyIsMissing Whether empty values fall back to the default
+     * @return array<string, mixed> Catalog entry for a float-typed variable
+     */
+    private static function floatEntry(float $default, bool $emptyIsMissing = false): array
+    {
+        return [
+            EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_FLOAT,
             EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,

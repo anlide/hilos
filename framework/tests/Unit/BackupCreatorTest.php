@@ -103,6 +103,31 @@ final class BackupCreatorTest extends TestCase
         $this->assertTrue($passes[1]['append']);
     }
 
+    public function testMeasureWorkDirSumsTheDumpFilesAndIgnoresSubdirectories(): void
+    {
+        // A successful run records a non-zero dumpBytes: the sum of the dump files in the work dir
+        // (db-*.sql plus the in-archive metadata copy), the uncompressed peak the space guard sizes
+        // runs from. The full create path needs a live database and is exercised at e2e; here the
+        // measurement itself is pinned over a hand-built work dir.
+        $workDir = sys_get_temp_dir() . '/hilos-measure-' . uniqid('', true);
+        mkdir($workDir . '/nested', 0700, true);
+        file_put_contents($workDir . '/db-0.sql', str_repeat('a', 1000));
+        file_put_contents($workDir . '/metadata.json', str_repeat('b', 24));
+        file_put_contents($workDir . '/nested/ignored.sql', str_repeat('c', 5000));
+
+        try {
+            // 1000 + 24; the subdirectory and its contents are not counted.
+            $this->assertSame(1024, BackupCreator::measureWorkDir($workDir));
+            $this->assertSame(0, BackupCreator::measureWorkDir($workDir . '/does-not-exist'));
+        } finally {
+            @unlink($workDir . '/db-0.sql');
+            @unlink($workDir . '/metadata.json');
+            @unlink($workDir . '/nested/ignored.sql');
+            @rmdir($workDir . '/nested');
+            @rmdir($workDir);
+        }
+    }
+
     public function testArchiveBaseNameJoinsIdEnvScope(): void
     {
         $this->assertSame(
