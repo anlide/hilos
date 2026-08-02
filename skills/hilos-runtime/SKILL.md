@@ -66,10 +66,13 @@ Start with `agents.md`, then read the matching runtime guide.
 11. Put established read-only helpers on the view collection or view item. Do
    not add `actions->has*()`, `actions->can*()`, `actions->get*()`, or similar
    read APIs.
-12. Use `getStateCollection()`, `RtContext::getStateCollection()`, and
-    `$this->stateCollection` only inside files under `Database/` or `Runtime/`.
-    Agents, pages, tables, signal handlers, and tests must call typed
-    collection/item APIs instead.
+12. Use `getStateCollection()`, `getStateItem()`, `RtContext::getStateCollection()`,
+    `RtContext::getStateItem()`, and `$this->stateCollection` only inside files
+    under `Database/` or `Runtime/`; any other path is a violation regardless of
+    the caller's role. Cure a leak by adding a delegate that returns plain values
+    (ids, scalars, DTOs) on the owning View collection/item and calling it — a
+    delegate that returns backing state objects outward is the same violation one
+    floor up.
 13. When updating or deleting one runtime item and the collection key is known,
    load the item and call `$item->actions->...`; do not add collection actions
    that accept the item key for that one-item write.
@@ -193,8 +196,11 @@ of duplicating runtime mutation logic in the page/table layer.
   change), never by `clear()` + re-add.
 - Do not use runtime state as a hidden durable database.
 - Keep sync payloads explicit and typed.
-- Do not call `getStateCollection()` outside files under `Database/` or
-  `Runtime/`; add a typed collection/item API and use it from callers.
+- Do not call `getStateCollection()` or `getStateItem()` (nor the `RtContext::`
+  forms or `$this->stateCollection`) outside files under `Database/` or
+  `Runtime/`; add a View-collection/item delegate returning plain values and call
+  it. A framework seam hook's PHPDoc must name the project View collection, not an
+  RT state class, as the data source.
 - Do not expose application-level `applyDiff*()` write APIs on RT actions.
 - Do not put read-only helpers on runtime `actions`; use `RtCollection` or
   `RtItem` instead.

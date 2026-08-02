@@ -133,13 +133,20 @@ if (
 }
 ```
 
-Direct backing-state reads (`getStateCollection()`, `$this->stateCollection`,
-or `RtContext::getStateCollection()`) are allowed only in files under
-`Database/` or `Runtime/`. Agents, pages, tables, signal handlers, tests, and
-other application orchestration code must use caller-facing collection/item
-APIs. If an approved reusable lookup is missing, add it to the owning
-`Runtime/` or `Database/` layer first; during transparent data-shape refactors,
-prefer explicit field access unless the new method was approved by name.
+Direct backing-state reads — `getStateCollection()`, `getStateItem()`,
+`RtContext::getStateCollection()`, `RtContext::getStateItem()`, and direct
+`$this->stateCollection` access — are allowed only in files under `Database/` or
+`Runtime/`. Any other path is a violation regardless of the caller's role: an
+agent, page, table, signal handler, or test that reaches a backing state object
+is the same leak whether it goes through `getStateCollection()` or
+`getStateItem()`. Those callers must use caller-facing collection/item APIs.
+
+Cure a leak by adding a delegate that returns plain values (ids, scalars,
+DTOs) on the owning `Runtime/View/Collection` or `Runtime/View/Item` class and
+calling that delegate — not by handing a state object back to the caller. A
+delegate that returns backing state objects outward is the same violation one
+floor up. During transparent data-shape refactors, prefer explicit field access
+unless the new method was approved by name.
 
 Concrete `Runtime/View/Item/*` classes must rely on their
 `@extends RtItem<StateFoo>` template when reading declared state fields. Read

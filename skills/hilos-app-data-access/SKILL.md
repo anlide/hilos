@@ -65,12 +65,15 @@ switch to the focused data-layer skill first.
    not obvious.
 5. For reads, call the collection or item directly and keep local payload assembly
    minimal.
-6. Never call `getStateCollection()`, `RtContext::getStateCollection()`, or
-   `$this->stateCollection` from agents, pages, tables, signal handlers, tests,
-   or other orchestration code. If the read API is missing, add it to the
-   owning `Database/` or `Runtime/` layer first. During transparent data-shape
-   refactors, keep simple field checks explicit unless a new method was
-   approved by name.
+6. Never call `getStateCollection()`, `getStateItem()`,
+   `RtContext::getStateCollection()`, `RtContext::getStateItem()`, or
+   `$this->stateCollection` from any file outside `Database/` or `Runtime/`;
+   this is a violation regardless of the caller's role (agent, page, table,
+   signal handler, or test). If the read API is missing, add a delegate that
+   returns plain values on the owning View collection/item and call it — a
+   delegate that returns backing state objects outward is the same violation one
+   floor up. During transparent data-shape refactors, keep simple field checks
+   explicit unless a new method was approved by name.
 7. For writes, call a collection action or item action. When a DB/RT item key is
    known and the write changes or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.
@@ -222,7 +225,8 @@ then call that API from the table/page.
 - Search existing magic/accessor results before adding a new finder or helper.
 - Do not use `[$key]` blindly; verify that the collection documents the offset
   key you plan to use.
-- Do not call `getStateCollection()`, `RtContext::getStateCollection()`, or
+- Do not call `getStateCollection()`, `getStateItem()`,
+  `RtContext::getStateCollection()`, `RtContext::getStateItem()`, or
   `$this->stateCollection` outside files under `Database/` or `Runtime/`.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with raw arrays, raw SQL, or
   duplicated filters in page/table/agent code.

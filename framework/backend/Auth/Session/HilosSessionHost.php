@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -49,16 +49,18 @@ trait HilosSessionHost
     abstract protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData;
 
     /**
-     * Returns the live connections belonging to a session token.
+     * Returns the accept keys of the live connections belonging to a session token.
      *
      * Project-owned because the runtime connection registry is a project runtime
-     * collection; the project resolves it (e.g. through
-     * {@see \Hilos\Runtime\State\Collection\HilosConnections::findAllBySessionToken()}).
+     * collection; the project resolves it through its own runtime View collection
+     * of connections. The hook deliberately yields plain accept keys, not runtime
+     * state objects, so the framework seam never touches the RT state layer.
      *
      * @param string $sessionToken Session cookie token
-     * @return array<string, HilosConnection> Accept key => connection map (empty for an unknown token)
+     * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      */
-    abstract protected function sessionConnections(string $sessionToken): array;
+    abstract protected function sessionConnectionKeys(string $sessionToken): array;
 
     /**
      * Re-points one live connection's bound user through the project runtime registry.
@@ -178,9 +180,9 @@ trait HilosSessionHost
 
         $response = $this->handshakeResponseFor($session);
         $signalName = $this->handshakeResponseSignalName();
-        foreach ($this->sessionConnections($sessionToken) as $connection) {
-            $this->bindConnectionUser($connection->acceptKey, $userId);
-            $this->sendToUser($signalName, $connection->acceptKey, $response);
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $this->bindConnectionUser($acceptKey, $userId);
+            $this->sendToUser($signalName, $acceptKey, $response);
         }
     }
 
@@ -211,9 +213,9 @@ trait HilosSessionHost
 
         $response = new HandshakeResponseSignalData();
         $signalName = $this->handshakeResponseSignalName();
-        foreach ($this->sessionConnections($sessionToken) as $connection) {
-            $this->bindConnectionUser($connection->acceptKey, null);
-            $this->sendToUser($signalName, $connection->acceptKey, $response);
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $this->bindConnectionUser($acceptKey, null);
+            $this->sendToUser($signalName, $acceptKey, $response);
         }
     }
 }
