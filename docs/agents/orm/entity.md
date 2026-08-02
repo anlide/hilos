@@ -51,6 +51,12 @@ Entity's `_columns` / `_types` / `_indexes` / `_foreign` metadata in the same co
 the migration that changes the schema. A mismatch between the two is a bug to fix, not a
 condition to diagnose at runtime.
 
+For framework Entities this drift is caught by `EntitySchemaConsistencyTest` (framework
+integration suite): it applies the migration stubs and audits every Entity against the
+live schema through `Hilos\Database\Schema\EntitySchemaAudit`, comparing the declared
+`_types` against the raw column type via `PhpType::forMysqlType()`. Add both migration
+stub files (`create_<table>.sql` and its `_down`) when adding a framework Entity.
+
 ## Settings Entity (special case)
 
 `Entity/Item/Setting.php` — key/value store for app-level runtime settings.

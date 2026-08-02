@@ -50,7 +50,7 @@ final class AuthBlock extends Entity
         self::identity => PhpType::STRING->value,
         self::action => PhpType::STRING->value,
         self::level => PhpType::INTEGER->value,
-        self::blocked_until => PhpType::STRING->value,
+        self::blocked_until => PhpType::DATETIME->value,
     ];
 
     public const array _indexes = [
