@@ -137,14 +137,20 @@ Direct backing-state access is a low-level data-layer tool. Calls to
 `RtContext::getStateItem()`, and direct `$this->stateCollection` access are
 allowed only inside files under `Database/` or `Runtime/`.
 
-Agents, pages, tables, signal handlers, tests, and other orchestration code
-must not use backing-state access. They must call caller-facing APIs on
-`Hilos::$rt` collections, items, or actions. When a needed read is missing, add
-a typed read helper to the owning `Runtime/View/Collection` or
-`Runtime/View/Item` class, then call that helper from the agent/page/table.
-During refactors whose goal is transparent data shape, keep field checks
-explicit and add no new convenience helper unless the exact method was approved
-in the plan.
+Any file outside those two trees is a violation regardless of the caller's
+role — agents, pages, tables, signal handlers, and tests must call caller-facing
+APIs on `Hilos::$rt` collections, items, or actions instead. When a needed read
+is missing, add a delegate that returns plain values (ids, scalars, DTOs) to the
+owning `Runtime/View/Collection` or `Runtime/View/Item` class and call that
+delegate; a delegate that returns backing state objects outward is the same
+violation one floor up. During refactors whose goal is transparent data shape,
+keep field checks explicit and add no new convenience helper unless the exact
+method was approved in the plan.
+
+A framework seam hook's PHPDoc must not point projects at RT state classes as a
+data source. Describe the plain value the hook returns (e.g. connection accept
+keys) and name the project's View collection as the resolution path, never a
+`getStateCollection()` / `findAllBy*()` state-layer call.
 
 The layers are:
 

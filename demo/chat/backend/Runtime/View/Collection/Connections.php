@@ -45,6 +45,22 @@ final class Connections extends RtCollection implements HilosPresenceSource
     }
 
     /**
+     * Accept keys of the live connections belonging to a session token.
+     *
+     * The session-host seam re-points every live connection of a token; it takes
+     * plain accept keys, so this delegate keeps the RT state layer behind the View
+     * collection instead of handing state objects to the agent.
+     *
+     * @param string $sessionToken Session cookie token
+     * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     */
+    public function acceptKeysForSessionToken(string $sessionToken): array
+    {
+        return array_keys($this->getStateCollection()->findAllBySessionToken($sessionToken));
+    }
+
+    /**
      * Get connections for a specific user.
      *
      * @param ?int $userId User ID, or null for an empty result

@@ -35,7 +35,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -596,16 +596,18 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Returns the live chat connections bound to a session token, resolved through
-     * the chat runtime connection registry — the {@see HilosSessionHost} hook the
-     * authenticate/deauthenticate seam iterates to re-point and re-notify.
+     * Returns the accept keys of the live chat connections bound to a session token,
+     * resolved through the chat runtime connection View collection — the
+     * {@see HilosSessionHost} hook the authenticate/deauthenticate seam iterates to
+     * re-point and re-notify.
      *
      * @param string $sessionToken Session cookie token
-     * @return array<string, HilosConnection> Accept key => connection map (empty for an unknown token)
+     * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      */
-    protected function sessionConnections(string $sessionToken): array
+    protected function sessionConnectionKeys(string $sessionToken): array
     {
-        return Hilos::$rt->connections->getStateCollection()->findAllBySessionToken($sessionToken);
+        return Hilos::$rt->connections->acceptKeysForSessionToken($sessionToken);
     }
 
     /**
