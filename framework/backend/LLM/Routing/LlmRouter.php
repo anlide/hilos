@@ -40,14 +40,48 @@ class LlmRouter
     }
 
     /**
-     * Resolves a profile key to an immutable, fully-configured profile.
+     * Exposes the profile catalog: keys plus each entry's env-variable map.
+     *
+     * The single source of catalog knowledge for callers that need to enumerate
+     * profiles or read an entry's env-variable names (e.g. the `llm:ping` CLI),
+     * so no code re-reads the catalog provider class directly.
+     *
+     * @return array<string, array<string, mixed>> Profiles keyed by profile key
+     */
+    public function catalog(): array
+    {
+        return ($this->catalogClass)::getCatalog();
+    }
+
+    /**
+     * Resolves a profile key to its effective profile, applying any override.
      *
      * @param string $profileKey Profile key, e.g. 'default'
-     * @return LlmProfile Resolved profile
+     * @return LlmProfile Effective profile (base plus any runtime override)
      * @throws LLMConfigurationException When the key is not declared, the provider
      *   is invalid, or the external provider is selected without an API key
      */
     public function resolve(string $profileKey): LlmProfile
+    {
+        $base = $this->resolveBase($profileKey);
+
+        return $this->overrides?->override($base) ?? $base;
+    }
+
+    /**
+     * Resolves a profile key to its env-backed profile, before any override.
+     *
+     * The pre-override half of {@see resolve()}: it turns catalog plus env into an
+     * immutable profile without consulting the runtime override source. Kept public
+     * so an operator tool can show what env resolves to versus what the override
+     * changed, from one code path rather than two.
+     *
+     * @param string $profileKey Profile key, e.g. 'default'
+     * @return LlmProfile Env-backed profile, before any runtime override
+     * @throws LLMConfigurationException When the key is not declared, the provider
+     *   is invalid, or the external provider is selected without an API key
+     */
+    public function resolveBase(string $profileKey): LlmProfile
     {
         $catalog = ($this->catalogClass)::getCatalog();
         if (!array_key_exists($profileKey, $catalog)) {
@@ -80,7 +114,7 @@ class LlmRouter
             ? Hilos::$env->float($timeoutEnv)
             : LLMConstants::DEFAULT_TIMEOUT_SEC;
 
-        $profile = new LlmProfile(
+        return new LlmProfile(
             $profileKey,
             $provider,
             $url,
@@ -89,8 +123,6 @@ class LlmRouter
             $timeoutSec,
             $entry[LlmProfileCatalogConstants::PLACEMENT] ?? null,
         );
-
-        return $this->overrides?->override($profile) ?? $profile;
     }
 
     /**

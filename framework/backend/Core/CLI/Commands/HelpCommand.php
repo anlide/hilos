@@ -113,6 +113,9 @@ HELP;
             'Database Schema' => [
                 CliCommands::DB_SCHEMA_STATUS,
             ],
+            'LLM' => [
+                CliCommands::LLM_PING,
+            ],
             'Help' => [
                 CliCommands::HELP,
             ],

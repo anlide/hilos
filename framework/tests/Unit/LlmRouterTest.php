@@ -129,4 +129,29 @@ final class LlmRouterTest extends TestCase
 
         self::assertSame('overridden-model', $profile->model);
     }
+
+    public function testResolveBaseIgnoresOverrideWhileResolveApplies(): void
+    {
+        putenv('LLM_CHAT_PROVIDER=' . LLMConstants::PROVIDER_LOCAL);
+
+        $override = new class implements LlmProfileOverrideSource {
+            public function override(LlmProfile $profile): LlmProfile
+            {
+                return new LlmProfile(
+                    $profile->key,
+                    $profile->provider,
+                    $profile->url,
+                    'overridden-model',
+                    $profile->apiKey,
+                    $profile->timeoutSec,
+                    $profile->placement,
+                );
+            }
+        };
+
+        $router = new LlmRouter(overrides: $override);
+
+        self::assertSame(LLMConstants::DEFAULT_LOCAL_CHAT_MODEL, $router->resolveBase('default')->model);
+        self::assertSame('overridden-model', $router->resolve('default')->model);
+    }
 }

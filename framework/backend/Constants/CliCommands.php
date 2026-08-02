@@ -71,4 +71,7 @@ final class CliCommands
 
     /** @var string Command: Force-close a live WebSocket connection by acceptKey (test-only) */
     public const string CONNECTION_TEST_DROP = 'connection:test:drop';
+
+    /** @var string Command: Resolve an LLM profile and optionally probe its endpoint */
+    public const string LLM_PING = 'llm:ping';
 }
