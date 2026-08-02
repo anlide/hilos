@@ -276,7 +276,9 @@ export class ActionLifecycle {
     }
     const parsed = pending.replySchema.safeParse(reply)
     if (!parsed.success) {
-      pending.reject(new ActionError(action, 'invalid-reply', parsed.error.message))
+      pending.reject(
+        new ActionError(action, 'invalid-reply', parsed.error.message),
+      )
 
       return
     }

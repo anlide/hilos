@@ -138,9 +138,13 @@ describe('ActionLifecycle', () => {
     const source = new FakeSource()
     const lifecycle = new ActionLifecycle(source)
 
-    const handle = lifecycle.dispatch('a', {}, {
-      replySchema: z.object({ token: z.string() }),
-    })
+    const handle = lifecycle.dispatch(
+      'a',
+      {},
+      {
+        replySchema: z.object({ token: z.string() }),
+      },
+    )
     source.success('a', handle.requestId, undefined, { token: 'abc' })
     await expect(handle.done).resolves.toEqual({
       message: undefined,
@@ -152,9 +156,13 @@ describe('ActionLifecycle', () => {
     const source = new FakeSource()
     const lifecycle = new ActionLifecycle(source)
 
-    const handle = lifecycle.dispatch('a', {}, {
-      replySchema: z.object({ token: z.string() }),
-    })
+    const handle = lifecycle.dispatch(
+      'a',
+      {},
+      {
+        replySchema: z.object({ token: z.string() }),
+      },
+    )
     source.success('a', handle.requestId, undefined, { token: 42 })
     await expect(handle.done).rejects.toMatchObject({
       outcome: 'invalid-reply',
