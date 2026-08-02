@@ -223,7 +223,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             return new FailedMailTransport();
         }
 
-        return (new MailTransportFactory())->create($this->transportConfig);
+        return new MailTransportFactory()->create($this->transportConfig);
     }
 
     /**

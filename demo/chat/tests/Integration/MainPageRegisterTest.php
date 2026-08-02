@@ -180,7 +180,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
      */
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        (new MainPage($agent))->onAction(
+        new MainPage($agent)->onAction(
             $acceptKey,
             ChatSignalConstants::REGISTER,
             new RegisterActionDTO($email, self::PASSWORD, self::PASSWORD),

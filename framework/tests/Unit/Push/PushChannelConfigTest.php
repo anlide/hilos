@@ -21,11 +21,11 @@ final class PushChannelConfigTest extends TestCase
 {
     public function testUnconfiguredWhenAnyPartIsMissing(): void
     {
-        self::assertFalse((new PushChannelConfig('', '', ''))->isConfigured());
+        self::assertFalse(new PushChannelConfig('', '', '')->isConfigured());
 
         $keys = $this->vapidKeyPair();
-        self::assertFalse((new PushChannelConfig($keys['public'], $keys['private'], ''))->isConfigured());
-        self::assertFalse((new PushChannelConfig($keys['public'], '', 'mailto:ops@example.com'))->isConfigured());
+        self::assertFalse(new PushChannelConfig($keys['public'], $keys['private'], '')->isConfigured());
+        self::assertFalse(new PushChannelConfig($keys['public'], '', 'mailto:ops@example.com')->isConfigured());
     }
 
     public function testUnconfiguredConfigRefusesVapidMaterial(): void

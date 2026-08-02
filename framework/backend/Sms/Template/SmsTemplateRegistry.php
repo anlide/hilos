@@ -47,6 +47,6 @@ class SmsTemplateRegistry
         /** @var class-string<SmsTemplate> $templateClass */
         $templateClass = $catalog[$key][SmsTemplateCatalogConstants::TEMPLATE_CLASS];
 
-        return (new $templateClass())->render($params, $locale);
+        return new $templateClass()->render($params, $locale);
     }
 }

@@ -46,7 +46,7 @@ final class SessionExpireCommandTest extends TestCase
         $this->expectOutputRegex('/Usage/');
         self::assertSame(
             ExitCode::INVALID_ARGUMENT,
-            (new SessionExpireCommand())->execute([], []),
+            new SessionExpireCommand()->execute([], []),
         );
     }
 
@@ -57,7 +57,7 @@ final class SessionExpireCommandTest extends TestCase
         $this->expectOutputRegex('/not available/');
         self::assertSame(
             ExitCode::CONFIG_ERROR,
-            (new SessionExpireCommand())->execute([], ['deadbeefdeadbeefdeadbeefdeadbeef']),
+            new SessionExpireCommand()->execute([], ['deadbeefdeadbeefdeadbeefdeadbeef']),
         );
     }
 }

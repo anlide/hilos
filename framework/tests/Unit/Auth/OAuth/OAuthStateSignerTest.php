@@ -130,9 +130,9 @@ final class OAuthStateSignerTest extends TestCase
      */
     public function testStateSignedWithAnotherSecretIsRejected(): void
     {
-        $state = (new OAuthStateSigner('secret-a'))->issue(self::SESSION, 600);
+        $state = new OAuthStateSigner('secret-a')->issue(self::SESSION, 600);
 
         $this->expectException(OAuthStateException::class);
-        (new OAuthStateSigner('secret-b'))->verify($state, self::SESSION);
+        new OAuthStateSigner('secret-b')->verify($state, self::SESSION);
     }
 }

@@ -169,7 +169,7 @@ final class PeerAnnounceEchoTest extends TestCase
         $clients = new \ReflectionProperty($server, 'clients');
         $clients->setValue($server, [...$clients->getValue($server), $link]);
 
-        socket_write($far, (new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, []))->toJson() . "\n");
+        socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [])->toJson() . "\n");
         $link->read();
 
         $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The welcome must complete the handshake');

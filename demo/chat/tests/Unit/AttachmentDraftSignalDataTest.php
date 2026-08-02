@@ -58,7 +58,7 @@ final class AttachmentDraftSignalDataTest extends TestCase
         ];
 
         $restored = SelfConnectionSignalData::fromArray(
-            (new SelfConnectionSignalData($selfConnection))->toArray(),
+            new SelfConnectionSignalData($selfConnection)->toArray(),
         );
 
         $this->assertSame($selfConnection, $restored->selfConnection);
@@ -79,13 +79,13 @@ final class AttachmentDraftSignalDataTest extends TestCase
         ];
 
         $restored = AttachmentDraftSignalData::fromArray(
-            (new AttachmentDraftSignalData(
+            new AttachmentDraftSignalData(
                 draftId: 'draft-1',
                 filename: 'report.pdf',
                 mimeType: 'application/pdf',
                 size: 1234,
                 uploadedAt: 1710000000,
-            ))->toArray(),
+            )->toArray(),
         );
 
         $this->assertSame($draft, $restored->toArray());

@@ -326,7 +326,7 @@ final class BackupPruner
         }
 
         try {
-            return (new DateTimeImmutable($createdAt))->setTimezone($timezone);
+            return new DateTimeImmutable($createdAt)->setTimezone($timezone);
         } catch (Throwable) {
             return null;
         }

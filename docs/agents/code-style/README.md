@@ -20,6 +20,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [cross-layer-field-names.md](cross-layer-field-names.md) | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TypeScript field |
 | [table-names.md](table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
+| [php-language-level.md](php-language-level.md) | choosing between an old and a new PHP syntax form, or wondering whether an 8.4-only construct is allowed |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
 | [scaffold-markers.md](scaffold-markers.md) | leaving code/config wired but intentionally unused — marking a scaffold or a deliberate keep so a dead-code sweep does not cull it |

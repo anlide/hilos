@@ -26,7 +26,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
 {
     public function testSystemBootstrapRoutesThroughDefaultHook(): void
     {
-        $destinations = (new SignalRouterServiceDefaultsTestRouter())->getDestinations(new SignalDTO(
+        $destinations = new SignalRouterServiceDefaultsTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::SYSTEM),
             new SignalName(SignalConstants::INITIAL_AGENTS_START),
@@ -41,7 +41,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
 
     public function testGenericDaemonCronRoutesThroughDefaultHook(): void
     {
-        $destinations = (new SignalRouterServiceDefaultsTestRouter())->getDestinations(new SignalDTO(
+        $destinations = new SignalRouterServiceDefaultsTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::CRON),
             new SignalName('generic_cron'),

@@ -40,7 +40,7 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
     {
         $this->installPlacement(['remote_agent:7' => 'node-B']);
 
-        $destinations = (new CrossNodeTestRouter())->getDestinations($this->noopSignal());
+        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
             new RemoteAgentDestination('node-B', 'remote_agent', '7'),
@@ -54,7 +54,7 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
         // No mapping: every nodeFor() returns null, so nothing is rewritten.
         $this->installPlacement([]);
 
-        $destinations = (new CrossNodeTestRouter())->getDestinations($this->noopSignal());
+        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
             new AgentDestination('remote_agent', '7'),
@@ -67,7 +67,7 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
     {
         Hilos::$cluster = null;
 
-        $destinations = (new CrossNodeTestRouter())->getDestinations($this->noopSignal());
+        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
             new AgentDestination('remote_agent', '7'),
@@ -81,7 +81,7 @@ final class SignalRouterCrossNodeRoutingTest extends TestCase
         // Cluster context present, but no worker-placement lookup registered (opt-in).
         Hilos::$cluster = new ClusterContext();
 
-        $destinations = (new CrossNodeTestRouter())->getDestinations($this->noopSignal());
+        $destinations = new CrossNodeTestRouter()->getDestinations($this->noopSignal());
 
         $this->assertEquals([
             new AgentDestination('remote_agent', '7'),

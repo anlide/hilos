@@ -80,7 +80,7 @@ final class BackupActionDtoTest extends TestCase
     public function testCreateSignalRoundTripsTheRequestingConnection(): void
     {
         $dto = BackupCreateSignalData::fromArray(
-            (new BackupCreateSignalData('full', 'accept-key-1'))->toArray(),
+            new BackupCreateSignalData('full', 'accept-key-1')->toArray(),
         );
 
         $this->assertSame('full', $dto->scope);
@@ -107,7 +107,7 @@ final class BackupActionDtoTest extends TestCase
     public function testDeleteSignalRoundTripsTheRequestingConnection(): void
     {
         $dto = BackupDeleteSignalData::fromArray(
-            (new BackupDeleteSignalData('bk-1', 'accept-key-1'))->toArray(),
+            new BackupDeleteSignalData('bk-1', 'accept-key-1')->toArray(),
         );
 
         $this->assertSame('bk-1', $dto->backupId);
@@ -124,7 +124,7 @@ final class BackupActionDtoTest extends TestCase
     public function testSetKeepSignalRoundTripsTheRequestingConnection(): void
     {
         $dto = BackupSetKeepSignalData::fromArray(
-            (new BackupSetKeepSignalData('bk-2', true, 'accept-key-2'))->toArray(),
+            new BackupSetKeepSignalData('bk-2', true, 'accept-key-2')->toArray(),
         );
 
         $this->assertSame('bk-2', $dto->backupId);

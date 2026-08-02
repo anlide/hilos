@@ -283,7 +283,7 @@ final class TopologyValidator
 
             /** @var class-string<AbstractAgentDaemon> $daemonClass */
             $daemonAgentType = $daemonClass::AGENT_TYPE;
-            if (is_string($daemonAgentType) && $daemonAgentType !== '' && $daemonAgentType !== $agentType) {
+            if ($daemonAgentType !== '' && $daemonAgentType !== $agentType) {
                 $errors[] = "AGENTS[{$agentType}][" . AgentRegistryKey::DAEMON . "] class {$daemonClass} AGENT_TYPE must match registry key ({$daemonAgentType})";
             }
 

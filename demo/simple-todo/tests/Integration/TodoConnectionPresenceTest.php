@@ -94,7 +94,7 @@ final class TodoConnectionPresenceTest extends IntegrationTestCase
     {
         Hilos::$rt->connections->actions->register('todo-ak-1', 7);
 
-        (new TodoAgent())->onSignalConnectionClose(new WebSocketCloseSignalDTO('todo-ak-1'), '', '');
+        new TodoAgent()->onSignalConnectionClose(new WebSocketCloseSignalDTO('todo-ak-1'), '', '');
 
         $this->assertNull(Hilos::$rt->connections['todo-ak-1']);
     }
@@ -112,7 +112,7 @@ final class TodoConnectionPresenceTest extends IntegrationTestCase
             $token = RandomHelper::hex(16);
             $user = Hilos::$db->users->actions->register($token);
 
-            (new TodoAgent())->onSignalHandshake(
+            new TodoAgent()->onSignalHandshake(
                 new WebSocketHandshakeSignalDTO(
                     headers: [],
                     acceptKey: 'todo-ak-handshake',

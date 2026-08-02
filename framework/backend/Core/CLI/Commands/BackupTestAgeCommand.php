@@ -221,7 +221,7 @@ HELP;
             return null;
         }
 
-        return (new DateTimeImmutable())->modify('-' . (int)$days . ' days');
+        return new DateTimeImmutable()->modify('-' . (int)$days . ' days');
     }
 
     /**

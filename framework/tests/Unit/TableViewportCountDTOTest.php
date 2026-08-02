@@ -15,7 +15,7 @@ final class TableViewportCountDTOTest extends TestCase
     public function testRoundTripPreservesTheCounts(): void
     {
         $restored = TableViewportCountDTO::fromArray(
-            (new TableViewportCountDTO('hilos_settings', 'settings', 42, 5))->toArray(),
+            new TableViewportCountDTO('hilos_settings', 'settings', 42, 5)->toArray(),
         );
 
         $this->assertSame('hilos_settings', $restored->page);

@@ -83,7 +83,7 @@ final class DaemonManagerSingletonDutiesTest extends TestCase
 
     private function registerRecordingWorkerServer(DaemonManager $manager): RecordingWorkerServer
     {
-        $server = (new ReflectionClass(RecordingWorkerServer::class))->newInstanceWithoutConstructor();
+        $server = new ReflectionClass(RecordingWorkerServer::class)->newInstanceWithoutConstructor();
         $manager->registerServer($server);
 
         return $server;
@@ -91,17 +91,17 @@ final class DaemonManagerSingletonDutiesTest extends TestCase
 
     private function setWorkersReady(DaemonManager $manager, bool $ready): void
     {
-        (new ReflectionProperty(DaemonManager::class, 'workersReady'))->setValue($manager, $ready);
+        new ReflectionProperty(DaemonManager::class, 'workersReady')->setValue($manager, $ready);
     }
 
     private function invokeEnsureSingletonsStarted(DaemonManager $manager): void
     {
-        (new ReflectionMethod(DaemonManager::class, 'ensureSingletonsStarted'))->invoke($manager);
+        new ReflectionMethod(DaemonManager::class, 'ensureSingletonsStarted')->invoke($manager);
     }
 
     private function invokeAmLeader(DaemonManager $manager): bool
     {
-        return (new ReflectionMethod(DaemonManager::class, 'amLeader'))->invoke($manager);
+        return new ReflectionMethod(DaemonManager::class, 'amLeader')->invoke($manager);
     }
 
     private function installLeadership(Leadership $leadership): void

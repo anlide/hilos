@@ -83,7 +83,7 @@ HELP;
         }
 
         try {
-            $metadata = (new BackupCreator())->create($id, $scope);
+            $metadata = new BackupCreator()->create($id, $scope);
         } catch (BackupException $e) {
             fwrite(STDERR, 'Backup failed: ' . $e->getMessage() . "\n");
 

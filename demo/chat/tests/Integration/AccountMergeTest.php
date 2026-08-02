@@ -59,7 +59,7 @@ final class AccountMergeTest extends IntegrationTestCase
         Hilos::$db->identities->createMagicLinkIdentity($loserId, $emailB);
         Hilos::$db->events->actions->addMessage('hello from loser', userId: $loserId);
 
-        $summary = (new ChatAgent())->handleAccountMerge($survivorId, $loserId);
+        $summary = new ChatAgent()->handleAccountMerge($survivorId, $loserId);
 
         $this->assertSame(2, $summary->identitiesMoved);
         $this->assertSame(1, $summary->messagesMoved);
@@ -91,7 +91,7 @@ final class AccountMergeTest extends IntegrationTestCase
         $userId = (int) Hilos::$db->users->actions->createWithName('Self')->id;
 
         $this->expectException(ValidationException::class);
-        (new ChatAgent())->handleAccountMerge($userId, $userId);
+        new ChatAgent()->handleAccountMerge($userId, $userId);
     }
 
     /**
@@ -104,7 +104,7 @@ final class AccountMergeTest extends IntegrationTestCase
         $loserId = (int) Hilos::$db->users->actions->createWithName('Orphan Loser')->id;
 
         $this->expectException(ValidationException::class);
-        (new ChatAgent())->handleAccountMerge($loserId + 1_000_000, $loserId);
+        new ChatAgent()->handleAccountMerge($loserId + 1_000_000, $loserId);
     }
 
     /**
@@ -118,10 +118,10 @@ final class AccountMergeTest extends IntegrationTestCase
         $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
         $secondSurvivorId = (int) Hilos::$db->users->actions->createWithName('Second Survivor')->id;
 
-        (new ChatAgent())->handleAccountMerge($survivorId, $loserId);
+        new ChatAgent()->handleAccountMerge($survivorId, $loserId);
 
         $this->expectException(ValidationException::class);
-        (new ChatAgent())->handleAccountMerge($secondSurvivorId, $loserId);
+        new ChatAgent()->handleAccountMerge($secondSurvivorId, $loserId);
     }
 
     /**
@@ -148,7 +148,7 @@ final class AccountMergeTest extends IntegrationTestCase
         TruthSourceRegistry::unregister(ChatDbContext::eventMessages, self::TEST_AGENT_ID);
 
         try {
-            (new ChatAgent())->handleAccountMerge($survivorId, $loserId);
+            new ChatAgent()->handleAccountMerge($survivorId, $loserId);
             $this->fail('Expected the revoked message re-point to abort the merge');
         } catch (WriteNotAllowedException) {
             // Expected: the mid-transaction truth-source failure aborts the merge.

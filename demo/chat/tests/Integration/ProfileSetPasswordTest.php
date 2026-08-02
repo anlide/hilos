@@ -58,7 +58,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         try {
             $this->register($agent, 'set-change-ak', $email);
 
-            (new ProfilePage($agent))->onAction(
+            new ProfilePage($agent)->onAction(
                 'set-change-ak',
                 ChatSignalConstants::SET_PASSWORD,
                 new SetPasswordActionDTO(self::PASSWORD, self::NEW_PASSWORD),
@@ -95,7 +95,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                (new ProfilePage($agent))->onAction(
+                new ProfilePage($agent)->onAction(
                     'set-wrong-ak',
                     ChatSignalConstants::SET_PASSWORD,
                     new SetPasswordActionDTO('not the password', self::NEW_PASSWORD),
@@ -133,7 +133,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
             $this->insertVerifiedMagicLink($userId, $email);
             $agent->authenticateSession($token, $userId);
 
-            (new ProfilePage($agent))->onAction(
+            new ProfilePage($agent)->onAction(
                 'set-add-ak',
                 ChatSignalConstants::SET_PASSWORD,
                 new SetPasswordActionDTO('', self::NEW_PASSWORD),
@@ -172,7 +172,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
             $rejected = false;
             try {
-                (new ProfilePage($agent))->onAction(
+                new ProfilePage($agent)->onAction(
                     'set-none-ak',
                     ChatSignalConstants::SET_PASSWORD,
                     new SetPasswordActionDTO('', self::NEW_PASSWORD),
@@ -248,7 +248,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
      */
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        (new MainPage($agent))->onAction(
+        new MainPage($agent)->onAction(
             $acceptKey,
             ChatSignalConstants::REGISTER,
             new RegisterActionDTO($email, self::PASSWORD, self::PASSWORD),

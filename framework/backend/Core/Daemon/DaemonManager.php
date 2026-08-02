@@ -57,6 +57,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
+use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Server\CommandServer;
@@ -710,9 +711,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Register client socket in event loop
      *
      * @param ServerInterface $server Server instance
-     * @param mixed $client Client instance
+     * @param ClientInterface $client Client instance
      */
-    protected function registerClientSocket(ServerInterface $server, $client): void
+    protected function registerClientSocket(ServerInterface $server, ClientInterface $client): void
     {
         $socket = $client->getSocket();
         if ($socket === null) {
@@ -730,9 +731,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Handle client read event
      *
      * @param ServerInterface $server Server instance
-     * @param mixed $client Client instance
+     * @param ClientInterface $client Client instance
      */
-    protected function onClientRead(ServerInterface $server, $client): void
+    protected function onClientRead(ServerInterface $server, ClientInterface $client): void
     {
         try {
             $client->read();
@@ -1421,13 +1422,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      */
     private function findWorkerServer(): ?WorkerServer
     {
-        foreach ($this->servers as $server) {
-            if ($server instanceof WorkerServer) {
-                return $server;
-            }
-        }
-
-        return null;
+        return array_find($this->servers, fn($server) => $server instanceof WorkerServer);
     }
 
     /**

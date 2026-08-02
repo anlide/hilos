@@ -91,7 +91,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testUnknownActionsDoNotUseWebSocketActionFallback(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::ACTION),
             new SignalName('unknown_action'),
@@ -137,7 +137,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testUnregisteredGroupUsesChatFallback(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
             new SignalName('unknown_group'),
@@ -169,7 +169,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testInitialSystemSignalStartsLibraryAgent(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::SYSTEM),
             new SignalName(SignalConstants::INITIAL_AGENTS_START),
@@ -183,7 +183,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testBotMessageRoutesToChatAgent(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::BOT_MESSAGE),
@@ -197,7 +197,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::MODERATION_RESULT),
@@ -217,7 +217,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testRenameModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::RENAME_MODERATION_RESULT),
@@ -237,7 +237,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testBinaryFramesRouteToChatAgentThroughPageSignalOwnership(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::FRAME_BINARY),
             new SignalName(SignalName::EMPTY),
@@ -251,7 +251,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testBotAgentStartRoutesToBotAgentWithExtractedIndex(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::BOT_AGENT_START),
@@ -265,7 +265,7 @@ final class ChatSignalRouterTest extends TestCase
 
     public function testBotAgentStartWithZeroBotIdProducesNoDestination(): void
     {
-        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::BOT_AGENT_START),

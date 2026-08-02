@@ -20,7 +20,7 @@ final class CommandPayloadDtoTest extends TestCase
     {
         $request = new CommandRequestDTO('corr-1', 'typed', ['value' => 'hi']);
 
-        $hydrated = (new CommandPayloadTestRouter())->createCommandPayloadDTO('typed', $request);
+        $hydrated = new CommandPayloadTestRouter()->createCommandPayloadDTO('typed', $request);
 
         $this->assertNotSame($request, $hydrated);
         $this->assertSame(['value' => 'hi'], $hydrated->payload);
@@ -32,7 +32,7 @@ final class CommandPayloadDtoTest extends TestCase
     {
         $request = new CommandRequestDTO('corr-2', 'plain', ['value' => 'hi']);
 
-        $result = (new CommandPayloadTestRouter())->createCommandPayloadDTO('plain', $request);
+        $result = new CommandPayloadTestRouter()->createCommandPayloadDTO('plain', $request);
 
         $this->assertSame($request, $result);
         $this->assertNull($result->parsedPayload);
@@ -43,7 +43,7 @@ final class CommandPayloadDtoTest extends TestCase
         $request = new CommandRequestDTO('corr-3', 'typed', []);
 
         $this->expectException(InvalidCommandPayloadException::class);
-        (new CommandPayloadTestRouter())->createCommandPayloadDTO('typed', $request);
+        new CommandPayloadTestRouter()->createCommandPayloadDTO('typed', $request);
     }
 }
 

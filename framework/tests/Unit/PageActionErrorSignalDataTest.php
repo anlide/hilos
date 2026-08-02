@@ -60,7 +60,7 @@ final class PageActionErrorSignalDataTest extends TestCase
     {
         $this->assertArrayNotHasKey(
             PageActionErrorSignalData::errorCode,
-            (new PageActionErrorSignalData('message', 'boom'))->toArray(),
+            new PageActionErrorSignalData('message', 'boom')->toArray(),
         );
     }
 

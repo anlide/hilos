@@ -32,7 +32,7 @@ final class BackupHistoryScannerTest extends TestCase
 
     public function testMissingRootYieldsEmptyResult(): void
     {
-        $result = (new BackupHistoryScanner())->scan($this->root . '/does-not-exist');
+        $result = new BackupHistoryScanner()->scan($this->root . '/does-not-exist');
 
         $this->assertSame([], $result->metadatas);
         $this->assertSame([], $result->anomalies);
@@ -40,7 +40,7 @@ final class BackupHistoryScannerTest extends TestCase
 
     public function testEmptyRootStringYieldsEmptyResult(): void
     {
-        $result = (new BackupHistoryScanner())->scan('');
+        $result = new BackupHistoryScanner()->scan('');
 
         $this->assertSame([], $result->metadatas);
         $this->assertSame([], $result->anomalies);
@@ -64,7 +64,7 @@ final class BackupHistoryScannerTest extends TestCase
         // Broken JSON sidecar → skipped + error.
         file_put_contents($this->scopePath(BackupScope::SCHEMA_ONLY, 'broken1' . BackupHistoryScanner::SIDECAR_EXTENSION), '{ not json');
 
-        $result = (new BackupHistoryScanner())->scan($this->root);
+        $result = new BackupHistoryScanner()->scan($this->root);
 
         $indexedIds = array_map(
             static fn(BackupMetadata $metadata): string => $metadata->id,

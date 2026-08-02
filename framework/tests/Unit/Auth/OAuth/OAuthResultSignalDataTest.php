@@ -66,7 +66,7 @@ final class OAuthResultSignalDataTest extends TestCase
 
     public function testFromArrayRoundTripsToArray(): void
     {
-        $array = (new OAuthResultSignalData('accept-2', 'oauth:stub'))->toArray();
+        $array = new OAuthResultSignalData('accept-2', 'oauth:stub')->toArray();
 
         $this->assertSame($array, OAuthResultSignalData::fromArray($array)->toArray());
     }

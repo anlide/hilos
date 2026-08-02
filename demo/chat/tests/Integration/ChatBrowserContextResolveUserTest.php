@@ -46,7 +46,7 @@ final class ChatBrowserContextResolveUserTest extends IntegrationTestCase
      */
     private function resolveCurrentUserId(string $acceptKey): ?int
     {
-        return (new ReflectionMethod(ChatBrowserContext::class, 'resolveCurrentUserId'))
+        return new ReflectionMethod(ChatBrowserContext::class, 'resolveCurrentUserId')
             ->invoke(new ChatBrowserContext(), $acceptKey);
     }
 }

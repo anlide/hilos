@@ -62,7 +62,7 @@ final class SmsVerificationDelivererTest extends TestCase
         $router = new SmsVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new SmsVerificationDeliverer())->deliver('+15551234567', VerificationType::SMS_LOGIN, '654321');
+        new SmsVerificationDeliverer()->deliver('+15551234567', VerificationType::SMS_LOGIN, '654321');
 
         self::assertCount(1, $router->captured);
         $signal = $router->captured[0];
@@ -83,7 +83,7 @@ final class SmsVerificationDelivererTest extends TestCase
         $router = new SmsVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new SmsVerificationDeliverer())->deliver('+15551234567', VerificationType::SMS_ADD, '111222');
+        new SmsVerificationDeliverer()->deliver('+15551234567', VerificationType::SMS_ADD, '111222');
 
         self::assertCount(1, $router->captured);
         self::assertSame(
@@ -97,7 +97,7 @@ final class SmsVerificationDelivererTest extends TestCase
         $router = new SmsVerificationDelivererTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new SmsVerificationDeliverer())->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '000000');
+        new SmsVerificationDeliverer()->deliver('user@example.com', VerificationType::REGISTER_CONFIRM, '000000');
 
         self::assertCount(0, $router->captured);
     }

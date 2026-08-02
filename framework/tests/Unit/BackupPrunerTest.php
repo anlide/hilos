@@ -198,7 +198,7 @@ final class BackupPrunerTest extends TestCase
      */
     private function assertDoomed(array $expected, array $rows, BackupRetentionPolicy $policy): void
     {
-        $doomed = (new BackupPruner())->selectForDeletion(
+        $doomed = new BackupPruner()->selectForDeletion(
             $rows,
             $policy,
             new DateTimeZone(self::TIMEZONE),

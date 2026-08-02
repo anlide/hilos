@@ -17,28 +17,28 @@ final class MailTransportFactoryTest extends TestCase
 {
     public function testAutoSelectsFileTransportWithoutSmtpHost(): void
     {
-        $transport = (new MailTransportFactory())->create($this->config(transport: null, smtpHost: ''));
+        $transport = new MailTransportFactory()->create($this->config(transport: null, smtpHost: ''));
 
         $this->assertInstanceOf(FileMailTransport::class, $transport);
     }
 
     public function testAutoSelectsSmtpTransportWithSmtpHost(): void
     {
-        $transport = (new MailTransportFactory())->create($this->config(transport: null, smtpHost: 'mail.example.com'));
+        $transport = new MailTransportFactory()->create($this->config(transport: null, smtpHost: 'mail.example.com'));
 
         $this->assertInstanceOf(SmtpMailTransport::class, $transport);
     }
 
     public function testExplicitFileSelectionWinsOverConfiguredHost(): void
     {
-        $transport = (new MailTransportFactory())->create($this->config(transport: 'file', smtpHost: 'mail.example.com'));
+        $transport = new MailTransportFactory()->create($this->config(transport: 'file', smtpHost: 'mail.example.com'));
 
         $this->assertInstanceOf(FileMailTransport::class, $transport);
     }
 
     public function testExplicitSmtpSelectionWinsWithoutHost(): void
     {
-        $transport = (new MailTransportFactory())->create($this->config(transport: 'smtp', smtpHost: ''));
+        $transport = new MailTransportFactory()->create($this->config(transport: 'smtp', smtpHost: ''));
 
         $this->assertInstanceOf(SmtpMailTransport::class, $transport);
     }

@@ -32,7 +32,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 {
     public function testIndexedSignalRoutesToAgentWithExtractedIndex(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => 42]),
         );
 
@@ -43,7 +43,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalAcceptsStringIndex(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => 'abc']),
         );
 
@@ -54,7 +54,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalReturnsEmptyWhenFieldIsZero(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => 0]),
         );
 
@@ -63,7 +63,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalReturnsEmptyWhenFieldIsEmptyString(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => '']),
         );
 
@@ -72,7 +72,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalReturnsEmptyWhenFieldIsMissing(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, []),
         );
 
@@ -81,7 +81,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalReturnsEmptyWhenFieldIsNull(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::INDEXED_SIGNAL, ['entityId' => null]),
         );
 
@@ -90,7 +90,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testSingletonSignalOnMixedAgentRoutesWithNullIndex(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(
             $this->agentSignal(IndexedAgentSignalTestAgent::SINGLETON_SIGNAL, []),
         );
 
@@ -101,7 +101,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalDoesNotRouteFromNonAgentSource(): void
     {
-        $destinations = (new IndexedAgentSignalTestRouter())->getDestinations(new SignalDTO(
+        $destinations = new IndexedAgentSignalTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(IndexedAgentSignalTestAgent::INDEXED_SIGNAL),
@@ -153,7 +153,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
 
     public function testIndexedSignalRoutesWithDeclaredDto(): void
     {
-        $destinations = (new IndexedAgentSignalDtoTestRouter())->getDestinations(
+        $destinations = new IndexedAgentSignalDtoTestRouter()->getDestinations(
             $this->agentSignal(
                 IndexedAgentSignalDtoTestAgent::INDEXED_TYPED_SIGNAL,
                 ['entityId' => 7, 'message' => 'route-me'],

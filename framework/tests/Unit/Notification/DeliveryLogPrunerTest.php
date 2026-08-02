@@ -41,7 +41,7 @@ final class DeliveryLogPrunerTest extends TestCase
     public function testZeroRetentionPruneIsNoOp(): void
     {
         // A disabled retention must never reach the database; prune returns 0 deleted.
-        self::assertSame(0, (new DeliveryLogPruner())->prune(0, new DateTimeImmutable('2026-07-28 12:00:00')));
+        self::assertSame(0, new DeliveryLogPruner()->prune(0, new DateTimeImmutable('2026-07-28 12:00:00')));
     }
 
     public function testCatalogFragmentExposesRetentionKeyWithDefault(): void

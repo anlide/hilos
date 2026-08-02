@@ -34,7 +34,7 @@ final class AssertionVerifierTest extends TestCase
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN, ClientData::TYPE_GET);
         $signature = $vectors->sign($authData, $clientDataJson);
 
-        $newCount = (new AssertionVerifier($this->config()))->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
+        $newCount = new AssertionVerifier($this->config())->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
 
         self::assertSame(10, $newCount);
     }
@@ -49,7 +49,7 @@ final class AssertionVerifierTest extends TestCase
         $clientDataJson = $vectors->clientDataJson(self::CHALLENGE, self::ORIGIN, ClientData::TYPE_GET);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AssertionVerifier($this->config()))->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, 'not-a-valid-signature');
+        new AssertionVerifier($this->config())->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, 'not-a-valid-signature');
     }
 
     /**
@@ -63,7 +63,7 @@ final class AssertionVerifierTest extends TestCase
         $signature = $vectors->sign($authData, $clientDataJson);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AssertionVerifier($this->config()))->verify($vectors->publicKeyPem, 10, self::CHALLENGE, $clientDataJson, $authData, $signature);
+        new AssertionVerifier($this->config())->verify($vectors->publicKeyPem, 10, self::CHALLENGE, $clientDataJson, $authData, $signature);
     }
 
     /**
@@ -77,7 +77,7 @@ final class AssertionVerifierTest extends TestCase
         $signature = $vectors->sign($authData, $clientDataJson);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AssertionVerifier($this->config()))->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
+        new AssertionVerifier($this->config())->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
     }
 
     /**
@@ -93,7 +93,7 @@ final class AssertionVerifierTest extends TestCase
         $config = $this->config(userVerification: WebAuthnConfig::USER_VERIFICATION_REQUIRED);
 
         $this->expectException(WebAuthnVerificationException::class);
-        (new AssertionVerifier($config))->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
+        new AssertionVerifier($config)->verify($vectors->publicKeyPem, 5, self::CHALLENGE, $clientDataJson, $authData, $signature);
     }
 
     /**

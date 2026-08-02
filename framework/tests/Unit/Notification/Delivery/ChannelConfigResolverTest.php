@@ -61,7 +61,7 @@ final class ChannelConfigResolverTest extends TestCase
             false,
             EnvConstants::MAIL_FROM_ADDRESS,
         );
-        $resolved = (new ChannelConfigResolver())->resolve(MailDeliveryChannel::NAME, $field);
+        $resolved = new ChannelConfigResolver()->resolve(MailDeliveryChannel::NAME, $field);
 
         self::assertSame(MailDeliveryChannel::FIELD_FROM_ADDRESS, $resolved->field);
         self::assertSame(ChannelConfigSource::ENV, $resolved->source);
@@ -78,7 +78,7 @@ final class ChannelConfigResolverTest extends TestCase
             EnvConstants::MAIL_SMTP_PORT,
             587,
         );
-        $resolved = (new ChannelConfigResolver())->resolve(MailDeliveryChannel::NAME, $field);
+        $resolved = new ChannelConfigResolver()->resolve(MailDeliveryChannel::NAME, $field);
 
         self::assertSame(ChannelConfigSource::ENV, $resolved->source);
         self::assertSame(587, $resolved->value);
@@ -87,7 +87,7 @@ final class ChannelConfigResolverTest extends TestCase
     public function testDefaultSourceWhenFieldHasNoEnvBacking(): void
     {
         $field = new ChannelConfigField('note', 'Note', SettingsCatalogConstants::TYPE_STRING, false, null, 'n/a');
-        $resolved = (new ChannelConfigResolver())->resolve(MailDeliveryChannel::NAME, $field);
+        $resolved = new ChannelConfigResolver()->resolve(MailDeliveryChannel::NAME, $field);
 
         self::assertSame(ChannelConfigSource::DEFAULT, $resolved->source);
         self::assertSame('n/a', $resolved->value);
@@ -104,7 +104,7 @@ final class ChannelConfigResolverTest extends TestCase
             true,
             EnvConstants::MAIL_SMTP_PASSWORD,
         );
-        $resolved = (new ChannelConfigResolver())->resolve(MailDeliveryChannel::NAME, $field);
+        $resolved = new ChannelConfigResolver()->resolve(MailDeliveryChannel::NAME, $field);
 
         self::assertSame(ChannelConfigSource::ENV, $resolved->source);
         self::assertNull($resolved->value);
@@ -121,7 +121,7 @@ final class ChannelConfigResolverTest extends TestCase
             true,
             EnvConstants::MAIL_SMTP_PASSWORD,
         );
-        $resolved = (new ChannelConfigResolver())->resolve(MailDeliveryChannel::NAME, $field);
+        $resolved = new ChannelConfigResolver()->resolve(MailDeliveryChannel::NAME, $field);
 
         self::assertSame(ChannelConfigSource::DEFAULT, $resolved->source);
         self::assertNull($resolved->value);

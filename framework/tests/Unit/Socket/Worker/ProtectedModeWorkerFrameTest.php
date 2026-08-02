@@ -69,7 +69,7 @@ final class ProtectedModeWorkerFrameTest extends TestCase
 
     public function testDisableFrameRoundTripsThroughTheWire(): void
     {
-        $restored = WorkerProtectedModeDisableDTO::fromJson((new WorkerProtectedModeDisableDTO())->toJson());
+        $restored = WorkerProtectedModeDisableDTO::fromJson(new WorkerProtectedModeDisableDTO()->toJson());
 
         $this->assertSame(WorkerProtectedModeDisableDTO::MESSAGE_TYPE, $restored->getType());
     }
@@ -93,7 +93,7 @@ final class ProtectedModeWorkerFrameTest extends TestCase
 
     public function testFactoryDispatchesDisableFrame(): void
     {
-        $parsed = WorkerDTO::factoryWorkerDTO((new WorkerProtectedModeDisableDTO())->toJson());
+        $parsed = WorkerDTO::factoryWorkerDTO(new WorkerProtectedModeDisableDTO()->toJson());
 
         $this->assertInstanceOf(WorkerProtectedModeDisableDTO::class, $parsed);
     }

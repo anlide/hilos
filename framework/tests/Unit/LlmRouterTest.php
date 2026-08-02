@@ -41,7 +41,7 @@ final class LlmRouterTest extends TestCase
     {
         putenv('LLM_CHAT_PROVIDER=' . LLMConstants::PROVIDER_LOCAL);
 
-        $profile = (new LlmRouter())->resolve('default');
+        $profile = new LlmRouter()->resolve('default');
 
         self::assertSame('default', $profile->key);
         self::assertSame(LlmProvider::LOCAL, $profile->provider);
@@ -57,7 +57,7 @@ final class LlmRouterTest extends TestCase
         putenv('LLM_CHAT_PROVIDER=' . LLMConstants::PROVIDER_EXTERNAL);
         putenv('LLM_EXTERNAL_API_KEY=sk-test');
 
-        $profile = (new LlmRouter())->resolve('default');
+        $profile = new LlmRouter()->resolve('default');
 
         self::assertSame(LlmProvider::EXTERNAL, $profile->provider);
         self::assertSame('sk-test', $profile->apiKey);
@@ -72,14 +72,14 @@ final class LlmRouterTest extends TestCase
 
         $this->expectException(LLMConfigurationException::class);
 
-        (new LlmRouter())->resolve('default');
+        new LlmRouter()->resolve('default');
     }
 
     public function testUnknownProfileIsConfigurationError(): void
     {
         $this->expectException(LLMConfigurationException::class);
 
-        (new LlmRouter())->resolve('does-not-exist');
+        new LlmRouter()->resolve('does-not-exist');
     }
 
     public function testUnknownProviderIsConfigurationError(): void
@@ -88,14 +88,14 @@ final class LlmRouterTest extends TestCase
 
         $this->expectException(LLMConfigurationException::class);
 
-        (new LlmRouter())->resolve('default');
+        new LlmRouter()->resolve('default');
     }
 
     public function testChatClientForLocalBuildsOllamaProvider(): void
     {
         putenv('LLM_CHAT_PROVIDER=' . LLMConstants::PROVIDER_LOCAL);
 
-        self::assertInstanceOf(AsyncOllamaChatProvider::class, (new LlmRouter())->chatClientFor('default'));
+        self::assertInstanceOf(AsyncOllamaChatProvider::class, new LlmRouter()->chatClientFor('default'));
     }
 
     public function testChatClientForExternalBuildsOpenAiProvider(): void
@@ -103,7 +103,7 @@ final class LlmRouterTest extends TestCase
         putenv('LLM_CHAT_PROVIDER=' . LLMConstants::PROVIDER_EXTERNAL);
         putenv('LLM_EXTERNAL_API_KEY=sk-test');
 
-        self::assertInstanceOf(AsyncOpenAIChatProvider::class, (new LlmRouter())->chatClientFor('default'));
+        self::assertInstanceOf(AsyncOpenAIChatProvider::class, new LlmRouter()->chatClientFor('default'));
     }
 
     public function testOverrideSourceReplacesResolvedProfile(): void
@@ -125,7 +125,7 @@ final class LlmRouterTest extends TestCase
             }
         };
 
-        $profile = (new LlmRouter(overrides: $override))->resolve('default');
+        $profile = new LlmRouter(overrides: $override)->resolve('default');
 
         self::assertSame('overridden-model', $profile->model);
     }

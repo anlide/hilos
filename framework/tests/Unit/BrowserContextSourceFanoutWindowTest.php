@@ -59,7 +59,7 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
         Hilos::$table->configure();
 
         $viewport = new TableViewportSubscription(tableKey: SourceFanoutWindowUnitTable::TABLE, offset: 1, limit: 1);
-        (new SourceFanoutWindowUnitContext())->sendTableWindow(
+        new SourceFanoutWindowUnitContext()->sendTableWindow(
             SourceFanoutWindowUnitContext::PAGE,
             'ak-1',
             $viewport,

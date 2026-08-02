@@ -42,7 +42,7 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testPlaceAgentFrameKeepsANullIndexForSingletons(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerPlaceAgentDTO('moderator', null))->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlaceAgentDTO('moderator', null)->toJson());
 
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $parsed);
         $this->assertNull($parsed->agentIndex);
@@ -56,7 +56,7 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testStopAgentFrameRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerStopAgentDTO('bot', 'b1'))->toJson());
+        $parsed = PeerDTO::fromWire(new PeerStopAgentDTO('bot', 'b1')->toJson());
 
         $this->assertInstanceOf(PeerStopAgentDTO::class, $parsed);
         $this->assertSame('bot', $parsed->agentType);
@@ -110,7 +110,7 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testPlacementQueryRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire((new PeerPlacementQueryDTO())->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlacementQueryDTO()->toJson());
 
         $this->assertInstanceOf(PeerPlacementQueryDTO::class, $parsed);
     }

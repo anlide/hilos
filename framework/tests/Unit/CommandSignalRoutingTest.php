@@ -24,7 +24,7 @@ final class CommandSignalRoutingTest extends TestCase
 {
     public function testCommandRequestRoutesToOwningAgent(): void
     {
-        $destinations = (new CommandRoutingTestRouter())->getDestinations(new SignalDTO(
+        $destinations = new CommandRoutingTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::COMMAND_REQUEST),
             new SignalName('echo'),
@@ -36,7 +36,7 @@ final class CommandSignalRoutingTest extends TestCase
 
     public function testUnknownCommandRoutesNowhere(): void
     {
-        $destinations = (new CommandRoutingTestRouter())->getDestinations(new SignalDTO(
+        $destinations = new CommandRoutingTestRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::COMMAND_REQUEST),
             new SignalName('nope'),
@@ -48,7 +48,7 @@ final class CommandSignalRoutingTest extends TestCase
 
     public function testCommandReplyRoutesToHeldConnectionByCorrelationId(): void
     {
-        $destinations = (new SignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new SignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::COMMAND_REPLY),
             new SignalName('corr-3'),
@@ -60,7 +60,7 @@ final class CommandSignalRoutingTest extends TestCase
 
     public function testCommandReplyWithoutCorrelationIdRoutesNowhere(): void
     {
-        $destinations = (new SignalRouter())->getDestinations(new SignalDTO(
+        $destinations = new SignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::COMMAND_REPLY),
             new SignalName(''),

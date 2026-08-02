@@ -45,14 +45,14 @@ final class ClusterContextTest extends TestCase
 
     public function testDisabledByDefault(): void
     {
-        $this->assertFalse((new ClusterContext())->isEnabled());
+        $this->assertFalse(new ClusterContext()->isEnabled());
     }
 
     public function testEnabledWhenFlagSet(): void
     {
         putenv('CLUSTER_ENABLED=true');
 
-        $this->assertTrue((new ClusterContext())->isEnabled());
+        $this->assertTrue(new ClusterContext()->isEnabled());
     }
 
     public function testIdentityThrowsWhenDisabled(): void
@@ -62,7 +62,7 @@ final class ClusterContextTest extends TestCase
 
         $this->expectException(ClusterDisabledException::class);
 
-        (new ClusterContext())->identity();
+        new ClusterContext()->identity();
     }
 
     public function testIdentityResolvedWhenEnabled(): void
@@ -71,7 +71,7 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ID=node-a');
         putenv('CLUSTER_NODE_ROLE=master');
 
-        $this->assertSame('node-a', (new ClusterContext())->identity()->nodeId);
+        $this->assertSame('node-a', new ClusterContext()->identity()->nodeId);
     }
 
     public function testIdentityIsMemoized(): void
@@ -87,7 +87,7 @@ final class ClusterContextTest extends TestCase
 
     public function testSnapshotWhenDisabledHasNoNodes(): void
     {
-        $snapshot = (new ClusterContext())->snapshot();
+        $snapshot = new ClusterContext()->snapshot();
 
         $this->assertFalse($snapshot[ClusterCommandConstants::FIELD_ENABLED]);
         $this->assertSame([], $snapshot[ClusterCommandConstants::FIELD_NODES]);
@@ -100,7 +100,7 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
-        $snapshot = (new ClusterContext())->snapshot();
+        $snapshot = new ClusterContext()->snapshot();
 
         $this->assertTrue($snapshot[ClusterCommandConstants::FIELD_ENABLED]);
         $this->assertSame(
@@ -118,7 +118,7 @@ final class ClusterContextTest extends TestCase
     {
         $this->expectException(ClusterDisabledException::class);
 
-        (new ClusterContext())->reload();
+        new ClusterContext()->reload();
     }
 
     public function testReloadRebuildsLocalNodeFromChangedConfig(): void
@@ -185,7 +185,7 @@ final class ClusterContextTest extends TestCase
 
     public function testLeadershipIsStandaloneWhenDisabled(): void
     {
-        $leadership = (new ClusterContext())->leadership();
+        $leadership = new ClusterContext()->leadership();
 
         $this->assertInstanceOf(StandaloneLeadership::class, $leadership);
         $this->assertTrue($leadership->amLeader());
@@ -197,7 +197,7 @@ final class ClusterContextTest extends TestCase
     {
         putenv('CLUSTER_ENABLED=true');
 
-        $leadership = (new ClusterContext())->leadership();
+        $leadership = new ClusterContext()->leadership();
 
         $this->assertInstanceOf(PendingLeadership::class, $leadership);
         $this->assertFalse($leadership->amLeader());
@@ -214,7 +214,7 @@ final class ClusterContextTest extends TestCase
 
     public function testLifecycleStateIsStandaloneWhenDisabled(): void
     {
-        $this->assertSame(NodeLifecycleState::Standalone, (new ClusterContext())->lifecycleState());
+        $this->assertSame(NodeLifecycleState::Standalone, new ClusterContext()->lifecycleState());
     }
 
     public function testLifecycleStateIsSlaveForAClusteredSlave(): void
@@ -223,7 +223,7 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ID=node-a');
         putenv('CLUSTER_NODE_ROLE=slave');
 
-        $this->assertSame(NodeLifecycleState::Slave, (new ClusterContext())->lifecycleState());
+        $this->assertSame(NodeLifecycleState::Slave, new ClusterContext()->lifecycleState());
     }
 
     public function testLifecycleStateIsMasterNoQuorumForAClusteredMaster(): void
@@ -233,7 +233,7 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ROLE=master');
 
         // In this slice PendingLeadership reports no quorum, so a master is dormant.
-        $this->assertSame(NodeLifecycleState::MasterNoQuorum, (new ClusterContext())->lifecycleState());
+        $this->assertSame(NodeLifecycleState::MasterNoQuorum, new ClusterContext()->lifecycleState());
     }
 
     public function testMembershipTransitionsReachTheRegisteredObserver(): void
@@ -282,7 +282,7 @@ final class ClusterContextTest extends TestCase
     {
         $this->assertSame(
             [ClusterCommandConstants::FIELD_ENABLED => false],
-            (new ClusterContext())->inspect(),
+            new ClusterContext()->inspect(),
         );
     }
 
@@ -293,7 +293,7 @@ final class ClusterContextTest extends TestCase
         putenv('CLUSTER_NODE_ROLE=master');
         putenv('CLUSTER_NODE_CAPABILITIES=gpu-local');
 
-        $inspection = (new ClusterContext())->inspect();
+        $inspection = new ClusterContext()->inspect();
 
         $this->assertTrue($inspection[ClusterCommandConstants::FIELD_ENABLED]);
         $this->assertSame('node-a', $inspection[ClusterCommandConstants::FIELD_LOCAL_NODE_ID]);

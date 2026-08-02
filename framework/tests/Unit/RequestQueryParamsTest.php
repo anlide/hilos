@@ -52,7 +52,7 @@ final class RequestQueryParamsTest extends TestCase
         $this->expectException(EmptyValueException::class);
         $this->expectExceptionMessage('token cannot be empty');
 
-        (new RequestQueryParams(['token' => '']))->requireString('token');
+        new RequestQueryParams(['token' => ''])->requireString('token');
     }
 
     public function testRequireStringMatchingThrowsForInvalidFormat(): void
@@ -60,7 +60,7 @@ final class RequestQueryParamsTest extends TestCase
         $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('token must be lowercase hex');
 
-        (new RequestQueryParams(['token' => 'xyz']))->requireStringMatching(
+        new RequestQueryParams(['token' => 'xyz'])->requireStringMatching(
             'token',
             '/\A[0-9a-f]{32}\z/',
             'token must be lowercase hex',

@@ -47,7 +47,7 @@ final class TodoAgentHandshakeTest extends TestCase
         $this->expectException(EmptyValueException::class);
         $this->expectExceptionMessage('session token is required');
 
-        (new TodoAgent())->onSignalHandshake(
+        new TodoAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
                 acceptKey: 'todo-ak',
@@ -65,7 +65,7 @@ final class TodoAgentHandshakeTest extends TestCase
         $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('session token must be a 32-character lowercase hex token');
 
-        (new TodoAgent())->onSignalHandshake(
+        new TodoAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
                 headers: [],
                 acceptKey: 'todo-ak',

@@ -72,7 +72,7 @@ final class HilosSmsSenderTest extends TestCase
         $router = new HilosSmsSenderTestSignalRouter();
         Hilos::$sr = $router;
 
-        (new HilosSmsSender())->send(new SmsMessage('+15551234567', 'Your code is 123'));
+        new HilosSmsSender()->send(new SmsMessage('+15551234567', 'Your code is 123'));
 
         self::assertCount(1, $router->captured);
         $signal = $router->captured[0];

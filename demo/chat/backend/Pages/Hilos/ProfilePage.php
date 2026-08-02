@@ -257,7 +257,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         return new PagePayload(data: [
-            self::NOTIFICATION_SECTION => (new NotificationChannelPreferenceProjector())
+            self::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()
                 ->sectionData(Hilos::$rt->selfConnection->userId)
                 ->toArray(),
         ]);
@@ -475,7 +475,7 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('Enter a valid phone number');
         }
 
-        (new VerificationService())->issue(VerificationType::SMS_ADD, $phone, $userId);
+        new VerificationService()->issue(VerificationType::SMS_ADD, $phone, $userId);
     }
 
     /**
@@ -508,7 +508,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         $phone = PhoneNumber::normalize($dto->phone);
         $verifiedUserId = $phone === null
             ? null
-            : (new VerificationService())->verify(VerificationType::SMS_ADD, $phone, $dto->code);
+            : new VerificationService()->verify(VerificationType::SMS_ADD, $phone, $dto->code);
         if ($phone === null || $verifiedUserId === null || $verifiedUserId !== $userId) {
             throw new ValidationException('Invalid or expired code');
         }
@@ -562,7 +562,7 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('That email is already in use');
         }
 
-        (new VerificationService())->issue(VerificationType::EMAIL_ADD, $email, $userId);
+        new VerificationService()->issue(VerificationType::EMAIL_ADD, $email, $userId);
     }
 
     /**
@@ -601,7 +601,7 @@ final class ProfilePage extends AbstractHilosProfilePage
         }
 
         $email = strtolower($dto->email);
-        $verifiedUserId = (new VerificationService())->verify(VerificationType::EMAIL_ADD, $email, $dto->code);
+        $verifiedUserId = new VerificationService()->verify(VerificationType::EMAIL_ADD, $email, $dto->code);
         if ($verifiedUserId === null || $verifiedUserId !== $userId) {
             throw new ValidationException('Invalid or expired code');
         }
@@ -660,7 +660,7 @@ final class ProfilePage extends AbstractHilosProfilePage
 
         Hilos::$db->notificationPreferences->actions->setChannel($userId, $dto->channel, $dto->enabled);
 
-        $channels = (new NotificationChannelPreferenceProjector())->channelPreferenceMap($userId);
+        $channels = new NotificationChannelPreferenceProjector()->channelPreferenceMap($userId);
         foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
             $this->sendToUser(
                 NotificationSignalName::PREFERENCES_CHANGED,

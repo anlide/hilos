@@ -44,7 +44,7 @@ final class LogRotatorTest extends TestCase
             str_repeat('d', 777),
         );
 
-        $this->assertSame(150, (new LogRotator($this->dir))->liveLogBytes());
+        $this->assertSame(150, new LogRotator($this->dir)->liveLogBytes());
     }
 
     public function testRotateMovesLiveLogsIntoTimestampedArchiveBatch(): void
@@ -52,7 +52,7 @@ final class LogRotatorTest extends TestCase
         file_put_contents($this->dir . '/daemon.log', 'one');
         file_put_contents($this->dir . '/worker.log', 'two');
 
-        $moved = (new LogRotator($this->dir))->rotate();
+        $moved = new LogRotator($this->dir)->rotate();
 
         $this->assertSame(2, $moved);
         // The live files are gone.
