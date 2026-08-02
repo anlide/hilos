@@ -110,23 +110,23 @@ test('windows, paginates, and searches the seeded users', async ({ page }) => {
   // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
   // is asserted by shape and lower bound, not an exact number on the shared database.
   const count = page.getByTestId('hilos-table-count')
-  await expect(count).toHaveText(/^\d+ total$/)
+  await expect(count).toHaveText(/^\s*\d+ total\s*$/)
   const total = Number((await count.textContent())?.replace(/\D/g, ''))
   expect(total).toBeGreaterThanOrEqual(26)
 
   // The page indicator starts at page 1 of a multi-page set.
   const pageIndicator = page.getByTestId('hilos-table-page')
-  await expect(pageIndicator).toHaveText(/^1 \/ \d+$/)
+  await expect(pageIndicator).toHaveText(/^\s*1 \/ \d+\s*$/)
 
   // Next advances the window to a different set of rows; prev restores it.
   const rowKeys = async () =>
     rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
   const firstKeys = JSON.stringify(await rowKeys())
   await page.getByTestId('hilos-table-next').click()
-  await expect(pageIndicator).toHaveText(/^2 \/ \d+$/)
+  await expect(pageIndicator).toHaveText(/^\s*2 \/ \d+\s*$/)
   await expect.poll(async () => JSON.stringify(await rowKeys())).not.toBe(firstKeys)
   await page.getByTestId('hilos-table-prev').click()
-  await expect(pageIndicator).toHaveText(/^1 \/ \d+$/)
+  await expect(pageIndicator).toHaveText(/^\s*1 \/ \d+\s*$/)
 
   // Server search filters the whole selection, not just the loaded window: the shared
   // prefix matches exactly the 25 seeded users, and the window still caps at 10 rows.
