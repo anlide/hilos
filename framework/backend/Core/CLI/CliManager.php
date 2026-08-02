@@ -18,6 +18,7 @@ use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\DbWaitCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
+use Hilos\Core\CLI\Commands\LlmPingCommand;
 use Hilos\Core\CLI\Commands\MigrationDownCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
@@ -94,6 +95,7 @@ class CliManager
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
+        $this->commands[CliCommands::LLM_PING] = new LlmPingCommand();
 
         $this->registerProjectCommands();
 
