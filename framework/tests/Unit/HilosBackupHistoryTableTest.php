@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Backup\BackupChecksumState;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime;
@@ -170,6 +171,8 @@ final class HilosBackupHistoryTableTest extends TestCase
             status: 'success',
             finished: true,
             failureReason: null,
+            checksumState: BackupChecksumState::VERIFIED,
+            verifiedAt: '2026-08-02T06:00:00+00:00',
         );
 
         $this->assertSame(
@@ -187,6 +190,8 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::status => 'success',
                         HilosBackupTableRow::finished => true,
                         HilosBackupTableRow::failureReason => null,
+                        HilosBackupTableRow::checksumState => 'verified',
+                        HilosBackupTableRow::verifiedAt => '2026-08-02T06:00:00+00:00',
                     ],
                 ],
             ],
@@ -237,6 +242,8 @@ final class HilosBackupHistoryTableTest extends TestCase
             status: 'success',
             finished: true,
             failureReason: null,
+            checksumState: BackupChecksumState::VERIFIED,
+            verifiedAt: '2026-08-02T06:00:00+00:00',
         );
 
         // The frontend normalizer ingests any slot payload bearing an `id` as an entity
@@ -244,6 +251,90 @@ final class HilosBackupHistoryTableTest extends TestCase
         // row. The identity rides the fragment's rowKey instead.
         $this->assertArrayNotHasKey('id', $row->toArray());
         $this->assertSame('b1', $row->toArray()[HilosBackupTableRow::rowKey]);
+    }
+
+    public function testTheChecksumColumnShowsAllFourStates(): void
+    {
+        $states = [
+            // No digest at all: the sidecar predates checksums, so there is nothing to check.
+            'legacy' => [[], BackupChecksumState::NONE],
+            // A digest exists but nobody has run a check against it yet.
+            'fresh' => [[BackupHistory::sha256 => 'ab'], BackupChecksumState::PRESENT],
+            'checked' => [
+                [BackupHistory::sha256 => 'ab', BackupHistory::verifyOutcome => 'ok'],
+                BackupChecksumState::VERIFIED,
+            ],
+            'broken' => [
+                [BackupHistory::sha256 => 'ab', BackupHistory::verifyOutcome => 'mismatch'],
+                BackupChecksumState::MISMATCH,
+            ],
+        ];
+
+        foreach ($states as $id => [$extra, $expected]) {
+            $table = $this->table(histories: $this->historiesWith(
+                BackupHistory::fromRow([
+                    BackupHistory::id => $id,
+                    BackupHistory::status => 'success',
+                    ...$extra,
+                ]),
+            ));
+
+            $mutation = $table->buildMutationForSourceEvent(
+                SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, $id, []),
+            );
+
+            $this->assertSame($expected, $mutation->row?->checksumState, "row {$id}");
+        }
+    }
+
+    public function testAVerifiedRowCarriesWhenItWasChecked(): void
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'b1',
+                BackupHistory::status => 'success',
+                BackupHistory::sha256 => 'ab',
+                BackupHistory::verifyOutcome => 'ok',
+                BackupHistory::verifiedAt => '2026-08-02T06:00:00+00:00',
+            ]),
+        ));
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
+        );
+
+        $this->assertSame('2026-08-02T06:00:00+00:00', $mutation->row?->verifiedAt);
+        // The digest itself is not part of the row payload: the browser never needs it.
+        $this->assertArrayNotHasKey(BackupHistory::sha256, $mutation->row?->toArray() ?? []);
+    }
+
+    public function testAVerifiedOutcomeWithoutADigestStillReadsAsNone(): void
+    {
+        // Defensive: an index row cannot honestly claim a check it has no digest for.
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'odd',
+                BackupHistory::status => 'success',
+                BackupHistory::verifyOutcome => 'ok',
+            ]),
+        ));
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'odd', []),
+        );
+
+        $this->assertSame(BackupChecksumState::NONE, $mutation->row?->checksumState);
+    }
+
+    public function testTheInProgressRowHasNothingToChecksum(): void
+    {
+        $mutation = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+        );
+
+        // The archive does not exist yet, so the running row claims neither digest nor check.
+        $this->assertSame(BackupChecksumState::NONE, $mutation->row?->checksumState);
+        $this->assertNull($mutation->row?->verifiedAt);
     }
 
     /**

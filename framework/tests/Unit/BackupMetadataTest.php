@@ -8,6 +8,7 @@ use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\BackupVerifyOutcome;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -141,6 +142,87 @@ final class BackupMetadataTest extends TestCase
 
         // A legacy sidecar written before the field existed carries no key and reads back as 0.
         $this->assertSame(0, BackupMetadata::fromArray([BackupMetadata::id => 'x'])->dumpBytes);
+    }
+
+    public function testVerificationFieldsRoundTripAndLegacySidecarReadsThemAsNull(): void
+    {
+        $metadata = new BackupMetadata(
+            id: 'v1',
+            createdAt: '2026-08-02T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 3,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            sha256: str_repeat('ab', 32),
+            verifiedAt: '2026-08-02T04:05:06+00:00',
+            verifyOutcome: BackupVerifyOutcome::OK,
+        );
+
+        $restored = BackupMetadata::fromArray($metadata->toArray());
+        $this->assertSame(str_repeat('ab', 32), $restored->sha256);
+        $this->assertSame('2026-08-02T04:05:06+00:00', $restored->verifiedAt);
+        $this->assertSame(BackupVerifyOutcome::OK, $restored->verifyOutcome);
+
+        // All three keys are always written, so an absent digest is explicit rather than ambiguous.
+        $payload = $metadata->toArray();
+        $this->assertArrayHasKey(BackupMetadata::sha256, $payload);
+        $this->assertArrayHasKey(BackupMetadata::verifiedAt, $payload);
+        $this->assertArrayHasKey(BackupMetadata::verifyOutcome, $payload);
+
+        // A sidecar written before this ticket has no digest at all: nothing to check, not corrupt.
+        $legacy = BackupMetadata::fromArray([BackupMetadata::id => 'x']);
+        $this->assertNull($legacy->sha256);
+        $this->assertNull($legacy->verifiedAt);
+        $this->assertNull($legacy->verifyOutcome);
+    }
+
+    public function testAnUnknownStoredVerifyOutcomeReadsBackAsNull(): void
+    {
+        $metadata = BackupMetadata::fromArray([
+            BackupMetadata::id => 'x',
+            BackupMetadata::verifyOutcome => 'nonsense',
+        ]);
+
+        $this->assertNull($metadata->verifyOutcome);
+        $this->assertSame(BackupVerifyOutcome::MISMATCH, BackupVerifyOutcome::fromString('mismatch'));
+        $this->assertNull(BackupVerifyOutcome::fromString(''));
+    }
+
+    public function testWithKeepAndWithVerificationPreserveEveryOtherField(): void
+    {
+        $original = new BackupMetadata(
+            id: 'v2',
+            createdAt: '2026-08-02T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::SCHEMA_SEED,
+            connections: [new BackupConnectionMeta(0, 'db', 4)],
+            sizeBytes: 8192,
+            durationSeconds: 11,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            warnings: ['note'],
+            failureReason: null,
+            dumpBytes: 262144,
+            sha256: str_repeat('cd', 32),
+        );
+
+        $pinned = $original->withKeep(true);
+        $this->assertTrue($pinned->keep);
+        $this->assertSame($original->sha256, $pinned->sha256);
+        $this->assertSame($original->dumpBytes, $pinned->dumpBytes);
+        $this->assertSame($original->warnings, $pinned->warnings);
+        $this->assertSame($original->connections, $pinned->connections);
+
+        $verified = $pinned->withVerification('2026-08-02T05:00:00+00:00', BackupVerifyOutcome::MISMATCH);
+        $this->assertSame('2026-08-02T05:00:00+00:00', $verified->verifiedAt);
+        $this->assertSame(BackupVerifyOutcome::MISMATCH, $verified->verifyOutcome);
+        // The pin taken a moment earlier survives the second clone.
+        $this->assertTrue($verified->keep);
+        $this->assertSame($original->sha256, $verified->sha256);
+        $this->assertSame(BackupScope::SCHEMA_SEED, $verified->scope);
     }
 
     public function testUnknownScopeAndStatusFallBackToDefaults(): void

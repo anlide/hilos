@@ -27,6 +27,9 @@ final class BackupMetadata extends BaseDTO
     public const string warnings = 'warnings';
     public const string failureReason = 'failureReason';
     public const string dumpBytes = 'dumpBytes';
+    public const string sha256 = 'sha256';
+    public const string verifiedAt = 'verifiedAt';
+    public const string verifyOutcome = 'verifyOutcome';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -42,6 +45,11 @@ final class BackupMetadata extends BaseDTO
      * @param ?string $failureReason Why the run failed (error records only); null for success and legacy sidecars
      * @param int $dumpBytes Uncompressed dump volume in bytes (the true peak the space guard sizes runs
      *     from); 0 means "no data" for error records and legacy sidecars written before the field existed
+     * @param ?string $sha256 Lowercase hex digest of the archive; null on error records and on sidecars
+     *     written before the digest existed - "nothing to check", not "corrupt"
+     * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+     * @param ?BackupVerifyOutcome $verifyOutcome Outcome of that verification; only ok/mismatch are ever
+     *     stored, and an unknown stored value reads back as null
      */
     public function __construct(
         public readonly string $id,
@@ -56,7 +64,65 @@ final class BackupMetadata extends BaseDTO
         public readonly array $warnings = [],
         public readonly ?string $failureReason = null,
         public readonly int $dumpBytes = 0,
+        public readonly ?string $sha256 = null,
+        public readonly ?string $verifiedAt = null,
+        public readonly ?BackupVerifyOutcome $verifyOutcome = null,
     ) {
+    }
+
+    /**
+     * Returns a copy carrying a different retention pin.
+     *
+     * @param bool $keep Desired retention pin
+     * @return self Copy with the pin applied
+     */
+    public function withKeep(bool $keep): self
+    {
+        return new self(
+            $this->id,
+            $this->createdAt,
+            $this->env,
+            $this->scope,
+            $this->connections,
+            $this->sizeBytes,
+            $this->durationSeconds,
+            $keep,
+            $this->status,
+            $this->warnings,
+            $this->failureReason,
+            $this->dumpBytes,
+            $this->sha256,
+            $this->verifiedAt,
+            $this->verifyOutcome,
+        );
+    }
+
+    /**
+     * Returns a copy carrying the result of a verification run.
+     *
+     * @param ?string $verifiedAt ISO-8601 instant the archive was verified
+     * @param ?BackupVerifyOutcome $verifyOutcome What that verification concluded
+     * @return self Copy with the verification recorded
+     */
+    public function withVerification(?string $verifiedAt, ?BackupVerifyOutcome $verifyOutcome): self
+    {
+        return new self(
+            $this->id,
+            $this->createdAt,
+            $this->env,
+            $this->scope,
+            $this->connections,
+            $this->sizeBytes,
+            $this->durationSeconds,
+            $this->keep,
+            $this->status,
+            $this->warnings,
+            $this->failureReason,
+            $this->dumpBytes,
+            $this->sha256,
+            $verifiedAt,
+            $verifyOutcome,
+        );
     }
 
     /**
@@ -90,6 +156,11 @@ final class BackupMetadata extends BaseDTO
             $warnings,
             isset($data[self::failureReason]) ? (string)$data[self::failureReason] : null,
             (int)($data[self::dumpBytes] ?? 0),
+            isset($data[self::sha256]) ? (string)$data[self::sha256] : null,
+            isset($data[self::verifiedAt]) ? (string)$data[self::verifiedAt] : null,
+            BackupVerifyOutcome::fromString(
+                isset($data[self::verifyOutcome]) ? (string)$data[self::verifyOutcome] : null,
+            ),
         );
     }
 
@@ -116,6 +187,11 @@ final class BackupMetadata extends BaseDTO
             // success record makes the field's absence explicit rather than ambiguous.
             self::failureReason => $this->failureReason,
             self::dumpBytes => $this->dumpBytes,
+            // Written even when null, for the same reason failureReason is: a reader tells
+            // "this backup carries no digest" from "this sidecar predates the field".
+            self::sha256 => $this->sha256,
+            self::verifiedAt => $this->verifiedAt,
+            self::verifyOutcome => $this->verifyOutcome?->value,
         ];
     }
 }

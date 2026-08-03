@@ -10,13 +10,16 @@ are the core headless's too; this view owns only the markup, so a project mounts
 it by passing its HilosBackupsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  BACKUP_CHECKSUM_STATE_FIELD,
   createHilosBackupsActions,
   createHilosBackupsTable,
+  formatBackupChecksum,
   formatBackupDuration,
   formatBackupSize,
   hasBackupFailureDetail,
   HILOS_BACKUP_SCOPES,
   HilosPages,
+  isBackupChecksumMismatch,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -52,6 +55,7 @@ const columns: HilosTableColumn[] = [
   { key: 'env', label: 'Environment', sortable: true },
   { key: 'scope', label: 'Scope', sortable: true },
   { key: 'sizeBytes', label: 'Size', sortable: true, headerClass: 'text-end' },
+  { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
   {
     key: 'durationSeconds',
     label: 'Duration',
@@ -181,6 +185,16 @@ async function submitDelete(): Promise<void> {
           <code>{{ row.scope || '—' }}</code>
         </td>
         <td class="text-end">{{ formatBackupSize(row) }}</td>
+        <td class="text-nowrap">
+          <span
+            :class="
+              isBackupChecksumMismatch(row)
+                ? 'text-danger fw-semibold'
+                : undefined
+            "
+            >{{ formatBackupChecksum(row) }}</span
+          >
+        </td>
         <td class="text-end">{{ formatBackupDuration(row) }}</td>
         <td style="min-width: 10rem">
           <div v-if="isBackupInProgress(row)" class="progress" role="status">

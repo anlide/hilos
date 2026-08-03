@@ -60,6 +60,9 @@ final class CliCommands
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'verification:test:expire';
 
+    /** @var string Command: Verify stored backup archives against their recorded checksums */
+    public const string BACKUP_VERIFY = 'backup:verify';
+
     /** @var string Command: Age a stored backup's sidecar createdAt into the past (test-only) */
     public const string BACKUP_TEST_AGE = 'test:backup:age';
 

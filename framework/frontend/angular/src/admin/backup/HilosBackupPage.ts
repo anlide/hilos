@@ -20,11 +20,14 @@ import {
 import {
   HILOS_BACKUP_SCOPES,
   HilosPages,
+  BACKUP_CHECKSUM_STATE_FIELD,
   createHilosBackupsActions,
   createHilosBackupsTable,
   formatBackupDuration,
+  formatBackupChecksum,
   formatBackupSize,
   hasBackupFailureDetail,
+  isBackupChecksumMismatch,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -46,6 +49,7 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'env', label: 'Environment', sortable: true },
   { key: 'scope', label: 'Scope', sortable: true },
   { key: 'sizeBytes', label: 'Size', sortable: true, headerClass: 'text-end' },
+  { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
   {
     key: 'durationSeconds',
     label: 'Duration',
@@ -109,6 +113,9 @@ const COLUMNS: HilosTableColumn[] = [
             <code>{{ row.scope || '—' }}</code>
           </td>
           <td class="text-end">{{ formatSize(row) }}</td>
+          <td class="text-nowrap">
+            <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
+          </td>
           <td class="text-end">{{ formatDuration(row) }}</td>
           <td style="min-width: 10rem">
             @if (isRunning(row)) {
@@ -359,5 +366,15 @@ export class HilosBackupPage {
   /** Human-readable capture duration, shared with the other view layers. */
   protected formatDuration(row: HilosBackupRow): string {
     return formatBackupDuration(row)
+  }
+
+  /** The checksum cell text, shared with the other view layers. */
+  protected formatChecksum(row: HilosBackupRow): string {
+    return formatBackupChecksum(row)
+  }
+
+  /** Red only for an archive that did not match its recorded checksum. */
+  protected checksumClass(row: HilosBackupRow): string {
+    return isBackupChecksumMismatch(row) ? 'text-danger fw-semibold' : ''
   }
 }

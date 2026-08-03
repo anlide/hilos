@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  formatBackupChecksum,
   formatBackupDuration,
   formatBackupSize,
   hasBackupFailureDetail,
+  isBackupChecksumMismatch,
   resolveHilosBackupRow,
   type HilosBackupRow,
 } from '../../src/admin/backup/hilosBackups.js'
@@ -21,6 +23,8 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     status: 'success',
     finished: true,
     failureReason: null,
+    checksumState: 'none',
+    verifiedAt: null,
     ...overrides,
   }
 }
@@ -76,6 +80,34 @@ describe('formatBackupSize', () => {
 })
 
 describe('resolveHilosBackupRow', () => {
+  it('reads the checksum state and the verification instant from the slot', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        checksumState: 'verified',
+        verifiedAt: '2026-08-02T06:07:08+00:00',
+      }),
+    )
+
+    expect(resolved.checksumState).toBe('verified')
+    expect(resolved.verifiedAt).toBe('2026-08-02T06:07:08+00:00')
+  })
+
+  it('reads an unknown or absent checksum state as none', () => {
+    // A row that cannot say it was checked must not render as if it were: a legacy
+    // payload has no key at all, and a newer backend could send a state this build
+    // does not know.
+    expect(resolveHilosBackupRow(backupTableRow('b1', {})).checksumState).toBe(
+      'none',
+    )
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', { checksumState: 'weird' }))
+        .checksumState,
+    ).toBe('none')
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', {})).verifiedAt,
+    ).toBeNull()
+  })
+
   it('reads a failure reason from the slot', () => {
     const resolved = resolveHilosBackupRow(
       backupTableRow('b1', {
@@ -100,6 +132,57 @@ describe('resolveHilosBackupRow', () => {
       resolveHilosBackupRow(backupTableRow('b1', { failureReason: '' }))
         .failureReason,
     ).toBeNull()
+  })
+})
+
+describe('formatBackupChecksum', () => {
+  it('dashes a backup that carries no digest at all', () => {
+    // Every backup written before checksums existed reads this way; it is "nothing to
+    // check", and must not look like a failed check.
+    expect(formatBackupChecksum(row({ checksumState: 'none' }))).toBe('—')
+  })
+
+  it('reports a recorded digest nobody has checked yet', () => {
+    expect(formatBackupChecksum(row({ checksumState: 'present' }))).toBe(
+      'present',
+    )
+  })
+
+  it('shows the day a verified archive was checked, not the full instant', () => {
+    expect(
+      formatBackupChecksum(
+        row({
+          checksumState: 'verified',
+          verifiedAt: '2026-08-02T06:07:08+00:00',
+        }),
+      ),
+    ).toBe('✓ 2026-08-02')
+  })
+
+  it('still marks a verified archive whose instant went missing', () => {
+    expect(
+      formatBackupChecksum(
+        row({ checksumState: 'verified', verifiedAt: null }),
+      ),
+    ).toBe('✓')
+  })
+
+  it('shouts about an archive that did not match', () => {
+    expect(formatBackupChecksum(row({ checksumState: 'mismatch' }))).toBe(
+      'MISMATCH',
+    )
+  })
+})
+
+describe('isBackupChecksumMismatch', () => {
+  it('is true only for a mismatching archive', () => {
+    expect(isBackupChecksumMismatch(row({ checksumState: 'mismatch' }))).toBe(
+      true,
+    )
+    expect(isBackupChecksumMismatch(row({ checksumState: 'verified' }))).toBe(
+      false,
+    )
+    expect(isBackupChecksumMismatch(row({ checksumState: 'none' }))).toBe(false)
   })
 })
 

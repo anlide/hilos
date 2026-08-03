@@ -32,6 +32,22 @@ final class BackupConstants
      */
     public const string RUN_SCHEDULE_COMMAND = 'backup:run-schedule';
 
+    /**
+     * Command-channel wire name asking {@see Agent\BackupAgent} to re-mirror its runtime index
+     * from storage. Declared on the agent's AGENT_COMMANDS.
+     *
+     * Not test-only: the operator command `backup:verify` rewrites sidecars on disk (files=truth)
+     * and then asks the agent to catch its index up, so the admin list shows the verification
+     * without waiting for the next rescan or restart.
+     *
+     * Provisional: HIL-528 gives the daemon filesystem watching, after which the index catches
+     * up on its own however storage changed, and this per-writer poke goes away.
+     */
+    public const string REFRESH_HISTORY_COMMAND = 'backup:refresh-history';
+
+    /** Reply key: number of index rows the agent holds after re-mirroring. */
+    public const string FIELD_HISTORY_COUNT = 'historyCount';
+
     /** `--at=<ISO-8601>` option: the explicit createdAt the age fixture writes into a sidecar. */
     public const string AT_OPTION = 'at';
 

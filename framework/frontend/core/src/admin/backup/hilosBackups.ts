@@ -57,7 +57,28 @@ export interface HilosBackupRow {
    * legacy records saved before the reason was recorded.
    */
   readonly failureReason: string | null
+  /**
+   * Whether the archive carries a checksum, and how it last verified. The digest
+   * itself never leaves the server — the list only ever shows this state.
+   */
+  readonly checksumState: HilosBackupChecksumState
+  /**
+   * ISO-8601 instant of the last verification, or null when the archive has never
+   * been checked (which includes every backup written before checksums existed).
+   */
+  readonly verifiedAt: string | null
 }
+
+/**
+ * The checksum state of a stored backup, mirroring the backend BackupChecksumState:
+ * no digest recorded, a digest that nobody has checked, a checked-and-matching
+ * archive, and one that did not match what was recorded.
+ */
+export type HilosBackupChecksumState =
+  | 'none'
+  | 'present'
+  | 'verified'
+  | 'mismatch'
 
 // Wire keys: the framework backup table and its single inline `backup` slot (the
 // merged runtime fields) and the create / delete / set-keep action names. A
@@ -74,6 +95,16 @@ const BACKUP_ACTIONS = new Set<string>([
   BACKUP_DELETE_ACTION,
   BACKUP_SET_KEEP_ACTION,
 ])
+
+/**
+ * Row payload key of the checksum state. Exported because it is also the table
+ * column key the three views declare, so the wire name has one owner instead of a
+ * copy per view.
+ */
+export const BACKUP_CHECKSUM_STATE_FIELD = 'checksumState'
+
+/** Row payload key of the last verification instant. */
+export const BACKUP_VERIFIED_AT_FIELD = 'verifiedAt'
 
 /** A selectable backup scope: its wire value and a human-readable label. */
 export interface HilosBackupScopeOption {
@@ -165,6 +196,30 @@ function toFailureReason(value: unknown): string | null {
 }
 
 /**
+ * Narrow a raw `checksumState` slot value to the view-model field. Anything the
+ * frontend does not recognize — a missing key on a legacy payload, a value from a
+ * newer backend — reads as `none`: a row that cannot say it was checked must not
+ * look like it was.
+ *
+ * @param value The raw `checksumState` value from a payload slot.
+ */
+function toChecksumState(value: unknown): HilosBackupChecksumState {
+  return value === 'present' || value === 'verified' || value === 'mismatch'
+    ? value
+    : 'none'
+}
+
+/**
+ * Narrow a raw `verifiedAt` slot value to the view-model field. Missing,
+ * non-string, or empty input is "never verified" (null).
+ *
+ * @param value The raw `verifiedAt` value from a payload slot.
+ */
+function toVerifiedAt(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
  * Resolve one raw backup table row into its view-model. The merged runtime fields
  * ride a single inline `backup` slot (no entity reference — a backup row is
  * page-scoped, keyed by its id), so this reads the slot as a plain record.
@@ -188,6 +243,8 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     status: readString(slot, 'status'),
     finished: toFinished(slot['finished']),
     failureReason: toFailureReason(slot['failureReason']),
+    checksumState: toChecksumState(slot[BACKUP_CHECKSUM_STATE_FIELD]),
+    verifiedAt: toVerifiedAt(slot[BACKUP_VERIFIED_AT_FIELD]),
   }
 }
 
@@ -234,6 +291,38 @@ export function formatBackupDuration(row: HilosBackupRow): string {
   }
 
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+/**
+ * The checksum cell: a dash when no digest was recorded, `present` for a digest
+ * nobody has checked, the check date once it verified, and a loud MISMATCH when it
+ * did not. Shared by the three views so the column cannot drift between them.
+ *
+ * Only the date part of the verification instant is shown: the column is a compact
+ * one next to Size, and the hour a check ran is not what the operator scans for.
+ *
+ * @param row The backup row to format.
+ */
+export function formatBackupChecksum(row: HilosBackupRow): string {
+  switch (row.checksumState) {
+    case 'mismatch':
+      return 'MISMATCH'
+    case 'verified':
+      return row.verifiedAt === null ? '✓' : `✓ ${row.verifiedAt.slice(0, 10)}`
+    case 'present':
+      return 'present'
+    default:
+      return '—'
+  }
+}
+
+/**
+ * A stored archive that did not match its recorded checksum — the only checksum
+ * state the views render in red. The single source the three share, so an alarming
+ * state cannot end up quiet in one of them.
+ */
+export function isBackupChecksumMismatch(row: HilosBackupRow): boolean {
+  return row.checksumState === 'mismatch'
 }
 
 /** The single in-progress backup (renders the live progress row; not actionable). */

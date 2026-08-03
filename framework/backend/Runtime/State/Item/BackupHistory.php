@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
+use Hilos\Backup\BackupVerifyOutcome;
 
 /**
  * BackupHistory - one runtime index row for a stored backup.
@@ -32,6 +33,9 @@ final class BackupHistory extends RtState
     public const string status = 'status';
     public const string failureReason = 'failureReason';
     public const string dumpBytes = 'dumpBytes';
+    public const string sha256 = 'sha256';
+    public const string verifiedAt = 'verifiedAt';
+    public const string verifyOutcome = 'verifyOutcome';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -70,6 +74,15 @@ final class BackupHistory extends RtState
      */
     public int $dumpBytes = 0;
 
+    /** Archive digest from the sidecar; null for error rows and backups written before digests. */
+    public ?string $sha256 = null;
+
+    /** ISO-8601 instant of the last verification; null means never verified. */
+    public ?string $verifiedAt = null;
+
+    /** Outcome value of that verification ({@see BackupVerifyOutcome}); null if never verified. */
+    public ?string $verifyOutcome = null;
+
     /**
      * Builds a history row from a scanned sidecar's metadata.
      *
@@ -90,6 +103,9 @@ final class BackupHistory extends RtState
         $instance->status = $metadata->status->value;
         $instance->failureReason = $metadata->failureReason;
         $instance->dumpBytes = $metadata->dumpBytes;
+        $instance->sha256 = $metadata->sha256;
+        $instance->verifiedAt = $metadata->verifiedAt;
+        $instance->verifyOutcome = $metadata->verifyOutcome?->value;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -119,6 +135,9 @@ final class BackupHistory extends RtState
         $instance->status = (string)($row[self::status] ?? '');
         $instance->failureReason = isset($row[self::failureReason]) ? (string)$row[self::failureReason] : null;
         $instance->dumpBytes = (int)($row[self::dumpBytes] ?? 0);
+        $instance->sha256 = isset($row[self::sha256]) ? (string)$row[self::sha256] : null;
+        $instance->verifiedAt = isset($row[self::verifiedAt]) ? (string)$row[self::verifiedAt] : null;
+        $instance->verifyOutcome = isset($row[self::verifyOutcome]) ? (string)$row[self::verifyOutcome] : null;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -170,6 +189,15 @@ final class BackupHistory extends RtState
         if (array_key_exists(self::dumpBytes, $diff)) {
             $this->dumpBytes = (int)$diff[self::dumpBytes];
         }
+        if (array_key_exists(self::sha256, $diff)) {
+            $this->sha256 = $diff[self::sha256] === null ? null : (string)$diff[self::sha256];
+        }
+        if (array_key_exists(self::verifiedAt, $diff)) {
+            $this->verifiedAt = $diff[self::verifiedAt] === null ? null : (string)$diff[self::verifiedAt];
+        }
+        if (array_key_exists(self::verifyOutcome, $diff)) {
+            $this->verifyOutcome = $diff[self::verifyOutcome] === null ? null : (string)$diff[self::verifyOutcome];
+        }
     }
 
     /**
@@ -208,6 +236,9 @@ final class BackupHistory extends RtState
             self::status => $this->status,
             self::failureReason => $this->failureReason,
             self::dumpBytes => $this->dumpBytes,
+            self::sha256 => $this->sha256,
+            self::verifiedAt => $this->verifiedAt,
+            self::verifyOutcome => $this->verifyOutcome,
         ];
     }
 }

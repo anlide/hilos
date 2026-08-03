@@ -205,6 +205,32 @@ also registers those. Generate, in any order:
    and the create / delete / keep round-trips are framework-owned — the context is
    binding, not page logic.
 
+Nothing above configures archive checksums: they are unconditional. A backup taken
+after HIL-435 records a `sha256` of its archive in the sidecar as part of the same
+atomic publish, and the sidecar also carries `verifiedAt` / `verifyOutcome` once the
+archive has been checked. A sidecar written before that carries none of the three and
+reads back as null — "nothing to check", not "corrupt" — so an upgrade does not turn
+the accumulated history red. The list's Checksum column reflects exactly that: a dash
+when there is no digest, `present` for one nobody has checked, the check date once it
+matched, and a red `MISMATCH` when it did not. The digest itself never reaches the
+browser.
+
+Checking is an operator action, not a scheduled one: `php cli.php backup:verify [id]
+[--scope=<scope>]` is framework-owned and usable on production. It hashes in the CLI
+process (never in the monopoly agent, where a multi-gigabyte hash would freeze backup
+creation and page actions for minutes), rejects an archive whose size already
+disagrees without reading it, stamps each ok/mismatch back into the sidecar, and asks
+the running daemon to re-mirror its index, so an open list learns of the result without
+waiting for the next rescan or restart — arriving like any other row change, behind the
+list's Apply gate. A daemon that does not answer costs a warning, since files are the
+truth and the index catches up on the next rescan anyway (HIL-528 replaces that poke
+with filesystem watching). It exits 0 when everything it checked matched or had nothing
+to check, 1 on a mismatch or on anything left unverified, 2 on an unknown id or scope,
+and 3 when `BACKUP_DIR` is not configured. The summary distinguishes the two: `skipped`
+is a backup carrying no digest, which is not an error, while `unverified` is an archive
+that is missing or unreadable, a sidecar that could not be read or paired, or a verdict
+that could not be written back.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +

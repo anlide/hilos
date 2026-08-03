@@ -31,6 +31,9 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read string $status Status value
  * @property-read ?string $failureReason Why the run failed (error rows only); null otherwise
  * @property-read int $dumpBytes Uncompressed dump volume in bytes; 0 for error and legacy rows
+ * @property-read ?string $sha256 Archive digest; null for error rows and backups written before digests
+ * @property-read ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+ * @property-read ?string $verifyOutcome Outcome value of that verification; null means never verified
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -63,6 +66,9 @@ final class BackupHistory extends RtItem
             StateBackupHistory::status => $this->_state->status,
             StateBackupHistory::failureReason => $this->_state->failureReason,
             StateBackupHistory::dumpBytes => $this->_state->dumpBytes,
+            StateBackupHistory::sha256 => $this->_state->sha256,
+            StateBackupHistory::verifiedAt => $this->_state->verifiedAt,
+            StateBackupHistory::verifyOutcome => $this->_state->verifyOutcome,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

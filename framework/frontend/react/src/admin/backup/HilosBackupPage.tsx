@@ -13,11 +13,14 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   HILOS_BACKUP_SCOPES,
   HilosPages,
+  BACKUP_CHECKSUM_STATE_FIELD,
   createHilosBackupsActions,
   createHilosBackupsTable,
+  formatBackupChecksum,
   formatBackupDuration,
   formatBackupSize,
   hasBackupFailureDetail,
+  isBackupChecksumMismatch,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -45,6 +48,7 @@ const COLUMNS: HilosTableColumn[] = [
   { key: 'env', label: 'Environment', sortable: true },
   { key: 'scope', label: 'Scope', sortable: true },
   { key: 'sizeBytes', label: 'Size', sortable: true, headerClass: 'text-end' },
+  { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
   {
     key: 'durationSeconds',
     label: 'Duration',
@@ -209,6 +213,17 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               <code>{row.scope || '—'}</code>
             </td>
             <td className="text-end">{formatBackupSize(row)}</td>
+            <td className="text-nowrap">
+              <span
+                className={
+                  isBackupChecksumMismatch(row)
+                    ? 'text-danger fw-semibold'
+                    : undefined
+                }
+              >
+                {formatBackupChecksum(row)}
+              </span>
+            </td>
             <td className="text-end">{formatBackupDuration(row)}</td>
             <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
             <td className="text-center">

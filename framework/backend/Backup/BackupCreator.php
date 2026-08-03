@@ -13,6 +13,7 @@ use Hilos\Core\Process;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\Migration;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Throwable;
@@ -62,12 +63,34 @@ final class BackupCreator
     private const string ARCHIVE_EXTENSION = '.tar.gz';
     private const string SIDECAR_EXTENSION = '.json';
 
+    /** Temp-name discriminators for in-place sidecar rewrites; they keep concurrent rewrites apart. */
+    private const string TEMP_KIND_KEEP = 'keep';
+    private const string TEMP_KIND_VERIFY = 'verify';
+
     /** Longest failure reason kept in an error sidecar; a killed dump's stderr can be a wall of text. */
     private const int FAILURE_REASON_LIMIT = 2000;
 
     /** Recorded when schema-seed runs but the reference registry declares no tables for any connection. */
     private const string WARNING_EMPTY_REFERENCE_REGISTRY =
         'schema-seed found no reference tables: captured schema only, seed data is empty';
+
+    /** Recorded when the finished archive could not be hashed; the backup is published without a digest. */
+    private const string WARNING_DIGEST_FAILED =
+        'archive checksum could not be computed: the backup is stored without a sha256 digest';
+
+    /** Recorded when there is not enough of the run's budget left to hash; the backup is published as is. */
+    private const string WARNING_DIGEST_SKIPPED =
+        'archive checksum skipped: not enough of the backup timeout was left to hash the archive';
+
+    /**
+     * Conservative floor for hashing throughput, bytes per second, used only to decide whether the
+     * digest fits in what is left of the run's budget. Deliberately pessimistic (measured hardware
+     * does 90-160 MB/s): over-estimating the cost costs a digest, under-estimating costs the backup.
+     */
+    private const int DIGEST_MIN_THROUGHPUT_BPS = 50 * 1024 * 1024;
+
+    /** Seconds left untouched for the publish itself (fsync of a just-written archive is not free). */
+    private const int DIGEST_BUDGET_MARGIN_SECONDS = 30;
 
     /**
      * Creates one backup: dumps every configured connection, archives, and publishes atomically.
@@ -123,6 +146,29 @@ final class BackupCreator
             $this->archive($workDir, $tmpArchive);
 
             $sizeBytes = $this->fileSize($tmpArchive);
+
+            // Hashed over the temp archive, before the sidecar is written: the digest then rides
+            // the existing publish order (archive first, sidecar second), so there is no second
+            // write pass and no window in which a published archive has no digest.
+            //
+            // But the hash is a full extra read of a possibly multi-gigabyte file, and it is spent
+            // inside the same wall-clock budget the supervisor kills the child by. A run that used
+            // to finish just inside that budget would now be killed mid-hash - and a killed child
+            // loses the FINISHED archive, because the supervisor sweeps its temp files. So the
+            // digest yields to the backup: no room, no digest, and the archive still gets published.
+            $sha256 = null;
+            if (!$this->digestFitsBudget($sizeBytes, $startedAt)) {
+                $warnings[] = self::WARNING_DIGEST_SKIPPED;
+            } else {
+                $sha256 = hash_file(BackupVerifier::DIGEST_ALGO, $tmpArchive);
+                if ($sha256 === false) {
+                    // A backup that exists without a digest beats no backup at all, so the failure
+                    // is recorded as a warning rather than aborting an otherwise complete run.
+                    $warnings[] = self::WARNING_DIGEST_FAILED;
+                    $sha256 = null;
+                }
+            }
+
             $durationSeconds = (int)round(microtime(true) - $startedAt);
             $metadata = $this->buildMetadata(
                 $id,
@@ -132,6 +178,7 @@ final class BackupCreator
                 $durationSeconds,
                 warnings: $warnings,
                 dumpBytes: $dumpBytes,
+                sha256: $sha256,
             );
 
             $this->writeJson($tmpSidecar, $metadata->toArray());
@@ -151,6 +198,35 @@ final class BackupCreator
             $this->cleanupTemp($workDir, $tmpArchive, $tmpSidecar);
             throw new BackupDumpFailedException('Backup create failed: ' . $e->getMessage(), 0, $e);
         }
+    }
+
+    /**
+     * Whether hashing the finished archive still fits in what is left of the run's budget.
+     *
+     * The supervisor kills the child by wall clock ({@see EnvConstants::BACKUP_TIMEOUT}) and then
+     * sweeps its temp files, so overrunning does not cost a digest - it costs the whole backup.
+     * The estimate is deliberately pessimistic and the answer is yes whenever the budget cannot be
+     * read at all, which keeps the previous behaviour on an installation that does not declare it.
+     *
+     * @param int $sizeBytes Size of the archive to hash
+     * @param float $startedAt Microtime the run started
+     * @return bool True when the digest is worth attempting
+     */
+    private function digestFitsBudget(int $sizeBytes, float $startedAt): bool
+    {
+        try {
+            $budgetSeconds = Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
+        } catch (EnvException) {
+            return true;
+        }
+        if ($budgetSeconds <= 0) {
+            return true;
+        }
+
+        $remaining = $budgetSeconds - (microtime(true) - $startedAt);
+        $estimate = $sizeBytes / self::DIGEST_MIN_THROUGHPUT_BPS;
+
+        return $remaining - self::DIGEST_BUDGET_MARGIN_SECONDS > $estimate;
     }
 
     /**
@@ -241,6 +317,59 @@ final class BackupCreator
      */
     public function setStoredKeep(BackupHistory $row, string $root, bool $keep): void
     {
+        $sidecarPath = $this->storedSidecarPath($row, $root);
+
+        $metadata = $this->readSidecar($sidecarPath);
+        if ($metadata->keep === $keep) {
+            return;
+        }
+
+        $this->republishSidecar($sidecarPath, self::TEMP_KIND_KEEP, $metadata->withKeep($keep));
+    }
+
+    /**
+     * Records the outcome of a verification run in the stored sidecar, atomically (HIL-435).
+     *
+     * Verification leaves a trace so the admin list can show when an archive was last checked
+     * and how it went. The rewrite reuses the same temp→fsync→rename idiom as
+     * {@see setStoredKeep()}, over the sidecar that is the source of truth (files=truth); the
+     * caller refreshes the runtime index afterwards. A concurrent keep-pin rewrite is
+     * last-write-wins, which is accepted: both fields are re-read from the same file on the
+     * next rescan.
+     *
+     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * @param string $root Backup storage root
+     * @param BackupVerifyOutcome $outcome What the verification concluded (ok or mismatch)
+     * @param string $verifiedAt ISO-8601 instant the verification ran
+     * @throws BackupException When the scope, root, or stored sidecar is invalid or missing
+     * @throws BackupDumpFailedException When the rewritten sidecar cannot be published
+     */
+    public function recordVerification(
+        BackupHistory $row,
+        string $root,
+        BackupVerifyOutcome $outcome,
+        string $verifiedAt,
+    ): void {
+        $sidecarPath = $this->storedSidecarPath($row, $root);
+        $metadata = $this->readSidecar($sidecarPath);
+
+        $this->republishSidecar(
+            $sidecarPath,
+            self::TEMP_KIND_VERIFY,
+            $metadata->withVerification($verifiedAt, $outcome),
+        );
+    }
+
+    /**
+     * Resolves the stored sidecar path of an indexed backup.
+     *
+     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * @param string $root Backup storage root
+     * @return string Absolute sidecar path
+     * @throws BackupException When the scope or root is invalid
+     */
+    private function storedSidecarPath(BackupHistory $row, string $root): string
+    {
         $scope = BackupScope::fromString($row->scope);
         if ($scope === null) {
             throw new BackupException("Invalid backup scope: {$row->scope}");
@@ -249,32 +378,26 @@ final class BackupCreator
             throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
         }
 
-        $scopeDir = $root . '/' . $scope->value;
-        $base = self::archiveBaseName($row->getId(), $row->env, $scope);
-        $sidecarPath = $scopeDir . '/' . $base . self::SIDECAR_EXTENSION;
+        return $root . '/' . $scope->value . '/'
+            . self::archiveBaseName($row->getId(), $row->env, $scope) . self::SIDECAR_EXTENSION;
+    }
 
-        $metadata = $this->readSidecar($sidecarPath);
-        if ($metadata->keep === $keep) {
-            return;
-        }
-
-        $rewritten = new BackupMetadata(
-            $metadata->id,
-            $metadata->createdAt,
-            $metadata->env,
-            $metadata->scope,
-            $metadata->connections,
-            $metadata->sizeBytes,
-            $metadata->durationSeconds,
-            $keep,
-            $metadata->status,
-            $metadata->warnings,
-            $metadata->failureReason,
-            $metadata->dumpBytes,
-        );
-
-        $tmpSidecar = $scopeDir . '/.tmp-keep-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
-        $this->writeJson($tmpSidecar, $rewritten->toArray());
+    /**
+     * Rewrites a stored sidecar in place through the atomic publish idiom.
+     *
+     * The temp file is created beside the sidecar it replaces, because {@see publish()} renames
+     * it and rename is only atomic within one filesystem.
+     *
+     * @param string $sidecarPath Sidecar being replaced
+     * @param string $tempKind Temp-name discriminator naming the rewrite (keep pin, verification)
+     * @param BackupMetadata $metadata Payload to publish over the sidecar
+     * @throws BackupDumpFailedException When the rewritten sidecar cannot be written or published
+     */
+    private function republishSidecar(string $sidecarPath, string $tempKind, BackupMetadata $metadata): void
+    {
+        $tmpSidecar = dirname($sidecarPath) . '/.tmp-' . $tempKind . '-'
+            . basename($sidecarPath, self::SIDECAR_EXTENSION) . '-' . getmypid() . self::SIDECAR_EXTENSION;
+        $this->writeJson($tmpSidecar, $metadata->toArray());
         $this->publish($tmpSidecar, $sidecarPath);
     }
 
@@ -544,6 +667,8 @@ final class BackupCreator
      * @param ?string $failureReason Failure reason recorded in the sidecar (error records only)
      * @param int $dumpBytes Uncompressed dump volume recorded in the sidecar (0 for the in-archive
      *     copy and for error records, which capture nothing)
+     * @param ?string $sha256 Archive digest recorded in the sidecar; null for the in-archive copy (it
+     *     would hash itself), for error records, and for a run whose hashing failed
      * @return BackupMetadata Assembled metadata
      */
     private function buildMetadata(
@@ -556,6 +681,7 @@ final class BackupCreator
         array $warnings = [],
         ?string $failureReason = null,
         int $dumpBytes = 0,
+        ?string $sha256 = null,
     ): BackupMetadata {
         return new BackupMetadata(
             $id,
@@ -570,6 +696,7 @@ final class BackupCreator
             $warnings,
             $failureReason,
             $dumpBytes,
+            $sha256,
         );
     }
 

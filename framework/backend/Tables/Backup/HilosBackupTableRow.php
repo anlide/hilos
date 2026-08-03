@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Backup;
 
+use Hilos\Backup\BackupChecksumState;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Runtime\State\Item\BackupHistory;
 
@@ -42,6 +43,8 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string status = 'status';
     public const string finished = 'finished';
     public const string failureReason = 'failureReason';
+    public const string checksumState = 'checksumState';
+    public const string verifiedAt = 'verifiedAt';
 
     /**
      * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
@@ -54,6 +57,9 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param string $status Status value
      * @param ?bool $finished true completed, false in progress, null failed/incomplete
      * @param ?string $failureReason Why the run failed (error rows only); null otherwise
+     * @param BackupChecksumState $checksumState Whether the backup carries a digest and how it last verified;
+     *     the digest itself never reaches the browser
+     * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
      */
     public function __construct(
         public string $rowKey,
@@ -66,6 +72,8 @@ final class HilosBackupTableRow extends AbstractTableRow
         public string $status,
         public ?bool $finished,
         public ?string $failureReason,
+        public BackupChecksumState $checksumState,
+        public ?string $verifiedAt,
     ) {
     }
 
@@ -99,6 +107,8 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::status => $this->status,
             self::finished => $this->finished,
             self::failureReason => $this->failureReason,
+            self::checksumState => $this->checksumState->value,
+            self::verifiedAt => $this->verifiedAt,
         ];
     }
 
@@ -121,6 +131,12 @@ final class HilosBackupTableRow extends AbstractTableRow
             status: (string) ($data[self::status] ?? ''),
             finished: array_key_exists(self::finished, $data) ? self::toTriState($data[self::finished]) : null,
             failureReason: isset($data[self::failureReason]) ? (string) $data[self::failureReason] : null,
+            // An unknown or absent state reads back as "no digest": a row that cannot say it was
+            // checked must not claim it was.
+            checksumState: BackupChecksumState::fromString(
+                isset($data[self::checksumState]) ? (string) $data[self::checksumState] : null,
+            ) ?? BackupChecksumState::NONE,
+            verifiedAt: isset($data[self::verifiedAt]) ? (string) $data[self::verifiedAt] : null,
         );
     }
 

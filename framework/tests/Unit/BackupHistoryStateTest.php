@@ -8,6 +8,7 @@ use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime;
@@ -119,6 +120,52 @@ final class BackupHistoryStateTest extends TestCase
 
         // A legacy row without the key reads back as 0 ("no data"), never a throw.
         $this->assertSame(0, BackupHistory::fromRow([BackupHistory::id => 'legacy'])->dumpBytes);
+    }
+
+    public function testVerificationFieldsTransferFromMetadataRoundTripAndUpdateViaDiff(): void
+    {
+        $history = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'ver-1',
+            createdAt: '2026-08-02T09:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 2,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            sha256: str_repeat('ab', 32),
+            verifiedAt: '2026-08-02T10:00:00+00:00',
+            verifyOutcome: BackupVerifyOutcome::OK,
+        ));
+        $this->assertSame(str_repeat('ab', 32), $history->sha256);
+        $this->assertSame('2026-08-02T10:00:00+00:00', $history->verifiedAt);
+        // The runtime row keeps the outcome as its stored value, like scope and status do.
+        $this->assertSame('ok', $history->verifyOutcome);
+
+        $restored = BackupHistory::fromRow($history->toArray());
+        $this->assertSame($history->sha256, $restored->sha256);
+        $this->assertSame($history->verifiedAt, $restored->verifiedAt);
+        $this->assertSame('ok', $restored->verifyOutcome);
+
+        // A verification runs in one worker; without the diff the others would keep showing
+        // "never checked" for a backup that was just found corrupt.
+        $history->applyDiff([
+            BackupHistory::verifiedAt => '2026-08-02T12:00:00+00:00',
+            BackupHistory::verifyOutcome => 'mismatch',
+        ]);
+        $this->assertSame('2026-08-02T12:00:00+00:00', $history->verifiedAt);
+        $this->assertSame('mismatch', $history->verifyOutcome);
+
+        // An explicit null in a diff clears the field rather than being ignored.
+        $history->applyDiff([BackupHistory::sha256 => null]);
+        $this->assertNull($history->sha256);
+
+        // A row written before checksums existed carries none of the three, and does not throw.
+        $legacy = BackupHistory::fromRow([BackupHistory::id => 'legacy']);
+        $this->assertNull($legacy->sha256);
+        $this->assertNull($legacy->verifiedAt);
+        $this->assertNull($legacy->verifyOutcome);
     }
 
     public function testHistoriesCollectionLookup(): void

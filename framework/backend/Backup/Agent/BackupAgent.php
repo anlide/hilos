@@ -80,14 +80,17 @@ final class BackupAgent extends AbstractAgent
     ];
 
     /**
-     * Command-channel commands the test-only CLI routes here (HIL-320): a forced retention
-     * prune and a forced scheduled backup, each driving the live agent so the runtime index
-     * stays the mirror of storage (files=truth). Both carry a plain payload, so neither
-     * declares an inner DTO.
+     * Command-channel commands a CLI routes here, each driving the live agent so the runtime
+     * index stays the mirror of storage (files=truth): a forced retention prune and a forced
+     * scheduled backup, both test-only (HIL-320), and a plain index refresh, which is NOT -
+     * the operator command `backup:verify` rewrites sidecars itself and then asks the agent to
+     * catch up ({@see BackupConstants::REFRESH_HISTORY_COMMAND}). All three carry a plain
+     * payload, so none declares an inner DTO.
      */
     public const array AGENT_COMMANDS = [
         BackupConstants::PRUNE_COMMAND,
         BackupConstants::RUN_SCHEDULE_COMMAND,
+        BackupConstants::REFRESH_HISTORY_COMMAND,
     ];
 
     /** Child interpreter; matches the worker spine's binary ({@see \Hilos\Socket\Server\WorkerServer}). */
@@ -247,6 +250,11 @@ final class BackupAgent extends AbstractAgent
 
                 return;
 
+            case BackupConstants::REFRESH_HISTORY_COMMAND:
+                $this->handleRefreshHistoryCommand($data);
+
+                return;
+
             default:
                 $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
 
@@ -269,6 +277,28 @@ final class BackupAgent extends AbstractAgent
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             BackupConstants::FIELD_PRUNED_COUNT => $prunedCount,
+        ]));
+    }
+
+    /**
+     * Re-mirrors the runtime index from storage and replies with the row count it now holds.
+     *
+     * Asked for by an operator command that changed sidecars on disk itself (`backup:verify`
+     * stamps a verification into them). The agent is the single writer of the index, so the
+     * catch-up has to happen here; the expensive part - hashing gigabytes - already happened in
+     * the CLI process, and this is only the cheap rescan.
+     *
+     * Provisional: HIL-528 replaces the poke with filesystem watching, which covers every writer
+     * instead of only the ones that know to ask.
+     *
+     * @param CommandRequestDTO $data Command request (no payload fields consumed)
+     */
+    private function handleRefreshHistoryCommand(CommandRequestDTO $data): void
+    {
+        $this->refreshHistory();
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_HISTORY_COUNT => count($this->indexRows()),
         ]));
     }
 

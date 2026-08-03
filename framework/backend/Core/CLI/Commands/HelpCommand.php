@@ -113,6 +113,9 @@ HELP;
             'Database Schema' => [
                 CliCommands::DB_SCHEMA_STATUS,
             ],
+            'Backup' => [
+                CliCommands::BACKUP_VERIFY,
+            ],
             'LLM' => [
                 CliCommands::LLM_PING,
             ],

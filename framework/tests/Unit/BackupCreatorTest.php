@@ -10,6 +10,7 @@ use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Environment\EnvAccessor;
@@ -280,6 +281,51 @@ final class BackupCreatorTest extends TestCase
         $this->expectException(BackupException::class);
 
         new BackupCreator()->setStoredKeep($this->rowFor($this->metadata()), $this->makeRoot(), true);
+    }
+
+    public function testRecordVerificationStampsTheSidecarAndKeepsTheDigest(): void
+    {
+        $root = $this->makeRoot();
+        $original = new BackupMetadata(
+            id: 'bk1',
+            createdAt: '2026-08-02T03:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 12,
+            keep: true,
+            status: BackupStatus::SUCCESS,
+            sha256: str_repeat('ab', 32),
+        );
+        $this->writeSidecar($root, $original);
+
+        new BackupCreator()->recordVerification(
+            $this->rowFor($original),
+            $root,
+            BackupVerifyOutcome::MISMATCH,
+            '2026-08-02T06:00:00+00:00',
+        );
+
+        $reloaded = $this->readSidecar($root, $original);
+        $this->assertSame('2026-08-02T06:00:00+00:00', $reloaded->verifiedAt);
+        $this->assertSame(BackupVerifyOutcome::MISMATCH, $reloaded->verifyOutcome);
+        // The verification stamp is the only change: the digest it judged and the keep pin stay put.
+        $this->assertSame($original->sha256, $reloaded->sha256);
+        $this->assertTrue($reloaded->keep);
+        $this->assertSame(4096, $reloaded->sizeBytes);
+    }
+
+    public function testRecordVerificationThrowsWhenTheSidecarIsMissing(): void
+    {
+        $this->expectException(BackupException::class);
+
+        new BackupCreator()->recordVerification(
+            $this->rowFor($this->metadata()),
+            $this->makeRoot(),
+            BackupVerifyOutcome::OK,
+            '2026-08-02T06:00:00+00:00',
+        );
     }
 
     /**

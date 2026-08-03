@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\BackupTestAgeCommand;
 use Hilos\Core\CLI\Commands\BackupTestPruneCommand;
 use Hilos\Core\CLI\Commands\BackupTestRunScheduleCommand;
+use Hilos\Core\CLI\Commands\BackupVerifyCommand;
 use Hilos\Core\CLI\Commands\ClusterNodesCommand;
 use Hilos\Core\CLI\Commands\ClusterReloadCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
@@ -93,6 +94,7 @@ class CliManager
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
+        $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Backup;
 
+use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
@@ -182,7 +184,33 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             status: $history->status,
             finished: $history->status === BackupStatus::SUCCESS->value ? true : null,
             failureReason: $history->failureReason,
+            checksumState: self::checksumStateOf($history),
+            verifiedAt: $history->verifiedAt,
         );
+    }
+
+    /**
+     * Derives the checksum state a list row shows from what the index row carries.
+     *
+     * No digest wins over everything else: a row that was never hashed has nothing to have
+     * been verified, whatever else it carries. Any other stored outcome than ok/mismatch (none
+     * is ever written today) degrades to "present" - a digest exists, and nothing trustworthy
+     * is known about a check of it.
+     *
+     * @param BackupHistory $history Stored backup index row
+     * @return BackupChecksumState Checksum state for the row
+     */
+    private static function checksumStateOf(BackupHistory $history): BackupChecksumState
+    {
+        if ($history->sha256 === null) {
+            return BackupChecksumState::NONE;
+        }
+
+        return match (BackupVerifyOutcome::fromString($history->verifyOutcome)) {
+            BackupVerifyOutcome::OK => BackupChecksumState::VERIFIED,
+            BackupVerifyOutcome::MISMATCH => BackupChecksumState::MISMATCH,
+            default => BackupChecksumState::PRESENT,
+        };
     }
 
     /**
@@ -208,6 +236,9 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             status: self::RUNNING_STATUS,
             finished: false,
             failureReason: null,
+            // A running backup has no archive yet, so it has nothing to checksum.
+            checksumState: BackupChecksumState::NONE,
+            verifiedAt: null,
         );
     }
 

@@ -172,17 +172,25 @@ HELP;
         $sidecarPath = $matches[0];
         $metadata = $this->readSidecar($sidecarPath);
 
+        // Named, and every field listed: a positional copy silently dropped whatever the DTO
+        // grew since it was written (it had already lost failureReason and dumpBytes, and would
+        // have lost the checksum fields next), while the docblock kept promising the opposite.
         $rewritten = new BackupMetadata(
-            $metadata->id,
-            $createdAt->format(DateTimeInterface::ATOM),
-            $metadata->env,
-            $metadata->scope,
-            $metadata->connections,
-            $metadata->sizeBytes,
-            $metadata->durationSeconds,
-            $metadata->keep,
-            $metadata->status,
-            $metadata->warnings,
+            id: $metadata->id,
+            createdAt: $createdAt->format(DateTimeInterface::ATOM),
+            env: $metadata->env,
+            scope: $metadata->scope,
+            connections: $metadata->connections,
+            sizeBytes: $metadata->sizeBytes,
+            durationSeconds: $metadata->durationSeconds,
+            keep: $metadata->keep,
+            status: $metadata->status,
+            warnings: $metadata->warnings,
+            failureReason: $metadata->failureReason,
+            dumpBytes: $metadata->dumpBytes,
+            sha256: $metadata->sha256,
+            verifiedAt: $metadata->verifiedAt,
+            verifyOutcome: $metadata->verifyOutcome,
         );
 
         $this->publishAtomically($sidecarPath, $rewritten->toArray());
