@@ -111,18 +111,22 @@ abstract class DbContext
     }
 
     /**
-     * Clears one collection's in-memory state (object rows + cached DbItems)
-     * without touching the database.
+     * Re-reads one collection from the database and drops its cached DbItems.
      *
-     * Used by DB_SYNC_CLEARED apply to mirror a remote deleteAll() truncate:
-     * the physical DELETE already ran in the originating process, so this drops
-     * the local rows without the reload that the magic getter would trigger.
+     * Used by DB_SYNC_CLEARED apply to follow a remote deleteAll() truncate. The
+     * physical DELETE already ran in the originating process, so after a legitimate
+     * clear this re-read returns nothing and costs one empty SELECT. It is a re-read
+     * rather than a blind blanking so that applying the same clear twice converges on
+     * whatever the table now holds instead of leaving the mirror stuck empty over rows
+     * written after the truncate.
      *
      * @param string $name Collection name (e.g. users, events)
+     * @throws LogicException When the collection entity class is not configured (eager reload)
+     * @throws DatabaseException If reloading an eager collection from the database fails
      */
-    public function clearCollectionInMemory(string $name): void
+    public function reHydrateCollection(string $name): void
     {
-        ($this->_objectCollections[$name] ?? null)?->clearInMemory();
+        ($this->_objectCollections[$name] ?? null)?->reHydrate();
         ($this->_dbItemCollections[$name] ?? null)?->clearCache();
     }
 

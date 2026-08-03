@@ -579,7 +579,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function handleDbSyncClearedMessage(WorkerDbSyncClearedMessageDTO $data): void
     {
-        if ($this->consumeIncomingDbSyncClearSelfBroadcast($data->signalData)) {
+        if ($this->isOwnDbSyncClearEcho($data->signalData)) {
             return;
         }
         DbSyncApplicator::applyCleared($data->signalData, skipSelfBroadcastCheck: false);
@@ -730,23 +730,25 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Consume a DB clear self-broadcast marker before applying a daemon echo.
+     * Recognize this worker's own DB clear before applying a daemon echo.
      *
      * The originating worker already cleared its in-memory rows and recorded the
      * browser fact when it queued the clear. Re-recording it on the echo would
      * wipe rows created in the same truncate (for example a follow-up marker
-     * event), so the originating worker must ignore its own clear echo.
+     * event), so the originating worker must ignore its own clear echo. Unlike the
+     * row-sync sibling this consumes nothing: the payload carries the emitter
+     * identity and the check is a comparison with this process's own.
      *
      * @param DbSyncClearedSignalData $signalData DB clear sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingDbSyncClearSelfBroadcast(DbSyncClearedSignalData $signalData): bool
+    private function isOwnDbSyncClearEcho(DbSyncClearedSignalData $signalData): bool
     {
         if ($signalData->collectionKey === '') {
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipDbSyncClearApply($signalData->collectionKey) ?? false;
+        return Hilos::$sr?->shouldSkipDbSyncClearApply($signalData->emitter) ?? false;
     }
 
     /**

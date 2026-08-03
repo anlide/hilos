@@ -24,8 +24,11 @@ state and does not decide which frontend collections changed.
 6. Every other worker applies the sync and records the same source fact in its
    own browser context.
 
-The originating worker receives its daemon echo too, but it consumes the
-self-broadcast marker and does not record the fact a second time.
+The originating worker receives its daemon echo too, but it recognizes its own
+broadcast and does not record the fact a second time. A row sync is recognized by
+consuming the `(collectionKey, id)` self-broadcast marker; a collection clear
+carries no row id, so it is recognized by the `emitter` identity in its payload,
+compared with the receiving process's own.
 
 ## Delivery
 

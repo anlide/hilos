@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
+use Hilos\Utils\Logger;
 
 /**
  * Applies DB sync signals (created, updated, deleted) to Hilos::$db.
@@ -105,8 +106,17 @@ final class DbSyncApplicator
     /**
      * Applies a whole-collection clear (truncate) from another process.
      *
-     * Drops the local in-memory rows for the collection without re-running the
-     * physical DELETE, which already ran in the originating process.
+     * Re-reads the collection instead of blanking it: the physical DELETE already ran
+     * in the originating process, so after a legitimate clear the re-read is empty and
+     * equivalent, while a clear applied twice converges on the current table instead of
+     * pinning an empty mirror over rows written since. Echoes of this process's own
+     * clear are recognized by the emitter identity in the payload.
+     *
+     * A failed re-read is logged rather than propagated: this runs inside the worker
+     * message loop and the daemon signal loop, neither of which catches, so a database
+     * hiccup during someone else's truncate would take the process down together with
+     * its agents and connections. The collection is left marked for re-read, so the next
+     * access retries the load instead of trusting an empty mirror.
      *
      * @param DbSyncClearedSignalData $data Cleared collection identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own clear
@@ -117,11 +127,18 @@ final class DbSyncApplicator
             return;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncClearApply($data->collectionKey)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncClearApply($data->emitter)) {
             return;
         }
 
-        Hilos::$db->clearCollectionInMemory($data->collectionKey);
+        try {
+            Hilos::$db->reHydrateCollection($data->collectionKey);
+        } catch (DatabaseException | LogicException $e) {
+            Logger::error('DB clear apply could not re-read the collection', [
+                'collectionKey' => $data->collectionKey,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

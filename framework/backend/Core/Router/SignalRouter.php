@@ -31,6 +31,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use SplQueue;
 
@@ -63,13 +64,8 @@ class SignalRouter
         SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
     ];
 
-    /**
-     * @var string Self-broadcast id used for collection-scoped clear syncs.
-     *
-     * A clear fact has no row id, so the (collectionKey, id) self-broadcast guard
-     * keys on this sentinel instead. It never collides with real row ids.
-     */
-    private const string CLEAR_BROADCAST_ID = '*';
+    /** @var int Byte length of the random per-process emitter identity */
+    private const int EMITTER_RANDOM_BYTES = 8;
 
     /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
     private SplQueue $queuedSignals;
@@ -87,7 +83,20 @@ class SignalRouter
     private SubscriptionRegistry $subscriptions;
 
     /**
-     * Initializes the signal queue, worker-local subscription mirror, and self-broadcast registries.
+     * @var string Identity of this process as the emitter of collection-scoped syncs.
+     *
+     * A clear fact has no row id, so the self-broadcast registry cannot key it the way
+     * row syncs are keyed. The emitter identity replaces that registration entirely:
+     * it travels in the payload and is compared on receive, so suppression holds no
+     * state that could be evicted. Random rather than the worker index because indexes
+     * are reused after a worker restart, and an echo from the dead worker would then
+     * suppress a legitimate clear in its successor.
+     */
+    private readonly string $emitter;
+
+    /**
+     * Initializes the signal queue, worker-local subscription mirror, self-broadcast
+     * registries, and this process's emitter identity.
      */
     public function __construct()
     {
@@ -95,6 +104,17 @@ class SignalRouter
         $this->dbSelfBroadcast = new SelfBroadcastRegistry();
         $this->rtSelfBroadcast = new SelfBroadcastRegistry();
         $this->subscriptions = new SubscriptionRegistry();
+        $this->emitter = RandomHelper::hex(self::EMITTER_RANDOM_BYTES);
+    }
+
+    /**
+     * Returns the emitter identity stamped on collection-scoped syncs this process sends.
+     *
+     * @return string Emitter identity of this process
+     */
+    public function getEmitter(): string
+    {
+        return $this->emitter;
     }
 
     /**
@@ -301,7 +321,7 @@ class SignalRouter
 
     /**
      * Queue a DB sync cleared signal (collection-scoped truncate).
-     * Skips if broadcast disabled. Registers the collection for self-apply skip.
+     * Skips if broadcast disabled. Stamps the payload with this process's emitter identity.
      *
      * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
      */
@@ -311,25 +331,27 @@ class SignalRouter
             return;
         }
 
-        $this->dbSelfBroadcast->register($signalData->collectionKey, self::CLEAR_BROADCAST_ID);
-
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
             signalName: new SignalName(SignalTypeConstants::DB_SYNC_CLEARED),
-            signalData: $signalData,
+            signalData: $signalData->withEmitter($this->emitter),
         );
     }
 
     /**
-     * Check if a clear apply should be skipped (self-broadcast) and remove from registry.
+     * Check if a clear apply should be skipped because this process emitted it.
      *
-     * @param string $collectionKey Collection key for the clear sync
+     * An unstamped clear counts as someone else's: skipping a foreign truncate is more
+     * dangerous than applying an extra one, because rows left standing after a remote
+     * delete collide with freshly minted ids.
+     *
+     * @param ?string $emitter Emitter identity from the clear payload, null when unstamped
      * @return bool True if this was our broadcast, skip apply
      */
-    public function shouldSkipDbSyncClearApply(string $collectionKey): bool
+    public function shouldSkipDbSyncClearApply(?string $emitter): bool
     {
-        return $this->dbSelfBroadcast->consume($collectionKey, self::CLEAR_BROADCAST_ID);
+        return $emitter !== null && $emitter === $this->emitter;
     }
 
     /**

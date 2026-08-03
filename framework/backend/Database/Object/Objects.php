@@ -582,9 +582,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Drops every row from the in-memory collection without touching the database.
      *
-     * Mirrors a remote deleteAll() truncate for DB_SYNC_CLEARED apply: the physical
-     * DELETE already ran in the originating process, so here only the local
-     * in-memory rows are dropped.
+     * Local half of deleteAll(): the DELETE ran in this process, so the rows are known
+     * to be gone and dropping them needs no re-read. An incoming DB_SYNC_CLEARED from
+     * another process goes through reHydrate() instead — there the mirror has to be
+     * reconciled with the table rather than assumed empty.
      */
     public function clearInMemory(): void
     {
@@ -593,11 +594,12 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Resets the collection to its fresh post-initDB() state after the underlying
-     * DB was replaced under a live daemon (external db-reset or restore).
+     * Resets the collection to its fresh post-initDB() state when this process can no
+     * longer trust its mirror: the DB was replaced under a live daemon (external
+     * db-reset or restore), or another process reported a truncate.
      *
-     * Unlike clearInMemory(), which only drops rows to mirror a truncate, this
-     * re-reads the new DB so the daemon stops holding pre-reset rows. Strategy-aware:
+     * Unlike clearInMemory(), which drops rows this process just deleted itself, this
+     * re-reads the DB so the daemon stops holding rows it only assumes. Strategy-aware:
      * an eager (LAZY_STRATEGY_NONE) collection reloads now via loadAllFromDB(); a lazy
      * collection drops its rows and reloads them from the fresh DB on next access.
      *
@@ -608,13 +610,14 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     {
         $this->objects = [];
         $this->index = 0;
+        // Dropped before the reload, not after: a failed read then leaves the collection
+        // empty AND not loaded, so the next access reads the DB again. Left true, a failed
+        // read would pin an empty mirror over a non-empty table for the process lifetime.
+        $this->_allLoaded = false;
 
         if ($this->_lazyStrategy === self::LAZY_STRATEGY_NONE) {
             $this->loadAllFromDB();
-            return;
         }
-
-        $this->_allLoaded = false;
     }
 
     /**
