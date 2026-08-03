@@ -149,6 +149,19 @@ ticket for the entries that are genuinely foreign.
   broken `fromArray` silently falls back to generic `SignalData` and
   drops any `WebSocketEnvelopeAware` metadata. See
   `ActionSuccessSignalDataTest::testRoundtripPreservesConcreteTypeAndEnvelopeMarker`.
+  A **new field on an existing sync DTO** needs this exactly as much as a new DTO does:
+  left out of `toArray()`, it arrives as `null`, whatever guard reads it takes its
+  safe-default branch from then on, and every suite stays green while the feature the
+  field carries is dead.
+- A test that reproduces the defect lands **before** the fix, in its own commit. When the
+  fix changes a signature, write that test against the signature as it stands and adapt
+  the call in the fix commit — what has to survive is the scenario, not the call. **Never
+  keep the old signature, add a parallel parameter, or introduce an overload so the test
+  text can stay untouched:** the test exists for the code, not the other way round.
+- A green new test is not yet a useful one. Ask whether its assertion could still hold
+  with the fix removed; if it could, it pins nothing. While developing, the cheapest way
+  to find out is to break one line of the fix and watch the test go red. That is a
+  debugging trick, not a gate — the verdict on a change still comes from one full run.
 - **Time-based features** (grace periods, token/session expiry, digests,
   scheduled rounds/settlement): there is no global clock to mock — see
   `cli/commands.md` § "Time-based features: no universal clock". Add a small,
