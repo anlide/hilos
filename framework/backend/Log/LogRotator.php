@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Log;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Daemon\DockerManager;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRotationException;
@@ -13,7 +14,7 @@ use Hilos\Utils\Logger;
 /**
  * Moves live daemon logs into the timestamped archive (HIL-379).
  *
- * The reusable rotation mechanics extracted from {@see \Hilos\Core\Daemon\DockerManager}: it
+ * The reusable rotation mechanics extracted from {@see DockerManager}: it
  * globs the `*.log` files under the log root, creates
  * `{@see LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME}/{@see LogRotationConstants::TIMESTAMP_FORMAT}/`,
  * and renames each live file there. Both the daemon bootstrap start path and the runtime

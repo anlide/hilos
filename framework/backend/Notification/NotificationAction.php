@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Notification;
 
+use Hilos\Pages\AbstractHilosNotificationsPage;
+
 /**
  * NotificationAction - client → server action names of the notification center.
  *
@@ -14,7 +16,7 @@ namespace Hilos\Notification;
  * read action ({@see SYNC}) carries no payload and returns the recipient's snapshot;
  * the client sends it once at connect (the notification center joins the per-user
  * group for live updates but has no page subscription — see
- * {@see \Hilos\Pages\AbstractHilosNotificationsPage}).
+ * {@see AbstractHilosNotificationsPage}).
  */
 final class NotificationAction
 {

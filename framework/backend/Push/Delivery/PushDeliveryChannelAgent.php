@@ -19,6 +19,7 @@ use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
@@ -26,14 +27,15 @@ use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Push\Exception\PushException;
 use Hilos\Push\PushChannelConfig;
 use Hilos\Push\WebPushRequestFactory;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Socket\SocketException;
 
 /**
  * PushDeliveryChannelAgent - the sharded web-push delivery agent (HIL-199).
  *
  * The concrete delivery agent for the `push` channel, mirroring
- * {@see \Hilos\Mail\Delivery\MailDeliveryChannelAgent} and
- * {@see \Hilos\Sms\Delivery\SmsDeliveryChannelAgent}: it owns one shard of the `hilos_push` pool and
+ * {@see MailDeliveryChannelAgent} and
+ * {@see SmsDeliveryChannelAgent}: it owns one shard of the `hilos_push` pool and
  * turns each dispatched notification into a fan-out of non-blocking web-push sends, one per device the
  * recipient subscribed. The base pipeline drives intake, the concurrency pool, bounded retries, and the
  * one-row-per-channel delivery bookkeeping; this leaf supplies the channel descriptor

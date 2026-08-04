@@ -6,6 +6,7 @@ namespace Hilos\Database\Entity\Item;
 
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\PhpType;
 
 /**
@@ -20,7 +21,7 @@ use Hilos\Database\PhpType;
  * Unlike the identity/verification tables there is no DB-only secret to hide: the
  * `public_key` (PEM) is public material, so every column is ORM-mapped. The
  * WebAuthn signature verification reads `public_key` and `sign_count` through the
- * object layer ({@see \Hilos\Database\Object\Item\PasskeyCredential}).
+ * object layer ({@see ObjectPasskeyCredential}).
  *
  * @method static EntityPasskeyCredentials get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityPasskeyCredentials getAll()

@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 
@@ -21,7 +22,7 @@ use Hilos\Hilos;
  * It takes the challenge type and identifier, finds the newest active challenge for
  * that pair (attempts ignored), and rewrites its `expires_at` into the past through
  * the verification layer's expire primitive; the existing
- * {@see \Hilos\Database\Object\Item\UserVerification::isActive()} gate then reads it
+ * {@see ObjectUserVerification::isActive()} gate then reads it
  * as expired on the next verify. Registered framework-wide (all projects, non-prod),
  * mirroring {@see ClusterTestInspectCommand}.
  */

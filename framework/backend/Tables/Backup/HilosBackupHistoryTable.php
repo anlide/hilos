@@ -36,7 +36,7 @@ use Throwable;
  * actions (create/delete/keep) are out of scope here; they land in HIL-333.
  *
  * A project activates the table by registering it under a table key and binding
- * that key to the backup page in {@see \Hilos\Hilos::PAGE_TABLES}; the runtime
+ * that key to the backup page in {@see Hilos::PAGE_TABLES}; the runtime
  * sources are already registered by the project runtime context.
  */
 class HilosBackupHistoryTable extends TableDefinition implements ViewportTable

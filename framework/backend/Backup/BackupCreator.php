@@ -6,6 +6,7 @@ namespace Hilos\Backup;
 
 use DateTimeImmutable;
 use DateTimeInterface;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\BackupDumpFailedException;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\EnvConstants;
@@ -703,7 +704,7 @@ final class BackupCreator
     /**
      * Sums the byte size of every file directly in the backup work directory.
      *
-     * This is the uncompressed dump peak {@see \Hilos\Backup\BackupSpaceGuard} sizes future runs
+     * This is the uncompressed dump peak {@see BackupSpaceGuard} sizes future runs
      * from: the per-connection `db-*.sql` files plus the in-archive `metadata.json` copy, measured
      * once the dumps are written and before the tar exists. Subdirectories and unreadable entries
      * are skipped, and a work directory that cannot be listed sums to 0 - "no measurement", not a
@@ -732,7 +733,7 @@ final class BackupCreator
      * Reads a backup's start instant back out of its id.
      *
      * The id is minted from the clock when the run starts
-     * ({@see \Hilos\Backup\Agent\BackupAgent::generateBackupId()}), so it already carries the
+     * ({@see BackupAgent::generateBackupId()}), so it already carries the
      * only timestamp a backup should be dated by. Reading the clock here instead would date the
      * backup by the moment the metadata is built - after the dump - and a twenty-minute dump
      * would then disagree with its own id by twenty minutes, on the record and in the list.

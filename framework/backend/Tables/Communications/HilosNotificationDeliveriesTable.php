@@ -18,6 +18,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\SqlSortDirection;
+use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryStatus;
 
 /**
@@ -37,7 +38,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * how the per-channel route opens the otherwise cross-cutting journal.
  *
  * A project activates the table by registering it under a table key and binding
- * that key to the deliveries page in {@see \Hilos\Hilos::PAGE_TABLES}. A project that
+ * that key to the deliveries page in {@see Hilos::PAGE_TABLES}. A project that
  * can resolve recipient display names subclasses and overrides {@see resolveUserLabel()};
  * the framework has no concrete user table, so the default label is empty.
  */

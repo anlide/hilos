@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Mail;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 
 /**
  * MailTransportInterface - a non-blocking driver for one email send (HIL-197).
  *
- * Modeled on {@see \Hilos\API\AsyncHttpClient}: a send is opened with {@see start()},
+ * Modeled on {@see AsyncHttpClient}: a send is opened with {@see start()},
  * then pumped one step per {@see tick()} so the worker loop never blocks on the network.
  * The transport carries a single in-flight send at a time; the delivery-channel agent
  * runs a pool of transports for concurrency. When the send settles {@see isBusy()} turns

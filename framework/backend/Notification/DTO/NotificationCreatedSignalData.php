@@ -6,13 +6,14 @@ namespace Hilos\Notification\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\Object\Item\Notification as ObjectNotification;
 
 /**
  * NotificationCreatedSignalData - server → client payload for NOTIFICATION_CREATED.
  *
  * Carries the freshly persisted notification so the recipient's connections can
  * prepend it to the list and increment the unread badge without a refetch. The
- * shape mirrors {@see \Hilos\Database\Object\Item\Notification::toArray()} (data
+ * shape mirrors {@see ObjectNotification::toArray()} (data
  * decoded to structure, no server-only columns).
  */
 final class NotificationCreatedSignalData extends BaseDTO implements SignalDataInterface

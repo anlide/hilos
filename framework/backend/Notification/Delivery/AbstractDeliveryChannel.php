@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 
 /**
@@ -62,7 +63,7 @@ abstract class AbstractDeliveryChannel
      * The agent signal that hands one delivery to this channel's agent.
      *
      * The channel leaf declares the matching route in its agent's AGENT_SIGNALS
-     * (with {@see \Hilos\Core\Agent\Config\AgentSignalConfigKey::INDEX_FIELD} set to
+     * (with {@see AgentSignalConfigKey::INDEX_FIELD} set to
      * `shardKey` for a pooled channel); the dispatcher only queues the signal by
      * this name.
      *

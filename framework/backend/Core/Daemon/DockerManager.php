@@ -18,6 +18,7 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotator;
 use Hilos\Utils\Exception\LogRotationException;
 use Hilos\Utils\Logger;
@@ -440,7 +441,7 @@ class DockerManager extends BaseManager
      *
      * Delegates to {@see LogRotator}, which creates the timestamped archive batch and moves each
      * live `*.log` file there. Invoked before starting processes so the live log directory is
-     * clean; the same rotator serves the runtime {@see \Hilos\Log\LogRotationAgent}.
+     * clean; the same rotator serves the runtime {@see LogRotationAgent}.
      *
      * @throws LogRotationException If log directory operations fail
      */

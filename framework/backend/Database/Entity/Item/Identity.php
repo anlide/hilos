@@ -6,6 +6,7 @@ namespace Hilos\Database\Entity\Item;
 
 use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\PhpType;
 
 /**
@@ -19,7 +20,7 @@ use Hilos\Database\PhpType;
  * The `secret` column (password hash; NULL for external methods) is DB-only: it
  * is intentionally absent from _columns and from the object/view ORM layer, and
  * is read only through the identity layer's verify primitive
- * ({@see \Hilos\Database\Object\Item\Identity::verifyPassword()}). The hash never
+ * ({@see ObjectIdentity::verifyPassword()}). The hash never
  * crosses the object, view, frontend, or cross-worker sync boundary.
  *
  * @object-exclude secret

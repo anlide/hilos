@@ -6,6 +6,7 @@ namespace Hilos\Database\Entity\Item;
 
 use Hilos\Database\Entity\Collection\UserVerifications as EntityUserVerifications;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\PhpType;
 
 /**
@@ -20,7 +21,7 @@ use Hilos\Database\PhpType;
  * The `code_hash` column (bcrypt hash of the delivered code) is DB-only: it is
  * intentionally absent from _columns and from the object/view ORM layer, and is
  * read only through the verify primitive
- * ({@see \Hilos\Database\Object\Item\UserVerification::verifyCode()}), so the
+ * ({@see ObjectUserVerification::verifyCode()}), so the
  * hash never crosses the object, view, frontend, or cross-worker sync boundary.
  *
  * @object-exclude code_hash

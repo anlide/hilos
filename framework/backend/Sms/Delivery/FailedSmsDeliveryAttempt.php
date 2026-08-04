@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Delivery;
 
+use Hilos\Mail\FailedMailTransport;
+
 /**
  * FailedSmsDeliveryAttempt - an attempt that settles a fixed permanent failure (HIL-285).
  *
  * The stand-in the SMS agent hands out when a send cannot even start - an invalid gateway
  * config or a request the client refuses to open - so the misconfiguration settles as a
  * permanent failure through the normal outcome path instead of throwing out of the tick loop
- * and crash-looping the worker. The SMS analogue of {@see \Hilos\Mail\FailedMailTransport}.
+ * and crash-looping the worker. The SMS analogue of {@see FailedMailTransport}.
  * It holds no socket and never touches the network.
  */
 final class FailedSmsDeliveryAttempt implements SmsSendAttempt

@@ -6,11 +6,12 @@ namespace Hilos\Notification\Delivery\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Notification\HilosNotifier;
 
 /**
  * NotificationDeliverSignalData - worker → delivery-agent handoff for one channel send (HIL-196).
  *
- * The dispatcher (folded into {@see \Hilos\Notification\HilosNotifier::emit()})
+ * The dispatcher (folded into {@see HilosNotifier::emit()})
  * queues one of these per resolved channel after persisting the notification and
  * its pending delivery row. It names the notification and the target channel; the
  * agent re-loads the notification and its delivery row (keyed by notification id +

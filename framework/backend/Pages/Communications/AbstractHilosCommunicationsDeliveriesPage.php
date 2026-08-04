@@ -21,11 +21,12 @@ use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificatio
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryStatus;
 use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
+use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 
 /**
  * AbstractHilosCommunicationsDeliveriesPage - the admin channel delivery log (HIL-201).
  *
- * The read-only delivery journal ({@see \Hilos\Tables\Communications\HilosNotificationDeliveriesTable}
+ * The read-only delivery journal ({@see HilosNotificationDeliveriesTable}
  * serves its windows) plus the single row action it owns: retry. A failed delivery
  * row can be re-queued — its status resets to pending with zero attempts and the
  * channel's deliver signal is sent again — so an admin can recover a delivery that

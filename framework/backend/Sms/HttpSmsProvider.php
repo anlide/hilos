@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Sms;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\API\DTO\AsyncHttpResponse;
+use Hilos\Auth\OAuth\HttpOAuthProvider;
 
 /**
  * HttpSmsProvider - an SMS provider whose send runs over real HTTP (HIL-285).
  *
  * The provider does no I/O itself: it builds the gateway request and interprets the
- * response, while the sharded SMS agent owns the non-blocking {@see \Hilos\API\AsyncHttpClient}
+ * response, while the sharded SMS agent owns the non-blocking {@see AsyncHttpClient}
  * and pumps it across event-loop ticks - exactly the boundary
- * {@see \Hilos\Auth\OAuth\HttpOAuthProvider} draws for OAuth. {@see GenericHttpSmsProvider}
+ * {@see HttpOAuthProvider} draws for OAuth. {@see GenericHttpSmsProvider}
  * is the config-driven implementation; a vendor with delivery-status semantics
  * (e.g. Twilio) is a later, separate implementation the registry admits.
  *

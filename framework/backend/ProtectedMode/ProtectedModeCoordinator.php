@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
@@ -12,7 +13,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  *
  * The initiator↔leader hand-off rides the peer channel, not the agent-signal fabric — a
  * worker-sent agent signal only ever lands on another worker, never on the leader daemon. The
- * {@see \Hilos\Cluster\Peer\PeerServer} unwraps each arriving envelope and calls the method for
+ * {@see PeerServer} unwraps each arriving envelope and calls the method for
  * its kind here, so this seam receives the domain payload and never the wire frame: enable carries
  * the {@see ProtectedModeEnableSignalData} contract fields, while ready and disable are bare
  * signals (the frame itself is the whole message) and carry only the originating node id.
@@ -22,7 +23,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  * descriptor, quiesced is the follower's bare readiness report, and lift is the bare release.
  *
  * The transport slice wires the routing to this interface; the leader orchestration slice supplies
- * the implementation and registers it with {@see \Hilos\Cluster\Peer\PeerServer::registerProtectedMode()}.
+ * the implementation and registers it with {@see PeerServer::registerProtectedMode()}.
  * Until then the seam stays null and the frames route to a no-op, exactly like the placement seam
  * before a worker executor is registered.
  */

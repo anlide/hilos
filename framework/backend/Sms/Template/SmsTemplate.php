@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Template;
 
+use Hilos\Mail\Template\MailTemplate;
+
 /**
  * SmsTemplate - renders one framework SMS template key into a single text line (HIL-285).
  *
- * The SMS counterpart of {@see \Hilos\Mail\Template\MailTemplate}: a template turns
+ * The SMS counterpart of {@see MailTemplate}: a template turns
  * caller-supplied params into one plain string - no subject, no HTML, no multipart, because
  * an SMS is a single short line. Templates are resolved by key through
  * {@see SmsTemplateRegistry}, so callers never instantiate one directly. The `$locale`

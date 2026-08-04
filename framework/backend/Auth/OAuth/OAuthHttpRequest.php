@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\OAuth;
 
+use Hilos\API\AsyncHttpClient;
+
 /**
  * A provider HTTP request the OAuth async agent replays through
- * {@see \Hilos\API\AsyncHttpClient} (HIL-281).
+ * {@see AsyncHttpClient} (HIL-281).
  *
  * The seam between a provider (which knows the endpoint URLs, credentials, and
  * field map) and the tick-driven agent (which owns the non-blocking sockets):

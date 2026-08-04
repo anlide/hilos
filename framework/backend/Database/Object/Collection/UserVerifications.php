@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -22,7 +23,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Persistence primitives of the verification layer (HIL-365): mint a challenge,
  * find the single active challenge for a (type, identifier), and void prior
  * active challenges. The orchestration (throttle, delivery, attempt handling)
- * lives in {@see \Hilos\Auth\Verification\VerificationService}; the code hash is
+ * lives in {@see VerificationService}; the code hash is
  * minted here with a targeted query so it never reaches the ORM columns.
  *
  * @extends Objects<ObjectUserVerification>

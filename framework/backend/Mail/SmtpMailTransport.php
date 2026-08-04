@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 use Hilos\Mail\Smtp\SmtpAction;
@@ -16,7 +17,7 @@ use Hilos\Mail\Smtp\SmtpReply;
  * SmtpMailTransport - a non-blocking SMTP driver for one email send (HIL-197).
  *
  * The first real transport behind {@see MailTransportInterface}, modeled on
- * {@see \Hilos\API\AsyncHttpClient}: it opens a stream socket, then pumps the send one
+ * {@see AsyncHttpClient}: it opens a stream socket, then pumps the send one
  * step per {@see tick()} so the mail agent's worker loop never blocks. The protocol logic
  * lives in a pure {@see SmtpDialog}; this class only owns the socket — completing the
  * async connect, running the (implicit or STARTTLS) handshake, flushing writes, reading

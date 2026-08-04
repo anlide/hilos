@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Sms\Template;
 
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Mail\Template\MailTemplateRegistry;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
 
 /**
  * Resolves an SMS template key to its class and renders it (HIL-285).
  *
- * The SMS counterpart of {@see \Hilos\Mail\Template\MailTemplateRegistry}: it looks a key up
+ * The SMS counterpart of {@see MailTemplateRegistry}: it looks a key up
  * in the catalog, instantiates the declared {@see SmsTemplate}, and renders it to one text
  * line. Callers name a template by key and never touch a template class directly. The catalog
  * class is injected so a project swaps in its own {@see CatalogProviderInterface}.

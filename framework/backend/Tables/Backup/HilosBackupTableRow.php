@@ -30,7 +30,7 @@ final class HilosBackupTableRow extends AbstractTableRow
      * It rides the row fragment's `rowKey`, never a field inside the slot: a slot payload
      * carrying `id` is ingested by the frontend normalizer as an entity fragment and replaced
      * with a reference, which would strip every other field off this row
-     * ({@see \Hilos\Core\Table\Row\AbstractTableRow}).
+     * ({@see AbstractTableRow}).
      */
     public const string rowKey = 'rowKey';
 

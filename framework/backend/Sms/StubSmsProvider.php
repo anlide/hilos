@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Sms;
 
+use Hilos\Mail\FileMailTransport;
 use Hilos\Utils\Logger;
 
 /**
@@ -11,7 +12,7 @@ use Hilos\Utils\Logger;
  *
  * The auto provider when no gateway endpoint is configured, and the explicit choice under
  * SMS_PROVIDER=stub. It writes the message to the stub directory as a verifiable artifact -
- * the SMS analogue of {@see \Hilos\Mail\FileMailTransport} - so dev and e2e can assert a code
+ * the SMS analogue of {@see FileMailTransport} - so dev and e2e can assert a code
  * was "sent" without a real gateway or a live number. The artifact carries the full message
  * (dev reads it); the log line never does - only the masked number and length, so an Auth
  * code routed as a raw send is never exposed. The send settles synchronously.

@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Mail\HilosMailer;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\Delivery\NotificationDispatcher;
+use Hilos\Push\Delivery\PushDeliveryChannel;
+use Hilos\Sms\Delivery\SmsDeliveryChannel;
+use Hilos\Sms\DTO\SmsSendSignalData;
+use Hilos\Sms\HilosSmsSender;
+
 /**
  * Signal names used by framework-level Hilos admin pages.
  */
@@ -301,20 +311,20 @@ final class HilosSignalConstants
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**
-     * {@see \Hilos\Notification\Delivery\NotificationDispatcher} → mail agent pool: deliver one email notification.
+     * {@see NotificationDispatcher} → mail agent pool: deliver one email notification.
      *
-     * The notification-delivery intake of the email channel ({@see \Hilos\Mail\Delivery\MailDeliveryChannel}),
-     * carried by {@see \Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData}; INDEX_FIELD is its
+     * The notification-delivery intake of the email channel ({@see MailDeliveryChannel}),
+     * carried by {@see NotificationDeliverSignalData}; INDEX_FIELD is its
      * `shardKey`, derived from the recipient address so it co-locates with the raw-send intake on one pool
      * instance. The raw-send intake uses {@see HILOS_MAIL_SEND} instead.
      */
     public const string HILOS_MAIL_DELIVER = 'hilos_mail_deliver';
 
     /**
-     * {@see \Hilos\Mail\HilosMailer::send()} → mail agent pool: raw-send one message.
+     * {@see HilosMailer::send()} → mail agent pool: raw-send one message.
      *
      * The raw-send intake (Auth codes, magic links) carried by
-     * {@see \Hilos\Mail\DTO\MailSendSignalData}; INDEX_FIELD is its `shardKey`, so the
+     * {@see MailSendSignalData}; INDEX_FIELD is its `shardKey`, so the
      * signal routes to one pool instance by recipient address. The notification-delivery
      * intake uses the mail channel's own deliver signal instead.
      */
@@ -322,20 +332,20 @@ final class HilosSignalConstants
 
     // ── SMS subsystem: facade → sharded hilos_sms agent pool (agent signal) ──
     /**
-     * {@see \Hilos\Notification\Delivery\NotificationDispatcher} → sms agent pool: deliver one SMS notification.
+     * {@see NotificationDispatcher} → sms agent pool: deliver one SMS notification.
      *
-     * The notification-delivery intake of the SMS channel ({@see \Hilos\Sms\Delivery\SmsDeliveryChannel}),
-     * carried by {@see \Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData}; INDEX_FIELD is its
+     * The notification-delivery intake of the SMS channel ({@see SmsDeliveryChannel}),
+     * carried by {@see NotificationDeliverSignalData}; INDEX_FIELD is its
      * `shardKey`, derived from the recipient number so it co-locates with the raw-send intake on one pool
      * instance. The raw-send intake uses {@see HILOS_SMS_SEND} instead.
      */
     public const string HILOS_SMS_DELIVER = 'hilos_sms_deliver';
 
     /**
-     * {@see \Hilos\Sms\HilosSmsSender::send()} → sms agent pool: raw-send one message.
+     * {@see HilosSmsSender::send()} → sms agent pool: raw-send one message.
      *
      * The raw-send intake (Auth login/add codes) carried by
-     * {@see \Hilos\Sms\DTO\SmsSendSignalData}; INDEX_FIELD is its `shardKey`, so the
+     * {@see SmsSendSignalData}; INDEX_FIELD is its `shardKey`, so the
      * signal routes to one pool instance by recipient number. The notification-delivery
      * intake uses the SMS channel's own deliver signal instead.
      */
@@ -343,10 +353,10 @@ final class HilosSignalConstants
 
     // ── Push subsystem: facade → sharded hilos_push agent pool (agent signal) ──
     /**
-     * {@see \Hilos\Notification\Delivery\NotificationDispatcher} → push agent pool: deliver one push notification.
+     * {@see NotificationDispatcher} → push agent pool: deliver one push notification.
      *
-     * The notification-delivery intake of the web-push channel ({@see \Hilos\Push\Delivery\PushDeliveryChannel}),
-     * carried by {@see \Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData}; INDEX_FIELD is its
+     * The notification-delivery intake of the web-push channel ({@see PushDeliveryChannel}),
+     * carried by {@see NotificationDeliverSignalData}; INDEX_FIELD is its
      * `shardKey`, derived from the recipient id so a recipient's deliveries stay on one pool instance. Push has
      * no raw-send intake, so this is the channel's only signal.
      */

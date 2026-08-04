@@ -39,7 +39,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
  * reacts to settings changes to redraw the affected field row.
  *
  * A project activates the table by registering it under a table key and binding that
- * key to the communications channel page in {@see \Hilos\Hilos::PAGE_TABLES}.
+ * key to the communications channel page in {@see Hilos::PAGE_TABLES}.
  */
 class HilosCommunicationsChannelFieldsTable extends TableDefinition implements SelfSnapshotTable
 {

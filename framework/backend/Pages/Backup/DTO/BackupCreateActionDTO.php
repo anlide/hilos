@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Backup\DTO;
 
+use Hilos\Backup\BackupScope;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -11,12 +12,12 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /**
  * DTO for the backup_create action payload: the scope of the backup to start.
  *
- * The scope is validated against {@see \Hilos\Backup\BackupScope} on the page
+ * The scope is validated against {@see BackupScope} on the page
  * before the create is routed to the monopoly backup agent.
  */
 final class BackupCreateActionDTO extends ActionPayloadDTO
 {
-    /** Payload key: the {@see \Hilos\Backup\BackupScope} value the run captures. */
+    /** Payload key: the {@see BackupScope} value the run captures. */
     public const string scope = 'scope';
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -16,7 +17,7 @@ use Hilos\Socket\Worker\WorkerDTO;
  * runs in a worker and cannot emit a peer frame itself, so it asks its own master daemon to
  * start the freeze. The worker builds the initiator identity into the carried
  * {@see ProtectedModeEnableSignalData} and sends this frame; the daemon hands the payload to
- * {@see \Hilos\ProtectedMode\ClusterProtectedMode::requestEnable()}, which either freezes the
+ * {@see ClusterProtectedMode::requestEnable()}, which either freezes the
  * cluster locally when this node leads or forwards the request to the current leader. The frame
  * is a thin transport envelope; the contract-gated field shape lives in the wrapped payload.
  */

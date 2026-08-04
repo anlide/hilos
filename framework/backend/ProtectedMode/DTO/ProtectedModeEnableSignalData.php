@@ -6,6 +6,7 @@ namespace Hilos\ProtectedMode\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * ProtectedModeEnableSignalData - initiator -> leader payload for PROTECTED_MODE_ENABLE.
@@ -13,7 +14,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * The initiator (the backup restore agent today, other operations later) is passive: it
  * asks the leader to freeze the cluster and identifies itself so the leader can leave it
  * running and let its connection through the lockdown. The leader records these fields on
- * {@see \Hilos\Runtime\State\Item\ProtectedModeRuntime}, drives the two-phase freeze, and
+ * {@see ProtectedModeRuntime}, drives the two-phase freeze, and
  * signals PROTECTED_MODE_READY back to this initiator once every node has quiesced.
  */
 final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataInterface

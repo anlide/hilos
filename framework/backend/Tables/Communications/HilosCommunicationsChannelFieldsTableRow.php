@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Notification\Delivery\ChannelConfigField;
 
 /**
  * Backend row payload for the framework channel-config fields table (HIL-200).
  *
  * One row per config field of every registered channel; the channel page renders
  * the rows whose {@see channel} matches its route. A row projects a
- * {@see \Hilos\Notification\Delivery\ChannelConfigField} together with its resolved
+ * {@see ChannelConfigField} together with its resolved
  * effective value and source: {@see value} is null for a {@see secret} field (a
  * secret is never sent to the browser — its {@see valueSource} carries only the
  * set/not-set state) and {@see editable} is false for it. The identity rides

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use Hilos\API\AsyncHttpClient;
+
 /**
  * DeliveryAttempt - one non-blocking send in flight, the channel transport seam (HIL-196).
  *
  * The async pipeline in {@see AbstractDeliveryChannelAgent} owns the pool,
  * concurrency ceiling, retry policy, and delivery-row bookkeeping; a channel leaf
- * only wraps its transport (an {@see \Hilos\API\AsyncHttpClient} for push/telegram,
+ * only wraps its transport (an {@see AsyncHttpClient} for push/telegram,
  * an SMTP conversation for email) as one of these and lets the agent pump it. The
  * agent {@see tick()}s it each loop and, once {@see isBusy()} is false, records
  * {@see isDelivered()} as sent or {@see errorDetail()} as a bounded retry — never

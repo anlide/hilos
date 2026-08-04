@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
@@ -19,7 +20,7 @@ use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
  * AbstractDeliveryChannelAgent - the async owner of one channel's deliveries (HIL-196).
  *
  * The tick-loop half of a delivery channel (email 197, sms 285, push 199, telegram
- * 198), modeled on {@see \Hilos\Auth\OAuth\Agent\AbstractOAuthAgent}. It owns the
+ * 198), modeled on {@see AbstractOAuthAgent}. It owns the
  * whole pipeline — intake, the in-flight pool with a concurrency ceiling, bounded
  * retries, and the hilos_notification_delivery row bookkeeping — so a channel leaf
  * supplies only its descriptor ({@see channel()}) and its transport wrapped as a

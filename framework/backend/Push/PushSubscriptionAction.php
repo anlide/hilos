@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Push;
 
+use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
+
 /**
  * PushSubscriptionAction - client → server action names of the profile push toggle (HIL-199).
  *
  * The per-device web-push opt in/out actions, mounted on the profile page (an
  * AUTHENTICATED surface) alongside the per-user channel preferences (HIL-485).
- * Subscribing upserts a {@see \Hilos\Database\Object\Collection\PushSubscriptions}
+ * Subscribing upserts a {@see ObjectPushSubscriptions}
  * row for the acting device; unsubscribing removes it. Both resolve the acting user
  * server-side from the connection, never the payload, so a client can only ever
  * subscribe its own device. Unlike the channel preference (a per-user state fanned to

@@ -23,7 +23,7 @@ use Hilos\Notification\Delivery\NotificationDispatcher;
 /**
  * HilosNotifier - the emit seam of the durable notification model (HIL-102).
  *
- * The facade global {@see \Hilos\Hilos::$notify}. {@see emit()} writes a durable
+ * The facade global {@see Hilos::$notify}. {@see emit()} writes a durable
  * notification row from the calling worker (the verification-service pattern: any
  * worker can call it directly, no owner agent) and best-effort fans a live in-app
  * signal to the recipient's connections. Persistence is authoritative; the live

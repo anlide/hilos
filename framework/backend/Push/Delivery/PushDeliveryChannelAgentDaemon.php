@@ -6,6 +6,7 @@ namespace Hilos\Push\Delivery;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgentDaemon;
 
 /**
@@ -15,7 +16,7 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgentDaemon;
  * non-monopolistic and not leader-pinned, so the leader's best-fit placement spreads the pool across
  * nodes (a notification is not pushed once from every node). Registered under
  * {@see HilosAgentType::HILOS_PUSH} with the pool's INDEXED flag; the constructor carries the shard
- * index. Mirrors {@see \Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon}.
+ * index. Mirrors {@see MailDeliveryChannelAgentDaemon}.
  */
 final class PushDeliveryChannelAgentDaemon extends AbstractDeliveryChannelAgentDaemon
 {

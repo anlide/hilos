@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router\Exception;
 
+use Throwable;
+
 /**
  * Exception thrown when trying to update a group subscription that doesn't exist.
  */
@@ -15,7 +17,7 @@ class GroupSubscriptionNotFoundException extends RouteException
      * @param string $acceptKey WebSocket accept key
      * @param string $group Group name that is not subscribed
      * @param int $code Exception code
-     * @param ?\Throwable $previous Previous exception for chaining
+     * @param ?Throwable $previous Previous exception for chaining
      */
     public function __construct(string $acceptKey, string $group, int $code = 0, ?\Throwable $previous = null)
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 
 /**
@@ -15,7 +16,7 @@ use Hilos\ProtectedMode\ProtectedModeExecutor;
  * agents while leaving that one running, then reports back with the QUIESCED frame. Unlike the
  * initiator->leader {@see ProtectedModeEnableSignalData}, this hand-off never rides the agent-signal
  * fabric — it is peer-transport only, leader to follower — so it is a plain payload and not a
- * {@see \Hilos\Core\Router\SignalDataInterface}. The accept-key of the initiator connection is a
+ * {@see SignalDataInterface}. The accept-key of the initiator connection is a
  * leader/welcome concern and stays out of this descriptor; followers only need whom not to stop.
  */
 final class ProtectedModeQuiesceData extends BaseDTO

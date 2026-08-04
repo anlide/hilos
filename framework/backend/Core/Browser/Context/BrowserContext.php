@@ -33,6 +33,7 @@ use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalDataInterface;
@@ -2010,7 +2011,7 @@ abstract class BrowserContext
      * Resolves the authenticated user behind an accept key for the action-auth guard.
      *
      * Public seam over {@see self::resolveCurrentUserId} so the action dispatcher
-     * ({@see \Hilos\Core\Page\PageSignalRouter::dispatchAction}) can gate a page's
+     * ({@see PageSignalRouter::dispatchAction}) can gate a page's
      * AUTH_ACTIONS without owning the connection→user mapping. Returns null for an
      * anonymous session, which the dispatcher denies with a 401.
      *

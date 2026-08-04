@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -210,7 +211,7 @@ abstract class Hilos
      * Creates a fixture user with the given display name and returns its id, or null
      * when the project does not support seeding users.
      *
-     * Minimal seam for the test-only {@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}:
+     * Minimal seam for the test-only {@see UserTestSeedCommand}:
      * the user table is still project-owned, so the framework cannot create a user row
      * itself. The base returns null — a project that never wired the seam (a demo with
      * no user table) cannot be seeded, and the command reports that instead of failing.

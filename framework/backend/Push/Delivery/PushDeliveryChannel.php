@@ -23,7 +23,7 @@ use Hilos\Push\PushChannelConfig;
  * The third concrete delivery channel (after email 197 and sms 285): it names the `push`
  * channel, points the dispatcher at the push pool's deliver signal (HILOS_PUSH_DELIVER),
  * and answers reachability from the recipient's per-device subscriptions
- * ({@see \Hilos\Database\Object\Collection\PushSubscriptions}). It is the push channel's
+ * ({@see ObjectPushSubscriptions}). It is the push channel's
  * extension seam - a project subclasses it to source subscriptions differently.
  *
  * Push is inherently multi-address: one recipient has many device endpoints, not a single

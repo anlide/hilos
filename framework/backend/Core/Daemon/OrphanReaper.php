@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\Process;
 use Hilos\Utils\Logger;
 
 /**
  * OrphanReaper - kills processes left behind by a daemon that died.
  *
- * Workers are spawned through {@see \Hilos\Core\Process}, which does not set FD_CLOEXEC,
+ * Workers are spawned through {@see Process}, which does not set FD_CLOEXEC,
  * so a worker inherits the daemon's listening sockets. When the daemon dies without
  * stopping its workers, a surviving worker keeps holding the daemon's ports and the
  * next daemon cannot bind them: the node never comes back, and the watchdog restarts

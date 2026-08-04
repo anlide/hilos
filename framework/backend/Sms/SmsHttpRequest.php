@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Sms;
 
+use Hilos\API\AsyncHttpClient;
+use Hilos\Auth\OAuth\OAuthHttpRequest;
+
 /**
  * SmsHttpRequest - a gateway HTTP request the SMS agent replays through
- * {@see \Hilos\API\AsyncHttpClient} (HIL-285).
+ * {@see AsyncHttpClient} (HIL-285).
  *
  * The seam between a provider (which knows the endpoint URL, credentials, and field map)
  * and the tick-driven agent (which owns the non-blocking sockets): a provider returns
  * this immutable descriptor and the agent constructs the client from `host`/`port`/`useTls`
  * and applies `method`/`path`/`headers`/`body`. Modelled on
- * {@see \Hilos\Auth\OAuth\OAuthHttpRequest}, itself shaped after the client's own inputs -
+ * {@see OAuthHttpRequest}, itself shaped after the client's own inputs -
  * constructor `(host, port, path, useTls)` plus `setRequestOptions(method, path, body, headers)` -
  * so no reshaping is needed at the call site.
  */

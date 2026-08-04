@@ -35,7 +35,7 @@ use Hilos\Runtime\State\Item\BackupRuntime;
  * lifecycle. It never writes to runtime state or files itself (single-writer rule,
  * files=truth): each action is validated synchronously against the runtime index
  * (so an invalid target fails the client's request with a correlated ACTION_ERROR)
- * and then routed to the monopoly {@see \Hilos\Backup\Agent\BackupAgent} through
+ * and then routed to the monopoly {@see BackupAgent} through
  * `$this->agent->sendToAgent(...)`, which owns the storage mutation. The generic
  * action ack (ACTION_SUCCESS / ACTION_ERROR, correlated by requestId) reports
  * acceptance; the committed outcome is observed reactively over the live table.

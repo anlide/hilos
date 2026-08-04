@@ -27,6 +27,8 @@ use Hilos\Notification\DTO\NotificationReadSignalData;
 use Hilos\Notification\DTO\NotificationsSnapshotSignalData;
 use Hilos\Notification\DTO\NotificationSyncPayloadDTO;
 use Hilos\Notification\NotificationAction;
+use Hilos\Notification\NotificationGroup;
+use Hilos\Notification\NotificationSignalName;
 
 /**
  * Base class for the framework notification-center page (HIL-195).
@@ -35,11 +37,11 @@ use Hilos\Notification\NotificationAction;
  * page is a pure action host — it declares no page subscription (no BROWSER): the
  * SubscriptionRegistry holds a single page per connection, so an always-on page
  * subscription would clobber the route page on every navigation. The live channel
- * is instead the per-user WebSocket group {@see \Hilos\Notification\NotificationGroup}
+ * is instead the per-user WebSocket group {@see NotificationGroup}
  * (`hilos_notifications:<userId>`), which the client joins with a `group_subscribe`
  * at connect and keeps for the connection's whole life; the recipient's other
  * devices stay in sync off the group signals
- * {@see \Hilos\Notification\NotificationSignalName::CREATED} / READ.
+ * {@see NotificationSignalName::CREATED} / READ.
  *
  * The page hosts three actions, all requiring an authenticated session
  * ({@see self::AUTH_ACTIONS}): {@see NotificationAction::SYNC} replies the initial

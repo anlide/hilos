@@ -12,11 +12,12 @@ use Hilos\Hilos;
 use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\ChannelConfigResolver;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
+use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 
 /**
  * SmsChannelConfig - the resolved gateway settings for one SMS send (HIL-285).
  *
- * The value {@see \Hilos\Sms\Delivery\SmsDeliveryChannelAgent} reads to build a request and
+ * The value {@see SmsDeliveryChannelAgent} reads to build a request and
  * classify the response, and the same effective config the admin channel page shows. It is
  * hybrid by design (HIL-200): the operational fields (endpoint, method, auth mode, field map,
  * success rule, from, timeout, max length) are layered settings-override -> env -> descriptor

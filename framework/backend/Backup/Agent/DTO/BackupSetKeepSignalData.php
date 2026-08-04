@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup\Agent\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -14,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * rewrites the sidecar (files=truth) and re-mirrors the runtime index.
  *
  * It also carries who asked, so the agent can stamp that connection as the origin
- * of the re-mirror write ({@see \Hilos\Core\Execution\ExecutionContext::withAcceptKey()}):
+ * of the re-mirror write ({@see ExecutionContext::withAcceptKey()}):
  * the requester's own row-updated delta then applies at once while other tabs keep
  * the pending gate. Null when the toggle has no connection behind it.
  */

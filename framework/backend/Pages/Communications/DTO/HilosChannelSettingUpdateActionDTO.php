@@ -7,13 +7,14 @@ namespace Hilos\Pages\Communications\DTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Notification\Delivery\DeliveryChannelSettings;
 
 /**
  * DTO for the communications_channel_set action payload (HIL-200).
  *
  * Names one channel, one field, and the new value to persist as a settings override.
  * The hub's enablement toggle rides this same action with the `enabled` field
- * ({@see \Hilos\Notification\Delivery\DeliveryChannelSettings::ENABLED_FIELD}), so a
+ * ({@see DeliveryChannelSettings::ENABLED_FIELD}), so a
  * single owning page handles both surfaces. The value is left untyped here; the handler
  * coerces and validates it against the field descriptor before writing.
  */

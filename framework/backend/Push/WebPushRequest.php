@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Push;
 
+use Hilos\API\AsyncHttpClient;
+use Hilos\Push\Delivery\PushEndpointSend;
+
 /**
  * WebPushRequest - one encrypted web-push HTTP request ready to replay (HIL-199).
  *
  * The transport-agnostic value {@see WebPushRequestFactory} produces from a subscription and an
  * encrypted payload: the parsed target ({@see $host}/{@see $port}/{@see $path}/{@see $useTls}) plus
- * the signed VAPID headers and the binary encrypted body. {@see \Hilos\Push\Delivery\PushEndpointSend}
- * replays it on a non-blocking {@see \Hilos\API\AsyncHttpClient}, keeping the web-push crypto (which
+ * the signed VAPID headers and the binary encrypted body. {@see PushEndpointSend}
+ * replays it on a non-blocking {@see AsyncHttpClient}, keeping the web-push crypto (which
  * needs no socket) separate from the send (which must not block the worker loop). Immutable; the
  * factory builds one per endpoint per notification.
  */

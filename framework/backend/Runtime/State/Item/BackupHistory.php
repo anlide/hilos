@@ -6,13 +6,16 @@ namespace Hilos\Runtime\State\Item;
 
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
+use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
+use Hilos\Runtime\State\Collection\BackupHistories;
 
 /**
  * BackupHistory - one runtime index row for a stored backup.
  *
  * Framework-owned runtime state: the project registers the backing
- * {@see \Hilos\Runtime\State\Collection\BackupHistories} collection under
+ * {@see BackupHistories} collection under
  * {@see RT_COLLECTION}, and the monopoly backup agent is its single writer.
  * Rows mirror the {@see BackupMetadata} sidecar (files=truth, RT=index). The
  * browser view/representation lands in HIL-278.
@@ -46,7 +49,7 @@ final class BackupHistory extends RtState
     /** Application environment the backup was taken in. */
     public string $env = '';
 
-    /** Scope value ({@see \Hilos\Backup\BackupScope}). */
+    /** Scope value ({@see BackupScope}). */
     public string $scope = '';
 
     /** @var list<BackupConnectionMeta> Connections captured in the backup. */
@@ -61,7 +64,7 @@ final class BackupHistory extends RtState
     /** Retention pin: true excludes the backup from rotation. */
     public bool $keep = false;
 
-    /** Status value ({@see \Hilos\Backup\BackupStatus}). */
+    /** Status value ({@see BackupStatus}). */
     public string $status = '';
 
     /** Why the run failed (error rows only); null for success rows and legacy sidecars. */

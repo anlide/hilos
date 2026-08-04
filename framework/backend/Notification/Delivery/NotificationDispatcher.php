@@ -18,16 +18,18 @@ use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\NotificationTypeRegistry;
 
 /**
  * NotificationDispatcher - fans a persisted notification to its enabled channels (HIL-196).
  *
- * The delivery half of the emit seam: {@see \Hilos\Notification\HilosNotifier::emit()}
+ * The delivery half of the emit seam: {@see HilosNotifier::emit()}
  * persists the notification and its live in-app signal, then hands the row here.
  * For every channel in the project's {@see DeliveryChannelRegistry} the dispatcher
  * applies the resolve policy — narrowed by the draft's optional channel list,
  * globally enabled (HIL-200 setting), a per-user-preference seam (HIL-485) that a
- * mandatory type ({@see \Hilos\Notification\NotificationTypeRegistry}) bypasses, and
+ * mandatory type ({@see NotificationTypeRegistry}) bypasses, and
  * a resolvable address — and for each survivor inserts a `pending`
  * hilos_notification_delivery row and queues the channel's deliver agent signal.
  *

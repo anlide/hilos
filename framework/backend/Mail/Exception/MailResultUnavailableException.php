@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Exception;
 
+use Hilos\Mail\MailTransportInterface;
+
 /**
  * Thrown when a result is consumed from a transport that has none ready (HIL-197).
  *
- * Callers must gate on {@see \Hilos\Mail\MailTransportInterface::hasResult()} before
- * calling {@see \Hilos\Mail\MailTransportInterface::consumeResult()}.
+ * Callers must gate on {@see MailTransportInterface::hasResult()} before
+ * calling {@see MailTransportInterface::consumeResult()}.
  */
 final class MailResultUnavailableException extends MailException
 {

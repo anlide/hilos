@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Auth\Throttle\ThrottleScope;
+use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 
 /**
  * AuthAttempt - hot window counter for one throttle key (HIL-420).
  *
  * The RT half of the anti-abuse layer's hybrid state: transient per-key attempt
  * counters kept off the database on the hot path, while consummated blocks live
- * durably in `hilos_auth_block` ({@see \Hilos\Database\Object\Item\AuthBlock}).
+ * durably in `hilos_auth_block` ({@see ObjectAuthBlock}).
  * The key is (scope, identity, action) — the same triple as the durable block —
  * where {@see scope} is one of {@see ThrottleScope} and {@see identity} is the
  * client IP or the sha256 of the session token.

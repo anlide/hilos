@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\WebAuthn;
 
+use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Random\RandomException;
 
@@ -11,7 +12,7 @@ use Random\RandomException;
  * Issues and verifies the stateless, signed WebAuthn challenge token (HIL-284).
  *
  * The replay guard of both ceremonies, kept storage-free by the same design as
- * {@see \Hilos\Auth\OAuth\OAuthStateSigner}: the token is
+ * {@see OAuthStateSigner}: the token is
  * `base64url(payload).base64url(HMAC)` where the payload binds the random
  * challenge, the ceremony purpose (register/login), the initiating session
  * token, an optional user id, and an absolute expiry. On confirm the HMAC is

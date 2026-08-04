@@ -14,6 +14,7 @@ use Hilos\Auth\OAuth\OAuthHttpRequest;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Auth\OAuth\OfflineOAuthProvider;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -47,7 +48,7 @@ use Throwable;
  * monopolistic singleton ({@see AbstractOAuthAgentDaemon}); if login volume ever outgrows
  * one pipelining singleton the daemon can be flipped to per-worker with no contract change.
  *
- * It is abstract, not concrete like {@see \Hilos\Backup\Agent\BackupAgent}, because the
+ * It is abstract, not concrete like {@see BackupAgent}, because the
  * success path crosses the framework boundary: resolving/creating the account and binding
  * the live session touch project-owned tables (users, sessions) and the project's own
  * session/currentUser fan-out (HIL-161). The project supplies that step through

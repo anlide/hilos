@@ -6,12 +6,13 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\ProtectedMode\DTO\ProtectedModeReadySignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Peer frame the leader sends back to the initiator node once the freeze is active.
  *
  * The mirror of {@see PeerProtectedModeEnableDTO}: after every node has reported quiesced and
- * {@see \Hilos\Runtime\State\Item\ProtectedModeRuntime} has reached the active phase, the leader
+ * {@see ProtectedModeRuntime} has reached the active phase, the leader
  * routes this frame to the initiator node with {@see PeerServer::sendToNode} — the go-ahead for
  * the initiator to run its destructive operation. The freeze is already fully described by the
  * runtime item, so the carried {@see ProtectedModeReadySignalData} is empty; the frame itself is

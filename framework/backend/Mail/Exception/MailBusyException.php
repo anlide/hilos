@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Exception;
 
+use Hilos\Mail\MailTransportInterface;
+
 /**
  * Thrown when a send is started on a transport that is still busy with one (HIL-197).
  *
  * A transport carries a single in-flight send; callers must gate on
- * {@see \Hilos\Mail\MailTransportInterface::isBusy()} before starting the next.
+ * {@see MailTransportInterface::isBusy()} before starting the next.
  */
 final class MailBusyException extends MailException
 {

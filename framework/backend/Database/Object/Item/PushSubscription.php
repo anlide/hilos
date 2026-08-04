@@ -7,6 +7,7 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
+use Hilos\Database\Object\Collection\PushSubscriptions;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -14,7 +15,7 @@ use Hilos\Database\Object\Item\Object_;
  *
  * One device's browser push subscription (HIL-199). Carries no behaviour beyond
  * field access — the upsert/delete orchestration lives on
- * {@see \Hilos\Database\Object\Collection\PushSubscriptions}. A push delivery reads
+ * {@see PushSubscriptions}. A push delivery reads
  * {@see endpoint} plus the {@see p256dh} / {@see auth} keys to send to the endpoint.
  *
  * @extends Object_<EntityPushSubscription>

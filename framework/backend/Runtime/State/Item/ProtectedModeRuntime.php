@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Cluster\ClusterContext;
+
 /**
  * ProtectedModeRuntime - the singleton runtime state of the protected mode subsystem.
  *
@@ -13,7 +15,7 @@ namespace Hilos\Runtime\State\Item;
  * the browser page guards can lock every connection except the initiator's out.
  *
  * The truth source is the leader daemon: the leader gates every state decision behind
- * {@see \Hilos\Cluster\ClusterContext::amLeader()} and drives the two-phase freeze
+ * {@see ClusterContext::amLeader()} and drives the two-phase freeze
  * (activating -> active). Each node keeps a local writer so the row reaches that node's
  * workers: the leader writes by its own decision, followers write in reaction to the
  * peer QUIESCE/LIFT frames. This foundation defines the row shape only; the writer seam

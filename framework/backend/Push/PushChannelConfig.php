@@ -9,8 +9,10 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\ChannelConfigResolver;
 use Hilos\Push\Delivery\PushDeliveryChannel;
+use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Exception\PushConfigException;
 use Minishlink\WebPush\VAPID;
 use Throwable;
@@ -18,12 +20,12 @@ use Throwable;
 /**
  * PushChannelConfig - the resolved VAPID application-server keys for a push send (HIL-199).
  *
- * The value {@see \Hilos\Push\Delivery\PushDeliveryChannelAgent} reads to sign and encrypt a
+ * The value {@see PushDeliveryChannelAgent} reads to sign and encrypt a
  * web-push request, and the same effective config the admin channel page shows. It is hybrid by
  * design (HIL-200): the {@see $publicKey} is a settings-overridable, env-backed operational field
  * (it is served to the frontend so the browser subscribes, and the agent must sign with the same
  * key baked into every subscription), resolved by {@see ChannelConfigResolver} through the
- * channel's own {@see \Hilos\Notification\Delivery\ChannelConfigField} list; the {@see $privateKey}
+ * channel's own {@see ChannelConfigField} list; the {@see $privateKey}
  * is an env-only secret read straight from env, never editable and never sent to the browser. The
  * {@see $subject} (a `mailto:` or URL contact) is also env-only. The key pair is generated once and
  * kept stable - regenerating it invalidates every existing subscription. Tests build one directly.

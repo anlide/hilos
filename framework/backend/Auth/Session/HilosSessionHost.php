@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Session;
 
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\View\Item\Session;
@@ -16,7 +17,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * Session-host seam graduated from the chat reference (HIL-361).
  *
- * Mixed into a project's monopolistic agent (an {@see \Hilos\Core\Agent\AbstractAgent}
+ * Mixed into a project's monopolistic agent (an {@see AbstractAgent}
  * subclass, whose `sendToUser()`/`logAgentInfo()` this trait calls) to own the
  * three session-lifecycle cores that used to live inline in the chat agent:
  * resolving a handshake token to a session, upgrading a live session to a user

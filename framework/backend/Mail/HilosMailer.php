@@ -14,16 +14,17 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Mail\DTO\MailSendSignalData;
+use Hilos\Notification\Delivery\NotificationDispatcher;
 
 /**
  * HilosMailer - the send seam of the mail subsystem (HIL-197).
  *
- * The facade global {@see \Hilos\Hilos::$mail}. {@see send()} never does mail I/O at
+ * The facade global {@see Hilos::$mail}. {@see send()} never does mail I/O at
  * the call site: it derives the pool shard from the recipient address and queues the
  * raw-send agent signal ({@see HilosSignalConstants::HILOS_MAIL_SEND}), so the actual
  * SMTP dialog runs off in the sharded `hilos_mail` agent pool. This is the raw-send
  * intake (Auth codes, magic links) that bypasses the hilos_notification tables — the
- * notification-delivery intake is the channel path through {@see \Hilos\Notification\Delivery\NotificationDispatcher}.
+ * notification-delivery intake is the channel path through {@see NotificationDispatcher}.
  *
  * A caller either hands a fully-formed {@see MailSendSignalData} (already carrying its
  * shard key, and optionally a template key resolved agent-side) or an inline

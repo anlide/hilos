@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Mail;
 
+use Hilos\Mail\Template\MailTemplate;
+
 /**
  * EmailContent - the rendered subject and bodies a mail template produces (HIL-197).
  *
- * The result of {@see \Hilos\Mail\Template\MailTemplate::render()}: subject plus the
+ * The result of {@see MailTemplate::render()}: subject plus the
  * plain-text body and an optional HTML body. It carries no recipient — the mailer
  * (HIL-197 SLICE 4) pairs it with a resolved address to build an {@see EmailMessage}.
  * When {@see html} is present the message is encoded multipart/alternative with

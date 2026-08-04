@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\AgentSignalSink;
+use Hilos\Cluster\Placement\PlacementExecutor;
+
 /**
  * Local port the daemon uses to relay the leader's ready to the initiator agent on this node.
  *
@@ -11,7 +14,7 @@ namespace Hilos\ProtectedMode;
  * quiesced, {@see DaemonProtectedModeExecutor::notifyInitiatorReady()} hands the initiator's
  * agent identity to this seam so the daemon can address the worker hosting it. The worker server
  * implements it by reusing its send-to-agent-worker path, mirroring how
- * {@see \Hilos\Cluster\Placement\PlacementExecutor} and {@see \Hilos\Cluster\AgentSignalSink}
+ * {@see PlacementExecutor} and {@see AgentSignalSink}
  * expose the worker server to the peer transport. A test supplies a fake so the executor runs
  * without a worker pool.
  */

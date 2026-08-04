@@ -12,6 +12,7 @@ use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPrefe
 use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPreference;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
+use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -21,7 +22,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * (user, channel) pair the recipient muted, so "no row" means the channel is
  * allowed. {@see setChannel()} is the write seam — enabling a channel deletes any
  * muted row (return to default), muting one upserts a row; {@see isAllowed()} is
- * the read the {@see \Hilos\Notification\Delivery\NotificationDispatcher} consults
+ * the read the {@see NotificationDispatcher} consults
  * per channel at emit time; {@see mutedChannels()} feeds the profile section's
  * per-channel toggle state. {@see deleteForUser()} clears a user's rows on account
  * deletion (best-effort, soft ref).

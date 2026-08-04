@@ -14,6 +14,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
@@ -36,7 +37,7 @@ use Hilos\Socket\SocketException;
  * SmsDeliveryChannelAgent - the sharded SMS delivery agent (HIL-285).
  *
  * The concrete delivery agent for the `sms` channel, mirroring
- * {@see \Hilos\Mail\Delivery\MailDeliveryChannelAgent}: it owns one shard of the `hilos_sms`
+ * {@see MailDeliveryChannelAgent}: it owns one shard of the `hilos_sms`
  * pool and turns each dispatched notification into a non-blocking HTTP gateway send (or a stub
  * .txt write). The base pipeline drives intake, the concurrency pool, bounded retries, and the
  * delivery-row bookkeeping; this leaf supplies the channel descriptor ({@see SmsDeliveryChannel})

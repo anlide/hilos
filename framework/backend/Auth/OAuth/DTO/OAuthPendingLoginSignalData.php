@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\OAuth\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 
@@ -13,7 +14,7 @@ use Hilos\Runtime\State\Item\OAuthPendingLogin;
  *
  * The intake payload of mechanism B: the callback action verifies the signed state
  * synchronously (no I/O) and hands the resulting pending op to the monopolistic OAuth
- * agent over the {@see \Hilos\Constants\HilosSignalConstants::HILOS_OAUTH_PENDING}
+ * agent over the {@see HilosSignalConstants::HILOS_OAUTH_PENDING}
  * agent signal. Because the callback runs on a worker page and the agent is a
  * leader-pinned singleton in another process, a synced point-to-point signal — not a
  * cross-process runtime collection — is what actually carries the op across that

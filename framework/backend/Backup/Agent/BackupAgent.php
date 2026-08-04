@@ -42,6 +42,7 @@ use Hilos\Runtime\State\Item\BackupRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories as BackupHistoriesView;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Server\WorkerServer;
 use Throwable;
 
 /**
@@ -93,7 +94,7 @@ final class BackupAgent extends AbstractAgent
         BackupConstants::REFRESH_HISTORY_COMMAND,
     ];
 
-    /** Child interpreter; matches the worker spine's binary ({@see \Hilos\Socket\Server\WorkerServer}). */
+    /** Child interpreter; matches the worker spine's binary ({@see WorkerServer}). */
     private const string PHP_BINARY = 'php';
 
     /** Longest failure detail kept in a user-facing notice ({@see failureNotice()}). */

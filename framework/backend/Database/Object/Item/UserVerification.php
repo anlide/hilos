@@ -8,6 +8,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
+use Hilos\Database\Object\Collection\UserVerifications;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -19,7 +20,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * Exposes the challenge's non-secret fields and the verify/increment/consume
  * primitives. The `code_hash` is never exposed as a property, in toArray(), or
  * over the DB sync bus; it is minted by
- * {@see \Hilos\Database\Object\Collection\UserVerifications::createChallenge()}
+ * {@see UserVerifications::createChallenge()}
  * and read only by {@see verifyCode()}.
  *
  * @extends Object_<EntityUserVerification>
@@ -117,7 +118,7 @@ final class UserVerification extends Object_
      * Verifies a plaintext code against this challenge's stored hash.
      *
      * Verify primitive of the verification layer, symmetric with the identity
-     * layer's {@see \Hilos\Database\Object\Item\Identity::verifyPassword()}: the
+     * layer's {@see Identity::verifyPassword()}: the
      * hash is read with a targeted query (it is not ORM-mapped) and compared in
      * place, so only the boolean result leaves the layer. Returns false for an
      * unpersisted challenge.

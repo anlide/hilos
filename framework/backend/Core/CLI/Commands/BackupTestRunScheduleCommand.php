@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -16,7 +17,7 @@ use Hilos\Environment\Exception\EnvException;
  * A scheduled backup normally fires only when its cron expression matches wall-clock time,
  * and scheduling carries no stored timestamp to age (unlike retention's sidecar createdAt).
  * To assert scheduling on demand, this drives the running
- * {@see \Hilos\Backup\Agent\BackupAgent} over the command channel
+ * {@see BackupAgent} over the command channel
  * ({@see BackupConstants::RUN_SCHEDULE_COMMAND}): the agent resolves the named schedule entry
  * to a scope and starts the backup through its single guarded create path, replying immediately
  * with the new backup id and scope (the capture then runs asynchronously in the child; a test

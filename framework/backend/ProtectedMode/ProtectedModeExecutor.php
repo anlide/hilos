@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Local-node effects port the {@see ClusterProtectedMode} orchestration drives this node through.
  *
  * The coordinator decides the freeze transitions; this port applies them here — writing the
- * {@see \Hilos\Runtime\State\Item\ProtectedModeRuntime} row (the daemon truth source registered in
+ * {@see ProtectedModeRuntime} row (the daemon truth source registered in
  * HIL-267 slice 2a) so this node's workers see the phase, and stopping or resuming the node's own
  * agents. Both the leader and every follower own one: the leader freezes itself the same way it
  * orders followers, and both roles release the same way. Keeping the effects behind this seam lets

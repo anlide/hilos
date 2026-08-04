@@ -37,7 +37,7 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
  * reacts to settings changes to redraw the affected channel row.
  *
  * A project activates the table by registering it under a table key and binding
- * that key to the communications hub page in {@see \Hilos\Hilos::PAGE_TABLES}.
+ * that key to the communications hub page in {@see Hilos::PAGE_TABLES}.
  */
 class HilosCommunicationsChannelsTable extends TableDefinition implements SelfSnapshotTable
 {

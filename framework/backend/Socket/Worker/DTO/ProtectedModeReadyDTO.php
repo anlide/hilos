@@ -6,12 +6,13 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
  * ProtectedModeReadyDTO - relays the leader's ready to the initiator agent's worker.
  *
- * Sent daemon -> worker on the initiator node once {@see \Hilos\ProtectedMode\ClusterProtectedMode}
+ * Sent daemon -> worker on the initiator node once {@see ClusterProtectedMode}
  * has every follower quiesced: the freeze is active, so the initiator agent may run its destructive
  * operation. It names the addressed agent and carries nothing else — the arrival is the whole
  * message, mirroring {@see AgentStopDTO}.

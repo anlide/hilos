@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tables\Communications;
 
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Notification\Delivery\DeliveryStatus;
 
 /**
  * Backend row payload for the framework delivery-logs table (HIL-201).
@@ -12,13 +13,13 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  * One row is one channel delivery of one notification, projected from a
  * hilos_notification_delivery row joined to its hilos_notification (type, title,
  * recipient). The journal is admin-facing and read-only; the only row action is
- * "retry" on a {@see \Hilos\Notification\Delivery\DeliveryStatus::FAILED} row,
+ * "retry" on a {@see DeliveryStatus::FAILED} row,
  * which the deliveries page owns.
  *
  * The delivery id rides the row fragment's {@see rowKey}, never a field named `id`
  * inside the slot: a slot payload carrying `id` is ingested by the frontend
  * normalizer as an entity fragment and replaced with a reference, which would strip
- * every other field off this row ({@see \Hilos\Core\Table\Row\AbstractTableRow}).
+ * every other field off this row ({@see AbstractTableRow}).
  * The notification body is deliberately absent — the journal shows the title so an
  * admin can tell what failed to arrive, but the body may carry personal detail.
  */

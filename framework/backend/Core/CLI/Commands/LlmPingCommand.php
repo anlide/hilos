@@ -12,8 +12,10 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\LLM\Routing\LlmProfileCatalogConstants;
+use Hilos\LLM\Routing\LlmRouter;
 
 /**
  * LlmPingCommand - resolve an LLM profile and optionally probe its endpoint.
@@ -21,7 +23,7 @@ use Hilos\LLM\Routing\LlmProfileCatalogConstants;
  * An operator-facing command (not a {@see TestOnlyCommand}: it must work on a real
  * install) that answers two questions about a running install: what an LLM profile
  * resolves to, and whether that endpoint actually answers. Resolution goes through
- * {@see \Hilos\LLM\Routing\LlmRouter} so the answer is exactly what an agent would
+ * {@see LlmRouter} so the answer is exactly what an agent would
  * get; the probe runs one minimal chat request inside the CLI process with its own
  * tick() loop, so it works even when the daemon is down — but it reports the CLI
  * process's environment, not the daemon container's.
@@ -255,7 +257,7 @@ HELP;
      * Sends one minimal chat request and reports outcome, latency and reply.
      *
      * Drives the async client with its own tick() loop bounded by the profile's
-     * timeout — the same DTO pair {@see \Hilos\LLM\Local\Chat\AsyncOllamaChatProvider}
+     * timeout — the same DTO pair {@see AsyncOllamaChatProvider}
      * receives from an agent, minus the daemon event loop.
      *
      * @param LlmProfile $profile Effective profile to probe

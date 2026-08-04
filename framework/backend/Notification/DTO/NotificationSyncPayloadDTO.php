@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\DTO;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Notification\NotificationAction;
 
@@ -14,7 +15,7 @@ use Hilos\Notification\NotificationAction;
  * not the payload, so a client can only ever request its own snapshot. Mounted on
  * the notification-center page in HIL-195, whose handler replies the recent rows
  * plus the unread count under
- * {@see \Hilos\Constants\HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS}.
+ * {@see HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS}.
  */
 final class NotificationSyncPayloadDTO extends ActionPayloadDTO
 {

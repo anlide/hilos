@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -189,7 +190,7 @@ final class Identities extends DbCollection
     /**
      * Creates an unverified `password`-type identity from a precomputed hash (HIL-327).
      *
-     * Bulk-seed write path of {@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}: the
+     * Bulk-seed write path of {@see UserTestSeedCommand}: the
      * read-facing sibling of {@see createPasswordIdentity()} that lets a fixture seeding
      * many users pay the bcrypt cost once and reuse the hash. Delegates the hash-at-rest
      * insert to the object collection's

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Notification\Delivery;
 
+use Hilos\Hilos;
+
 /**
  * DeliveryChannelRegistry - the code-side catalog of dispatchable channels (HIL-196).
  *
  * Maps a channel name to its {@see AbstractDeliveryChannel} descriptor. The
  * framework ships this empty base (no built-in channels); a project points
- * {@see \Hilos\Hilos::NOTIFICATION_CHANNEL_REGISTRY} at its own subclass and adds
+ * {@see Hilos::NOTIFICATION_CHANNEL_REGISTRY} at its own subclass and adds
  * channels by overriding {@see channels()} with `array_replace(parent::channels(),
  * [...])`, so channel leaves (email 197, sms 285, push 199, telegram 198) compose
  * without editing a central list.

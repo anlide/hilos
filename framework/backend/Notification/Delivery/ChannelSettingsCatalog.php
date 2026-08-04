@@ -12,7 +12,7 @@ use Hilos\Hilos;
  * ChannelSettingsCatalog - the framework settings-catalog fragment for delivery channels (HIL-200).
  *
  * Derives one settings entry per channel from the project's channel registry
- * ({@see \Hilos\Hilos::notificationChannelRegistryClass()}): a boolean enablement key
+ * ({@see Hilos::notificationChannelRegistryClass()}): a boolean enablement key
  * ({@see DeliveryChannelSettings::enabledKey()}) plus one key per non-secret config
  * field ({@see AbstractDeliveryChannel::configFields()}). Every default is the empty
  * value for its type - the real default lives in env, and {@see ChannelConfigResolver}

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Sms;
 
+use Hilos\Mail\MailSendOutcome;
+
 /**
  * SmsSendResult - the settled result of one SMS send attempt (HIL-285).
  *
- * The mirror of {@see \Hilos\Mail\MailSendOutcome} for SMS: a provider (or the stub)
+ * The mirror of {@see MailSendOutcome} for SMS: a provider (or the stub)
  * settles exactly one of these. A delivered result carries no error. A failed result
  * carries a domain sentence in {@see errorDetail} (never the message text or the full
  * number) and a {@see permanent} flag: permanent failures (HTTP 4xx, a provider-reported

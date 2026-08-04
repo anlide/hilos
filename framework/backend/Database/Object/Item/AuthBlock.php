@@ -7,13 +7,14 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
+use Hilos\Database\Object\Collection\AuthBlocks;
 use Hilos\Database\Object\Item\Object_;
 
 /**
  * AuthBlock object - wraps AuthBlock entity.
  *
  * Exposes the durable block's fields (HIL-420). Values are written only through
- * the {@see \Hilos\Database\Object\Collection\AuthBlocks} upsert/clear
+ * the {@see AuthBlocks} upsert/clear
  * primitives; the throttle service owns the ladder and window logic that
  * decides them.
  *

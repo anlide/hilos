@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer\DTO;
 
+use Hilos\Cluster\Exception\PeerTransportException;
+
 /**
  * Placement frame a node sends the leader listing every agent it currently hosts.
  *
@@ -59,7 +61,7 @@ final class PeerPlacementReportDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored report
-     * @throws \Hilos\Cluster\Exception\PeerTransportException When a hosted agent entry is malformed
+     * @throws PeerTransportException When a hosted agent entry is malformed
      */
     public static function fromArray(array $data): static
     {

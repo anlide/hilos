@@ -6,15 +6,17 @@ namespace Hilos\Notification\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Notification\NotificationSignalName;
+use Hilos\Pages\AbstractHilosNotificationsPage;
 
 /**
  * NotificationsSnapshotSignalData - server → client payload for the notification-center subscribe.
  *
- * The initial snapshot the {@see \Hilos\Pages\AbstractHilosNotificationsPage} sends
+ * The initial snapshot the {@see AbstractHilosNotificationsPage} sends
  * when a recipient's connection subscribes (HIL-195): the recent notifications
  * newest-first plus the unread badge count. After the snapshot the list stays
- * live off the per-user group signals {@see \Hilos\Notification\NotificationSignalName::CREATED}
- * / {@see \Hilos\Notification\NotificationSignalName::READ}, so this payload is
+ * live off the per-user group signals {@see NotificationSignalName::CREATED}
+ * / {@see NotificationSignalName::READ}, so this payload is
  * sent once per subscribe, not on every change. Each row reuses the
  * {@see NotificationCreatedSignalData} shape rather than a second row shape.
  */

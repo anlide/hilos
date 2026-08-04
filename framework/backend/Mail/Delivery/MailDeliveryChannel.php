@@ -11,6 +11,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
+use Hilos\Mail\MailTransportConfig;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelConfigField;
 use Hilos\Notification\Delivery\ChannelConfigValidators;
@@ -108,7 +109,7 @@ class MailDeliveryChannel extends AbstractDeliveryChannel
     /**
      * The email channel's config fields for the admin page: operational SMTP config and env-only secrets.
      *
-     * Operational fields mirror the mail transport env ({@see \Hilos\Mail\MailTransportConfig});
+     * Operational fields mirror the mail transport env ({@see MailTransportConfig});
      * their descriptor defaults match the env-catalog defaults. The SMTP username and
      * password are secrets: env-only, never editable, never sent to the browser.
      *

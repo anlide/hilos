@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use Hilos\Backup\BackupPruner;
 use Hilos\Constants\EnvConstants;
 use Hilos\Hilos;
 
@@ -13,7 +14,7 @@ use Hilos\Hilos;
  * A pure candidate-selection policy over two independent criteria — how many of the newest
  * batches are always kept ({@see $keepBatches}) and how old a batch must be to be eligible
  * ({@see $maxAgeSeconds}). {@see selectEvictionCandidates()} is a pure predicate mirroring
- * {@see \Hilos\Backup\BackupPruner::selectForDeletion()}: no I/O and no clock read (the instant
+ * {@see BackupPruner::selectForDeletion()}: no I/O and no clock read (the instant
  * ages are measured from is injected), recomputed from scratch each pass so it is self-healing
  * and carries no per-batch flags. Unlike the backup grid it needs no timeline reconstruction —
  * logs are a flat newest-first stream.

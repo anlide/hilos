@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Mail\Template;
 
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\LLM\Routing\LlmProfileCatalogStub;
+use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
 
 /**
  * Resolves a mail template key to its class and renders it (HIL-197).
  *
- * The policy layer over a template catalog, mirroring how {@see \Hilos\LLM\Routing\LlmRouter}
- * sits over {@see \Hilos\LLM\Routing\LlmProfileCatalogStub}: it looks a key up in the
+ * The policy layer over a template catalog, mirroring how {@see LlmRouter}
+ * sits over {@see LlmProfileCatalogStub}: it looks a key up in the
  * catalog, instantiates the declared {@see MailTemplate}, and renders it. Callers name
  * a template by key and never touch a template class directly. The catalog class is
  * injected so a project swaps in its own {@see CatalogProviderInterface}.

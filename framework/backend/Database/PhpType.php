@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\Database\Schema\Schema;
+
 /**
  * Entity _types column identifiers for PHP-side database mapping.
  *
@@ -34,7 +36,7 @@ enum PhpType: string
      * Strict PhpType-to-MySQL reference table, keyed off the raw column type
      * (`information_schema.COLUMNS.COLUMN_TYPE` / `DESCRIBE.Type`).
      *
-     * Unlike {@see \Hilos\Database\Schema\Schema::mysqlTypeToPhp()}, which folds
+     * Unlike {@see Schema::mysqlTypeToPhp()}, which folds
      * every unknown type into STRING for schema introspection, this returns the
      * exhaustive set of PhpTypes that legitimately map to the MySQL type and an
      * empty list for anything unmapped — so the schema audit reports an unknown

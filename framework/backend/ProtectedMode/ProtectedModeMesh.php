@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
 /**
  * Outbound peer port the {@see ClusterProtectedMode} orchestration sends freeze frames through.
  *
- * It hides the {@see \Hilos\Cluster\Peer\PeerServer} behind the sends the freeze needs and the two
+ * It hides the {@see PeerServer} behind the sends the freeze needs and the two
  * roster reads the coordinator relies on, so the coordinator stays pure logic and is unit-testable
  * with a fake. An initiator that does not lead forwards enable and disable to the current leader
  * (addressed via {@see leaderNodeId()}); the leader broadcasts quiesce and lift to its followers

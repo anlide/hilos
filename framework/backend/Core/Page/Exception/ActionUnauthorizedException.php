@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page\Exception;
 
 use Hilos\Core\Page\PageException;
+use Hilos\Core\Page\PageSignalRouter;
 use Throwable;
 
 /**
@@ -17,7 +18,7 @@ use Throwable;
  * authenticated session for such an action with {@see self::requireUser}, which
  * throws this when the acting session has no user. It is a page-subsystem error,
  * not a {@see PageSubscriptionException}: the action dispatcher
- * ({@see \Hilos\Core\Page\PageSignalRouter::dispatchAction}) converts it into the
+ * ({@see PageSignalRouter::dispatchAction}) converts it into the
  * client `action_error`, carrying 401 auth semantics through the exception code.
  */
 final class ActionUnauthorizedException extends PageException

@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Peer frame an initiator node sends to the leader to request a protected-mode freeze.
@@ -15,7 +16,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
  * lands on another worker, never on the leader daemon — so the request rides the peer channel
  * instead. The initiator node forwards this frame to the leader with {@see PeerServer::sendToMaster};
  * the leader records the carried {@see ProtectedModeEnableSignalData} on
- * {@see \Hilos\Runtime\State\Item\ProtectedModeRuntime}, drives the two-phase freeze, and answers
+ * {@see ProtectedModeRuntime}, drives the two-phase freeze, and answers
  * with a {@see PeerProtectedModeReadyDTO} once every node has quiesced. The frame is a thin
  * transport envelope; the contract-gated field shape lives in the wrapped payload.
  */

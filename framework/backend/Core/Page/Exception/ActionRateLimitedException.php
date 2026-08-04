@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Core\Page\Exception;
 
 use Hilos\Core\Page\PageException;
+use Hilos\Core\Page\PageSignalRouter;
 use Throwable;
 
 /**
  * ActionRateLimitedException - an expensive auth/detection action was throttled.
  *
  * The anti-abuse counterpart of {@see ActionUnauthorizedException}: the action
- * dispatch seam ({@see \Hilos\Core\Page\PageSignalRouter::dispatchAction}) counts
+ * dispatch seam ({@see PageSignalRouter::dispatchAction}) counts
  * attempts on a page's THROTTLED_ACTIONS and, once a caller trips the window
  * ladder or is under a durable block, denies the action BEFORE onAction runs
  * rather than sleeping (the worker is single-threaded, so a blocking delay would

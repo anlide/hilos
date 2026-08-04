@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Auth\PhoneNumber;
+use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValidationException;
@@ -97,7 +99,7 @@ final class Identities extends Objects
     /**
      * Creates an unverified `password`-type identity from a precomputed hash.
      *
-     * Bulk-seed write path ({@see \Hilos\Core\CLI\Commands\UserTestSeedCommand}):
+     * Bulk-seed write path ({@see UserTestSeedCommand}):
      * identical to {@see createPasswordIdentity()} except the caller supplies the
      * already-computed `password_hash()` value, so a fixture that seeds many users pays
      * the bcrypt cost once and reuses the hash for all of them. Symmetric with the
@@ -159,7 +161,7 @@ final class Identities extends Objects
      * possession of the one-time SMS code already proved the phone, so the row is
      * inserted with `secret = NULL` and `verified = true` and needs no follow-up
      * hash write. The identifier is a normalized E.164 phone (the caller
-     * normalizes through {@see \Hilos\Auth\PhoneNumber::normalize()} before
+     * normalizes through {@see PhoneNumber::normalize()} before
      * calling); uniqueness is per (sms, identifier).
      *
      * @param int $userId Owning user id
@@ -250,7 +252,7 @@ final class Identities extends Objects
      *
      * The WebAuthn write path: a passkey is a thin anchor row here plus a crypto
      * row in `hilos_passkey_credential`
-     * ({@see \Hilos\Database\Object\Collection\PasskeyCredentials::createFromRegistration()}).
+     * ({@see PasskeyCredentials::createFromRegistration()}).
      * Like the SMS/OAuth identities there is no secret — the attestation ceremony
      * already proved possession of the authenticator — so the row is inserted with
      * `secret = NULL` and `verified = true` and needs no follow-up write. The

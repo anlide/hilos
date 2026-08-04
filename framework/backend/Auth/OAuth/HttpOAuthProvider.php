@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\OAuth;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\Auth\OAuth\Exception\OAuthProviderException;
 
@@ -12,7 +13,7 @@ use Hilos\Auth\OAuth\Exception\OAuthProviderException;
  *
  * The provider does no I/O itself: it builds the token and userinfo requests and
  * parses their responses, while the OAuth async agent owns the non-blocking
- * {@see \Hilos\API\AsyncHttpClient} and pumps them across event-loop ticks. This
+ * {@see AsyncHttpClient} and pumps them across event-loop ticks. This
  * keeps the token/userinfo round-trips off the master and out of any synchronous
  * page action. {@see GenericOAuthProvider} is the config-driven implementation.
  */

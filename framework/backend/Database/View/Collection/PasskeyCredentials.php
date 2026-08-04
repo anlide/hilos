@@ -10,12 +10,13 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\View\Item\PasskeyCredential;
+use Hilos\Hilos;
 
 /**
  * PasskeyCredentials Db collection.
  *
  * Read-facing representation of the framework-owned hilos_passkey_credential
- * table, and the collection presented on {@see \Hilos\Hilos::$db}->passkeyCredentials.
+ * table, and the collection presented on {@see Hilos::$db}->passkeyCredentials.
  * The register/login ceremonies run in the demo action handlers through this
  * represented accessor, so the ceremony primitives are bridged here as thin
  * delegates to the object-layer collection ({@see ObjectPasskeyCredentials}).

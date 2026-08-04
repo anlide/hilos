@@ -2,6 +2,8 @@
 
 namespace Hilos\Core\TruthSource;
 
+use Exception;
+
 /**
  * Abstract Truth Source Registry.
  *
@@ -168,7 +170,7 @@ abstract class AbstractTruthSourceRegistry
      * Must be implemented by child classes to throw appropriate exception type.
      *
      * @param string $collection Collection/table name
-     * @throws \Exception If write is not allowed (no truth source registered)
+     * @throws Exception If write is not allowed (no truth source registered)
      */
     abstract public static function checkCanWrite(string $collection): void;
 }

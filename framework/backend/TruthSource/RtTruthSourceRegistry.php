@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\TruthSource;
 
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -32,7 +33,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
      * directly, with no agent behind the write.
      *
      * Most runtime collections are owned by an agent, which registers under its
-     * {@see \Hilos\Core\Agent\AbstractAgent::getId()}. A framework singleton such as the
+     * {@see AbstractAgent::getId()}. A framework singleton such as the
      * protected-mode runtime is instead written by the daemon master itself: the leader
      * writes it by its own decision and each follower writes it in reaction to a peer
      * frame, so no agent stands behind the write. The write-guard's agent-less branch

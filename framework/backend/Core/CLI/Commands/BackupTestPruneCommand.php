@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -14,7 +15,7 @@ use Hilos\Environment\Exception\EnvException;
  * BackupTestPruneCommand - force a backup retention prune through the live agent (test-only).
  *
  * Retention normally rotates only after a successful scheduled create. To assert rotation on
- * demand, this drives the running {@see \Hilos\Backup\Agent\BackupAgent} over the command
+ * demand, this drives the running {@see BackupAgent} over the command
  * channel ({@see BackupConstants::PRUNE_COMMAND}): the agent rescans storage and applies the
  * retention policy synchronously, then replies with the number of backups pruned. Going through
  * the agent (rather than scanning the disk from the CLI) keeps the runtime index consistent

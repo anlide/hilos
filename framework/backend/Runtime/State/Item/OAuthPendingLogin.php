@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+
 /**
  * OAuthPendingLogin - one in-flight OAuth login exchange, keyed by accept key (HIL-281).
  *
@@ -12,7 +14,7 @@ namespace Hilos\Runtime\State\Item;
  * on success, records one of these keyed by the initiating connection's accept key,
  * then returns — its `action_success` means only "accepted, working", not "logged in".
  * The framework-owned OAuth async agent
- * ({@see \Hilos\Auth\OAuth\Agent\AbstractOAuthAgent}) observes the collection and
+ * ({@see AbstractOAuthAgent}) observes the collection and
  * drives the token/userinfo round-trips across ticks off the master.
  *
  * It is a short-lived, best-effort record: {@see deadlineMs} bounds its life so a

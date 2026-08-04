@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Backup\Agent\DTO;
 
+use Hilos\Backup\BackupScope;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -11,7 +12,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * BackupCreateSignalData - page → BackupAgent payload for BACKUP_AGENT_CREATE.
  *
  * Carries the validated scope value a manual create should capture; the agent
- * resolves it back to a {@see \Hilos\Backup\BackupScope} on the guarded create path.
+ * resolves it back to a {@see BackupScope} on the guarded create path.
  *
  * It also carries who asked. A backup is accepted synchronously but finishes long
  * after its action was acked, so the run's outcome has no reply to ride: the agent

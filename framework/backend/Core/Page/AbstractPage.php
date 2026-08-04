@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -50,7 +51,7 @@ abstract class AbstractPage
      * session with an ActionUnauthorizedException (401) before onAction runs, for
      * the anonymous-read + authenticated-write model. A project that gates a write
      * action declares it here; the connection→user resolution stays project-owned
-     * ({@see \Hilos\Core\Browser\Context\BrowserContext::resolveActionUserId}).
+     * ({@see BrowserContext::resolveActionUserId}).
      */
     public const array AUTH_ACTIONS = [];
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Collection;
 
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\View\Item\UserVerification;
 
@@ -12,7 +13,7 @@ use Hilos\Database\View\Item\UserVerification;
  *
  * Read-facing representation of the framework-owned hilos_user_verification
  * table. The issue/verify orchestration runs in
- * {@see \Hilos\Auth\Verification\VerificationService} against the object-layer
+ * {@see VerificationService} against the object-layer
  * primitives ({@see ObjectUserVerifications}); no read API is exposed here
  * because the verification mechanism never surfaces to the frontend.
  *

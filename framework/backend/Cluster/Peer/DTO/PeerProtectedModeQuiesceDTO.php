@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Peer frame the leader broadcasts to every follower to freeze it for a destructive operation.
@@ -14,7 +15,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
  * {@see PeerProtectedModeEnableDTO}, the leader sends this to each follower with
  * {@see PeerServer::broadcastToMasters}. The follower quiesces its own agents (leaving the
  * initiator agent named in the carried {@see ProtectedModeQuiesceData} running), writes the
- * freeze onto {@see \Hilos\Runtime\State\Item\ProtectedModeRuntime} locally, and answers with a
+ * freeze onto {@see ProtectedModeRuntime} locally, and answers with a
  * {@see PeerProtectedModeQuiescedDTO}. The frame is a thin transport envelope; the freeze
  * descriptor lives in the wrapped payload.
  */

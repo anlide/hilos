@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Push;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\Constants\HttpConstants;
 use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
 use Hilos\Push\Exception\PushConfigException;
@@ -17,10 +18,10 @@ use Throwable;
  *
  * The push channel's crypto seam: it turns a subscription plus a payload into a
  * {@see WebPushRequest} the non-blocking sender replays, reusing the framework dependency
- * {@see \Minishlink\WebPush\Encryption} (RFC 8291 `aes128gcm` payload encryption) and
- * {@see \Minishlink\WebPush\VAPID} (the signed application-server identity header). It mirrors the
+ * {@see Encryption} (RFC 8291 `aes128gcm` payload encryption) and
+ * {@see VAPID} (the signed application-server identity header). It mirrors the
  * library's own request assembly but stops at the request object rather than dispatching it, so the
- * send rides Hilos's non-blocking {@see \Hilos\API\AsyncHttpClient} instead of the library's blocking
+ * send rides Hilos's non-blocking {@see AsyncHttpClient} instead of the library's blocking
  * PSR-18 client. Only the modern `aes128gcm` encoding is emitted (every current browser subscribes
  * with it). A single build failure never escapes as a raw SPL/library exception - it is wrapped as a
  * {@see PushConfigException} so the channel agent settles the send as a permanent failure.

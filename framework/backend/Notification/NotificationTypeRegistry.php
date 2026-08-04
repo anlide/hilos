@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Notification;
 
+use Hilos\Hilos;
+
 /**
  * NotificationTypeRegistry - the code-side catalog of notification types (HIL-485).
  *
  * Maps a machine notification type to its {@see NotificationTypeDescriptor}. The
  * framework ships this empty base; a project points
- * {@see \Hilos\Hilos::NOTIFICATION_TYPE_REGISTRY} at its own subclass and adds
+ * {@see Hilos::NOTIFICATION_TYPE_REGISTRY} at its own subclass and adds
  * types by overriding {@see types()} with `array_replace(parent::types(), [...])`.
  *
  * The dispatcher reads {@see isMandatory()} to decide whether a type bypasses

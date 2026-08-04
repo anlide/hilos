@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router\Exception;
 
+use Throwable;
+
 /**
  * Exception thrown when trying to update a page subscription that doesn't exist.
  */
@@ -14,7 +16,7 @@ class PageSubscriptionNotFoundException extends RouteException
      *
      * @param string $acceptKey Accept key with no subscription
      * @param int $code Exception code
-     * @param ?\Throwable $previous Previous exception for chaining
+     * @param ?Throwable $previous Previous exception for chaining
      */
     public function __construct(string $acceptKey, int $code = 0, ?\Throwable $previous = null)
     {

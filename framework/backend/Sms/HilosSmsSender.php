@@ -13,18 +13,20 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Mail\HilosMailer;
+use Hilos\Notification\Delivery\NotificationDispatcher;
 use Hilos\Sms\DTO\SmsSendSignalData;
 
 /**
  * HilosSmsSender - the send seam of the SMS subsystem (HIL-285).
  *
- * The facade global {@see \Hilos\Hilos::$sms}, mirroring {@see \Hilos\Mail\HilosMailer}.
+ * The facade global {@see Hilos::$sms}, mirroring {@see HilosMailer}.
  * {@see send()} never does SMS I/O at the call site: it derives the pool shard from the
  * recipient number and queues the raw-send agent signal
  * ({@see HilosSignalConstants::HILOS_SMS_SEND}), so the actual gateway request runs off in
  * the sharded `hilos_sms` agent pool. This is the raw-send intake (Auth login/add codes)
  * that bypasses the hilos_notification tables - the notification-delivery intake is the
- * channel path through {@see \Hilos\Notification\Delivery\NotificationDispatcher}.
+ * channel path through {@see NotificationDispatcher}.
  *
  * A caller either hands a fully-formed {@see SmsSendSignalData} (already carrying its shard
  * key, and optionally a template key resolved agent-side) or an inline {@see SmsMessage} the

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
@@ -11,7 +12,7 @@ use Hilos\Utils\Logger;
 
 /**
  * The two-phase cluster freeze orchestration — the leader side and the follower side in one flat
- * unit, mirroring {@see \Hilos\Cluster\Placement\ClusterPlacement}.
+ * unit, mirroring {@see ClusterPlacement}.
  *
  * Every clustered node builds one; the leader-orchestration slice wires it as the peer transport's
  * {@see ProtectedModeCoordinator} and hands it a {@see ProtectedModeMesh} (outbound peer) and a

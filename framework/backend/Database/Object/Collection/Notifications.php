@@ -17,6 +17,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Database\SqlSortDirection;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -27,7 +28,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * recipient's unread, and mark all of a recipient's notifications read. The
  * per-item mark-read primitive lives on {@see ObjectNotification} via its item
  * actions; the emit orchestration and the live signal fan live in
- * {@see \Hilos\Notification\HilosNotifier}.
+ * {@see HilosNotifier}.
  *
  * @extends Objects<ObjectNotification>
  * @method ObjectNotification|null current()
@@ -48,7 +49,7 @@ final class Notifications extends Objects
     /**
      * Persists a new notification for a recipient.
      *
-     * The durable write behind {@see \Hilos\Notification\HilosNotifier::emit()}:
+     * The durable write behind {@see HilosNotifier::emit()}:
      * the row is inserted through the ORM (which assigns the id and stamps
      * `created_at`), so a caller can read the id back to correlate the live signal.
      *

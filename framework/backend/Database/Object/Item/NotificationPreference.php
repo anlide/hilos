@@ -7,6 +7,7 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPreference;
+use Hilos\Database\Object\Collection\NotificationPreferences;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -15,7 +16,7 @@ use Hilos\Database\Object\Item\Object_;
  * One per-user channel opt-out row (HIL-485). A live object exists only for a
  * muted (user, channel) pair; enabling a channel deletes it. Carries no behaviour
  * beyond field access — the upsert/delete orchestration lives on
- * {@see \Hilos\Database\Object\Collection\NotificationPreferences}.
+ * {@see NotificationPreferences}.
  *
  * @extends Object_<EntityNotificationPreference>
  *

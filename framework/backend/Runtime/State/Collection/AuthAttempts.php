@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Collection;
 
+use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Runtime\State\Item\AuthAttempt;
 use OutOfBoundsException;
 
@@ -13,7 +14,7 @@ use OutOfBoundsException;
  * Framework-owned state collection; the throttle service records and mutates
  * counters here on the hot auth path and syncs them across workers, so counters
  * are never round-tripped through the database. Durable blocks live separately
- * in `hilos_auth_block` ({@see \Hilos\Database\Object\Collection\AuthBlocks}).
+ * in `hilos_auth_block` ({@see ObjectAuthBlocks}).
  *
  * @extends RtStates<AuthAttempt>
  */
