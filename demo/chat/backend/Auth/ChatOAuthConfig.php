@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Auth;
 
+use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
@@ -20,7 +21,7 @@ use Hilos\Auth\OAuth\StubOAuthProvider;
  * The single place that turns env config into the framework OAuth objects both
  * halves of the flow need: the {@see OAuthService} the `oauthStart`/`oauthCallback`
  * page actions run on, and the {@see OAuthProviderRegistry} the async
- * {@see \Demo\Chat\Agents\OAuthAgent} drives. It mirrors the LLM
+ * {@see OAuthAgent} drives. It mirrors the LLM
  * local-vs-external switch: when a provider's client id + secret are configured a
  * real {@see GenericOAuthProvider} is built; otherwise the offline
  * {@see StubOAuthProvider} answers under the same key, so dev/e2e log in with no

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
+use Demo\Chat\Agents\ChatAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -14,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * itself must execute on the session-owning ChatAgent (it owns the users,
  * messages, and sessions truth sources plus the force-logout mechanics). The
  * page forwards the request point-to-point; the agent runs
- * {@see \Demo\Chat\Agents\ChatAgent::handleAccountMerge()} and acks the
+ * {@see ChatAgent::handleAccountMerge()} and acks the
  * initiating connection ({@see $acceptKey}) with success or failure.
  *
  * Routing is by signal name (ACCOUNT_MERGE_REQUEST → ChatAgent) via the agent's

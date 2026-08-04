@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\DTO;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 
@@ -14,7 +15,7 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
  * effective user is now the impersonated target, so no page is guaranteed) and
  * carries no payload: the acting session is taken from the connection, and the
  * admin to restore comes from the session's impersonator marker. Owned by
- * {@see \Demo\Chat\Agents\ChatAgent} through AGENT_ACTIONS, calque of
+ * {@see ChatAgent} through AGENT_ACTIONS, calque of
  * {@see LogoutActionDTO}.
  */
 final class ImpersonateStopActionDTO extends ChatActionPayloadDTO

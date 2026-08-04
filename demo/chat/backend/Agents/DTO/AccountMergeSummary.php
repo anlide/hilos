@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\DTO;
 
+use Demo\Chat\Agents\ChatAgent;
+
 /**
  * AccountMergeSummary - counts returned by a completed account merge (HIL-378).
  *
- * The result of {@see \Demo\Chat\Agents\ChatAgent::handleAccountMerge()}: how
+ * The result of {@see ChatAgent::handleAccountMerge()}: how
  * much of the loser's content moved to the survivor. Surfaced to the initiator
  * (CLI reply / admin-UI signal) so the operator sees what the merge transferred.
  */

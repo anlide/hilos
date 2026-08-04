@@ -21,6 +21,7 @@ use Demo\Chat\Pages\DTO\Profile\RequestAddPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\DTO\Profile\UnlinkIdentityActionDTO;
+use Demo\Chat\Pages\MainPage;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthStateSigner;
@@ -56,6 +57,7 @@ use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
+use Random\RandomException;
 
 /**
  * Chat demo implementation of the framework current-user profile page.
@@ -105,7 +107,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code), a notification channel toggle carries no channel name, or a push subscribe/unsubscribe carries no endpoint or key
-     * @throws \Random\RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
+     * @throws RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
      * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, an SMS-add or add-password verification/identity query fails, a notification-preference write or channel-map read query fails, or a push subscription write fails
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
@@ -414,7 +416,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * whose signed `state` carries mode=link so the callback binds the identity to
      * this session's user instead of resolving an account. The initiator's user id
      * is not carried here — it is read server-side from the session at callback time
-     * ({@see \Demo\Chat\Pages\MainPage::handleOauthCallback()}), so a client can
+     * ({@see MainPage::handleOauthCallback()}), so a client can
      * never link into another account. The URL rides the OAUTH_AUTHORIZE signal
      * (the framework `action_success` carries no domain payload); the SPA navigates
      * there. An unknown provider is a synchronous rejection.
@@ -422,7 +424,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param LinkOAuthStartActionDTO $dto Parsed link-start payload (provider)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the provider is not configured
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a state nonce
+     * @throws RandomException When the platform CSPRNG cannot produce a state nonce
      */
     private function handleLinkOAuthStart(LinkOAuthStartActionDTO $dto): void
     {
@@ -463,7 +465,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @throws ItemNotFoundForUpdateException When the user session is missing
      * @throws ValidationException When the phone is not a valid number
      * @throws EmptyValueException When the normalized identifier is empty
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When the verification query fails
      */
     private function handleRequestSmsAddCode(string $acceptKey, RequestSmsAddCodeActionDTO $dto): void
@@ -545,7 +547,7 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @throws ItemNotFoundForUpdateException When the user session is missing
      * @throws ValidationException When the email is malformed or already verified by another account
      * @throws EmptyValueException When the normalized identifier is empty
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When a verification or identity query fails
      */
     private function handleRequestAddPassword(string $acceptKey, RequestAddPasswordActionDTO $dto): void

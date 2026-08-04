@@ -11,11 +11,12 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandInterface;
+use Hilos\Core\Process;
 
 /**
  * BackupRunCommand - the short-lived child that creates one backup.
  *
- * The monopoly backup agent supervisor spawns this over {@see \Hilos\Core\Process}
+ * The monopoly backup agent supervisor spawns this over {@see Process}
  * for each backup run; it delegates to the framework {@see BackupCreator} engine.
  * It needs a full Hilos init (it dumps the configured database connections), so it is
  * not among the init-skipping commands. It returns 0 on success and a non-zero exit

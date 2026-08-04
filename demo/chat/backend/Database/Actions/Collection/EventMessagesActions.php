@@ -12,6 +12,7 @@ use Demo\Chat\Database\View\Collection\EventMessages as DbCollectionEventMessage
 use Demo\Chat\Database\View\Item\EventMessage as DbEventMessage;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Object\Collection\Identities;
 use Hilos\HilosException;
 
 /**
@@ -64,7 +65,7 @@ final class EventMessagesActions extends DbActions
      * Re-points every message authored by a loser user to a survivor user (HIL-378).
      *
      * The demo content-transfer half of account merge, symmetric with the
-     * framework identity re-point ({@see \Hilos\Database\Object\Collection\Identities::rePointToUser()}):
+     * framework identity re-point ({@see Identities::rePointToUser()}):
      * the survivor absorbs the loser's chat messages. Each message is moved
      * through its object's {@see ObjectEventMessage::sync()} rather than a single
      * bulk UPDATE, exactly like the identity re-point, so every moved row emits a

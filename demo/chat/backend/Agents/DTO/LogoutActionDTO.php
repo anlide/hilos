@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\DTO;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 
@@ -12,7 +13,7 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
  *
  * Logout is page-independent and carries no payload: the acting session is taken
  * from the connection, and the effect is always "revert this session to anonymous".
- * Owned by {@see \Demo\Chat\Agents\ChatAgent} through AGENT_ACTIONS, not a page.
+ * Owned by {@see ChatAgent} through AGENT_ACTIONS, not a page.
  */
 final class LogoutActionDTO extends ChatActionPayloadDTO
 {

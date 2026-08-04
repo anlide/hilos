@@ -8,6 +8,7 @@ use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
+use Demo\Chat\Pages\UserPage;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserDataConfigKey;
 use Hilos\Core\Browser\Config\BrowserDataFieldKey;
@@ -18,7 +19,7 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 /**
  * Browser data source for the chat user detail page: the user's reactive
  * runtime presence. The user profile is delivered separately as a page entity
- * by {@see \Demo\Chat\Pages\UserPage::buildPagePayload()}.
+ * by {@see UserPage::buildPagePayload()}.
  */
 final class UserPresenceBrowserData
 {

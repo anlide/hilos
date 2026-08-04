@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
+use Demo\Chat\Agents\ChatAgent;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -14,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * OAuth agent resolves/creates the account off the master, then signals the
  * session-owning ChatAgent to authenticate the live session to that user, which
  * rides HIL-161's existing session/currentUser fan-out. The agent stays the sole
- * owner of {@see \Demo\Chat\Agents\ChatAgent::authenticateSession()}; the OAuth
+ * owner of {@see ChatAgent::authenticateSession()}; the OAuth
  * agent never touches sessions directly.
  *
  * Routing is by signal name (OAUTH_BIND_SESSION → ChatAgent) via the agent's

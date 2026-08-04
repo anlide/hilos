@@ -7,6 +7,7 @@ namespace Demo\Chat\Browser\Data;
 use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus;
 use Hilos\Core\Browser\Config\BrowserDataConfigKey;
@@ -17,7 +18,7 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 /**
  * Browser data source for the chat bot detail page: the bot's reactive runtime
  * lifecycle status. The bot profile is delivered separately as a page entity by
- * {@see \Demo\Chat\Pages\BotPage::buildPagePayload()}.
+ * {@see BotPage::buildPagePayload()}.
  */
 final class BotStatusBrowserData
 {

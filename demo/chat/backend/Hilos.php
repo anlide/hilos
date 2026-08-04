@@ -143,6 +143,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
 use Hilos\Log\LogRotationAgent;
 use Hilos\Log\LogRotationAgentDaemon;
@@ -478,7 +479,7 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates a fixture user in the chat users collection and returns its id.
      *
-     * Project side of the {@see \Hilos\Hilos::createFixtureUser()} seam (test-only user
+     * Project side of the {@see HilosFacade::createFixtureUser()} seam (test-only user
      * seeding): the framework does not know the project's users collection, so this
      * registers that collection as a truth source (the CLI has no agent) and creates the
      * row through the existing name-only create path.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Item;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
@@ -93,7 +94,7 @@ final class UserActions extends DbActions
      * partial reversibility, with `merged_into` recording the survivor it folded
      * into and `block` closing its login. Both columns are written in one sync so
      * the tombstone is atomic within the surrounding merge transaction. The caller
-     * ({@see \Demo\Chat\Agents\ChatAgent::handleAccountMerge()}) has already
+     * ({@see ChatAgent::handleAccountMerge()}) has already
      * validated that this user is not itself already merged.
      *
      * @param int $survivorId Survivor user id this account is folded into

@@ -2,23 +2,6 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-PHPDOC-FQN demo/chat/backend/Agents/ChatAgent.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Agents/DTO/AccountMergeSummary.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Agents/DTO/ImpersonateStopActionDTO.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Agents/DTO/LogoutActionDTO.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Auth/ChatOAuthConfig.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Browser/Data/BotStatusBrowserData.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Browser/Data/UserPresenceBrowserData.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/CLI/Commands/BackupRunCommand.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Core/Router/DTO/AccountMergeSignalData.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Core/Router/DTO/OAuthBindSessionSignalData.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Database/Actions/Collection/EventMessagesActions.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Database/Actions/Item/UserActions.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Hilos.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Pages/DTO/AdminUsers/ImpersonateStartActionDTO.php 1 # HIL-533
-PHPDOC-FQN demo/chat/backend/Pages/Hilos/ProfilePage.php 5 # HIL-533
-PHPDOC-FQN demo/chat/backend/Pages/MainPage.php 10 # HIL-533
-PHPDOC-FQN demo/chat/backend/Tables/HilosUser/DTO/HilosUserMergeActionDTO.php 1 # HIL-533
 PHPDOC-FQN demo/chat/tests/Integration/AccountMergeTest.php 3 # HIL-534
 PHPDOC-FQN demo/chat/tests/Integration/OAuthEmailIdentityTest.php 1 # HIL-534
 PHPDOC-FQN framework/tests/Integration/EntitySchemaConsistencyTest.php 10 # HIL-534

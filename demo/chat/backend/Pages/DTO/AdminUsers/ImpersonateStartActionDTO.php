@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\DTO\AdminUsers;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Constants\SignalPayloadConstants;
 
@@ -13,7 +14,7 @@ use Hilos\Constants\SignalPayloadConstants;
  * action.
  *
  * Carries only the target user id; the acting admin session is taken from the
- * connection. Owned by {@see \Demo\Chat\Pages\AdminUsersPage} through its ACTIONS,
+ * connection. Owned by {@see AdminUsersPage} through its ACTIONS,
  * auto admin-gated by the page's ACCESS guard.
  */
 final class ImpersonateStartActionDTO extends ChatActionPayloadDTO

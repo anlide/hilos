@@ -18,6 +18,7 @@ use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Core\Agent\AbstractAgent;
@@ -237,7 +238,7 @@ final class ChatAgent extends AbstractAgent
      * Starts impersonation: an admin session assumes another user's identity.
      *
      * Shared core behind both the CLI command (HIL-166) and the admin users-table
-     * page-action ({@see \Demo\Chat\Pages\AdminUsersPage}). Guards, in order: the
+     * page-action ({@see AdminUsersPage}). Guards, in order: the
      * session must exist; its current user must be an admin (an anonymous or
      * non-admin session is rejected — which also blocks a second start once
      * impersonating a non-admin target); it must not already be impersonating (no

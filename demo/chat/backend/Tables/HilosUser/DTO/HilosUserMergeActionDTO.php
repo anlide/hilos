@@ -6,13 +6,14 @@ namespace Demo\Chat\Tables\HilosUser\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
  * DTO for the Hilos users "merge account into this" action payload (HIL-378).
  *
  * The survivor is the acted-on row; the loser is picked in the confirm dialog.
- * Both ids travel in the payload because {@see \Demo\Chat\Pages\Hilos\Users\UserPage::onAction()}
+ * Both ids travel in the payload because {@see UserPage::onAction()}
  * receives no route params, so the survivor cannot be read back from the page
  * subscription — this mirrors {@see HilosUserUpdateActionDTO} carrying its own id.
  */

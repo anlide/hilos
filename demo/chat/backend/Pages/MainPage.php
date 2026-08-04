@@ -79,6 +79,7 @@ use Hilos\Fs\FsException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\FileSystemHelper;
+use Random\RandomException;
 
 /**
  * Handles main chat subscriptions, message submit actions, upload signals, and outbound moderation results.
@@ -205,7 +206,7 @@ final class MainPage extends AbstractPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ValidationException When a routed handler rejects the action
-     * @throws \Random\RandomException When issuing a verification code cannot draw from the CSPRNG
+     * @throws RandomException When issuing a verification code cannot draw from the CSPRNG
      * @throws HilosException When a routed handler exposes storage, settings, database, or runtime failure
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
@@ -622,7 +623,7 @@ final class MainPage extends AbstractPage
      *
      * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
      * @throws HilosException When identity lookup or code issuing fails
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws RandomException When the platform CSPRNG cannot produce a code
      */
     private function handleRequestPasswordReset(RequestPasswordResetActionDTO $dto): void
     {
@@ -689,7 +690,7 @@ final class MainPage extends AbstractPage
      * @param RequestSmsCodeActionDTO $dto Parsed request payload (phone)
      * @throws ValidationException When the phone number is malformed
      * @throws HilosException When code issuing fails
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws RandomException When the platform CSPRNG cannot produce a code
      */
     private function handleRequestSmsCode(RequestSmsCodeActionDTO $dto): void
     {
@@ -756,7 +757,7 @@ final class MainPage extends AbstractPage
      *
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
      * @throws HilosException When identity lookup or token issuing fails
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a token
+     * @throws RandomException When the platform CSPRNG cannot produce a token
      */
     private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): void
     {
@@ -815,7 +816,7 @@ final class MainPage extends AbstractPage
      * @param RequestRegisterConfirmActionDTO $dto Parsed request payload (no fields)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws HilosException When identity lookup or code issuing fails
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a code
+     * @throws RandomException When the platform CSPRNG cannot produce a code
      */
     private function handleRequestRegisterConfirm(RequestRegisterConfirmActionDTO $dto): void
     {
@@ -894,7 +895,7 @@ final class MainPage extends AbstractPage
      * @param OAuthStartActionDTO $dto Parsed start payload (provider)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the provider is not configured
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a state nonce
+     * @throws RandomException When the platform CSPRNG cannot produce a state nonce
      */
     private function handleOauthStart(OAuthStartActionDTO $dto): void
     {
@@ -1029,7 +1030,7 @@ final class MainPage extends AbstractPage
      *
      * @param PasskeyRegisterOptionsActionDTO $dto Parsed options request payload (no fields)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing or anonymous
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge
+     * @throws RandomException When the platform CSPRNG cannot produce a challenge
      * @throws HilosException When WebAuthn env config or credential lookup fails
      */
     private function handlePasskeyRegisterOptions(PasskeyRegisterOptionsActionDTO $dto): void
@@ -1153,7 +1154,7 @@ final class MainPage extends AbstractPage
      *
      * @param PasskeyLoginOptionsActionDTO $dto Parsed options request payload (email)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge or dummy id
+     * @throws RandomException When the platform CSPRNG cannot produce a challenge or dummy id
      * @throws HilosException When WebAuthn env config or credential lookup fails
      */
     private function handlePasskeyLoginOptions(PasskeyLoginOptionsActionDTO $dto): void
@@ -1219,7 +1220,7 @@ final class MainPage extends AbstractPage
      *
      * @param PasskeyDiscoverableLoginOptionsActionDTO $dto Parsed options request payload (no fields)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce a challenge
+     * @throws RandomException When the platform CSPRNG cannot produce a challenge
      * @throws HilosException When WebAuthn env config fails
      */
     private function handlePasskeyDiscoverableLoginOptions(PasskeyDiscoverableLoginOptionsActionDTO $dto): void
@@ -1401,7 +1402,7 @@ final class MainPage extends AbstractPage
      * Builds one fabricated credential descriptor for the login anti-enumeration path.
      *
      * @return array{type: string, id: string, transports: list<string>} WebAuthn descriptor with a random id
-     * @throws \Random\RandomException When the platform CSPRNG cannot produce the dummy id
+     * @throws RandomException When the platform CSPRNG cannot produce the dummy id
      */
     private function dummyCredentialDescriptor(): array
     {
