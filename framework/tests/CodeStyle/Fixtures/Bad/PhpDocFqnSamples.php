@@ -12,6 +12,8 @@ use DateTimeImmutable;
  *
  * @property-read \Hilos\Core\Hilos $facade Facade handle
  * @method \Hilos\Tests\CodeStyle\Violation build(\SplFileInfo $file) Builds one violation
+ * @extends \Hilos\Tests\CodeStyle\Baseline<\SplFileInfo>
+ * @implements \Hilos\Tests\CodeStyle\CodeStyleRule
  */
 final class PhpDocFqnSamples
 {

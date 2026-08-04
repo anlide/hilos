@@ -124,7 +124,6 @@ PHPDOC-FQN framework/backend/Runtime/State/Item/AuthAttempt.php 1 # HIL-521
 PHPDOC-FQN framework/backend/Runtime/State/Item/BackupHistory.php 3 # HIL-521
 PHPDOC-FQN framework/backend/Runtime/State/Item/OAuthPendingLogin.php 1 # HIL-521
 PHPDOC-FQN framework/backend/Runtime/State/Item/ProtectedModeRuntime.php 1 # HIL-521
-PHPDOC-FQN framework/backend/Runtime/View/Actions/Collection/BackupHistoriesActions.php 1 # HIL-521
 PHPDOC-FQN framework/backend/Runtime/View/Collection/BackupHistories.php 1 # HIL-521
 PHPDOC-FQN framework/backend/Sms/Delivery/FailedSmsDeliveryAttempt.php 1 # HIL-521
 PHPDOC-FQN framework/backend/Sms/Delivery/RawSmsSend.php 1 # HIL-521

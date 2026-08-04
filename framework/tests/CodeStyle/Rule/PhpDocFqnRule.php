@@ -9,7 +9,8 @@ use Hilos\Tests\CodeStyle\Violation;
 
 /**
  * Enforces phpdoc.md rules 9 and 12: a docblock references a class by its imported
- * short name, never by a leading-backslash fully qualified name.
+ * short name, never by a leading-backslash fully qualified name. A generic base named
+ * by `@extends` or `@implements` is a type position like any other, arguments included.
  *
  * Only doc comments are read, so a leading backslash in real code, in a line
  * comment, or in a string literal is out of scope by construction.
@@ -21,7 +22,9 @@ final class PhpDocFqnRule implements CodeStyleRule
     private const string DOC = 'docs/agents/code-style/phpdoc.md';
 
     /** Tags whose type position must carry an imported short name. */
-    private const array TYPE_TAGS = ['throws', 'param', 'return', 'var', 'property-read', 'property', 'method'];
+    private const array TYPE_TAGS = [
+        'throws', 'param', 'return', 'var', 'property-read', 'property', 'method', 'extends', 'implements',
+    ];
 
     /** Matches one leading-backslash class reference; each match counts as its own violation. */
     private const string FQN_PATTERN = '/(?<![\w\\\\])\\\\([A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)/';
@@ -116,6 +119,9 @@ final class PhpDocFqnRule implements CodeStyleRule
         return match ($tag) {
             'throws', 'return' => explode(' ', $rest, 2)[0],
             'method' => $signatureEnd === false ? $rest : substr($rest, 0, $signatureEnd + 1),
+            // A generic argument list carries spaces after its commas, so the whole rest is the
+            // type: cutting at the first space would read `Foo<A,` and miss every later argument.
+            'extends', 'implements' => $rest,
             default => $this->typeBeforeVariable($rest),
         };
     }

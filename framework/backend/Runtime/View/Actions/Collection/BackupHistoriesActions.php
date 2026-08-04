@@ -10,6 +10,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
@@ -23,8 +24,8 @@ use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
  * archive costs exactly one create signal — which is what a browser table needs to
  * grow a single row instead of being torn down and rebuilt.
  *
- * @extends RtActions<ViewBackupHistory, BackupHistories, \Hilos\Runtime\State\Collection\BackupHistories>
- * @property-read \Hilos\Runtime\State\Collection\BackupHistories $stateCollection
+ * @extends RtActions<ViewBackupHistory, BackupHistories, StateBackupHistories>
+ * @property-read StateBackupHistories $stateCollection
  */
 final class BackupHistoriesActions extends RtActions
 {

@@ -53,9 +53,14 @@ Read this when writing or changing PHPDoc in project PHP code.
     the current namespace. Do not use leading-backslash fully qualified names in
     docblocks unless there is no importable symbol.
 12. PHPDoc type references must use imported class names too. For
-    `@property-read`, `@method`, `@param`, `@return`, `@var`, and `@throws`,
-    add a `use` import and reference the short class name or alias instead of
-    writing a leading-backslash fully qualified class name in the docblock.
+    `@property-read`, `@method`, `@param`, `@return`, `@var`, `@throws`,
+    `@extends`, and `@implements`, add a `use` import and reference the short
+    class name or alias instead of writing a leading-backslash fully qualified
+    class name in the docblock. A generic argument counts: write
+    `@extends RtActions<ViewBackupHistory, BackupHistories, StateBackupHistories>`,
+    not the same line with a fully qualified third argument. `@extends` sits next
+    to the `@property-read` that repeats its state type, and the two spelling the
+    same class two different ways is exactly what this rule exists to prevent.
     Checked automatically: `PHPDOC-FQN`, see [automated-checks.md](automated-checks.md).
 13. On a View item the class-level `@method __construct(...)` documents an
     *inherited* constructor. Keep it on a DB View item, which inherits the base

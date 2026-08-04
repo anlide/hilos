@@ -29,15 +29,22 @@ final class RuleFixtureTest extends TestCase
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:14 — @method references \SplFileInfo '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
-                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:19 — {@see} references \Hilos\Tests\CodeStyle\SourceScanner '
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:15 — @extends references \Hilos\Tests\CodeStyle\Baseline '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
-                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:21 — @var references \SplFileInfo '
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:15 — @extends references \SplFileInfo '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
-                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:26 — @param references \DateTimeImmutable '
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:16 — @implements references '
+                    . '\Hilos\Tests\CodeStyle\CodeStyleRule '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
-                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:27 — @return references \Hilos\Tests\CodeStyle\Violation '
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:21 — {@see} references \Hilos\Tests\CodeStyle\SourceScanner '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
-                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:28 — @throws references \OutOfBoundsException '
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:23 — @var references \SplFileInfo '
+                    . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:28 — @param references \DateTimeImmutable '
+                    . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:29 — @return references \Hilos\Tests\CodeStyle\Violation '
+                    . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:30 — @throws references \OutOfBoundsException '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:20 — getStateCollection() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
