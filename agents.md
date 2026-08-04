@@ -4,8 +4,26 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 ## Critical Git Rule
 
-- Never run `git commit`.
-- Never run `git push`.
+- **Never run `git push`.** origin carries only what the owner reviewed; pushing
+  yourself walks around the one quality gate the whole scheme rests on.
+- **Never commit to `master`.**
+- **`git commit` is off by default.** Leave the change in the tree and hand the
+  commit text over — the owner decides what becomes history.
+
+Exactly two things lift the commit ban, and nothing else does:
+
+1. **The pipeline's headless agent**, driving a ticket by `hilos-ops/playbook.md`.
+   It commits to its own ticket branch `HIL-<n>` and squash-merges that branch into
+   `total-refac` on Verify. Committing is not a liberty there but the mechanism: the
+   watcher reads a moved HEAD as the proof that the step progressed, and the branch
+   is what keeps red work out of the base — an agent forbidden to commit cannot work
+   at all.
+2. **The owner asked for it in this session** — either outright ("commit this") or
+   by asking for work whose written procedure commits, such as running a watcher
+   tick. The permission covers what he asked for and ends with it; it is not a
+   standing licence for the rest of the session.
+
+Both exceptions are about `git commit` only. The push ban has none.
 
 ---
 
