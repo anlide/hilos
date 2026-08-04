@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Daemon\OrphanReaper;
+use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Process;
 use PHPUnit\Framework\TestCase;
 
@@ -16,9 +17,24 @@ use PHPUnit\Framework\TestCase;
  * the parser matches the fake. Each test spawns its own `sleep`, which is a direct
  * child of the PHPUnit process exactly as an orphaned worker is a direct child of the
  * watchdog after re-parenting.
+ *
+ * A spawned child is not immediately the process it was asked to be, and that gap used
+ * to make this suite flake. Process runs proc_open() without a shell, so the call
+ * returns as soon as the fork is done — before the child reaches execve(). Until it
+ * does, the child is still a copy of the PHPUnit process and /proc/<pid>/cmdline reads
+ * `php ... phpunit`, not `sleep 30`. Hence the barrier in spawn(): it waits for the
+ * child to be listed by the reaper carrying its post-exec command line, which is
+ * exactly what the assertions below read back. Do not replace that wait with a blind
+ * sleep, and do not drop it as redundant — it is the thing being synchronised on.
  */
 final class OrphanReaperTest extends TestCase
 {
+    /** How long a spawned child may take to reach its post-exec command line. */
+    private const int SPAWN_TIMEOUT_SECONDS = 5;
+
+    /** Poll interval while waiting for a spawned child to become visible. */
+    private const int SPAWN_POLL_INTERVAL_US = 5_000;
+
     /** @var list<Process> Processes spawned by the running test, stopped in teardown */
     private array $spawned = [];
 
@@ -31,56 +47,57 @@ final class OrphanReaperTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
     public function testFindsASpawnedChild(): void
     {
-        $this->spawn();
+        $pid = $this->spawn();
 
-        $children = new OrphanReaper()->findChildren();
-
-        self::assertNotSame([], $children);
-        self::assertNotNull($this->pidOfSleep($children), 'the spawned sleep should be listed');
+        self::assertArrayHasKey($pid, new OrphanReaper()->findChildren(), 'the spawned sleep should be listed');
     }
 
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
     public function testReportsTheChildCommandLine(): void
     {
-        $this->spawn();
+        $pid = $this->spawn();
 
-        $children = new OrphanReaper()->findChildren();
-        $pid = $this->pidOfSleep($children);
-
-        self::assertNotNull($pid);
-        self::assertStringContainsString('sleep', $children[$pid]);
+        self::assertStringContainsString('sleep', new OrphanReaper()->findChildren()[$pid]);
     }
 
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
     public function testExcludesTheGivenPid(): void
     {
-        $this->spawn();
-        $reaper = new OrphanReaper();
-        $pid = $this->pidOfSleep($reaper->findChildren());
+        $pid = $this->spawn();
 
-        self::assertNotNull($pid);
-        self::assertArrayNotHasKey($pid, $reaper->findChildren($pid));
+        self::assertArrayNotHasKey($pid, new OrphanReaper()->findChildren($pid));
     }
 
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
     public function testReapTerminatesTheChild(): void
     {
-        $this->spawn();
+        $pid = $this->spawn();
         $reaper = new OrphanReaper();
-
-        $killed = $reaper->reap();
 
         // `sleep` honours SIGTERM, so nothing should need the follow-up SIGKILL.
-        self::assertSame(0, $killed);
-        self::assertNull($this->pidOfSleep($reaper->findChildren()), 'the child should be gone');
+        self::assertSame(0, $reaper->reap());
+        self::assertArrayNotHasKey($pid, $reaper->findChildren(), 'the child should be gone');
     }
 
+    /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
     public function testReapSparesTheExcludedPid(): void
     {
-        $this->spawn();
+        $pid = $this->spawn();
         $reaper = new OrphanReaper();
-        $pid = $this->pidOfSleep($reaper->findChildren());
 
-        self::assertNotNull($pid);
         $reaper->reap($pid);
 
         self::assertArrayHasKey($pid, $reaper->findChildren(), 'the excluded child should survive');
@@ -92,27 +109,37 @@ final class OrphanReaperTest extends TestCase
     }
 
     /**
-     * Spawns a long-lived child process for the running test.
-     */
-    private function spawn(): void
-    {
-        $this->spawned[] = new Process('sleep', ['30']);
-    }
-
-    /**
-     * Picks the spawned sleep out of a child listing.
+     * Spawns a long-lived child process for the running test and waits until it is ready.
      *
-     * @param array<int, string> $children Command line keyed by process id
-     * @return ?int Process id of the sleep child, or null when it is not listed
+     * Ready means visible to the reaper under the command line it will keep, so the
+     * caller can assert on the listing without racing the child's own startup.
+     *
+     * @return int Process id of the spawned child
+     * @throws FailedToGetStatusException When the child's status cannot be read
      */
-    private function pidOfSleep(array $children): ?int
+    private function spawn(): int
     {
-        foreach ($children as $pid => $cmdline) {
-            if (str_contains($cmdline, 'sleep')) {
+        // Registered before the wait, so teardown still kills the child if the wait fails.
+        $process = new Process('sleep', ['30']);
+        $this->spawned[] = $process;
+
+        // proc_open() fills the pid in right after the fork, well before execve() lands.
+        $pid = (int) $process->getStatus()['pid'];
+
+        $deadline = microtime(true) + self::SPAWN_TIMEOUT_SECONDS;
+        while (microtime(true) < $deadline) {
+            $children = new OrphanReaper()->findChildren();
+            if (isset($children[$pid]) && str_contains($children[$pid], 'sleep')) {
                 return $pid;
             }
+
+            usleep(self::SPAWN_POLL_INTERVAL_US);
         }
 
-        return null;
+        self::fail(sprintf(
+            'the spawned child pid=%d never appeared with its post-exec cmdline within %ds',
+            $pid,
+            self::SPAWN_TIMEOUT_SECONDS,
+        ));
     }
 }
