@@ -110,6 +110,8 @@ For RT changes:
    regardless of the caller's role; callers need typed collection/item APIs.
    Cure a leak with a View collection/item delegate that returns plain values —
    a delegate handing back state objects is the same violation one floor up.
+   Checked automatically by the `RT-STATE-REACH` guard on `test:framework:unit` —
+   see `docs/agents/code-style/automated-checks.md`.
 
 ## Hard Rules
 

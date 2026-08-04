@@ -135,7 +135,9 @@ owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 Direct backing-state access is a low-level data-layer tool. Calls to
 `getStateCollection()`, `getStateItem()`, `RtContext::getStateCollection()`,
 `RtContext::getStateItem()`, and direct `$this->stateCollection` access are
-allowed only inside files under `Database/` or `Runtime/`.
+allowed only inside files under `Database/` or `Runtime/`. Checked
+automatically: `RT-STATE-REACH`, see
+[automated-checks.md](../code-style/automated-checks.md).
 
 Any file outside those two trees is a violation regardless of the caller's
 role — agents, pages, tables, signal handlers, and tests must call caller-facing

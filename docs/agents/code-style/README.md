@@ -8,6 +8,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 
 | File | Read when... |
 |---|---|
+| [automated-checks.md](automated-checks.md) | a guard test failed on a style rule, a rule should stop depending on memory, or the known-debt baseline needs a record |
 | [phpdoc.md](phpdoc.md) | writing or changing PHPDoc, overriding inherited methods, adding `@see` links |
 | [exceptions.md](exceptions.md) | choosing exception classes, documenting `@throws`, handling validation/business errors |
 | [page-action-handlers.md](page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, action acks/errors |

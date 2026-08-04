@@ -46,6 +46,7 @@ Read this when writing or changing PHPDoc in project PHP code.
    `{@see \Demo\Chat\Database\Actions\Item\UserActions::rename}`. This holds even
    when the class is referenced only in the docblock and nowhere in code — add
    the `use` anyway rather than writing a leading-backslash fully qualified name.
+   Checked automatically: `PHPDOC-FQN`, see [automated-checks.md](automated-checks.md).
 10. If two imported names conflict, alias the import and use the alias in
     PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
 11. Prefer `self::`, `static::`, or a short imported class name for links inside
@@ -55,6 +56,7 @@ Read this when writing or changing PHPDoc in project PHP code.
     `@property-read`, `@method`, `@param`, `@return`, `@var`, and `@throws`,
     add a `use` import and reference the short class name or alias instead of
     writing a leading-backslash fully qualified class name in the docblock.
+    Checked automatically: `PHPDOC-FQN`, see [automated-checks.md](automated-checks.md).
 13. On a View item the class-level `@method __construct(...)` documents an
     *inherited* constructor. Keep it on a DB View item, which inherits the base
     constructor, so the construction contract stays visible. Do **not** put it on

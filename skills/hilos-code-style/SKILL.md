@@ -103,7 +103,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    `{@see ...}` / `{@link ...}` cross-references (`{@see UserActions::rename}`,
    not `{@see \Demo\Chat\Database\Actions\Item\UserActions::rename}`) — even when
    the class is referenced only in the docblock, add the `use` rather than a
-   leading-backslash FQN.
+   leading-backslash FQN. Checked automatically by the `PHPDOC-FQN` guard on
+   `test:framework:unit` — see `docs/agents/code-style/automated-checks.md`.
 23. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
 24. Before finishing a PHP method change, re-check the affected docblock against

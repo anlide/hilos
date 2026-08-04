@@ -73,7 +73,9 @@ switch to the focused data-layer skill first.
    returns plain values on the owning View collection/item and call it — a
    delegate that returns backing state objects outward is the same violation one
    floor up. During transparent data-shape refactors, keep simple field checks
-   explicit unless a new method was approved by name.
+   explicit unless a new method was approved by name. Checked automatically by
+   the `RT-STATE-REACH` guard on `test:framework:unit` — see
+   `docs/agents/code-style/automated-checks.md`.
 7. For writes, call a collection action or item action. When a DB/RT item key is
    known and the write changes or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.

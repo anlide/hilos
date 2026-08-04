@@ -72,7 +72,8 @@ Start with `agents.md`, then read the matching runtime guide.
     the caller's role. Cure a leak by adding a delegate that returns plain values
     (ids, scalars, DTOs) on the owning View collection/item and calling it — a
     delegate that returns backing state objects outward is the same violation one
-    floor up.
+    floor up. Checked automatically by the `RT-STATE-REACH` guard on
+    `test:framework:unit` — see `docs/agents/code-style/automated-checks.md`.
 13. When updating or deleting one runtime item and the collection key is known,
    load the item and call `$item->actions->...`; do not add collection actions
    that accept the item key for that one-item write.

@@ -140,6 +140,8 @@ Direct backing-state reads — `getStateCollection()`, `getStateItem()`,
 agent, page, table, signal handler, or test that reaches a backing state object
 is the same leak whether it goes through `getStateCollection()` or
 `getStateItem()`. Those callers must use caller-facing collection/item APIs.
+Checked automatically: `RT-STATE-REACH`, see
+[automated-checks.md](../code-style/automated-checks.md).
 
 Cure a leak by adding a delegate that returns plain values (ids, scalars,
 DTOs) on the owning `Runtime/View/Collection` or `Runtime/View/Item` class and

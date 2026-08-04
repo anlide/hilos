@@ -130,6 +130,14 @@ doc. The rule stays canonical in `docs/agents/*`; the skill is the thin trigger
 that makes the agent read it at the right moment. A rule that is hard to enforce
 without a matching trigger skill is incomplete.
 
+A trigger skill does not exhaust enforcement. It improves the odds that the rule
+is read; it cannot tell whether the rule was followed. When a rule is decidable
+from the source — a forbidden shape, a name that may appear only under a given
+path — it must also get a machine check, and the trigger skill stops being the
+last line of defence. See
+[code-style/automated-checks.md](code-style/automated-checks.md) for what is
+checked today and how to add a rule to the guard.
+
 ## Codex Skill Wrapper Shape
 
 A Hilos skill wrapper should stay small:

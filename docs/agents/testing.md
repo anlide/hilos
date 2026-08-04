@@ -60,6 +60,23 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 
 ---
 
+## Code-style guard and its baseline
+
+`composer run test:framework:unit` also runs the machine-checkable code-style
+rules over `framework/backend`, `framework/tests`, `demo/*/backend`, and
+`demo/*/tests`. A failure names the file, the line, the rule id, and the document
+that owns the rule.
+
+Existing debt lives in `framework/tests/CodeStyle/baseline.txt`, anchored to a
+file and a count, and every record names the leaf that will remove it. The
+baseline can only shrink: a fresh hit fails, and so does a record that has
+nothing left to cover. After paying debt off, regenerate it with
+`CODESTYLE_BASELINE_UPDATE=1` — the run rewrites the file and then fails on
+purpose so the diff gets reviewed. Full command and the `--user` caveat are in
+[code-style/automated-checks.md](code-style/automated-checks.md).
+
+---
+
 ## Selective testing — what to run for which change
 
 Match the test set to what changed; do not run everything for every edit. The
