@@ -11,7 +11,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerDbSyncCreatedMessageDTO - DB sync created message from daemon to worker.
  */
-class WorkerDbSyncCreatedMessageDTO extends WorkerDTO
+class WorkerDbSyncCreatedMessageDTO extends WorkerDTO implements WorkerDbSyncMessageInterface
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_CREATED;
 

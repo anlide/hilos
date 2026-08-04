@@ -52,16 +52,20 @@ use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
@@ -69,6 +73,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -355,26 +360,26 @@ abstract class WorkerManager extends BaseManager
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
                 if (!$data instanceof WorkerDbSyncCreatedMessageDTO) {
-                    Logger::error("handleDbSyncCreatedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleDbSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleDbSyncCreatedMessage($data);
+                $this->handleDbSyncMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_UPDATED:
                 if (!$data instanceof WorkerDbSyncUpdatedMessageDTO) {
-                    Logger::error("handleDbSyncUpdatedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleDbSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleDbSyncUpdatedMessage($data);
+                $this->handleDbSyncMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_DELETED:
                 if (!$data instanceof WorkerDbSyncDeletedMessageDTO) {
-                    Logger::error("handleDbSyncDeletedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleDbSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleDbSyncDeletedMessage($data);
+                $this->handleDbSyncMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CLEARED:
@@ -387,26 +392,26 @@ abstract class WorkerManager extends BaseManager
 
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
                 if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
-                    Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleRtSyncCreatedMessage($data);
+                $this->handleRtSyncMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_UPDATED:
                 if (!$data instanceof WorkerRtSyncUpdatedMessageDTO) {
-                    Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleRtSyncUpdatedMessage($data);
+                $this->handleRtSyncMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_DELETED:
                 if (!$data instanceof WorkerRtSyncDeletedMessageDTO) {
-                    Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
+                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleRtSyncDeletedMessage($data);
+                $this->handleRtSyncMessage($data);
                 break;
 
             default:
@@ -525,46 +530,36 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Applies and forwards a DB create sync received from the daemon.
+     * Applies and forwards a row-scoped DB sync received from the daemon.
      *
-     * @param WorkerDbSyncCreatedMessageDTO $data Worker-level DB create sync message
+     * The step order is part of the contract: the self-echo is dropped before the
+     * applicator runs, the browser invalidation is recorded after it, and agents
+     * are notified last.
+     *
+     * @param WorkerDbSyncMessageInterface $data Worker-level DB sync message (create, update or delete)
      */
-    private function handleDbSyncCreatedMessage(WorkerDbSyncCreatedMessageDTO $data): void
+    private function handleDbSyncMessage(WorkerDbSyncMessageInterface $data): void
     {
         if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
             return;
         }
-        DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange($data->signalData);
-        $this->dispatchDbSyncToAgents($data->signalData);
-    }
-
-    /**
-     * Applies and forwards a DB update sync received from the daemon.
-     *
-     * @param WorkerDbSyncUpdatedMessageDTO $data Worker-level DB update sync message
-     */
-    private function handleDbSyncUpdatedMessage(WorkerDbSyncUpdatedMessageDTO $data): void
-    {
-        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
-            return;
-        }
-        DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange($data->signalData);
-        $this->dispatchDbSyncToAgents($data->signalData);
-    }
-
-    /**
-     * Applies and forwards a DB delete sync received from the daemon.
-     *
-     * @param WorkerDbSyncDeletedMessageDTO $data Worker-level DB delete sync message
-     */
-    private function handleDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $data): void
-    {
-        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
-            return;
-        }
-        DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+        match (true) {
+            $data->signalData instanceof DbSyncCreatedSignalData => DbSyncApplicator::applyCreated(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            $data->signalData instanceof DbSyncUpdatedSignalData => DbSyncApplicator::applyUpdated(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            $data->signalData instanceof DbSyncDeletedSignalData => DbSyncApplicator::applyDeleted(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            default => Logger::error(
+                'handleDbSyncMessage - unexpected payload: ' . get_class($data->signalData),
+            ),
+        };
         $this->recordBrowserSourceChange($data->signalData);
         $this->dispatchDbSyncToAgents($data->signalData);
     }
@@ -592,9 +587,9 @@ abstract class WorkerManager extends BaseManager
      *
      * Each agent can filter by collectionKey/idString in its onSignal* handler.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $data DB sync payload
+     * @param DbSyncSignalDataInterface $data DB sync payload
      */
-    private function dispatchDbSyncToAgents(DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $data): void
+    private function dispatchDbSyncToAgents(DbSyncSignalDataInterface $data): void
     {
         $source = SignalSource::DB;
 
@@ -619,7 +614,7 @@ abstract class WorkerManager extends BaseManager
                     $source,
                     SignalConstants::DB_SYNC_DELETED,
                 ),
-                default => null,
+                default => Logger::error('dispatchDbSyncToAgents - unexpected payload: ' . get_class($data)),
             };
         }
 
@@ -631,9 +626,9 @@ abstract class WorkerManager extends BaseManager
      *
      * Each agent can filter by collectionKey/stateId in its onSignal* handler.
      *
-     * @param RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $data RT sync payload
+     * @param RtSyncSignalDataInterface $data RT sync payload
      */
-    private function dispatchRtSyncToAgents(RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $data): void
+    private function dispatchRtSyncToAgents(RtSyncSignalDataInterface $data): void
     {
         $source = SignalSource::RT;
 
@@ -658,7 +653,7 @@ abstract class WorkerManager extends BaseManager
                     $source,
                     SignalConstants::RT_SYNC_DELETED,
                 ),
-                default => null,
+                default => Logger::error('dispatchRtSyncToAgents - unexpected payload: ' . get_class($data)),
             };
         }
 
@@ -666,46 +661,36 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Applies and forwards an RT create sync received from the daemon.
+     * Applies and forwards a state-scoped RT sync received from the daemon.
      *
-     * @param WorkerRtSyncCreatedMessageDTO $data Worker-level RT create sync message
+     * The step order is part of the contract: the self-echo is dropped before the
+     * applicator runs, the browser invalidation is recorded after it, and agents
+     * are notified last.
+     *
+     * @param WorkerRtSyncMessageInterface $data Worker-level RT sync message (create, update or delete)
      */
-    private function handleRtSyncCreatedMessage(WorkerRtSyncCreatedMessageDTO $data): void
+    private function handleRtSyncMessage(WorkerRtSyncMessageInterface $data): void
     {
         if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
             return;
         }
-        RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange($data->signalData);
-        $this->dispatchRtSyncToAgents($data->signalData);
-    }
-
-    /**
-     * Applies and forwards an RT update sync received from the daemon.
-     *
-     * @param WorkerRtSyncUpdatedMessageDTO $data Worker-level RT update sync message
-     */
-    private function handleRtSyncUpdatedMessage(WorkerRtSyncUpdatedMessageDTO $data): void
-    {
-        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
-            return;
-        }
-        RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordBrowserSourceChange($data->signalData);
-        $this->dispatchRtSyncToAgents($data->signalData);
-    }
-
-    /**
-     * Applies and forwards an RT delete sync received from the daemon.
-     *
-     * @param WorkerRtSyncDeletedMessageDTO $data Worker-level RT delete sync message
-     */
-    private function handleRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $data): void
-    {
-        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
-            return;
-        }
-        RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+        match (true) {
+            $data->signalData instanceof RtSyncCreatedSignalData => RtSyncApplicator::applyCreated(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            $data->signalData instanceof RtSyncUpdatedSignalData => RtSyncApplicator::applyUpdated(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            $data->signalData instanceof RtSyncDeletedSignalData => RtSyncApplicator::applyDeleted(
+                $data->signalData,
+                skipSelfBroadcastCheck: false,
+            ),
+            default => Logger::error(
+                'handleRtSyncMessage - unexpected payload: ' . get_class($data->signalData),
+            ),
+        };
         $this->recordBrowserSourceChange($data->signalData);
         $this->dispatchRtSyncToAgents($data->signalData);
     }
@@ -717,12 +702,11 @@ abstract class WorkerManager extends BaseManager
      * state when it sent the sync to the daemon. The echoed worker message
      * must therefore neither re-apply nor re-emit the same fact.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $signalData DB sync payload
+     * @param DbSyncSignalDataInterface $signalData DB sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingDbSyncSelfBroadcast(
-        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData $signalData,
-    ): bool {
+    private function consumeIncomingDbSyncSelfBroadcast(DbSyncSignalDataInterface $signalData): bool
+    {
         if ($signalData->collectionKey === '' || $signalData->idString === '') {
             return false;
         }
@@ -755,12 +739,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Consume an RT sync self-broadcast marker before applying a daemon echo.
      *
-     * @param RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData RT sync payload
+     * @param RtSyncSignalDataInterface $signalData RT sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingRtSyncSelfBroadcast(
-        RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
-    ): bool {
+    private function consumeIncomingRtSyncSelfBroadcast(RtSyncSignalDataInterface $signalData): bool
+    {
         if ($signalData->collectionKey === '' || $signalData->stateId === '') {
             return false;
         }
@@ -776,11 +759,10 @@ abstract class WorkerManager extends BaseManager
      * accepted. Incoming self-broadcast echoes are consumed before this method,
      * so one backend fact becomes one browser invalidation per worker.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
+     * @param SyncSignalDataInterface $signalData Sync payload
      */
-    private function recordBrowserSourceChange(
-        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
-    ): void {
+    private function recordBrowserSourceChange(SyncSignalDataInterface $signalData): void
+    {
         if (Hilos::$browser === null) {
             return;
         }
@@ -840,19 +822,17 @@ abstract class WorkerManager extends BaseManager
      * The daemon echo is intentionally consumed as a self-broadcast, so local
      * agents must see the sync when the worker first drains the queued signal.
      *
-     * @param DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData Sync payload
+     * @param SyncSignalDataInterface $signalData Sync payload
      */
-    private function dispatchSyncToLocalAgents(
-        DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|DbSyncClearedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData,
-    ): void {
+    private function dispatchSyncToLocalAgents(SyncSignalDataInterface $signalData): void
+    {
         match (true) {
-            $signalData instanceof DbSyncCreatedSignalData,
-            $signalData instanceof DbSyncUpdatedSignalData,
-            $signalData instanceof DbSyncDeletedSignalData => $this->dispatchDbSyncToAgents($signalData),
-            $signalData instanceof RtSyncCreatedSignalData,
-            $signalData instanceof RtSyncUpdatedSignalData,
-            $signalData instanceof RtSyncDeletedSignalData => $this->dispatchRtSyncToAgents($signalData),
-            default => null,
+            $signalData instanceof DbSyncSignalDataInterface => $this->dispatchDbSyncToAgents($signalData),
+            $signalData instanceof RtSyncSignalDataInterface => $this->dispatchRtSyncToAgents($signalData),
+            // A collection truncate is browser-only fan-out: agents that care observe
+            // the per-row delete/create events, so this no-op is the contract.
+            $signalData instanceof DbSyncClearedSignalData => null,
+            default => Logger::error('dispatchSyncToLocalAgents - unexpected payload: ' . get_class($signalData)),
         };
     }
 

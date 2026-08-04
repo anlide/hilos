@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * DbSyncDeletedSignalData - DB sync signal data for deleted row.
  *
  * Carries idString plus optional previous row data.
  */
-class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
+class DbSyncDeletedSignalData extends BaseDTO implements DbSyncSignalDataInterface
 {
     /**
      * Creates DB sync deleted signal data.

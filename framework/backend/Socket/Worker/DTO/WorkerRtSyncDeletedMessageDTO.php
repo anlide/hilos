@@ -11,7 +11,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerRtSyncDeletedMessageDTO - RT sync deleted message from daemon to worker.
  */
-class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
+class WorkerRtSyncDeletedMessageDTO extends WorkerDTO implements WorkerRtSyncMessageInterface
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_DELETED;
 

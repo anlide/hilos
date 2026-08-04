@@ -11,7 +11,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerDbSyncDeletedMessageDTO - DB sync deleted message from daemon to worker.
  */
-class WorkerDbSyncDeletedMessageDTO extends WorkerDTO
+class WorkerDbSyncDeletedMessageDTO extends WorkerDTO implements WorkerDbSyncMessageInterface
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_DELETED;
 

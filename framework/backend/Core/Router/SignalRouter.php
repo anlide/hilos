@@ -20,7 +20,8 @@ use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
-use Hilos\Core\Sync\DTO\SyncSignalDataKey;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -289,15 +290,15 @@ class SignalRouter
      * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply skip.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
-     * @param SignalDataInterface $signalData Signal data with collectionKey and idString
+     * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
      */
-    public function queueDbSyncSignal(string $signalName, SignalDataInterface $signalData): void
+    public function queueDbSyncSignal(string $signalName, DbSyncSignalDataInterface $signalData): void
     {
         if (!$this->dbSyncBroadcastEnabled) {
             return;
         }
 
-        $this->registerSelfBroadcast($this->dbSelfBroadcast, $signalData, SyncSignalDataKey::ID_STRING);
+        $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
@@ -359,11 +360,11 @@ class SignalRouter
      * Registers (collectionKey, stateId) for self-apply skip.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
-     * @param SignalDataInterface $signalData Signal data with collectionKey and stateId
+     * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId
      */
-    public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
+    public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
     {
-        $this->registerSelfBroadcast($this->rtSelfBroadcast, $signalData, SyncSignalDataKey::STATE_ID);
+        $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
@@ -383,22 +384,6 @@ class SignalRouter
     public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool
     {
         return $this->rtSelfBroadcast->consume($collectionKey, $stateId);
-    }
-
-    /**
-     * Adapts sync signal data to a SelfBroadcastRegistry registration.
-     *
-     * @param SelfBroadcastRegistry $registry Registry to record the broadcast id in
-     * @param SignalDataInterface $signalData Sync signal data carrying collectionKey and the id
-     * @param string $idKey Payload key holding the entity id (ID_STRING for DB, STATE_ID for RT)
-     */
-    private function registerSelfBroadcast(SelfBroadcastRegistry $registry, SignalDataInterface $signalData, string $idKey): void
-    {
-        $data = $signalData->toArray();
-        $registry->register(
-            (string) ($data[SyncSignalDataKey::COLLECTION_KEY] ?? ''),
-            (string) ($data[$idKey] ?? ''),
-        );
     }
 
     /**

@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * RtSyncUpdatedSignalData - RT sync signal data for updated state.
  *
  * Only changed fields.
  */
-class RtSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
+class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterface
 {
     /**
      * Creates RT sync updated signal data.

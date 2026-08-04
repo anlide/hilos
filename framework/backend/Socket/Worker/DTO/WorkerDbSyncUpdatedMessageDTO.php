@@ -11,7 +11,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerDbSyncUpdatedMessageDTO - DB sync updated message from daemon to worker.
  */
-class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO
+class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO implements WorkerDbSyncMessageInterface
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_UPDATED;
 

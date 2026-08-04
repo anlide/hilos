@@ -18,6 +18,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -43,7 +44,7 @@ final class WorkerManagerBrowserContextTest extends TestCase
         $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
 
         $recordSourceChange = \Closure::bind(
-            static function (WorkerManager $manager, DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData|RtSyncCreatedSignalData|RtSyncUpdatedSignalData|RtSyncDeletedSignalData $signalData): void {
+            static function (WorkerManager $manager, SyncSignalDataInterface $signalData): void {
                 $manager->recordBrowserSourceChange($signalData);
             },
             null,

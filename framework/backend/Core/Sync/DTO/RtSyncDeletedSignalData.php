@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * RtSyncDeletedSignalData - RT sync signal data for deleted state.
  *
  * Carries state ID plus optional previous runtime row data.
  */
-class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
+class RtSyncDeletedSignalData extends BaseDTO implements RtSyncSignalDataInterface
 {
     /**
      * Creates RT sync deleted signal data.

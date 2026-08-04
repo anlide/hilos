@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * DbSyncCreatedSignalData - DB sync signal data for created row.
  *
  * Full row data (all columns).
  */
-class DbSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
+class DbSyncCreatedSignalData extends BaseDTO implements DbSyncSignalDataInterface
 {
     /**
      * Creates DB sync created signal data.

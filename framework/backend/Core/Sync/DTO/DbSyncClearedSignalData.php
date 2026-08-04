@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * DbSyncClearedSignalData - DB sync signal data for a whole-collection truncate.
@@ -19,7 +18,7 @@ use Hilos\Core\Router\SignalDataInterface;
  * identity of the process that broadcast the signal — the field a receiver
  * compares with its own identity to drop its own echo.
  */
-class DbSyncClearedSignalData extends BaseDTO implements SignalDataInterface
+class DbSyncClearedSignalData extends BaseDTO implements SyncSignalDataInterface
 {
     /**
      * Creates DB sync cleared signal data.

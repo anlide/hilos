@@ -11,7 +11,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 /**
  * WorkerRtSyncUpdatedMessageDTO - RT sync updated message from daemon to worker.
  */
-class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO
+class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO implements WorkerRtSyncMessageInterface
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_UPDATED;
 
