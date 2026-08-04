@@ -20,6 +20,7 @@ use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Unit tests for the agent-placement coordinator (HIL-179).
@@ -557,7 +558,7 @@ final class FakePlacementExecutor implements PlacementExecutor
     /** @var list<array{0: string, 1: ?string}> Revoked placements, as [type, index] */
     public array $revoked = [];
 
-    /** @var ?\Throwable Exception the next executePlacement() should throw, or null to succeed */
+    /** @var ?Throwable Exception the next executePlacement() should throw, or null to succeed */
     public ?\Throwable $failWith = null;
 
     /** @var ResourceProfile Resource profile every agent type reports */

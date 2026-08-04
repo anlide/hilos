@@ -18,6 +18,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Socket;
 
 /**
  * Unit tests that membership gossip cannot echo around the mesh.
@@ -39,7 +40,7 @@ final class PeerAnnounceEchoTest extends TestCase
     /** @var ?ClusterContext Previous cluster context to restore after the test */
     private ?ClusterContext $previousCluster = null;
 
-    /** @var list<\Socket> Sockets kept alive for the links under test */
+    /** @var list<Socket> Sockets kept alive for the links under test */
     private array $sockets = [];
 
     protected function setUp(): void
@@ -159,7 +160,7 @@ final class PeerAnnounceEchoTest extends TestCase
      *
      * @param PeerServer $server Server owning the link
      * @param string $nodeId Remote node id the handshake reports
-     * @return array{0: PeerLink, 1: \Socket} Link and the far end of its socket pair
+     * @return array{0: PeerLink, 1: Socket} Link and the far end of its socket pair
      */
     private function makeHandshakedLink(PeerServer $server, string $nodeId): array
     {
@@ -181,7 +182,7 @@ final class PeerAnnounceEchoTest extends TestCase
      * Flushes a link's outbound buffer and returns everything readable on the far end.
      *
      * @param PeerLink $link Link to flush
-     * @param \Socket $far Far end of the link's socket pair
+     * @param Socket $far Far end of the link's socket pair
      * @return string Bytes the far end received
      */
     private function flushAndRead(PeerLink $link, \Socket $far): string
@@ -222,7 +223,7 @@ final class PeerAnnounceEchoTest extends TestCase
     /**
      * Creates a connected socket pair so a link's output can be read back.
      *
-     * @return array{0: \Socket, 1: \Socket} Near end (wrapped by the link) and far end (the test reads here)
+     * @return array{0: Socket, 1: Socket} Near end (wrapped by the link) and far end (the test reads here)
      */
     private function makeSocketPair(): array
     {

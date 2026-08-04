@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
+use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
@@ -14,6 +16,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Object\Collection\Identities;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -22,9 +25,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * {@see ChatAgent::handleAccountMerge()} absorbs a loser account into a survivor
  * in ONE database transaction: the framework identity re-point
- * ({@see \Hilos\Database\Object\Collection\Identities::rePointToUser()}), the demo
- * message re-point ({@see \Demo\Chat\Database\Actions\Collection\EventMessagesActions::rePointAuthor()}),
- * and the loser tombstone ({@see \Demo\Chat\Database\Actions\Item\UserActions::tombstone()}).
+ * ({@see Identities::rePointToUser()}), the demo
+ * message re-point ({@see EventMessagesActions::rePointAuthor()}),
+ * and the loser tombstone ({@see UserActions::tombstone()}).
  * Coverage: the happy path moves both content kinds and tombstones the loser; the
  * validation guards reject a self/unknown/already-merged merge before any write;
  * and a failure of a later transaction step rolls the whole merge back, so the

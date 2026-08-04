@@ -14,6 +14,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Socket;
 
 /**
  * Unit tests for the per-link keepalive on {@see PeerLink} (HIL-183).
@@ -33,10 +34,10 @@ final class PeerLinkKeepaliveTest extends TestCase
     /** @var ?ClusterContext Previous cluster context to restore after the test */
     private ?ClusterContext $previousCluster = null;
 
-    /** @var list<\Socket> Sockets kept alive for the links under test */
+    /** @var list<Socket> Sockets kept alive for the links under test */
     private array $sockets = [];
 
-    /** @var ?\Socket Far end of the current link's socket pair, where the test reads flushed output */
+    /** @var ?Socket Far end of the current link's socket pair, where the test reads flushed output */
     private ?\Socket $far = null;
 
     protected function setUp(): void
@@ -163,7 +164,7 @@ final class PeerLinkKeepaliveTest extends TestCase
     /**
      * Creates a bare socket that satisfies the link constructor without any I/O.
      *
-     * @return \Socket Unconnected socket kept alive for the test's lifetime
+     * @return Socket Unconnected socket kept alive for the test's lifetime
      */
     private function makeSocket(): \Socket
     {
@@ -177,7 +178,7 @@ final class PeerLinkKeepaliveTest extends TestCase
     /**
      * Creates a connected socket pair so a frame can be fed into a link's read path.
      *
-     * @return array{0: \Socket, 1: \Socket} Near end (wrapped by the link) and far end (test writes here)
+     * @return array{0: Socket, 1: Socket} Near end (wrapped by the link) and far end (test writes here)
      */
     private function makeSocketPair(): array
     {

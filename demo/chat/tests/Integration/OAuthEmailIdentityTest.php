@@ -13,6 +13,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Collection\Identities;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -22,7 +23,7 @@ use ReflectionMethod;
  * Integration tests for OAuth verified-email persistence (HIL-405).
  *
  * Two surfaces: the framework write primitive
- * {@see \Hilos\Database\View\Collection\Identities::createMagicLinkIdentity()}
+ * {@see Identities::createMagicLinkIdentity()}
  * (verified, lowercased, secret-less, duplicate-guarded), and the demo call site
  * {@see OAuthAgent::completeOAuthLogin()} which, on a new-user sign-up with a
  * non-empty provider email, persists that email as a verified `magic_link`

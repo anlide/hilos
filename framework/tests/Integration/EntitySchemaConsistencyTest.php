@@ -8,8 +8,12 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseConnectionPolicy;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\Schema\EntitySchemaAudit;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -40,10 +44,10 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
     /**
      * Connects (via parent) and raises the covered stub schema once per class run.
      *
-     * @throws \Hilos\Environment\Exception\EnvException When env variables are missing or invalid
-     * @throws \Hilos\Database\Exception\DatabaseConnectionException When connect fails
-     * @throws \Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException When connect retries are exhausted
-     * @throws \Hilos\Database\DatabaseException When a stub statement fails
+     * @throws EnvException When env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
+     * @throws DatabaseException When a stub statement fails
      */
     protected function setUp(): void
     {
@@ -124,7 +128,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      * The Entity metadata must match the live table on every audit axis.
      *
      * @param class-string<Entity> $entityClass Entity under test
-     * @throws \Hilos\Database\DatabaseException When an introspection query fails
+     * @throws DatabaseException When an introspection query fails
      */
     #[DataProvider('entityProvider')]
     public function testEntityMatchesSchema(string $entityClass): void
@@ -142,7 +146,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      * Applies every covered create stub, dropping first so a partial prior run
      * cannot collide.
      *
-     * @throws \Hilos\Database\DatabaseException When a stub statement fails
+     * @throws DatabaseException When a stub statement fails
      */
     private static function applyStubSchema(): void
     {
@@ -154,7 +158,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      * Runs one direction of every covered entity's stub file.
      *
      * @param bool $down Run the down (drop) stubs when true, the create stubs when false
-     * @throws \Hilos\Database\DatabaseException When a stub statement fails
+     * @throws DatabaseException When a stub statement fails
      */
     private static function runStubDirection(bool $down): void
     {
@@ -168,9 +172,9 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      * Opens connection index 0 from environment (mirrors the base setUp) for the
      * static teardown path.
      *
-     * @throws \Hilos\Environment\Exception\EnvException When env variables are missing or invalid
-     * @throws \Hilos\Database\Exception\DatabaseConnectionException When connect fails
-     * @throws \Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException When connect retries are exhausted
+     * @throws EnvException When env variables are missing or invalid
+     * @throws DatabaseConnectionException When connect fails
+     * @throws CantConnectToMysqlServerException When connect retries are exhausted
      */
     private static function openConnection(): void
     {

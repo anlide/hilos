@@ -8,11 +8,13 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerAddress;
+use Hilos\Cluster\Peer\PeerDial;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Socket;
 
 /**
  * Unit tests that a peer re-handshaking on a changed address re-points its dial (HIL-343).
@@ -31,7 +33,7 @@ final class PeerServerAddressChurnTest extends TestCase
     /** @var ?ClusterContext Previous cluster context to restore after the test */
     private ?ClusterContext $previousCluster = null;
 
-    /** @var list<\Socket> Sockets kept alive for the test's lifetime and closed on teardown */
+    /** @var list<Socket> Sockets kept alive for the test's lifetime and closed on teardown */
     private array $sockets = [];
 
     protected function setUp(): void
@@ -120,7 +122,7 @@ final class PeerServerAddressChurnTest extends TestCase
      * Reads the server's private dial-on-learn map.
      *
      * @param PeerServer $server Server under test
-     * @return array<string, \Hilos\Cluster\Peer\PeerDial> Dial-on-learn state keyed by node id
+     * @return array<string, PeerDial> Dial-on-learn state keyed by node id
      */
     private function peerDials(PeerServer $server): array
     {
@@ -130,7 +132,7 @@ final class PeerServerAddressChurnTest extends TestCase
     /**
      * Creates a bare socket kept alive for the test's lifetime.
      *
-     * @return \Socket Unconnected socket closed on teardown
+     * @return Socket Unconnected socket closed on teardown
      */
     private function newSocket(): \Socket
     {

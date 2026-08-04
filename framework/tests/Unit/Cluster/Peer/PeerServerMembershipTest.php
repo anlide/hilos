@@ -16,6 +16,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Socket;
 
 /**
  * Unit tests that a peer-mesh membership transition reaches the daemon observer (HIL-338).
@@ -32,7 +33,7 @@ final class PeerServerMembershipTest extends TestCase
     /** @var ?ClusterContext Previous cluster context to restore after the test */
     private ?ClusterContext $previousCluster = null;
 
-    /** @var ?\Socket Dummy socket kept alive for the link under test */
+    /** @var ?Socket Dummy socket kept alive for the link under test */
     private ?\Socket $socket = null;
 
     protected function setUp(): void
@@ -103,7 +104,7 @@ final class PeerServerMembershipTest extends TestCase
     /**
      * Creates a bare socket that satisfies the link constructor without any I/O.
      *
-     * @return \Socket Unconnected socket kept alive for the test's lifetime
+     * @return Socket Unconnected socket kept alive for the test's lifetime
      */
     private function makeSocket(): \Socket
     {

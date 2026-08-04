@@ -11,6 +11,7 @@ use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\Push\Delivery\PushEndpointSend;
 use Hilos\Socket\SocketException;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Tests one device endpoint's non-blocking web-push send classification (HIL-199).
@@ -151,7 +152,7 @@ final class PushEndpointSendTest extends TestCase
     /**
      * Ticks a send whose client throws the given exception and returns it settled.
      *
-     * @param \Throwable $thrown Exception the client raises from tick
+     * @param Throwable $thrown Exception the client raises from tick
      * @return PushEndpointSend The settled send
      */
     private function settledFrom(\Throwable $thrown): PushEndpointSend

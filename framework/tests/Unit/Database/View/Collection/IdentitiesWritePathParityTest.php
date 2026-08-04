@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Database\View\Collection;
 
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\View\Collection\Identities as ViewIdentities;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionNamedType;
@@ -15,7 +16,7 @@ use ReflectionNamedType;
  *
  * Every `create*Identity*` write primitive on the object collection must have a
  * matching read-facing delegator on the view collection, since callers write
- * through {@see \Hilos\Hilos::$db}->identities (the view surface). The bulk-seed
+ * through {@see Hilos::$db}->identities (the view surface). The bulk-seed
  * regression that motivated this test added createPasswordIdentityWithHash() to
  * the object layer only, so the CLI's view-collection call fataled at runtime with
  * no framework-suite coverage catching it. This reflection parity check makes the
