@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\ProtectedMode\ProtectedModeExecutor;
 
 /**
  * ProtectedModeQuiesceData - leader -> follower freeze descriptor for the peer QUIESCE frame.
@@ -28,20 +29,23 @@ final class ProtectedModeQuiesceData extends BaseDTO
     /** Payload key: the initiator agent index left running during the freeze. */
     public const string initiatorAgentIndex = 'initiatorAgentIndex';
 
-    /** Payload key: the node id that hosts the initiator agent. */
+    /** Payload key: the node id that hosts the initiator agent, or null off-cluster. */
     public const string initiatorNodeId = 'initiatorNodeId';
 
     /**
      * @param string $operation Operation the freeze protects
      * @param string $initiatorAgentType Agent type left running during the freeze
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
-     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     * @param ?string $initiatorNodeId Node id that hosts the initiator agent, or null on a
+     *                                 single-node installation, which never sends this
+     *                                 descriptor to a peer and only reuses it as the freeze
+     *                                 argument of {@see ProtectedModeExecutor::enterActivating()}
      */
     public function __construct(
         public readonly string $operation,
         public readonly string $initiatorAgentType,
         public readonly ?int $initiatorAgentIndex,
-        public readonly string $initiatorNodeId,
+        public readonly ?string $initiatorNodeId,
     ) {
     }
 
@@ -65,12 +69,13 @@ final class ProtectedModeQuiesceData extends BaseDTO
     public static function fromArray(array $data): static
     {
         $agentIndex = $data[self::initiatorAgentIndex] ?? null;
+        $nodeId = $data[self::initiatorNodeId] ?? null;
 
         return new static(
             operation: (string)($data[self::operation] ?? ''),
             initiatorAgentType: (string)($data[self::initiatorAgentType] ?? ''),
             initiatorAgentIndex: $agentIndex === null ? null : (int)$agentIndex,
-            initiatorNodeId: (string)($data[self::initiatorNodeId] ?? ''),
+            initiatorNodeId: $nodeId === null ? null : (string)$nodeId,
         );
     }
 }

@@ -50,12 +50,15 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
@@ -300,6 +303,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * @throws InvalidArgumentException When the required-function list is empty
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function run(): void
     {
@@ -343,6 +347,12 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         // node's agents (leaving the initiator running) while the freeze holds.
         if ($workerServer instanceof ProtectedModeAgentFreezer) {
             Hilos::$cluster?->registerProtectedModeAgentFreezer($workerServer);
+        }
+        // Off-cluster there is no peer transport to build a freeze coordinator, and this is the one
+        // start-up path both topologies run, so the single-node freeze is built here. The clustered
+        // one is built by PeerServer::onStart(); the two are mutually exclusive by construction.
+        if (Hilos::$cluster !== null && !Hilos::$cluster->isEnabled()) {
+            Hilos::$cluster->registerProtectedMode(new StandaloneProtectedMode(new DaemonProtectedModeExecutor()));
         }
 
         Logger::info("Daemon started with epoll");
@@ -1541,7 +1551,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         Hilos::$cluster?->placement()?->onBecameLeader();
 
         // The new leader takes up the protected-mode freeze orchestration.
-        Hilos::$cluster?->protectedMode()?->onBecameLeader();
+        Hilos::$cluster?->protectedModeLeadership()?->onBecameLeader();
     }
 
     /**
@@ -1568,7 +1578,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
         // Drop any protected-mode freeze this node was orchestrating as leader; the follower-side
         // state stays, so a freeze the new leader ordered against this node is still honoured.
-        Hilos::$cluster?->protectedMode()?->onLostLeadership();
+        Hilos::$cluster?->protectedModeLeadership()?->onLostLeadership();
     }
 
     /**

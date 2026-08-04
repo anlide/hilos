@@ -569,6 +569,7 @@ abstract class Hilos
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
             static::$rt?->configure();
+            static::$rt?->mountFrameworkState();
         }
 
         if (static::$table === null) {

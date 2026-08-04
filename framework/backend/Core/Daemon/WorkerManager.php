@@ -70,6 +70,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -1566,7 +1567,11 @@ abstract class WorkerManager extends BaseManager
                 continue;
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_DISABLE) {
-                $this->daemonClient->send(new WorkerProtectedModeDisableDTO());
+                if ($signal->data instanceof ProtectedModeDisableSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeDisableDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode disable carries invalid data: ' . get_class($signal->data));
+                }
                 continue;
             }
 

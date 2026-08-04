@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\ProtectedMode\ClusterProtectedMode;
+use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
@@ -280,7 +281,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->requestDisable();
+        $this->coordinator->requestDisable($this->disableData());
 
         $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
         $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
@@ -290,10 +291,24 @@ final class ClusterProtectedModeTest extends TestCase
     {
         $this->mesh->leader = 'node-z';
 
-        $this->coordinator->requestDisable();
+        $this->coordinator->requestDisable($this->disableData());
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([['sendDisable', 'node-z']], $this->mesh->calls);
+    }
+
+    public function testLeaderDropsEnableThatNamesNoInitiatorNode(): void
+    {
+        // A payload with no node id is what a single-node installation sends; a leader cannot
+        // orchestrate it — it would have nowhere to send ready and nothing to authorize the
+        // later disable against — so it refuses instead of entering a freeze it cannot lift.
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+
+        $this->coordinator->onEnable('node-b', $this->enableDataFrom(null));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
     }
 
     private function enableData(): ProtectedModeEnableSignalData
@@ -301,7 +316,15 @@ final class ClusterProtectedModeTest extends TestCase
         return $this->enableDataFrom('node-b');
     }
 
-    private function enableDataFrom(string $initiatorNodeId): ProtectedModeEnableSignalData
+    private function disableData(): ProtectedModeDisableSignalData
+    {
+        return new ProtectedModeDisableSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+        );
+    }
+
+    private function enableDataFrom(?string $initiatorNodeId): ProtectedModeEnableSignalData
     {
         return new ProtectedModeEnableSignalData(
             operation: 'restore',

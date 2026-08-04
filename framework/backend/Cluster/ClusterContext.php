@@ -17,7 +17,10 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
+use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeSwitch;
+use Hilos\ProtectedMode\StandaloneProtectedMode;
 
 /**
  * Facade context for cluster mode and the local node identity.
@@ -62,8 +65,11 @@ final class ClusterContext
     /** @var ?ClusterPlacement Agent-placement coordinator, registered by the peer transport at start. */
     private ?ClusterPlacement $placement = null;
 
-    /** @var ?ClusterProtectedMode Protected-mode freeze coordinator, registered by the peer transport at start. */
-    private ?ClusterProtectedMode $protectedMode = null;
+    /** @var ?ProtectedModeSwitch Protected-mode request seam, registered at start by whichever topology this node runs. */
+    private ?ProtectedModeSwitch $protectedMode = null;
+
+    /** @var ?ProtectedModeLeadership Leader-side hooks of the freeze, registered by the peer transport at start; null off-cluster. */
+    private ?ProtectedModeLeadership $protectedModeLeadership = null;
 
     /** @var ?ProtectedModeReadyRelay Local relay of the leader's ready to the initiator agent, registered by the daemon at start. */
     private ?ProtectedModeReadyRelay $protectedModeReadyRelay = null;
@@ -331,29 +337,51 @@ final class ClusterContext
     }
 
     /**
-     * Installs the protected-mode freeze coordinator built by the peer transport.
+     * Installs the protected-mode request seam for this node's topology.
      *
-     * The transport builds the {@see ClusterProtectedMode} for a clustered node at start and
-     * registers it here so the daemon's leadership hooks can drive its leader-side role.
+     * A clustered node registers the {@see ClusterProtectedMode} its peer transport builds; a
+     * single-node installation registers the {@see StandaloneProtectedMode} its daemon builds.
+     * The callers above this slot ask for a freeze the same way either way.
      *
-     * @param ClusterProtectedMode $protectedMode Freeze coordinator to install
+     * @param ProtectedModeSwitch $protectedMode Freeze request seam to install
      */
-    public function registerProtectedMode(ClusterProtectedMode $protectedMode): void
+    public function registerProtectedMode(ProtectedModeSwitch $protectedMode): void
     {
         $this->protectedMode = $protectedMode;
     }
 
     /**
-     * Returns the protected-mode freeze coordinator, or null on a node without one.
+     * Returns the protected-mode request seam, or null on a node without one.
      *
-     * Null off-cluster (no peer transport); present on every clustered node so its leadership
-     * hooks can take up and drop the leader-side orchestration.
-     *
-     * @return ?ClusterProtectedMode Freeze coordinator, or null
+     * @return ?ProtectedModeSwitch Freeze request seam, or null
      */
-    public function protectedMode(): ?ClusterProtectedMode
+    public function protectedMode(): ?ProtectedModeSwitch
     {
         return $this->protectedMode;
+    }
+
+    /**
+     * Installs the leader-side hooks of the freeze, built by the peer transport.
+     *
+     * Separate from {@see registerProtectedMode()} because leadership exists only in a cluster:
+     * the peer transport registers the same coordinator object in both slots, while a single-node
+     * daemon fills only the request seam and leaves this one null.
+     *
+     * @param ProtectedModeLeadership $leadership Leader-side hooks to install
+     */
+    public function registerProtectedModeLeadership(ProtectedModeLeadership $leadership): void
+    {
+        $this->protectedModeLeadership = $leadership;
+    }
+
+    /**
+     * Returns the leader-side hooks of the freeze, or null on a node that leads nothing.
+     *
+     * @return ?ProtectedModeLeadership Leader-side hooks, or null
+     */
+    public function protectedModeLeadership(): ?ProtectedModeLeadership
+    {
+        return $this->protectedModeLeadership;
     }
 
     /**

@@ -168,17 +168,54 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($restored->initiatorAgentIndex);
     }
 
-    public function testReadyAndDisableSignalDataAreEmptyPayloads(): void
+    public function testEnableSignalDataKeepsNullNodeId(): void
+    {
+        // A single-node installation has no node ids to name, and the freeze it asks for is
+        // local, so the initiator sends null rather than inventing an identifier.
+        $data = new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-9',
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+            initiatorNodeId: null,
+        );
+
+        $restored = ProtectedModeEnableSignalData::fromArray($data->toArray());
+
+        $this->assertNull($restored->initiatorNodeId);
+    }
+
+    public function testReadySignalDataIsAnEmptyPayload(): void
     {
         $this->assertSame([], new ProtectedModeReadySignalData()->toArray());
-        $this->assertSame([], new ProtectedModeDisableSignalData()->toArray());
         $this->assertInstanceOf(
             ProtectedModeReadySignalData::class,
             ProtectedModeReadySignalData::fromArray([]),
         );
-        $this->assertInstanceOf(
-            ProtectedModeDisableSignalData::class,
-            ProtectedModeDisableSignalData::fromArray([]),
+    }
+
+    public function testDisableSignalDataCarriesTheRequestingAgentIdentity(): void
+    {
+        $data = new ProtectedModeDisableSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 2,
         );
+
+        $restored = ProtectedModeDisableSignalData::fromArray($data->toArray());
+
+        $this->assertSame('backup', $restored->initiatorAgentType);
+        $this->assertSame(2, $restored->initiatorAgentIndex);
+    }
+
+    public function testDisableSignalDataKeepsNullAgentIndex(): void
+    {
+        $data = new ProtectedModeDisableSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+        );
+
+        $restored = ProtectedModeDisableSignalData::fromArray($data->toArray());
+
+        $this->assertNull($restored->initiatorAgentIndex);
     }
 }

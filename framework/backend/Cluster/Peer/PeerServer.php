@@ -175,7 +175,10 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
                 new DaemonProtectedModeExecutor(),
             );
             $this->registerProtectedMode($protectedMode);
+            // The same object fills both facade slots: it is what an initiator asks for a freeze
+            // and what the daemon drives through its leadership transitions.
             Hilos::$cluster->registerProtectedMode($protectedMode);
+            Hilos::$cluster->registerProtectedModeLeadership($protectedMode);
         }
 
         Logger::info("Peer server listening as node {$this->localIdentity->nodeId}");

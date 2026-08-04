@@ -317,9 +317,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Handle protected-mode enable request from an initiator worker.
      *
-     * Hands the carried initiator identity to the cluster's freeze coordinator, which enables
-     * protected mode locally when this node leads or forwards the request to the current leader.
-     * A node without a coordinator (cluster mode off) ignores the request.
+     * Hands the carried initiator identity to this node's freeze switch, which freezes the single
+     * node on the spot, or enables locally when this node leads a cluster and forwards the request
+     * to the current leader otherwise. A node without a switch ignores the request.
      *
      * @param WorkerProtectedModeEnableDTO $dto DTO with the initiator identity and operation
      */
@@ -331,15 +331,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Handle protected-mode disable request from an initiator worker.
      *
-     * Hands the release to the cluster's freeze coordinator, which lifts protected mode locally
-     * when this node leads or forwards the request to the current leader. A node without a
-     * coordinator (cluster mode off) ignores the request.
+     * Hands the carried initiator identity to this node's freeze switch, which authorizes the
+     * release against the recorded initiator on a single node, or lifts locally when this node
+     * leads and forwards to the current leader otherwise. A node without a switch ignores it.
      *
-     * @param WorkerProtectedModeDisableDTO $dto DTO carrying only the disable request
+     * @param WorkerProtectedModeDisableDTO $dto DTO with the identity of the agent asking for the release
      */
     private function handleProtectedModeDisableMessage(WorkerProtectedModeDisableDTO $dto): void
     {
-        Hilos::$cluster?->protectedMode()?->requestDisable();
+        Hilos::$cluster?->protectedMode()?->requestDisable($dto->data);
     }
 
     /**

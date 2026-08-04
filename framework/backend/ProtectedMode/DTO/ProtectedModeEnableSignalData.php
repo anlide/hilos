@@ -30,7 +30,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     /** Payload key: the initiator agent index left running during the freeze. */
     public const string initiatorAgentIndex = 'initiatorAgentIndex';
 
-    /** Payload key: the node id that hosts the initiator agent. */
+    /** Payload key: the node id that hosts the initiator agent, or null off-cluster. */
     public const string initiatorNodeId = 'initiatorNodeId';
 
     /**
@@ -38,14 +38,15 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
      * @param string $initiatorAcceptKey Accept key of the initiator connection
      * @param string $initiatorAgentType Agent type left running during the freeze
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
-     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     * @param ?string $initiatorNodeId Node id that hosts the initiator agent, or null on a
+     *                                 single-node installation, which has no node ids at all
      */
     public function __construct(
         public readonly string $operation,
         public readonly string $initiatorAcceptKey,
         public readonly string $initiatorAgentType,
         public readonly ?int $initiatorAgentIndex,
-        public readonly string $initiatorNodeId,
+        public readonly ?string $initiatorNodeId,
     ) {
     }
 
@@ -70,13 +71,14 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     public static function fromArray(array $data): static
     {
         $agentIndex = $data[self::initiatorAgentIndex] ?? null;
+        $nodeId = $data[self::initiatorNodeId] ?? null;
 
         return new static(
             operation: (string)($data[self::operation] ?? ''),
             initiatorAcceptKey: (string)($data[self::initiatorAcceptKey] ?? ''),
             initiatorAgentType: (string)($data[self::initiatorAgentType] ?? ''),
             initiatorAgentIndex: $agentIndex === null ? null : (int)$agentIndex,
-            initiatorNodeId: (string)($data[self::initiatorNodeId] ?? ''),
+            initiatorNodeId: $nodeId === null ? null : (string)$nodeId,
         );
     }
 }

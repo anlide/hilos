@@ -10,25 +10,26 @@ use Hilos\Runtime\View\Context\RtContext;
 /**
  * ClusterRtContext - runtime context for the headless cluster demo.
  *
- * The cluster demo carries no pages or WebSocket, so this context exists solely to
- * mount the framework-owned {@see StateProtectedModeRuntime} singleton on every node.
- * That single item is the local writer seam the daemon truth source registers against
+ * The cluster demo carries no pages, no WebSocket and no runtime state of its own, so
+ * this context registers nothing. It exists because the framework mounts the
+ * {@see StateProtectedModeRuntime} singleton into the project context after configure()
+ * ({@see RtContext::mountFrameworkState()}), and a project whose createRuntime() returns
+ * null leaves Hilos::$rt === null - the row would have nowhere to live, and this demo
+ * exists precisely to show the freeze reaching every node.
+ *
+ * That mounted item is the local writer seam the daemon truth source registers against
  * (see DaemonManager::registerProtectedModeTruthSource()): the leader writes it by its
  * own decision and followers write it in reaction to peer QUIESCE/LIFT frames, so the
- * row reaches each node's workers over RT sync.
- *
- * The item is mounted flat (no view representation), mirroring how the chat demo mounts
- * BackupRuntime: the writer-owner reads it through Hilos::$rt->getStateItem() and writes
- * its fields plus sync(); no page reads it through a view, so View/Actions are not needed.
- * The context has no state collections, which the base context permits.
+ * row reaches each node's workers over RT sync. It is mounted flat (no view
+ * representation): the writer-owner reads it through Hilos::$rt->getStateItem() and
+ * writes its fields plus sync(), and no page reads it through a view.
  */
 final class ClusterRtContext extends RtContext
 {
     /**
-     * Registers the protected mode runtime singleton.
+     * Registers no project runtime state: this demo owns none.
      */
     public function configure(): void
     {
-        $this->_stateItems[StateProtectedModeRuntime::RT_ITEM] = StateProtectedModeRuntime::create();
     }
 }

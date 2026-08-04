@@ -81,14 +81,16 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->assertSame([], $restored->data->toArray());
     }
 
-    public function testDisableFrameRoundTripsAsEmptyPayload(): void
+    public function testDisableFrameRoundTripsCarryingOnlyItsType(): void
     {
+        // Unlike the worker->daemon disable frame, this one names no initiator agent: the leader
+        // authorizes the release by the node id of the link it arrived on.
         $frame = new PeerProtectedModeDisableDTO();
 
         $restored = PeerProtectedModeDisableDTO::fromJson($frame->toJson());
 
         $this->assertSame(PeerProtectedModeDisableDTO::MESSAGE_TYPE, $restored->getType());
-        $this->assertSame([], $restored->data->toArray());
+        $this->assertSame([PeerProtectedModeDisableDTO::TYPE => PeerProtectedModeDisableDTO::MESSAGE_TYPE], $restored->toArray());
     }
 
     public function testEnableFrameDispatchesThroughTheSharedWireParser(): void

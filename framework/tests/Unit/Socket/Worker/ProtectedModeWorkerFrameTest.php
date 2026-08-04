@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Socket\Worker;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
@@ -69,9 +70,25 @@ final class ProtectedModeWorkerFrameTest extends TestCase
 
     public function testDisableFrameRoundTripsThroughTheWire(): void
     {
-        $restored = WorkerProtectedModeDisableDTO::fromJson(new WorkerProtectedModeDisableDTO()->toJson());
+        $frame = new WorkerProtectedModeDisableDTO(new ProtectedModeDisableSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 2,
+        ));
+
+        $restored = WorkerProtectedModeDisableDTO::fromJson($frame->toJson());
 
         $this->assertSame(WorkerProtectedModeDisableDTO::MESSAGE_TYPE, $restored->getType());
+        $this->assertSame('backup', $restored->data->initiatorAgentType);
+        $this->assertSame(2, $restored->data->initiatorAgentIndex);
+    }
+
+    public function testDisableFrameRejectsNonObjectPayload(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        WorkerProtectedModeDisableDTO::fromArray([
+            WorkerProtectedModeDisableDTO::FIELD_PAYLOAD => 'not-an-object',
+        ]);
     }
 
     public function testFactoryDispatchesEnableFrame(): void
@@ -93,8 +110,15 @@ final class ProtectedModeWorkerFrameTest extends TestCase
 
     public function testFactoryDispatchesDisableFrame(): void
     {
-        $parsed = WorkerDTO::factoryWorkerDTO(new WorkerProtectedModeDisableDTO()->toJson());
+        $frame = new WorkerProtectedModeDisableDTO(new ProtectedModeDisableSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+        ));
+
+        $parsed = WorkerDTO::factoryWorkerDTO($frame->toJson());
 
         $this->assertInstanceOf(WorkerProtectedModeDisableDTO::class, $parsed);
+        $this->assertSame('backup', $parsed->data->initiatorAgentType);
+        $this->assertNull($parsed->data->initiatorAgentIndex);
     }
 }

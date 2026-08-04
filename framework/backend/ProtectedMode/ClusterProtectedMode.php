@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\Utils\Logger;
@@ -29,10 +30,15 @@ use Hilos\Utils\Logger;
  * - Follower side: {@see onQuiesce()} freezes this node and reports quiesced; {@see onLift()}
  *   releases it. The initiator's own node relays the leader's {@see onReady()} to its agent.
  *
- * A single-node cluster has no followers, so the leader activates the moment it enables. Watchdog
- * policy for a stalled initiator or follower (timeouts, escalation) is HIL-266, not here.
+ * A single-node cluster has no followers, so the leader activates the moment it enables. An
+ * installation with cluster mode off has no coordinator at all and freezes through
+ * {@see StandaloneProtectedMode} instead; the three interfaces here mark which half of this class
+ * each caller uses - the request path ({@see ProtectedModeSwitch}) is shared with that standalone
+ * sibling, the leadership hooks ({@see ProtectedModeLeadership}) and the peer frames
+ * ({@see ProtectedModeCoordinator}) exist only in a cluster. Watchdog policy for a stalled
+ * initiator or follower (timeouts, escalation) is HIL-266, not here.
  */
-final class ClusterProtectedMode implements ProtectedModeCoordinator
+final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedModeSwitch, ProtectedModeLeadership
 {
     /** @var string Id of the node this coordinator runs on, for log context */
     private string $selfNodeId;
@@ -128,8 +134,13 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
      * Mirrors {@see requestEnable()}: handled locally through {@see onDisable()} when this node
      * leads, otherwise sent to the current leader over the peer channel and dropped when no leader
      * is known.
+     *
+     * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release,
+     *                                             unused here: a cluster authorizes the release by
+     *                                             the initiator node id it recorded, which is what
+     *                                             the peer frame carries
      */
-    public function requestDisable(): void
+    public function requestDisable(ProtectedModeDisableSignalData $data): void
     {
         if ($this->isLeader) {
             $this->onDisable($this->selfNodeId);
@@ -153,6 +164,13 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
     {
         if (!$this->isLeader) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — node '{$this->selfNodeId}' is not the leader");
+            return;
+        }
+        // A nameless initiator is a single-node payload that reached a cluster: the leader would
+        // have no node to send ready to and no node id to authorize the later disable against,
+        // so the freeze is refused instead of entered and never lifted.
+        if ($data->initiatorNodeId === null) {
+            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — the request names no initiator node");
             return;
         }
         if ($this->activeFreeze !== null) {
@@ -293,12 +311,16 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator
         $this->active = true;
         $this->executor->enterActive();
 
-        if ($this->activeFreeze->initiatorNodeId === $this->selfNodeId) {
+        // A nameless initiator never gets past onEnable, so null cannot reach here; relaying
+        // locally is nonetheless the safe reading of it, because a ready sent to no node would
+        // leave the initiator waiting forever under a freeze nobody can lift.
+        $initiatorNodeId = $this->activeFreeze->initiatorNodeId;
+        if ($initiatorNodeId === null || $initiatorNodeId === $this->selfNodeId) {
             $this->executor->notifyInitiatorReady();
             return;
         }
 
-        $this->mesh->sendReady($this->activeFreeze->initiatorNodeId);
+        $this->mesh->sendReady($initiatorNodeId);
     }
 
     /**

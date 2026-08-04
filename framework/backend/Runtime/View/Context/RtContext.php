@@ -11,6 +11,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
@@ -81,6 +82,24 @@ abstract class RtContext
      * Called from facade init() after createRuntime().
      */
     abstract public function configure(): void;
+
+    /**
+     * Mounts the framework-owned runtime state every project gets for free.
+     *
+     * Called from facade init() right AFTER {@see self::configure()}: the framework goes
+     * last, so a project can neither forget the row nor shadow it with an alias of its
+     * own. The protected mode singleton is mounted here because a node freezing itself
+     * for a destructive operation is a data-integrity guarantee, not an opt-in project
+     * feature - every project that can run such an operation must be able to freeze.
+     *
+     * A project whose createRuntime() returns null has no context to mount into and
+     * therefore no protected mode; introducing a destructive operation there means
+     * introducing an RtContext first.
+     */
+    final public function mountFrameworkState(): void
+    {
+        $this->_stateItems[ProtectedModeRuntime::RT_ITEM] = ProtectedModeRuntime::create();
+    }
 
     /**
      * Set representation for state collection.

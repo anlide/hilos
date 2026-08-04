@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -20,9 +21,10 @@ use PHPUnit\Framework\TestCase;
  * The initiator agent runs in a worker and cannot emit a peer frame, so it queues a worker-drained
  * protected-mode signal that its own daemon later turns into a request frame. These tests pin the
  * agent-facing half: {@see AbstractAgent::requestProtectedModeEnable()} queues the enable signal with
- * this node's initiator identity, {@see AbstractAgent::requestProtectedModeDisable()} queues the empty
- * disable signal, and both are silent no-ops when cluster mode is off. The worker-to-daemon frame
- * emission lives on {@see \Hilos\Core\Daemon\WorkerManager} and is exercised end-to-end.
+ * this node's initiator identity, {@see AbstractAgent::requestProtectedModeDisable()} queues the
+ * disable signal naming the agent that asks, and both are queued whether or not the installation
+ * clusters - the agent asks for a freeze and the daemon decides which machinery answers. The
+ * worker-to-daemon frame emission lives on {@see WorkerManager} and is exercised end-to-end.
  */
 final class ProtectedModeAgentTriggerTest extends TestCase
 {
@@ -93,7 +95,7 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         $this->assertNull($signal->data->initiatorAgentIndex, 'A singleton initiator carries a null index');
     }
 
-    public function testDisableQueuesEmptyDisableSignal(): void
+    public function testDisableQueuesSignalNamingTheAgentThatAsks(): void
     {
         $this->enableCluster();
 
@@ -103,27 +105,40 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         $this->assertNotNull($signal, 'Disable queues one worker-drained signal');
         $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $signal->signalType->getType());
         $this->assertInstanceOf(ProtectedModeDisableSignalData::class, $signal->data);
+        $this->assertSame('restore-initiator', $signal->data->initiatorAgentType);
+        $this->assertSame(7, $signal->data->initiatorAgentIndex, 'Agent index is carried as an int');
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Exactly one signal is queued');
     }
 
-    public function testEnableIsSilentWhenClusterModeIsOff(): void
+    public function testEnableOffClusterQueuesTheRequestNamingNoNode(): void
     {
+        // The freeze is a node-local guarantee, not a cluster feature: a single node has agents to
+        // stop and connections to lock out just the same. It names no node id because it has none,
+        // and asking the disabled cluster for an identity would throw.
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
 
         new ProtectedModeTriggerTestAgent('7')->enable('restore', 'accept-key-3');
 
-        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A non-clustered node has no cluster to freeze');
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal, 'A single node freezes itself, so the request is queued');
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $signal->data);
+        $this->assertSame('restore', $signal->data->operation);
+        $this->assertSame('restore-initiator', $signal->data->initiatorAgentType);
+        $this->assertNull($signal->data->initiatorNodeId, 'Off-cluster there is no node to name');
     }
 
-    public function testDisableIsSilentWhenClusterModeIsOff(): void
+    public function testDisableOffClusterQueuesTheRelease(): void
     {
         Hilos::$env = new EnvAccessor();
         Hilos::$cluster = new ClusterContext();
 
         new ProtectedModeTriggerTestAgent('7')->disable();
 
-        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'A non-clustered node has nothing to release');
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal, 'A single node has its own freeze to release');
+        $this->assertInstanceOf(ProtectedModeDisableSignalData::class, $signal->data);
+        $this->assertSame('restore-initiator', $signal->data->initiatorAgentType);
     }
 }
 

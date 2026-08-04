@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -27,6 +28,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -295,12 +297,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * The initiator agent (a backup restore agent today, other destructive operations later) runs in
      * a worker and cannot reach the leader directly, so it asks its own master daemon to start the
      * two-phase freeze. This queues a worker-drained {@see SignalTypeConstants::PROTECTED_MODE_ENABLE}
-     * signal that {@see \Hilos\Core\Daemon\WorkerManager} turns into a worker-to-daemon frame; the
-     * daemon hands the payload to {@see \Hilos\ProtectedMode\ClusterProtectedMode::requestEnable()}.
-     * The initiator identity carried here (this agent's type and index, this node's id) is what the
-     * leader leaves running through the lockdown and later authorizes {@see requestProtectedModeDisable()}
-     * against, so it must name this node. No-op when cluster mode is off, where a cluster-wide freeze
-     * is meaningless.
+     * signal that {@see WorkerManager} turns into a worker-to-daemon frame; the daemon hands the
+     * payload to {@see ProtectedModeSwitch::requestEnable()}.
+     * The initiator identity carried here (this agent's type and index, and this node's id when
+     * there are nodes to name) is what the freeze leaves running through the lockdown and later
+     * authorizes {@see requestProtectedModeDisable()} against.
+     *
+     * The agent asks the same way whether or not the installation clusters: which machinery answers
+     * is a topology decision that lives in the daemon. A single node names no node id - it has none,
+     * and asking for one off-cluster throws.
      *
      * @param string $operation Operation name the freeze protects (for example a restore)
      * @param string $initiatorAcceptKey Accept key of the connection driving the operation
@@ -310,10 +315,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     protected function requestProtectedModeEnable(string $operation, string $initiatorAcceptKey): void
     {
         $cluster = Hilos::$cluster;
-        if ($cluster === null || !$cluster->isEnabled()) {
-            $this->logAgentWarning('Protected mode enable ignored — cluster mode is disabled');
-            return;
-        }
+        $clustered = $cluster !== null && $cluster->isEnabled();
 
         $index = $this->getIndex();
         Hilos::$sr->queueSignal(
@@ -325,7 +327,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
                 initiatorAcceptKey: $initiatorAcceptKey,
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
-                initiatorNodeId: $cluster->identity()->nodeId,
+                initiatorNodeId: $clustered ? $cluster->identity()->nodeId : null,
             ),
         );
     }
@@ -334,26 +336,24 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * Request the cluster to leave protected mode once the destructive operation is done.
      *
      * The mirror of {@see requestProtectedModeEnable()}: queues a worker-drained
-     * {@see SignalTypeConstants::PROTECTED_MODE_DISABLE} signal that {@see \Hilos\Core\Daemon\WorkerManager}
-     * sends to this node's daemon, which routes it to {@see \Hilos\ProtectedMode\ClusterProtectedMode::requestDisable()}.
-     * The leader lifts only a freeze this node initiated, so it must be called from the same initiator
-     * node that enabled it. No-op when cluster mode is off.
-     *
-     * @throws EnvException When the cluster-enabled flag value cannot be read
+     * {@see SignalTypeConstants::PROTECTED_MODE_DISABLE} signal that {@see WorkerManager} sends to
+     * this node's daemon, which routes it to {@see ProtectedModeSwitch::requestDisable()}.
+     * The agent names itself in the payload: a leader lifts only a freeze the requesting node
+     * initiated, and a single node - where every request comes from the same node - authorizes the
+     * release by this identity instead. Nothing here depends on the topology, so unlike
+     * {@see requestProtectedModeEnable()} this side reads no cluster state at all.
      */
     protected function requestProtectedModeDisable(): void
     {
-        $cluster = Hilos::$cluster;
-        if ($cluster === null || !$cluster->isEnabled()) {
-            $this->logAgentWarning('Protected mode disable ignored — cluster mode is disabled');
-            return;
-        }
-
+        $index = $this->getIndex();
         Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_DISABLE),
             signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_DISABLE),
-            signalData: new ProtectedModeDisableSignalData(),
+            signalData: new ProtectedModeDisableSignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+            ),
         );
     }
 
