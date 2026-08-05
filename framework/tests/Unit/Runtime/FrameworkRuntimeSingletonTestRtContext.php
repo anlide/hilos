@@ -13,7 +13,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * It stands for a project that mounts the backup runtime row and registers nothing else,
  * so what the tests read back is the framework's own representation and not a project's.
  * Protected mode is not mounted here on purpose: the framework mounts it itself through
- * {@see RtContext::mountFrameworkState()}, and the tests call that where they need it.
+ * {@see RtContext::mountFeatureRuntime()}, and the tests call that where they need it.
  */
 final class FrameworkRuntimeSingletonTestRtContext extends RtContext
 {

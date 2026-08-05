@@ -8,7 +8,16 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\CLI\CliApplication;
+use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
+use Hilos\Core\Feature\DeferredFeatureRequirementsValidator;
+use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
+use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
+use Hilos\Core\Feature\FeatureActivationValidator;
+use Hilos\Core\Feature\FeatureDefinition;
+use Hilos\Core\Feature\FeatureRegistry;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -36,6 +45,7 @@ use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
+use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -101,6 +111,21 @@ abstract class Hilos
      * @var class-string<NotificationTypeRegistry>
      */
     protected const string NOTIFICATION_TYPE_REGISTRY = NotificationTypeRegistry::class;
+
+    /**
+     * Framework features this project is built with.
+     *
+     * The single statement of activation: a feature is on because it is listed here, and off
+     * because it is not. The default is empty - a project takes nothing it did not ask for.
+     * What each declared feature obliges the project to register is checked at startup, so
+     * the list cannot drift away from the registries that carry it.
+     *
+     * This is not the deployment switch. FEATURES says the feature is built into the project;
+     * env values such as BACKUP_ENABLED say whether it is turned on at this installation.
+     *
+     * @var list<HilosFeature>
+     */
+    protected const array FEATURES = [];
 
     /** Page classes keyed by page name. */
     public const array PAGES = [];
@@ -261,6 +286,43 @@ abstract class Hilos
     public static function notificationTypeRegistryClass(): string
     {
         return static::appClass()::NOTIFICATION_TYPE_REGISTRY;
+    }
+
+    /**
+     * Returns the framework features this project declared.
+     *
+     * @return list<HilosFeature> Declared features, empty when the project takes none
+     */
+    public static function features(): array
+    {
+        return static::appClass()::FEATURES;
+    }
+
+    /**
+     * Tells whether the project declared a feature.
+     *
+     * The one way to ask whether a feature is on. Nothing else answers that question: an
+     * artifact that happens to exist - a mounted runtime row, a registered page, a non-null
+     * catalog constant - says only that the project registered it, which is exactly the
+     * inference this registry replaced.
+     *
+     * No framework gate reads it yet: the four that were to be converted turned out to belong
+     * to node freeze, which is unconditional and stays outside the registry (HIL-537 owns its
+     * activation contract). It is a static on the facade because the gates that will read it -
+     * the daemon manager, the socket client, the browser context - live where there is nothing
+     * to inject into, and it is answered from constants alone, so it also holds before any
+     * layer exists.
+     *
+     * Resolved through {@see appClass()} for the usual reason: a bare `Hilos::hasFeature()`
+     * call from framework code binds `static::` to this base class, which declares no
+     * features at all, and every such gate would answer no.
+     *
+     * @param HilosFeature $feature Feature to ask about
+     * @return bool True when the project declared the feature
+     */
+    public static function hasFeature(HilosFeature $feature): bool
+    {
+        return in_array($feature, static::appClass()::FEATURES, true);
     }
 
     /**
@@ -535,11 +597,15 @@ abstract class Hilos
      * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.
      *
      * @throws InvalidTopologyException When project topology constants are inconsistent
+     * @throws IncompleteFeatureActivationException When a declared feature is not fully activated
+     * @throws FeatureRuntimeOverwrittenException When the project re-mounts runtime state a feature owns
+     * @throws StateCollectionNotFoundException When a feature represents a collection it did not mount
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
     {
         static::validateTopology();
+        static::validateFeatureActivation();
 
         if (static::$env === null) {
             static::$env = static::createEnv();
@@ -569,8 +635,14 @@ abstract class Hilos
 
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
-            static::$rt?->configure();
-            static::$rt?->mountFrameworkState();
+            $definitions = static::featureDefinitions();
+            if (static::$rt === null) {
+                static::refuseRuntimeFeaturesWithoutContext($definitions);
+            } else {
+                static::$rt->mountFeatureRuntime($definitions);
+                static::$rt->configure();
+                static::$rt->assertFeatureRuntimeIntact();
+            }
         }
 
         if (static::$table === null) {
@@ -598,6 +670,94 @@ abstract class Hilos
     public static function validateTopology(): void
     {
         static::createTopologyValidator()->validate(static::class);
+    }
+
+    /**
+     * Returns the definition of every feature this project declared.
+     *
+     * @return list<FeatureDefinition> Definitions in declaration order
+     * @throws IncompleteFeatureActivationException When a declared feature has no definition
+     */
+    protected static function featureDefinitions(): array
+    {
+        $registry = static::createFeatureRegistry();
+
+        return array_map(
+            static fn(HilosFeature $feature): FeatureDefinition => $registry->definition($feature),
+            static::FEATURES,
+        );
+    }
+
+    /**
+     * Refuses a declaration that needs runtime state on a project that builds no runtime context.
+     *
+     * The check lives here rather than in the activation validator because the answer is not in
+     * the constants: whether there is a context at all is known only once createRuntime() has
+     * been asked. A feature that brings rows into a project with nowhere to put them is
+     * activated in name only, which is the state this whole registry exists to make impossible.
+     *
+     * @param list<FeatureDefinition> $definitions Definitions of the features the project declared
+     * @throws IncompleteFeatureActivationException When a declared feature mounts runtime state and there is no context
+     */
+    protected static function refuseRuntimeFeaturesWithoutContext(array $definitions): void
+    {
+        $errors = [];
+        foreach ($definitions as $definition) {
+            if ($definition->mountsRuntime()) {
+                $errors[] = 'HilosFeature::' . $definition->feature()->name
+                    . ' brings runtime state, but createRuntime() returned no context to mount it into';
+            }
+        }
+
+        if ($errors !== []) {
+            throw IncompleteFeatureActivationException::forErrors(static::class, $errors);
+        }
+    }
+
+    /**
+     * Validates that every declared framework feature is fully activated.
+     *
+     * Runs beside {@see validateTopology()} and for the same reason: a registry that disagrees
+     * with the declaration is a fault of the project's composition, and composition faults are
+     * cheapest to see at startup. Reads constants only, so it holds before any layer exists.
+     *
+     * @throws IncompleteFeatureActivationException When a declared feature is incomplete or an undeclared one is registered
+     */
+    public static function validateFeatureActivation(): void
+    {
+        static::createFeatureActivationValidator()->validate(static::class);
+    }
+
+    /**
+     * Validates the feature requirements that startup deliberately does not check.
+     *
+     * Not called from {@see init()} and not meant to be: migrations are applied as a separate
+     * step, so a process that starts before the migration run would fail on a table it is about
+     * to get, and the CLI manager and the runtime context are built later than the constants
+     * check or not at all. Each project's own unit test calls this instead - one place where the
+     * whole layout is knowable and nothing is running.
+     *
+     * The three arguments are exactly what the facade does not own: its migration directory, the
+     * CLI manager its entry point passes to {@see CliApplication}, and the runtime context class
+     * behind {@see createRuntime()}.
+     *
+     * @param string $migrationsPath Directory holding this project's schema migrations
+     * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
+     * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence source
+     * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
+     */
+    public static function validateDeferredFeatureRequirements(
+        string $migrationsPath,
+        string $cliManagerClass,
+        ?string $rtContextClass,
+    ): void {
+        static::createDeferredFeatureRequirementsValidator()->validate(
+            static::class,
+            $migrationsPath,
+            $cliManagerClass,
+            $rtContextClass,
+        );
     }
 
     /**
@@ -767,6 +927,39 @@ abstract class Hilos
     protected static function createTopologyValidator(): TopologyValidator
     {
         return new TopologyValidator();
+    }
+
+    /**
+     * Creates the registry of framework feature definitions.
+     *
+     * Override to hand the activation validator and the runtime context a synthetic set of
+     * features; the real six are the default.
+     *
+     * @return FeatureRegistry Feature definition registry
+     */
+    protected static function createFeatureRegistry(): FeatureRegistry
+    {
+        return new FeatureRegistry();
+    }
+
+    /**
+     * Creates the startup feature activation validator over this project's feature registry.
+     *
+     * @return FeatureActivationValidator Feature activation validator
+     */
+    protected static function createFeatureActivationValidator(): FeatureActivationValidator
+    {
+        return new FeatureActivationValidator(static::createFeatureRegistry());
+    }
+
+    /**
+     * Creates the deferred feature requirements validator over this project's feature registry.
+     *
+     * @return DeferredFeatureRequirementsValidator Deferred feature requirements validator
+     */
+    protected static function createDeferredFeatureRequirementsValidator(): DeferredFeatureRequirementsValidator
+    {
+        return new DeferredFeatureRequirementsValidator(static::createFeatureRegistry());
     }
 
     /**

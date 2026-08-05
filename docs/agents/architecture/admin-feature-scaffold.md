@@ -50,22 +50,28 @@ for a project to clone. Two contract shapes recur:
 
 The framework owns everything mechanical. Generate, in any order:
 
-1. A catalog provider class holding this project's setting keys and defaults
+1. Declare the feature: `HilosFeature::SETTINGS` in the project facade's
+   `FEATURES` ([../app-topology.md](../app-topology.md#feature-declaration)).
+   This is the on-switch, and it is what turns every step below into a checked
+   obligation rather than a checklist item somebody may skip — a declaration
+   without the page, the table binding or the catalog refuses to start, and the
+   `hilos_setting` migration is checked by the project's topology test.
+2. A catalog provider class holding this project's setting keys and defaults
    (project content). Bind it through the `SETTINGS_CATALOG` constant on the
    project `Hilos` facade; the framework reads it back via `Hilos::$setting->catalog()`.
-2. A subscription-owner page — `final class … extends Hilos\Pages\AbstractHilosSettingsPage`
+3. A subscription-owner page — `final class … extends Hilos\Pages\AbstractHilosSettingsPage`
    carrying only one `SUBSCRIPTION_AGENT_TYPE` — and register it in the project
    `PAGES`.
-3. Register the framework table in topology: `TableContext::settings =>
+4. Register the framework table in topology: `TableContext::settings =>
    Hilos\Tables\Settings\HilosSettingsTable::class`, returned from the project
    `createTable()`, and bind it to the page in `PAGE_TABLES`. Register it; never
    subclass or re-implement it.
-4. A `BrowserContext` returned from the project `createBrowser()` — an empty
+5. A `BrowserContext` returned from the project `createBrowser()` — an empty
    subclass is enough. The framework default is `null`, and without a browser
    context the settings page answers a subscription with nothing; the base
    context delivers the table's snapshot through the self-snapshot path
    ([admin-features.md](admin-features.md), *Browser delivery*).
-5. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
+6. Mount the SDK view: map `HilosPages.SETTINGS` to the framework view from
    `@hilos/{vue,react,angular}` `admin/settings/HilosSettingsPage`, through a thin
    project wrapper that binds the `HilosSettingsContext` (`{ scopes, actions }`
    from the project session + connection). The view, the row model, and the
@@ -82,26 +88,31 @@ The framework owns the table merge, the page subscribe + actions, the presence
 contract, and the base row. The project generates the data binding the contract
 requires, in dependency order (the table merges sources that must exist first):
 
-1. **DB user entity.** Generate the project's panel-operator entity triad and
+1. **Declaration.** `HilosFeature::HILOS_USERS` in the project facade's
+   `FEATURES` ([../app-topology.md](../app-topology.md#feature-declaration)).
+   Both pages, their table bindings and the users table become required at
+   startup; the presence source in step 3 is checked by the project's topology
+   test, since a runtime collection is not visible in the constants.
+2. **DB user entity.** Generate the project's panel-operator entity triad and
    migration. `id`, `admin`, `block` are the framework-fixed base fields the
    project persists; add project fields beside them. Register the collection on
    the project `DbContext`. *(Contract Gate: entity fields.)*
-2. **RT presence source.** Generate an RT connections collection that
+3. **RT presence source.** Generate an RT connections collection that
    `implements Hilos\Runtime\View\Collection\HilosPresenceSource`, returning a
    `HilosUserPresenceSummary` from `summaryForUser(?int)`. Register it on the
    project `RtContext`, returned from `createRuntime()`. *(Contract Gate: RT item
    shape.)* Presence comes from this project RT collection — never framework
    analytics, which is process-local and not user-keyed.
-3. **Table.** Generate a subclass of `AbstractHilosUsersTable` implementing the
+4. **Table.** Generate a subclass of `AbstractHilosUsersTable` implementing the
    five hooks (`usersSourceKey`, `presenceSourceKey`, `presenceSource`,
    `rowForUserId`, `resolveUserIdForPresence`) and a subclass of
    `AbstractHilosUserTableRow` that folds the base fields via `baseFields()` and
    adds the project columns. The merge dispatch is `final` in the base — do not
    re-implement it.
-4. **Page.** Generate thin concrete pages — `extends Hilos\Pages\Users\AbstractHilosUsersPage`
+5. **Page.** Generate thin concrete pages — `extends Hilos\Pages\Users\AbstractHilosUsersPage`
    / `AbstractHilosUserPage`; the subscribe and the action lifecycle stay
    framework-owned.
-5. **Topology + frontend.** Register the page(s) in `PAGES`, the table in
+6. **Topology + frontend.** Register the page(s) in `PAGES`, the table in
    `TABLES`, the binding in `PAGE_TABLES`. Mount the SDK views: map
    `HilosPages.USERS`/`USER` to the `@hilos/{vue,react,angular}` `admin/users/`
    views, passing the thin typed context — the frontend twin of the backend
@@ -118,7 +129,15 @@ configuration and binding — no engine, no action code. It is configure-only li
 settings, but the engine is a monopoly agent plus a CLI command, so activation
 also registers those. Generate, in any order:
 
-1. A backup catalog — `final class … implements
+1. Declare the feature: `HilosFeature::BACKUP` in the project facade's `FEATURES`
+   ([../app-topology.md](../app-topology.md#feature-declaration)). It is also
+   what brings the runtime index: the framework mounts `hilosBackupHistories`
+   with its own representation and `hilosBackupRuntime` for a project that
+   declares it, so the project writes no mount line at all — and is refused at
+   startup if it writes one anyway
+   ([../runtime/rt-context.md](../runtime/rt-context.md), *Feature-Owned Runtime
+   State*).
+2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
    `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default
    is `null` = subsystem off). It carries two content keys: the per-connection
@@ -129,7 +148,7 @@ also registers those. Generate, in any order:
    schema-seed then captures schema only, with a warning), and an optional
    schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
    framework default: one daily full backup at 03:00 on the agent mechanism).
-2. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
+3. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
    `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, the retention ladder
    (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
    in its own unit, at which that granularity starts applying, so a backup younger
@@ -159,46 +178,34 @@ also registers those. Generate, in any order:
    whichever node currently holds the monopoly agent. Copying an archive off the
    machine is not implemented; a deployment that needs to survive losing the box
    must arrange that outside the framework for now.
-3. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
+4. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
    `backup:run` child shells out to it (Debian: `default-mysql-client`). Missing,
    it is not a config error but a failed run: the dump exits non-zero and the
    backup is recorded as an error.
-4. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
+5. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),
    *Worker pool*) — and expose the `backup:run` child command
    (`BackupConstants::RUN_COMMAND`) in the project CLI command registry. Both are
    framework-owned; the project only lists them.
-5. Register the framework runtime index on the project `RtContext`: the
-   `BackupHistories` state collection (`BackupHistory::RT_COLLECTION`) and the
-   `BackupRuntime` state item (`BackupRuntime::RT_ITEM`). Files are truth; this RT
-   index is a rebuildable projection the agent rescans from `BACKUP_DIR` on start,
-   so the project persists no backup DB table. **Then bind the framework
-   representation to it** — the state registration alone is a half-activation:
-
-   ```php
-   $this->setRepresent(
-       StateBackupHistory::RT_COLLECTION,
-       BackupHistories::class,          // Hilos\Runtime\View\Collection
-       BackupHistoriesActions::class,   // Hilos\Runtime\View\Actions\Collection
-       BackupHistoryActions::class,     // Hilos\Runtime\View\Actions\Item
-   );
-   ```
-
-   The backup agent is monopolistic and the backup page is served by whichever
-   worker owns the browser's connection — a different process. Only the actions
-   emit `RT_SYNC_*`, so without this line the index exists in the agent's worker
-   alone and the page shows an empty table forever
+6. Nothing for the runtime index — step 1 already brought it. Files are truth;
+   the index is a rebuildable projection the agent rescans from `BACKUP_DIR` on
+   start, so the project persists no backup DB table either. It is mounted *with*
+   the framework representation because the halves cannot be separated: the agent
+   is monopolistic and the page is served by whichever worker owns the browser's
+   connection, and only the actions emit `RT_SYNC_*`, so a state collection
+   mounted without `setRepresent()` lives in the agent's worker alone and the page
+   shows an empty table forever
    ([../runtime/rt-context.md](../runtime/rt-context.md), *A collection written
-   outside its actions is worker-local*). All four classes are framework-owned;
-   the project writes only this call.
-6. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
+   outside its actions is worker-local*). That pairing used to be the project's to
+   get right; it is the framework's now.
+7. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
    the project `TableContext`, add a thin subscription-owner page — `final class …
    extends Hilos\Pages\Backup\AbstractHilosBackupPage` carrying only a
    `SUBSCRIPTION_AGENT_TYPE` — to `PAGES`, and bind the table to the page in
    `PAGE_TABLES`. Register the framework table; never subclass it. Add the page's
    nav entry to the project page catalog if it should appear in the admin shell.
-7. Mount the SDK view: map `HilosPages.BACKUP` to the framework view from
+8. Mount the SDK view: map `HilosPages.BACKUP` to the framework view from
    `@hilos/{vue,react,angular}` `admin/backup/HilosBackupPage`, through a thin
    project context (`HilosBackupsContext` = `{ connection, scopes, actions }` from
    the project bootstrap). The table, the row view-model, the live-row behavior,

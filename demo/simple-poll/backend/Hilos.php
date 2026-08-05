@@ -31,6 +31,7 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -60,6 +61,12 @@ final class Hilos extends \Hilos\Hilos
     protected const string ENV_CATALOG = PollEnvCatalog::class;
 
     protected const string SETTINGS_CATALOG = PollSettingsCatalog::class;
+
+    protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::NOTIFICATIONS,
+    ];
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,

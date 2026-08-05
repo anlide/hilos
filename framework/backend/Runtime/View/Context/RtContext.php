@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Context;
 
 use Closure;
+use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
+use Hilos\Core\Feature\FeatureDefinition;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
@@ -18,6 +22,8 @@ use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
+use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
@@ -29,6 +35,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * Manages state collections and their runtime view wrappers.
  * Runtime data is transient - it lives only in memory for the process lifetime.
  *
+ * @property-read BackupHistories $hilosBackupHistories Stored-backup index, mounted for a project that declares HilosFeature::BACKUP
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
  */
@@ -64,6 +71,23 @@ abstract class RtContext
      * }>
      */
     protected array $_rtItems = [];
+
+    /**
+     * Framework-owned state collections, keyed by name, with the feature that mounted each.
+     *
+     * @var array<string, array{feature: ?HilosFeature, state: RtStates}>
+     */
+    private array $_featureCollections = [];
+
+    /**
+     * Framework-owned state rows, keyed by alias, with the feature that mounted each.
+     *
+     * @var array<string, array{feature: ?HilosFeature, state: RtState}>
+     */
+    private array $_featureItems = [];
+
+    /** @var ?HilosFeature Feature whose mount() is running, null while the framework mounts its own */
+    private ?HilosFeature $_mountingFeature = null;
 
     /**
      * Creates runtime context.
@@ -117,21 +141,136 @@ abstract class RtContext
     abstract public function configure(): void;
 
     /**
-     * Mounts the framework-owned runtime state every project gets for free.
+     * Mounts the runtime state the framework owns: the always-on rows and the declared features.
      *
-     * Called from facade init() right AFTER {@see self::configure()}: the framework goes
-     * last, so a project can neither forget the row nor shadow it with an alias of its
-     * own. The protected mode singleton is mounted here because a node freezing itself
-     * for a destructive operation is a data-integrity guarantee, not an opt-in project
-     * feature - every project that can run such an operation must be able to freeze.
+     * Called from facade init() right BEFORE {@see self::configure()}, so the project builds its
+     * own state on top of a context that already carries what it declared. Mounting first and
+     * checking afterwards ({@see self::assertFeatureRuntimeIntact()}) is what makes the
+     * declaration the only switch: a project cannot forget a row of a feature it declared, and
+     * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * A project whose createRuntime() returns null has no context to mount into and
-     * therefore no protected mode; introducing a destructive operation there means
-     * introducing an RtContext first.
+     * The protected mode singleton is mounted unconditionally and before any feature, because a
+     * node freezing itself for a destructive operation is a data-integrity guarantee rather than
+     * an opt-in surface: every project that can run such an operation must be able to freeze.
+     *
+     * A project whose createRuntime() returns null has no context to mount into; declaring a
+     * feature that brings runtime state there is refused by the facade instead, since there is
+     * nothing here to refuse it with.
+     *
+     * @param list<FeatureDefinition> $definitions Definitions of the features the project declared
+     * @throws StateCollectionNotFoundException When a definition represents a collection it did not mount
      */
-    final public function mountFrameworkState(): void
+    final public function mountFeatureRuntime(array $definitions): void
     {
-        $this->_stateItems[StateProtectedModeRuntime::RT_ITEM] = StateProtectedModeRuntime::create();
+        $this->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
+
+        foreach ($definitions as $definition) {
+            $this->_mountingFeature = $definition->feature();
+            $definition->mount($this);
+        }
+
+        $this->_mountingFeature = null;
+    }
+
+    /**
+     * Fails when the project replaced runtime state the framework mounted for it.
+     *
+     * Called from facade init() right after {@see self::configure()}. Identity is what is
+     * compared, not presence: a project that re-mounts a feature's key gets a second, empty
+     * collection under the same name, and every reader that already holds the first one - the
+     * agent that fills it, the page that syncs it - keeps writing into state nobody reads.
+     * That failure is invisible at runtime, so it is turned into a refusal to start.
+     *
+     * @throws FeatureRuntimeOverwrittenException When a framework-owned runtime key was replaced or dropped
+     */
+    final public function assertFeatureRuntimeIntact(): void
+    {
+        $errors = [];
+        foreach ($this->_featureCollections as $name => $mounted) {
+            if (($this->_stateCollections[$name] ?? null) !== $mounted['state']) {
+                $errors[] = "state collection {$name} is " . $this->ownerLabel($mounted['feature']);
+            }
+        }
+
+        foreach ($this->_featureItems as $alias => $mounted) {
+            if (($this->_stateItems[$alias] ?? null) !== $mounted['state']) {
+                $errors[] = "state item {$alias} is " . $this->ownerLabel($mounted['feature']);
+            }
+        }
+
+        if ($errors !== []) {
+            throw FeatureRuntimeOverwrittenException::forErrors(static::class, $errors);
+        }
+    }
+
+    /**
+     * Mounts a framework-owned state collection for a declared feature.
+     *
+     * The only caller is {@see FeatureDefinition::mount()}: a feature owns its rows, and the
+     * context owns the maps they live in, so the definition hands the collection over instead
+     * of reaching into the context. A project never calls this - it registers its own state in
+     * {@see self::configure()}, and a key that belongs to a feature is refused there.
+     *
+     * @param string $name Collection name owned by the feature
+     * @param RtStates $collection State collection instance to mount
+     */
+    final public function mountFeatureCollection(string $name, RtStates $collection): void
+    {
+        $this->_stateCollections[$name] = $collection;
+        $this->_featureCollections[$name] = ['feature' => $this->_mountingFeature, 'state' => $collection];
+    }
+
+    /**
+     * Mounts a framework-owned singleton state row for a declared feature.
+     *
+     * The view representation of framework singletons is declared once in
+     * {@see self::representFrameworkItems()} and does not depend on the mount, so a feature
+     * only supplies the backing row; an unmounted row still resolves to null for its readers.
+     *
+     * @param string $name Item alias owned by the feature
+     * @param RtState $item State row instance to mount
+     */
+    final public function mountFeatureItem(string $name, RtState $item): void
+    {
+        $this->_stateItems[$name] = $item;
+        $this->_featureItems[$name] = ['feature' => $this->_mountingFeature, 'state' => $item];
+    }
+
+    /**
+     * Names who owns a framework-mounted runtime key, and what to do about it.
+     *
+     * @param ?HilosFeature $feature Feature that mounted the key, or null when the framework did
+     * @return string Owner sentence for the overwrite error
+     */
+    private function ownerLabel(?HilosFeature $feature): string
+    {
+        $owner = $feature === null
+            ? 'mounted by the framework for every project'
+            : 'mounted by the framework for HilosFeature::' . $feature->name . ' declared in ' . Hilos::appClass() . '::FEATURES';
+
+        return $owner . '; remove the line that mounts it from ' . static::class . '::configure()';
+    }
+
+    /**
+     * Returns the mounted runtime collection that reports user presence, when there is one.
+     *
+     * At runtime the framework never asks this: the users table is bound to its presence source
+     * by name, and the project's table says which name. The question with no name in it belongs
+     * to the activation check - HilosFeature::HILOS_USERS requires a presence source, and the
+     * only way to ask whether the project has one at all is to ask the context, since the key it
+     * lives under is the project's own choice.
+     *
+     * @return ?HilosPresenceSource First represented collection reporting presence, or null when none does
+     */
+    final public function presenceSource(): ?HilosPresenceSource
+    {
+        foreach ($this->_rtCollections as $collection) {
+            if ($collection instanceof HilosPresenceSource) {
+                return $collection;
+            }
+        }
+
+        return null;
     }
 
     /**

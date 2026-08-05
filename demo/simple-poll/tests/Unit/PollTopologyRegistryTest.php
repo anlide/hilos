@@ -17,11 +17,13 @@ use Demo\SimplePoll\Pages\Hilos\SettingsPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UserPage;
 use Demo\SimplePoll\Pages\Hilos\Users\UsersPage;
 use Demo\SimplePoll\Pages\MainPage;
+use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
 use Demo\SimplePoll\Tables\HilosUser\HilosUsersTable;
 use Demo\SimplePoll\Tables\PollTableContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\CLI\CliManager;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use PHPUnit\Framework\TestCase;
 
@@ -126,5 +128,29 @@ final class PollTopologyRegistryTest extends TestCase
             UserPage::PAGE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE],
         );
+    }
+
+    public function testDeclaredFeaturesAreFullyActivated(): void
+    {
+        // The startup activation check this project boots under: every declared feature has
+        // its pages, agents, tables, bindings and catalogs, and nothing framework-owned is
+        // registered without the declaration that switches it on.
+        Hilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDeclaredFeaturesHaveWhatStartupCannotCheck(): void
+    {
+        // The other half of the activation check, the half no starting process can make: the SQL
+        // tables a declared feature reads live in migrations applied as a separate step, and the
+        // presence source behind the users list is a runtime collection, not a constant.
+        Hilos::validateDeferredFeatureRequirements(
+            __DIR__ . '/../../backend/Database/Migration/Schema',
+            CliManager::class,
+            PollRtContext::class,
+        );
+
+        $this->addToAssertionCount(1);
     }
 }

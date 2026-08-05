@@ -117,6 +117,23 @@ class CliManager
     }
 
     /**
+     * Tells whether a command name is registered, framework or project.
+     *
+     * Asked by the feature activation check rather than by the routing above it, which resolves
+     * a name through {@see self::$commands} directly: a feature driven by a CLI command
+     * (backup:run is spawned by the backup supervisor) is only half-activated when the project
+     * never registered it, and that gap otherwise surfaces as a child process exiting with
+     * "unknown command" hours later.
+     *
+     * @param string $name Command name to look for
+     * @return bool True when a command is registered under that name
+     */
+    public function hasCommand(string $name): bool
+    {
+        return isset($this->commands[$name]);
+    }
+
+    /**
      * Registers a command under its own name.
      *
      * @param CommandInterface $command Command to register

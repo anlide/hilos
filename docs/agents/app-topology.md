@@ -80,6 +80,51 @@ registry for missing classes, mismatched keys, duplicate signal ownership,
 unknown page/table references, missing page subscription owners, and page-local
 table bindings that should live in `Hilos::PAGE_TABLES`.
 
+## Feature Declaration
+
+Framework features — `settings`, `hilos_users`, `backup`, `logs`,
+`notifications`, `notification_delivery` — are switched on in one place:
+
+```php
+protected const array FEATURES = [
+    HilosFeature::SETTINGS,
+    HilosFeature::HILOS_USERS,
+    HilosFeature::NOTIFICATIONS,
+];
+```
+
+A feature is on because it is listed there and off because it is not. Nothing
+else is an on-switch: registering the page, mounting the runtime row, or adding
+the migration does not activate anything by itself, and the framework never
+infers activation from an artifact it happens to find. Ask with
+`Hilos::hasFeature(HilosFeature::BACKUP)`, never by testing whether some
+registry entry or runtime row exists.
+
+`FEATURES` is not a deployment switch. It says the feature is built into this
+project; whether it runs at an installation stays with env and settings.
+
+What each declared feature obliges the project to register lives with the
+feature, in `Core/Feature/Definition/*Feature.php`, and is checked rather than
+remembered:
+
+- `Hilos::validateFeatureActivation()` runs in `init()` beside
+  `validateTopology()` and reads constants only. It refuses to start when a
+  declared feature is missing its page, agent pair, table, page-table binding,
+  catalog constant or a feature it depends on — and equally when such an
+  artifact is registered while the feature is *not* declared, which is the same
+  half-flipped switch seen from the other side.
+- `Hilos::validateDeferredFeatureRequirements($migrationsPath,
+  $cliManagerClass, $rtContextClass)` covers what startup deliberately cannot
+  see: the SQL tables the feature reads (migrations are applied as a separate
+  step, so booting must not depend on them), the CLI commands it is driven by,
+  and the presence source behind the users list. Each project calls it from its
+  own topology unit test, passing the three layout facts the facade does not
+  own.
+
+Runtime state that belongs to a feature is mounted by the framework from the
+declaration; a project must not mount it in `configure()`. See
+[runtime/rt-context.md](runtime/rt-context.md).
+
 ## Workflow
 
 1. For a new page, add the page class to `Hilos::PAGES` using

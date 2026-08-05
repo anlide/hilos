@@ -42,8 +42,8 @@ final class RtContextFrameworkItemAliasTest extends TestCase
     public function testFrameworkMountedProtectedModeIsSeenThroughItsViewItem(): void
     {
         $context = new EmptyTestRtContext();
+        $context->mountFeatureRuntime([]);
         $context->configure();
-        $context->mountFrameworkState();
 
         $this->assertInstanceOf(ProtectedModeRuntime::class, $context->hilosProtectedModeRuntime);
     }
@@ -68,8 +68,8 @@ final class RtContextFrameworkItemAliasTest extends TestCase
     public function testTheAliasHandsOutTheActionsOfTheProtectedModeSingleton(): void
     {
         $context = new EmptyTestRtContext();
+        $context->mountFeatureRuntime([]);
         $context->configure();
-        $context->mountFrameworkState();
 
         $view = $context->hilosProtectedModeRuntime;
 

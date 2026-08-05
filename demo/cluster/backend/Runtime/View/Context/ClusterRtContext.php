@@ -12,8 +12,8 @@ use Hilos\Runtime\View\Context\RtContext;
  *
  * The cluster demo carries no pages, no WebSocket and no runtime state of its own, so
  * this context registers nothing. It exists because the framework mounts the
- * {@see StateProtectedModeRuntime} singleton into the project context after configure()
- * ({@see RtContext::mountFrameworkState()}), and a project whose createRuntime() returns
+ * {@see StateProtectedModeRuntime} singleton into the project context before configure()
+ * ({@see RtContext::mountFeatureRuntime()}), and a project whose createRuntime() returns
  * null leaves Hilos::$rt === null - the row would have nowhere to live, and this demo
  * exists precisely to show the freeze reaching every node.
  *

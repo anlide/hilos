@@ -147,6 +147,28 @@ only whether the backing row is mounted. Read them as literal properties —
 is not mounted resolves to `null`, which is what makes an unused subsystem a
 quiet no-op instead of an exception.
 
+### Feature-Owned Runtime State
+
+A project never mounts runtime state that belongs to a framework feature. The
+framework mounts it from `Hilos::FEATURES` (see
+[app-topology.md](../app-topology.md)): `mountFeatureRuntime()` runs each
+declared feature's `mount()` right before the project's `configure()`, and
+`assertFeatureRuntimeIntact()` right after it refuses a project that mounted the
+same key itself. `hilosBackupHistories` — the backup index, with the framework's
+own `setRepresent()` — and `hilosBackupRuntime` arrive this way for any project
+declaring `HilosFeature::BACKUP`.
+
+Identity is what the check compares, not presence: re-mounting a feature's key
+in `configure()` leaves a second, empty collection under the same name, into
+which the agent writes while every reader still holds the first one. That is
+invisible at runtime, so it is turned into a refusal to start naming the feature
+and the line to delete.
+
+`hilosProtectedModeRuntime` is the exception and is mounted for every project,
+declared or not: freezing a node before a destructive operation is a
+data-integrity guarantee, not an opt-in surface. A `null` there means "this
+process has no runtime context", never "the feature is off".
+
 ## Backing-State Boundary
 
 Direct backing-state access is a low-level data-layer tool. Calls to

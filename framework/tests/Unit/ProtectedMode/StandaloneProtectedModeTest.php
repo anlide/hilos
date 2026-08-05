@@ -117,7 +117,7 @@ final class StandaloneProtectedModeTest extends TestCase
     private function mount(): void
     {
         Hilos::$rt = new StandaloneProtectedModeTestRtContext();
-        Hilos::$rt->mountFrameworkState();
+        Hilos::$rt->mountFeatureRuntime([]);
     }
 
     /**

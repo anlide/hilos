@@ -1,8 +1,9 @@
 -- Activates the framework hilos_notification table (HIL-505) for demo/simple-poll.
 -- Copied from framework/backend/Database/Migration/Stub/create_hilos_notification.sql;
--- backs the shell bell, which sends notification_sync on every connect. Only this
--- table is activated here: the demo has no delivery channels and no Communications
--- pages, so hilos_notification_delivery/_preference would stay empty.
+-- backs the shell bell, which sends notification_sync on every connect. The per-user
+-- preference table rides along in 005 - the NOTIFICATIONS feature owns both. Only
+-- hilos_notification_delivery stays out: the demo has no delivery channels and no
+-- Communications pages, so it would stay empty.
 
 CREATE TABLE `hilos_notification` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

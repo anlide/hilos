@@ -40,6 +40,9 @@ schedule), the backup env values, and the registration/binding; see the backup
 recipe in [admin-feature-scaffold.md](admin-feature-scaffold.md).
 The project:
 
+- declares the feature in `Hilos::FEATURES` — the single on-switch, and what the
+  activation check reads; see
+  [app-topology.md](../app-topology.md#feature-declaration);
 - declares the content — a catalog (settings), or extra fields on the base
   entity (hilos-users), or the collection it binds;
 - sets one `SUBSCRIPTION_AGENT_TYPE`;

@@ -137,6 +137,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
@@ -194,6 +195,15 @@ final class Hilos extends \Hilos\Hilos
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
+
+    protected const array FEATURES = [
+        HilosFeature::SETTINGS,
+        HilosFeature::HILOS_USERS,
+        HilosFeature::BACKUP,
+        HilosFeature::LOGS,
+        HilosFeature::NOTIFICATIONS,
+        HilosFeature::NOTIFICATION_DELIVERY,
+    ];
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,

@@ -17,7 +17,9 @@ use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
+use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
@@ -618,6 +620,31 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (Hilos::TABLES as $table => $tableClass) {
             $this->assertInstanceOf($tableClass, $context->get($table));
         }
+    }
+
+    public function testDeclaredFeaturesAreFullyActivated(): void
+    {
+        // The startup activation check this project boots under: every declared feature has
+        // its pages, agents, tables, bindings and catalogs, and nothing framework-owned is
+        // registered without the declaration that switches it on.
+        Hilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testDeclaredFeaturesHaveWhatStartupCannotCheck(): void
+    {
+        // The other half of the activation check, the half no starting process can make: the SQL
+        // tables a declared feature reads live in migrations applied as a separate step, the
+        // backup:run child is a CLI registration, and the presence source behind the users list
+        // is a runtime collection - none of the three is a constant.
+        Hilos::validateDeferredFeatureRequirements(
+            __DIR__ . '/../../backend/Database/Migration/Schema',
+            ChatCliManager::class,
+            ChatRtContext::class,
+        );
+
+        $this->addToAssertionCount(1);
     }
 
     /**
