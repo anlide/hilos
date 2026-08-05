@@ -130,6 +130,23 @@ connection" or a documented singleton runtime row. Do not use them to hide
 arbitrary lookups, filters, or convenience predicates; those belong on the
 owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 
+### Framework-Owned Singleton Aliases
+
+Two aliases exist on every `RtContext` without any project registration:
+
+| Alias | View item | Backing state |
+|---|---|---|
+| `hilosBackupRuntime` | `Runtime/View/Item/BackupRuntime` | `Runtime/State/Item/BackupRuntime` |
+| `hilosProtectedModeRuntime` | `Runtime/View/Item/ProtectedModeRuntime` | `Runtime/State/Item/ProtectedModeRuntime` |
+
+The framework declares their representation in the base `RtContext` constructor,
+because it owns both rows and every caller that reads them; the project decides
+only whether the backing row is mounted. Read them as literal properties —
+`Hilos::$rt?->hilosBackupRuntime?->isRunning($backupId) ?? false` — so the
+`@property-read` declarations on `RtContext` type the result. An alias whose row
+is not mounted resolves to `null`, which is what makes an unused subsystem a
+quiet no-op instead of an exception.
+
 ## Backing-State Boundary
 
 Direct backing-state access is a low-level data-layer tool. Calls to

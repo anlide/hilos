@@ -54,7 +54,6 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Throwable;
 
 /**
@@ -1904,9 +1903,7 @@ abstract class BrowserContext
      */
     private function protectedModeLocksOut(string $acceptKey): bool
     {
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
-
-        return $state instanceof ProtectedModeRuntime && $state->locksOut($acceptKey);
+        return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey) ?? false;
     }
 
     /**

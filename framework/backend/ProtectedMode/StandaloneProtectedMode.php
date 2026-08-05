@@ -8,7 +8,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
 /**
@@ -60,7 +60,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             Logger::warning("Protected mode: dropping enable — a '{$this->activeFreeze->operation}' freeze is already in flight");
             return;
         }
-        if ($this->runtimeState() === null) {
+        if ($this->runtimeView() === null) {
             Logger::error(
                 "Protected mode: cannot enter for '{$data->operation}' requested by agent "
                 . "'{$data->initiatorAgentType}' — this project mounts no protected mode runtime state"
@@ -92,11 +92,11 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             return;
         }
 
-        $state = $this->runtimeState();
+        $view = $this->runtimeView();
         if (
-            $state === null
-            || $state->initiatorAgentType !== $data->initiatorAgentType
-            || $state->initiatorAgentIndex !== $data->initiatorAgentIndex
+            $view === null
+            || $view->initiatorAgentType !== $data->initiatorAgentType
+            || $view->initiatorAgentIndex !== $data->initiatorAgentIndex
         ) {
             Logger::warning("Protected mode: dropping disable from agent '{$data->initiatorAgentType}' — the freeze was initiated by another agent");
             return;
@@ -114,12 +114,10 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * questions of the same row: the executor asks where to write, this asks whether entering the
      * mode is possible at all and who the recorded initiator is.
      *
-     * @return ?ProtectedModeRuntime Runtime singleton, or null when runtime state is unavailable
+     * @return ?ProtectedModeRuntime Runtime singleton view, or null when runtime state is unavailable
      */
-    private function runtimeState(): ?ProtectedModeRuntime
+    private function runtimeView(): ?ProtectedModeRuntime
     {
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
-
-        return $state instanceof ProtectedModeRuntime ? $state : null;
+        return Hilos::$rt?->hilosProtectedModeRuntime;
     }
 }

@@ -15,7 +15,6 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
@@ -462,9 +461,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private function protectedModeLocksOut(string $acceptKey): bool
     {
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
-
-        return $state instanceof ProtectedModeRuntime && $state->locksOut($acceptKey);
+        return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey) ?? false;
     }
 
     /**

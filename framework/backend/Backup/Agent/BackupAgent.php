@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Backup\Agent;
 
 use DateTimeImmutable;
-use DateTimeInterface;
 use DateTimeZone;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
@@ -38,8 +37,9 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
-use Hilos\Runtime\State\Item\BackupRuntime;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories as BackupHistoriesView;
+use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
@@ -169,7 +169,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->registerRtTruthSource(BackupHistory::RT_COLLECTION);
-        $this->registerRtTruthSource(BackupRuntime::RT_ITEM);
+        $this->registerRtTruthSource(StateBackupRuntime::RT_ITEM);
 
         $this->refreshHistory();
 
@@ -978,16 +978,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function markRuntimeRunning(string $id, BackupScope $scope): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
-            return;
-        }
-
-        $state->running = true;
-        $state->currentBackupId = $id;
-        $state->scope = $scope->value;
-        $state->startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
-        $state->sync();
+        $this->runtimeView()?->actions->markRunning($id, $scope);
     }
 
     /**
@@ -995,28 +986,32 @@ final class BackupAgent extends AbstractAgent
      */
     private function clearRuntime(): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
-            return;
-        }
-
-        $state->running = false;
-        $state->currentBackupId = null;
-        $state->scope = null;
-        $state->startedAt = null;
-        $state->sync();
+        $this->runtimeView()?->actions->clearRunning();
     }
 
     /**
-     * Resolves the backup runtime singleton, or null when runtime state is unavailable.
+     * Resolves the backup runtime singleton, or null when the project mounted none.
      *
-     * @return ?BackupRuntime Runtime singleton or null
+     * A running backup agent with no runtime row is a forgotten activation step rather
+     * than a subsystem switched off — the agent only exists because the project asked for
+     * backups — so the miss is logged instead of passing silently.
+     *
+     * @return ?BackupRuntime Runtime singleton view, or null when it is not mounted
      */
-    private function runtimeState(): ?BackupRuntime
+    private function runtimeView(): ?BackupRuntime
     {
-        $state = Hilos::$rt?->getStateItem(BackupRuntime::RT_ITEM);
+        $view = Hilos::$rt?->hilosBackupRuntime;
+        if ($view instanceof BackupRuntime) {
+            return $view;
+        }
 
-        return $state instanceof BackupRuntime ? $state : null;
+        $this->logAgentError(
+            'Backup runtime singleton is not mounted: register it with $this->_stateItems['
+            . StateBackupRuntime::RT_ITEM
+            . '] = BackupRuntime::create() in the project RtContext::configure()',
+        );
+
+        return null;
     }
 
     /**

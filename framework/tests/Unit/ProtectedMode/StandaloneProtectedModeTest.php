@@ -11,8 +11,9 @@ use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -124,21 +125,31 @@ final class StandaloneProtectedModeTest extends TestCase
      *
      * The release is authorized against the row rather than against the machine's own memory, so
      * with a fake executor the test has to put there what {@see DaemonProtectedModeExecutor::enterActivating()}
-     * would have written.
+     * would have written. It writes through the same item actions the real executor uses, which is
+     * why the daemon truth source is registered for the length of the write and dropped after: a
+     * test that wrote the row any other way would stop proving the release path reads what the
+     * executor actually leaves behind.
      *
      * @param string $agentType Initiator agent type to record
      * @param ?int $agentIndex Initiator agent index to record
      */
     private function recordInitiatorOnTheRuntimeRow(string $agentType, ?int $agentIndex): void
     {
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
-        if (!$state instanceof ProtectedModeRuntime) {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
             $this->fail('The protected mode runtime row is not mounted.');
         }
 
-        $state->phase = ProtectedModeRuntime::PHASE_ACTIVE;
-        $state->initiatorAgentType = $agentType;
-        $state->initiatorAgentIndex = $agentIndex;
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        try {
+            $view->actions->enterActivating(
+                new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null),
+                null,
+            );
+            $view->actions->enterActive();
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
+        }
     }
 
     /**

@@ -2,13 +2,6 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-RT-STATE-REACH framework/backend/Backup/Agent/BackupAgent.php 5 # HIL-507
-RT-STATE-REACH framework/backend/Core/Browser/Context/BrowserContext.php 1 # HIL-508
-RT-STATE-REACH framework/backend/Core/Daemon/DaemonManager.php 1 # HIL-508
-RT-STATE-REACH framework/backend/Pages/Backup/AbstractHilosBackupPage.php 2 # HIL-507
-RT-STATE-REACH framework/backend/ProtectedMode/DaemonProtectedModeExecutor.php 1 # HIL-508
-RT-STATE-REACH framework/backend/ProtectedMode/StandaloneProtectedMode.php 1 # HIL-508
-RT-STATE-REACH framework/backend/Socket/Client/WebSocketClient.php 1 # HIL-508
-RT-STATE-REACH framework/backend/Tables/Backup/HilosBackupHistoryTable.php 2 # HIL-507
-RT-STATE-REACH framework/tests/Unit/ProtectedMode/ProtectedModeRuntimeMountTest.php 1 # HIL-508
-RT-STATE-REACH framework/tests/Unit/ProtectedMode/StandaloneProtectedModeTest.php 1 # HIL-508
+RT-STATE-REACH framework/backend/Backup/Agent/BackupAgent.php 4 # HIL-507
+RT-STATE-REACH framework/backend/Pages/Backup/AbstractHilosBackupPage.php 1 # HIL-507
+RT-STATE-REACH framework/backend/Tables/Backup/HilosBackupHistoryTable.php 1 # HIL-507

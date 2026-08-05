@@ -6,7 +6,9 @@ namespace Hilos\ProtectedMode;
 
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
 /**
@@ -17,8 +19,8 @@ use Hilos\Utils\Logger;
  * registered in HIL-267 slice 2a — so every worker on this node sees the current phase and the
  * master's welcome path and the browser page guards can lock connections out. Both the leader
  * (freezing itself) and every follower own one, and both release the same way. A node that never
- * mounted the runtime item (getStateItem returns null) writes nothing, so the executor is inert
- * there rather than failing.
+ * mounted the runtime item writes nothing and says so in the log, so the executor is inert there
+ * rather than failing.
  *
  * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
  * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
@@ -31,23 +33,17 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     /**
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key let through when the leader freezes itself; null on a follower
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
+        $view = $this->runtimeView();
+        if ($view === null) {
             return;
         }
 
-        $state->phase = ProtectedModeRuntime::PHASE_ACTIVATING;
-        $state->operation = $freeze->operation;
-        $state->initiatorAcceptKey = $initiatorAcceptKey;
-        $state->initiatorAgentType = $freeze->initiatorAgentType;
-        $state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
-        $state->initiatorNodeId = $freeze->initiatorNodeId;
-        $state->startedAt = time();
-        $state->activatedAt = null;
-        $state->sync();
+        $view->actions->enterActivating($freeze, $initiatorAcceptKey);
 
         // Stop this node's own agents so no application work runs against the destructive
         // operation, leaving the initiator agent running to carry it out (HIL-267 slice 7a).
@@ -57,45 +53,36 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         );
     }
 
+    /**
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
     public function enterActive(): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
-            return;
-        }
-
-        $state->phase = ProtectedModeRuntime::PHASE_ACTIVE;
-        $state->activatedAt = time();
-        $state->sync();
+        $this->runtimeView()?->actions->enterActive();
     }
 
+    /**
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
     public function enterDeactivating(): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
-            return;
-        }
-
-        $state->phase = ProtectedModeRuntime::PHASE_DEACTIVATING;
-        $state->sync();
+        $this->runtimeView()?->actions->enterDeactivating();
     }
 
+    /**
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
     public function enterInactive(): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
+        $view = $this->runtimeView();
+        if ($view === null) {
             return;
         }
 
-        $state->phase = ProtectedModeRuntime::PHASE_INACTIVE;
-        $state->operation = null;
-        $state->initiatorAcceptKey = null;
-        $state->initiatorAgentType = null;
-        $state->initiatorAgentIndex = null;
-        $state->initiatorNodeId = null;
-        $state->startedAt = null;
-        $state->activatedAt = null;
-        $state->sync();
+        $view->actions->enterInactive();
 
         // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
         // freeze has lifted; the freezer replays exactly the set it stopped on this node.
@@ -104,31 +91,43 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 
     public function notifyInitiatorReady(): void
     {
-        $state = $this->runtimeState();
-        if ($state === null) {
+        $view = $this->runtimeView();
+        if ($view === null) {
             return;
         }
 
-        if ($state->initiatorAgentType === null) {
+        if ($view->initiatorAgentType === null) {
             Logger::warning('Protected mode: ready arrived but no initiator identity is recorded');
             return;
         }
 
         Hilos::$cluster?->protectedModeReadyRelay()?->deliverProtectedModeReady(
-            $state->initiatorAgentType,
-            $state->initiatorAgentIndex === null ? null : (string)$state->initiatorAgentIndex,
+            $view->initiatorAgentType,
+            $view->initiatorAgentIndex === null ? null : (string)$view->initiatorAgentIndex,
         );
     }
 
     /**
      * Resolves the protected-mode runtime singleton, or null when this node never mounted it.
      *
-     * @return ?ProtectedModeRuntime Runtime singleton, or null when runtime state is unavailable
+     * An executor asked to freeze a node that carries no runtime row cannot freeze it, and the
+     * caller has already decided the operation needs protecting - so the miss is logged rather
+     * than passed over in silence, and the node stays open instead of pretending it quiesced.
+     *
+     * @return ?ProtectedModeRuntime Runtime singleton view, or null when it is not mounted
      */
-    private function runtimeState(): ?ProtectedModeRuntime
+    private function runtimeView(): ?ProtectedModeRuntime
     {
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view !== null) {
+            return $view;
+        }
 
-        return $state instanceof ProtectedModeRuntime ? $state : null;
+        Logger::warning(
+            'Protected mode: the runtime singleton is not mounted, this node cannot freeze;'
+            . ' mount it in the project RtContext',
+        );
+
+        return null;
     }
 }

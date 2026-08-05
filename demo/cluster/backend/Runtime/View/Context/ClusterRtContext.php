@@ -20,9 +20,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * That mounted item is the local writer seam the daemon truth source registers against
  * (see DaemonManager::registerProtectedModeTruthSource()): the leader writes it by its
  * own decision and followers write it in reaction to peer QUIESCE/LIFT frames, so the
- * row reaches each node's workers over RT sync. It is mounted flat (no view
- * representation): the writer-owner reads it through Hilos::$rt->getStateItem() and
- * writes its fields plus sync(), and no page reads it through a view.
+ * row reaches each node's workers over RT sync. Its view representation is declared by
+ * the framework too, so this demo still registers nothing: writers and readers alike
+ * reach the row as Hilos::$rt->hilosProtectedModeRuntime.
  */
 final class ClusterRtContext extends RtContext
 {

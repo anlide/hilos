@@ -11,11 +11,16 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\RtStates;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
+use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Item\BackupRuntime;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
@@ -23,6 +28,9 @@ use Hilos\Runtime\View\Item\RtItem;
  *
  * Manages state collections and their runtime view wrappers.
  * Runtime data is transient - it lives only in memory for the process lifetime.
+ *
+ * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
+ * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
  */
 abstract class RtContext
 {
@@ -64,6 +72,31 @@ abstract class RtContext
      */
     public function __construct()
     {
+        $this->representFrameworkItems();
+    }
+
+    /**
+     * Declares the view representation of the framework-owned runtime singletons.
+     *
+     * The framework owns both rows and every caller that reads them, so it declares how
+     * they are seen; the project decides only whether the backing row is mounted at all.
+     * That is why the representation is written straight into {@see self::$_rtItems}
+     * instead of going through {@see self::setRepresentItem()}: that method demands an
+     * already-mounted state row, while here the alias must exist even when nothing is
+     * mounted — a registered alias with no row resolves to null, which is exactly what
+     * {@see self::getStateItem()} used to return, whereas an unregistered one would throw
+     * {@see RtCollectionNotFoundException} at every reader of an optional subsystem.
+     */
+    private function representFrameworkItems(): void
+    {
+        $this->_rtItems[StateBackupRuntime::RT_ITEM] = [
+            'itemClass' => BackupRuntime::class,
+            'itemActionsClass' => BackupRuntimeActions::class,
+        ];
+        $this->_rtItems[StateProtectedModeRuntime::RT_ITEM] = [
+            'itemClass' => ProtectedModeRuntime::class,
+            'itemActionsClass' => ProtectedModeRuntimeActions::class,
+        ];
     }
 
     /**
@@ -98,7 +131,7 @@ abstract class RtContext
      */
     final public function mountFrameworkState(): void
     {
-        $this->_stateItems[ProtectedModeRuntime::RT_ITEM] = ProtectedModeRuntime::create();
+        $this->_stateItems[StateProtectedModeRuntime::RT_ITEM] = StateProtectedModeRuntime::create();
     }
 
     /**

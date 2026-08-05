@@ -10,7 +10,8 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
-use Hilos\Runtime\State\Item\BackupRuntime;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Backup\HilosBackupTableRow;
 use PHPUnit\Framework\TestCase;
@@ -36,7 +37,7 @@ final class HilosBackupHistoryTableTest extends TestCase
         $table = $this->table(runtime: $this->runningRuntime());
 
         $mutation = $table->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
 
         $this->assertNotNull($mutation);
@@ -54,7 +55,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testRuntimeIdleDeletesRunningRow(): void
     {
         $mutation = $this->table()->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
 
         $this->assertNotNull($mutation);
@@ -202,10 +203,10 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testTheInProgressRowIsDeclaredLive(): void
     {
         $create = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
         $delete = $this->table()->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
 
         // A progress row must never wait behind Apply: it would outlive the run it reports.
@@ -329,7 +330,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     public function testTheInProgressRowHasNothingToChecksum(): void
     {
         $mutation = $this->table(runtime: $this->runningRuntime())->buildMutationForSourceEvent(
-            SourceChange::rtUpdated(BackupRuntime::RT_ITEM, BackupRuntime::ID, []),
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
         );
 
         // The archive does not exist yet, so the running row claims neither digest nor check.
@@ -356,16 +357,18 @@ final class HilosBackupHistoryTableTest extends TestCase
     /**
      * Builds a running backup runtime singleton fixture.
      *
-     * @return BackupRuntime Running backup runtime state
+     * @return BackupRuntime Running backup runtime singleton, seen the way the table sees it
      */
     private function runningRuntime(): BackupRuntime
     {
-        return BackupRuntime::fromRow([
-            BackupRuntime::running => true,
-            BackupRuntime::currentBackupId => 'b9',
-            BackupRuntime::scope => 'full',
-            BackupRuntime::startedAt => '2026-07-20T11:00:00+00:00',
+        $state = StateBackupRuntime::fromRow([
+            StateBackupRuntime::running => true,
+            StateBackupRuntime::currentBackupId => 'b9',
+            StateBackupRuntime::scope => 'full',
+            StateBackupRuntime::startedAt => '2026-07-20T11:00:00+00:00',
         ]);
+
+        return new BackupRuntime($state);
     }
 
     /**
@@ -390,7 +393,7 @@ final class HilosBackupHistoryTableTest extends TestCase
                 return $this->historiesFixture;
             }
 
-            protected function runtimeState(): ?BackupRuntime
+            protected function runtimeView(): ?BackupRuntime
             {
                 return $this->runtimeFixture;
             }

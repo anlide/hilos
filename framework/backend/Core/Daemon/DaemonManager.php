@@ -55,7 +55,7 @@ use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\RtSyncApplicator;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
@@ -1754,11 +1754,11 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      */
     private function registerProtectedModeTruthSource(): void
     {
-        if (Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM) === null) {
+        if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
             return;
         }
 
-        RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
     }
 
     /**

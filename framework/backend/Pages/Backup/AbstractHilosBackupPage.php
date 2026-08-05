@@ -26,7 +26,6 @@ use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
-use Hilos\Runtime\State\Item\BackupRuntime;
 
 /**
  * AbstractHilosBackupPage - Abstract base for the Hilos backup list page.
@@ -223,11 +222,7 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      */
     private function isInProgress(string $backupId): bool
     {
-        $runtime = Hilos::$rt?->getStateItem(BackupRuntime::RT_ITEM);
-
-        return $runtime instanceof BackupRuntime
-            && $runtime->running
-            && $runtime->currentBackupId === $backupId;
+        return Hilos::$rt?->hilosBackupRuntime?->isRunning($backupId) ?? false;
     }
 
     /**

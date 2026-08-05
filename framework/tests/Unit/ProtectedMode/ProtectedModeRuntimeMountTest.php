@@ -7,8 +7,9 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -42,10 +43,10 @@ final class ProtectedModeRuntimeMountTest extends TestCase
     {
         ProtectedModeMountTestHilos::init();
 
-        $state = Hilos::$rt?->getStateItem(ProtectedModeRuntime::RT_ITEM);
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
 
-        $this->assertInstanceOf(ProtectedModeRuntime::class, $state);
-        $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $state->phase);
+        $this->assertInstanceOf(ProtectedModeRuntime::class, $view);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $view->phase);
     }
 
     public function testProjectWithoutARuntimeContextGetsNoProtectedMode(): void

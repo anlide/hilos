@@ -21,7 +21,8 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
-use Hilos\Runtime\State\Item\BackupRuntime;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\View\Item\BackupRuntime;
 use Throwable;
 
 /**
@@ -62,7 +63,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             return $this->historyMutation($change);
         }
 
-        if ($change->sourceKey === BackupRuntime::RT_ITEM) {
+        if ($change->sourceKey === StateBackupRuntime::RT_ITEM) {
             return $this->runtimeMutation();
         }
 
@@ -220,7 +221,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     private function runningRow(): ?HilosBackupTableRow
     {
-        $runtime = $this->runtimeState();
+        $runtime = $this->runtimeView();
         if ($runtime === null || !$runtime->running) {
             return null;
         }
@@ -279,11 +280,11 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * A seam the framework reads from the runtime facade; tests bind in-memory state.
      *
-     * @return ?BackupRuntime Backup runtime singleton, or null
+     * @return ?BackupRuntime Backup runtime singleton view, or null
      */
-    protected function runtimeState(): ?BackupRuntime
+    protected function runtimeView(): ?BackupRuntime
     {
-        $runtime = Hilos::$rt?->getStateItem(BackupRuntime::RT_ITEM);
+        $runtime = Hilos::$rt?->hilosBackupRuntime;
 
         return $runtime instanceof BackupRuntime ? $runtime : null;
     }
