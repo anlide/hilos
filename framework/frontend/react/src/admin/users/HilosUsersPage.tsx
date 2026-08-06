@@ -7,9 +7,14 @@
 // the detail page). Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { HilosPages, createHilosUsersTable } from '@hilos/core'
+import {
+  HilosPages,
+  USER_ONLINE_SESSION_COUNT_FIELD,
+  USER_PRESENCE_FIELD,
+  createHilosUsersTable,
+} from '@hilos/core'
 import type {
-  HilosTableColumn,
+  HilosTableColumnOf,
   HilosUserRow,
   HilosUsersContext,
 } from '@hilos/core'
@@ -25,12 +30,12 @@ export interface HilosUsersPageProps {
   rowActions?: (row: HilosUserRow) => ReactNode
 }
 
-const COLUMNS: HilosTableColumn[] = [
+const COLUMNS: HilosTableColumnOf<HilosUserRow>[] = [
   { key: 'id', label: 'ID', sortable: true },
   { key: 'name', label: 'Name', sortable: true },
-  { key: 'presence', label: 'Presence', sortable: true },
+  { key: USER_PRESENCE_FIELD, label: 'Presence', sortable: true },
   {
-    key: 'onlineSessionCount',
+    key: USER_ONLINE_SESSION_COUNT_FIELD,
     label: 'Sessions',
     sortable: true,
     headerClass: 'text-end',

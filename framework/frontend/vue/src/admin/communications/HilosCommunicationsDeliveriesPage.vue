@@ -15,15 +15,23 @@ import {
   computedSignal,
   createHilosDeliveriesActions,
   createHilosDeliveriesTable,
+  DELIVERY_ATTEMPTS_FIELD,
+  DELIVERY_CHANNEL_FIELD,
+  DELIVERY_CREATED_AT_FIELD,
+  DELIVERY_DELIVERED_AT_FIELD,
   DELIVERY_FILTER_FROM,
   DELIVERY_FILTER_STATUS,
   DELIVERY_FILTER_TO,
+  DELIVERY_LAST_ERROR_FIELD,
+  DELIVERY_NOTIFICATION_TITLE_FIELD,
+  DELIVERY_STATUS_FIELD,
+  DELIVERY_USER_LABEL_FIELD,
   HILOS_DELIVERY_STATUSES,
   HilosPages,
   isDeliveryRetryable,
   type HilosDeliveriesContext,
   type HilosDeliveryRow,
-  type HilosTableColumn,
+  type HilosTableColumnOf,
 } from '@hilos/core'
 import { inject, onMounted, onUnmounted, ref } from 'vue'
 
@@ -61,20 +69,20 @@ const { sendDeliveryRetry } = createHilosDeliveriesActions(props.context)
 onMounted(() => deliveries.start())
 onUnmounted(() => deliveries.dispose())
 
-const columns: HilosTableColumn[] = [
-  { key: 'createdAt', label: 'Date', sortable: true },
-  { key: 'channel', label: 'Channel', sortable: true },
-  { key: 'status', label: 'Status', sortable: true },
+const columns: HilosTableColumnOf<HilosDeliveryRow>[] = [
+  { key: DELIVERY_CREATED_AT_FIELD, label: 'Date', sortable: true },
+  { key: DELIVERY_CHANNEL_FIELD, label: 'Channel', sortable: true },
+  { key: DELIVERY_STATUS_FIELD, label: 'Status', sortable: true },
   {
-    key: 'attempts',
+    key: DELIVERY_ATTEMPTS_FIELD,
     label: 'Attempts',
     sortable: true,
     headerClass: 'text-end',
   },
-  { key: 'deliveredAt', label: 'Delivered', sortable: true },
-  { key: 'recipient', label: 'Recipient' },
-  { key: 'notification', label: 'Notification' },
-  { key: 'lastError', label: 'Error' },
+  { key: DELIVERY_DELIVERED_AT_FIELD, label: 'Delivered', sortable: true },
+  { key: DELIVERY_USER_LABEL_FIELD, label: 'Recipient' },
+  { key: DELIVERY_NOTIFICATION_TITLE_FIELD, label: 'Notification' },
+  { key: DELIVERY_LAST_ERROR_FIELD, label: 'Error' },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

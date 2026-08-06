@@ -161,6 +161,21 @@ function toValueSource(value: unknown): ChannelValueSource {
     : 'default'
 }
 
+/**
+ * Payload keys of the channels-hub row slot (mirrors the backend row shape). A map
+ * rather than flat constants because this module owns two row shapes whose field
+ * names overlap, and the map says which row a key belongs to at every use site.
+ * Exported because the hub view declares its columns from the same keys.
+ */
+export const HilosChannelRowKey = {
+  channel: 'channel',
+  label: 'label',
+  enabled: CHANNEL_ENABLED_FIELD,
+  configured: 'configured',
+  driver: 'driver',
+  missingFields: 'missingFields',
+} as const
+
 /** Payload keys of the channel-fields row slot (mirrors the backend row shape). */
 const HilosChannelFieldRowKey = {
   channel: 'channel',
@@ -199,12 +214,12 @@ export function resolveHilosChannelRow(row: TableRow): HilosChannelRow {
   return {
     // Identity is the fragment's row key; it never rides the slot as `id`, which the
     // normalizer would treat as an entity reference and strip the row (normalizer.ts).
-    channel: readString(slot, 'channel') || String(row.rowKey),
-    label: readString(slot, 'label'),
-    enabled: readBoolean(slot, 'enabled'),
-    configured: readBoolean(slot, 'configured'),
-    driver: readString(slot, 'driver'),
-    missingFields: Number(slot['missingFields'] ?? 0),
+    channel: readString(slot, HilosChannelRowKey.channel) || String(row.rowKey),
+    label: readString(slot, HilosChannelRowKey.label),
+    enabled: readBoolean(slot, HilosChannelRowKey.enabled),
+    configured: readBoolean(slot, HilosChannelRowKey.configured),
+    driver: readString(slot, HilosChannelRowKey.driver),
+    missingFields: Number(slot[HilosChannelRowKey.missingFields] ?? 0),
   }
 }
 
@@ -298,7 +313,7 @@ export function createHilosChannelsTable(
         descriptor,
       ),
     pageSize: CHANNELS_PAGE_SIZE,
-    initialSort: { field: 'channel', direction: 'asc' },
+    initialSort: { field: HilosChannelRowKey.channel, direction: 'asc' },
   })
   let teardown: Array<() => void> = []
 

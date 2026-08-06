@@ -9,8 +9,10 @@ detail page). Bootstrap classes only (styling-rules.md). -->
 import {
   createHilosUsersTable,
   HilosPages,
-  type HilosTableColumn,
+  type HilosTableColumnOf,
   type HilosUserRow,
+  USER_ONLINE_SESSION_COUNT_FIELD,
+  USER_PRESENCE_FIELD,
   type HilosUsersContext,
 } from '@hilos/core'
 import { onMounted, onUnmounted } from 'vue'
@@ -36,12 +38,12 @@ const usersTable = users.controller
 onMounted(() => users.start())
 onUnmounted(() => users.dispose())
 
-const columns: HilosTableColumn[] = [
+const columns: HilosTableColumnOf<HilosUserRow>[] = [
   { key: 'id', label: 'ID', sortable: true },
   { key: 'name', label: 'Name', sortable: true },
-  { key: 'presence', label: 'Presence', sortable: true },
+  { key: USER_PRESENCE_FIELD, label: 'Presence', sortable: true },
   {
-    key: 'onlineSessionCount',
+    key: USER_ONLINE_SESSION_COUNT_FIELD,
     label: 'Sessions',
     sortable: true,
     headerClass: 'text-end',

@@ -96,6 +96,37 @@ const BACKUP_ACTIONS = new Set<string>([
   BACKUP_SET_KEEP_ACTION,
 ])
 
+// Row payload keys of the backup slot. They are declared here because this module
+// owns the view-model they resolve into, and exported where a view also names them
+// as a column key, so the wire name has one owner instead of a copy per view.
+
+/** Row payload key of the creation instant (also the table's default sort field). */
+export const BACKUP_CREATED_AT_FIELD = 'createdAt'
+
+/** Row payload key of the environment the backup was taken in. */
+export const BACKUP_ENV_FIELD = 'env'
+
+/** Row payload key of the capture scope. */
+export const BACKUP_SCOPE_FIELD = 'scope'
+
+/** Row payload key of the archive size. */
+export const BACKUP_SIZE_BYTES_FIELD = 'sizeBytes'
+
+/** Row payload key of the capture duration. */
+export const BACKUP_DURATION_SECONDS_FIELD = 'durationSeconds'
+
+/** Row payload key of the rotation pin. */
+export const BACKUP_KEEP_FIELD = 'keep'
+
+/** Row payload key of the run status. */
+export const BACKUP_STATUS_FIELD = 'status'
+
+/** Row payload key of the completion tri-state. */
+const BACKUP_FINISHED_FIELD = 'finished'
+
+/** Row payload key of the recorded failure reason. */
+const BACKUP_FAILURE_REASON_FIELD = 'failureReason'
+
 /**
  * Row payload key of the checksum state. Exported because it is also the table
  * column key the three views declare, so the wire name has one owner instead of a
@@ -234,15 +265,15 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     // payload carrying `id` is ingested as an entity fragment and replaced by a
     // reference, which would strip every other field off the row (normalizer.ts).
     id: String(row.rowKey),
-    createdAt: readString(slot, 'createdAt'),
-    env: readString(slot, 'env'),
-    scope: readString(slot, 'scope'),
-    sizeBytes: readNumber(slot, 'sizeBytes'),
-    durationSeconds: readNumber(slot, 'durationSeconds'),
-    keep: readBoolean(slot, 'keep'),
-    status: readString(slot, 'status'),
-    finished: toFinished(slot['finished']),
-    failureReason: toFailureReason(slot['failureReason']),
+    createdAt: readString(slot, BACKUP_CREATED_AT_FIELD),
+    env: readString(slot, BACKUP_ENV_FIELD),
+    scope: readString(slot, BACKUP_SCOPE_FIELD),
+    sizeBytes: readNumber(slot, BACKUP_SIZE_BYTES_FIELD),
+    durationSeconds: readNumber(slot, BACKUP_DURATION_SECONDS_FIELD),
+    keep: readBoolean(slot, BACKUP_KEEP_FIELD),
+    status: readString(slot, BACKUP_STATUS_FIELD),
+    finished: toFinished(slot[BACKUP_FINISHED_FIELD]),
+    failureReason: toFailureReason(slot[BACKUP_FAILURE_REASON_FIELD]),
     checksumState: toChecksumState(slot[BACKUP_CHECKSUM_STATE_FIELD]),
     verifiedAt: toVerifiedAt(slot[BACKUP_VERIFIED_AT_FIELD]),
   }
@@ -383,7 +414,7 @@ export function createHilosBackupsTable(
         descriptor,
       ),
     pageSize: HILOS_BACKUPS_PAGE_SIZE,
-    initialSort: { field: 'createdAt', direction: 'desc' },
+    initialSort: { field: BACKUP_CREATED_AT_FIELD, direction: 'desc' },
   })
   const teardown: Array<() => void> = []
 

@@ -17,9 +17,11 @@ import {
   HilosPages,
   isOrphanSetting,
   isPersistedSetting,
+  SETTING_KEY_FIELD,
+  SETTING_VALUE_FIELD,
   type HilosSettingRow,
   type HilosSettingsContext,
-  type HilosTableColumn,
+  type HilosTableColumnOf,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -45,9 +47,9 @@ const { sendSettingAdd, sendSettingUpdate, sendSettingDelete } =
 onMounted(() => settings.start())
 onUnmounted(() => settings.dispose())
 
-const columns: HilosTableColumn[] = [
-  { key: 'key', label: 'Key', sortable: true },
-  { key: 'value', label: 'Value', sortable: true },
+const columns: HilosTableColumnOf<HilosSettingRow>[] = [
+  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
+  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

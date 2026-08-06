@@ -14,6 +14,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   HilosPages,
+  SETTING_KEY_FIELD,
+  SETTING_VALUE_FIELD,
   createHilosSettingsActions,
   createHilosSettingsTable,
   isOrphanSetting,
@@ -22,7 +24,7 @@ import {
 import type {
   HilosSettingRow,
   HilosSettingsContext,
-  HilosTableColumn,
+  HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -38,9 +40,9 @@ export interface HilosSettingsPageProps {
   context: HilosSettingsContext
 }
 
-const COLUMNS: HilosTableColumn[] = [
-  { key: 'key', label: 'Key', sortable: true },
-  { key: 'value', label: 'Value', sortable: true },
+const COLUMNS: HilosTableColumnOf<HilosSettingRow>[] = [
+  { key: SETTING_KEY_FIELD, label: 'Key', sortable: true },
+  { key: SETTING_VALUE_FIELD, label: 'Value', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

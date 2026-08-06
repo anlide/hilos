@@ -35,6 +35,10 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - PHP class member order: `docs/agents/code-style/php-class-members.md` -
   read when adding or reordering class constants, properties, or methods.
+- Frontend row-payload keys: `docs/agents/code-style/wire-key-ownership.md` -
+  read when naming a row-payload key in a frontend admin module: adding or
+  renaming a table column, writing a row resolver, or deciding what the core
+  barrel exports.
 - Database table names: `docs/agents/code-style/table-names.md` - read when
   naming a DB table; entity first then purpose, bridge tables order both
   entities by project dominance.
@@ -83,7 +87,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    fields, DTO payload keys, table row keys, and boundary array keys whenever
    a constant exists. If a repeated payload key has no owner constant, add one
    to the owning DTO, browser payload, table row, entity, object, or context before
-   using that key in examples or code.
+   using that key in examples or code. On the frontend, which module owns the
+   constant and when it reaches the core barrel is
+   `docs/agents/code-style/wire-key-ownership.md`.
 15. During refactors, do not add new convenience read helpers or predicates
    such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items,
    collections, objects, actions, or read payload objects unless the user explicitly

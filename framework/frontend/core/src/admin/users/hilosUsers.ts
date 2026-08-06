@@ -68,6 +68,16 @@ export interface HilosUserRow {
   readonly onlineSessionCount: number
 }
 
+/**
+ * Row payload key of the live presence, inside the inline `connections` slot.
+ * Exported because it is also the table column key the three views declare, so the
+ * wire name has one owner instead of a copy per view.
+ */
+export const USER_PRESENCE_FIELD = 'presence'
+
+/** Row payload key of the open-session count, inside the inline `connections` slot. */
+export const USER_ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
+
 // Wire keys: the framework users table and the single-user detail table, which
 // carry the same row slots so both resolve through resolveHilosUserRow. A project
 // binds its backend tables to these keys.
@@ -78,8 +88,6 @@ const USER_DETAIL_TABLE = 'userDetail'
 // runtime connection summary a project fills on its backend.
 const USER_SLOT = 'users'
 const CONNECTIONS_SLOT = 'connections'
-const PRESENCE_FIELD = 'presence'
-const ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 // Action / ack signal names (the rename round-trip). The fail ack carries no
 // registered schema, so the view observes its type only.
 const HILOS_USER_UPDATE_ACTION = 'hilos_user_update'
@@ -145,9 +153,9 @@ export function resolveHilosUserRow<TUser extends HilosUserProfile>(
     id: Number(user?.id ?? row.rowKey),
     name: user?.name ?? '',
     lastActivity: user?.lastActivity ?? null,
-    presence: toHilosPresence(connection?.[PRESENCE_FIELD]),
+    presence: toHilosPresence(connection?.[USER_PRESENCE_FIELD]),
     onlineSessionCount: connection
-      ? readNumber(connection, ONLINE_SESSION_COUNT_FIELD)
+      ? readNumber(connection, USER_ONLINE_SESSION_COUNT_FIELD)
       : 0,
   }
 }

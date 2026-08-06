@@ -19,6 +19,7 @@ import {
 } from '@angular/core'
 import {
   CHANNEL_ENABLED_FIELD,
+  HilosChannelRowKey,
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
@@ -27,7 +28,7 @@ import {
 import type {
   HilosChannelRow,
   HilosCommunicationsContext,
-  HilosTableColumn,
+  HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -35,11 +36,11 @@ import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
-const COLUMNS: HilosTableColumn[] = [
-  { key: 'channel', label: 'Channel', sortable: true },
-  { key: 'enabled', label: 'Enabled' },
-  { key: 'configured', label: 'Configured' },
-  { key: 'driver', label: 'Driver', sortable: true },
+const COLUMNS: HilosTableColumnOf<HilosChannelRow>[] = [
+  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
+  { key: HilosChannelRowKey.enabled, label: 'Enabled' },
+  { key: HilosChannelRowKey.configured, label: 'Configured' },
+  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

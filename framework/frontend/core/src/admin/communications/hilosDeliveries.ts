@@ -55,6 +55,36 @@ export interface HilosDeliveryRow {
   readonly notificationTitle: string
 }
 
+/** Row payload key of the recipient user id. */
+const DELIVERY_USER_ID_FIELD = 'userId'
+
+/** Row payload key of the creation instant (also the table's default sort field). */
+export const DELIVERY_CREATED_AT_FIELD = 'createdAt'
+
+/** Row payload key of the delivery channel. */
+export const DELIVERY_CHANNEL_FIELD = 'channel'
+
+/** Row payload key of the delivery status. */
+export const DELIVERY_STATUS_FIELD = 'status'
+
+/** Row payload key of the attempt count. */
+export const DELIVERY_ATTEMPTS_FIELD = 'attempts'
+
+/** Row payload key of the delivered instant. */
+export const DELIVERY_DELIVERED_AT_FIELD = 'deliveredAt'
+
+/** Row payload key of the last failure detail. */
+export const DELIVERY_LAST_ERROR_FIELD = 'lastError'
+
+/** Row payload key of the recipient display label (also the recipient column key). */
+export const DELIVERY_USER_LABEL_FIELD = 'userLabel'
+
+/** Row payload key of the notification machine type. */
+const DELIVERY_NOTIFICATION_TYPE_FIELD = 'notificationType'
+
+/** Row payload key of the notification title (also the notification column key). */
+export const DELIVERY_NOTIFICATION_TITLE_FIELD = 'notificationTitle'
+
 // Wire keys: the framework delivery-logs table and its single inline `delivery`
 // slot, and the retry action name. A project binds its backend to these keys
 // (Hilos::TABLES / PAGE_TABLES / the deliveries page action).
@@ -135,7 +165,7 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
 
 /** Read a recipient user id, keeping null when the notification (and its user) is gone. */
 function readUserId(slot: Record<string, unknown>): number | null {
-  const value = slot['userId']
+  const value = slot[DELIVERY_USER_ID_FIELD]
 
   return typeof value === 'number' ? value : null
 }
@@ -155,16 +185,16 @@ export function resolveHilosDeliveryRow(row: TableRow): HilosDeliveryRow {
     // payload carrying `id` is ingested as an entity fragment and replaced by a
     // reference, which would strip every other field off the row (normalizer.ts).
     rowKey: String(row.rowKey),
-    createdAt: readString(slot, 'createdAt'),
-    channel: readString(slot, 'channel'),
-    status: readString(slot, 'status'),
-    attempts: readNumber(slot, 'attempts'),
-    deliveredAt: readString(slot, 'deliveredAt'),
-    lastError: readString(slot, 'lastError'),
+    createdAt: readString(slot, DELIVERY_CREATED_AT_FIELD),
+    channel: readString(slot, DELIVERY_CHANNEL_FIELD),
+    status: readString(slot, DELIVERY_STATUS_FIELD),
+    attempts: readNumber(slot, DELIVERY_ATTEMPTS_FIELD),
+    deliveredAt: readString(slot, DELIVERY_DELIVERED_AT_FIELD),
+    lastError: readString(slot, DELIVERY_LAST_ERROR_FIELD),
     userId: readUserId(slot),
-    userLabel: readString(slot, 'userLabel'),
-    notificationType: readString(slot, 'notificationType'),
-    notificationTitle: readString(slot, 'notificationTitle'),
+    userLabel: readString(slot, DELIVERY_USER_LABEL_FIELD),
+    notificationType: readString(slot, DELIVERY_NOTIFICATION_TYPE_FIELD),
+    notificationTitle: readString(slot, DELIVERY_NOTIFICATION_TITLE_FIELD),
   }
 }
 
@@ -211,7 +241,7 @@ export function createHilosDeliveriesTable(
       ),
     pageSize: DELIVERIES_PAGE_SIZE,
     initialFilter,
-    initialSort: { field: 'createdAt', direction: 'desc' },
+    initialSort: { field: DELIVERY_CREATED_AT_FIELD, direction: 'desc' },
   })
   const teardown: Array<() => void> = []
 

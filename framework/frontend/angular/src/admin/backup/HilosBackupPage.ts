@@ -20,7 +20,14 @@ import {
 import {
   HILOS_BACKUP_SCOPES,
   HilosPages,
+  BACKUP_CREATED_AT_FIELD,
+  BACKUP_ENV_FIELD,
+  BACKUP_SCOPE_FIELD,
+  BACKUP_SIZE_BYTES_FIELD,
   BACKUP_CHECKSUM_STATE_FIELD,
+  BACKUP_DURATION_SECONDS_FIELD,
+  BACKUP_STATUS_FIELD,
+  BACKUP_KEEP_FIELD,
   createHilosBackupsActions,
   createHilosBackupsTable,
   formatBackupDuration,
@@ -35,7 +42,7 @@ import {
 import type {
   HilosBackupRow,
   HilosBackupsContext,
-  HilosTableColumn,
+  HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -44,20 +51,25 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
-const COLUMNS: HilosTableColumn[] = [
-  { key: 'createdAt', label: 'Date', sortable: true },
-  { key: 'env', label: 'Environment', sortable: true },
-  { key: 'scope', label: 'Scope', sortable: true },
-  { key: 'sizeBytes', label: 'Size', sortable: true, headerClass: 'text-end' },
+const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
+  { key: BACKUP_CREATED_AT_FIELD, label: 'Date', sortable: true },
+  { key: BACKUP_ENV_FIELD, label: 'Environment', sortable: true },
+  { key: BACKUP_SCOPE_FIELD, label: 'Scope', sortable: true },
+  {
+    key: BACKUP_SIZE_BYTES_FIELD,
+    label: 'Size',
+    sortable: true,
+    headerClass: 'text-end',
+  },
   { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
   {
-    key: 'durationSeconds',
+    key: BACKUP_DURATION_SECONDS_FIELD,
     label: 'Duration',
     sortable: true,
     headerClass: 'text-end',
   },
-  { key: 'status', label: 'Status', sortable: true },
-  { key: 'keep', label: 'Keep', headerClass: 'text-center' },
+  { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
+  { key: BACKUP_KEEP_FIELD, label: 'Keep', headerClass: 'text-center' },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

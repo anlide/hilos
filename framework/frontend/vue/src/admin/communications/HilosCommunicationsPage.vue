@@ -15,11 +15,12 @@ import {
   CHANNEL_ENABLED_FIELD,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
+  HilosChannelRowKey,
   HilosPages,
   resolveHilosPath,
   type HilosChannelRow,
   type HilosCommunicationsContext,
-  type HilosTableColumn,
+  type HilosTableColumnOf,
 } from '@hilos/core'
 import { onMounted, onUnmounted } from 'vue'
 
@@ -47,11 +48,11 @@ onUnmounted(() => channels.dispose())
 // flag disables every switch while one write is settling).
 const { busy: toggleBusy, run: runToggle } = useTrackedAction()
 
-const columns: HilosTableColumn[] = [
-  { key: 'channel', label: 'Channel', sortable: true },
-  { key: 'enabled', label: 'Enabled' },
-  { key: 'configured', label: 'Configured' },
-  { key: 'driver', label: 'Driver', sortable: true },
+const columns: HilosTableColumnOf<HilosChannelRow>[] = [
+  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
+  { key: HilosChannelRowKey.enabled, label: 'Enabled' },
+  { key: HilosChannelRowKey.configured, label: 'Configured' },
+  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

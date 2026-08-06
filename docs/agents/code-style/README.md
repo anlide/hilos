@@ -19,6 +19,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [frontend-import-paths.md](frontend-import-paths.md) | adding or changing a relative import in frontend TypeScript — explicit `.js` extension, the barrel `index.js`, the "Import can be shortened" warning |
 | [cross-layer-field-names.md](cross-layer-field-names.md) | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TypeScript field |
+| [wire-key-ownership.md](wire-key-ownership.md) | naming a row-payload key in a frontend admin module — adding or renaming a table column, writing a row resolver, deciding what the core barrel exports |
 | [table-names.md](table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [php-class-members.md](php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [reflection.md](reflection.md) | adding or changing a Reflection call, or wondering whether an existing one is justified |

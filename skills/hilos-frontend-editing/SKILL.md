@@ -18,6 +18,8 @@ rules below. Every edit surface is a modal — never an inline form.
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
 - Where the edit view and its files live: `docs/agents/frontend/page-module-structure.md`
+- Row-payload key ownership — the constant a field is read and rendered by:
+  `docs/agents/code-style/wire-key-ownership.md`
 
 ## Workflow
 

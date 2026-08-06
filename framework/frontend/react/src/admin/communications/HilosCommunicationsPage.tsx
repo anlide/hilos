@@ -13,6 +13,7 @@
 import { useEffect, useMemo } from 'react'
 import {
   CHANNEL_ENABLED_FIELD,
+  HilosChannelRowKey,
   HilosPages,
   createHilosChannelsTable,
   createHilosCommunicationsActions,
@@ -21,7 +22,7 @@ import {
 import type {
   HilosChannelRow,
   HilosCommunicationsContext,
-  HilosTableColumn,
+  HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -35,11 +36,11 @@ export interface HilosCommunicationsPageProps {
   context: HilosCommunicationsContext
 }
 
-const COLUMNS: HilosTableColumn[] = [
-  { key: 'channel', label: 'Channel', sortable: true },
-  { key: 'enabled', label: 'Enabled' },
-  { key: 'configured', label: 'Configured' },
-  { key: 'driver', label: 'Driver', sortable: true },
+const COLUMNS: HilosTableColumnOf<HilosChannelRow>[] = [
+  { key: HilosChannelRowKey.channel, label: 'Channel', sortable: true },
+  { key: HilosChannelRowKey.enabled, label: 'Enabled' },
+  { key: HilosChannelRowKey.configured, label: 'Configured' },
+  { key: HilosChannelRowKey.driver, label: 'Driver', sortable: true },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 

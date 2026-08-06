@@ -64,6 +64,12 @@ This does not apply to boundary arrays — JSON, `toArray()` / `fromArray()`, ra
 DB rows, and the other system boundaries listed above — where string keys are
 part of the wire or storage shape.
 
+The boundary exception covers backend code that reads the boundary in one place.
+It does not carry to the frontend: one row-payload key there is read by the core
+resolver and named again by the Vue, React, and Angular views, so the literal is
+a copy per package, not a boundary. See
+[wire-key-ownership.md](wire-key-ownership.md).
+
 ## DB actions
 
 Do not introduce `create([...])` or similar ad-hoc array parameters for DB

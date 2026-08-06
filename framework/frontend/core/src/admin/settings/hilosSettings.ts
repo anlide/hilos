@@ -67,6 +67,36 @@ const SETTING_ADD_ACTION = 'setting_add'
 const SETTING_UPDATE_ACTION = 'setting_update'
 const SETTING_DELETE_ACTION = 'setting_delete'
 
+// Row payload keys of the settings slot. They are declared here because this
+// module owns the view-model they resolve into, and exported where a view also
+// names them as a column key, so the wire name has one owner instead of a copy
+// per view. The snake_case ones are the backend's spelling and stay verbatim —
+// aligning them with the view-model field names is HIL-531, not this pass.
+
+/** Row payload key of the setting key (also the table's default sort field). */
+export const SETTING_KEY_FIELD = 'key'
+
+/** Row payload key of the value type. */
+const SETTING_TYPE_FIELD = 'type'
+
+/** Row payload key of the effective value. */
+export const SETTING_VALUE_FIELD = 'value'
+
+/** Row payload key of the persisted override value. */
+const SETTING_OVERRIDE_VALUE_FIELD = 'override_value'
+
+/** Row payload key of the catalog default value. */
+const SETTING_DEFAULT_VALUE_FIELD = 'default_value'
+
+/** Row payload key of the key a referencing default points at. */
+const SETTING_DEFAULT_REFERENCE_KEY_FIELD = 'default_reference_key'
+
+/** Row payload key of the effective value's origin. */
+const SETTING_VALUE_SOURCE_FIELD = 'value_source'
+
+/** Row payload key of the backing-row flag. */
+const SETTING_PERSISTED_FIELD = 'persisted'
+
 /**
  * The project-supplied context the settings admin reads from: the scope-partitioned
  * stores that own the page-scoped settings table, and the action lifecycle the
@@ -132,14 +162,17 @@ export function resolveHilosSettingRow(row: TableRow): HilosSettingRow {
   const slot = recordSlot(row.slots[SETTINGS_SLOT]) ?? {}
 
   return {
-    key: readString(slot, 'key') || String(row.rowKey),
-    type: readString(slot, 'type'),
-    value: readStringOrNull(slot, 'value'),
-    overrideValue: readStringOrNull(slot, 'override_value'),
-    defaultValue: readStringOrNull(slot, 'default_value'),
-    defaultReferenceKey: readStringOrNull(slot, 'default_reference_key'),
-    valueSource: toValueSource(slot['value_source']),
-    persisted: slot['persisted'] === true,
+    key: readString(slot, SETTING_KEY_FIELD) || String(row.rowKey),
+    type: readString(slot, SETTING_TYPE_FIELD),
+    value: readStringOrNull(slot, SETTING_VALUE_FIELD),
+    overrideValue: readStringOrNull(slot, SETTING_OVERRIDE_VALUE_FIELD),
+    defaultValue: readStringOrNull(slot, SETTING_DEFAULT_VALUE_FIELD),
+    defaultReferenceKey: readStringOrNull(
+      slot,
+      SETTING_DEFAULT_REFERENCE_KEY_FIELD,
+    ),
+    valueSource: toValueSource(slot[SETTING_VALUE_SOURCE_FIELD]),
+    persisted: slot[SETTING_PERSISTED_FIELD] === true,
   }
 }
 
@@ -191,7 +224,7 @@ export function createHilosSettingsTable(
         descriptor,
       ),
     pageSize: SETTINGS_PAGE_SIZE,
-    initialSort: { field: 'key', direction: 'asc' },
+    initialSort: { field: SETTING_KEY_FIELD, direction: 'asc' },
   })
   const teardown: Array<() => void> = []
 
