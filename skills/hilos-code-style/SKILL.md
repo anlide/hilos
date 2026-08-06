@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style
-description: Apply Hilos PHP and TypeScript code style, PHPDoc conventions, strict types, page action handler style, local variable rules, DTO routing style, and project quality rules. Use when writing, reviewing, or refactoring Hilos code where naming, typing, comments, PHPDoc, handlers, method signatures, method contracts, static factory return contracts, or method behavior matter.
+description: Apply Hilos PHP and TypeScript code style, PHPDoc conventions, strict types, page action handler style, local variable rules, DTO routing style, Reflection use in production PHP, and project quality rules. Use when writing, reviewing, or refactoring Hilos code where naming, typing, comments, PHPDoc, handlers, method signatures, method contracts, static factory return contracts, Reflection calls, or method behavior matter.
 ---
 
 # Hilos Code Style
@@ -27,6 +27,11 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Static factory `self`/`static` return contract:
   `docs/agents/code-style/static-factories.md` - read when adding or changing a
   static factory (`fromArray`, `fromRow`, `create`, named constructors).
+- Reflection in production PHP: `docs/agents/code-style/reflection.md` - read
+  before adding or changing a `Reflection*` call in `framework/backend` or
+  `demo/*/backend`. Adding one is the owner's decision, not the agent's; every
+  surviving call carries an inline comment saying what it asks and why plain
+  PHP does not answer.
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - PHP class member order: `docs/agents/code-style/php-class-members.md` -
   read when adding or reordering class constants, properties, or methods.

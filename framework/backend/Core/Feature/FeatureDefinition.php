@@ -7,7 +7,6 @@ namespace Hilos\Core\Feature;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
-use ReflectionMethod;
 
 /**
  * One framework feature: what the project owes it, and what the framework mounts for it.
@@ -53,17 +52,18 @@ abstract class FeatureDefinition
     /**
      * Tells whether this feature brings runtime state with it.
      *
-     * Answered by asking who declares {@see self::mount()} rather than by a flag a definition
-     * sets, so the two can never disagree: a feature that grows a mount later starts requiring
-     * a runtime context in the same edit, without anyone remembering to flip anything.
-     *
      * The facade asks before it accepts a declaration: a project whose createRuntime() returns
      * null has nowhere to mount, and a feature that needs a place would be half-activated there.
      *
-     * @return bool True when the definition overrides the no-op mount
+     * A definition that overrides {@see self::mount()} overrides this too - the fact is declared
+     * next to the mount it describes, and the two are edited in the same breath. The property
+     * that they cannot drift apart is not lost, it moved into FeatureRuntimeMountTest, which
+     * holds the pair against the whole registry.
+     *
+     * @return bool True when the definition mounts runtime state
      */
-    final public function mountsRuntime(): bool
+    public function mountsRuntime(): bool
     {
-        return (new ReflectionMethod(static::class, 'mount'))->getDeclaringClass()->getName() !== self::class;
+        return false;
     }
 }

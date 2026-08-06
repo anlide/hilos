@@ -55,6 +55,16 @@ final class BackupFeature extends FeatureDefinition
     }
 
     /**
+     * The one of the six features that carries runtime state, declared beside the mount it describes.
+     *
+     * @return bool Always true
+     */
+    public function mountsRuntime(): bool
+    {
+        return true;
+    }
+
+    /**
      * Mounts the backup history index with its framework representation, and the runtime row.
      *
      * @param RtContext $context Runtime context being built

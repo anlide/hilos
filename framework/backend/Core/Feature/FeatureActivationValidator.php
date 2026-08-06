@@ -10,7 +10,6 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Hilos;
-use ReflectionClass;
 
 /**
  * Validates that the features a project declared are the features it actually registered.
@@ -92,11 +91,10 @@ final class FeatureActivationValidator
     /**
      * Reads the features a facade declared.
      *
-     * Read by reflection because the declaration is a protected constant: it is a statement the
-     * project makes to the framework, not API for callers, and the framework asks it through
-     * {@see Hilos::hasFeature()}. The validator is the one place that must read it off a named
-     * class rather than off the running facade, since it validates a class before that class is
-     * the running one.
+     * Read through {@see Hilos::featuresOf()} because the declaration is a protected constant:
+     * it is a statement the project makes to the framework, not API for callers, and only the
+     * facade itself can read it off a named class. The validator is the one place that must,
+     * since it validates a class before that class is the running one.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @param list<string> $errors Activation error accumulator
@@ -104,15 +102,8 @@ final class FeatureActivationValidator
      */
     private function declaredFeatures(string $hilosClass, array &$errors): array
     {
-        $declared = (new ReflectionClass($hilosClass))->getConstant('FEATURES');
-        if (!is_array($declared)) {
-            $errors[] = 'FEATURES must be a list of ' . HilosFeature::class . ' cases';
-
-            return [];
-        }
-
         $features = [];
-        foreach ($declared as $feature) {
+        foreach (Hilos::featuresOf($hilosClass) as $feature) {
             if (!$feature instanceof HilosFeature) {
                 $errors[] = 'FEATURES must contain only ' . HilosFeature::class . ' cases';
                 continue;
@@ -304,14 +295,18 @@ final class FeatureActivationValidator
      * check honest for all three shapes at once, and a project that points the constant back at
      * the framework default really has switched the feature off.
      *
+     * Both sides are read through {@see Hilos::catalogConstantOf()}: catalog constants are
+     * protected, and a name no facade declares comes back null on both sides, so it compares
+     * equal and reports as "the framework default" rather than throwing.
+     *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @param string $constant Catalog constant name
      * @return bool True when the project declared its own catalog
      */
     private function pointsAtProjectCatalog(string $hilosClass, string $constant): bool
     {
-        return (new ReflectionClass($hilosClass))->getConstant($constant)
-            !== (new ReflectionClass(Hilos::class))->getConstant($constant);
+        return Hilos::catalogConstantOf($hilosClass, $constant)
+            !== Hilos::catalogConstantOf(Hilos::class, $constant);
     }
 
     /**

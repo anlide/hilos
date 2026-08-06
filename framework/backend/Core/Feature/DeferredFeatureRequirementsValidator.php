@@ -11,7 +11,6 @@ use Hilos\Hilos;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Context\RtContext;
-use ReflectionClass;
 
 /**
  * Validates the half of a feature's requirements that startup cannot see.
@@ -104,21 +103,19 @@ final class DeferredFeatureRequirementsValidator
     /**
      * Reads the features a facade declared, skipping anything malformed.
      *
-     * Read by reflection for the same reason {@see FeatureActivationValidator} does it: the
-     * declaration is a protected constant on a class that is not the running facade here. A
-     * declaration that is not a list of cases is not this validator's error to report - the
-     * startup one names it precisely, and repeating it would double every message a project
-     * sees for one mistake.
+     * Read through {@see Hilos::featuresOf()} for the same reason {@see FeatureActivationValidator}
+     * does it: the declaration is a protected constant on a class that is not the running facade
+     * here. An entry that is not a case is not this validator's error to report - the startup one
+     * names it precisely, and repeating it would double every message a project sees for one
+     * mistake.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
      * @return list<HilosFeature> Declared features
      */
     private function declaredFeatures(string $hilosClass): array
     {
-        $declared = (new ReflectionClass($hilosClass))->getConstant('FEATURES');
-
         return array_values(array_filter(
-            is_array($declared) ? $declared : [],
+            Hilos::featuresOf($hilosClass),
             static fn(mixed $feature): bool => $feature instanceof HilosFeature,
         ));
     }

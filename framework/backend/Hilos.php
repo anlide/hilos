@@ -17,6 +17,7 @@ use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureActivationValidator;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRegistry;
+use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
@@ -295,7 +296,7 @@ abstract class Hilos
      */
     public static function features(): array
     {
-        return static::appClass()::FEATURES;
+        return static::featuresOf(static::appClass());
     }
 
     /**
@@ -322,7 +323,41 @@ abstract class Hilos
      */
     public static function hasFeature(HilosFeature $feature): bool
     {
-        return in_array($feature, static::appClass()::FEATURES, true);
+        return in_array($feature, static::featuresOf(static::appClass()), true);
+    }
+
+    /**
+     * Reads the feature declaration of a facade class that is not the running one.
+     *
+     * The activation validators need exactly this: they judge a facade class before it is the
+     * running facade, and the declaration is a protected constant on purpose - a statement the
+     * project makes to the framework, not API for callers (HIL-513). From outside the class
+     * nothing answers it, so the read lives here, inside the scope that owns the constant,
+     * and FEATURES stays unreadable to everyone else.
+     *
+     * @param class-string<Hilos> $hilosClass Facade class to read the declaration off
+     * @return list<HilosFeature> Declared features, empty when the project takes none
+     */
+    public static function featuresOf(string $hilosClass): array
+    {
+        return $hilosClass::FEATURES;
+    }
+
+    /**
+     * Reads a catalog constant off a facade class that is not the running one.
+     *
+     * Null for a constant the class does not declare, rather than a fatal: the name arrives
+     * from {@see FeatureRequirements::$requiredCatalogConstant}, so a typo there must surface
+     * as a named activation error - the feature points at no project catalog - and not as an
+     * `Error` thrown out of the constant read.
+     *
+     * @param class-string<Hilos> $hilosClass Facade class to read the constant off
+     * @param string $constant Catalog constant name
+     * @return mixed Constant value, or null when the class declares no such constant
+     */
+    public static function catalogConstantOf(string $hilosClass, string $constant): mixed
+    {
+        return defined("{$hilosClass}::{$constant}") ? constant("{$hilosClass}::{$constant}") : null;
     }
 
     /**

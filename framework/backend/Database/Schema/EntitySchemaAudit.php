@@ -81,6 +81,9 @@ final class EntitySchemaAudit
             if (!class_exists($class) || !is_subclass_of($class, Entity::class)) {
                 continue;
             }
+            // Reflection asks whether the class is declared abstract. Plain PHP has no answer:
+            // `class_exists()` is true for an abstract class, and nothing else in the language
+            // reports the declaration - only instantiating it, which is what must be avoided.
             if ((new ReflectionClass($class))->isAbstract()) {
                 continue;
             }
@@ -218,6 +221,11 @@ final class EntitySchemaAudit
         array $types,
         array $liveColumns,
     ): void {
+        // Reflection asks what the Entity *declares* about a property: that it exists, whether
+        // it is static, and its declared type with nullability. Plain PHP answers none of it -
+        // `property_exists()` sees the name but not the type, and a typed property left
+        // uninitialized is invisible to `get_object_vars()` on an instance. One object is built
+        // here and handed down: auditProperty() asks all three questions of it.
         $reflection = new ReflectionClass($entityClass);
 
         foreach ($columns as $column) {

@@ -9,6 +9,7 @@ use Hilos\Core\Feature\Definition\SettingsFeature;
 use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureDefinition;
+use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
@@ -18,6 +19,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * Unit tests for the framework-owned runtime mount driven by the feature declaration.
@@ -71,10 +73,20 @@ final class FeatureRuntimeMountTest extends TestCase
         $context->assertFeatureRuntimeIntact();
     }
 
-    public function testOnlyAFeatureWithItsOwnMountSaysItBringsRuntimeState(): void
+    public function testEveryDefinitionAnswersMountsRuntimeAsItsOwnMountSays(): void
     {
-        $this->assertTrue((new BackupFeature())->mountsRuntime());
-        $this->assertFalse((new SettingsFeature())->mountsRuntime());
+        foreach ((new FeatureRegistry())->all() as $definition) {
+            // Reflection asks which class declares mount(); no plain-PHP call answers that,
+            // and the point of the check is the declaration rather than what a call returns.
+            $mounts = (new ReflectionMethod($definition, 'mount'))->getDeclaringClass()->getName()
+                !== FeatureDefinition::class;
+
+            $this->assertSame(
+                $mounts,
+                $definition->mountsRuntime(),
+                $definition::class . '::mountsRuntime() disagrees with whether it declares its own mount()',
+            );
+        }
     }
 
     public function testDeclaringARuntimeFeatureWithoutARuntimeContextIsRefused(): void

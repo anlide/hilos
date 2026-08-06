@@ -148,6 +148,7 @@ Minimum ORM rules before editing:
 | [code-style/table-names.md](docs/agents/code-style/table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
+| [code-style/reflection.md](docs/agents/code-style/reflection.md) | adding or changing a Reflection call in production PHP, or judging an existing one |
 
 ## AI Tool Integration
 
