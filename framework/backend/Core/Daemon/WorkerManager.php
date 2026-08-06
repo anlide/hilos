@@ -94,7 +94,10 @@ use Throwable;
 abstract class WorkerManager extends BaseManager
 {
     /** @var list<string> Signal functions the worker needs; the anchor set other managers extend */
-    private const array REQUIRED_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch'];
+    private const array REQUIRED_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch', 'posix_getppid'];
+
+    /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
+    private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
 
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
@@ -103,7 +106,13 @@ abstract class WorkerManager extends BaseManager
     protected bool $isMonopolistic;
 
     /** Daemon client connection, or null before connect/after cleanup. */
-    private ?WorkerDaemonClient $daemonClient = null;
+    protected ?WorkerDaemonClient $daemonClient = null;
+
+    /** Pid of the daemon that forked this worker, or null before the loop starts. */
+    protected ?int $daemonPid = null;
+
+    /** Loop timestamp of the last parent-process check. */
+    private float $lastParentCheckAt = 0.0;
 
     /** Agent manager for worker-local agent instances. */
     protected AgentManager $agentManager;
@@ -179,6 +188,10 @@ abstract class WorkerManager extends BaseManager
         Hilos::$ac?->openWorkerSession($this->workerIndex, $this->isMonopolistic);
 
         Logger::info("Worker #{$this->workerIndex} started");
+
+        // Remember the supervisor before the connection exists: an orphaned worker
+        // whose EOF never arrives is recognised by this pid changing.
+        $this->daemonPid = $this->currentParentPid();
 
         // Start connection to daemon (non-blocking)
         try {
@@ -266,6 +279,13 @@ abstract class WorkerManager extends BaseManager
                 Hilos::$ac?->tick();
             }
 
+            // Outside the connected branch on purpose: a worker whose connect() is
+            // still queued in an inherited listen backlog never gets here otherwise.
+            $this->checkDaemonLiveness($loopStartTime);
+            if ($this->shouldExit) {
+                break;
+            }
+
             $this->sleepWithPreciseTiming($loopStartTime);
 
             // Process signals
@@ -276,6 +296,45 @@ abstract class WorkerManager extends BaseManager
         $this->cleanup();
 
         Logger::info("Worker #{$this->workerIndex} stopped");
+    }
+
+    /**
+     * Requests exit once this worker is orphaned.
+     *
+     * Two independent detectors feed one exit: the daemon connection reaching its
+     * terminal lost state, and the supervisor pid changing. The second one covers
+     * the case where no EOF arrives at all, so it is checked on its own interval
+     * rather than per loop iteration.
+     *
+     * @param float $loopStartTime Timestamp of the current loop iteration
+     */
+    protected function checkDaemonLiveness(float $loopStartTime): void
+    {
+        if ($this->daemonClient !== null && $this->daemonClient->isConnectionLost()) {
+            Logger::info("Worker #{$this->workerIndex}: daemon connection closed, worker exits");
+            $this->shouldExit = true;
+            return;
+        }
+
+        if ($loopStartTime - $this->lastParentCheckAt < self::PARENT_CHECK_INTERVAL_SECONDS) {
+            return;
+        }
+        $this->lastParentCheckAt = $loopStartTime;
+
+        if ($this->daemonPid !== null && $this->currentParentPid() !== $this->daemonPid) {
+            Logger::info("Worker #{$this->workerIndex}: daemon parent gone, worker exits");
+            $this->shouldExit = true;
+        }
+    }
+
+    /**
+     * Reads the pid of the process supervising this worker.
+     *
+     * @return int Parent process id
+     */
+    protected function currentParentPid(): int
+    {
+        return posix_getppid();
     }
 
     /**

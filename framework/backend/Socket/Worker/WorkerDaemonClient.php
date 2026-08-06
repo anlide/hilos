@@ -23,17 +23,14 @@ use Hilos\Socket\SocketOperation;
  */
 class WorkerDaemonClient extends AbstractSocket
 {
+    /** Connection lifecycle state; LOST is terminal until close() resets it. */
+    protected DaemonConnectionState $state = DaemonConnectionState::IDLE;
+
     /** @var string Read buffer */
     private string $readBuffer = '';
 
     /** @var string Write buffer */
     private string $writeBuffer = '';
-
-    /** @var bool Connection status */
-    private bool $connected = false;
-
-    /** @var bool Whether connection attempt has been made */
-    private bool $connectionAttempted = false;
 
     /** @var array<WorkerDTO> Message queue for received messages */
     private array $messageQueue = [];
@@ -43,13 +40,16 @@ class WorkerDaemonClient extends AbstractSocket
      *
      * Starts connection attempt. Use checkConnection() to verify connection status.
      * Connection is established when isConnected() returns true.
+     * Does nothing outside the IDLE state: a connection that was established or
+     * lost is never re-dialled, because the daemon supervises workers and starts
+     * a replacement instead of expecting one to come back.
      *
      * @throws SocketException When socket operations fail
      * @throws EnvException When WORKER_COMM_HOST or WORKER_COMM_PORT is missing or invalid
      */
     public function connect(): void
     {
-        if ($this->connectionAttempted && $this->socket !== null) {
+        if ($this->state !== DaemonConnectionState::IDLE) {
             return;
         }
 
@@ -82,8 +82,7 @@ class WorkerDaemonClient extends AbstractSocket
         // Connection started (non-blocking), will be checked asynchronously
         // Note: Worker ID will be sent after connection is established
         // by the worker manager that has access to worker ID
-        $this->connectionAttempted = true;
-        $this->connected = false; // Will be set to true when connection is verified
+        $this->state = DaemonConnectionState::CONNECTING;
     }
 
     /**
@@ -91,12 +90,14 @@ class WorkerDaemonClient extends AbstractSocket
      *
      * For non-blocking sockets, this checks if connection is established
      * using socket_select. Must be called repeatedly until isConnected() returns true.
+     * Only the CONNECTING state is polled: a socket the peer has already closed
+     * still selects as writable, so any other state would be resurrected here.
      *
      * @throws SocketException When socket select or connection check fails
      */
     public function checkConnection(): void
     {
-        if ($this->connected || $this->socket === null || !$this->connectionAttempted) {
+        if ($this->state !== DaemonConnectionState::CONNECTING || $this->socket === null) {
             return;
         }
 
@@ -132,7 +133,7 @@ class WorkerDaemonClient extends AbstractSocket
             }
 
             // Connection is established
-            $this->connected = true;
+            $this->state = DaemonConnectionState::CONNECTED;
         }
     }
 
@@ -156,20 +157,22 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Read data from socket.
      *
+     * An empty read means the daemon closed its end: the connection goes to the
+     * terminal LOST state, and already parsed messages stay in the queue.
+     *
      * @throws SocketException When socket read fails or read buffer limits are exceeded
      * @throws InvalidArgumentException When a complete message has invalid JSON or type
      */
     public function read(): void
     {
-        if (!$this->connected || $this->socket === null) {
+        if (!$this->isConnected()) {
             return;
         }
 
         $data = socket_read($this->socket, 8192, PHP_BINARY_READ);
 
         if ($data === '') {
-            // Connection closed
-            $this->connected = false;
+            $this->loseConnection();
             return;
         }
 
@@ -186,11 +189,14 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Write buffered data to socket.
      *
+     * Silently does nothing once the connection is lost; undelivered bytes are
+     * dropped rather than kept for a reconnect that never happens.
+     *
      * @throws SocketException When socket write fails
      */
     public function write(): void
     {
-        if (!$this->connected || $this->socket === null || $this->writeBuffer === '') {
+        if (!$this->isConnected() || $this->writeBuffer === '') {
             return;
         }
 
@@ -246,20 +252,26 @@ class WorkerDaemonClient extends AbstractSocket
      */
     public function isConnected(): bool
     {
-        return $this->connected && $this->socket !== null;
+        return $this->state === DaemonConnectionState::CONNECTED && $this->socket !== null;
     }
 
     /**
-     * Close connection.
+     * Check whether the daemon connection is gone for good.
+     *
+     * @return bool True once the connection reached its terminal LOST state
+     */
+    public function isConnectionLost(): bool
+    {
+        return $this->state === DaemonConnectionState::LOST;
+    }
+
+    /**
+     * Close connection and return the client to its initial state.
      */
     public function close(): void
     {
-        if ($this->socket !== null) {
-            socket_close($this->socket);
-            $this->socket = null;
-        }
-        $this->connected = false;
-        $this->connectionAttempted = false;
+        $this->closeSocket();
+        $this->state = DaemonConnectionState::IDLE;
         $this->readBuffer = '';
         $this->writeBuffer = '';
         $this->messageQueue = [];
@@ -270,7 +282,31 @@ class WorkerDaemonClient extends AbstractSocket
      */
     public function markShouldClose(): void
     {
-        $this->connected = false;
-        // Keep connectionAttempted = true to prevent reconnection attempts
+        $this->loseConnection();
+    }
+
+    /**
+     * Move the connection to its terminal state and release the socket.
+     *
+     * Buffers are dropped because nothing will be sent or parsed further, while
+     * the queue of already parsed messages survives for the caller to drain.
+     */
+    private function loseConnection(): void
+    {
+        $this->closeSocket();
+        $this->state = DaemonConnectionState::LOST;
+        $this->readBuffer = '';
+        $this->writeBuffer = '';
+    }
+
+    /**
+     * Close the underlying socket if it is still open.
+     */
+    private function closeSocket(): void
+    {
+        if ($this->socket !== null) {
+            socket_close($this->socket);
+            $this->socket = null;
+        }
     }
 }
