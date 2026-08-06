@@ -180,15 +180,6 @@ class DockerManager extends BaseManager
         }
 
         $this->process->tick();
-        $stdOut = $this->process->getStdOut();
-        if (!empty($stdOut)) {
-            Logger::info("Daemon STDOUT: " . $stdOut);
-        }
-
-        $stdErr = $this->process->getStdErr();
-        if (!empty($stdErr)) {
-            Logger::error("Daemon STDERR: " . $stdErr);
-        }
 
         // Check if the daemon is running
         $status = $this->process->getStatus();
@@ -281,6 +272,11 @@ class DockerManager extends BaseManager
 
     /**
      * Start daemon process
+     *
+     * The daemon's stdout and stderr are opened as {@see Process::DESCRIPTOR_FILE} straight
+     * into DAEMON_LOG_FILE and DAEMON_ERROR_LOG_FILE, so `proc_open` creates no pipes 1 and 2
+     * and the watchdog never sees the daemon's output: the daemon writes its own logs. Only
+     * stdin stays a pipe, and it is the one the watchdog actually uses.
      *
      * @param string $script Path to daemon script
      * @throws CouldNotStartException If daemon process cannot be started

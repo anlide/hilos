@@ -44,6 +44,13 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
   `Process::getStdErr()` — the daemon's stderr is redirected to that file, so the process
   has no stderr pipe to read.
 
+**The daemon owns its log files.** `startDaemon()` hands its stdout and stderr to
+`DAEMON_LOG_FILE` and `DAEMON_ERROR_LOG_FILE` as file descriptors, so the daemon's output is
+written by the kernel and never passes through the watchdog: there is nothing for
+`tickDaemon()` to tee into the watchdog's own log, and it does not try. The single exception
+is the failed-start escalation above, which reads the tail of the error file — a deliberate
+read of a file, not of a stream.
+
 The cluster harness guards this end to end: `cluster start <node>` reuses the existing
 container instead of recreating it, and scenario 9 (`cluster_e2e.py`) SIGKILLs the daemon
 inside a live container and requires the node to rebind, rejoin the roster, and accept
