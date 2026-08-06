@@ -10,6 +10,7 @@ rule.
 |---|---|---|
 | `PHPDOC-FQN` | A docblock references a class by its imported short name, never by a leading-backslash fully qualified name. Covers the type position of `@throws`, `@param`, `@return`, `@var`, `@property`, `@property-read`, `@method`, `@extends`, `@implements` (generic arguments included), and the `{@see ...}` / `{@link ...}` cross-references. | [phpdoc.md](phpdoc.md) rules 9 and 12 |
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
+| `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 
 The checker is not a second source of truth. Each rule points back at the
 document that owns it, and the failure line carries that path. Change the rule in
@@ -93,3 +94,8 @@ until a person names the owing leaf.
    rule still fires.
 5. Register the rule in `CodeStyleGuardTest`, regenerate the baseline, and give
    every new record an owing leaf.
+
+A rule that judges production code only is listed in `BACKEND_ONLY_RULES` in the
+same test. It cannot decide that for itself: `check()` receives the path relative
+to the scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and
+is indistinguishable from a backend file. The root is known to the guard.

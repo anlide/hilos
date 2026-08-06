@@ -49,3 +49,8 @@ use scoped suppression only for a deliberate pattern, document-and-accept a
 confirmed false positive, and never a crutch. Run `php -l` and analysis in the
 container — the host PHP is stale (see [../cli/commands.md](../cli/commands.md)
 and [../testing.md](../testing.md)).
+
+This page is about warnings a *toolchain* raises about the code. A warning **PHP
+itself** raises while the code runs is a different subject with a different
+answer, and `@` is not it: read
+[error-suppression.md](error-suppression.md) before suppressing one.

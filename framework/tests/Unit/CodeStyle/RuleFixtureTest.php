@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -23,6 +24,17 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:20 — @ silences a warning with no '
+                    . '`// warning-suppressed:` marker on the line above '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:22 — @ silences a warning with no '
+                    . '`// warning-suppressed:` marker on the line above '
+                    . '(see docs/agents/code-style/error-suppression.md)',
+                'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:25 — the `// warning-suppressed:` marker '
+                    . 'above the call names no reason (see docs/agents/code-style/error-suppression.md)',
+                'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:29 — @ silences a warning with no '
+                    . '`// warning-suppressed:` marker on the line above '
+                    . '(see docs/agents/code-style/error-suppression.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:13 — @property-read references \Hilos\Core\Hilos '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:14 — @method references \Hilos\Tests\CodeStyle\Violation '
@@ -93,6 +105,6 @@ final class RuleFixtureTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule()];
+        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule()];
     }
 }

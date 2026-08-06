@@ -32,6 +32,13 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
   `demo/*/backend`. Adding one is the owner's decision, not the agent's; every
   surviving call carries an inline comment saying what it asks and why plain
   PHP does not answer.
+- Error suppression: `docs/agents/code-style/error-suppression.md` - read
+  before writing `@` in front of a call in `framework/backend` or
+  `demo/*/backend`. `@` is not a warning silencer: a failing builtin becomes a
+  typed exception, a checked error code, or a documented degrade. A surviving
+  suppression carries a marker on the line directly above it -
+  `// warning-suppressed: <what is checked instead of the warning>` - and the
+  `ERROR-SUPPRESSION` guard fails `test:framework:unit` without it.
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - PHP class member order: `docs/agents/code-style/php-class-members.md` -
   read when adding or reordering class constants, properties, or methods.
@@ -141,6 +148,10 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
   `new static()`, never `new self()`. Mark a class with no subclasses `final`
   and keep its body, native return type, and `@return` aligned.
 - Use `?type` for nullable PHP types in code and regular PHPDoc, unless a documented exception applies.
+- Do not use `@` to silence a PHP warning in production code. Where suppression
+  survives, it carries `// warning-suppressed: <reason>` on the line directly
+  above the call, and the result is checked in the same few lines. Never
+  `error_get_last()` after a suppressed call.
 - Do not add unrelated refactors while applying style cleanup.
 - Do not add unapproved convenience helpers or predicates during refactors.
 - Do not write repeated payload/model/table keys as magic strings when an owner

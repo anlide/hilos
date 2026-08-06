@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -27,6 +28,17 @@ final class CodeStyleGuardTest extends TestCase
      * @var array<string, array<int, string>>
      */
     private const array EXCLUDED_PATHS = ['framework/tests' => ['CodeStyle/Fixtures']];
+
+    /**
+     * Rules that judge production code only, listed here because the scanned root
+     * is known here and nowhere else: a rule receives the path relative to its
+     * root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and reads
+     * exactly like a backend file. A suite is allowed what production is not —
+     * suppressing a warning while it arranges a failure, for one.
+     *
+     * @var array<int, string>
+     */
+    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID];
 
 
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
@@ -53,10 +65,10 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function reportedViolations(): array
     {
-        $rules = $this->rules();
         $reported = [];
 
         foreach ($this->scannedRoots() as $root) {
+            $rules = $this->rulesFor($root);
             $scanner = new SourceScanner($this->repositoryRoot() . '/' . $root, self::EXCLUDED_PATHS[$root] ?? []);
             foreach ($scanner->files() as $file) {
                 $relativePath = $scanner->relativePath($file);
@@ -96,7 +108,23 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule()];
+        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule()];
+    }
+
+    /**
+     * @param string $root Scanned root, relative to the repository root
+     * @return array<int, CodeStyleRule> Rules that judge this root, in report order
+     */
+    private function rulesFor(string $root): array
+    {
+        if (str_ends_with($root, '/backend')) {
+            return $this->rules();
+        }
+
+        return array_values(array_filter(
+            $this->rules(),
+            static fn(CodeStyleRule $rule): bool => !in_array($rule->id(), self::BACKEND_ONLY_RULES, true),
+        ));
     }
 
     /**
