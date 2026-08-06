@@ -35,7 +35,7 @@ final class ModeratorPromptPiece extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::section => PhpType::STRING->value,
-        self::prompt_piece => PhpType::STRING->value,
+        self::prompt_piece => PhpType::TEXT->value,
     ];
 
     // Properties

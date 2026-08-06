@@ -67,6 +67,7 @@
         "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-cli-test php backend/Bootstrap/cli.php db:test:reset",
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-cli-test php backend/Bootstrap/cli.php db:wait",
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
         "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-frontend-cli-test sh -c \"npm install && npm run check\"",
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm todo-frontend-cli-test sh -c \"npm install && npm run build\"",

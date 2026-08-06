@@ -57,6 +57,12 @@ live schema through `Hilos\Database\Schema\EntitySchemaAudit`, comparing the dec
 `_types` against the raw column type via `PhpType::forMysqlType()`. Add both migration
 stub files (`create_<table>.sql` and its `_down`) when adding a framework Entity.
 
+Projects and demos wire their own Entities into the same auditor from their integration
+suite (see `demo/*/tests/Integration/EntitySchemaConsistencyTest.php`). For a framework
+table whose DDL the project carries in its own migrations, the INDEX axis is not
+checked: a project may add an index of its own for its own queries. It may extend the
+schema, not diverge from the metadata.
+
 ## Settings Entity (special case)
 
 `Entity/Item/Setting.php` — key/value store for app-level runtime settings.

@@ -55,10 +55,10 @@ final class Bot extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::name => PhpType::STRING->value,
-        self::description => PhpType::STRING->value,
+        self::description => PhpType::TEXT->value,
         self::style => PhpType::STRING->value,
-        self::topics => PhpType::STRING->value,
-        self::personality => PhpType::STRING->value,
+        self::topics => PhpType::TEXT->value,
+        self::personality => PhpType::TEXT->value,
         self::active => PhpType::BOOLEAN->value,
         self::reaction_delay_min => PhpType::INTEGER->value,
         self::reaction_delay_max => PhpType::INTEGER->value,

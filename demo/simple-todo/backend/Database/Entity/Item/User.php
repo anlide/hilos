@@ -49,6 +49,8 @@ final class User extends Entity
 
     // Indexes
     public const array _indexes = [
+        'admin' => [Entity::INDEX_COLUMNS => [self::admin]],
+        'block' => [Entity::INDEX_COLUMNS => [self::block]],
         'session_token' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_token]],
         'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];

@@ -36,7 +36,7 @@ final class EventMessage extends Entity
         self::event_id => PhpType::INTEGER->value,
         self::author_user_id => PhpType::INTEGER->value,
         self::author_bot_id => PhpType::INTEGER->value,
-        self::message => PhpType::STRING->value,
+        self::message => PhpType::TEXT->value,
     ];
 
     public const array _foreign = [
