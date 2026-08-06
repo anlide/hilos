@@ -104,6 +104,15 @@ when:
   screen-reader semantics; or
 - before collapsing or merging the branch, as the final gate.
 
+Its npm installs and SDK builds are **idempotent and self-skipping**: every
+`npm ci` / `npm install` in the test targets goes through
+`npm-install-if-stale.mjs` and every SDK build through `prebuild-sdk.mjs`, so a
+second run on an unchanged tree performs neither, and says on stdout which it
+skipped and why. Nothing is skipped by looking at a diff, and no test or check is
+ever skipped — only work whose output is already on disk and provably current
+(see [frontend/build-and-docker.md](frontend/build-and-docker.md)). If a run
+looks suspiciously cheap, the guards' own log lines are the first place to check.
+
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 `moderator.spec.ts` (Vue; settings / bots / profile also carry two-tab tests) and
 the `users.spec.ts` of simple-todo (React) and simple-poll (Angular) — one

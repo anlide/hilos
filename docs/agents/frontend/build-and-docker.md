@@ -185,10 +185,11 @@ symlinks into `framework/frontend/*`, whose `dist/` is a gitignored build
 artifact — **absent on a fresh clone**. A production build resolves the SDK to
 that `dist` (to build against the same artifact a real vendored consumer ships —
 "test what you ship"), so it fails until the SDK is built once. Each demo has a
-`prebuild` npm hook — `npm --prefix ../../../framework/frontend install && … run
-build:<view>` — so `npm run build` builds the SDK first automatically, the same
+`prebuild` npm hook — `node ../../../framework/frontend/scripts/prebuild-sdk.mjs
+<view>` — so `npm run build` builds the SDK first automatically, the same
 lifecycle idiom the SDK already uses internally
-(`@hilos/angular`'s `prebuild` builds `@hilos/core`).
+(`@hilos/angular`'s `prebuild` builds `@hilos/core`, through the same script in
+its `core` mode).
 
 The hook names a **per-view** script (`build:vue`, `build:react`,
 `build:angular`), which builds `@hilos/core` plus that demo's own view layer and
@@ -197,12 +198,49 @@ demos that exist to prove the core is framework-agnostic: a broken or
 version-drifted sibling layer would fail an unrelated demo's build, and every
 demo would pay for the Angular layer's `ng-packagr` pass. The full-workspace
 `build` stays the entry point for `pack` and for the SDK's own checks. The
-Angular path compiles the core twice — the explicit list plus the layer's own
-`prebuild` guard — a cheap `tsc` that keeps the core current however the layer
-is built. Dev needs no hook: every
+Angular path asks for the core twice — the explicit list plus the layer's own
+`prebuild`, which keeps the core current however the layer is built — but the
+second ask now costs a `stat` sweep instead of a `tsc` run, because the first
+one has just made it current. Dev needs no hook: every
 demo resolves the SDK to `src` in dev (the Vite demos through the `development`
 export condition, the Angular demo through its `tsconfig.dev.json` paths), so a
 `dist` is never required to `npm run dev`.
+
+### The build and install guards
+
+`prebuild-sdk.mjs` does not rebuild what is already built, and its sibling
+`npm-install-if-stale.mjs` does not reinstall what is already installed. A full
+Verify run walks the SDK past four consumers — the workspace itself and three
+demos — and without the guards it built the SDK four times and installed the same
+unchanged lockfiles four more, for about two minutes of the run (HIL-519).
+
+A `dist` is stale when it is missing, empty, or when the newest of the package's
+sources — `src/**` plus every `*.json` at the package root, so `tsconfig*.json`
+and `ng-package.json` are covered without enumerating them — is newer than the
+**oldest** file inside `dist`. Oldest, not newest: a build that died halfway
+leaves fresh files beside stale ones, and only the oldest of them reports that
+the artifact as a whole predates its sources. An install is skippable when
+`node_modules` carries a stamp naming the sha256 of the current
+`package-lock.json` *and* the npm mode (`ci` or `install`) that produced it. The
+modes are **ordered, not merely different**: `npm ci` wipes `node_modules` and
+installs the lockfile exactly, so the tree it leaves also satisfies an
+`npm install` of that lockfile — never the reverse. Treating them as simply
+unequal makes them mutually exclusive, and the full run uses both on the same
+tree (`test:framework:frontend:install` with ci, the demo hook with install), so
+each would keep undoing the other's stamp and neither would ever skip. The stamp
+lives inside `node_modules` on purpose: whatever removes the tree removes the
+claim that it is current along with it.
+
+Both guards state their verdict on stdout — `sdk: core, vue current — skipped`,
+or the exact file that forced the rebuild — because a step that silently does
+nothing is indistinguishable from a step that silently did the wrong thing.
+
+Two properties make them safe to leave on. **A fresh clone still builds:** `dist`
+is a gitignored artifact, so it is absent, and absent reads as stale. And
+**every uncertainty falls through to the real command** — an unreadable stamp, a
+missing lockfile, sources that cannot be listed. A guard that wrongly skips turns
+a red run green; a guard that wrongly runs costs seconds. The decision rules are
+pure functions in `scripts/staleness.mjs`, covered by the `scripts` test project.
 
 This `prebuild` is a **monorepo-dev convenience**, not part of the shipped
 consumer contract: a real project vendors the SDK as a prebuilt Composer tarball
@@ -232,6 +270,11 @@ Full `npm run build`, SDK prebuild included: Angular 15.8s, React 10.3s,
 Vue 12.3s. The dev server starts in 4.5–5.5s (`ng serve`) against 0.7–0.8s for
 the Vite demos, and its HMR round-trip settles at ~0.4s, for an app edit and an
 SDK-source edit alike.
+
+Those prebuild figures are the **cold** path — the one a fresh clone and any
+touched SDK source take. When the SDK is already current the hook costs a
+directory walk (well under a second) and the app build is all that remains, which
+is the usual case for the second and third demo of a Verify run.
 
 Read those numbers with three rules:
 

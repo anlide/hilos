@@ -6,7 +6,7 @@
   "scripts": {
     "ng": "ng",
     "dev": "ng serve --host 0.0.0.0 --port 5173",
-    "prebuild": "npm --prefix ../../../framework/frontend install && npm --prefix ../../../framework/frontend run build:angular",
+    "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs angular",
     "build": "ng build",
     "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
     "check": "tsc --noEmit -p tsconfig.dev.json"
