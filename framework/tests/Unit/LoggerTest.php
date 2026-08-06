@@ -15,6 +15,9 @@ final class LoggerTest extends TestCase
 {
     private const string TIMESTAMP_PATTERN = '/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
 
+    /** Same stamp without the start anchor, to count how many a line carries */
+    private const string TIMESTAMP_ANYWHERE_PATTERN = '/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/';
+
     protected function tearDown(): void
     {
         $reflection = new ReflectionClass(Logger::class);
@@ -85,6 +88,50 @@ final class LoggerTest extends TestCase
         $this->assertStringContainsString(' failure', $mainLine);
         $this->assertStringNotContainsString('ERROR:', $errorLine);
         $this->assertStringContainsString(' failure', $errorLine);
+    }
+
+    /**
+     * error() with only the error log file set writes one stamped line there and keeps
+     * echoing to stdout (the docker watchdog setup).
+     */
+    public function testErrorWritesToErrorLogFileWithoutMainLogFile(): void
+    {
+        $errorLogFile = $this->createTempLogFile();
+        Logger::setErrorLogFile($errorLogFile);
+
+        ob_start();
+        Logger::error('failure');
+        $stdout = ob_get_clean();
+
+        $content = file_get_contents($errorLogFile);
+        $this->assertNotFalse($content);
+        $this->assertSame(1, substr_count($content, "\n"));
+
+        $line = rtrim($content, "\n");
+        $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $line);
+        $this->assertSame(1, preg_match_all(self::TIMESTAMP_ANYWHERE_PATTERN, $line));
+        $this->assertStringNotContainsString('ERROR:', $line);
+        $this->assertStringContainsString(' failure', $line);
+
+        $this->assertNotFalse($stdout);
+        $this->assertStringContainsString('ERROR:', $stdout);
+    }
+
+    /**
+     * errorLog() with only the error log file set stamps the message and writes it there
+     * instead of falling through to error_log().
+     */
+    public function testErrorLogWritesToErrorLogFileWithoutMainLogFile(): void
+    {
+        $errorLogFile = $this->createTempLogFile();
+        Logger::setErrorLogFile($errorLogFile);
+
+        Logger::errorLog('raw failure');
+
+        $line = $this->readLogLine($errorLogFile);
+        $this->assertMatchesRegularExpression(self::TIMESTAMP_PATTERN, $line);
+        $this->assertSame(1, preg_match_all(self::TIMESTAMP_ANYWHERE_PATTERN, $line));
+        $this->assertStringContainsString(' raw failure', $line);
     }
 
     /**

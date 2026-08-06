@@ -338,9 +338,9 @@ class DockerManager extends BaseManager
         try {
             $this->process->stop();
         } catch (FailedToGetStatusException $e) {
-            Logger::errorLog('Failed to get status while stopping daemon: ' . $e->getMessage());
+            Logger::error('Failed to get status while stopping daemon: ' . $e->getMessage());
         } catch (FailedToTerminateProcessException $e) {
-            Logger::errorLog('Failed to terminate daemon process: ' . $e->getMessage());
+            Logger::error('Failed to terminate daemon process: ' . $e->getMessage());
         }
     }
 
@@ -357,36 +357,33 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Log error message (file + system log).
+     * Log error message (process error log + container stdout).
      *
      * @param string $message Error message to log
-     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logError(string $message): void
     {
-        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+        Logger::error($message);
     }
 
     /**
-     * Log exception message (file + system log).
+     * Log exception message (process error log + container stdout).
      *
      * @param string $message Exception message to log
-     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logException(string $message): void
     {
-        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+        Logger::error($message);
     }
 
     /**
-     * Log shutdown message (file + system log).
+     * Log shutdown message (process error log + container stdout).
      *
      * @param string $message Shutdown message to log
-     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logShutdown(string $message): void
     {
-        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
+        Logger::error($message);
     }
 
     /**

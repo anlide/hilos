@@ -66,6 +66,10 @@ class Logger
     /**
      * Set error log file path for error-only logging.
      *
+     * The address holds independently of the main log: a process that sets only this one
+     * (the docker watchdog) keeps echoing its whole feed to stdout while its errors are
+     * also appended here.
+     *
      * @param string $errorLogFile Error log file path
      */
     public static function setErrorLogFile(string $errorLogFile): void
@@ -149,6 +153,10 @@ class Logger
     /**
      * Log message.
      *
+     * With no main log file the line is echoed to stdout; an ERROR is additionally
+     * appended to the error log file when one is set, and only falls back to stderr
+     * when it is not.
+     *
      * @param string $level Log level (INFO, ERROR, WARNING, DEBUG)
      * @param string $message Message
      * @param array<string, mixed> $context Optional context data
@@ -182,12 +190,19 @@ class Logger
             }
         } else {
             // Fallback to echo/error_log
-            // For ERROR level: write to both stdout (with prefix) and stderr (without prefix)
+            // For ERROR level: write to both stdout (with prefix) and the error log file
+            // (without prefix), or stderr when no error log file is set
             if ($level === self::LEVEL_ERROR) {
                 // Write to stdout (main log file) with ERROR: prefix
                 echo $mainLogLine . "\n";
-                // Write to stderr (error log file) without prefix
-                self::errorLog($errorLogLine);
+                if (self::$errorLogFile !== null) {
+                    // Write straight to the file: the line already carries its
+                    // timestamp, and errorLog() would stamp it a second time
+                    file_put_contents(self::$errorLogFile, $errorLogLine . "\n", FILE_APPEND | LOCK_EX);
+                } else {
+                    // Write to stderr without prefix
+                    self::errorLog($errorLogLine);
+                }
             } elseif ($useStderr) {
                 // For other levels going to stderr, write without prefix
                 self::errorLog($errorLogLine);
@@ -202,7 +217,9 @@ class Logger
      * Log error message using error_log (replacement for error_log function)
      *
      * This method replaces direct error_log() calls throughout the codebase.
-     * If log file is set, writes to file, otherwise uses error_log().
+     * If the main log file is set, writes there (and to the error log file when that is
+     * set too); with no main log file it writes to the error log file alone, stamping the
+     * line itself; with neither, it falls back to error_log().
      *
      * @param string $message Error message
      * @param int $messageType Optional message type (default: 0)
@@ -227,6 +244,11 @@ class Logger
                 $errorLogLine = "[{$timestamp}] {$message}";
                 file_put_contents(self::$errorLogFile, $errorLogLine . "\n", FILE_APPEND | LOCK_EX);
             }
+        } elseif (self::$errorLogFile !== null) {
+            // No main log, but the process declared an error log: write there in the
+            // same "[timestamp] message" shape the daemon uses for that file
+            $timestamp = TimeHelper::getTimestampWithMs();
+            file_put_contents(self::$errorLogFile, "[{$timestamp}] {$message}\n", FILE_APPEND | LOCK_EX);
         } else {
             // Fallback to error_log
             error_log($message, $messageType);

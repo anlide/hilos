@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
@@ -64,6 +65,10 @@ final class DockerApplication
                 // Initialize Hilos now that the schema is ready.
                 $hilosClass::init();
             });
+
+            // Only the error log address: setLogFile() would stop Logger from echoing and
+            // leave the container's docker logs empty, which is where a dead node is read first.
+            Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
 
             $dockerManager = new DockerManager();
             $dockerManager->runDockerWatchdog($bootstrapDir . '/daemon.php');

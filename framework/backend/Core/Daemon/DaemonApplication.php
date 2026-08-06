@@ -45,6 +45,7 @@ final class DaemonApplication
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
 
             Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
+            Logger::setErrorLogFile(Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
 
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));

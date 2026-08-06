@@ -51,6 +51,14 @@ written by the kernel and never passes through the watchdog: there is nothing fo
 is the failed-start escalation above, which reads the tail of the error file — a deliberate
 read of a file, not of a stream.
 
+**The watchdog's own errors land in the same error file.** `DockerApplication::run()` calls
+`Logger::setErrorLogFile(DAEMON_ERROR_LOG_FILE)` at startup and deliberately does *not* call
+`setLogFile()`: with no main log file the logger keeps echoing its whole feed to stdout, so
+`docker logs` — the first place a dead node is read — stays complete, while errors are
+additionally appended to the file. So both halves of an incident (the daemon's crash trail
+and the watchdog's stop/restart trail) end up in one file, the one the Hilos logs admin page
+already reads. The daemon does the same for its own process next to `setLogFile()`.
+
 The cluster harness guards this end to end: `cluster start <node>` reuses the existing
 container instead of recreating it, and scenario 9 (`cluster_e2e.py`) SIGKILLs the daemon
 inside a live container and requires the node to rebind, rejoin the roster, and accept
