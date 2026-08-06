@@ -38,6 +38,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
@@ -223,6 +225,19 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * calling parent::onInitialWorkersReady() first.
      */
     protected function onInitialWorkersReady(): void
+    {
+        $this->startPerNodeAgents();
+    }
+
+    /**
+     * Starts every agent the project registry flags {@see AgentRegistryKey::PER_NODE}.
+     *
+     * Shared by the workers-ready bootstrap and by the protected-mode lift default
+     * ({@see onProtectedModeLifted()}), which needs exactly this loop, containment included.
+     * A per-agent start failure is contained and logged so it never strands the others; an
+     * empty per-node set is a normal no-op.
+     */
+    final protected function startPerNodeAgents(): void
     {
         foreach (Hilos::appClass()::AGENTS as $agentType => $registryEntry) {
             if (!AgentRegistry::startsOnEveryNode($registryEntry)) {
@@ -841,6 +856,15 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             }
         }
 
+        // Protected-mode freeze gate: while the node is frozen only the initiator agent may
+        // start, so an inbound signal cannot revive an agent the freeze just stopped. It sits
+        // here, above the temporary record, because it needs only the identity - unlike the
+        // leadership gate below, which needs the agent daemon and therefore has to roll back.
+        if ($this->protectedModeRefusesStart($agentType, $agentIndex)) {
+            Logger::debug("Agent {$agentId} not started: protected mode holds the node");
+            return;
+        }
+
         // Create agent daemon if it doesn't exist (temporary, will be linked to worker below)
         if (!$this->agentManager->hasAgent($agentId)) {
             // Create agent daemon with dummy worker info (will be updated when linked)
@@ -901,6 +925,42 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             Logger::error("Cluster leadership unavailable, assuming standalone leader: {$e->getMessage()}");
             return true;
         }
+    }
+
+    /**
+     * Whether the protected-mode freeze refuses to let this agent start right now.
+     *
+     * A pure read of the freeze row, with no state of its own: the gate opens again the
+     * moment the phase returns to inactive, even if the resume that follows the lift fails.
+     * Every non-inactive phase holds - a follower stops at activating and never reaches
+     * active, and a window during deactivating would reopen the very defect the gate closes.
+     * An active freeze with no initiator recorded refuses everyone: during a live freeze an
+     * unknown initiator must read as "nobody may start", never as "everybody may". Fail-open
+     * without a mounted row is safe by construction - the mode cannot be entered at all
+     * there ({@see DaemonProtectedModeExecutor::enterActivating()}), so there is no freeze
+     * to protect.
+     *
+     * @param string $agentType Agent type asking to start
+     * @param ?string $agentIndex Agent index asking to start, or null for a singleton
+     * @return bool True when the freeze refuses this start
+     */
+    private function protectedModeRefusesStart(string $agentType, ?string $agentIndex): bool
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null || $freeze->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return false;
+        }
+
+        if ($freeze->initiatorAgentType === null) {
+            return true;
+        }
+
+        $initiatorAgentId = $this->buildAgentId(
+            $freeze->initiatorAgentType,
+            $freeze->initiatorAgentIndex === null ? null : (string)$freeze->initiatorAgentIndex,
+        );
+
+        return $this->buildAgentId($agentType, $agentIndex) !== $initiatorAgentId;
     }
 
     /**
@@ -1018,12 +1078,24 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         $parsedAgentType = $parsed->type;
         $parsedAgentIndex = $parsed->index;
 
-        // If agent doesn't exist or not linked to worker, try to start it
+        // If agent doesn't exist or not linked to worker, try to start it. A start the freeze
+        // refuses ends the delivery here, quietly: the gate in startAgent() would otherwise
+        // surface as AgentNotFoundException below, and dispatchSignals() catches only
+        // NoSuitableWorkerException - the freeze would kill the daemon mid-restore. Delivery
+        // to the still-running initiator goes through the branch below and is untouched.
         if (!$this->agentManager->hasAgent($agentId)) {
+            if ($this->protectedModeRefusesStart($parsedAgentType, $parsedAgentIndex)) {
+                Logger::debug("Signal to agent {$agentId} dropped: protected mode holds the node");
+                return;
+            }
             $this->startAgent($parsedAgentType, $parsedAgentIndex);
         } else {
             $agentDaemon = $this->agentManager->getAgent($agentId);
             if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
+                if ($this->protectedModeRefusesStart($parsedAgentType, $parsedAgentIndex)) {
+                    Logger::debug("Signal to agent {$agentId} dropped: protected mode holds the node");
+                    return;
+                }
                 $this->startAgent($parsedAgentType, $parsedAgentIndex);
             }
         }
@@ -1149,10 +1221,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * {@see stopAgent()} mutates the roster. Bringing the stopped agents back when the freeze
      * lifts is the mirror seam, landed in HIL-267 slice 7b.
      *
-     * @param ?string $initiatorAgentType Initiator agent type left running, or null when none is recorded
+     * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
      */
-    public function stopAgentsForProtectedMode(?string $initiatorAgentType, ?string $initiatorAgentIndex): void
+    public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void
     {
         $initiatorAgentId = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
 
@@ -1166,6 +1238,13 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $this->protectedModeStoppedAgents[] = $parsed;
             $this->stopAgent($parsed->type, $parsed->index);
         }
+
+        // Say the freeze took hold: a restore log otherwise shows the decision to freeze but
+        // nothing about the roster it actually stopped on this node.
+        Logger::info(
+            'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
+            . count($this->protectedModeStoppedAgents) . ' agent(s)',
+        );
     }
 
     /**
@@ -1177,7 +1256,9 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * leadership and worker gates silently drop any that no longer belong here (e.g. a
      * cluster-singleton whose node lost leadership during the freeze). Clears the remembered set up
      * front so a second lift is a harmless no-op, and contains a per-agent start failure so one bad
-     * restart never strands the rest.
+     * restart never strands the rest. Nothing has to be un-set first: the executor writes the
+     * inactive phase before it calls this, so each replayed start passes the freeze gate on its own.
+     * Ends by firing {@see onProtectedModeLifted()} for whatever else the application wants back.
      */
     public function resumeAgentsForProtectedMode(): void
     {
@@ -1192,6 +1273,26 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
             }
         }
+
+        $this->onProtectedModeLifted();
+    }
+
+    /**
+     * Called once on this node when the protected-mode freeze lifts, after the remembered
+     * roster has been replayed.
+     *
+     * The framework brings back only what it knows: the agents the freeze itself stopped, plus
+     * the per-node registry list this default starts. Anything else this node was running is
+     * the application's call - a project that starts local agents by overriding
+     * {@see onInitialWorkersReady()} has to override this hook too, or those agents stay down
+     * until something else starts them. The default is not redundant with the replayed roster:
+     * the roster is captured once on entry, so an agent whose start the gate refused during the
+     * freeze (a worker re-registering after a crash, a cluster placement) is in no list at all.
+     * {@see startAgent()} is idempotent, so replaying a still-running agent is a no-op.
+     */
+    protected function onProtectedModeLifted(): void
+    {
+        $this->startPerNodeAgents();
     }
 
     /**
