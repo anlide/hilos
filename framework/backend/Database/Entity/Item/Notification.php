@@ -66,7 +66,7 @@ final class Notification extends Entity
     ];
 
     public ?int $id = null;
-    public ?int $user_id = null;
+    public int $user_id;
     public string $type;
     public string $severity = 'info';
     public string $title;

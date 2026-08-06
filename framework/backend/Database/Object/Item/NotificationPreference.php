@@ -21,7 +21,7 @@ use Hilos\Database\Object\Item\Object_;
  * @extends Object_<EntityNotificationPreference>
  *
  * @property-read ?int $id
- * @property ?int $userId
+ * @property int $userId
  * @property string $channel
  * @property bool $enabled
  * @property ?string $createdAt
@@ -77,7 +77,7 @@ final class NotificationPreference extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
+            self::userId => $this->entity->user_id = (int)$value,
             self::channel => $this->entity->channel = (string)$value,
             self::enabled => $this->entity->enabled = (bool)$value,
             self::createdAt => $this->entity->created_at = $value === null ? null : (string)$value,

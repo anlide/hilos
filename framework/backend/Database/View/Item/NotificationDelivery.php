@@ -16,7 +16,7 @@ use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDeliver
  *
  * @extends DbItem<ObjectNotificationDelivery>
  * @property-read ?int $id
- * @property-read ?int $notificationId
+ * @property-read int $notificationId
  * @property-read string $channel
  * @property-read string $status
  * @property-read int $attempts

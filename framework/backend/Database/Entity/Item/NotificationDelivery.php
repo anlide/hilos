@@ -66,7 +66,7 @@ final class NotificationDelivery extends Entity
     ];
 
     public ?int $id = null;
-    public ?int $notification_id = null;
+    public int $notification_id;
     public string $channel;
     public string $status = 'pending';
     public int $attempts = 0;

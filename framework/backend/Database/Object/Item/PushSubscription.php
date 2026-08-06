@@ -21,7 +21,7 @@ use Hilos\Database\Object\Item\Object_;
  * @extends Object_<EntityPushSubscription>
  *
  * @property-read ?int $id
- * @property ?int $userId
+ * @property int $userId
  * @property string $endpoint
  * @property string $p256dh
  * @property string $auth
@@ -83,7 +83,7 @@ final class PushSubscription extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
+            self::userId => $this->entity->user_id = (int)$value,
             self::endpoint => $this->entity->endpoint = (string)$value,
             self::p256dh => $this->entity->p256dh = (string)$value,
             self::auth => $this->entity->auth = (string)$value,

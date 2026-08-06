@@ -231,7 +231,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         }
 
         $notification = $this->notifications()->get($notificationId);
-        if (!$notification instanceof ObjectNotification || $notification->userId === null) {
+        if (!$notification instanceof ObjectNotification) {
             $deliveries->beginAttempt($delivery);
             $this->failOrRetry($delivery, 'notification unavailable', $notificationId, microtime(true) * 1000);
 

@@ -57,6 +57,22 @@ live schema through `Hilos\Database\Schema\EntitySchemaAudit`, comparing the dec
 `_types` against the raw column type via `PhpType::forMysqlType()`. Add both migration
 stub files (`create_<table>.sql` and its `_down`) when adding a framework Entity.
 
+The audit also reads the **typed property** behind each mapped column, because that is
+the shape hydration writes into, and its nullability is a claim about the column:
+
+- a nullable property (`?int`, `mixed`, or untyped) over a NOT NULL column is a finding —
+  `saveInsert()` may send the NULL the column refuses;
+- a non-nullable property over a NULL-able column is a finding in the other direction —
+  hydrating a stored NULL is a `TypeError`;
+- a NOT NULL column the database fills on its own (`DEFAULT`, `AUTO_INCREMENT`,
+  `GENERATED`) is exempt in both directions: there the null in PHP means "let the
+  database decide" and never reaches the column, which is why `?int $id = null` over an
+  auto-increment primary key is the correct declaration;
+- a column in `_columns` with no instance property to hydrate into is a finding of its own.
+
+So a NOT NULL foreign key column is declared `public int $user_id;` — no `?`, no default.
+The property then throws on save if nobody set it, instead of quietly inserting NULL.
+
 Projects and demos wire their own Entities into the same auditor from their integration
 suite (see `demo/*/tests/Integration/EntitySchemaConsistencyTest.php`). For a framework
 table whose DDL the project carries in its own migrations, the INDEX axis is not

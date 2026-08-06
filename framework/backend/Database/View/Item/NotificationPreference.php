@@ -17,7 +17,7 @@ use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPrefe
  *
  * @extends DbItem<ObjectNotificationPreference>
  * @property-read ?int $id
- * @property-read ?int $userId
+ * @property-read int $userId
  * @property-read string $channel
  * @property-read bool $enabled
  * @property-read ?string $createdAt

@@ -20,7 +20,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * @extends Object_<EntityNotificationDelivery>
  *
  * @property-read ?int $id
- * @property ?int $notificationId
+ * @property int $notificationId
  * @property string $channel
  * @property string $status
  * @property int $attempts
@@ -85,7 +85,7 @@ final class NotificationDelivery extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::notificationId => $this->entity->notification_id = $value === null ? null : (int)$value,
+            self::notificationId => $this->entity->notification_id = (int)$value,
             self::channel => $this->entity->channel = (string)$value,
             self::status => $this->entity->status = (string)$value,
             self::attempts => $this->entity->attempts = (int)$value,

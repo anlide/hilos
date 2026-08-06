@@ -13,7 +13,8 @@ use ReflectionClass;
 
 /**
  * Audits Entity ORM metadata (_table, _columns, _types, _primary, _indexes,
- * _foreign) against the live database schema, entity by entity.
+ * _foreign) and the typed properties hydration writes into against the live
+ * database schema, entity by entity.
  *
  * Lives in framework/backend (not framework/tests) so that demos and projects,
  * which do not see framework/tests, can reuse it. It reads the live schema
@@ -199,7 +200,8 @@ final class EntitySchemaAudit
     }
 
     /**
-     * Axes COLUMN_MISSING, COLUMN_NOT_INSERTABLE, TYPE, TYPE_UNSUPPORTED.
+     * Axes COLUMN_MISSING, COLUMN_NOT_INSERTABLE, PROPERTY_MISSING,
+     * PROPERTY_NULLABLE, TYPE, TYPE_UNSUPPORTED.
      *
      * @param list<EntitySchemaMismatch> $mismatches Accumulator, appended in place
      * @param class-string<Entity> $entityClass Entity being audited
@@ -216,6 +218,8 @@ final class EntitySchemaAudit
         array $types,
         array $liveColumns,
     ): void {
+        $reflection = new ReflectionClass($entityClass);
+
         foreach ($columns as $column) {
             if (!isset($liveColumns[$column])) {
                 $mismatches[] = new EntitySchemaMismatch(
@@ -228,6 +232,10 @@ final class EntitySchemaAudit
                 );
                 continue;
             }
+
+            // Before the type axes, because an unmapped MySQL type skips the rest
+            // of this iteration and would hide a nullability divergence with it.
+            self::auditProperty($mismatches, $entityClass, $table, $column, $liveColumns[$column], $reflection);
 
             $mysqlType = (string) $liveColumns[$column][self::COL_TYPE];
             $accepted = PhpType::forMysqlType($mysqlType);
@@ -266,6 +274,77 @@ final class EntitySchemaAudit
                 $table,
                 $name,
                 'insert-safe (nullable / DEFAULT / auto_increment / GENERATED) or mapped in _columns',
+                'NOT NULL without default',
+            );
+        }
+    }
+
+    /**
+     * Axes PROPERTY_MISSING and PROPERTY_NULLABLE for one mapped column.
+     *
+     * The typed property is the shape hydration writes into, so its nullability is
+     * a claim about the column and is checked in both directions: nullable over a
+     * NOT NULL column means `saveInsert()` may send NULL where the column refuses
+     * it, non-nullable over a NULL-able column means hydrating a stored NULL is a
+     * TypeError. A NOT NULL column the database fills on its own (DEFAULT,
+     * auto_increment, GENERATED — the {@see self::isInsertSafe()} predicate) is
+     * skipped in both directions: there the null in PHP means "let the database
+     * decide" and never reaches the column.
+     *
+     * @param list<EntitySchemaMismatch> $mismatches Accumulator, appended in place
+     * @param class-string<Entity> $entityClass Entity being audited
+     * @param string $table The Entity's _table
+     * @param string $column Column from _columns, known to exist in the live table
+     * @param array<string, mixed> $columnInfo Live column row (IS_NULLABLE, COLUMN_DEFAULT, EXTRA)
+     * @param ReflectionClass<Entity> $reflection Reflection of the audited Entity
+     */
+    private static function auditProperty(
+        array &$mismatches,
+        string $entityClass,
+        string $table,
+        string $column,
+        array $columnInfo,
+        ReflectionClass $reflection,
+    ): void {
+        if (!$reflection->hasProperty($column) || $reflection->getProperty($column)->isStatic()) {
+            $mismatches[] = new EntitySchemaMismatch(
+                EntitySchemaAxis::PROPERTY_MISSING,
+                $entityClass,
+                $table,
+                $column,
+                'instance property $' . $column,
+                $reflection->hasProperty($column) ? 'declared static' : 'no property',
+            );
+            return;
+        }
+
+        // A property with no type at all, and `mixed`, both hold null — and
+        // allowsNull() already answers true for `mixed`, so one call covers all three.
+        $type = $reflection->getProperty($column)->getType();
+        $propertyNullable = $type === null || $type->allowsNull();
+        $columnNullable = $columnInfo[self::COL_IS_NULLABLE] === self::NULLABLE_YES;
+
+        if ($columnNullable) {
+            if (!$propertyNullable) {
+                $mismatches[] = new EntitySchemaMismatch(
+                    EntitySchemaAxis::PROPERTY_NULLABLE,
+                    $entityClass,
+                    $table,
+                    $column,
+                    'nullable property',
+                    'NULL-able column',
+                );
+            }
+            return;
+        }
+
+        if ($propertyNullable && !self::isInsertSafe($columnInfo)) {
+            $mismatches[] = new EntitySchemaMismatch(
+                EntitySchemaAxis::PROPERTY_NULLABLE,
+                $entityClass,
+                $table,
+                $column,
+                'non-nullable property',
                 'NOT NULL without default',
             );
         }

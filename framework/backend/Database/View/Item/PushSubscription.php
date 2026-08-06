@@ -16,7 +16,7 @@ use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
  *
  * @extends DbItem<ObjectPushSubscription>
  * @property-read ?int $id
- * @property-read ?int $userId
+ * @property-read int $userId
  * @property-read string $endpoint
  * @property-read string $p256dh
  * @property-read string $auth

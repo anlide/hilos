@@ -59,7 +59,7 @@ final class NotificationPreference extends Entity
     ];
 
     public ?int $id = null;
-    public ?int $user_id = null;
+    public int $user_id;
     public string $channel = '';
     public bool $enabled = false;
     public ?string $created_at = null;

@@ -239,7 +239,7 @@ abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
     {
         return new NotificationCreatedSignalData(
             id: $notification->id ?? 0,
-            userId: $notification->userId ?? 0,
+            userId: $notification->userId,
             type: $notification->type,
             severity: $notification->severity,
             title: $notification->title,

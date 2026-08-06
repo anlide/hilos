@@ -19,7 +19,7 @@ use Hilos\Database\Object\Item\Object_;
  * @extends Object_<EntityNotification>
  *
  * @property-read ?int $id
- * @property ?int $userId
+ * @property int $userId
  * @property string $type
  * @property string $severity
  * @property string $title
@@ -84,7 +84,7 @@ final class Notification extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
+            self::userId => $this->entity->user_id = (int)$value,
             self::type => $this->entity->type = (string)$value,
             self::severity => $this->entity->severity = (string)$value,
             self::title => $this->entity->title = (string)$value,

@@ -50,7 +50,7 @@ class NotificationDispatcher
     {
         $notificationId = $notification->id;
         $userId = $notification->userId;
-        if ($notificationId === null || $userId === null) {
+        if ($notificationId === null) {
             return;
         }
 
@@ -104,7 +104,7 @@ class NotificationDispatcher
     {
         $notificationId = $delivery->notificationId;
         $channel = $delivery->channel;
-        if ($notificationId === null || $channel === '') {
+        if ($channel === '') {
             return;
         }
 

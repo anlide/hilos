@@ -69,7 +69,7 @@ final class PushSubscription extends Entity
     ];
 
     public ?int $id = null;
-    public ?int $user_id = null;
+    public int $user_id;
     public string $endpoint = '';
     public string $p256dh = '';
     public string $auth = '';

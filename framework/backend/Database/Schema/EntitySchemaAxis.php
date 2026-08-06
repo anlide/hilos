@@ -33,6 +33,16 @@ enum EntitySchemaAxis: string
     /** The live column type has no entry in the PhpType↔MySQL reference table. */
     case TYPE_UNSUPPORTED = 'type_unsupported';
 
+    /** A column declared in _columns has no instance property to hydrate into. */
+    case PROPERTY_MISSING = 'property_missing';
+
+    /**
+     * The property's nullability contradicts the column's: it is nullable over a
+     * NOT NULL column the database will not fill on its own, or non-nullable over
+     * a NULL-able column.
+     */
+    case PROPERTY_NULLABLE = 'property_nullable';
+
     /** _primary and the live PRIMARY KEY disagree, or the PRIMARY KEY is missing. */
     case PRIMARY = 'primary';
 

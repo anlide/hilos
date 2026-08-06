@@ -17,7 +17,7 @@ use Hilos\Database\Object\Item\Notification as ObjectNotification;
  *
  * @extends DbItem<ObjectNotification>
  * @property-read ?int $id
- * @property-read ?int $userId
+ * @property-read int $userId
  * @property-read string $type
  * @property-read string $severity
  * @property-read string $title
