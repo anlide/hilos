@@ -186,6 +186,7 @@ export {
 } from './auth/passkey.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
   SIGNAL_TYPE_PAGE_UNSUBSCRIBE,
   SIGNAL_TYPE_PAGE_RESPONSE,
@@ -243,6 +244,15 @@ export {
   type HandshakeSignalData,
 } from './protocol/envelope.js'
 export {
+  protectedModeBlockSchema,
+  toProtectedModeStatus,
+  isSameProtectedModeStatus,
+  PROTECTED_MODE_INACTIVE,
+  PROTECTED_MODE_FALLBACK_COPY,
+  type ProtectedModeBlock,
+  type ProtectedModeStatus,
+} from './protocol/protectedMode.js'
+export {
   entityFragmentSchema,
   listItemSchema,
   listSectionSchema,
@@ -257,6 +267,7 @@ export {
   parseSignal,
   type ParsedSignal,
   type HandshakeSignal,
+  type ProtectedModeSignal,
   type ActionSuccessSignal,
   type ActionErrorSignal,
   type ProjectSignal,

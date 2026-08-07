@@ -4,6 +4,7 @@
 // extra keys and unknown signal types must survive parsing so a newer backend
 // never breaks an older client.
 import { z } from 'zod'
+import { protectedModeBlockSchema } from './protectedMode.js'
 
 /**
  * Abstract envelope of every server→client frame:
@@ -24,9 +25,18 @@ export const signalEnvelopeSchema = z.looseObject({
 
 export type SignalEnvelope = z.infer<typeof signalEnvelopeSchema>
 
-/** Payload of the framework welcome (`type: 'handshake'`), sent first after the socket opens. */
+/**
+ * Payload of the framework welcome (`type: 'handshake'`), sent first after the
+ * socket opens: the daemon build plus, since HIL-268, the protected-mode block
+ * that lets a connection arriving mid-freeze paint the maintenance surface before
+ * it subscribes to anything. The block is optional and `catch`-guarded rather than
+ * required: an older daemon sends none, and a half-built one must not cost the
+ * client its welcome — the build check and the session it opens matter more than
+ * the freeze notice, which the pushed frame would repeat anyway.
+ */
 export const handshakeSignalDataSchema = z.looseObject({
   build: z.string().min(1),
+  protectedMode: protectedModeBlockSchema.optional().catch(undefined),
 })
 
 export type HandshakeSignalData = z.infer<typeof handshakeSignalDataSchema>

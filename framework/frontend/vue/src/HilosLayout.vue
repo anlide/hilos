@@ -12,24 +12,38 @@ is a fixed-height viewport column (vh-100): the nav, banner, and footer never sc
 chat page — fills it and scrolls an inner region rather than the whole document.
 The brand, the gear, and the footer links are HilosLinks — no-refresh navigation
 that leaves the socket alive — so the shell alone moves between the project home,
-the admin section, and the public pages. Styling is Bootstrap classes only and
-the shell carries no CSS of its own (styling-rules.md); the status and admin
-icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
-like Bootstrap. -->
+the admin section, and the public pages. While the connection reports protected
+mode the shell becomes the maintenance surface (HilosMaintenance) and keeps only
+the connection indicator — every other region of the shell links to a page the
+freeze has shut. Styling is Bootstrap classes only and the shell carries no CSS
+of its own (styling-rules.md); the status and admin icons are Bootstrap Icons
+(`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import { HILOS_FOOTER_LINKS, HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core'
 import { computed, inject, watch } from 'vue'
 
 import HilosLink from './HilosLink.vue'
+import HilosMaintenance from './HilosMaintenance.vue'
 import HilosToastHost from './HilosToastHost.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useProtectedMode } from './useProtectedMode.js'
 import { useSignal } from './useSignal.js'
 
 const props = defineProps<{ connection: HilosConnection }>()
 
 const connectionState = useConnectionState(props.connection)
+
+// While the backend holds the node in protected mode the shell shows the
+// maintenance surface instead of the routed page, and drops everything that
+// leads anywhere: the brand, the nav, the user region, the admin gear, and the
+// footer all point at pages the freeze has shut. The connection indicator is
+// the one thing that stays — during planned work it is the only status worth
+// telling the visitor. The state is read from the connection, not from a page
+// store, so it outlives routing and subscription lifecycles.
+const protectedMode = useProtectedMode(props.connection)
+const underMaintenance = computed(() => protectedMode.value.active)
 
 // Mirror the navigator's current page title: set it as the document title so the
 // browser tab tracks the no-refresh navigation, and render it in the live region
@@ -93,23 +107,35 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       aria-label="Main"
     >
       <div class="container">
-        <HilosLink to="/" class="navbar-brand mb-0 h1" data-id="nav-brand">
+        <HilosLink
+          v-if="!underMaintenance"
+          to="/"
+          class="navbar-brand mb-0 h1"
+          data-id="nav-brand"
+        >
           <slot name="brand">Hilos</slot>
         </HilosLink>
+        <!-- The auto margin lives on this region whether or not it holds links,
+        so the connection indicator keeps its place on the right while the
+        maintenance surface is up. -->
         <div class="navbar-nav me-auto">
-          <slot name="nav" />
+          <template v-if="!underMaintenance">
+            <slot name="nav" />
+          </template>
         </div>
         <div class="d-flex align-items-center gap-3">
-          <slot name="user" />
-          <HilosLink
-            class="nav-link d-inline-flex align-items-center p-0 fs-5"
-            :to="adminHref"
-            data-id="nav-admin"
-            aria-label="Hilos dashboard"
-          >
-            <i class="bi bi-gear-fill" aria-hidden="true"></i>
-            <span class="visually-hidden">Hilos dashboard</span>
-          </HilosLink>
+          <template v-if="!underMaintenance">
+            <slot name="user" />
+            <HilosLink
+              class="nav-link d-inline-flex align-items-center p-0 fs-5"
+              :to="adminHref"
+              data-id="nav-admin"
+              aria-label="Hilos dashboard"
+            >
+              <i class="bi bi-gear-fill" aria-hidden="true"></i>
+              <span class="visually-hidden">Hilos dashboard</span>
+            </HilosLink>
+          </template>
           <span
             class="navbar-text d-inline-flex align-items-center fs-5"
             :class="connVisual.color"
@@ -136,10 +162,13 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       id="hilos-main-content"
       tabindex="-1"
       class="container flex-grow-1 min-h-0 overflow-auto py-4"
+      :class="{ 'd-flex flex-column': underMaintenance }"
     >
-      <slot />
+      <HilosMaintenance v-if="underMaintenance" :status="protectedMode" />
+      <slot v-else />
     </main>
     <footer
+      v-if="!underMaintenance"
       class="footer flex-shrink-0 border-top bg-body-tertiary py-2"
       data-id="app-footer"
     >

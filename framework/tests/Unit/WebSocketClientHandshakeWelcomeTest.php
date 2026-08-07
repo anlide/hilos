@@ -45,7 +45,18 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
 
         $welcome = $this->decodeFirstFrameAfter101($probe->outboundBytes());
         $this->assertSame(
-            ['type' => 'handshake', 'data' => ['build' => 'dev', 'protectedMode' => ['active' => false]]],
+            [
+                'type' => 'handshake',
+                'data' => [
+                    'build' => 'dev',
+                    'protectedMode' => [
+                        'active' => false,
+                        'operation' => null,
+                        'title' => null,
+                        'message' => null,
+                    ],
+                ],
+            ],
             $welcome,
         );
     }
@@ -142,8 +153,10 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
     /**
      * Decode the first WebSocket frame following the 101 response bytes.
      *
-     * Also pins the frame shape: a single final unmasked text frame with a
-     * 7-bit payload length, and nothing else queued behind it.
+     * Also pins the frame shape: a single final unmasked text frame, and nothing
+     * else queued behind it. Both length forms are read, because the welcome
+     * outgrew the 7-bit one when HIL-268 gave the protected-mode block its copy —
+     * a frozen connection's welcome carries whole sentences.
      *
      * @param string $outbound Bytes queued for the client (101 response + frames)
      * @return array<string, mixed> Decoded JSON payload of the first frame
@@ -156,11 +169,18 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
         $frame = substr($outbound, $delimiterPos + 4);
         $this->assertGreaterThanOrEqual(2, strlen($frame), 'No frame follows the 101 response');
         $this->assertSame(0x81, ord($frame[0]), 'Welcome must be a final text frame');
-        $payloadLength = ord($frame[1]);
-        $this->assertLessThan(126, $payloadLength, 'Welcome payload must use the 7-bit length form');
-        $this->assertSame(2 + $payloadLength, strlen($frame), 'Welcome must be the only frame behind the 101');
 
-        $payload = substr($frame, 2, $payloadLength);
+        $lengthByte = ord($frame[1]);
+        $this->assertLessThan(127, $lengthByte, 'Welcome payload is never long enough for the 64-bit length form');
+        $headerLength = $lengthByte === 126 ? 4 : 2;
+        $payloadLength = $lengthByte === 126 ? unpack('n', substr($frame, 2, 2))[1] : $lengthByte;
+        $this->assertSame(
+            $headerLength + $payloadLength,
+            strlen($frame),
+            'Welcome must be the only frame behind the 101',
+        );
+
+        $payload = substr($frame, $headerLength, $payloadLength);
         $decoded = json_decode($payload, true);
         $this->assertIsArray($decoded);
 

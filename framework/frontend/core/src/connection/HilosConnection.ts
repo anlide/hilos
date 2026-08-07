@@ -30,12 +30,18 @@ import {
   type ParseFailure,
   type ProjectSignal,
   type ProjectSignalSchemas,
+  type ProtectedModeSignal,
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
   type TableViewportDeltaSignal,
   type TableWindowSignal,
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
+import {
+  isSameProtectedModeStatus,
+  PROTECTED_MODE_INACTIVE,
+  type ProtectedModeStatus,
+} from '../protocol/protectedMode.js'
 import {
   computeBackoffDelay,
   DEFAULT_RECONNECT_OPTIONS,
@@ -98,6 +104,14 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
   actionError: ActionErrorSignal
   /** Welcome carried a different build than expected — the consumer forces the refresh. */
   buildMismatch: BuildMismatch
+  /**
+   * Protected mode was announced. A pushed `protected_mode` frame always emits,
+   * because the daemon sends it exactly on a phase transition; a welcome frame
+   * emits only when it changes the state it re-announces. Either way an
+   * `active: false` payload means the freeze just lifted — which is what the
+   * consumer reloads on (there is no catch-up snapshot; see createHilosConnection).
+   */
+  protectedMode: ProtectedModeStatus
   /** A signal validated against a project-declared schema. */
   projectSignal: ProjectSignal
   /** A table window snapshot reply (`table_window`): the rows in the requested window. */
@@ -163,6 +177,7 @@ export class HilosConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private latchedBuild: string | undefined
+  private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
 
   constructor(options: HilosConnectionOptions) {
     this.url = options.url
@@ -181,6 +196,18 @@ export class HilosConnection {
 
   get state(): ConnectionState {
     return this.currentState
+  }
+
+  /**
+   * The freeze the backend last announced, on a welcome frame or a pushed one.
+   *
+   * Held here rather than in a page store because it must outlive routing and
+   * subscription lifecycles, and survive `reconnecting` / `disconnected` — a
+   * socket blip during planned maintenance must keep showing maintenance, not an
+   * outage.
+   */
+  get protectedMode(): ProtectedModeStatus {
+    return this.protectedModeStatus
   }
 
   on<K extends keyof HilosConnectionEventMap>(
@@ -215,10 +242,20 @@ export class HilosConnection {
    * `connected` transition instead of queueing (every new socket starts a
    * fresh protocol exchange).
    *
+   * Also refuses, the same way, while protected mode holds: every outbound frame
+   * reaches an agent, and a stopped agent is what the freeze is made of. This is
+   * the client half of the server-side start gate — the maintenance surface must
+   * not be the thing that wakes the system it is apologizing for. The keepalive
+   * ping is not affected: the daemon answers it in the socket layer without
+   * involving an agent, and a connection that stops pinging simply dies.
+   *
    * @param text The frame payload, already serialized.
    */
   send(text: string): boolean {
     if (this.currentState !== 'connected' || this.socket === null) {
+      return false
+    }
+    if (this.protectedModeStatus.active) {
       return false
     }
     this.socket.send(text)
@@ -229,14 +266,17 @@ export class HilosConnection {
   /**
    * Send one raw binary frame — the `frame_binary` upload channel of
    * wire-protocol.md. Returns false, sending nothing, unless the connection is
-   * currently `connected`, exactly like {@link send}; a dropped upload restarts
-   * rather than queueing. Callers stream a file as a sequence of these once the
+   * currently `connected`, exactly like {@link send} — including its refusal while
+   * protected mode holds; a dropped upload restarts rather than queueing. Callers stream a file as a sequence of these once the
    * backend has acknowledged the upload init sent over {@link sendAction}.
    *
    * @param data The binary chunk to send.
    */
   sendBinary(data: ArrayBuffer | Blob): boolean {
     if (this.currentState !== 'connected' || this.socket === null) {
+      return false
+    }
+    if (this.protectedModeStatus.active) {
       return false
     }
     this.socket.send(data)
@@ -398,6 +438,9 @@ export class HilosConnection {
       case 'handshake':
         this.handleHandshake(signal)
         break
+      case 'protectedMode':
+        this.handleProtectedMode(signal)
+        break
       case 'actionSuccess':
         this.emitter.emit('actionSuccess', signal)
         break
@@ -435,7 +478,32 @@ export class HilosConnection {
     } else if (signal.build !== expected) {
       this.emitter.emit('buildMismatch', { expected, received: signal.build })
     }
+    // A reconnect lands here: the welcome is how a connection that came back
+    // learns the freeze it slept through, or that it is over.
+    this.syncProtectedMode(signal.protectedMode)
     this.emitter.emit('handshake', signal)
+  }
+
+  /**
+   * A pushed frame is a phase transition, not a re-announcement — the daemon sends
+   * it exactly when the mode goes on or off — so it is stored and reported without
+   * comparing it to the current state. The initiator is what makes that load-bearing:
+   * it is left out of the "mode on" push and its own welcome reported the mode off,
+   * so the lift frame says byte for byte what it already holds. Compare the two and
+   * the admin who ran the restore is the one client that never reloads.
+   */
+  private handleProtectedMode(signal: ProtectedModeSignal): void {
+    this.protectedModeStatus = signal.state
+    this.emitter.emit('protectedMode', signal.state)
+  }
+
+  /** Stores the state a welcome re-announced, emitting only when it changed. */
+  private syncProtectedMode(status: ProtectedModeStatus): void {
+    if (isSameProtectedModeStatus(this.protectedModeStatus, status)) {
+      return
+    }
+    this.protectedModeStatus = status
+    this.emitter.emit('protectedMode', status)
   }
 
   private scheduleReconnect(): void {

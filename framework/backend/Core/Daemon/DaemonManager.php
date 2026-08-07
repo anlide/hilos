@@ -51,7 +51,9 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
+use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\RtSyncApplicator;
@@ -106,7 +108,7 @@ use Hilos\Utils\Logger;
  * and {@see onPlacementDegraded()} when failover cannot re-place an orphaned agent. The
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper
+abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper, ProtectedModeClientNotifier
 {
     /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
     private const array REQUIRED_FUNCTIONS = [
@@ -348,6 +350,10 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         if ($workerServer instanceof ProtectedModeAgentFreezer) {
             Hilos::$cluster?->registerProtectedModeAgentFreezer($workerServer);
         }
+        // Expose this daemon as the port the protected-mode executor tells the browser
+        // connections through: the WebSocket server it broadcasts over is ours, not the
+        // worker server's.
+        Hilos::$cluster?->registerProtectedModeClientNotifier($this);
         // Off-cluster there is no peer transport to build a freeze coordinator, and this is the one
         // start-up path both topologies run, so the single-node freeze is built here. The clustered
         // one is built by PeerServer::onStart(); the two are mutually exclusive by construction.
@@ -516,6 +522,28 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         }
 
         return false;
+    }
+
+    /**
+     * Tells every open browser connection on this node that protected mode turned on or off.
+     *
+     * Queues the state as a broadcast signal rather than writing to the sockets here: the
+     * WS_ALL_CONNECTED type resolves to {@see AllClientsDestination} and the routing pass
+     * of the same loop fans it out through {@see sendToAllClients()}, so the freeze frame
+     * leaves the daemon by the one path every other broadcast uses. The excluded accept key
+     * is the initiator's — it drives the operation and must keep seeing the real app.
+     *
+     * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
+     * @param ?string $excludeAcceptKey Accept key kept out of the broadcast, or null to tell everyone
+     */
+    public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void
+    {
+        Hilos::$sr?->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
+            new SignalName(SignalTypeConstants::PROTECTED_MODE),
+            new WebSocketSignalData(data: $state, excludeAcceptKey: $excludeAcceptKey),
+        );
     }
 
     /**

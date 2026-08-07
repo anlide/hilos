@@ -15,6 +15,7 @@ use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
@@ -421,9 +422,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * First frame of every connection: {type: 'handshake', data: {build, protectedMode}}.
      * `build` carries the HILOS_BUILD_TIMESTAMP env value the frontend compares on every
      * (re)connect to force a page refresh on mismatch; `protectedMode.active` tells a
-     * connection caught by a cluster freeze that it is locked out. The freeze flag is a
-     * light in-memory read of the daemon-owned runtime row on this same master process —
-     * inert (false) when no project mounted the item — so the light master stays light.
+     * connection caught by a cluster freeze that it is locked out, and the copy beside it
+     * gives that connection the words to say so without asking anything further. The freeze
+     * flag is a light in-memory read of the daemon-owned runtime row on this same master
+     * process — inert (false) when no project mounted the item — so the light master stays
+     * light; the copy comes from a facade constant, not the database, which a restore is
+     * rewriting underneath us.
      * Written directly to the write buffer so the 101 response and the welcome leave in
      * one flush.
      *
@@ -432,9 +436,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     private function sendHandshakeWelcome(string $acceptKey): void
     {
+        $locksOut = $this->protectedModeLocksOut($acceptKey);
+        $operation = $locksOut ? Hilos::$rt?->hilosProtectedModeRuntime?->operation : null;
+        $copy = $locksOut ? ProtectedModeStubCopy::forOperation($operation) : null;
         $welcome = new HandshakeWelcomeSignalData(
             build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
-            protectedModeActive: $this->protectedModeLocksOut($acceptKey),
+            protectedModeActive: $locksOut,
+            protectedModeOperation: $operation,
+            protectedModeTitle: $copy?->title,
+            protectedModeMessage: $copy?->message,
         );
         $message = [
             SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,

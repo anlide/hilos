@@ -8,6 +8,7 @@ import {
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
@@ -28,6 +29,11 @@ import {
   type TableViewportCountSignalData,
   type TableViewportAppendSignalData,
 } from './envelope.js'
+import {
+  protectedModeBlockSchema,
+  toProtectedModeStatus,
+  type ProtectedModeStatus,
+} from './protectedMode.js'
 
 /**
  * Project-declared concrete signal schemas, keyed by signal `type`. Framework
@@ -39,7 +45,17 @@ export type ProjectSignalSchemas = Record<string, ZodType>
 
 /** A frame that parsed into a signal the core understands or tolerates. */
 export type ParsedSignal =
-  | { kind: 'handshake'; build: string; envelope: SignalEnvelope }
+  | {
+      kind: 'handshake'
+      build: string
+      protectedMode: ProtectedModeStatus
+      envelope: SignalEnvelope
+    }
+  | {
+      kind: 'protectedMode'
+      state: ProtectedModeStatus
+      envelope: SignalEnvelope
+    }
   | {
       kind: 'actionSuccess'
       action: string
@@ -80,6 +96,10 @@ export type ParsedSignal =
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
 export type HandshakeSignal = Extract<ParsedSignal, { kind: 'handshake' }>
+export type ProtectedModeSignal = Extract<
+  ParsedSignal,
+  { kind: 'protectedMode' }
+>
 export type ActionSuccessSignal = Extract<
   ParsedSignal,
   { kind: 'actionSuccess' }
@@ -119,7 +139,8 @@ export type ParseResult =
 /**
  * Parse one raw WebSocket frame into a typed signal.
  *
- * Framework signal types (`handshake`, `action_success`, `action_error`) are
+ * Framework signal types (`handshake`, `protected_mode`, `action_success`,
+ * `action_error`) are
  * owned by the core and parse to their own kind ahead of any project schema —
  * the two action replies surfacing the envelope's `requestId` for correlation.
  * A `type` with a
@@ -173,6 +194,33 @@ export function parseSignal(
         signal: {
           kind: 'handshake',
           build: data.data.build,
+          protectedMode: toProtectedModeStatus(data.data.protectedMode),
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_PROTECTED_MODE: {
+      // Unlike the welcome's tolerated block, this frame IS the message: one that
+      // cannot be read would leave the client guessing whether it is frozen, so it
+      // is rejected outright and the state stays whatever the client last knew.
+      const data = protectedModeBlockSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_PROTECTED_MODE,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'protectedMode',
+          state: toProtectedModeStatus(data.data),
           envelope: envelope.data,
         },
       }

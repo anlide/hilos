@@ -4,6 +4,9 @@
 /** Signal `type` of the framework welcome frame (PHP `SignalTypeConstants::HANDSHAKE`). */
 export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 
+/** Server frame `type` announcing the protected-mode state (PHP `SignalTypeConstants::PROTECTED_MODE`). */
+export const SIGNAL_TYPE_PROTECTED_MODE = 'protected_mode'
+
 /** Client frame `type` subscribing the page (PHP `SignalTypeConstants::PAGE_SUBSCRIBE`). */
 export const SIGNAL_TYPE_PAGE_SUBSCRIBE = 'page_subscribe'
 

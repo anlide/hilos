@@ -11,10 +11,13 @@
 // chat page — fills it and scrolls an inner region rather than the whole
 // document. The brand, the gear, and the footer links are HilosLinks —
 // no-refresh navigation that leaves the socket alive — so the shell alone moves
-// between the project home, the admin section, and the public pages. Styling is
-// Bootstrap classes only and the shell carries
-// no CSS of its own (styling-rules.md); the status and admin icons are Bootstrap
-// Icons (`bi-*`), shipped with the view layer (src/index.ts) like Bootstrap.
+// between the project home, the admin section, and the public pages. While the
+// connection reports protected mode the shell becomes the maintenance surface
+// (HilosMaintenance) and keeps only the connection indicator — every other
+// region of the shell links to a page the freeze has shut. Styling is Bootstrap
+// classes only and the shell carries no CSS of its own (styling-rules.md); the
+// status and admin icons are Bootstrap Icons (`bi-*`), shipped with the view
+// layer (src/index.ts) like Bootstrap.
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import {
   HILOS_FOOTER_LINKS,
@@ -26,9 +29,11 @@ import { useContext, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { HilosLink } from './HilosLink.js'
+import { HilosMaintenance } from './HilosMaintenance.js'
 import { HilosToastHost } from './HilosToastHost.js'
 import { HilosRouterContext } from './hilosRouterContext.js'
 import { useConnectionState } from './useConnectionState.js'
+import { useProtectedMode } from './useProtectedMode.js'
 import { useSignal } from './useSignal.js'
 
 /** Props for {@link HilosLayout}. */
@@ -85,6 +90,16 @@ export function HilosLayout({
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
 
+  // While the backend holds the node in protected mode the shell shows the
+  // maintenance surface instead of the routed page, and drops everything that
+  // leads anywhere: the brand, the nav, the user region, the admin gear, and
+  // the footer all point at pages the freeze has shut. The connection indicator
+  // is the one thing that stays — during planned work it is the only status
+  // worth telling the visitor. The state is read from the connection, not from
+  // a page store, so it outlives routing and subscription lifecycles.
+  const protectedMode = useProtectedMode(connection)
+  const underMaintenance = protectedMode.active
+
   // Mirror the navigator's current page title: set it as the document title so
   // the browser tab tracks the no-refresh navigation, and render it in the live
   // region below so a screen reader announces the page change (WCAG 2.4.2).
@@ -122,25 +137,36 @@ export function HilosLayout({
         aria-label="Main"
       >
         <div className="container">
-          <HilosLink
-            to="/"
-            className="navbar-brand mb-0 h1"
-            data-id="nav-brand"
-          >
-            {brand}
-          </HilosLink>
-          <div className="navbar-nav me-auto">{nav}</div>
-          <div className="d-flex align-items-center gap-3">
-            {user}
+          {!underMaintenance && (
             <HilosLink
-              className="nav-link d-inline-flex align-items-center p-0 fs-5"
-              to={ADMIN_HREF}
-              data-id="nav-admin"
-              aria-label="Hilos dashboard"
+              to="/"
+              className="navbar-brand mb-0 h1"
+              data-id="nav-brand"
             >
-              <i className="bi bi-gear-fill" aria-hidden="true" />
-              <span className="visually-hidden">Hilos dashboard</span>
+              {brand}
             </HilosLink>
+          )}
+          {/* The auto margin lives on this region whether or not it holds
+          links, so the connection indicator keeps its place on the right while
+          the maintenance surface is up. */}
+          <div className="navbar-nav me-auto">
+            {underMaintenance ? null : nav}
+          </div>
+          <div className="d-flex align-items-center gap-3">
+            {!underMaintenance && (
+              <>
+                {user}
+                <HilosLink
+                  className="nav-link d-inline-flex align-items-center p-0 fs-5"
+                  to={ADMIN_HREF}
+                  data-id="nav-admin"
+                  aria-label="Hilos dashboard"
+                >
+                  <i className="bi bi-gear-fill" aria-hidden="true" />
+                  <span className="visually-hidden">Hilos dashboard</span>
+                </HilosLink>
+              </>
+            )}
             <span
               className={`navbar-text d-inline-flex align-items-center fs-5 ${visual.color}`}
               data-id="conn-state"
@@ -157,27 +183,35 @@ export function HilosLayout({
       <main
         id="hilos-main-content"
         tabIndex={-1}
-        className="container flex-grow-1 min-h-0 overflow-auto py-4"
+        className={`container flex-grow-1 min-h-0 overflow-auto py-4${
+          underMaintenance ? ' d-flex flex-column' : ''
+        }`}
       >
-        {children}
+        {underMaintenance ? (
+          <HilosMaintenance status={protectedMode} />
+        ) : (
+          children
+        )}
       </main>
-      <footer
-        className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
-        data-id="app-footer"
-      >
-        <div className="container d-flex flex-wrap justify-content-center gap-3 small">
-          {HILOS_FOOTER_LINKS.map((link) => (
-            <HilosLink
-              key={link.page}
-              className="link-secondary text-decoration-none"
-              to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
-              data-id={`footer-link-${link.page}`}
-            >
-              {link.label}
-            </HilosLink>
-          ))}
-        </div>
-      </footer>
+      {!underMaintenance && (
+        <footer
+          className="footer flex-shrink-0 border-top bg-body-tertiary py-2"
+          data-id="app-footer"
+        >
+          <div className="container d-flex flex-wrap justify-content-center gap-3 small">
+            {HILOS_FOOTER_LINKS.map((link) => (
+              <HilosLink
+                key={link.page}
+                className="link-secondary text-decoration-none"
+                to={HILOS_PAGE_ROUTES[link.page] ?? '/'}
+                data-id={`footer-link-${link.page}`}
+              >
+                {link.label}
+              </HilosLink>
+            ))}
+          </div>
+        </footer>
+      )}
       {/* Transient notices float over the shell, so every page inside it can
       report an outcome without owning a notification surface of its own. */}
       <HilosToastHost />

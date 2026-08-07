@@ -20,6 +20,7 @@ import 'bootstrap-icons/font/bootstrap-icons.css'
 import './hilos-styles.scss'
 
 export { useConnectionState } from './useConnectionState.js'
+export { useProtectedMode } from './useProtectedMode.js'
 export { useSignal } from './useSignal.js'
 export { useEntity } from './useEntity.js'
 export { useTrackedAction, type TrackedAction } from './useTrackedAction.js'
@@ -27,6 +28,10 @@ export { HilosRouterContext } from './hilosRouterContext.js'
 export { HilosLink, type HilosLinkProps } from './HilosLink.js'
 export { HilosView, type HilosViewProps } from './HilosView.js'
 export { ErrorPage, type ErrorPageProps } from './ErrorPage.js'
+export {
+  HilosMaintenance,
+  type HilosMaintenanceProps,
+} from './HilosMaintenance.js'
 export { HilosLayout, type HilosLayoutProps } from './HilosLayout.js'
 export {
   HilosStaticPage,

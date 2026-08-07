@@ -115,4 +115,7 @@ final class SignalTypeConstants
 
     /** @var string Protected-mode disable request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_DISABLE = 'protected_mode_disable';
+
+    /** @var string Protected-mode state frame type (daemon master -> every connected browser client) */
+    public const string PROTECTED_MODE = 'protected_mode';
 }

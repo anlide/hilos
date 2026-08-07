@@ -30,6 +30,15 @@ export interface CreateHilosConnectionOptions {
    * forced-refresh check).
    */
   onBuildMismatch?: () => void
+  /**
+   * Handler for protected mode lifting. Defaults to a full-page reload, and that
+   * is not cosmetic: a full snapshot is sent once, on page_subscribe, and after
+   * it the client only receives deltas — so a page that merely sat through the
+   * freeze would keep pre-restore rows forever. The session, the runtime baseline
+   * and even the build can all differ on the other side of a restore; reloading
+   * is the only outcome that is honest about all of them at once.
+   */
+  onProtectedModeLift?: () => void
   /** Socket constructor seam; tests inject a mock. Default `new WebSocket(url)`. */
   webSocketFactory?: (url: string) => WebSocketLike
 }
@@ -51,11 +60,11 @@ function sameOriginWebSocketUrl(): string {
 
 /**
  * Create the application's single Hilos connection with the framework schemas
- * merged, an {@link ActionErrorStore} attached, and the forced-refresh check
- * wired. The connection is returned unopened — {@link bootHilos} (or the caller)
+ * merged, an {@link ActionErrorStore} attached, and both forced-refresh checks
+ * wired — the stale build and the lifting of protected mode. The connection is returned unopened — {@link bootHilos} (or the caller)
  * opens it once the subscriptions are bound.
  *
- * @param options Endpoint, extra schemas, build-mismatch handler, socket seam.
+ * @param options Endpoint, extra schemas, reload handlers, socket seam.
  */
 export function createHilosConnection(
   options: CreateHilosConnectionOptions = {},
@@ -80,6 +89,20 @@ export function createHilosConnection(
         location.reload()
       }),
   )
+  const onLift =
+    options.onProtectedModeLift ??
+    (() => {
+      location.reload()
+    })
+  connection.on('protectedMode', (status) => {
+    // An inactive state reaches this event only as a lift: a pushed frame saying so
+    // is the daemon leaving the mode, and a welcome saying so is emitted only when
+    // it changes what the connection held. Either way there is no catch-up snapshot,
+    // so the document has to come back from the server.
+    if (!status.active) {
+      onLift()
+    }
+  })
 
   return { connection, actionErrors, actions }
 }

@@ -17,6 +17,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
+use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
@@ -76,6 +77,9 @@ final class ClusterContext
 
     /** @var ?ProtectedModeAgentFreezer Local port that stops this node's agents during the freeze, registered by the daemon at start. */
     private ?ProtectedModeAgentFreezer $protectedModeAgentFreezer = null;
+
+    /** @var ?ProtectedModeClientNotifier Local port that tells this node's browser connections about the freeze, registered by the daemon at start. */
+    private ?ProtectedModeClientNotifier $protectedModeClientNotifier = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */
     private ?WorkerPlacement $workerPlacement = null;
@@ -428,6 +432,30 @@ final class ClusterContext
     public function protectedModeAgentFreezer(): ?ProtectedModeAgentFreezer
     {
         return $this->protectedModeAgentFreezer;
+    }
+
+    /**
+     * Registers the local port used to tell this node's browser connections about the freeze.
+     *
+     * The daemon registers itself here at start, because the WebSocket server it broadcasts
+     * through is its own. Symmetric to {@see registerProtectedModeAgentFreezer()}: that seam
+     * stops the work, this one tells the people watching it.
+     *
+     * @param ProtectedModeClientNotifier $notifier Local client notifier for the protected-mode frame
+     */
+    public function registerProtectedModeClientNotifier(ProtectedModeClientNotifier $notifier): void
+    {
+        $this->protectedModeClientNotifier = $notifier;
+    }
+
+    /**
+     * Returns the registered protected-mode client notifier, or null when none is set.
+     *
+     * @return ?ProtectedModeClientNotifier Local client notifier, or null
+     */
+    public function protectedModeClientNotifier(): ?ProtectedModeClientNotifier
+    {
+        return $this->protectedModeClientNotifier;
     }
 
     /**

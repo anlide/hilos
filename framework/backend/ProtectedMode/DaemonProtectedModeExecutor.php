@@ -6,6 +6,7 @@ namespace Hilos\ProtectedMode;
 
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
@@ -27,6 +28,11 @@ use Hilos\Utils\Logger;
  * the runtime row this node wrote on entry. On entry it stops this node's own agents through
  * {@see ProtectedModeAgentFreezer}, leaving the initiator agent running; on exit ({@see enterInactive()})
  * the same freezer brings back exactly the agents it stopped.
+ *
+ * The two phases a browser can see - entering and lifting - are also pushed to this node's open
+ * connections through {@see ProtectedModeClientNotifier} (HIL-268), so a page that was already
+ * loaded when the freeze landed learns about it instead of waiting for a refused subscription.
+ * `active` and `deactivating` push nothing: the surface is already up and must stay up.
  */
 final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 {
@@ -50,6 +56,20 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         Hilos::$cluster?->protectedModeAgentFreezer()?->stopAgentsForProtectedMode(
             $freeze->initiatorAgentType,
             $freeze->initiatorAgentIndex === null ? null : (string)$freeze->initiatorAgentIndex,
+        );
+
+        // Tell the connections that were already open: the lockdown is binary from this phase on,
+        // so this is the earliest honest moment, and on a follower the phase never gets past it.
+        // The initiator's own connection is left out - it must keep seeing the real app.
+        $copy = ProtectedModeStubCopy::forOperation($freeze->operation);
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
+            new ProtectedModeStateSignalData(
+                active: true,
+                operation: $freeze->operation,
+                title: $copy->title,
+                message: $copy->message,
+            ),
+            $initiatorAcceptKey,
         );
     }
 
@@ -87,6 +107,14 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
         // freeze has lifted; the freezer replays exactly the set it stopped on this node.
         Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
+
+        // Tell everyone the mode lifted, the initiator included: after a restore its data is as
+        // stale as anybody else's, and the frame means "reload". It carries no copy, because
+        // nothing renders words on the way out.
+        Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
+            new ProtectedModeStateSignalData(active: false),
+            null,
+        );
     }
 
     public function notifyInitiatorReady(): void

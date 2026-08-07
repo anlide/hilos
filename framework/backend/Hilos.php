@@ -46,6 +46,8 @@ use Hilos\Sms\HilosSmsSender;
 use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
+use Hilos\ProtectedMode\ProtectedModeStubConstants;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -112,6 +114,31 @@ abstract class Hilos
      * @var class-string<NotificationTypeRegistry>
      */
     protected const string NOTIFICATION_TYPE_REGISTRY = NotificationTypeRegistry::class;
+
+    /**
+     * Words of the maintenance surface shown while protected mode holds the node (HIL-268).
+     *
+     * Keyed by the operation name recorded on the freeze row, plus a
+     * {@see ProtectedModeStubConstants::DEFAULT_OPERATION} entry used by any operation that
+     * registered none of its own. The framework ships the default; a project overrides the
+     * constant WHOLESALE to speak in its own voice - the entries are not merged with the
+     * framework's, so an override that drops the default key leaves every unregistered
+     * operation without words. Unlike {@see NOTIFICATION_CHANNEL_REGISTRY} and
+     * {@see BACKUP_CATALOG}, which name a class, this constant carries the content itself:
+     * the copy is one sentence per operation and has nowhere else to live.
+     *
+     * Deliberately not a settings row: the database is exactly what a restore is rewriting,
+     * so copy read from it during the mode is unreliable by construction.
+     *
+     * @var array<string, array{title: string, message: string}>
+     */
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable while'
+                . ' a maintenance operation finishes. It will come back on its own.',
+        ],
+    ];
 
     /**
      * Framework features this project is built with.
@@ -287,6 +314,20 @@ abstract class Hilos
     public static function notificationTypeRegistryClass(): string
     {
         return static::appClass()::NOTIFICATION_TYPE_REGISTRY;
+    }
+
+    /**
+     * Returns the project's protected-mode stub registry (HIL-268).
+     *
+     * The facade only hands over the entries; picking one for the running operation and falling
+     * back to the default is {@see ProtectedModeStubCopy}'s job, the same split
+     * {@see getBackupCatalogClass()} makes between naming a catalog and reading it.
+     *
+     * @return array<string, array{title: string, message: string}> Stub copy keyed by operation
+     */
+    public static function protectedModeStubRegistry(): array
+    {
+        return static::appClass()::PROTECTED_MODE_STUB;
     }
 
     /**
