@@ -151,7 +151,9 @@ final class BackupPruner
 
         $base = BackupCreator::archiveBaseName($row->getId(), $row->env, $scope);
         $scopeDir = $root . '/' . $scope->value;
+        // warning-suppressed: an absent archive is legitimate here (error records carry none), no-op
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION);
+        // warning-suppressed: an absent sidecar is legitimate here, no-op
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION);
     }
 

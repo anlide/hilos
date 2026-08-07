@@ -65,6 +65,7 @@ final class BackupHistoryScanner
             $id = basename($sidecarPath, self::SIDECAR_EXTENSION);
             $seenIds[$id] = true;
 
+            // warning-suppressed: an unreadable sidecar becomes a BROKEN_SIDECAR anomaly below, the scan never throws
             $raw = @file_get_contents($sidecarPath);
             $decoded = $raw === false ? null : json_decode($raw, true);
             if (!is_array($decoded)) {

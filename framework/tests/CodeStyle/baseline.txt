@@ -2,22 +2,13 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-ERROR-SUPPRESSION framework/backend/Backup/Agent/BackupAgent.php 1 # HIL-539
-ERROR-SUPPRESSION framework/backend/Backup/BackupCreator.php 19 # HIL-539
-ERROR-SUPPRESSION framework/backend/Backup/BackupHistoryScanner.php 1 # HIL-539
-ERROR-SUPPRESSION framework/backend/Backup/BackupPruner.php 2 # HIL-539
 ERROR-SUPPRESSION framework/backend/Cluster/Peer/PeerServer.php 2 # HIL-541
-ERROR-SUPPRESSION framework/backend/Core/CLI/Commands/BackupTestAgeCommand.php 8 # HIL-539
 ERROR-SUPPRESSION framework/backend/Core/CLI/Commands/DbTestResetCommand.php 1 # HIL-540
 ERROR-SUPPRESSION framework/backend/Core/CLI/Commands/DbWaitCommand.php 1 # HIL-540
 ERROR-SUPPRESSION framework/backend/Core/Daemon/DockerManager.php 2 # HIL-542
 ERROR-SUPPRESSION framework/backend/Core/Daemon/Master/DaemonStatus.php 1 # HIL-542
 ERROR-SUPPRESSION framework/backend/Core/Daemon/OrphanReaper.php 3 # HIL-542
 ERROR-SUPPRESSION framework/backend/Database/Database.php 18 # HIL-540
-ERROR-SUPPRESSION framework/backend/Fs/FsDirectory.php 3 # HIL-539
-ERROR-SUPPRESSION framework/backend/Fs/FsFile.php 2 # HIL-539
-ERROR-SUPPRESSION framework/backend/Fs/FsTmpDirectory.php 1 # HIL-539
-ERROR-SUPPRESSION framework/backend/Fs/FsTmpFile.php 1 # HIL-539
 ERROR-SUPPRESSION framework/backend/Log/LogStoreReader.php 1 # HIL-542
 ERROR-SUPPRESSION framework/backend/Mail/SmtpMailTransport.php 9 # HIL-541
 ERROR-SUPPRESSION framework/backend/Socket/Client/AbstractClient.php 2 # HIL-541

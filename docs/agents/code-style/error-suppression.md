@@ -68,10 +68,14 @@ if ($written === false && socket_last_error($socket) !== SOCKET_EAGAIN) {
 }
 ```
 
-**C. File primitives that owe an exception.** `@` lives only inside the
-`Fs/{FsFile,FsDirectory,FsTmpFile,FsTmpDirectory}` seam, and only where the very
-next line turns `false` into an `Fs/Exception/*`. Callers use the seam and catch
-the exception; they do not call the primitive.
+**C. File primitives that owe an exception.** `@` lives only inside
+`Hilos\Fs\FsPath`, the context-free primitive layer, and only where the very next
+line turns `false` into an `Fs/Exception/*`. Callers use the layer and catch the
+exception; they do not call the primitive. The object seam above it
+(`Fs/{FsFile,FsDirectory,FsTmpFile,FsTmpDirectory}`, addressed by registered
+directory name) calls the same layer, and a subsystem with paths of its own —
+Backup, for one — calls it directly and converts `FsException` into its own
+taxonomy at its boundary.
 
 **D. Deliberate degrade and teardown.** Marker plus the documented outcome —
 `null`, a log line, or a no-op. `/proc` on a non-Linux host, unlinking a temp

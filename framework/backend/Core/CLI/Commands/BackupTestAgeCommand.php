@@ -15,6 +15,8 @@ use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 
 /**
@@ -241,9 +243,10 @@ HELP;
      */
     private function readSidecar(string $sidecarPath): BackupMetadata
     {
-        $raw = @file_get_contents($sidecarPath);
-        if ($raw === false) {
-            throw new BackupException("Backup sidecar not found: {$sidecarPath}");
+        try {
+            $raw = FsPath::read($sidecarPath);
+        } catch (FsException $failure) {
+            throw new BackupException("Backup sidecar not found: {$sidecarPath}", 0, $failure);
         }
 
         $decoded = json_decode($raw, true);
@@ -255,7 +258,7 @@ HELP;
     }
 
     /**
-     * Writes JSON to a same-directory temp file, fsyncs it, then renames it over the target.
+     * Writes JSON to a same-directory temp file, then publishes it over the target through the Fs seam.
      *
      * @param string $path Final sidecar path
      * @param array<string, mixed> $data Sidecar payload
@@ -269,20 +272,17 @@ HELP;
         }
 
         $tmpPath = dirname($path) . '/' . self::TEMP_PREFIX . basename($path) . '-' . getmypid();
-        if (@file_put_contents($tmpPath, $json) === false) {
-            throw new BackupException("Failed to write {$tmpPath}");
+
+        try {
+            FsPath::write($tmpPath, $json);
+        } catch (FsException $failure) {
+            throw new BackupException("Failed to write {$tmpPath}", 0, $failure);
         }
 
-        $handle = @fopen($tmpPath, 'r');
-        if ($handle !== false) {
-            @fflush($handle);
-            @fsync($handle);
-            @fclose($handle);
-        }
-
-        if (!@rename($tmpPath, $path)) {
-            @unlink($tmpPath);
-            throw new BackupException("Failed to publish {$path}");
+        try {
+            FsPath::publish($tmpPath, $path);
+        } catch (FsException $failure) {
+            throw new BackupException("Failed to publish {$path}", 0, $failure);
         }
     }
 }

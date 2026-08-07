@@ -712,6 +712,7 @@ final class BackupAgent extends AbstractAgent
             return false;
         }
 
+        // warning-suppressed: false means "not measured" and the caller keeps the backup going
         $free = @disk_free_space($dir);
 
         return $free === false ? false : (int)$free;

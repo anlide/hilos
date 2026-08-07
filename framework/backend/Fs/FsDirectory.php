@@ -8,6 +8,7 @@ use ArrayAccess;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Fs\Exception\FileWriteException;
@@ -70,10 +71,7 @@ final readonly class FsDirectory implements ArrayAccess
             throw new FileNotFoundException("Tmp file not found: {$tmpIndex}");
         }
         $safe = basename($filename);
-        $target = $this->path . DIRECTORY_SEPARATOR . $safe;
-        if (!@rename($source, $target)) {
-            throw new FileMoveException("Cannot move tmp file {$tmpIndex} to {$this->name}/{$safe}");
-        }
+        FsPath::move($source, $this->path . DIRECTORY_SEPARATOR . $safe);
 
         return new FsFile($this, $safe);
     }
@@ -92,7 +90,11 @@ final readonly class FsDirectory implements ArrayAccess
             }
             $full = $this->path . DIRECTORY_SEPARATOR . $entry;
             if (is_file($full)) {
-                @unlink($full);
+                try {
+                    FsPath::delete($full);
+                } catch (FileDeleteException) {
+                    // best-effort by contract: one undeletable file does not stop the sweep
+                }
             }
         }
     }
@@ -126,9 +128,7 @@ final readonly class FsDirectory implements ArrayAccess
      */
     public function ensureDirectory(): void
     {
-        if (!is_dir($this->path) && !@mkdir($this->path, 0775, true) && !is_dir($this->path)) {
-            throw new DirectoryCreateException("Cannot create directory: {$this->path}");
-        }
+        FsPath::ensureDirectory($this->path);
     }
 
     /**

@@ -41,9 +41,7 @@ final readonly class FsFile
      */
     public function append(string $data): void
     {
-        if (file_put_contents($this->path, $data, FILE_APPEND) === false) {
-            throw new FileWriteException("Cannot append to file: {$this->filename}");
-        }
+        FsPath::append($this->path, $data);
     }
 
     /**
@@ -53,9 +51,7 @@ final readonly class FsFile
      */
     public function unlink(): void
     {
-        if (is_file($this->path) && !@unlink($this->path)) {
-            throw new FileDeleteException("Cannot delete file: {$this->filename}");
-        }
+        FsPath::delete($this->path);
     }
 
     /**
@@ -102,10 +98,7 @@ final readonly class FsFile
         }
         $targetDir = $this->directory->getContext()->getDirectory($targetDirectoryName);
         $targetDir->ensureDirectory();
-        $target = $targetDir->getPath() . DIRECTORY_SEPARATOR . basename($this->filename);
-        if (!@rename($this->path, $target)) {
-            throw new FileMoveException("Cannot move {$this->filename} to {$targetDirectoryName}");
-        }
+        FsPath::move($this->path, $targetDir->getPath() . DIRECTORY_SEPARATOR . basename($this->filename));
     }
 
     /**

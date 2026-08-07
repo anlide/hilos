@@ -15,6 +15,9 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\FilePermissionException;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Throwable;
@@ -411,9 +414,10 @@ final class BackupCreator
      */
     private function readSidecar(string $sidecarPath): BackupMetadata
     {
-        $raw = @file_get_contents($sidecarPath);
-        if ($raw === false) {
-            throw new BackupException("Backup sidecar not found: {$sidecarPath}");
+        try {
+            $raw = FsPath::read($sidecarPath);
+        } catch (FsException $failure) {
+            throw new BackupException("Backup sidecar not found: {$sidecarPath}", 0, $failure);
         }
 
         $decoded = json_decode($raw, true);
@@ -587,6 +591,7 @@ final class BackupCreator
                 );
             }
         } finally {
+            // warning-suppressed: teardown of the credentials file, no-op when it is already gone
             @unlink($iniPath);
         }
     }
@@ -720,6 +725,7 @@ final class BackupCreator
             if (!is_file($path)) {
                 continue;
             }
+            // warning-suppressed: an unreadable dump file means "no measurement", the sum just does not grow
             $size = @filesize($path);
             if ($size !== false) {
                 $total += $size;
@@ -756,17 +762,25 @@ final class BackupCreator
      *
      * @param DatabaseConnectionConfig $config Connection settings
      * @return string Path to the temporary INI file
-     * @throws BackupDumpFailedException When the temp file cannot be created or written
+     * @throws BackupDumpFailedException When the temp file cannot be created, restricted or written
      */
     private function writeDefaultsIni(DatabaseConnectionConfig $config): string
     {
-        $path = tempnam(sys_get_temp_dir(), 'hilos-backup-');
-        if ($path === false) {
-            throw new BackupDumpFailedException('Failed to create mysqldump defaults file');
+        try {
+            $path = FsPath::createTempFile('hilos-backup-', 0600);
+        } catch (FilePermissionException $failure) {
+            throw new BackupDumpFailedException('Failed to restrict mysqldump defaults file', 0, $failure);
+        } catch (FsException $failure) {
+            throw new BackupDumpFailedException('Failed to create mysqldump defaults file', 0, $failure);
         }
-        if (!@chmod($path, 0600) || @file_put_contents($path, self::renderDefaultsIni($config)) === false) {
+
+        try {
+            FsPath::write($path, self::renderDefaultsIni($config));
+        } catch (FsException $failure) {
+            // warning-suppressed: the half-written file is dropped best-effort, no-op when it resists
             @unlink($path);
-            throw new BackupDumpFailedException('Failed to write mysqldump defaults file');
+
+            throw new BackupDumpFailedException('Failed to write mysqldump defaults file', 0, $failure);
         }
 
         return $path;
@@ -785,28 +799,26 @@ final class BackupCreator
         if ($json === false) {
             throw new BackupDumpFailedException("Failed to encode JSON for {$path}");
         }
-        if (@file_put_contents($path, $json) === false) {
-            throw new BackupDumpFailedException("Failed to write {$path}");
+        try {
+            FsPath::write($path, $json);
+        } catch (FsException $failure) {
+            throw new BackupDumpFailedException("Failed to write {$path}", 0, $failure);
         }
     }
 
     /**
-     * Fsyncs a finished file then renames it into place, so readers never see a partial write.
+     * Publishes a finished file through the Fs seam, so readers never see a partial write.
      *
      * @param string $tmpPath Source temp file on the same filesystem as the target
      * @param string $finalPath Final path
-     * @throws BackupDumpFailedException When fsync or rename fails
+     * @throws BackupDumpFailedException When the rename fails
      */
     private function publish(string $tmpPath, string $finalPath): void
     {
-        $handle = @fopen($tmpPath, 'r');
-        if ($handle !== false) {
-            @fflush($handle);
-            @fsync($handle);
-            @fclose($handle);
-        }
-        if (!@rename($tmpPath, $finalPath)) {
-            throw new BackupDumpFailedException("Failed to publish {$finalPath}");
+        try {
+            FsPath::publish($tmpPath, $finalPath);
+        } catch (FsException $failure) {
+            throw new BackupDumpFailedException("Failed to publish {$finalPath}", 0, $failure);
         }
     }
 
@@ -819,12 +831,11 @@ final class BackupCreator
      */
     private function fileSize(string $path): int
     {
-        $size = @filesize($path);
-        if ($size === false) {
-            throw new BackupDumpFailedException("Failed to stat archive {$path}");
+        try {
+            return FsPath::size($path);
+        } catch (FsException $failure) {
+            throw new BackupDumpFailedException("Failed to stat archive {$path}", 0, $failure);
         }
-
-        return $size;
     }
 
     /**
@@ -835,11 +846,10 @@ final class BackupCreator
      */
     private function ensureDirectory(string $path): void
     {
-        if (is_dir($path)) {
-            return;
-        }
-        if (!@mkdir($path, 0755, true) && !is_dir($path)) {
-            throw new BackupException("Failed to create directory {$path}");
+        try {
+            FsPath::ensureDirectory($path, 0755);
+        } catch (FsException $failure) {
+            throw new BackupException("Failed to create directory {$path}", 0, $failure);
         }
     }
 
@@ -853,7 +863,9 @@ final class BackupCreator
     private function cleanupTemp(string $workDir, string $tmpArchive, string $tmpSidecar): void
     {
         $this->removeDirectory($workDir);
+        // warning-suppressed: teardown of a temp artifact, no-op when the run never created it
         @unlink($tmpArchive);
+        // warning-suppressed: teardown of a temp artifact, no-op when the run never created it
         @unlink($tmpSidecar);
     }
 
@@ -869,6 +881,7 @@ final class BackupCreator
     private function sweepPartialTemp(string $scopeDir, string $base): void
     {
         foreach (glob($scopeDir . '/.tmp-' . $base . '-*') ?: [] as $path) {
+            // warning-suppressed: sweeping leftovers of a dead child, an undeletable one stays behind
             is_dir($path) ? $this->removeDirectory($path) : @unlink($path);
         }
     }
@@ -888,8 +901,10 @@ final class BackupCreator
                 continue;
             }
             $child = $path . '/' . $entry;
+            // warning-suppressed: best-effort removal, an undeletable child leaves the tree in place
             is_dir($child) ? $this->removeDirectory($child) : @unlink($child);
         }
+        // warning-suppressed: best-effort removal, a non-empty directory stays behind
         @rmdir($path);
     }
 

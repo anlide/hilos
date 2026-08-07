@@ -34,9 +34,7 @@ final readonly class FsTmpFile
      */
     public function append(string $data): void
     {
-        if (file_put_contents($this->path, $data, FILE_APPEND) === false) {
-            throw new FileWriteException("Cannot append to tmp file: {$this->index}");
-        }
+        FsPath::append($this->path, $data);
     }
 
     /**
@@ -46,9 +44,7 @@ final readonly class FsTmpFile
      */
     public function unlink(): void
     {
-        if (is_file($this->path) && !@unlink($this->path)) {
-            throw new FileDeleteException("Cannot delete tmp file: {$this->index}");
-        }
+        FsPath::delete($this->path);
     }
 
     /**

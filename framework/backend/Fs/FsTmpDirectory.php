@@ -50,9 +50,7 @@ final readonly class FsTmpDirectory implements ArrayAccess
      */
     public function ensureDirectory(): void
     {
-        if (!is_dir($this->path) && !@mkdir($this->path, 0775, true) && !is_dir($this->path)) {
-            throw new DirectoryCreateException("Cannot create tmp directory: {$this->path}");
-        }
+        FsPath::ensureDirectory($this->path);
     }
 
     /**
