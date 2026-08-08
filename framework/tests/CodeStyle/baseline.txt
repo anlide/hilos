@@ -2,13 +2,10 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-ERROR-SUPPRESSION framework/backend/Cluster/Peer/PeerServer.php 2 # HIL-541
 ERROR-SUPPRESSION framework/backend/Core/Daemon/DockerManager.php 2 # HIL-542
 ERROR-SUPPRESSION framework/backend/Core/Daemon/Master/DaemonStatus.php 1 # HIL-542
 ERROR-SUPPRESSION framework/backend/Core/Daemon/OrphanReaper.php 3 # HIL-542
 ERROR-SUPPRESSION framework/backend/Log/LogStoreReader.php 1 # HIL-542
-ERROR-SUPPRESSION framework/backend/Mail/SmtpMailTransport.php 9 # HIL-541
-ERROR-SUPPRESSION framework/backend/Socket/Client/AbstractClient.php 2 # HIL-541
 MAGIC-REPEAT demo/chat/backend/Agents/BotAgent.php 2 # HIL-546
 MAGIC-REPEAT demo/chat/backend/CLI/Commands/AbstractImpersonateCommand.php 2 # HIL-546
 MAGIC-REPEAT demo/chat/backend/CLI/Commands/AbstractSetAdminCommand.php 2 # HIL-546

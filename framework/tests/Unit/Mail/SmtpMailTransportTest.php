@@ -12,7 +12,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Drives the non-blocking SMTP transport over an in-memory socket pair: the full send
- * pump against scripted replies, and the timeout path when the server stays silent (HIL-197).
+ * pump against scripted replies, the timeout path when the server stays silent (HIL-197),
+ * and the connect failure that has to carry its reason out (HIL-541).
  */
 final class SmtpMailTransportTest extends TestCase
 {
@@ -65,6 +66,22 @@ final class SmtpMailTransportTest extends TestCase
         $this->assertFalse($outcome->delivered);
         $this->assertFalse($outcome->permanent);
         $this->assertSame('SMTP send timed out', $outcome->errorDetail);
+    }
+
+    public function testAFailedConnectCarriesItsReasonIntoTheOutcome(): void
+    {
+        $transport = new RefusedSmtpMailTransport($this->config(5000));
+        $transport->start(new EmailMessage(to: 'user@test.local', subject: 'Hi', text: 'Hello'), 0.0);
+
+        $this->assertTrue($transport->hasResult());
+
+        $outcome = $transport->consumeResult();
+        $this->assertFalse($outcome->delivered);
+        $this->assertFalse($outcome->permanent);
+        $this->assertSame(
+            'SMTP connection could not be opened: Connection refused',
+            $outcome->errorDetail,
+        );
     }
 
     public function testStartTlsDiscardsBytesBufferedBeforeTheHandshake(): void
@@ -174,6 +191,23 @@ final class ScriptedSmtpMailTransport extends SmtpMailTransport
         $this->peer = $pair[1];
 
         return $pair[0];
+    }
+}
+
+/**
+ * SMTP transport whose connect always fails with a reason, standing in for a refused or
+ * unresolvable host: what the test watches is the reason reaching the settled outcome.
+ */
+final class RefusedSmtpMailTransport extends SmtpMailTransport
+{
+    /**
+     * @return false Always fails, recording why the connect did not happen
+     */
+    protected function establishSocket()
+    {
+        $this->connectError = 'Connection refused';
+
+        return false;
     }
 }
 

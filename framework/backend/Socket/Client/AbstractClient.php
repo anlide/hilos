@@ -79,6 +79,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         // false and handleSocketError() raises the proper SocketException the loop
         // already closes the client on. Surfaced live by the peer mesh (HIL-185),
         // whose duplicate-link collapse and node kills reset peer links routinely.
+        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
         $data = @socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
 
         // Empty string means connection closed gracefully
@@ -128,6 +129,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         // Suppress the reset/broken-pipe warning for the same reason as read():
         // let handleSocketError() raise the catchable SocketException instead of a
         // fatal ErrorException.
+        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
         $written = @socket_write($this->socket, $this->writeBuffer);
 
         if ($written === false) {

@@ -32,6 +32,14 @@ class SmtpMailTransport implements MailTransportInterface
     /** Line terminator on the SMTP wire (RFC 5321). */
     private const string CRLF = "\r\n";
 
+    /**
+     * @var ?string Why the last connect attempt failed, or null when it opened a socket.
+     *
+     * Protected because {@see establishSocket()} is the seam tests override, and an override
+     * that reports a failure has to be able to say what the failure was.
+     */
+    protected ?string $connectError = null;
+
     /** @var MailMessageEncoder Shared wire-format encoder. */
     private MailMessageEncoder $encoder;
 
@@ -85,11 +93,17 @@ class SmtpMailTransport implements MailTransportInterface
         $this->dialog = new SmtpDialog($message, $this->config, $this->stampHeaders($encoded, $nowMs));
         $this->pendingWrite = '';
         $this->readBuffer = '';
+        $this->connectError = null;
         $this->startTime = $nowMs;
 
         $socket = $this->establishSocket();
         if (!is_resource($socket)) {
-            $this->settle(MailSendOutcome::failed('SMTP connection could not be opened', false));
+            $detail = 'SMTP connection could not be opened';
+            if ($this->connectError !== null) {
+                $detail .= ': ' . $this->connectError;
+            }
+
+            $this->settle(MailSendOutcome::failed($detail, false));
             return;
         }
 
@@ -170,6 +184,9 @@ class SmtpMailTransport implements MailTransportInterface
     /**
      * Opens the non-blocking stream socket to the configured SMTP host.
      *
+     * A failure records its reason in {@see connectError} before returning: the caller only
+     * sees `false`, and without the reason every connect failure reads the same in the log.
+     *
      * @return resource|false The connected non-blocking socket, or false on failure
      */
     protected function establishSocket()
@@ -177,6 +194,7 @@ class SmtpMailTransport implements MailTransportInterface
         $address = 'tcp://' . $this->config->smtpHost . ':' . $this->config->smtpPort;
         $errno = 0;
         $errstr = '';
+        // warning-suppressed: the returned resource is checked below, and $errstr carries the reason
         $socket = @stream_socket_client(
             $address,
             $errno,
@@ -186,10 +204,18 @@ class SmtpMailTransport implements MailTransportInterface
         );
 
         if (!is_resource($socket)) {
+            $this->connectError = $errstr !== '' ? $errstr : 'connect failed with error ' . $errno;
             return false;
         }
 
-        @stream_set_blocking($socket, false);
+        // warning-suppressed: the false return is checked on this same line
+        if (@stream_set_blocking($socket, false) === false) {
+            // Without the close the descriptor would leak: the caller only learns that no
+            // socket came back, so nobody else is left holding this one.
+            fclose($socket);
+            $this->connectError = 'non-blocking mode could not be enabled';
+            return false;
+        }
 
         return $socket;
     }
@@ -203,6 +229,7 @@ class SmtpMailTransport implements MailTransportInterface
      */
     protected function enableCrypto(): int|bool
     {
+        // warning-suppressed: the int|bool result is examined by processHandshake()
         return @stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
     }
 
@@ -214,6 +241,7 @@ class SmtpMailTransport implements MailTransportInterface
         $read = [];
         $write = [$this->socket];
         $except = [];
+        // warning-suppressed: the false return is checked on this same line, the send settles as failed
         if (@stream_select($read, $write, $except, 0, 0) === false) {
             $this->settle(MailSendOutcome::failed('SMTP connection failed', false));
             return;
@@ -262,6 +290,9 @@ class SmtpMailTransport implements MailTransportInterface
      */
     private function processWriting(): void
     {
+        // A short write is normal traffic on a non-blocking socket: 0 written under EAGAIN
+        // leaves the buffer untouched for the next tick.
+        // warning-suppressed: the false return is checked below
         $written = @fwrite($this->socket, $this->pendingWrite);
         if ($written === false) {
             $this->settle(MailSendOutcome::failed('SMTP socket write failed', false));
@@ -289,6 +320,7 @@ class SmtpMailTransport implements MailTransportInterface
         $read = [$this->socket];
         $write = [];
         $except = [];
+        // warning-suppressed: the false return is checked on this same line, the send settles as failed
         if (@stream_select($read, $write, $except, 0, 0) === false) {
             $this->settle(MailSendOutcome::failed('SMTP socket read failed', false));
             return;
@@ -298,6 +330,7 @@ class SmtpMailTransport implements MailTransportInterface
             return;
         }
 
+        // warning-suppressed: the false return is checked below, an empty read is normal traffic
         $chunk = @fread($this->socket, 8192);
         if ($chunk === false) {
             $this->settle(MailSendOutcome::failed('SMTP socket read failed', false));
@@ -307,6 +340,7 @@ class SmtpMailTransport implements MailTransportInterface
         $this->readBuffer .= $chunk;
         $this->consumeReplies($nowMs);
 
+        // warning-suppressed: the result is the branch condition itself, a closed peer settles the dialog
         if ($this->phase === SmtpConnectionPhase::READING && $chunk === '' && @feof($this->socket)) {
             $this->applyAction($this->dialog->onDisconnect(), $nowMs);
         }
@@ -411,6 +445,7 @@ class SmtpMailTransport implements MailTransportInterface
     private function closeSocket(): void
     {
         if (is_resource($this->socket)) {
+            // warning-suppressed: teardown, the socket is dropped either way
             @fclose($this->socket);
         }
 

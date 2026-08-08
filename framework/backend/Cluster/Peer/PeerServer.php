@@ -460,6 +460,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         socket_set_nonblock($socket);
 
         // A non-blocking connect returns false with EINPROGRESS; completion is polled next tick.
+        // warning-suppressed: the result is the branch condition, socket_last_error is read below
         if (@socket_connect($socket, $dial->address->host, $dial->address->port)) {
             $this->promoteDial($dial, $socket, $now);
             return;
@@ -500,8 +501,25 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         $read = null;
         $write = [$socket];
         $except = null;
+        // warning-suppressed: a false return is told apart from 0 below, by socket_last_error
         $ready = @socket_select($read, $write, $except, 0);
-        if ($ready === false || $ready === 0) {
+        if ($ready === false) {
+            // The error of a failed select lands in the global slot, not on any one socket:
+            // socket_last_error($socket) reads 0 here and would abort every dial.
+            $error = socket_last_error();
+            // An interrupted or would-block select says nothing about the connect, so it waits
+            // for the next tick like a plain 0. Any other code means the poll itself is broken,
+            // and waiting on it would cost the connect timeout on top of the retry interval.
+            if (!in_array($error, [SOCKET_EINTR, SOCKET_EAGAIN, SOCKET_EWOULDBLOCK], true)) {
+                $this->abortDial($dial, $now);
+                return;
+            }
+
+            socket_clear_error();
+            return;
+        }
+
+        if ($ready === 0) {
             // Still connecting; re-check on a later tick.
             return;
         }
