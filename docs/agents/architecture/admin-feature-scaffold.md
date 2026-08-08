@@ -20,6 +20,14 @@ action lifecycle. The agent generates only the project-side binding each
 feature's base class declares as its extension points. Never generate a copy of
 the engine.
 
+**Access is closed by default.** Every page on the framework admin surface
+inherits the `ADMIN` access level from `AbstractHilosPage` (HIL-441), and
+openness is an explicit declaration on the page class. The activation needs no
+per-page guard for that, but the project must wire identity —
+`resolveCurrentUserId()` and `isAdmin()` on its `BrowserContext` — or the
+mounted feature denies everyone. See
+[page-access-control.md](page-access-control.md).
+
 ## Generate against the contract
 
 Each framework feature ships base classes plus the extension points a project

@@ -8,8 +8,6 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserGuardKey;
-use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -48,8 +46,10 @@ use LogicException;
  * send resolves the acting admin's address for the channel and emits a channel-narrowed
  * notification, exercising the real delivery path (HIL-201) rather than a bespoke ping.
  *
- * The page guards its subscription and every action with a flagless AUTHENTICATED guard
- * (a signed-in-only surface). Projects add a concrete subclass with a
+ * The page is an admin surface: the ADMIN access level inherited from
+ * AbstractHilosPage closes its subscription and every action, replacing the
+ * former flagless AUTHENTICATED guard and AUTH_ACTIONS list with the stricter
+ * inherited default. Projects add a concrete subclass with a
  * `SUBSCRIPTION_AGENT_TYPE`; they add no action code of their own.
  */
 abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
@@ -62,19 +62,8 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
         HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST => HilosChannelTestActionDTO::class,
     ];
 
-    public const array AUTH_ACTIONS = [
-        HilosSignalConstants::COMMUNICATIONS_CHANNEL_SET,
-        HilosSignalConstants::COMMUNICATIONS_CHANNEL_RESET,
-        HilosSignalConstants::COMMUNICATIONS_CHANNEL_TEST,
-    ];
-
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_CHANNEL,
-        BrowserConfigKey::GUARDS => [
-            [
-                BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED,
-            ],
-        ],
     ];
 
     /** Machine type of the self-addressed test notification. */

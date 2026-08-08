@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
+
 // Moderation admin e2e: /hilos/admin_moderator renders the prompt-pieces table
 // over the live socket, and the create / edit / delete dialogs round-trip through
 // the backend (AdminModeratorPage), the row appearing, updating, and leaving the
@@ -84,6 +86,7 @@ test('saving an edit with no changes still closes the dialog', async ({
 })
 
 test('reaches the moderation admin from the dashboard', async ({ page }) => {
+  await signUpAdmin(page)
   await page.goto('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 

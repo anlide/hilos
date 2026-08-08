@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
 import { signUp } from '../helpers/session'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
@@ -20,6 +21,7 @@ async function openSettings(page: Page): Promise<void> {
 test('the viewport table has an accessible name and a labelled search', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await openSettings(page)
 
   // The visually-hidden <caption> is the table's accessible name.
@@ -34,6 +36,7 @@ test('the viewport table has an accessible name and a labelled search', async ({
 test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await openSettings(page)
 
   const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
@@ -60,6 +63,7 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
 test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await page.goto('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
@@ -80,6 +84,7 @@ test('the shell exposes a skip link and marks the active nav item', async ({
 test('each page titles the tab and announces the page on navigation', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await openSettings(page)
 
   // The settings page titles the browser tab (framework label + app name), and

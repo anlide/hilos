@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
+
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
@@ -26,6 +28,7 @@ async function isolate(page: Page, key: string): Promise<void> {
 test('lists settings in the server window and filters from the search box', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await openSettings(page)
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
 
@@ -51,6 +54,7 @@ test('lists settings in the server window and filters from the search box', asyn
 })
 
 test('paginates the server window', async ({ page }) => {
+  await signUpAdmin(page)
   await openSettings(page)
 
   // The catalog spans four pages of ten; the first page holds the chat_* keys,
@@ -82,6 +86,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
     fullLoads += 1
   })
 
+  await signUpAdmin(page)
   await openSettings(page)
   const loadsAfterColdLoad = fullLoads
   await isolate(page, 'example_integer')
@@ -115,6 +120,7 @@ test('a tab applies its own edit at once, with no pending gate', async ({
 test('an edit in one tab hangs as pending in another until applied', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -155,6 +161,7 @@ test('an edit in one tab hangs as pending in another until applied', async ({
 test('opening the edit dialog applies the pending change first', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   const tabB = await page.context().newPage()
   await openSettings(page)
   await openSettings(tabB)
@@ -190,6 +197,7 @@ test('deletes an orphan setting through the confirm modal', async ({ page }) => 
   // this test owns the row and needs no cleanup.
   const orphanKey = 'e2e_orphan_delete'
 
+  await signUpAdmin(page)
   await openSettings(page)
   await isolate(page, orphanKey)
 

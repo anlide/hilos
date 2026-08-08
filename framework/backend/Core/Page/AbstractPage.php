@@ -56,6 +56,17 @@ abstract class AbstractPage
     public const array AUTH_ACTIONS = [];
 
     /**
+     * Access level every subscription and action on this page must clear.
+     *
+     * Enforced by {@see PageAccessGate} before onSubscribe, on every browser
+     * fan-out, and before onAction. The project-page default stays PUBLIC, so
+     * no existing project page changes behavior; the framework admin surface
+     * inverts the default — {@see AbstractHilosPage} overrides this to ADMIN,
+     * closing every hilos page unless it explicitly declares otherwise.
+     */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::PUBLIC;
+
+    /**
      * Action names on this page that the anti-abuse layer rate-limits (HIL-420).
      *
      * The action dispatcher counts attempts per (scope, identity, action) on a

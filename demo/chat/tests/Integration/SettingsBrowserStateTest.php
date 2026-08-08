@@ -9,6 +9,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -22,7 +23,9 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\HilosException;
 use Hilos\Tables\Settings\HilosSettingTableRow;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -38,6 +41,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
 
         try {
+            $this->registerAdminConnection('settings-snapshot-ak');
             $this->createOrphanSetting($orphanKey, 'snapshot orphan');
             $rows = $this->sendSettingsWindow('settings-snapshot-ak');
 
@@ -63,6 +67,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
             $this->assertSame($orphanKey, $orphan[HilosSettingTableRow::key]);
             $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_ORPHAN, $orphan[HilosSettingTableRow::valueSource]);
         } finally {
+            Hilos::$rt->connections->actions->clear();
+            RtTruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             $this->deleteSettingIfExists($orphanKey);
             TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             $this->resetFrontendRouter();
@@ -80,6 +86,7 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::settings, true, self::TEST_SETTINGS_AGENT_ID);
 
         try {
+            $this->registerAdminConnection('settings-mutation-ak');
             $this->deleteSettingIfExists($catalogKey);
             $this->createOrphanSetting($orphanKey, 'delete orphan');
 
@@ -116,6 +123,8 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
                 $orphanKey,
             ));
         } finally {
+            Hilos::$rt->connections->actions->clear();
+            RtTruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             $this->deleteSettingIfExists($catalogKey);
             if ($originalExists) {
                 Hilos::$db->settings->actions->add($catalogKey, $originalValue, SettingsCatalog::getCatalog());
@@ -146,6 +155,23 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     {
         Hilos::initSignalRouter(new ChatSignalRouter());
         Hilos::initBrowser();
+    }
+
+    /**
+     * Binds an admin user to an accept key, so the settings window passes the
+     * ADMIN page access level (HIL-441): sendTableWindow re-checks the level on
+     * every delivery and silently skips an anonymous accept key. The caller's
+     * finally block clears the connections collection.
+     *
+     * @param string $acceptKey Accept key the test will request the window for
+     * @throws HilosException When the user create, admin grant, or connection registration fails
+     */
+    private function registerAdminConnection(string $acceptKey): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_SETTINGS_AGENT_ID);
+        $userId = (int) Hilos::$db->users->actions->createWithName('Settings Browser Admin')->id;
+        Hilos::$db->users[$userId]?->actions->setAdmin(true);
+        Hilos::$rt->connections->actions->register($acceptKey, $userId);
     }
 
     /**

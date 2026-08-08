@@ -11,10 +11,13 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -83,6 +86,12 @@ class PageSignalRouter
         }
 
         try {
+            // The access level gates BEFORE onSubscribe: AbstractPage::onSubscribe
+            // sends the page payload ahead of the browser guards, so a later check
+            // would leak the payload to a denied session. The denial lands in the
+            // PageSubscriptionException catch below, keeping the subscription alive
+            // for live-promotion after sign-in or an admin grant.
+            PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
         } catch (PageSubscriptionException $e) {
             // The subscription is intentionally KEPT alive, not torn down. A guard
@@ -225,6 +234,7 @@ class PageSignalRouter
         $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
 
         try {
+            $this->assertPageAccessLevel($pageInstance, $data->acceptKey);
             $this->assertActionAuthorized($pageInstance, $data->action, $data->acceptKey);
             $pageInstance->beginActionDispatch();
             $reply = $pageInstance->onAction($data->acceptKey, $data->action, $dto);
@@ -257,6 +267,7 @@ class PageSignalRouter
             $errorCode = match (true) {
                 $e instanceof ActionRateLimitedException => $e->errorCode,
                 $e instanceof ActionUnauthorizedException => $e->errorCode,
+                $e instanceof ActionForbiddenException => $e->errorCode,
                 default => null,
             };
             $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
@@ -318,6 +329,31 @@ class PageSignalRouter
 
         if (Hilos::$browser?->resolveActionUserId($acceptKey) === null) {
             throw new ActionUnauthorizedException();
+        }
+    }
+
+    /**
+     * Enforces the page's declared ACCESS_LEVEL before an action handler runs.
+     *
+     * The same rule the subscription gate applies ({@see PageAccessGate}),
+     * converted to the action-dispatch exception family: a guest on an
+     * AUTHENTICATED/ADMIN page is denied 401 (the frontend opens the sign-in
+     * modal), an authenticated non-admin on an ADMIN page is denied 403 — a
+     * sign-in modal is useless to a user who is already signed in.
+     *
+     * @param AbstractPage $page Resolved page handler
+     * @param string $acceptKey Acting connection accept key
+     * @throws ActionUnauthorizedException When the level requires a user and the acting session is anonymous
+     * @throws ActionForbiddenException When the level is ADMIN and the acting user lacks the admin privilege
+     */
+    private function assertPageAccessLevel(AbstractPage $page, string $acceptKey): void
+    {
+        try {
+            PageAccessGate::assert($page::class, $acceptKey);
+        } catch (PageUnauthorizedException $e) {
+            throw new ActionUnauthorizedException(previous: $e);
+        } catch (PageForbiddenException $e) {
+            throw new ActionForbiddenException(previous: $e);
         }
     }
 

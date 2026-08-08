@@ -32,6 +32,7 @@ use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Source\SourceChange;
@@ -135,7 +136,7 @@ abstract class BrowserContext
 
         $this->validateParams($pageConfig->paramConfigs(), $params);
         $pageParams = $params->toArray();
-        $this->assertPageGuards($pageConfig, $acceptKey, $pageParams);
+        $this->assertPageGuards($page, $pageConfig, $acceptKey, $pageParams);
 
         $tables = [];
         foreach ($this->pageBindings($page) as $pageBinding) {
@@ -210,7 +211,7 @@ abstract class BrowserContext
         $pageConfig = $this->pageConfig($page);
         if ($pageConfig !== null) {
             $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-            if (!$this->pageGuardsAllow($pageConfig, $acceptKey, $pageParams)) {
+            if (!$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
                 return;
             }
         }
@@ -426,7 +427,7 @@ abstract class BrowserContext
                 }
 
                 $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
-                $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($pageConfig, $acceptKey, $pageParams);
+                $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
                 if (!$guardAllows[$acceptKey]) {
                     continue;
                 }
@@ -1834,24 +1835,34 @@ abstract class BrowserContext
     }
 
     /**
-     * Enforces page-level browser guards.
+     * Enforces page-level access checks in a fixed order: lockdown, level, guards.
      *
      * The protected-mode route lockdown is checked first, as defense-in-depth behind
      * the master welcome choke: while the freeze is up every connection but the
      * initiator's is refused all page data with one domain sentence, regardless of the
-     * page's own guards (the lockdown is binary, no per-page whitelist). Authentication
-     * is unaffected — it travels the action path, not the browser guards.
+     * page's own guards (the lockdown is binary, no per-page whitelist). The page's
+     * declared ACCESS_LEVEL comes second ({@see PageAccessGate}): checking it here —
+     * not only at subscribe time — is what starves a kept-alive denied subscription
+     * of fan-out and table-window data, because most framework admin pages declare
+     * no browser guards at all. The page's own browser guards run last.
      *
+     * @param string $page Page name the config belongs to
      * @param BrowserPageConfig $pageConfig Browser page config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @throws PageServiceUnavailableException When the protected-mode freeze locks this connection out
-     * @throws PageSubscriptionException When a guard rejects the subscription or declares an unsupported type
+     * @throws PageSubscriptionException When the access level or a guard rejects the subscription, or a guard declares an unsupported type
      */
-    private function assertPageGuards(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
+    private function assertPageGuards(string $page, BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
     {
         if ($this->protectedModeLocksOut($acceptKey)) {
             throw new PageServiceUnavailableException();
+        }
+
+        $hilosClass = $this->hilosClass;
+        $pageClass = $hilosClass::PAGES[$page] ?? null;
+        if (is_string($pageClass)) {
+            PageAccessGate::assert($pageClass, $acceptKey);
         }
 
         foreach ($pageConfig->guardConfigs() as $guard) {
@@ -1875,15 +1886,16 @@ abstract class BrowserContext
      * guard-failed subscription must receive nothing WHILE the guard fails yet
      * resume the instant it passes (the missing resource appears / access granted).
      *
+     * @param string $page Page name the config belongs to
      * @param BrowserPageConfig $pageConfig Browser page config
      * @param string $acceptKey Subscriber accept key
      * @param array<string, string> $pageParams Current page subscription params
      * @return bool Whether this connection may receive the page's browser data now
      */
-    private function pageGuardsAllow(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): bool
+    private function pageGuardsAllow(string $page, BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): bool
     {
         try {
-            $this->assertPageGuards($pageConfig, $acceptKey, $pageParams);
+            $this->assertPageGuards($page, $pageConfig, $acceptKey, $pageParams);
         } catch (PageSubscriptionException) {
             return false;
         }
@@ -2005,12 +2017,13 @@ abstract class BrowserContext
     }
 
     /**
-     * Resolves the authenticated user behind an accept key for the action-auth guard.
+     * Resolves the authenticated user behind an accept key for the auth gates.
      *
      * Public seam over {@see self::resolveCurrentUserId} so the action dispatcher
-     * ({@see PageSignalRouter::dispatchAction}) can gate a page's
-     * AUTH_ACTIONS without owning the connection→user mapping. Returns null for an
-     * anonymous session, which the dispatcher denies with a 401.
+     * ({@see PageSignalRouter::dispatchAction}) can gate a page's AUTH_ACTIONS and
+     * the page access gate ({@see PageAccessGate}) can serve AUTHENTICATED/ADMIN
+     * page levels, without either owning the connection→user mapping. Returns null
+     * for an anonymous session, which the callers deny with a 401.
      *
      * @param string $acceptKey Acting connection accept key
      * @return ?int Authenticated user id, or null when the session is anonymous
@@ -2018,6 +2031,25 @@ abstract class BrowserContext
     public function resolveActionUserId(string $acceptKey): ?int
     {
         return $this->resolveCurrentUserId($acceptKey);
+    }
+
+    /**
+     * Whether the authenticated user holds the project's admin privilege.
+     *
+     * The identity seam the page access gate ({@see PageAccessGate}) asks for
+     * ADMIN-level pages. The framework cannot read a project's user storage from
+     * this worker, so the default denies: a project that has not wired admin
+     * identity closes its admin surface to everyone rather than opening it. A
+     * project overrides this from its own runtime or database source. When a
+     * central authorization hook lands (HIL-309), only this method's body
+     * changes — no page declaration moves.
+     *
+     * @param int $userId Authenticated durable user id
+     * @return bool Whether this user may access ADMIN-level pages and actions
+     */
+    public function isAdmin(int $userId): bool
+    {
+        return false;
     }
 
     /**

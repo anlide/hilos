@@ -6,6 +6,7 @@ namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageAccessLevel;
 
 /**
  * AbstractHilosTermsPage - Abstract base for the Hilos public Terms page.
@@ -19,4 +20,7 @@ use Hilos\Core\Page\AbstractHilosPage;
 abstract class AbstractHilosTermsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_TERMS;
+
+    /** Public footer page: readable without a session ({@see PageAccessLevel}). */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::PUBLIC;
 }

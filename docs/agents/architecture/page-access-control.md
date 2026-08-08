@@ -1,12 +1,59 @@
 # Page Access Control
 
-Page subscriptions are authorized by **declarative guards** in the page's
-`BROWSER` config. A guard is page data, not an interface or an authorizer object:
-the same mechanism that enforces "does this resource exist" (404) also enforces
-"may this connection see this page" (403).
+Access to a page is controlled by two layers, checked in this order:
 
-This is the low-level guard mechanism. A future role/permission system (RBAC)
-sits on top of it; it does not replace these guards.
+1. **The page access level** (`ACCESS_LEVEL` constant, `PageAccessLevel` enum) —
+   a hard gate every page carries. The framework admin surface is **closed by
+   default**: `AbstractHilosPage` inherits `ADMIN` to all of its descendants,
+   and openness is an explicit declaration on the page class.
+2. **Declarative browser guards** in the page's `BROWSER` config — resource and
+   subscriber checks a page opts into (`DB_EXISTS`, `ACCESS`, `AUTHENTICATED`).
+
+A guard is page data, not an interface or an authorizer object: the same
+mechanism that enforces "does this resource exist" (404) also enforces "may this
+connection see this page" (403).
+
+This is the low-level mechanism. A future role/permission system (RBAC) sits on
+top of it; it does not replace these layers.
+
+## Page access levels (the closed-by-default gate)
+
+Every page class declares (or inherits) `ACCESS_LEVEL`, a `PageAccessLevel`:
+
+- `PUBLIC` — no identity check. The `AbstractPage` default, so project pages
+  keep the anonymous-read model unless they declare otherwise.
+- `AUTHENTICATED` — the connection must resolve to a user, else 401.
+- `ADMIN` — the user must also pass the project's `isAdmin()` seam, else 403
+  (401 when anonymous). The `AbstractHilosPage` default: every framework admin
+  page is closed unless it explicitly relaxes its level.
+
+The framework relaxations are pinned by an exact-composition unit test
+(`PageAccessLevelRegistryTest`): `PUBLIC` = About/Terms/Privacy/License,
+`AUTHENTICATED` = Profile/Notifications, everything else `ADMIN`. Note
+`AbstractHilosProfilePage` extends `AbstractPage` directly (it is served by the
+project agent, not the admin agent), so its `AUTHENTICATED` declaration is
+mandatory — silence would open the profile to guests.
+
+`PageAccessGate` is the single carrier of the rule and is enforced at:
+
+- **subscribe** — `PageSignalRouter::dispatchPageSubscribe`, *before*
+  `onSubscribe`, so no page payload leaves ahead of the check. The denial is a
+  `PageSubscriptionException`, so the subscription stays alive for
+  live-promotion (sign-in / admin grant resumes delivery without re-subscribe).
+- **every delivery** — `BrowserContext::assertPageGuards`, after the
+  protected-mode lockdown and before the browser guards, which starves a denied
+  kept-alive subscription of fan-out and table windows. This second point is
+  load-bearing: most admin pages declare no browser guards at all.
+- **actions** — `PageSignalRouter::dispatchAction`, before `AUTH_ACTIONS`: a
+  guest gets 401 `ActionUnauthorizedException`, an authenticated non-admin 403
+  `ActionForbiddenException`. A page's actions are closed by its level; the
+  per-action `AUTH_ACTIONS` list remains for project pages with the
+  anonymous-read + authenticated-write model.
+
+Identity comes from two `BrowserContext` seams (see the identity hook below):
+`resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
+framework default `false` — answers "is that user an admin". A project without a
+mounted browser context fails **closed**: nothing resolves, the surface denies.
 
 ## Declaring a guard
 
@@ -31,7 +78,13 @@ Guard types (`BrowserGuardType`):
 - `DB_EXISTS` — the route-param `KEY` must resolve to a row in `SOURCE`,
   otherwise 404 (or 403 if `ERROR` says so). Checks a *resource*.
 - `ACCESS` — the subscribing connection's current user must hold a truthy `FIELD`
-  on `SOURCE` (e.g. `User::admin`), otherwise 403. Checks the *subscriber*.
+  on `SOURCE` (e.g. `User::admin`), otherwise 403 (401 when anonymous). Checks
+  the *subscriber*.
+- `AUTHENTICATED` — flagless: the connection must resolve to a user at all,
+  otherwise 401. For a page whose only requirement is "signed in", prefer
+  declaring `ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED` instead — one access
+  rule on the class beats a parallel guard entry (the former framework users of
+  this guard type migrated to the level in HIL-441).
 
 Guard keys (`BrowserGuardKey`): `TYPE`, `SOURCE`, `KEY` (DB_EXISTS route param),
 `FIELD` (ACCESS flag column), `ERROR` (which code to raise on a miss).
@@ -69,6 +122,14 @@ protected function resolveCurrentUserId(string $acceptKey): ?int
 admin-flag read itself is not new code: the `ACCESS` guard reuses the guard
 source mechanism (`SOURCE` = users, the resolved id, `FIELD` = admin).
 
+The **page access level** uses a second seam next to it: `isAdmin(int $userId):
+bool`, framework default `false` (deny). The project answers it from its own
+user storage (e.g. the chat demo reads `Hilos::$db->users[$userId]?->admin`),
+defensively — any storage failure denies. Unlike a declarative `ACCESS` guard,
+the seam runs in whatever worker serves the page, so it must read a source that
+is readable there; when a central authorization hook lands (HIL-309), only this
+method's body changes.
+
 ## Error codes
 
 A guard failure throws a `PageSubscriptionException` subclass, which is caught and
@@ -77,8 +138,9 @@ sent to the client as a `subscription_page_error` signal:
 - 404 `not_found` — `PageResourceNotFoundException`: the resource is missing.
 - 403 `forbidden` — `PageForbiddenException`: authenticated but lacks rights.
   This is the admin gate — a guest is authenticated by its cookie, just not admin.
-- 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all
-  (reserved for a real login; not raised in the guest demos).
+- 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all.
+  Raised by the `AUTHENTICATED`/`ADMIN` access levels and the `AUTHENTICATED`
+  guard; the frontend mounts the in-place sign-in surface over the page.
 
 ## Guards run on EVERY delivery path
 

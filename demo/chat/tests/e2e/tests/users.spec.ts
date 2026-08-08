@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-import { signUp } from '../helpers/session'
+import { signUpAdmin } from '../helpers/adminGrant'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -17,7 +17,7 @@ test('lists users in the framework table and opens a detail page', async ({
     fullLoads += 1
   })
 
-  await signUp(page)
+  await signUpAdmin(page)
   await page.goto('/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
@@ -37,7 +37,7 @@ test('lists users in the framework table and opens a detail page', async ({
 })
 
 test('filters the users table from the search box', async ({ page }) => {
-  await signUp(page)
+  await signUpAdmin(page)
   await page.goto('/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -57,7 +57,7 @@ test('filters the users table from the search box', async ({ page }) => {
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  await signUp(page)
+  await signUpAdmin(page)
   await page.goto('/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
@@ -79,7 +79,7 @@ test('shows the connected user as online with a live session', async ({
   // Register the client and take its own id, then open its detail directly.
   // Robust against how many users the shared DB has accumulated: the self row
   // need not be on the first viewport page of /hilos/users.
-  const { userId } = await signUp(page)
+  const userId = await signUpAdmin(page)
 
   await page.goto(`/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -99,7 +99,7 @@ test('shows the connected user as online with a live session', async ({
 // deterministic `seed-###` users on stand bring-up, so window paging and server search
 // run against more than one page — the case a single registered user can never reach.
 test('windows, paginates, and searches the seeded users', async ({ page }) => {
-  await signUp(page)
+  await signUpAdmin(page)
   await page.goto('/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 

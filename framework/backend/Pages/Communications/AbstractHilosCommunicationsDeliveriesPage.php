@@ -8,8 +8,6 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserGuardKey;
-use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -33,8 +31,10 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
  * failed on a transient outage without asking the user to re-trigger the event. The
  * action is valid only for a failed row (pending is already queued; sent is done).
  *
- * The page guards its subscription and the retry action with a flagless AUTHENTICATED
- * guard (a signed-in-only admin surface). Projects add a concrete subclass with a
+ * The page is an admin surface: the ADMIN access level inherited from
+ * AbstractHilosPage closes its subscription and the retry action, replacing the
+ * former flagless AUTHENTICATED guard and AUTH_ACTIONS list with the stricter
+ * inherited default. Projects add a concrete subclass with a
  * `SUBSCRIPTION_AGENT_TYPE`; they add no action code of their own.
  */
 abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPage
@@ -45,17 +45,8 @@ abstract class AbstractHilosCommunicationsDeliveriesPage extends AbstractHilosPa
         HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY => HilosDeliveryRetryActionDTO::class,
     ];
 
-    public const array AUTH_ACTIONS = [
-        HilosSignalConstants::COMMUNICATIONS_DELIVERY_RETRY,
-    ];
-
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_COMMUNICATIONS_DELIVERIES,
-        BrowserConfigKey::GUARDS => [
-            [
-                BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED,
-            ],
-        ],
     ];
 
     /**

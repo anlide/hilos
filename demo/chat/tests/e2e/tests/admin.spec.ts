@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
+
 // Admin tree navigation e2e: the framework dashboard lists the Hilos admin
 // sections, and every section / sub-page / deep link resolves over the live
 // socket with no document reload. Each `/hilos` page renders through the
@@ -15,6 +17,7 @@ test('navigates the admin tree with no reload or reconnect', async ({
     fullLoads += 1
   })
 
+  await signUpAdmin(page)
   await page.goto('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const loadsAfterColdLoad = fullLoads
@@ -54,6 +57,7 @@ test('navigates the admin tree with no reload or reconnect', async ({
 test('cold-loads a parametrized admin page through the framework shell', async ({
   page,
 }) => {
+  await signUpAdmin(page)
   await page.goto('/hilos/billing/stripe/payments')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Payments')

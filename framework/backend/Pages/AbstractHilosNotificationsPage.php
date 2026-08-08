@@ -11,6 +11,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -44,7 +45,8 @@ use Hilos\Notification\NotificationSignalName;
  * {@see NotificationSignalName::CREATED} / READ.
  *
  * The page hosts three actions, all requiring an authenticated session
- * ({@see self::AUTH_ACTIONS}): {@see NotificationAction::SYNC} replies the initial
+ * (closed by the page's AUTHENTICATED {@see self::ACCESS_LEVEL}, which gates
+ * actions along with the subscription): {@see NotificationAction::SYNC} replies the initial
  * snapshot (the recent notifications plus the unread count) under
  * {@see HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_NOTIFICATIONS}, and
  * {@see NotificationAction::MARK_READ} / {@see NotificationAction::MARK_ALL_READ}
@@ -58,6 +60,13 @@ abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_NOTIFICATIONS;
 
+    /**
+     * Per-user surface, not an admin one: any signed-in user reads and marks
+     * their own notifications. The level also closes the page's actions, so the
+     * former per-action AUTH_ACTIONS list became redundant and was removed.
+     */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+
     /** Maximum notifications carried in the sync snapshot (the bell is recent-only). */
     public const int RECENT_LIMIT = 20;
 
@@ -65,12 +74,6 @@ abstract class AbstractHilosNotificationsPage extends AbstractHilosPage
         NotificationAction::MARK_READ => NotificationMarkReadPayloadDTO::class,
         NotificationAction::MARK_ALL_READ => NotificationMarkAllReadPayloadDTO::class,
         NotificationAction::SYNC => NotificationSyncPayloadDTO::class,
-    ];
-
-    public const array AUTH_ACTIONS = [
-        NotificationAction::MARK_READ,
-        NotificationAction::MARK_ALL_READ,
-        NotificationAction::SYNC,
     ];
 
     /**

@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
+import { signUpAdmin } from '../helpers/adminGrant'
+
 // Bots admin e2e: /hilos/admin_bots renders the bots table over the live socket,
 // and the create / edit / delete dialogs round-trip through the backend
 // (AdminBotsPage), the row appearing, updating, and leaving the live table with no
@@ -161,6 +163,7 @@ test.fixme('creating a bot applies at once in the creating tab with no Apply gat
 // HIL-376: muted alongside the flaky bots family per request. This nav smoke is
 // NOT itself flaky — re-enable it once the live-table append flake root is fixed.
 test.fixme('reaches the bots admin from the dashboard', async ({ page }) => {
+  await signUpAdmin(page)
   await page.goto('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 

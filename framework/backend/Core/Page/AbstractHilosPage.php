@@ -16,6 +16,13 @@ use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
  */
 abstract class AbstractHilosPage extends AbstractPage
 {
+    /**
+     * The framework admin surface is closed by default: every hilos page
+     * requires the admin privilege unless it explicitly declares PUBLIC or
+     * AUTHENTICATED ({@see PageAccessLevel}). Enforced by {@see PageAccessGate}.
+     */
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+
     // TODO: [change-log] Before each DB write that should attribute hilos_change_log rows, set MySQL session
     // variable (e.g. SET @hilos_user_id = <userId>;) so triggers can read the acting user. Wire this in the
     // database layer or connection wrapper used for authenticated requests.
