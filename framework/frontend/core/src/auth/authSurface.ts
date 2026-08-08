@@ -1,3 +1,8 @@
+// @deprecated Superseded by the identifier-first {@link ./authFlow} machine
+// (HIL-413): the mode-first switcher contradicts the agreed guest design
+// (mockup framework/guest). Kept only until HIL-423 rebinds the Vue surface and
+// removes this module together with its barrel exports. Do not build on it.
+//
 // The auth surface state machine: the framework-agnostic "which mode is showing,
 // what's in the form, is it submitting, did it fail" controller behind the
 // project's sign-in component (HIL-364). The concrete component (a Vue/React/

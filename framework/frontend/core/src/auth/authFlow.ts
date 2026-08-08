@@ -1,27 +1,37 @@
 // The identifier-first auth flow state machine (HIL-413): the framework-agnostic
 // "one identifier field, live account lookup, then the right next step" controller
-// behind the redesigned sign-in surface (HIL-412). It supersedes the mode-first
-// {@link ./authSurface} controller — instead of a login/register/recovery switcher,
-// the user types a SINGLE identifier (email or phone), the machine looks the
-// account up live, and the step that follows (enter a password, enter a code, set a
-// new password, or hand off to an external method) is a function of two axes —
-// {@link AuthStep} × {@link AuthIntent} — plus the chosen method, NEVER a branch on
-// mode names (hleb's defect: flow logic scattered across a store's mutations). It
-// lives in @hilos/core so the Vue default surface (HIL-423) and the React/Angular
-// demos (424/425) bind the same one small machine.
+// behind the redesigned sign-in surface (HIL-412, mockup framework/guest). It
+// supersedes the mode-first {@link ./authSurface} controller — instead of a
+// login/register/recovery switcher, the user types a SINGLE identifier (email or
+// phone), the machine looks the account up live, and what happens next is a
+// function of the axes {@link AuthStep} × {@link AuthIntent} plus the chosen
+// method and code channel, NEVER a branch on mode names (hleb's defect: flow
+// logic scattered across a store's mutations). It lives in @hilos/core so the
+// Vue default surface (HIL-423) and the React/Angular demos (424/425) bind the
+// same one small machine.
 //
-// This leaf ships the pure core only: no DOM, no wire. Three seams are delegated to
-// the project, mirroring authSurface's `onSubmit`: `onDetect` looks an identifier up
-// (HIL-414), `onSubmit` dispatches the active step's form, and `onMethodAction` runs
-// an icon method's ceremony (HIL-418/419). The machine owns identifier
-// classification, the debounced last-reply-wins detection, the derived icon
-// visibility matrix, and the atomic step transitions.
+// A STEP IS A SCREEN CHANGE. There is no password step: the password reveals
+// INSIDE the identifier step as a function of the detection reply (the mockup's
+// known_email/new_email nodes are one screen with two fields). If the machine
+// switched steps on a network reply the views would have to know that two steps
+// share one layout — exactly the knowledge that must not spread. The one decided
+// exception is a `pending` reservation, which parks the user on the code screen.
 //
-// Method descriptors are pure serializable DATA (no closures): HIL-427 phase 3 ships
-// the enabled set from backend settings over the wire, so a closure could never
-// arrive — behaviour is keyed by `key` and registered separately (onMethodAction),
-// never carried on the descriptor. Change detection is `Object.is` (signal.ts):
-// replace objects on update, never mutate them in place.
+// This leaf ships the pure core only: no DOM, no wire, no UI strings — the
+// machine emits semantic keys ({@link AuthFlowScreen}, error codes) and the
+// views/backend own all human-facing text. Three seams are delegated to the
+// project: `onDetect` looks an identifier up (HIL-414), `onSubmit` dispatches
+// the active step's form, and `onMethodAction` runs an icon method's ceremony
+// (HIL-418/419). There is NO degraded detection state: transport fails as a
+// whole and the connection gate owns that (rules-and-violations §A) — an
+// unanswered lookup simply reveals nothing.
+//
+// Method descriptors are pure serializable DATA (no closures): HIL-427 phase 3
+// ships the enabled set from backend settings over the wire, so a closure could
+// never arrive — behavior is keyed by `key` and registered separately
+// (onMethodAction). Code channels (HIL-492) mirror that: a channel is a
+// descriptor plus a setting, never a surface edit. Change detection is
+// `Object.is` (signal.ts): replace objects on update, never mutate them.
 //
 // Not exported from the barrel (src/index.ts): the clean names collide with the
 // still-present authSurface until HIL-423 removes it and re-exports this module.
@@ -33,45 +43,49 @@ import {
 } from '../state/signal.js'
 
 /**
- * What an identifier looks like. Drives which icon methods apply (an email-only
- * magic link never shows for a phone) and which detection endpoint is meaningful.
- * `unknown` is an empty or unrecognised field — no lookup fires for it.
+ * What an identifier looks like. Drives which icon methods and code channels
+ * apply (an email-only magic link never shows for a phone) and whether a lookup
+ * is meaningful. `unknown` is an empty or unrecognized field — no lookup fires
+ * for it and the icon row hides while typing one.
  */
 export type IdentifierKind = 'email' | 'phone' | 'unknown'
 
 /**
- * The active step of the flow — one axis of the state. `identifier` is the single
- * entry field; `credential` collects a password; `code` collects a one-time code
- * (recovery, or passwordless register); `set_password` sets a new password
- * (register, or a recovery reset); `external` parks while an icon method's ceremony
- * runs (HIL-418/419); `done` is terminal for a flow that doesn't finish by a
- * session upgrade. Reveal and the icon matrix are functions of this axis, not
- * branches on named modes.
+ * The active step of the flow — one axis of the state, where a step means a
+ * CHANGE OF SCREEN. `identifier` is the single entry field (password and all
+ * reveal live inside it); `consent` is the registration terms screen; `code`
+ * collects a one-time code (identifier confirmation, phone sign-in, recovery);
+ * `second_factor` is the two-step verification code after a successful
+ * credential and before the session upgrade (contract here, mechanism
+ * HIL-494); `set_password` chooses a new password (recovery); `external` parks
+ * while an icon method's ceremony runs (HIL-418/419); `done` is a real terminal
+ * screen with a Continue action.
  */
 export type AuthStep =
   | 'identifier'
-  | 'credential'
+  | 'consent'
   | 'code'
+  | 'second_factor'
   | 'set_password'
   | 'external'
   | 'done'
 
 /**
  * The other axis of the state: what the flow is trying to do. `login` and
- * `recovery` act on an existing account; `register` creates one. The backend
- * confirms the intent on submit — e.g. an unknown phone resolves to `register`
- * (passwordless SMS code, contract only in this leaf; the branch's backend is a
- * later leaf).
+ * `recovery` act on an existing account; `register` creates one. The intent
+ * derives from the detection reply (none → register, pending → register at the
+ * code step, active → login) and the backend confirms it on submit.
  */
 export type AuthIntent = 'login' | 'register' | 'recovery'
 
 /**
  * The whole flow state as ONE object, so a transition is atomic (a view never
- * observes a half-applied step/intent pair). `methodKey` is the icon method a
- * ceremony is running for, or `null` on the primary identifier path.
+ * observes a half-applied pair of axes). `methodKey` is the icon method a
+ * ceremony is running for; `channelKey` is the chosen code delivery channel
+ * (HIL-492), named on the code screen; both are `null` outside their paths.
  */
 export interface AuthFlowState {
-  /** The active step. */
+  /** The active step (screen). */
   readonly step: AuthStep
   /** What the flow is trying to do. */
   readonly intent: AuthIntent
@@ -79,25 +93,31 @@ export interface AuthFlowState {
   readonly methodKey: string | null
   /** The classification of the current identifier field. */
   readonly identifierKind: IdentifierKind
+  /** The chosen code delivery channel, or `null` before one is picked. */
+  readonly channelKey: string | null
 }
 
 /**
- * The flow's form fields. A single flat shape; each step reads only what it needs.
- * There is ONE `identifier` field (email or phone) rather than separate email and
- * phone inputs — that unification is the point of the redesign. Replace the object
- * to update, never mutate in place (the signal is shallow, signal.ts).
+ * The flow's form fields. A single flat shape; each step reads only what it
+ * needs. There is ONE `identifier` field (email or phone) — that unification is
+ * the point of the redesign — and NO password confirmation (the mockup dropped
+ * it). Replace the object to update, never mutate in place (signal.ts).
  */
 export interface AuthFlowForm {
   /** The single identifier — an email or a phone number. */
   readonly identifier: string
-  /** Password — the `credential` (login) step. */
+  /** Password — revealed inside the `identifier` step by the detection reply. */
   readonly password: string
-  /** Password confirmation — the `set_password` (register) step. */
-  readonly confirmPassword: string
-  /** One-time code — the `code` (recovery / passwordless register) step. */
+  /** One-time code — the `code` and `second_factor` steps. */
   readonly code: string
-  /** New password — the `set_password` (register / recovery reset) step. */
+  /** New password — the `set_password` step. */
   readonly newPassword: string
+  /** Whether the registration terms are accepted — the `consent` step. */
+  readonly consentAccepted: boolean
+  /** Whether the `second_factor` code is a backup code, not a generated one. */
+  readonly usingBackupCode: boolean
+  /** "Don't ask again on this device" on the `second_factor` step. */
+  readonly trustDevice: boolean
 }
 
 /** A form field name, for the view's per-field update calls. */
@@ -108,24 +128,26 @@ export type AuthMethodPlacement = 'icon_row' | 'password_adjacent'
 
 /**
  * When an icon method is visible against the state of the identifier field. An
- * icon shows when the field is empty and `whenEmpty`, or non-empty and `whenTyping`
- * (and, if `identifierKinds` is set, the typed kind is in that list). This is pure
- * data so it can round-trip from HIL-427 backend settings.
+ * icon shows when the field is empty and `whenEmpty`, or non-empty and
+ * `whenTyping` (and, if `identifierKinds` is set, the typed kind is in that
+ * list). An unrecognized non-empty value hides ALL icons regardless. Pure data
+ * so it can round-trip from HIL-427 backend settings.
  */
 export interface AuthMethodVisibility {
   /** Show while the identifier field is empty (e.g. a discoverable passkey). */
   readonly whenEmpty?: boolean
-  /** Show while the user is typing an identifier (e.g. OAuth, a magic link). */
+  /** Show while the user is typing an identifier (e.g. a magic link). */
   readonly whenTyping?: boolean
-  /** When typing, restrict to these identifier kinds (e.g. a magic link is email-only). */
+  /** When typing, restrict to these identifier kinds (e.g. email-only). */
   readonly identifierKinds?: readonly IdentifierKind[]
 }
 
 /**
- * One enabled auth method as pure serializable DATA — the new descriptor contract
- * that replaces authSurface's `AuthMethodDescriptor` and gates compatibility with
- * HIL-427 (backend-declared method sets). No behaviour lives here: an icon method's
- * ceremony is registered by `key` via {@link AuthFlowOptions.onMethodAction}.
+ * One enabled auth method as pure serializable DATA — the descriptor contract
+ * that replaces authSurface's `AuthMethodDescriptor` and gates compatibility
+ * with HIL-427 (backend-declared method sets). No behavior lives here: an icon
+ * method's ceremony is registered by `key` via
+ * {@link AuthFlowOptions.onMethodAction}.
  */
 export interface AuthFlowMethodDescriptor {
   /** Stable method key, e.g. `password`, `oauth:github`, `passkey`. */
@@ -133,9 +155,9 @@ export interface AuthFlowMethodDescriptor {
   /** Human-facing label. */
   readonly label: string
   /**
-   * `identifier` takes the shared identifier field (the password path); `icon` is a
-   * button (OAuth, passkey, magic link) rendered per {@link placement} and gated by
-   * {@link visibility}.
+   * `identifier` takes the shared identifier field (the password path); `icon`
+   * is a button (OAuth, passkey, magic link) rendered per {@link placement} and
+   * gated by {@link visibility}.
    */
   readonly kind: 'identifier' | 'icon'
   /** Identifier kinds this method serves at all, e.g. a magic link serves `[email]`. */
@@ -149,31 +171,58 @@ export interface AuthFlowMethodDescriptor {
 }
 
 /**
- * The result of looking an identifier up — the contract with HIL-414. It carries
- * the account's available method keys, NOT just `exists`: a passwordless account
- * (HIL-417) must land on a "sign in by link" hint rather than a password field, and
- * the view can only decide that from `methods`.
+ * One code delivery channel as pure serializable DATA — the registry the code
+ * screens offer (HIL-492: a new channel is a descriptor plus a setting, never a
+ * surface edit). Choosing a channel IS sending the code
+ * ({@link AuthFlow.chooseChannel}).
  */
-export interface IdentifierDetection {
-  /** The identifier as normalized by the backend (e.g. E.164 phone). */
-  readonly identifier: string
-  /** How the backend classified it. */
-  readonly kind: IdentifierKind
-  /** Whether an account already exists for it. */
-  readonly exists: boolean
-  /** The method keys available to this identifier (drives the credential-step hint). */
-  readonly methods: readonly string[]
+export interface CodeChannelDescriptor {
+  /** Stable channel key, e.g. `sms`, `telegram`. */
+  readonly key: string
+  /** Human-facing label. */
+  readonly label: string
+  /** Identifier kinds this channel serves; absent means all. */
+  readonly identifierKinds?: readonly IdentifierKind[]
+  /** Whether this channel is the default (drives the primary action). */
+  readonly primary?: boolean
 }
 
-/** The lifecycle of the live identifier lookup. */
-export type DetectionStatus = 'idle' | 'pending' | 'resolved' | 'unavailable'
+/**
+ * The result of looking an identifier up — the contract with HIL-414. The
+ * detection is THREE-VALUED: `none` (no account — registration if `registerable`
+ * offers it), `pending` (a reserved registration awaiting its code — the flow
+ * parks on the code screen WITHOUT re-sending), `active` (sign in). `methods`
+ * carries the account's available method keys — a passwordless account must
+ * land on its passwordless method as the primary action, and only `methods` can
+ * decide that.
+ */
+export interface IdentifierDetection {
+  /**
+   * The identifier EXACTLY as the lookup was asked (the request echo). Replies
+   * are matched to the field by this value — never by `normalized`, so a
+   * backend-normalized phone does not orphan its own reply.
+   */
+  readonly identifier: string
+  /** The identifier as normalized by the backend (e.g. E.164 phone). */
+  readonly normalized: string
+  /** How the backend classified it. */
+  readonly kind: 'email' | 'phone'
+  /** The account status behind the identifier. */
+  readonly status: 'none' | 'pending' | 'active'
+  /** The method keys available to this account (empty for `none`). */
+  readonly methods: readonly string[]
+  /** The method keys registration is open with (consulted for `none`). */
+  readonly registerable: readonly string[]
+}
 
 /**
- * The detection signal. `idle` before/without a lookup; `pending` while one is in
- * flight; `resolved` carries the {@link IdentifierDetection}; `unavailable` is the
- * degraded state (offline, or a rate-limit rejection from HIL-420) in which the flow
- * does NOT block — the view falls back to password + explicit login/register.
+ * The lifecycle of the live identifier lookup. There is deliberately NO
+ * `unavailable` state: transport fails as a whole and the connection gate owns
+ * that — an unanswered lookup leaves the flow at `idle` with nothing revealed.
  */
+export type DetectionStatus = 'idle' | 'pending' | 'resolved'
+
+/** The detection signal a view renders the reveal from. */
 export interface DetectionState {
   /** The lookup lifecycle status. */
   readonly status: DetectionStatus
@@ -182,32 +231,89 @@ export interface DetectionState {
 }
 
 /**
- * The outcome a delegated dispatch ({@link AuthFlowOptions.onSubmit} or
- * `onMethodAction`) reports back. On failure `message` is surfaced inline (auth
- * deliberately shows the backend reason). On success `next` is a PARTIAL flow state
- * merged over the current one — the backend decides where the flow goes (existing
- * account → `credential`, new email → `set_password`, …); omit `next` when a session
- * upgrade closes the surface (login/register success).
+ * The inline error of the active step. Both parts are backend-supplied: the
+ * machine never invents human-facing text (a dispatch that fails without a
+ * message surfaces `code` alone and the view maps it).
+ */
+export interface AuthFlowError {
+  /** The backend's human-facing message, or `null` when it sent none. */
+  readonly message: string | null
+  /**
+   * The semantic error code, or `null`. Known codes include `rate_limited` and
+   * `challenge_required` (HIL-420).
+   */
+  readonly code: string | null
+}
+
+/**
+ * The outcome a delegated dispatch reports back. On failure `message`/`code`
+ * surface inline (auth deliberately shows the backend reason). On success
+ * `next` is a PARTIAL flow state merged over the current one — the backend
+ * decides where the flow goes; omit it when a session upgrade closes the
+ * surface. `resendInSeconds` arms the resend gate ({@link AuthFlow.resend}).
  */
 export interface AuthFlowSubmitOutcome {
   /** Whether the dispatch succeeded. */
   readonly ok: boolean
   /** The inline error message to show on failure. */
   readonly message?: string
+  /** The semantic error code on failure, e.g. `rate_limited` (HIL-420). */
+  readonly code?: string
   /** A partial next flow state to merge on success; omit to stay put. */
   readonly next?: Partial<AuthFlowState>
+  /** Seconds until a code re-send is allowed again, when one was just sent. */
+  readonly resendInSeconds?: number
 }
+
+/**
+ * The derived main control of the current screen: the submit button, an icon
+ * method promoted to the primary button (a passwordless account's magic link),
+ * a code channel (a phone signs in by code, so its channel IS the send), or
+ * nothing (`null` — e.g. an empty field or a parked ceremony).
+ */
+export type AuthFlowPrimaryAction =
+  | { readonly kind: 'submit' }
+  | { readonly kind: 'method'; readonly key: string }
+  | { readonly kind: 'channel'; readonly key: string }
+  | null
+
+/**
+ * The derived semantic key of the active screen's HEADING — the mockup demands
+ * the title come from the surface, not from the modal frame, and the machine is
+ * the one place that knows which screen the axes add up to. The views map keys
+ * to text; the core ships no UI strings.
+ */
+export type AuthFlowScreen =
+  | 'sign_in'
+  | 'create_account'
+  | 'terms'
+  | 'confirm_identifier'
+  | 'enter_code'
+  | 'reset_code'
+  | 'choose_password'
+  | 'two_step'
+  | 'waiting_external'
+  | 'check_inbox'
+  | 'done_registered'
+  | 'done_password_changed'
+  | 'done_signed_in'
+
+/** What a submit dispatch is: the step's form, or a code re-send. */
+export type AuthSubmitAction = 'submit' | 'resend'
 
 /** Wiring for {@link createAuthFlow}. */
 export interface AuthFlowOptions {
-  /** The project's ordered enabled methods; drives the identifier field and icons. */
+  /** The project's ordered enabled methods; drives the field, icons and reveal. */
   methods: readonly AuthFlowMethodDescriptor[]
+  /** The project's ordered code delivery channels (HIL-492); may be empty. */
+  channels: readonly CodeChannelDescriptor[]
   /**
-   * Look an identifier up over the project's transport (HIL-414). Called debounced,
-   * only for a recognised, complete email/phone. Reject to signal the lookup is
-   * unavailable — the machine degrades rather than blocks.
+   * Look an identifier up over the project's transport (HIL-414). Called
+   * debounced, only for a recognized, complete email/phone. A rejection reveals
+   * nothing (the machine returns to `idle`) — the connection gate owns broken
+   * transport, and a limiter refusal is an ordinary action error, not a state.
    *
-   * @param identifier The current identifier value.
+   * @param identifier The current identifier value (echoed back in the reply).
    * @param kind Its classification.
    */
   onDetect: (
@@ -215,19 +321,22 @@ export interface AuthFlowOptions {
     kind: IdentifierKind,
   ) => Promise<IdentifierDetection>
   /**
-   * Dispatch the active step's form over the project's transport, resolving the
-   * outcome. The machine guards re-entry and owns pending/error; this dispatches and
-   * maps the reply (including the next step via {@link AuthFlowSubmitOutcome.next}).
+   * Dispatch the active step's form (`submit`) or a code re-send (`resend`)
+   * over the project's transport, resolving the outcome. The machine guards
+   * re-entry and owns pending/error; the backend decides the next step via
+   * {@link AuthFlowSubmitOutcome.next}.
    *
-   * @param flow The current flow state (step/intent tell the dispatch what to do).
+   * @param action What is being dispatched.
+   * @param flow The current flow state (step/intent/channel tell it what to do).
    * @param form The current form values.
    */
   onSubmit: (
+    action: AuthSubmitAction,
     flow: AuthFlowState,
     form: AuthFlowForm,
   ) => Promise<AuthFlowSubmitOutcome>
   /**
-   * Run an icon method's registered behaviour — its OAuth redirect or WebAuthn
+   * Run an icon method's registered behavior — its OAuth redirect or WebAuthn
    * ceremony (HIL-418/419). The flow parks in `external` while it runs.
    *
    * @param key The chosen method key.
@@ -243,45 +352,102 @@ export interface AuthFlowOptions {
 
 /** The reactive identifier-first flow a view binds and drives. */
 export interface AuthFlow {
-  /** The whole flow state (step/intent/methodKey/identifierKind), atomic. */
+  /** The whole flow state (all axes), atomic. */
   readonly flow: ReadonlySignal<AuthFlowState>
   /** The current form values. */
   readonly form: ReadonlySignal<AuthFlowForm>
   /** The live identifier lookup state. */
   readonly detection: ReadonlySignal<DetectionState>
-  /** Whether a submit or ceremony is in flight (disables the submit control). */
+  /** Whether a submit or ceremony is in flight (disables the controls). */
   readonly pending: ReadonlySignal<boolean>
-  /** The active step's inline error, or null when clear. */
-  readonly error: ReadonlySignal<string | null>
+  /** The active step's inline error, or `null` when clear. */
+  readonly error: ReadonlySignal<AuthFlowError | null>
   /** Whether the active step's form is complete enough to submit. */
   readonly submittable: ReadonlySignal<boolean>
-  /** The icon methods currently visible, given the identifier field and its kind. */
+  /** The icon methods currently visible against the identifier field. */
   readonly icons: ReadonlySignal<readonly AuthFlowMethodDescriptor[]>
+  /** The code channels applicable to the current identifier kind. */
+  readonly channels: ReadonlySignal<readonly CodeChannelDescriptor[]>
+  /** The derived main control of the current screen. */
+  readonly primaryAction: ReadonlySignal<AuthFlowPrimaryAction>
+  /** The derived semantic key of the active screen's heading. */
+  readonly screenKey: ReadonlySignal<AuthFlowScreen>
   /**
-   * Update one form field. Editing `identifier` resets the flow to the top, clears
-   * the secrets, and (re)schedules the live lookup.
+   * The epoch-ms moment a code re-send unblocks (from the backend's
+   * `resendInSeconds`), or `null` when un-armed. The view draws the countdown;
+   * the machine enforces the gate in {@link resend}.
+   */
+  readonly resendAvailableAt: ReadonlySignal<number | null>
+  /**
+   * Update one form field, typed by the field's name (the boolean flags take a
+   * boolean, not a string). Editing `identifier` restarts the flow, clears the
+   * rest of the form — the ONLY thing that does (input preservation) — and
+   * (re)schedules the live lookup. Re-emitting the SAME identifier resets
+   * nothing but retries a lookup that failed.
    *
    * @param field The field to set.
-   * @param value The new value.
+   * @param value The new value, of that field's type.
    */
-  setField(field: AuthFlowField, value: string): void
-  /** Submit the active step; a no-op while already pending. */
+  setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void
+  /**
+   * Submit the active step. From the `identifier` step with a `register` intent
+   * this is a LOCAL move to `consent` — nothing is created until the terms
+   * screen submits. Everywhere else it dispatches. A no-op while pending.
+   */
   submit(): Promise<void>
   /**
-   * Hand off to an icon method's ceremony; parks the flow in `external`. A no-op for
-   * an unknown key, a non-icon method, or while already pending.
+   * Re-send the active code. Blocked (a silent no-op) until
+   * {@link resendAvailableAt}; the backend re-arms the gate via
+   * `resendInSeconds`. A no-op while pending.
+   */
+  resend(): Promise<void>
+  /**
+   * Hand off to an icon method's ceremony; parks the flow in `external` (a
+   * magic link parks the same way — its screen differs by key). A no-op for an
+   * unknown key, a non-icon method, or while pending.
    *
    * @param key The chosen icon method key.
    */
   chooseMethod(key: string): Promise<void>
   /**
-   * Enter the recovery flow ("forgot password?"). The view gates this control on
-   * `detection.result.exists && methods.includes('password')` (HIL-417). Requesting
-   * the emailed code is the view's transport concern; the machine holds the step.
+   * Pick a code delivery channel — which IS sending the code (there is no
+   * separate send control), except under a `register` intent on the identifier
+   * step, where the choice is stored and the flow hops to consent locally:
+   * registration dispatches nothing before the terms screen submits. The
+   * chosen key lives in the state and the code screen names it. A no-op for an
+   * unknown key, while pending, or while the resend cooldown blocks sending.
+   *
+   * @param key The chosen channel key.
+   */
+  chooseChannel(key: string): Promise<void>
+  /**
+   * Enter the recovery flow (the key icon next to the password; the view gates
+   * it on an `active` detection whose methods include `password`). A local move
+   * to the recovery code screen; the code email itself is the view's transport
+   * concern.
    */
   startRecovery(): void
-  /** Return to the single identifier field, keeping the identifier and its lookup. */
-  back(): void
+  /**
+   * Return to the single identifier field, keeping everything typed. The
+   * mockup's exactly-two return points: "Not that address?" on the registration
+   * code screen, and "Back" on the consent screen. There is NO general back().
+   */
+  backToIdentifier(): void
+  /**
+   * Cancel a parked external ceremony and return to the identifier field,
+   * releasing the pending guard (the abandoned ceremony may never settle). A
+   * late outcome from the canceled ceremony is ignored.
+   */
+  cancelMethod(): void
+  /**
+   * Apply an EXTERNAL flow transition (a ceremony's redirect landing, a
+   * cross-tab converge) with the same merge as a backend `next`: clears the
+   * shown error, never touches the form. Every step must survive being rebuilt
+   * under the user's hands.
+   *
+   * @param next The partial flow state to merge.
+   */
+  applyExternal(next: Partial<AuthFlowState>): void
   /** Reset to the initial identifier step with an empty form — call on (re)mount. */
   reset(): void
 }
@@ -291,6 +457,15 @@ export const PASSWORD_MIN_LENGTH = 8
 
 /** Default detection debounce: quiet enough to skip mid-word lookups. */
 export const DEFAULT_DETECT_DEBOUNCE_MS = 300
+
+/** The `password` method key — the shared-identifier-field method (HIL-416). */
+export const PASSWORD_METHOD_KEY = 'password'
+
+/**
+ * The `magic_link` method key. Core-known because the machine derives the
+ * `check_inbox` screen (vs the generic `waiting_external`) from it.
+ */
+export const MAGIC_LINK_METHOD_KEY = 'magic_link'
 
 /** A full-email shape — the gate for firing a lookup, not backend validation. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -305,8 +480,8 @@ const PHONE_MAX_DIGITS = 15
 /** Cosmetic phone separators stripped before counting digits. */
 const PHONE_SEPARATORS = /[\s\-().]/g
 
-/** The default generic failure message when a dispatch reports none. */
-const DEFAULT_ERROR = 'The request could not be completed. Please try again.'
+/** Milliseconds in one second — converts `resendInSeconds` to an epoch gate. */
+const MS_PER_SECOND = 1000
 
 /** The starting flow state — the single identifier field, no intent decided yet. */
 const INITIAL_FLOW: AuthFlowState = {
@@ -314,15 +489,18 @@ const INITIAL_FLOW: AuthFlowState = {
   intent: 'login',
   methodKey: null,
   identifierKind: 'unknown',
+  channelKey: null,
 }
 
 /** An empty form — the starting and identifier-change reset value. */
 const EMPTY_FORM: AuthFlowForm = {
   identifier: '',
   password: '',
-  confirmPassword: '',
   code: '',
   newPassword: '',
+  consentAccepted: false,
+  usingBackupCode: false,
+  trustDevice: false,
 }
 
 /** The detection signal before or without a lookup. */
@@ -331,32 +509,27 @@ const IDLE_DETECTION: DetectionState = { status: 'idle', result: null }
 /** The detection signal while a lookup is in flight. */
 const PENDING_DETECTION: DetectionState = { status: 'pending', result: null }
 
-/** The degraded detection signal (lookup unavailable). */
-const UNAVAILABLE_DETECTION: DetectionState = {
-  status: 'unavailable',
-  result: null,
-}
-
 /**
- * The default identifier (email/phone + password) method — the shared identifier
- * field. A project lists it first; icon methods are added around it.
+ * The default identifier (email/phone + password) method — the shared
+ * identifier field. A project lists it first; icon methods are added around it.
  */
 export const PASSWORD_FLOW_METHOD: AuthFlowMethodDescriptor = {
-  key: 'password',
+  key: PASSWORD_METHOD_KEY,
   label: 'Email or phone',
   kind: 'identifier',
 }
 
 /**
- * The GitHub OAuth icon method — an icon shown both before and while typing (an
- * external provider is offered regardless of what's in the field), login-only.
+ * The GitHub OAuth icon method — shown only while the field is EMPTY (HIL-419
+ * revision: tapping a provider mid-address discards the typed identifier, so
+ * once the user chose the long road the surface develops it), login-only.
  */
 export const OAUTH_GITHUB_FLOW_METHOD: AuthFlowMethodDescriptor = {
   key: 'oauth:github',
   label: 'Continue with GitHub',
   kind: 'icon',
   intents: ['login'],
-  visibility: { whenEmpty: true, whenTyping: true },
+  visibility: { whenEmpty: true, whenTyping: false },
   placement: 'icon_row',
 }
 
@@ -373,11 +546,12 @@ export const PASSKEY_FLOW_METHOD: AuthFlowMethodDescriptor = {
 }
 
 /**
- * The email magic-link icon method — shown only while typing an EMAIL, rendered next
- * to the password so it reads as a passwordless alternative for that account.
+ * The email magic-link icon method — shown only while typing an EMAIL, rendered
+ * next to the password so it reads as a passwordless alternative for that
+ * account.
  */
 export const MAGIC_LINK_FLOW_METHOD: AuthFlowMethodDescriptor = {
-  key: 'magic_link',
+  key: MAGIC_LINK_METHOD_KEY,
   label: 'Email me a sign-in link',
   kind: 'icon',
   identifierKinds: ['email'],
@@ -390,11 +564,11 @@ export const MAGIC_LINK_FLOW_METHOD: AuthFlowMethodDescriptor = {
 }
 
 /**
- * Classify an identifier as email, phone, or unknown — a pure core function so the
- * views never re-implement it. An `@` reads as an email; an otherwise all-digit
- * value (with cosmetic separators) reads as a phone; anything else is unknown. This
- * is lenient (it fires while typing, e.g. `a@` is already `email`) — the stricter
- * completeness gate for firing a lookup is separate.
+ * Classify an identifier as email, phone, or unknown — a pure core function so
+ * the views never re-implement it. An `@` reads as an email; an otherwise
+ * all-digit value (with cosmetic separators) reads as a phone; anything else is
+ * unknown. This is lenient (it fires while typing, e.g. `a@` is already
+ * `email`) — the stricter completeness gate for firing a lookup is separate.
  *
  * @param value The raw identifier field value.
  */
@@ -414,9 +588,9 @@ export function classifyIdentifier(value: string): IdentifierKind {
 }
 
 /**
- * Whether an identifier is complete enough to spend a lookup on: a full email, or a
- * phone whose digit count is within the backend's bounds. A recognised-but-partial
- * value (`a@`, a three-digit number) is not.
+ * Whether an identifier is complete enough to spend a lookup on: a full email,
+ * or a phone whose digit count is within the backend's bounds. A
+ * recognized-but-partial value (`a@`, a three-digit number) is not.
  *
  * @param value The raw identifier field value.
  * @param kind Its classification.
@@ -436,40 +610,10 @@ function isIdentifierComplete(value: string, kind: IdentifierKind): boolean {
 }
 
 /**
- * Whether an active step's form is complete enough to submit. Client-side gating
- * for the button state only — the backend stays the source of truth. `external` and
- * `done` are never submittable (the ceremony / terminal states have no form).
- *
- * @param flow The current flow state.
- * @param form The current form values.
- */
-export function isFlowSubmittable(
-  flow: AuthFlowState,
-  form: AuthFlowForm,
-): boolean {
-  switch (flow.step) {
-    case 'identifier':
-      return form.identifier.trim() !== ''
-    case 'credential':
-      return form.password !== ''
-    case 'code':
-      return form.code.trim() !== ''
-    case 'set_password':
-      return (
-        form.newPassword.length >= PASSWORD_MIN_LENGTH &&
-        form.confirmPassword === form.newPassword
-      )
-    case 'external':
-    case 'done':
-      return false
-  }
-}
-
-/**
- * Whether one icon method is visible against the identifier field's state. Absent
- * visibility means always visible; otherwise it shows when empty and `whenEmpty`, or
- * when typing and `whenTyping` (and, when `identifierKinds` is set, only for a kind
- * in that list). The derived signal the view renders — the applicability matrix.
+ * Whether one icon method is visible against the identifier field's state.
+ * Absent visibility means always visible; otherwise it shows when empty and
+ * `whenEmpty`, or when typing and `whenTyping` (and, when `identifierKinds` is
+ * set, only for a kind in that list).
  *
  * @param descriptor The icon method descriptor.
  * @param empty Whether the identifier field is empty.
@@ -501,31 +645,168 @@ function isIconVisible(
 }
 
 /**
- * The icon methods visible given the identifier field and its kind, in registry
- * order — a pure derivation the machine exposes as a signal and the view only
- * renders (splitting by {@link AuthFlowMethodDescriptor.placement}).
+ * The icon methods visible given the identifier field, its kind, and the
+ * current intent, in registry order — a pure derivation the machine exposes as
+ * a signal and the view only renders (splitting by
+ * {@link AuthFlowMethodDescriptor.placement}). A non-empty UNRECOGNIZED value
+ * hides the whole row: no icon serves an identifier that is neither an email
+ * nor a phone, and a half-typed value must not flicker the row. The
+ * descriptor-level constraints are honored here too: a method constrained by
+ * `intents` hides outside them (OAuth is login-only), and one constrained by
+ * its top-level `identifierKinds` hides while typing a kind it does not serve.
  *
  * @param methods The project's ordered method descriptors.
  * @param identifier The current identifier field value.
  * @param kind The current identifier classification.
+ * @param intent The current flow intent.
  */
 export function visibleMethodIcons(
   methods: readonly AuthFlowMethodDescriptor[],
   identifier: string,
   kind: IdentifierKind,
+  intent: AuthIntent,
 ): readonly AuthFlowMethodDescriptor[] {
   const empty = identifier.trim() === ''
+  if (!empty && kind === 'unknown') {
+    return []
+  }
 
   return methods.filter(
-    (method) => method.kind === 'icon' && isIconVisible(method, empty, kind),
+    (method) =>
+      method.kind === 'icon' &&
+      (method.intents === undefined || method.intents.includes(intent)) &&
+      (empty ||
+        method.identifierKinds === undefined ||
+        method.identifierKinds.includes(kind)) &&
+      isIconVisible(method, empty, kind),
   )
 }
 
 /**
- * Create the identifier-first auth flow machine over the project's method registry
- * and delegated transport callbacks.
+ * The code channels applicable to an identifier kind, in registry order — the
+ * core-side selection HIL-492 requires (a new channel must never mean a surface
+ * edit).
  *
- * @param options The method registry, the detect/submit/method-action dispatches,
+ * @param channels The project's ordered channel descriptors.
+ * @param kind The current identifier classification.
+ */
+export function applicableChannels(
+  channels: readonly CodeChannelDescriptor[],
+  kind: IdentifierKind,
+): readonly CodeChannelDescriptor[] {
+  return channels.filter(
+    (channel) =>
+      channel.identifierKinds === undefined ||
+      channel.identifierKinds.includes(kind),
+  )
+}
+
+/**
+ * Whether an active step's form is complete enough to submit. Client-side
+ * gating for the button state only — the backend stays the source of truth. On
+ * the `identifier` step nothing is submittable until the detection resolved and
+ * revealed a PASSWORD field to fill: a login submits a non-empty password, a
+ * password registration a password of at least {@link PASSWORD_MIN_LENGTH}; a
+ * phone never submits from this step (its channel choice is the send), and a
+ * passwordless registration goes through its method's ceremony, not through
+ * submit (mirrored by the primary action). `external` is never submittable;
+ * `done` always is (its Continue).
+ *
+ * @param flow The current flow state.
+ * @param form The current form values.
+ * @param detection The current detection state (the identifier step's reveal).
+ */
+export function isFlowSubmittable(
+  flow: AuthFlowState,
+  form: AuthFlowForm,
+  detection: DetectionState,
+): boolean {
+  switch (flow.step) {
+    case 'identifier': {
+      const result = detection.result
+      if (result === null || result.kind !== 'email') {
+        return false
+      }
+      if (
+        result.status === 'active' &&
+        result.methods.includes(PASSWORD_METHOD_KEY)
+      ) {
+        return form.password !== ''
+      }
+      if (
+        result.status === 'none' &&
+        result.registerable.includes(PASSWORD_METHOD_KEY)
+      ) {
+        return form.password.length >= PASSWORD_MIN_LENGTH
+      }
+
+      return false
+    }
+    case 'consent':
+      return form.consentAccepted
+    case 'code':
+    case 'second_factor':
+      return form.code.trim() !== ''
+    case 'set_password':
+      return form.newPassword.length >= PASSWORD_MIN_LENGTH
+    case 'external':
+      return false
+    case 'done':
+      return true
+  }
+}
+
+/**
+ * The code screen per intent: the registration code proves the address, the
+ * login code signs a phone in, the recovery code resets a password.
+ */
+const CODE_SCREENS: Record<AuthIntent, AuthFlowScreen> = {
+  register: 'confirm_identifier',
+  recovery: 'reset_code',
+  login: 'enter_code',
+}
+
+/** The terminal screen per intent — each flow ends on its own done screen. */
+const DONE_SCREENS: Record<AuthIntent, AuthFlowScreen> = {
+  register: 'done_registered',
+  recovery: 'done_password_changed',
+  login: 'done_signed_in',
+}
+
+/**
+ * The derived semantic heading key — the one place the axes add up to a screen.
+ * A parked magic link waits on `check_inbox` while every other ceremony waits
+ * on `waiting_external`; the code and done screens split by intent
+ * ({@link CODE_SCREENS}, {@link DONE_SCREENS}).
+ *
+ * @param flow The current flow state.
+ */
+export function screenKeyOf(flow: AuthFlowState): AuthFlowScreen {
+  switch (flow.step) {
+    case 'identifier':
+      return flow.intent === 'register' ? 'create_account' : 'sign_in'
+    case 'consent':
+      return 'terms'
+    case 'code':
+      return CODE_SCREENS[flow.intent]
+    case 'second_factor':
+      return 'two_step'
+    case 'set_password':
+      return 'choose_password'
+    case 'external':
+      return flow.methodKey === MAGIC_LINK_METHOD_KEY
+        ? 'check_inbox'
+        : 'waiting_external'
+    case 'done':
+      return DONE_SCREENS[flow.intent]
+  }
+}
+
+/**
+ * Create the identifier-first auth flow machine over the project's method and
+ * channel registries and delegated transport callbacks.
+ *
+ * @param options The registries, the detect/submit/method-action dispatches,
  *   and the detection debounce.
  */
 export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
@@ -534,35 +815,116 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const form = createSignal<AuthFlowForm>(EMPTY_FORM)
   const detection = createSignal<DetectionState>(IDLE_DETECTION)
   const pending = createSignal(false)
-  const error = createSignal<string | null>(null)
+  const error = createSignal<AuthFlowError | null>(null)
+  const resendAvailableAt = createSignal<number | null>(null)
   const submittable = computedSignal(() =>
-    isFlowSubmittable(flow.get(), form.get()),
+    isFlowSubmittable(flow.get(), form.get(), detection.get()),
   )
   const icons = computedSignal(() =>
     visibleMethodIcons(
       options.methods,
       form.get().identifier,
       flow.get().identifierKind,
+      flow.get().intent,
     ),
   )
+  const channels = computedSignal(() =>
+    applicableChannels(options.channels, flow.get().identifierKind),
+  )
+  const screenKey = computedSignal(() => screenKeyOf(flow.get()))
+  const primaryAction = computedSignal<AuthFlowPrimaryAction>(() => {
+    const state = flow.get()
+    switch (state.step) {
+      case 'external':
+        return null
+      case 'identifier': {
+        const result = detection.get().result
+        if (result === null) {
+          return null
+        }
+        if (result.kind === 'phone') {
+          // A phone never reveals a password; its channel choice IS the send —
+          // and only when the account signs in or registration is open.
+          if (result.status === 'none' && result.registerable.length === 0) {
+            return null
+          }
+          const applicable = channels.get()
+          const primary =
+            applicable.find((channel) => channel.primary === true) ??
+            applicable[0]
 
-  // Detection race guard: every new identifier value bumps the sequence, and a
-  // reply is applied only when its sequence is still current — last reply wins.
-  let detectSeq = 0
+          return primary === undefined
+            ? null
+            : { kind: 'channel', key: primary.key }
+        }
+        if (result.status === 'active') {
+          if (result.methods.includes(PASSWORD_METHOD_KEY)) {
+            return { kind: 'submit' }
+          }
+          // A passwordless account promotes its first enabled passwordless
+          // method (registry order) to the primary button.
+          const method = options.methods.find(
+            (descriptor) =>
+              descriptor.kind === 'icon' &&
+              result.methods.includes(descriptor.key),
+          )
+
+          return method === undefined
+            ? null
+            : { kind: 'method', key: method.key }
+        }
+        if (result.status === 'none' && result.registerable.length > 0) {
+          if (result.registerable.includes(PASSWORD_METHOD_KEY)) {
+            return { kind: 'submit' }
+          }
+          // A passwordless-only registration goes through its method's
+          // ceremony — mirror of the active-account promotion above, kept in
+          // step with isFlowSubmittable (which never enables submit here).
+          const method = options.methods.find(
+            (descriptor) =>
+              descriptor.kind === 'icon' &&
+              result.registerable.includes(descriptor.key),
+          )
+
+          return method === undefined
+            ? null
+            : { kind: 'method', key: method.key }
+        }
+
+        return null
+      }
+      default:
+        return { kind: 'submit' }
+    }
+  })
+
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  // The lookup sequence orders replies: the echo guard alone cannot tell two
+  // in-flight lookups of the SAME text apart (type, edit away, retype), and
+  // reset() must orphan in-flight replies, not only the debounce timer.
+  let detectSeq = 0
+  // The dispatch generation orphans stale submit/ceremony outcomes: without it
+  // a slow onSubmit resolution would merge its `next` into whatever flow exists
+  // by then, and its pending-clear would release a NEWER dispatch's guard.
+  let dispatchSeq = 0
 
   function cancelDetect(): void {
+    detectSeq += 1
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer)
       debounceTimer = null
     }
   }
 
+  /** Whether a lookup reply still matches the field — the ECHO race guard. */
+  function isCurrentReply(identifier: string): boolean {
+    return identifier === form.get().identifier
+  }
+
   function scheduleDetect(identifier: string, kind: IdentifierKind): void {
     cancelDetect()
-    // Any new value invalidates an in-flight reply, and an empty or partial field
-    // rolls detection back to idle without spending a lookup.
-    detectSeq += 1
+    // An empty or partial field rolls detection back to idle without spending a
+    // lookup; a stale in-flight reply is dropped by the sequence+echo guards.
     if (!isIdentifierComplete(identifier, kind)) {
       detection.set(IDLE_DETECTION)
 
@@ -583,27 +945,97 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   ): Promise<void> {
     try {
       const result = await options.onDetect(identifier, kind)
-      if (seq !== detectSeq) {
+      // Replies are matched by the request ECHO, not by `normalized` — a
+      // backend-normalized phone must not orphan its own reply (the plan's
+      // rule) — and ordered by the sequence, which alone can drop a stale
+      // reply whose text matches the field again.
+      if (seq !== detectSeq || !isCurrentReply(result.identifier)) {
         return
       }
       detection.set({ status: 'resolved', result })
+      applyDetection(result)
     } catch {
-      if (seq !== detectSeq) {
-        return
+      if (seq === detectSeq) {
+        // NO degraded state: an unanswered lookup reveals nothing and the
+        // connection gate owns broken transport (rules-and-violations §A).
+        detection.set(IDLE_DETECTION)
       }
-      detection.set(UNAVAILABLE_DETECTION)
+    }
+  }
+
+  /**
+   * Derive the intent from a resolved lookup: none → register (when
+   * registration is open), pending → register parked on the code screen
+   * WITHOUT re-sending (the reservation already sent one), active → login.
+   */
+  function applyDetection(result: IdentifierDetection): void {
+    const state = flow.get()
+    if (state.step !== 'identifier') {
+      return
+    }
+    if (result.status === 'pending') {
+      flow.set({ ...state, step: 'code', intent: 'register' })
+
+      return
+    }
+    if (result.status === 'none' && result.registerable.length > 0) {
+      flow.set({ ...state, intent: 'register' })
+
+      return
+    }
+    if (state.intent !== 'login') {
+      flow.set({ ...state, intent: 'login' })
     }
   }
 
   function applyOutcome(outcome: AuthFlowSubmitOutcome): void {
     if (!outcome.ok) {
-      error.set(outcome.message ?? DEFAULT_ERROR)
+      error.set({
+        message: outcome.message ?? null,
+        code: outcome.code ?? null,
+      })
 
       return
     }
     if (outcome.next !== undefined) {
       flow.set({ ...flow.get(), ...outcome.next })
     }
+    if (outcome.resendInSeconds !== undefined) {
+      resendAvailableAt.set(
+        Date.now() + outcome.resendInSeconds * MS_PER_SECOND,
+      )
+    }
+  }
+
+  /**
+   * Run one guarded dispatch: clear the error, hold pending, apply the outcome.
+   * A dispatch orphaned by a newer generation (an identifier edit, a reset, a
+   * canceled ceremony) applies nothing and releases nothing.
+   */
+  async function dispatch(
+    run: () => Promise<AuthFlowSubmitOutcome>,
+  ): Promise<void> {
+    error.set(null)
+    pending.set(true)
+    const seq = ++dispatchSeq
+    try {
+      const outcome = await run()
+      if (seq !== dispatchSeq) {
+        return
+      }
+      applyOutcome(outcome)
+    } finally {
+      if (seq === dispatchSeq) {
+        pending.set(false)
+      }
+    }
+  }
+
+  /** Whether the backend-armed cooldown still blocks sending a code. */
+  function isResendBlocked(): boolean {
+    const availableAt = resendAvailableAt.get()
+
+    return availableAt !== null && Date.now() < availableAt
   }
 
   return {
@@ -614,16 +1046,36 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     error,
     submittable,
     icons,
-    setField(field: AuthFlowField, value: string): void {
+    channels,
+    primaryAction,
+    screenKey,
+    resendAvailableAt,
+    setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {
       if (field === 'identifier') {
-        // Editing the identifier itself restarts the flow and clears the secrets
-        // (input-preservation rule: only an identifier change clears the form —
-        // stepping forward never does); then (re)schedule the live lookup.
-        const kind = classifyIdentifier(value)
+        const identifier = value as string
+        if (identifier === form.get().identifier) {
+          // A same-value re-emit is not an edit — nothing resets — but it does
+          // retry a lookup that failed (idle after a rejection): without this
+          // the surface would stay dead until the text actually changed.
+          if (detection.get().status === 'idle') {
+            scheduleDetect(identifier, classifyIdentifier(identifier))
+          }
+
+          return
+        }
+        // Editing the identifier itself restarts the flow, clears the rest of
+        // the form (input-preservation rule: ONLY an identifier change clears —
+        // stepping forward never does), and orphans any in-flight dispatch (its
+        // outcome belongs to the abandoned identifier); then (re)schedule the
+        // lookup.
+        const kind = classifyIdentifier(identifier)
+        dispatchSeq += 1
+        pending.set(false)
         flow.set({ ...INITIAL_FLOW, identifierKind: kind })
-        form.set({ ...EMPTY_FORM, identifier: value })
+        form.set({ ...EMPTY_FORM, identifier })
         error.set(null)
-        scheduleDetect(value, kind)
+        resendAvailableAt.set(null)
+        scheduleDetect(identifier, kind)
 
         return
       }
@@ -633,13 +1085,22 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (pending.get()) {
         return
       }
-      error.set(null)
-      pending.set(true)
-      try {
-        applyOutcome(await options.onSubmit(flow.get(), form.get()))
-      } finally {
-        pending.set(false)
+      const state = flow.get()
+      if (state.step === 'identifier' && state.intent === 'register') {
+        // Registration does NOT create an account from the identifier step —
+        // it moves locally to the terms screen; the real dispatch is consent's.
+        error.set(null)
+        flow.set({ ...state, step: 'consent' })
+
+        return
       }
+      await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
+    },
+    async resend(): Promise<void> {
+      if (pending.get() || isResendBlocked()) {
+        return
+      }
+      await dispatch(() => options.onSubmit('resend', flow.get(), form.get()))
     },
     async chooseMethod(key: string): Promise<void> {
       if (pending.get()) {
@@ -650,50 +1111,118 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       error.set(null)
-      // Park in `external` while the method's ceremony runs; on failure fall back to
-      // the identifier field so the user can retry another way.
+      // Park in `external` while the ceremony runs; on failure fall back to the
+      // identifier field so the user can retry another way. A canceled or
+      // superseded ceremony's late outcome is ignored (the generation and park
+      // guards).
       flow.set({ ...flow.get(), step: 'external', methodKey: key })
       pending.set(true)
+      const seq = ++dispatchSeq
       try {
         const outcome = await options.onMethodAction(key, form.get())
+        if (seq !== dispatchSeq) {
+          return
+        }
+        const state = flow.get()
+        if (state.step !== 'external' || state.methodKey !== key) {
+          return
+        }
+        // One outcome application for ceremonies and submits alike — a
+        // hand-rolled copy here already diverged once (it dropped the
+        // resendInSeconds a magic-link send replies with).
+        applyOutcome(outcome)
         if (!outcome.ok) {
-          error.set(outcome.message ?? DEFAULT_ERROR)
-          flow.set({ ...flow.get(), step: 'identifier', methodKey: null })
-        } else if (outcome.next !== undefined) {
-          flow.set({ ...flow.get(), ...outcome.next })
+          flow.set({ ...state, step: 'identifier', methodKey: null })
         }
       } finally {
-        pending.set(false)
+        if (seq === dispatchSeq) {
+          pending.set(false)
+        }
       }
+    },
+    async chooseChannel(key: string): Promise<void> {
+      if (pending.get() || isResendBlocked()) {
+        return
+      }
+      const channel = channels
+        .get()
+        .find((descriptor) => descriptor.key === key)
+      if (channel === undefined) {
+        return
+      }
+      const state = flow.get()
+      if (state.step === 'identifier' && state.intent === 'register') {
+        // Registration dispatches NOTHING before the terms screen submits —
+        // the channel choice is stored and the flow hops to consent locally;
+        // consent's submit is the send (channelKey rides in the state).
+        error.set(null)
+        flow.set({ ...state, channelKey: key, step: 'consent' })
+
+        return
+      }
+      // Choosing the channel IS sending the code: the key goes into the state
+      // first (the code screen names it), then the send dispatches and the
+      // backend replies with the code step and the resend gate.
+      flow.set({ ...state, channelKey: key })
+      await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
     },
     startRecovery(): void {
       error.set(null)
+      resendAvailableAt.set(null)
+      // The recovery challenge starts clean: a code or new password lingering
+      // from another challenge must not pre-fill it as already-submittable
+      // (input preservation protects the identifier and password, not a
+      // foreign challenge's fields).
+      form.set({ ...form.get(), code: '', newPassword: '' })
       flow.set({
         ...flow.get(),
         intent: 'recovery',
         step: 'code',
         methodKey: null,
-      })
-      form.set({
-        ...form.get(),
-        password: '',
-        confirmPassword: '',
-        code: '',
-        newPassword: '',
+        channelKey: null,
       })
     },
-    back(): void {
+    backToIdentifier(): void {
       error.set(null)
-      flow.set({ ...INITIAL_FLOW, identifierKind: flow.get().identifierKind })
+      resendAvailableAt.set(null)
+      // Back to the single field with everything typed preserved — the form is
+      // NOT cleared (only an identifier edit clears it).
+      flow.set({
+        ...flow.get(),
+        step: 'identifier',
+        methodKey: null,
+        channelKey: null,
+      })
+    },
+    cancelMethod(): void {
+      const state = flow.get()
+      if (state.step !== 'external') {
+        return
+      }
+      // The abandoned ceremony may never settle (a closed OAuth popup), so the
+      // cancel itself releases pending and orphans the ceremony's outcome —
+      // otherwise every control would stay dead behind the pending guard.
+      dispatchSeq += 1
+      pending.set(false)
+      error.set(null)
+      flow.set({ ...state, step: 'identifier', methodKey: null })
+    },
+    applyExternal(next: Partial<AuthFlowState>): void {
+      // The converge entry: an external transition lands with the same merge as
+      // a backend `next` — clears the shown error, never touches the form, and
+      // any step must survive being rebuilt under the user's hands.
+      error.set(null)
+      flow.set({ ...flow.get(), ...next })
     },
     reset(): void {
       cancelDetect()
-      detectSeq += 1
+      dispatchSeq += 1
       flow.set(INITIAL_FLOW)
       form.set(EMPTY_FORM)
       detection.set(IDLE_DETECTION)
       pending.set(false)
       error.set(null)
+      resendAvailableAt.set(null)
     },
   }
 }
