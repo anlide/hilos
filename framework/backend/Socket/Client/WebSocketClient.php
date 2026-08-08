@@ -87,6 +87,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private const int OPCODE_MASK = 0x0F;            // Opcode mask (bits 0-3)
     private const int MASKED_MASK = 0x80;            // Masked bit mask (bit 7 of second byte)
     private const int MASK_KEY_LENGTH = 4;           // Masking key length in bytes
+    private const int HIGH_BIT_SHIFT = 7;            // Shift that turns bit 7 (FIN, MASK) into a 0/1 flag
 
     /** Frame header length constants */
     private const int HEADER_LEN_BASE = 2;           // Base header length (2 bytes)
@@ -520,9 +521,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $byte1 = ord($this->readBuffer[0]);
         $byte2 = ord($this->readBuffer[1]);
 
-        $fin = ($byte1 & self::FIN_MASK) >> 7;
+        $fin = ($byte1 & self::FIN_MASK) >> self::HIGH_BIT_SHIFT;
         $opcode = $byte1 & self::OPCODE_MASK;
-        $masked = ($byte2 & self::MASKED_MASK) >> 7;
+        $masked = ($byte2 & self::MASKED_MASK) >> self::HIGH_BIT_SHIFT;
         $payloadLen = $byte2 & self::PAYLOAD_LEN_MASK;
 
         // Extended payload length

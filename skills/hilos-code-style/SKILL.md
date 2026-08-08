@@ -21,6 +21,16 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - `Page::onAction()` and action handler routing: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler routing (`onSignalAgent()`, `onSignalCron()`):
   `docs/agents/code-style/signal-handlers.md`
+- Magic values: `docs/agents/code-style/magic-values.md` - read before writing a
+  bare number or string into production code. A literal is magic when it is
+  REPEATED (more than one place, in a file or between classes), when a number
+  carries an invisible UNIT (`* 1000`, `> 2000.0`), or when a string belongs to
+  a closed set that already has an OWNER (`AppEnv`, `HttpConstants`). A unique
+  description read in one place, and `0`/`1`/`2`/`-1` in a structural role, stay
+  literals. Cure a repeated number with a constant whose name carries the unit,
+  never the digits; two quantities that merely happen to be equal get two
+  constants. Checked automatically by `MAGIC-REPEAT`, which sees numbers only,
+  one file at a time.
 - Internal backend API contracts: `docs/agents/code-style/internal-backend-api.md`
 - Method command/predicate/result contracts:
   `docs/agents/code-style/method-contracts.md`
@@ -155,9 +165,11 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Do not add unrelated refactors while applying style cleanup.
 - Do not add unapproved convenience helpers or predicates during refactors.
 - Do not write repeated payload/model/table keys as magic strings when an owner
-  constant exists or should exist.
+  constant exists or should exist (see `magic-values.md`).
 - Do not leave magic-string keys in an internal structured array; use named
-  constants at minimum and a value object preferably (see
-  `internal-backend-api.md`).
+  constants at minimum and a value object preferably (see `magic-values.md`).
+- Do not repeat a number, and do not write one whose unit is invisible at the
+  place of use; name it with a constant that carries the unit (see
+  `magic-values.md`).
 - Declare PHP class constants before properties; read `php-class-members.md`
   when adding or reordering class members.

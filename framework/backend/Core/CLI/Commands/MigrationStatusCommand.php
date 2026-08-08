@@ -17,6 +17,9 @@ use Hilos\Database\Migration;
  */
 class MigrationStatusCommand implements CommandInterface
 {
+    /** @var int Width of the horizontal rule that frames the migration list, in characters */
+    private const int TABLE_RULE_WIDTH = 50;
+
     /**
      * Returns command name for CLI routing.
      *
@@ -98,7 +101,7 @@ HELP;
         }
         
         echo "\nMigration list:\n";
-        echo str_repeat('-', 50) . "\n";
+        echo str_repeat('-', self::TABLE_RULE_WIDTH) . "\n";
         
         foreach ($status['available_migrations'] as $index) {
             $isCurrent = $index === $status['current_index'];
@@ -121,7 +124,7 @@ HELP;
             printf("  %s Migration %03d - %-10s%s\n", $marker, $index, $statusText, $current);
         }
         
-        echo str_repeat('-', 50) . "\n";
+        echo str_repeat('-', self::TABLE_RULE_WIDTH) . "\n";
         
         // Overall status
         echo "\nOverall status: ";

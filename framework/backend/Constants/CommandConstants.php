@@ -56,4 +56,17 @@ final class CommandConstants
 
     /** @var string Test-only command: the master force-closes the live WebSocket connection with the given acceptKey */
     public const string COMMAND_CONNECTION_DROP = 'connection:test:drop';
+
+    /**
+     * How often a CLI client looks for the reply while it waits, in microseconds.
+     *
+     * The cadence belongs to the transport, not to any one command, and it lives
+     * here rather than in CommandChannelClientTrait because PHP forbids reading a
+     * trait constant without composing the trait — and the commands that poll by
+     * hand do not compose it. The wait BUDGET is a different matter: it is a
+     * property of the command and stays where the command declares it.
+     *
+     * @var int Poll sleep between client ticks, in microseconds
+     */
+    public const int POLL_INTERVAL_US = 10000;
 }

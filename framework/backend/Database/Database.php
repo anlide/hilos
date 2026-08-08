@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
@@ -403,7 +404,7 @@ class Database
                     }
 
                     // Sleep using sleep() for seconds (minimum 1 second)
-                    $delaySeconds = (int)ceil($delayMs / DatabaseConnectionPolicy::MS_PER_SECOND);
+                    $delaySeconds = (int)ceil($delayMs / TimeConstants::MS_PER_SECOND);
                     sleep($delaySeconds);
 
                     self::close($index);
@@ -484,7 +485,7 @@ class Database
         $oldTimeout = false;
         try {
             $oldTimeout = mysqli_query($mysqli, DatabaseSql::SESSION_MAX_STATEMENT_TIME_GET);
-            mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * DatabaseConnectionPolicy::MS_PER_SECOND));
+            mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * TimeConstants::MS_PER_SECOND));
         } catch (mysqli_sql_exception) {
             // Timeout stays whatever the session had
         }

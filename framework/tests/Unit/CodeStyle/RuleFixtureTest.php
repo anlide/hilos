@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -35,6 +36,22 @@ final class RuleFixtureTest extends TestCase
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:29 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
                     . '(see docs/agents/code-style/error-suppression.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:21 — 1000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:21 — 1000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:30 — 2000.0 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:38 — 2000.0 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:49 — 3000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:49 — 3000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:61 — 4000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'MAGIC-REPEAT Bad/MagicRepeatSamples.php:62 — 4000 occurs 2 times in this file; name it '
+                    . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:13 — @property-read references \Hilos\Core\Hilos '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:14 — @method references \Hilos\Tests\CodeStyle\Violation '
@@ -105,6 +122,6 @@ final class RuleFixtureTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule()];
+        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule(), new MagicRepeatRule()];
     }
 }

@@ -27,7 +27,6 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -110,15 +109,6 @@ use Hilos\Utils\Logger;
  */
 abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper, ProtectedModeClientNotifier
 {
-    /** @var list<string> Anchor signal set plus the proc_* functions WorkerServer uses to spawn workers */
-    private const array REQUIRED_FUNCTIONS = [
-        'pcntl_signal',
-        'pcntl_signal_dispatch',
-        'proc_open',
-        'proc_get_status',
-        'proc_terminate',
-    ];
-
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
 
@@ -302,7 +292,6 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * and all servers are ready to shutdown (or timeout expires).
      *
      * @throws MissingRequiredParameterException When required process functions are unavailable
-     * @throws InvalidArgumentException When the required-function list is empty
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -313,7 +302,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         $this->eventLoop = new EventLoop();
 
         // Check the availability of required functions
-        $this->checkRequiredFunctions(self::REQUIRED_FUNCTIONS);
+        $this->checkRequiredFunctions(self::PROCESS_FUNCTIONS);
 
         // Setup error handling and signal handlers
         $this->setupErrorHandling();

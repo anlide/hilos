@@ -9,6 +9,7 @@ use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Environment\Exception\EnvException;
@@ -115,14 +116,14 @@ HELP;
             $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
             $client->timeout = 800.0;
 
-            $currentTimeMs = microtime(true) * 1000;
+            $currentTimeMs = microtime(true) * TimeConstants::MS_PER_SECOND;
             $client->startNewRequest($currentTimeMs);
 
             $maxWaitTime = 400.0;
             $startTime = $currentTimeMs;
 
             while (!$client->hasResult()) {
-                $currentTimeMs = microtime(true) * 1000;
+                $currentTimeMs = microtime(true) * TimeConstants::MS_PER_SECOND;
                 if (($currentTimeMs - $startTime) > $maxWaitTime) {
                     $this->daemonStatus = null;
                     return;

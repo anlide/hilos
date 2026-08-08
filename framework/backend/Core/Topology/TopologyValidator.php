@@ -27,6 +27,23 @@ use Hilos\Hilos;
 final class TopologyValidator
 {
     /**
+     * Names of the facade topology constants this validator reads twice — once to
+     * load the section, once to name it in an error. The four sections it reads a
+     * single time stay literals: a name read in one place describes itself.
+     */
+    private const string SECTION_BROWSER_TABLES = 'BROWSER_TABLES';
+
+    private const string SECTION_BROWSER_LISTS = 'BROWSER_LISTS';
+
+    private const string SECTION_BROWSER_DATA = 'BROWSER_DATA';
+
+    private const string SECTION_PAGE_TABLES = 'PAGE_TABLES';
+
+    private const string SECTION_PAGE_LISTS = 'PAGE_LISTS';
+
+    private const string SECTION_PAGE_DATA = 'PAGE_DATA';
+
+    /**
      * Validates topology constants declared by a Hilos facade subclass.
      *
      * @param class-string<Hilos> $hilosClass Project facade class
@@ -39,21 +56,21 @@ final class TopologyValidator
         $groups = $this->constantArray($hilosClass, 'GROUPS', $errors);
         $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $tables = $this->constantArray($hilosClass, 'TABLES', $errors);
-        $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES', $errors);
-        $browserLists = $this->constantArray($hilosClass, 'BROWSER_LISTS', $errors);
-        $browserData = $this->constantArray($hilosClass, 'BROWSER_DATA', $errors);
-        $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES', $errors);
-        $pageLists = $this->constantArray($hilosClass, 'PAGE_LISTS', $errors);
-        $pageData = $this->constantArray($hilosClass, 'PAGE_DATA', $errors);
+        $browserTables = $this->constantArray($hilosClass, self::SECTION_BROWSER_TABLES, $errors);
+        $browserLists = $this->constantArray($hilosClass, self::SECTION_BROWSER_LISTS, $errors);
+        $browserData = $this->constantArray($hilosClass, self::SECTION_BROWSER_DATA, $errors);
+        $pageTables = $this->constantArray($hilosClass, self::SECTION_PAGE_TABLES, $errors);
+        $pageLists = $this->constantArray($hilosClass, self::SECTION_PAGE_LISTS, $errors);
+        $pageData = $this->constantArray($hilosClass, self::SECTION_PAGE_DATA, $errors);
         $browserSources = $browserLists + $browserTables + $browserData;
 
         $this->validatePages($pages, $errors);
         $this->validateGroups($groups, $errors);
         $this->validateAgents($agents, $errors);
         $this->validateRegisteredTables($tables, $errors);
-        $this->validateBrowserTables($browserTables, 'BROWSER_TABLES', $errors);
-        $this->validateBrowserTables($browserLists, 'BROWSER_LISTS', $errors);
-        $this->validateBrowserTables($browserData, 'BROWSER_DATA', $errors);
+        $this->validateBrowserTables($browserTables, self::SECTION_BROWSER_TABLES, $errors);
+        $this->validateBrowserTables($browserLists, self::SECTION_BROWSER_LISTS, $errors);
+        $this->validateBrowserTables($browserData, self::SECTION_BROWSER_DATA, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
@@ -75,9 +92,9 @@ final class TopologyValidator
         );
         $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
         $this->validateAgentCommandRoutes($agents, $hilosClass::getCommandAgentRoutes(), $errors);
-        $this->validatePageTables($pages, $tables, $browserSources, $pageTables, 'PAGE_TABLES', $errors);
-        $this->validatePageTables($pages, $tables, $browserSources, $pageLists, 'PAGE_LISTS', $errors);
-        $this->validatePageTables($pages, $tables, $browserSources, $pageData, 'PAGE_DATA', $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
+        $this->validatePageTables($pages, $tables, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);

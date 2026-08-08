@@ -150,6 +150,7 @@ Minimum ORM rules before editing:
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 | [code-style/reflection.md](docs/agents/code-style/reflection.md) | adding or changing a Reflection call in production PHP, or judging an existing one |
 | [code-style/error-suppression.md](docs/agents/code-style/error-suppression.md) | writing `@` in front of a PHP call in production, or deciding how a failing builtin reports |
+| [code-style/magic-values.md](docs/agents/code-style/magic-values.md) | writing a bare number or a bare string into production PHP, or judging whether a literal is magic or data |
 
 ## AI Tool Integration
 

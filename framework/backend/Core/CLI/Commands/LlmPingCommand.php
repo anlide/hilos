@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -30,9 +32,6 @@ use Hilos\LLM\Routing\LlmRouter;
  */
 class LlmPingCommand implements CommandInterface
 {
-    /** @var int Poll sleep between probe ticks in microseconds */
-    private const int PROBE_POLL_INTERVAL_US = 10000;
-
     /** @var int Column width the resolution labels are padded to */
     private const int LABEL_WIDTH = 10;
 
@@ -285,12 +284,12 @@ HELP;
                     return ExitCode::TIMEOUT;
                 }
 
-                $client->tick(microtime(true) * 1000);
-                usleep(self::PROBE_POLL_INTERVAL_US);
+                $client->tick(microtime(true) * TimeConstants::MS_PER_SECOND);
+                usleep(CommandConstants::POLL_INTERVAL_US);
             }
 
             $reply = $client->consumeResult();
-            $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+            $elapsedMs = (int) round((microtime(true) - $startedAt) * TimeConstants::MS_PER_SECOND);
 
             echo "probe: ok, {$elapsedMs} ms\n";
             echo 'reply: ' . $this->snippet($reply) . "\n";

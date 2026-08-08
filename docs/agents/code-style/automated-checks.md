@@ -11,6 +11,23 @@ rule.
 | `PHPDOC-FQN` | A docblock references a class by its imported short name, never by a leading-backslash fully qualified name. Covers the type position of `@throws`, `@param`, `@return`, `@var`, `@property`, `@property-read`, `@method`, `@extends`, `@implements` (generic arguments included), and the `{@see ...}` / `{@link ...}` cross-references. | [phpdoc.md](phpdoc.md) rules 9 and 12 |
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
+| `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
+
+`MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
+green run must not be read as "the magic-value rule is satisfied". It counts
+numbers and no strings, because tokens cannot tell a wire key or a fragment of
+SQL from a magic value; and it reads one file at a time, so the same value
+declared independently by two classes is invisible to it. Both of those stay a
+matter for review. A rule may be narrower than its document — it may never be
+wider.
+
+That last sentence is a requirement, not an observation, and `MAGIC-REPEAT` has
+one place where it is not yet met: a minus is a token of its own, so a symmetric
+pair such as `max(-1500, min(1500, $n))` reaches the rule as one value written
+twice and is reported. No such site exists in the scanned roots today. It is
+written down here rather than left to be rediscovered, because the way out of a
+hit is to argue with the document, and an argument needs to know what the rule
+actually does.
 
 The checker is not a second source of truth. Each rule points back at the
 document that owns it, and the failure line carries that path. Change the rule in

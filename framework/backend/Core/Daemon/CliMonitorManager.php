@@ -9,9 +9,9 @@ use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -27,9 +27,6 @@ use Hilos\Utils\Logger;
  */
 class CliMonitorManager extends BaseManager
 {
-    /** @var list<string> Signal functions plus posix_isatty for TTY detection; no proc_* (the monitor spawns nothing) */
-    private const array REQUIRED_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch', 'posix_isatty'];
-
     /** @var ?DaemonStatus Last daemon status */
     private ?DaemonStatus $daemonStatus = null;
 
@@ -48,13 +45,12 @@ class CliMonitorManager extends BaseManager
      * HTTP requests every 350ms after completion.
      *
      * @throws MissingRequiredParameterException When required process-control functions are unavailable
-     * @throws InvalidArgumentException When the required-function list is empty
      * @throws EnvException When daemon status env values are missing or invalid
      */
     public function run(): void
     {
         // Check the availability of required functions
-        $this->checkRequiredFunctions(self::REQUIRED_FUNCTIONS);
+        $this->checkRequiredFunctions(['posix_isatty']);
 
         // Check terminal support
         if (!$this->checkTerminalSupport()) {
@@ -76,7 +72,7 @@ class CliMonitorManager extends BaseManager
         $httpClient->timeout = 400.0;  // 0.4 seconds timeout
 
         // Initialize timers
-        $currentTimeMs = microtime(true) * 1000;
+        $currentTimeMs = microtime(true) * TimeConstants::MS_PER_SECOND;
 
         $lastUiUpdate = $currentTimeMs;
 
@@ -85,7 +81,7 @@ class CliMonitorManager extends BaseManager
         // Main monitoring loop - 10ms ticks
         while (!$this->shouldExit) {
             $loopStartTime = microtime(true);
-            $currentTimeMs = $loopStartTime * 1000;
+            $currentTimeMs = $loopStartTime * TimeConstants::MS_PER_SECOND;
 
             try {
                 if (!$httpClient->isBusy()) {

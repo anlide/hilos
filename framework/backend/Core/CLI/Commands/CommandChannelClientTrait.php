@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncCommandClient;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -26,9 +28,6 @@ trait CommandChannelClientTrait
 {
     /** @var float Wall-clock wait budget for a reply in milliseconds */
     private const float MAX_WAIT_MS = 5000.0;
-
-    /** @var int Poll sleep between ticks in microseconds */
-    private const int POLL_INTERVAL_US = 10000;
 
     /**
      * Sends one command over the channel and waits for its reply.
@@ -53,14 +52,14 @@ trait CommandChannelClientTrait
         try {
             $client->startRequest($request);
 
-            $startedAtMs = microtime(true) * 1000;
+            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
             while (!$client->hasResult()) {
-                if ((microtime(true) * 1000 - $startedAtMs) > self::MAX_WAIT_MS) {
+                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
                     return null;
                 }
 
                 $client->tick();
-                usleep(self::POLL_INTERVAL_US);
+                usleep(CommandConstants::POLL_INTERVAL_US);
             }
 
             return $client->consumeResult();

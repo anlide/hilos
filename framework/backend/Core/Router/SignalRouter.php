@@ -68,6 +68,9 @@ class SignalRouter
     /** @var int Byte length of the random per-process emitter identity */
     private const int EMITTER_RANDOM_BYTES = 8;
 
+    /** @var string Separates the parts of a destination dedupe key; never appears inside a part */
+    private const string DESTINATION_KEY_SEPARATOR = '|';
+
     /** @var SplQueue<SignalDTO> Queued signals awaiting dispatch (FIFO, O(1) enqueue/dequeue) */
     private SplQueue $queuedSignals;
 
@@ -687,11 +690,13 @@ class SignalRouter
         foreach ($destinations as $destination) {
             $key = match (true) {
                 $destination instanceof AgentDestination =>
-                    AgentDestination::class . '|' . $destination->agentType . '|' . ($destination->agentIndex ?? ''),
+                    AgentDestination::class . self::DESTINATION_KEY_SEPARATOR . $destination->agentType
+                        . self::DESTINATION_KEY_SEPARATOR . ($destination->agentIndex ?? ''),
                 $destination instanceof WebSocketDestination =>
-                    WebSocketDestination::class . '|' . $destination->acceptKey,
+                    WebSocketDestination::class . self::DESTINATION_KEY_SEPARATOR . $destination->acceptKey,
                 $destination instanceof AllClientsDestination =>
-                    AllClientsDestination::class . '|' . ($destination->excludeAcceptKey ?? ''),
+                    AllClientsDestination::class . self::DESTINATION_KEY_SEPARATOR
+                        . ($destination->excludeAcceptKey ?? ''),
                 default => (string) spl_object_id($destination),
             };
             if (isset($seen[$key])) {

@@ -18,7 +18,6 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -93,9 +92,6 @@ use Throwable;
  */
 abstract class WorkerManager extends BaseManager
 {
-    /** @var list<string> Signal functions the worker needs; the anchor set other managers extend */
-    private const array REQUIRED_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch', 'posix_getppid'];
-
     /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
 
@@ -175,12 +171,11 @@ abstract class WorkerManager extends BaseManager
      * shutdown condition requests exit.
      *
      * @throws MissingRequiredParameterException When required signal functions are unavailable
-     * @throws InvalidArgumentException When the required-function list is empty
      */
     public function run(): void
     {
         // Check the availability of required functions
-        $this->checkRequiredFunctions(self::REQUIRED_FUNCTIONS);
+        $this->checkRequiredFunctions(['posix_getppid']);
 
         // Setup error handling and signal handlers
         $this->setupErrorHandling();

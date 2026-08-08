@@ -13,7 +13,8 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [exceptions.md](exceptions.md) | choosing exception classes, documenting `@throws`, handling validation/business errors |
 | [page-action-handlers.md](page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, action acks/errors |
 | [signal-handlers.md](signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
-| [internal-backend-api.md](internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, typed collections, or magic-string keys in structured arrays |
+| [magic-values.md](magic-values.md) | writing a bare number or string into production code — when a literal is magic, when it is data, and what names its cure carries |
+| [internal-backend-api.md](internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
 | [method-contracts.md](method-contracts.md) | changing method return types, success/failure contracts, command methods, predicates, or result consumption APIs |
 | [static-factories.md](static-factories.md) | adding or changing a static factory (`fromArray`, `fromRow`, `create`, named constructors) or its `self`/`static` return contract |
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |

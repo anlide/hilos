@@ -6,9 +6,9 @@ namespace Hilos\Core\Daemon;
 
 use ErrorException;
 use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
 
@@ -20,6 +20,20 @@ use Throwable;
  */
 abstract class BaseManager
 {
+    /**
+     * Signal handling every manager needs, checked whatever else it asks for.
+     *
+     * @var list<string> Function names
+     */
+    protected const array SIGNAL_FUNCTIONS = ['pcntl_signal', 'pcntl_signal_dispatch'];
+
+    /**
+     * Process control needed by a manager that spawns and watches a child process.
+     *
+     * @var list<string> Function names
+     */
+    protected const array PROCESS_FUNCTIONS = ['proc_open', 'proc_get_status', 'proc_terminate'];
+
     /** Whether the manager loop should stop. */
     protected bool $shouldExit = false;
 
@@ -62,7 +76,7 @@ abstract class BaseManager
     {
         // Calculate time spent on useful work
         $usefulWorkTime = microtime(true) - $loopStartTime;
-        $usefulWorkTimeMicroseconds = (int)($usefulWorkTime * 1000000);
+        $usefulWorkTimeMicroseconds = (int)($usefulWorkTime * TimeConstants::US_PER_SECOND);
 
         // Calculate remaining sleep time (target - time spent on work)
         $remainingSleepTime = $targetLoopTimeMicroseconds - $usefulWorkTimeMicroseconds;
@@ -209,21 +223,19 @@ abstract class BaseManager
     /**
      * Ensures the process-management functions a manager relies on exist.
      *
-     * Each manager passes the set it actually uses, so the guard validates
-     * exactly those functions and nothing more.
+     * The signal anchor is checked for every manager whether it names it or not.
+     * A manager that forgets pcntl_signal_dispatch does not fail to start — it
+     * starts and then quietly ignores every signal sent to it, which is the one
+     * failure mode this guard exists to prevent. On top of the anchor a manager
+     * names only what it adds.
      *
-     * @param list<string> $requiredFunctions Function names the calling manager uses
-     * @throws InvalidArgumentException When the required-function list is empty
+     * @param list<string> $additionalFunctions Functions this manager needs beyond the signal anchor
      * @throws MissingRequiredParameterException When any required function is unavailable
      */
-    protected function checkRequiredFunctions(array $requiredFunctions): void
+    protected function checkRequiredFunctions(array $additionalFunctions = []): void
     {
-        if ($requiredFunctions === []) {
-            throw new InvalidArgumentException('checkRequiredFunctions() requires a non-empty list of function names');
-        }
-
         $missingFunctions = [];
-        foreach ($requiredFunctions as $function) {
+        foreach ([...self::SIGNAL_FUNCTIONS, ...$additionalFunctions] as $function) {
             if (!function_exists($function)) {
                 $missingFunctions[] = $function;
             }

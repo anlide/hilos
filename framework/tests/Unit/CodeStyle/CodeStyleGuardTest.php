@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -34,11 +35,13 @@ final class CodeStyleGuardTest extends TestCase
      * is known here and nowhere else: a rule receives the path relative to its
      * root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and reads
      * exactly like a backend file. A suite is allowed what production is not —
-     * suppressing a warning while it arranges a failure, for one.
+     * suppressing a warning while it arranges a failure, or repeating the same
+     * number in a dozen assertions, where a constant would hide from the reader
+     * the very value under test.
      *
      * @var array<int, string>
      */
-    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID];
+    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID, MagicRepeatRule::ID];
 
 
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
@@ -108,7 +111,7 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule()];
+        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule(), new MagicRepeatRule()];
     }
 
     /**
