@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Runtime\State\Item\RestoreRuntime;
+
 /**
  * BackupConstants - the cross-process vocabulary shared by the backup supervisor and child.
  *
@@ -102,4 +104,50 @@ final class BackupConstants
 
     /** Default schedule cron: a daily full backup at 03:00 server time. */
     public const string DEFAULT_SCHEDULE_CRON = '0 3 * * *';
+
+    /**
+     * Command-channel wire name asking {@see Agent\BackupAgent} to run a restore (HIL-274).
+     * Declared on the agent's AGENT_COMMANDS; the reply is accepted/refused, the restore
+     * itself runs asynchronously under protected mode.
+     */
+    public const string RESTORE_REQUEST_COMMAND = 'backup:restore-request';
+
+    /**
+     * Command-channel wire name asking {@see Agent\BackupAgent} for a snapshot of the
+     * restore runtime row; the CLI monitor polls it until the run reaches a terminal
+     * outcome. Declared on the agent's AGENT_COMMANDS.
+     */
+    public const string RESTORE_STATUS_COMMAND = 'backup:restore-status';
+
+    /**
+     * CLI command name the restore supervisor spawns as its child
+     * (`php <cli> backup:restore-run <id> --scope= --decision=`); the project registers a
+     * command under this name, exactly as it does for {@see RUN_COMMAND}.
+     */
+    public const string RESTORE_RUN_COMMAND = 'backup:restore-run';
+
+    /**
+     * Restore status reply keys, bound to the runtime row's own field names
+     * ({@see RestoreRuntime}): the reply is that row's snapshot, and a separately spelled
+     * wire key would be the same concept free to drift.
+     */
+    public const string FIELD_RESTORE_PHASE = RestoreRuntime::phase;
+    public const string FIELD_RESTORE_OUTCOME = RestoreRuntime::outcome;
+    public const string FIELD_RESTORE_FAILURE = RestoreRuntime::failureReason;
+    public const string FIELD_RESTORE_RUNNING = RestoreRuntime::running;
+
+    /**
+     * Request payload / child argv option carrying the {@see RestoreEnvDecision} value the
+     * CLI preflight recorded; the engine acts on it without re-deriving.
+     */
+    public const string FIELD_DECISION = 'decision';
+
+    /** `--force` option: override the unknown-archive-env-into-prod refusal (HIL-269 envs). */
+    public const string FORCE_OPTION = 'force';
+
+    /** `--cold` option: run the restore engine synchronously in the CLI, without the daemon. */
+    public const string COLD_OPTION = 'cold';
+
+    /** `--yes` option: the explicit confirmation a destructive restore requires on both paths. */
+    public const string YES_OPTION = 'yes';
 }

@@ -63,6 +63,9 @@ final class CliCommands
     /** @var string Command: Verify stored backup archives against their recorded checksums */
     public const string BACKUP_VERIFY = 'backup:verify';
 
+    /** @var string Command: Restore a stored backup into the configured databases */
+    public const string BACKUP_RESTORE = 'backup:restore';
+
     /** @var string Command: Age a stored backup's sidecar createdAt into the past (test-only) */
     public const string BACKUP_TEST_AGE = 'test:backup:age';
 

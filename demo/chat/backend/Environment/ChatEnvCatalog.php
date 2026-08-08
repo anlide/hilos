@@ -63,6 +63,7 @@ final class ChatEnvCatalog implements CatalogProviderInterface
                 emptyIsMissing: true,
             ),
             EnvConstants::BACKUP_TIMEOUT->name => self::intEntry(1800, emptyIsMissing: true),
+            EnvConstants::BACKUP_RESTORE_TIMEOUT->name => self::intEntry(3600, emptyIsMissing: true),
             EnvConstants::BACKUP_RETENTION_DAILY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_RETENTION_WEEKLY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_RETENTION_MONTHLY->name => self::intEntry(45, emptyIsMissing: true),

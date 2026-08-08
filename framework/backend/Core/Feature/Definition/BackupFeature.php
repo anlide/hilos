@@ -14,6 +14,7 @@ use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
 use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
@@ -40,7 +41,8 @@ final class BackupFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements Backup page and its history table binding, the agent pair, the catalog and the run command
+     * @return FeatureRequirements Backup page and its history table binding, the agent pair,
+     *     the catalog, and the two child commands the supervisor spawns (create and restore)
      */
     public function requirements(): FeatureRequirements
     {
@@ -50,7 +52,7 @@ final class BackupFeature extends FeatureDefinition
             requiredTables: [HilosBackupHistoryTable::class],
             requiredPageTables: [AbstractHilosBackupPage::class => HilosBackupHistoryTable::class],
             requiredCatalogConstant: 'BACKUP_CATALOG',
-            requiredCliCommands: [BackupConstants::RUN_COMMAND],
+            requiredCliCommands: [BackupConstants::RUN_COMMAND, BackupConstants::RESTORE_RUN_COMMAND],
         );
     }
 
@@ -65,7 +67,8 @@ final class BackupFeature extends FeatureDefinition
     }
 
     /**
-     * Mounts the backup history index with its framework representation, and the runtime row.
+     * Mounts the backup history index with its framework representation, and the create
+     * and restore runtime rows.
      *
      * @param RtContext $context Runtime context being built
      * @throws StateCollectionNotFoundException When the history index is represented before it is mounted
@@ -80,5 +83,6 @@ final class BackupFeature extends FeatureDefinition
             BackupHistoryActions::class,
         );
         $context->mountFeatureItem(StateBackupRuntime::RT_ITEM, StateBackupRuntime::create());
+        $context->mountFeatureItem(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::create());
     }
 }

@@ -7,6 +7,7 @@ namespace Demo\Chat\CLI;
 use Demo\Chat\CLI\Commands\AccountMergeCommand;
 use Demo\Chat\CLI\Commands\AdminGrantCommand;
 use Demo\Chat\CLI\Commands\AdminRevokeCommand;
+use Demo\Chat\CLI\Commands\BackupRestoreRunCommand;
 use Demo\Chat\CLI\Commands\BackupRunCommand;
 use Demo\Chat\CLI\Commands\CreateOrphanCommand;
 use Demo\Chat\CLI\Commands\CreateOrphanSettingCommand;
@@ -43,5 +44,6 @@ final class ChatCliManager extends CliManager
         $this->addCommand(new AccountMergeCommand());
         $this->addCommand(new SessionExpireCommand());
         $this->addCommand(new BackupRunCommand());
+        $this->addCommand(new BackupRestoreRunCommand());
     }
 }

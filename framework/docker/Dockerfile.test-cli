@@ -3,11 +3,15 @@
 
 FROM php:8.4-cli
 
+# default-mysql-client provides the `mysql` binary the restore engine integration
+# tests replay dumps through (BackupRestorer); the dumps themselves are hand-written
+# fixtures, so mysqldump is not needed here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     unzip \
     libonig-dev \
+    default-mysql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Align with root composer.json (ext-posix, pcntl, sockets, mbstring, mysqli, …)

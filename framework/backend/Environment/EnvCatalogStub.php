@@ -214,6 +214,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60, emptyIsMissing: true),
             EnvConstants::BACKUP_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
+            EnvConstants::BACKUP_RESTORE_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

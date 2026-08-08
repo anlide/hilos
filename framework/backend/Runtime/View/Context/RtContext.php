@@ -17,16 +17,19 @@ use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
+use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
+use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
@@ -37,6 +40,7 @@ use Hilos\Runtime\View\Item\RtItem;
  *
  * @property-read BackupHistories $hilosBackupHistories Stored-backup index, mounted for a project that declares HilosFeature::BACKUP
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
+ * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
  */
 abstract class RtContext
@@ -116,6 +120,10 @@ abstract class RtContext
         $this->_rtItems[StateBackupRuntime::RT_ITEM] = [
             'itemClass' => BackupRuntime::class,
             'itemActionsClass' => BackupRuntimeActions::class,
+        ];
+        $this->_rtItems[StateRestoreRuntime::RT_ITEM] = [
+            'itemClass' => RestoreRuntime::class,
+            'itemActionsClass' => RestoreRuntimeActions::class,
         ];
         $this->_rtItems[StateProtectedModeRuntime::RT_ITEM] = [
             'itemClass' => ProtectedModeRuntime::class,

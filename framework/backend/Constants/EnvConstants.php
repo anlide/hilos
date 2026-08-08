@@ -285,6 +285,15 @@ enum EnvConstants
     case BACKUP_TIMEOUT;
 
     /**
+     * Restore child timeout in seconds. The supervisor kills a hot restore that exceeds it
+     * and records the run as failed; the database may be left partially restored (HIL-436).
+     * The cold path (`backup:restore --cold`) runs in the operator's own process and is not
+     * subject to it. Default 3600 (60 min) - a restore replays every dump serially, so it
+     * gets more room than a single create pass.
+     */
+    case BACKUP_RESTORE_TIMEOUT;
+
+    /**
      * Age **in days** from which rotation keeps only the newest backup of each day; nothing
      * younger is thinned at all. One shared ladder applies to every scope's grid. Default 45.
      */

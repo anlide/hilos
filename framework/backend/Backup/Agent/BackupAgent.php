@@ -22,12 +22,17 @@ use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
+use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Backup\RestorePhase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
@@ -38,8 +43,11 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Collection\BackupHistories as BackupHistoriesView;
 use Hilos\Runtime\View\Item\BackupRuntime;
+use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
@@ -65,6 +73,14 @@ use Throwable;
  * and its daemon-mechanism entries fire named DAEMON/CRON signals handled by
  * {@see onSignalCron()}. Both, plus the list action (HIL-333) and the manual CLI backup, funnel
  * through the single guarded {@see startBackup()}; this class owns the launch path and the lock.
+ *
+ * And it supervises the hot restore path (HIL-274). A `backup:restore` CLI asks over the
+ * command channel ({@see handleRestoreRequest()}); the agent freezes the node through
+ * protected mode, spawns the `backup:restore-run` child once the freeze is ready
+ * ({@see onProtectedModeReady()}), polls it under {@see EnvConstants::BACKUP_RESTORE_TIMEOUT},
+ * and lifts the freeze when the run ends ({@see finishRestore()}). Create and restore share
+ * the one child slot, so the monopoly lock keeps them mutually exclusive by construction;
+ * {@see BackupRunKind} routes the poll's finish.
  */
 final class BackupAgent extends AbstractAgent
 {
@@ -85,13 +101,17 @@ final class BackupAgent extends AbstractAgent
      * index stays the mirror of storage (files=truth): a forced retention prune and a forced
      * scheduled backup, both test-only (HIL-320), and a plain index refresh, which is NOT -
      * the operator command `backup:verify` rewrites sidecars itself and then asks the agent to
-     * catch up ({@see BackupConstants::REFRESH_HISTORY_COMMAND}). All three carry a plain
-     * payload, so none declares an inner DTO.
+     * catch up ({@see BackupConstants::REFRESH_HISTORY_COMMAND}). The restore pair (HIL-274)
+     * is operator-facing too: request admits a run under protected mode, status snapshots the
+     * restore runtime row for the CLI monitor. All carry plain payloads, so none declares an
+     * inner DTO.
      */
     public const array AGENT_COMMANDS = [
         BackupConstants::PRUNE_COMMAND,
         BackupConstants::RUN_SCHEDULE_COMMAND,
         BackupConstants::REFRESH_HISTORY_COMMAND,
+        BackupConstants::RESTORE_REQUEST_COMMAND,
+        BackupConstants::RESTORE_STATUS_COMMAND,
     ];
 
     /** Child interpreter; matches the worker spine's binary ({@see WorkerServer}). */
@@ -100,8 +120,36 @@ final class BackupAgent extends AbstractAgent
     /** Longest failure detail kept in a user-facing notice ({@see failureNotice()}). */
     private const int NOTICE_DETAIL_LIMIT = 200;
 
+    /** Protected-mode operation name a restore freeze is requested under. */
+    private const string RESTORE_OPERATION = 'restore';
+
+    /**
+     * Seconds an accepted restore may wait for its freeze before the wait is expired.
+     * Generous against a real cluster quiesce (workers drain in well under a minute), tiny
+     * against the alternative: a dropped enable wedging the subsystem until agent restart.
+     */
+    private const int RESTORE_FREEZE_WAIT_SECONDS = 60;
+
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
+
+    /** What the in-flight child is doing, or null when idle. */
+    private ?BackupRunKind $runKind = null;
+
+    /** Id of a restore accepted but not yet spawned (waiting for the freeze), or null. */
+    private ?string $pendingRestoreId = null;
+
+    /** Scope of the accepted restore, or null when none is pending. */
+    private ?BackupScope $pendingRestoreScope = null;
+
+    /** Recorded ENV guard verdict of the accepted restore, or null when none is pending. */
+    private ?RestoreEnvDecision $pendingRestoreDecision = null;
+
+    /** Child timeout (seconds) of the accepted restore, read at admission; 0.0 when none is pending. */
+    private float $pendingRestoreTimeout = 0.0;
+
+    /** Monotonic-ish instant (microtime) the pending restore was admitted; 0.0 when none is pending. */
+    private float $pendingRestoreSince = 0.0;
 
     /** Id of the in-flight backup, or null when idle. */
     private ?string $currentBackupId = null;
@@ -170,6 +218,7 @@ final class BackupAgent extends AbstractAgent
 
         $this->registerRtTruthSource(BackupHistory::RT_COLLECTION);
         $this->registerRtTruthSource(StateBackupRuntime::RT_ITEM);
+        $this->registerRtTruthSource(StateRestoreRuntime::RT_ITEM);
 
         $this->refreshHistory();
 
@@ -191,11 +240,25 @@ final class BackupAgent extends AbstractAgent
 
     /**
      * Kills any in-flight child and clears the runtime flag on shutdown.
+     *
+     * A restore engaged at this moment additionally lifts protected mode: the freeze was
+     * requested for a run that is now dead, and an agent that stops without releasing it
+     * leaves the whole node frozen with nobody left to unfreeze it. The restore row is
+     * finished as failed first, so a monitor still polling learns how the run ended.
      */
     public function onStop(): void
     {
         if ($this->childProcess !== null) {
             $this->childProcess->halt();
+        }
+        if ($this->restoreEngaged()) {
+            // The pending create slot is dropped first: the finalizer drains it into
+            // startBackup, and a stopping agent must not spawn a child nobody will poll.
+            $this->pendingScope = null;
+            $this->pendingInitiator = null;
+            // Through the one finalizer, so a stopping agent records the outcome and lifts
+            // the freeze exactly like any other failed run.
+            $this->finishRestore(false, 'backup agent stopped during restore');
         }
         $this->resetRun();
         $this->clearRuntime();
@@ -227,12 +290,14 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Handles the test-only command-channel commands routed here (HIL-320).
+     * Handles the command-channel commands routed here.
      *
-     * Both force a time-based path that would otherwise wait out the clock: prune forces a
-     * retention rotation, run-schedule forces a scheduled backup by name. Driving the live
-     * agent (rather than mutating storage from the CLI) keeps the runtime index consistent
-     * with truth. Every branch answers exactly once via {@see replyToCommand()}.
+     * The test-only pair (HIL-320) forces a time-based path that would otherwise wait out
+     * the clock: prune forces a retention rotation, run-schedule forces a scheduled backup
+     * by name. Refresh re-mirrors the index for `backup:verify`. The restore pair (HIL-274)
+     * admits a restore run and snapshots its progress. Driving the live agent (rather than
+     * mutating storage from the CLI) keeps the runtime index consistent with truth. Every
+     * branch answers exactly once via {@see replyToCommand()}.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -253,6 +318,16 @@ final class BackupAgent extends AbstractAgent
 
             case BackupConstants::REFRESH_HISTORY_COMMAND:
                 $this->handleRefreshHistoryCommand($data);
+
+                return;
+
+            case BackupConstants::RESTORE_REQUEST_COMMAND:
+                $this->handleRestoreRequest($data);
+
+                return;
+
+            case BackupConstants::RESTORE_STATUS_COMMAND:
+                $this->handleRestoreStatus($data);
 
                 return;
 
@@ -348,6 +423,112 @@ final class BackupAgent extends AbstractAgent
             BackupConstants::FIELD_BACKUP_ID => $this->currentBackupId,
             BackupConstants::FIELD_SCOPE => $scope->value,
         ]));
+    }
+
+    /**
+     * Admits one restore run: parks it pending and asks the cluster to freeze (HIL-274).
+     *
+     * The reply is immediate - accepted or refused - because the freeze and the restore
+     * outlive any command-channel wait. On accept the restore runtime row starts in
+     * {@see RestorePhase::PENDING} and the child is spawned only once the freeze is ready
+     * ({@see onProtectedModeReady()}). The ENV verdict arrives as a value the CLI preflight
+     * recorded (per the ticket, the matrix is authoritative there); only the plainly
+     * un-actable {@see RestoreEnvDecision::REFUSE} is rejected here as a backstop.
+     *
+     * The single-flight lock covers both kinds and both windows: a running child (create or
+     * restore) and a restore still waiting for its freeze each refuse a second admission.
+     *
+     * @param CommandRequestDTO $data Command request carrying the backup id, scope and decision
+     */
+    private function handleRestoreRequest(CommandRequestDTO $data): void
+    {
+        if ($this->childProcess !== null || $this->restoreEngaged()) {
+            $busyId = $this->currentBackupId ?? $this->pendingRestoreId;
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                "Backup subsystem busy: {$busyId}",
+            ));
+
+            return;
+        }
+
+        $id = (string)($data->payload[BackupConstants::FIELD_BACKUP_ID] ?? '');
+        $scope = BackupScope::fromString((string)($data->payload[BackupConstants::FIELD_SCOPE] ?? ''));
+        $decision = RestoreEnvDecision::tryFrom((string)($data->payload[BackupConstants::FIELD_DECISION] ?? ''));
+        if ($id === '' || $scope === null || $decision === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Malformed restore request'));
+
+            return;
+        }
+        if ($decision === RestoreEnvDecision::REFUSE) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Restore refused by the environment guard',
+            ));
+
+            return;
+        }
+
+        // Every env value the run will need is read HERE, where a failure can still be an
+        // error reply: the ready relay and the frozen node are no place for a first read of
+        // a key a project catalog may not carry.
+        try {
+            $missing = self::missingCreateConfig(
+                Hilos::$env->string(EnvConstants::BACKUP_DIR),
+                Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+            );
+            $timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_RESTORE_TIMEOUT);
+        } catch (EnvException $e) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Cannot restore: ' . $e->getMessage(),
+            ));
+
+            return;
+        }
+        if ($missing !== []) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Cannot restore: missing configuration (' . implode(', ', $missing) . ')',
+            ));
+
+            return;
+        }
+
+        $this->pendingRestoreId = $id;
+        $this->pendingRestoreScope = $scope;
+        $this->pendingRestoreDecision = $decision;
+        $this->pendingRestoreTimeout = $timeoutSeconds;
+        $this->pendingRestoreSince = microtime(true);
+        $this->restoreView()?->actions->markRunning($id, $scope);
+        // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
+        // has no connection to keep alive on its behalf.
+        $this->requestProtectedModeEnable(self::RESTORE_OPERATION, '');
+        $this->logAgentInfo("Restore accepted: {$id} (scope={$scope->value}); requesting protected mode");
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_BACKUP_ID => $id,
+        ]));
+    }
+
+    /**
+     * Replies with the restore runtime row's snapshot for the CLI monitor.
+     *
+     * @param CommandRequestDTO $data Command request (no payload fields consumed)
+     */
+    private function handleRestoreStatus(CommandRequestDTO $data): void
+    {
+        $view = $this->restoreView();
+        if ($view === null) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Restore runtime row is not mounted',
+            ));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $view->toArray()));
     }
 
     /**
@@ -515,6 +696,61 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Spawns the restore child once the cluster freeze is ready (HIL-274).
+     *
+     * Reached over the daemon->worker ready relay after {@see handleRestoreRequest()} asked
+     * for the freeze. A ready signal with no restore pending is ignored (this agent only
+     * requests protected mode for restores today), as is a duplicate ready while the child
+     * already runs. Spawn failure finishes the run as failed, which also lifts the freeze -
+     * the node must never stay frozen for a child that never lived.
+     *
+     * @throws RtActionsCollectionNameNullException When the restore row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     */
+    public function onProtectedModeReady(): void
+    {
+        $id = $this->pendingRestoreId;
+        $scope = $this->pendingRestoreScope;
+        $decision = $this->pendingRestoreDecision;
+        if ($id === null || $scope === null || $decision === null) {
+            return;
+        }
+        if ($this->childProcess !== null) {
+            // A duplicate ready relay must not spawn a second child over the running one.
+            $this->logAgentWarning("Ignoring duplicate protected-mode ready for restore {$id}");
+
+            return;
+        }
+
+        $this->currentBackupId = $id;
+        $this->currentScope = $scope;
+        $this->startedAt = microtime(true);
+        $this->timeoutSeconds = $this->pendingRestoreTimeout;
+        $this->runKind = BackupRunKind::RESTORE;
+        // The coarse hot-path phase: the supervisor only sees its child's lifecycle, so the
+        // whole verify/extract/import sequence reports as importing (per-step is HIL-277).
+        $this->restoreView()?->actions->markPhase(RestorePhase::IMPORTING);
+
+        try {
+            $this->childProcess = new Process(
+                self::PHP_BINARY,
+                self::buildRestoreChildArgs(
+                    Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY),
+                    $id,
+                    $scope,
+                    $decision,
+                ),
+            );
+        } catch (Throwable $e) {
+            $this->finishRestore(false, 'failed to spawn child: ' . $e->getMessage());
+
+            return;
+        }
+
+        $this->logAgentInfo("Restore started: {$id} (scope={$scope->value})");
+    }
+
+    /**
      * Starts one backup unless one is already running (the single-flight lock).
      *
      * Generates the id, marks the runtime running, and spawns the `backup:run` child. Every
@@ -545,6 +781,16 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        if ($this->restoreEngaged()) {
+            // Covers the freeze window too: an accepted restore has no child yet, but the node
+            // is about to be frozen for it, and a create spawned now would run into the freeze.
+            $this->logAgentWarning(
+                "Restore engaged ({$this->pendingRestoreId}); skipping new {$scope->value} request",
+            );
+
+            return;
+        }
+
         $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
         $cliEntry = Hilos::$env->string(EnvConstants::BACKUP_CLI_ENTRY);
         $missing = self::missingCreateConfig($root, $cliEntry);
@@ -570,6 +816,7 @@ final class BackupAgent extends AbstractAgent
         $this->currentInitiator = $initiatorAcceptKey;
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
+        $this->runKind = BackupRunKind::CREATE;
         $this->markRuntimeRunning($id, $scope);
 
         try {
@@ -754,14 +1001,18 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Polls the in-flight backup child: finalizes it on exit and kills it on timeout.
+     * Polls the in-flight child: finalizes it on exit and kills it on timeout.
      *
      * The work here stays tiny per the onTick rule — a status poll plus, only at the very
-     * end of a run, a storage rescan; the heavy dump lives in the spawned child.
+     * end of a run, a storage rescan; the heavy dump or import lives in the spawned child.
+     * The timeout budget was captured at spawn from the kind's own env key, so one poll
+     * serves both kinds; only the finish routes by {@see BackupRunKind}.
      */
     private function pollRunningBackup(): void
     {
         if ($this->childProcess === null) {
+            $this->expireStalePendingRestore();
+
             return;
         }
 
@@ -771,7 +1022,7 @@ final class BackupAgent extends AbstractAgent
             if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
                 $this->childProcess->stop();
                 $this->childProcess->halt();
-                $this->finishRun(false, "timed out after {$this->timeoutSeconds}s");
+                $this->finishChild(false, "timed out after {$this->timeoutSeconds}s");
             }
 
             return;
@@ -779,9 +1030,54 @@ final class BackupAgent extends AbstractAgent
 
         $exitCode = $this->childProcess->getExitCode();
         if ($exitCode === 0) {
-            $this->finishRun(true, null);
+            $this->finishChild(true, null);
         } else {
-            $this->finishRun(false, 'child exited with code ' . ($exitCode ?? 'unknown'));
+            $this->finishChild(false, 'child exited with code ' . ($exitCode ?? 'unknown'));
+        }
+    }
+
+    /**
+     * Expires a restore that was admitted but whose freeze never became ready.
+     *
+     * The enable request can be dropped without a word to this agent (no known leader, a
+     * stale freeze already in flight, an unmounted protected-mode row are all log-and-return
+     * paths in the switch), and nothing else bounds the wait: the child timeout arms only at
+     * spawn. Left alone, the pending state would suppress the schedule and refuse every
+     * create and restore until an agent restart, while the CLI monitor polls a PENDING row
+     * forever. Expiring finishes the run as failed through the one finalizer, which also
+     * sends the disable — a no-op warning on a node that never froze, the needed lift on one
+     * that froze after the deadline.
+     */
+    private function expireStalePendingRestore(): void
+    {
+        if ($this->pendingRestoreId === null || $this->runKind === BackupRunKind::RESTORE) {
+            return;
+        }
+        if (microtime(true) - $this->pendingRestoreSince < self::RESTORE_FREEZE_WAIT_SECONDS) {
+            return;
+        }
+
+        $this->currentBackupId = $this->pendingRestoreId;
+        $this->startedAt = $this->pendingRestoreSince;
+        $this->runKind = BackupRunKind::RESTORE;
+        $this->finishRestore(
+            false,
+            'protected mode never became ready within ' . self::RESTORE_FREEZE_WAIT_SECONDS . 's',
+        );
+    }
+
+    /**
+     * Routes a finished child to its kind's finalizer.
+     *
+     * @param bool $success Whether the child exited cleanly
+     * @param ?string $failureReason Human-readable reason when the run failed
+     */
+    private function finishChild(bool $success, ?string $failureReason): void
+    {
+        if ($this->runKind === BackupRunKind::RESTORE) {
+            $this->finishRestore($success, $failureReason);
+        } else {
+            $this->finishRun($success, $failureReason);
         }
     }
 
@@ -794,11 +1090,91 @@ final class BackupAgent extends AbstractAgent
      */
     private function checkSchedule(): void
     {
+        if ($this->restoreEngaged()) {
+            // A scheduled create must not race a restore through the freeze window; the
+            // slot fires again on its next cron match once the restore is over.
+            return;
+        }
+
         foreach ($this->agentSchedule as $job) {
             if ($job->rule->shouldRun()) {
                 $this->startBackup($job->scope);
             }
         }
+    }
+
+    /**
+     * Whether a restore currently owns the subsystem: accepted and awaiting its freeze,
+     * or already running as the in-flight child.
+     *
+     * @return bool True while a restore is pending or running
+     */
+    private function restoreEngaged(): bool
+    {
+        return $this->pendingRestoreId !== null || $this->runKind === BackupRunKind::RESTORE;
+    }
+
+    /**
+     * Finalizes a restore run: records its outcome, lifts the freeze, and unlocks.
+     *
+     * The restore row keeps its terminal snapshot (outcome, failure reason, finish time)
+     * rather than being cleared: the CLI monitor learns how the run ended from exactly this
+     * row, possibly polling seconds after the child died. The next accepted restore resets
+     * it through {@see RestoreRuntimeActions::markRunning()}. Lifting protected mode is
+     * unconditional - however the run ended, a node left frozen has nobody else to unfreeze
+     * it. No storage rescan: a restore changes databases, not the archive store.
+     *
+     * @param bool $success Whether the child exited cleanly
+     * @param ?string $failureReason Human-readable reason when the run failed
+     */
+    private function finishRestore(bool $success, ?string $failureReason): void
+    {
+        $id = $this->currentBackupId ?? '';
+        $durationSeconds = (int)round(microtime(true) - $this->startedAt);
+        $stderr = $this->childProcess !== null ? trim($this->childProcess->getStdErr()) : '';
+
+        if ($success) {
+            $this->logAgentInfo("Restore {$id} completed in {$durationSeconds}s");
+            $this->restoreView()?->actions->finish(BackupStatus::SUCCESS);
+        } else {
+            $detail = $stderr !== '' ? "{$failureReason}: {$stderr}" : (string)$failureReason;
+            $this->logAgentError("Restore {$id} failed: {$detail}");
+            $this->restoreView()?->actions->finish(BackupStatus::ERROR, $detail);
+        }
+
+        $this->requestProtectedModeDisable();
+        $this->resetRun();
+        // A manual create coalesced while the restore held the child slot must not rot in
+        // its slot until some unrelated later run happens to drain it.
+        $this->drainPendingCreate();
+    }
+
+    /**
+     * Builds the restore child argv `[<cli>, backup:restore-run, <id>, --scope=, --decision=]`.
+     *
+     * The command name and options come from {@see BackupConstants} so this argv and the
+     * project child command that parses it cannot drift apart - the same contract
+     * {@see buildChildArgs()} keeps with `backup:run`.
+     *
+     * @param string $cliEntry Absolute path to the CLI entry script hosting `backup:restore-run`
+     * @param string $id Backup id to restore
+     * @param BackupScope $scope Scope the archive was captured under
+     * @param RestoreEnvDecision $decision Recorded ENV guard verdict the child acts on
+     * @return list<string> Child process argv (after the php binary)
+     */
+    public static function buildRestoreChildArgs(
+        string $cliEntry,
+        string $id,
+        BackupScope $scope,
+        RestoreEnvDecision $decision,
+    ): array {
+        return [
+            $cliEntry,
+            BackupConstants::RESTORE_RUN_COMMAND,
+            $id,
+            '--' . BackupConstants::SCOPE_OPTION . '=' . $scope->value,
+            '--' . BackupConstants::FIELD_DECISION . '=' . $decision->value,
+        ];
     }
 
     /**
@@ -964,11 +1340,17 @@ final class BackupAgent extends AbstractAgent
     private function resetRun(): void
     {
         $this->childProcess = null;
+        $this->runKind = null;
         $this->currentBackupId = null;
         $this->currentScope = null;
         $this->currentInitiator = null;
         $this->startedAt = 0.0;
         $this->timeoutSeconds = 0.0;
+        $this->pendingRestoreId = null;
+        $this->pendingRestoreScope = null;
+        $this->pendingRestoreDecision = null;
+        $this->pendingRestoreTimeout = 0.0;
+        $this->pendingRestoreSince = 0.0;
     }
 
     /**
@@ -1010,6 +1392,30 @@ final class BackupAgent extends AbstractAgent
             'Backup runtime singleton is not mounted: register it with $this->_stateItems['
             . StateBackupRuntime::RT_ITEM
             . '] = BackupRuntime::create() in the project RtContext::configure()',
+        );
+
+        return null;
+    }
+
+    /**
+     * Resolves the restore runtime singleton, or null when the project mounted none.
+     *
+     * The same forgotten-activation logic as {@see runtimeView()}: the agent only exists
+     * because the project declared the backup feature, and that mount carries this row.
+     *
+     * @return ?RestoreRuntime Restore runtime singleton view, or null when it is not mounted
+     */
+    private function restoreView(): ?RestoreRuntime
+    {
+        $view = Hilos::$rt?->hilosRestoreRuntime;
+        if ($view instanceof RestoreRuntime) {
+            return $view;
+        }
+
+        $this->logAgentError(
+            'Restore runtime singleton is not mounted: declaring HilosFeature::BACKUP mounts '
+            . StateRestoreRuntime::RT_ITEM
+            . ' via BackupFeature::mount(); the project runtime context must not replace it',
         );
 
         return null;

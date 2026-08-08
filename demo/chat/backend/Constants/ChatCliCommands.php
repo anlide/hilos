@@ -54,4 +54,7 @@ final class ChatCliCommands
 
     /** @var string Create one backup archive of all database connections (framework-owned contract) */
     public const string BACKUP_RUN = BackupConstants::RUN_COMMAND;
+
+    /** @var string Replay one stored backup into the databases (framework-owned contract) */
+    public const string BACKUP_RESTORE_RUN = BackupConstants::RESTORE_RUN_COMMAND;
 }

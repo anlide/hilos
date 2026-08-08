@@ -52,20 +52,34 @@ final class BackupCreator
     /** Archiver binary producing the gzip tarball. */
     private const string TAR_BIN = 'tar';
 
-    /** Poll interval while blocking on a child dump/archive process, microseconds. */
-    private const int POLL_INTERVAL_US = 50_000;
+    /**
+     * Poll interval while blocking on a child dump/archive process, microseconds.
+     * Public because it is the one child-process poll budget of the backup subsystem:
+     * the restore engine blocks on its children under the same cadence.
+     */
+    public const int POLL_INTERVAL_US = 50_000;
 
-    /** Allowed backup id characters; the id is a filesystem base name, so no separators. */
-    private const string ID_PATTERN = '/^[A-Za-z0-9._-]+$/';
+    /**
+     * Allowed backup id characters; the id is a filesystem base name, so no separators.
+     * Public because the restore path validates the ids it is asked for against the
+     * same contract this engine mints them under.
+     */
+    public const string ID_PATTERN = '/^[A-Za-z0-9._-]+$/';
 
     /** Clock format the supervisor mints a backup id from; read back to date the backup. */
     private const string ID_TIME_FORMAT = 'Y-m-d_H-i-s';
 
-    private const string SQL_FILE_PREFIX = 'db-';
-    private const string SQL_FILE_SUFFIX = '.sql';
+    // The storage layout vocabulary is public: the restore path ({@see BackupRestorer})
+    // reads back exactly what this engine writes, and a private copy there would be a
+    // second definition of the same on-disk contract, free to drift. The extensions
+    // alias the scanner's pre-existing public pair rather than restating the literals:
+    // one on-disk contract, one owner, however many readers.
+    public const string SQL_FILE_PREFIX = 'db-';
+    public const string SQL_FILE_SUFFIX = '.sql';
+    public const string ARCHIVE_EXTENSION = BackupHistoryScanner::ARCHIVE_EXTENSION;
+    public const string SIDECAR_EXTENSION = BackupHistoryScanner::SIDECAR_EXTENSION;
+
     private const string METADATA_FILENAME = 'metadata.json';
-    private const string ARCHIVE_EXTENSION = '.tar.gz';
-    private const string SIDECAR_EXTENSION = '.json';
 
     /** Temp-name discriminators for in-place sidecar rewrites; they keep concurrent rewrites apart. */
     private const string TEMP_KIND_KEEP = 'keep';
@@ -911,10 +925,14 @@ final class BackupCreator
     /**
      * Double-quotes and escapes a value for a MySQL option file.
      *
+     * Public because the escaping is one contract for every option file the subsystem
+     * writes: the restore engine's `[client]` file must quote exactly as this dump-side
+     * file does, or a credentials fix lands on one path only.
+     *
      * @param string $value Raw value
      * @return string Quoted value
      */
-    private static function iniQuote(string $value): string
+    public static function iniQuote(string $value): string
     {
         return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $value) . '"';
     }

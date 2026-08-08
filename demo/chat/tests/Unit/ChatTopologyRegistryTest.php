@@ -328,6 +328,8 @@ final class ChatTopologyRegistryTest extends TestCase
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::REFRESH_HISTORY_COMMAND => AgentType::HILOS_BACKUP,
+            BackupConstants::RESTORE_REQUEST_COMMAND => AgentType::HILOS_BACKUP,
+            BackupConstants::RESTORE_STATUS_COMMAND => AgentType::HILOS_BACKUP,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
     }

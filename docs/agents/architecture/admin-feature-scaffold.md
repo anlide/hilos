@@ -149,7 +149,9 @@ also registers those. Generate, in any order:
    schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
    framework default: one daily full backup at 03:00 on the agent mechanism).
 3. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
-   `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, the retention ladder
+   `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, `BACKUP_RESTORE_TIMEOUT` (seconds the
+   supervisor gives a hot restore child before killing it, default 3600;
+   `BACKUP_TIMEOUT` is the create child's own budget), the retention ladder
    (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
    in its own unit, at which that granularity starts applying, so a backup younger
    than `BACKUP_RETENTION_DAILY` days is never thinned), and
@@ -179,15 +181,19 @@ also registers those. Generate, in any order:
    machine is not implemented; a deployment that needs to survive losing the box
    must arrange that outside the framework for now.
 4. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
-   `backup:run` child shells out to it (Debian: `default-mysql-client`). Missing,
-   it is not a config error but a failed run: the dump exits non-zero and the
-   backup is recorded as an error.
+   `backup:run` child shells out to it — and the `mysql` client beside it, which
+   the `backup:restore-run` child replays dumps through (Debian:
+   `default-mysql-client` provides both). Missing, it is not a config error but a
+   failed run: the child exits non-zero and the run is recorded as an error.
 5. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),
-   *Worker pool*) — and expose the `backup:run` child command
-   (`BackupConstants::RUN_COMMAND`) in the project CLI command registry. Both are
-   framework-owned; the project only lists them.
+   *Worker pool*) — and expose both child commands in the project CLI command
+   registry: `backup:run` (`BackupConstants::RUN_COMMAND`) and
+   `backup:restore-run` (`BackupConstants::RESTORE_RUN_COMMAND`). The feature
+   declaration requires both, so a forgotten registration is refused at startup
+   rather than discovered by the first restore. All are framework-owned; the
+   project only lists them.
 6. Nothing for the runtime index — step 1 already brought it. Files are truth;
    the index is a rebuildable projection the agent rescans from `BACKUP_DIR` on
    start, so the project persists no backup DB table either. It is mounted *with*
@@ -237,6 +243,25 @@ and 3 when `BACKUP_DIR` is not configured. The summary distinguishes the two: `s
 is a backup carrying no digest, which is not an error, while `unverified` is an archive
 that is missing or unreadable, a sidecar that could not be read or paired, or a verdict
 that could not be written back.
+
+Restoring is an operator action too (HIL-274): `php cli.php backup:restore <id>
+[--scope=<scope>] --yes [--force] [--cold]`, framework-owned. The preflight runs in
+the CLI on both paths — archive resolution, a digest re-check, the environment
+matrix, and the explicit `--yes` a destructive operation requires. The matrix: a
+prod archive restores into prod as-is (disaster recovery); a prod archive into a
+non-prod target requires anonymization (refused until the HIL-275 toolkit lands); a
+non-prod archive never enters prod; an archive whose sidecar records no environment
+needs `--force` to enter prod. By default the restore is HOT: the daemon's backup
+agent freezes the node through protected mode, spawns the `backup:restore-run`
+child under `BACKUP_RESTORE_TIMEOUT`, and the CLI stays a monitor — closing it
+abandons nothing, and the outcome remains readable in the restore runtime row
+(`hilosRestoreRuntime`). With an explicit `--cold` the engine runs synchronously in
+the CLI process for a daemon that is down; a daemon that does not answer is an
+error, never a silent fallback to cold. The engine replays each `db-<index>.sql`
+into the connection of the same index — into that connection's *currently
+configured* database name — and re-verifies the digest immediately before its
+destructive steps. Tables absent from the dump are left in place (reconciliation is
+HIL-436); the migration-index gate is HIL-430.
 
 ### a future framework feature (roles, …)
 
