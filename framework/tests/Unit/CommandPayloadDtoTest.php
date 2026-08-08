@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -58,6 +59,16 @@ final class CommandPayloadDtoTest extends TestCase
             $this->assertStringContainsString('value is required', $e->getMessage());
         }
     }
+
+    public function testBrokenDeclaredClassIsNotReportedAsAnInvalidPayload(): void
+    {
+        $request = new CommandRequestDTO('corr-5', 'broken', ['value' => 'hi']);
+
+        $this->expectException(BrokenSignalPayloadDtoException::class);
+        $this->expectExceptionMessage('broken');
+
+        new CommandPayloadTestRouter()->createCommandPayloadDTO('broken', $request);
+    }
 }
 
 /**
@@ -96,16 +107,21 @@ final class RequireFieldCommandData implements SignalDataInterface
 }
 
 /**
- * Test facade declaring a DTO route for the 'typed' command.
+ * Test facade declaring a DTO route for the 'typed' command and a broken one for 'broken'.
  */
 final class CommandPayloadTestHilos extends \Hilos\Hilos
 {
+    public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\CommandPayloadTestMissingData';
+
     /**
-     * @return array<string, class-string<SignalDataInterface>> DTO class keyed by command name
+     * @return array<string, class-string<SignalDataInterface>> DTO class keyed by command name, one deliberately unresolvable
      */
     public static function getCommandDtoRoutes(): array
     {
-        return ['typed' => RequireFieldCommandData::class];
+        return [
+            'typed' => RequireFieldCommandData::class,
+            'broken' => self::MISSING_DTO_CLASS,
+        ];
     }
 
     protected static function createDb(): DbContext

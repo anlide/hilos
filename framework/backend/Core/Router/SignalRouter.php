@@ -7,8 +7,8 @@ namespace Hilos\Core\Router;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
-use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -1069,12 +1069,14 @@ class SignalRouter
      * @param string $signalName Signal name
      * @param AgentSignalData $signalData Wrapped agent signal payload
      * @return AgentSignalData Validated or passthrough wrapper
+     * @throws BrokenSignalPayloadDtoException When topology declares a class that cannot be hydrated at all
      * @throws InvalidAgentSignalPayloadException When topology declares a DTO and payload does not match
      */
     public function createAgentSignalPayloadDTO(string $signalName, AgentSignalData $signalData): AgentSignalData
     {
+        // Registry values are class-strings; anything else means the signal declares no DTO.
         $dtoClass = $this->hilosClass()::getAgentSignalDtoRoutes()[$signalName] ?? null;
-        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+        if (!is_string($dtoClass)) {
             return $signalData;
         }
 
@@ -1083,10 +1085,11 @@ class SignalRouter
             return $signalData;
         }
 
-        $dataArray = $payload instanceof BaseDTO ? $payload->toArray() : [];
-
         try {
-            $parsed = $dtoClass::fromArray($dataArray);
+            $parsed = SignalPayloadHydrator::hydrate($payload->toArray(), $dtoClass, $signalName);
+        } catch (BrokenSignalPayloadDtoException $e) {
+            // A broken registry entry is not a payload problem; it must not be reported as one.
+            throw $e;
         } catch (\Throwable $e) {
             throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
@@ -1105,17 +1108,22 @@ class SignalRouter
      * @param string $command Command name
      * @param CommandRequestDTO $data Incoming command request
      * @return CommandRequestDTO Hydrated or passthrough command request
+     * @throws BrokenSignalPayloadDtoException When topology declares a class that cannot be hydrated at all
      * @throws InvalidCommandPayloadException When topology declares a DTO and the payload does not match
      */
     public function createCommandPayloadDTO(string $command, CommandRequestDTO $data): CommandRequestDTO
     {
+        // Registry values are class-strings; anything else means the command declares no DTO.
         $dtoClass = $this->hilosClass()::getCommandDtoRoutes()[$command] ?? null;
-        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+        if (!is_string($dtoClass)) {
             return $data;
         }
 
         try {
-            $parsed = $dtoClass::fromArray($data->payload);
+            $parsed = SignalPayloadHydrator::hydrate($data->payload, $dtoClass, $command);
+        } catch (BrokenSignalPayloadDtoException $e) {
+            // A broken registry entry is not a payload problem; it must not be reported as one.
+            throw $e;
         } catch (\Throwable $e) {
             throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload, $e);
         }

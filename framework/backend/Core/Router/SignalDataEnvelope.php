@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
-use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Utils\Logger;
 
@@ -27,7 +26,7 @@ final class SignalDataEnvelope
     public static function encode(SignalDataInterface $data): array
     {
         return [
-            SignalPayloadConstants::FIELD_DATA => $data instanceof BaseDTO ? $data->toArray() : [],
+            SignalPayloadConstants::FIELD_DATA => $data->toArray(),
             SignalPayloadConstants::FIELD_DATA_TYPE => get_class($data),
         ];
     }

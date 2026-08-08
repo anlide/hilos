@@ -43,6 +43,20 @@ Dispatch layers parse raw or loosely typed payloads before handlers run:
 | Client action | `Page::ACTIONS` | `Hilos::getActionDtoRoutes()` | `HilosPageFactory::createActionPayloadDTO()` |
 | Page-routed agent signal | `Page::SIGNALS[AGENT_SIGNAL]` | `Hilos::getPageSignalDtoRoutes()` | `HilosPageFactory::createPageSignalPayloadDTO()` |
 | Agent-owned signal | `Agent::AGENT_SIGNALS` | `Hilos::getAgentSignalDtoRoutes()` | `SignalRouter::createAgentSignalPayloadDTO()` |
+| Agent-owned CLI command | `Agent::AGENT_COMMANDS` | `Hilos::getCommandDtoRoutes()` | `SignalRouter::createCommandPayloadDTO()` |
+
+The three `SignalDataInterface` parsers — page signal, agent signal, and CLI
+command — keep their own public signatures and their own contextual exceptions,
+but hydrate through one shared call, `SignalPayloadHydrator::hydrate()`. Add a
+new inbound path there rather than repeating the class-string check and the
+`fromArray()` call. The client-action row is a different contract
+(`ActionPayloadDTO`, with `UnknownActionPayloadDTO` as its passthrough) and does
+not go through the hydrator.
+
+The parsers take the payload's data with `SignalDataInterface::toArray()`, which
+the interface guarantees. Do not gate that call behind `instanceof BaseDTO`:
+`BaseDTO` only adds `toJson()`/`fromJson()`, so the check silently replaced the
+payload of any non-`BaseDTO` implementation with an empty array.
 
 When topology declares a DTO class, handlers may pass `$data->data` directly to
 private methods typed with that DTO. Do not add redundant `instanceof` checks
@@ -55,7 +69,29 @@ topology or validate manually until the contract is declared.
 
 Topology mismatch after declaration is a contract error:
 `InvalidAgentSignalPayloadException` for agent and page-routed agent signals,
-`InvalidActionPayloadException` for actions.
+`InvalidCommandPayloadException` for CLI commands, `InvalidActionPayloadException`
+for actions.
+
+### Broken declaration vs rejected payload
+
+Hydration failures split by the *moment* they happen, not by the exception type
+that surfaces:
+
+| Failure | Meaning | Exception |
+|---|---|---|
+| Declared class-string does not exist, or does not implement `SignalDataInterface` | Hydration never starts — the topology registry is wrong | `BrokenSignalPayloadDtoException` |
+| `fromArray()` threw | The declared class exists and rejected this payload | `InvalidAgentSignalPayloadException` / `InvalidCommandPayloadException` |
+
+Both are `AgentException` children, so `WorkerManager` still logs them once
+under the owning agent and the worker survives. Do not split them by `\Error`
+against `\Exception` instead: a typical `fromArray()` fails with a `TypeError`
+from its own typed constructor, which would read as a broken class every time.
+
+`TopologyValidator` rejects an unusable class-string at startup, so a broken
+declaration should never reach dispatch. `BrokenSignalPayloadDtoException` is
+the second line: registries are computed from `AGENTS` and `PAGES` at runtime,
+and before it existed a broken entry fell through as a silent passthrough that
+delivered an unparsed payload to a handler typed for the declared DTO.
 
 ## Outbound server→client WebSocket signals (decision)
 

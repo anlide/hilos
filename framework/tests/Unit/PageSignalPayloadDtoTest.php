@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
@@ -76,6 +77,30 @@ final class PageSignalPayloadDtoTest extends TestCase
         }
     }
 
+    public function testHydratesPayloadThatDoesNotExtendBaseDto(): void
+    {
+        $parsed = $this->factory()->createPageSignalPayloadDTO(
+            SignalTypeConstants::AGENT_SIGNAL,
+            PageSignalPayloadTestHilos::TYPED_SIGNAL,
+            new PageSignalPayloadTestPlainData('carried'),
+        );
+
+        $this->assertInstanceOf(PageSignalPayloadTestData::class, $parsed);
+        $this->assertSame('carried', $parsed->message);
+    }
+
+    public function testBrokenDeclaredClassIsNotReportedAsAnInvalidPayload(): void
+    {
+        $this->expectException(BrokenSignalPayloadDtoException::class);
+        $this->expectExceptionMessage(PageSignalPayloadTestHilos::BROKEN_SIGNAL);
+
+        $this->factory()->createPageSignalPayloadDTO(
+            SignalTypeConstants::AGENT_SIGNAL,
+            PageSignalPayloadTestHilos::BROKEN_SIGNAL,
+            new SignalData(['message' => 'hello']),
+        );
+    }
+
     public function testSignalDataInterfaceDeclaresStaticFromArray(): void
     {
         $factory = new ReflectionMethod(SignalDataInterface::class, 'fromArray');
@@ -130,20 +155,55 @@ final class PageSignalPayloadTestData extends BaseDTO implements SignalDataInter
 }
 
 /**
- * Test facade declaring a page signal DTO route for the typed signal.
+ * Inbound payload implementing the interface without extending BaseDTO.
+ */
+final class PageSignalPayloadTestPlainData implements SignalDataInterface
+{
+    /**
+     * @param string $message Payload message
+     */
+    public function __construct(public readonly string $message)
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload
+     */
+    public function toArray(): array
+    {
+        return ['message' => $this->message];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(is_string($data['message'] ?? null) ? $data['message'] : '');
+    }
+}
+
+/**
+ * Test facade declaring a page signal DTO route for the typed signal and a broken one.
  */
 final class PageSignalPayloadTestHilos extends HilosFacade
 {
     public const string TYPED_SIGNAL = 'typed_test_signal';
 
+    public const string BROKEN_SIGNAL = 'broken_dto_test_signal';
+
+    public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\PageSignalPayloadTestMissingData';
+
     /**
-     * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal type, then signal name
+     * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal type, then signal name, one deliberately unresolvable
      */
     public static function getPageSignalDtoRoutes(): array
     {
         return [
             SignalTypeConstants::AGENT_SIGNAL => [
                 self::TYPED_SIGNAL => PageSignalPayloadTestData::class,
+                self::BROKEN_SIGNAL => self::MISSING_DTO_CLASS,
             ],
         ];
     }

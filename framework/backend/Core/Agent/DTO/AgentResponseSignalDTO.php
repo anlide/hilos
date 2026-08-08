@@ -60,10 +60,6 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
      */
     public function toArray(): array
     {
-        $dataArray = $this->signalData instanceof BaseDTO
-            ? $this->signalData->toArray()
-            : [];
-
         // Serialize signalSource
         $signalSourceArray = [
             'source' => $this->signalSource->getSource(),
@@ -75,7 +71,7 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
             self::SIGNAL_SOURCE => $signalSourceArray,
             self::SIGNAL_TYPE => $this->signalType->getType(),
             self::SIGNAL_NAME => $this->signalName->getName(),
-            self::SIGNAL_DATA => $dataArray,
+            self::SIGNAL_DATA => $this->signalData->toArray(),
         ];
 
         if ($this->targetAcceptKey !== null) {

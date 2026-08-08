@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
-use Hilos\BaseDTO;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalPayloadHydrator;
 use Hilos\Hilos;
 
 /**
@@ -177,6 +178,7 @@ class HilosPageFactory extends AbstractPageFactory
      * @param string $signalName Signal name
      * @param SignalDataInterface $payload Inner signal payload from AgentSignalData
      * @return SignalDataInterface Validated or passthrough payload
+     * @throws BrokenSignalPayloadDtoException When topology declares a class that cannot be hydrated at all
      * @throws InvalidAgentSignalPayloadException When topology declares a DTO and payload does not match
      */
     public function createPageSignalPayloadDTO(
@@ -184,8 +186,9 @@ class HilosPageFactory extends AbstractPageFactory
         string $signalName,
         SignalDataInterface $payload,
     ): SignalDataInterface {
+        // Registry values are class-strings; anything else means the signal declares no DTO.
         $dtoClass = $this->hilosClass::getPageSignalDtoRoutes()[$signalType][$signalName] ?? null;
-        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+        if (!is_string($dtoClass)) {
             return $payload;
         }
 
@@ -193,14 +196,13 @@ class HilosPageFactory extends AbstractPageFactory
             return $payload;
         }
 
-        $dataArray = $payload instanceof BaseDTO ? $payload->toArray() : [];
-
         try {
-            $parsed = $dtoClass::fromArray($dataArray);
+            return SignalPayloadHydrator::hydrate($payload->toArray(), $dtoClass, $signalName);
+        } catch (BrokenSignalPayloadDtoException $e) {
+            // A broken registry entry is not a payload problem; it must not be reported as one.
+            throw $e;
         } catch (\Throwable $e) {
             throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
-
-        return $parsed;
     }
 }

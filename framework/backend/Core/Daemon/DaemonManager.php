@@ -7,7 +7,6 @@ namespace Hilos\Core\Daemon;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
-use Hilos\BaseDTO;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\LeadershipObserver;
@@ -1175,14 +1174,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             ? $signalData->data
             : $signalData;
 
-        // Serialize signal data for sending
-        $dataArray = $innerData instanceof BaseDTO
-            ? $innerData->toArray()
-            : [];
-
         $message = [
             'type' => $signal->signalName->getName(),
-            'data' => $dataArray,
+            'data' => $innerData->toArray(),
         ];
         $this->mergeEnvelopeMetadata($message, $innerData);
 
