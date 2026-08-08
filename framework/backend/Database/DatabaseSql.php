@@ -21,6 +21,16 @@ final class DatabaseSql
 
     public const string SQL_NULL = 'NULL';
 
+    /**
+     * The three transaction statements never reach mysqli as text — the driver has its own
+     * calls for them — so they exist to name the failing operation in an exception.
+     */
+    public const string START_TRANSACTION = 'START TRANSACTION';
+
+    public const string COMMIT = 'COMMIT';
+
+    public const string ROLLBACK = 'ROLLBACK';
+
     public const string SESSION_MAX_STATEMENT_TIME_GET = 'SELECT @@max_statement_time';
 
     public const string SESSION_MAX_STATEMENT_TIME_SET = 'SET SESSION max_statement_time = %d';

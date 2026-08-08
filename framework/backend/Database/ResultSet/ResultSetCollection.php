@@ -6,6 +6,7 @@ use Countable;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\CloneNotAllowedException;
 use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
 use Iterator;
 use mysqli_result;
 
@@ -383,6 +384,7 @@ class ResultSetCollection implements Iterator, Countable
      *
      * @return self Self for chaining
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When a statement of the multi-query failed
      */
     public function collectAll(): self
     {
@@ -405,6 +407,7 @@ class ResultSetCollection implements Iterator, Countable
      * @param int $index Result set index (0-based)
      * @return ?ResultSet Result set or null if index is out of bounds
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When a statement of the multi-query failed
      */
     public function getResultSet(int $index): ?ResultSet
     {
@@ -448,6 +451,7 @@ class ResultSetCollection implements Iterator, Countable
      *
      * @return list<ResultSet> Array of result sets
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When a statement of the multi-query failed
      */
     public function all(): array
     {

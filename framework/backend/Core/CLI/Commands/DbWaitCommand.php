@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Hilos;
+use mysqli_sql_exception;
 
 /**
  * DB Wait Command.
@@ -92,8 +93,16 @@ HELP;
 
         while (true) {
             $attempt++;
-            $conn = @mysqli_connect($host, $user, $pass, '', $port);
-            if ($conn !== false) {
+            $conn = null;
+            try {
+                $conn = mysqli_connect($host, $user, $pass, '', $port);
+            } catch (mysqli_sql_exception) {
+                // Not up yet: the timeout below decides between waiting and giving up
+            }
+
+            // Only the connect answers the question this command asks, so the teardown stays
+            // outside the catch: a link that opened means ready, whatever closing it says.
+            if ($conn !== null) {
                 mysqli_close($conn);
                 echo "MySQL is ready ({$attempt} attempt(s))\n";
                 return ExitCode::SUCCESS;

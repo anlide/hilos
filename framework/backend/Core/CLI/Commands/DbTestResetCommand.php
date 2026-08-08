@@ -18,6 +18,7 @@ use Hilos\Database\MysqlExceptionMapper;
 use Hilos\Database\Seed;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use mysqli_sql_exception;
 
 /**
  * DB Test Reset Command.
@@ -99,9 +100,10 @@ HELP;
         echo "\n=== Test DB Reset ===\n\n";
 
         // Connect without database to run DROP/CREATE
-        $conn = @mysqli_connect($host, $user, $pass, '', $port);
-        if ($conn === false) {
-            MysqlExceptionMapper::connectionException(mysqli_connect_errno(), mysqli_connect_error());
+        try {
+            $conn = mysqli_connect($host, $user, $pass, '', $port);
+        } catch (mysqli_sql_exception $e) {
+            MysqlExceptionMapper::connectionException($e->getCode(), $e->getMessage());
         }
 
         $dbEscaped = '`' . mysqli_real_escape_string($conn, $database) . '`';

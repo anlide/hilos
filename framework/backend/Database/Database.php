@@ -12,6 +12,7 @@ use Hilos\Database\ResultSet\ResultSet;
 use Hilos\Database\ResultSet\ResultSetCollection;
 use mysqli;
 use mysqli_result;
+use mysqli_sql_exception;
 
 /**
  * Static multi-connection MySQL access layer with reconnect and result-set caching.
@@ -29,6 +30,17 @@ class Database
 
     /** @var array<int, ?ResultSet> Cached ResultSet instances for each connection */
     private static array $resultSets = [];
+
+    /**
+     * Last SQL sent on each connection, kept for error reporting only.
+     *
+     * {@see nextResult()} learns about a failing statement from mysqli long after
+     * {@see sql()} returned, and the exception it maps would otherwise name the table
+     * but not the query the statement lived in.
+     *
+     * @var array<int, string>
+     */
+    private static array $lastSql = [];
 
     /**
      * @param ?int $index Connection index (defaults to current)
@@ -110,6 +122,7 @@ class Database
         );
         self::$connections[$index] = null;
         self::$resultSets[$index] = null;
+        self::$lastSql[$index] = '';
     }
 
     /**
@@ -192,21 +205,28 @@ class Database
             }
             
             try {
-                mysqli_report(MYSQLI_REPORT_OFF);
+                mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-                $mysqli = @mysqli_connect(
-                    $config->host,
-                    $config->user,
-                    $config->password,
-                    $config->database,
-                    $config->port,
-                    $config->socket,
-                );
+                try {
+                    // A failed connect is a warning AND an exception, and the warning is the
+                    // dangerous half: BaseManager::errorHandler logs it and calls onError(),
+                    // which sets shouldExit on a daemon — ending the process that this very
+                    // retry loop exists to carry through a blip. Measured: an unresolvable host
+                    // raises the handler once per attempt, while a lost link on a live query
+                    // raises it not at all.
+                    // warning-suppressed: the same failure arrives as mysqli_sql_exception and is mapped right below
+                    $mysqli = @mysqli_connect(
+                        $config->host,
+                        $config->user,
+                        $config->password,
+                        $config->database,
+                        $config->port,
+                        $config->socket,
+                    );
+                } catch (mysqli_sql_exception $e) {
+                    $errno = $e->getCode();
+                    $error = $e->getMessage();
 
-                if ($mysqli === false) {
-                    $errno = mysqli_connect_errno();
-                    $error = mysqli_connect_error();
-                    
                     // Retry only for temporary connection errors if retry is enabled
                     if ($retryOnConnectionError && MysqlClientErrorCode::isTemporaryConnectFailure($errno) && $attempt < $retries - 1) {
                         $lastException = new CantConnectToMysqlServerException($error, $errno);
@@ -217,11 +237,13 @@ class Database
                 }
 
                 // Set charset
-                if (!@mysqli_set_charset($mysqli, $config->charset)) {
-                    $errno = mysqli_errno($mysqli);
-                    $error = mysqli_error($mysqli);
+                try {
+                    mysqli_set_charset($mysqli, $config->charset);
+                } catch (mysqli_sql_exception $e) {
+                    $errno = $e->getCode();
+                    $error = $e->getMessage();
                     mysqli_close($mysqli);
-                    
+
                     // Charset errors are not retryable
                     MysqlExceptionMapper::connectionException($errno, $error);
                 }
@@ -258,12 +280,13 @@ class Database
             if ($resultSet !== null) {
                 $mysqliResult = $resultSet->getMysqliResult();
                 if ($mysqliResult !== null) {
-                    @mysqli_free_result($mysqliResult);
+                    mysqli_free_result($mysqliResult);
                 }
             }
-            @mysqli_close(self::$connections[$index]);
+            mysqli_close(self::$connections[$index]);
             self::$connections[$index] = null;
             self::$resultSets[$index] = null;
+            self::$lastSql[$index] = '';
         }
     }
 
@@ -310,6 +333,7 @@ class Database
 
         // Clear cached ResultSet before new query (new query = new result set)
         self::$resultSets[$index] = null;
+        self::$lastSql[$index] = $sql;
 
         // Convert array to SqlParamCollection
         if (is_array($params)) {
@@ -319,9 +343,15 @@ class Database
         // Parse SQL with parameters
         $parsedSql = self::parseSqlWithParams($sql, $params, $mysqli);
 
-        // Process all remaining result sets from multi-query (if any)
-        while (@mysqli_next_result($mysqli)) {
-            @mysqli_store_result($mysqli);
+        // Process all remaining result sets from multi-query (if any).
+        // A failure here belongs to the PREVIOUS query, whose leftovers we are draining:
+        // rethrowing it would kill this correct query with someone else's error.
+        try {
+            while (mysqli_next_result($mysqli)) {
+                mysqli_store_result($mysqli);
+            }
+        } catch (mysqli_sql_exception) {
+            // Drained as far as the previous query allows
         }
 
         $attempts = 0;
@@ -355,17 +385,11 @@ class Database
             }
 
             // Execute multi-query
-            $result = @mysqli_multi_query($mysqli, $parsedSql);
-
-            if ($result === false) {
-                $errno = mysqli_errno($mysqli);
-                $error = mysqli_error($mysqli);
-                
-                // If mysqli_errno returns 0, connection is likely closed
-                if ($errno === 0 && $error === '') {
-                    $error = 'mysqli object is already closed';
-                    $errno = MysqlClientErrorCode::SERVER_GONE->value;
-                }
+            try {
+                mysqli_multi_query($mysqli, $parsedSql);
+            } catch (mysqli_sql_exception $e) {
+                $errno = $e->getCode();
+                $error = $e->getMessage();
 
                 // Check if we should try to reconnect
                 if ($tryReconnect && MysqlClientErrorCode::isConnectionLost($errno) && $attempts < $maxAttempts) {
@@ -399,8 +423,15 @@ class Database
         }
 
         // Store first result set immediately after multi_query
-        // (or null if no result set, e.g. for INSERT/UPDATE/DELETE)
-        $result = @mysqli_store_result($mysqli);
+        // (or null if no result set, e.g. for INSERT/UPDATE/DELETE).
+        // Buffering is where the server reports what it could not report earlier — a statement
+        // that ran into max_statement_time, a link that died mid-transfer — so the failure is
+        // mapped here exactly as the one from multi_query itself.
+        try {
+            $result = mysqli_store_result($mysqli);
+        } catch (mysqli_sql_exception $e) {
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), $sql);
+        }
         $mysqliResult = $result !== false ? $result : null;
 
         // Create/cache ResultSet for this result (reuse same instance to preserve pointer position)
@@ -447,18 +478,31 @@ class Database
         $index = self::$currentIndex;
         $mysqli = self::getConnection($index);
 
-        // Set max execution time
-        $oldTimeout = @mysqli_query($mysqli, DatabaseSql::SESSION_MAX_STATEMENT_TIME_GET);
-        @mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * DatabaseConnectionPolicy::MS_PER_SECOND));
+        // Set max execution time. A connection that already died is not this method's
+        // business: the failure is left to sql() below, which reconnects and reports it
+        // as a typed exception, exactly as it did while the warning was suppressed here.
+        $oldTimeout = false;
+        try {
+            $oldTimeout = mysqli_query($mysqli, DatabaseSql::SESSION_MAX_STATEMENT_TIME_GET);
+            mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $timeout * DatabaseConnectionPolicy::MS_PER_SECOND));
+        } catch (mysqli_sql_exception) {
+            // Timeout stays whatever the session had
+        }
 
         try {
             self::sql($sql, $params, $tryReconnect);
         } finally {
-            // Restore old timeout
-            if ($oldTimeout !== false) {
+            // Restore old timeout, but only while the link is still the one it was read from:
+            // sql() may have reconnected, and then $mysqli is the handle close() destroyed,
+            // while the session that replaced it starts from the server default anyway.
+            if ($oldTimeout !== false && (self::$connections[$index] ?? null) === $mysqli) {
                 $row = mysqli_fetch_row($oldTimeout);
                 if ($row !== null) {
-                    @mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $row[0]));
+                    try {
+                        mysqli_query($mysqli, sprintf(DatabaseSql::SESSION_MAX_STATEMENT_TIME_SET, $row[0]));
+                    } catch (mysqli_sql_exception) {
+                        // Thrown from finally, this would overwrite the real error of the query
+                    }
                 }
             }
         }
@@ -467,28 +511,34 @@ class Database
     /**
      * @return bool Whether another result set was loaded
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When the next statement of the multi-query failed
      */
     public static function nextResult(): bool
     {
         $index = self::$currentIndex;
         $mysqli = self::getConnection($index);
 
-        // Move to next result set
-        $hasMore = @mysqli_next_result($mysqli);
+        // Move to next result set. false now means only "there are no more results": a
+        // statement that failed arrives as an exception and is mapped, where before it
+        // was indistinguishable from the end of the multi-query and disappeared. Buffering
+        // the rows is part of the same step — the server reports a timed-out or interrupted
+        // statement there, not when the statement header arrives.
+        try {
+            if (mysqli_next_result($mysqli)) {
+                // Store next result set (or null if no result set)
+                $result = mysqli_store_result($mysqli);
+                $mysqliResult = $result !== false ? $result : null;
 
-        if ($hasMore) {
-            // Store next result set (or null if no result set)
-            $result = @mysqli_store_result($mysqli);
-            $mysqliResult = $result !== false ? $result : null;
-            
-            // Create/cache new ResultSet for next result
-            if ($mysqliResult !== null) {
-                self::$resultSets[$index] = ResultSet::fromMysqliResult($mysqliResult);
-            } else {
-                self::$resultSets[$index] = null;
+                // Create/cache new ResultSet for next result
+                self::$resultSets[$index] = $mysqliResult !== null
+                    ? ResultSet::fromMysqliResult($mysqliResult)
+                    : null;
+
+                return true;
             }
-            
-            return true;
+        } catch (mysqli_sql_exception $e) {
+            self::$resultSets[$index] = null;
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), self::$lastSql[$index] ?? '');
         }
 
         // No more result sets
@@ -577,29 +627,44 @@ class Database
 
     /**
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When the server refuses to start the transaction
      */
     public static function transactionStart(): void
     {
         $mysqli = self::getConnection();
-        @mysqli_begin_transaction($mysqli);
+        try {
+            mysqli_begin_transaction($mysqli);
+        } catch (mysqli_sql_exception $e) {
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::START_TRANSACTION);
+        }
     }
 
     /**
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When the commit fails
      */
     public static function transactionCommit(): void
     {
         $mysqli = self::getConnection();
-        @mysqli_commit($mysqli);
+        try {
+            mysqli_commit($mysqli);
+        } catch (mysqli_sql_exception $e) {
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::COMMIT);
+        }
     }
 
     /**
      * @throws DatabaseConnectionException When not connected
+     * @throws DatabaseRuntimeException When the rollback fails
      */
     public static function transactionRollback(): void
     {
         $mysqli = self::getConnection();
-        @mysqli_rollback($mysqli);
+        try {
+            mysqli_rollback($mysqli);
+        } catch (mysqli_sql_exception $e) {
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::ROLLBACK);
+        }
     }
 
     /**
@@ -728,13 +793,13 @@ class Database
     {
         try {
             $mysqli = self::getConnection();
-            $result = @mysqli_query($mysqli, DatabaseSql::PING);
+            $result = mysqli_query($mysqli, DatabaseSql::PING);
             if ($result !== false) {
-                @mysqli_free_result($result);
+                mysqli_free_result($result);
                 return true;
             }
             return false;
-        } catch (DatabaseConnectionException $e) {
+        } catch (DatabaseConnectionException | mysqli_sql_exception $e) {
             return false;
         }
     }

@@ -463,7 +463,11 @@ final class ChatAgent extends AbstractAgent
             $loser->actions->tombstone($survivorId);
             Database::transactionCommit();
         } catch (HilosException $e) {
-            Database::transactionRollback();
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // A failing rollback would replace the error that made the merge fail
+            }
 
             throw $e;
         }

@@ -56,6 +56,16 @@ The scope of this rule is production code: `framework/backend` and
 from a `catch`. The general form: *when a library can report an error as an
 exception, switch its mode on rather than muting its warning*.
 
+One call keeps its suppression under a marker: `mysqli_connect` in
+`Hilos\Database\Database::connect()`. mysqli reports an unreachable host twice —
+as a PHP warning and as the exception — and the warning is the half that does
+damage: `BaseManager::errorHandler` logs it and calls `onError()`, which sets
+`shouldExit` on a daemon, ending the process that the surrounding retry loop
+exists to carry through a blip. The exception carries the same failure, so
+nothing is lost by muting the warning. This is the exception that proves the
+class: a library's own exception mode replaces `@` only where the library does
+not ALSO raise a warning the process treats as fatal.
+
 **B. Non-blocking sockets and streams.** Marker plus an immediate check of the
 result and the error code in the same few lines. Do not throw: `EAGAIN` is the
 normal outcome of an event-loop tick, and no pre-check exists for it.
