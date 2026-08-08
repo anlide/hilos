@@ -122,6 +122,7 @@ class DaemonStatus
      */
     private function readCpuStats(): ?CpuStats
     {
+        // warning-suppressed: /proc is absent off Linux, the caller reads null as CPU usage unknown
         $contents = @file_get_contents('/proc/stat', false, null, 0, 256);
         if ($contents === false) {
             return null;

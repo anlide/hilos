@@ -245,12 +245,14 @@ class DockerManager extends BaseManager
     private function readErrorLogTail(): string
     {
         $path = Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE];
+        // warning-suppressed: the error log may not exist yet, the escalation says it is not readable
         $size = @filesize($path);
         if ($size === false) {
             return '(error log is not readable)';
         }
 
         $offset = max(0, $size - self::ERROR_LOG_TAIL_BYTES);
+        // warning-suppressed: the log can rotate away between the size and the read, the escalation says the tail is empty
         $tail = @file_get_contents($path, false, null, $offset);
         if ($tail === false || trim($tail) === '') {
             return '(error log is empty)';

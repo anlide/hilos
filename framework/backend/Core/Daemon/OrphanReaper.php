@@ -43,10 +43,13 @@ class OrphanReaper
      *
      * @param ?int $excludePid Process to leave out, normally the daemon just started
      * @return array<int, string> Command line keyed by process id (empty when there are none)
+     *
+     * When /proc cannot be read the scan is skipped and no children are reported.
      */
     public function findChildren(?int $excludePid = null): array
     {
         $selfPid = posix_getpid();
+        // warning-suppressed: /proc is absent off Linux, the scan logs a warning and reports no children
         $entries = @scandir('/proc');
         if ($entries === false) {
             Logger::warning('OrphanReaper: /proc is not readable, skipping the orphan scan');
@@ -140,6 +143,7 @@ class OrphanReaper
      */
     private function statOf(int $pid): ?ProcessStat
     {
+        // warning-suppressed: a process can exit mid-scan, null makes the caller skip the pid
         $stat = @file_get_contents("/proc/{$pid}/stat");
         if ($stat === false) {
             return null;
@@ -169,6 +173,7 @@ class OrphanReaper
      */
     private function commandLineOf(int $pid): string
     {
+        // warning-suppressed: a process can exit before its command line is read, the log record falls back to (?)
         $cmdline = @file_get_contents("/proc/{$pid}/cmdline");
         if ($cmdline === false || $cmdline === '') {
             return '?';

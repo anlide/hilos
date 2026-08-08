@@ -168,6 +168,7 @@ final class LogStoreReader
                 continue;
             }
             $name = basename($path);
+            // warning-suppressed: a log rotated away between the listing and the read counts as 0 bytes
             $size = @filesize($path);
             if ($size === false) {
                 $size = 0;
