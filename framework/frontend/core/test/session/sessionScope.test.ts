@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bindSessionScope,
   sessionUserName,
+  sessionUserIsAdmin,
   sessionUserId,
   sessionImpersonating,
   sessionImpersonatedByName,
@@ -54,6 +55,28 @@ describe('sessionScope', () => {
     })
 
     expect(name.get()).toBe('Ada')
+  })
+
+  it('resolves the admin flag the handshake response carries', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const admin = sessionUserIsAdmin(scopes)
+
+    expect(admin.get()).toBe(false)
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+    })
+
+    expect(admin.get()).toBe(true)
+
+    // A revoke arrives the same way and takes the entry away again.
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada', admin: false } },
+    })
+
+    expect(admin.get()).toBe(false)
   })
 
   it('ingests the handshake response and resolves the current user id', () => {
