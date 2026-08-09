@@ -13,6 +13,8 @@ rule.
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
 | `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only. | [method-contracts.md](method-contracts.md) |
+| `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
+| `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 
 `MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
 green run must not be read as "the magic-value rule is satisfied". It counts
@@ -36,6 +38,24 @@ branch is also how an optional fragment is rendered into a concatenation, and
 tokens cannot tell the two apart. It says nothing about `=== ''` either: those
 comparisons are how legitimate input is checked, and a machine ban on them would
 report the very code the document calls correct.
+
+The two markdown rules are narrower than their document as well, and each in a
+way worth knowing before you argue with a hit.
+
+`DOC-ROUTE` reads reachability as a direct mention and never expands it: a
+wrapper that routes to another wrapper does not inherit that wrapper's files, and
+a file reachable only through such a hop is still reported. A route an agent has
+to derive is not a route it takes. The rule also judges this catalog alone. The
+rest of `docs/agents/` has no owning mechanism to route from, and requiring one
+there would decide the fate of documents this check does not own.
+
+`DOC-LINK` judges the file part of a reference and nothing else: `page.md#section`
+is checked as `page.md`, and whether the section exists is not asked. It also
+stays silent on a bare path inside a document, however broken. A document names
+files inside other roots constantly — `pages/keys.ts`, `Bootstrap/daemon.php` —
+and reading those as addresses reported 46 legitimate mentions the day it was
+tried. In a wrapper the same path *is* an address, because a wrapper exists to be
+followed; that difference is the rule, not an oversight.
 
 ### Why the rule reads a zone and not the whole tree
 
@@ -139,3 +159,30 @@ A rule that judges production code only is listed in `BACKEND_ONLY_RULES` in the
 same test. It cannot decide that for itself: `check()` receives the path relative
 to the scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and
 is indistinguishable from a backend file. The root is known to the guard.
+
+### A rule that reads markdown
+
+The steps above describe a rule over PHP tokens. A rule that judges the agent
+docs has a second home, and shares nothing with the first but the failure-line
+format:
+
+1. Put it in `framework/tests/CodeStyle/Markdown/`, next to `MarkdownSources`,
+   which lists the scanned files, tells a router from a document, and resolves
+   the text of a reference into repository paths.
+2. Do not implement `CodeStyleRule`. That interface takes the `token_get_all()`
+   output of one PHP file, which markdown has none of. Do not invent a shared
+   interface for the markdown rules either: `DOC-ROUTE` judges the tree as a
+   whole and `DOC-LINK` a file at a time, and one signature over both would be a
+   likeness rather than a contract.
+3. Yield finished report lines, not `Violation` objects. A `Violation` exists to
+   carry a baseline key, and these rules have no baseline: both halves land
+   green, and a debt list here would read as permission to leave the next rule
+   file unrouted.
+4. Seed `framework/tests/CodeStyle/Fixtures/AgentDocs/` with a toy tree — its own
+   catalog, its own wrapper — and pin the exact report in `AgentDocFixtureTest`.
+   Seed the look-alikes that must stay silent as carefully as the hits. Those
+   fixtures need no path exclusion, unlike the PHP ones: the live scan covers
+   `docs/**`, `agents.md`, `CLAUDE.md`, `skills/*` and `demo/*`, and
+   `framework/tests` is not among them.
+5. Register the rule in `AgentDocGuardTest`, one test method per rule, so two
+   unrelated failures do not arrive as one.

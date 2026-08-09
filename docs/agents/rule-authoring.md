@@ -180,12 +180,27 @@ A new or moved rule file under `docs/agents/` must be reachable from at least on
 `hilos-*` skill wrapper, and listed in the index table that owns it (`agents.md`,
 or the catalog `README.md` for a code-style rule). An unrouted rule file is
 unreachable at code time: it is canonical, correct, and never read.
+Checked automatically: `DOC-ROUTE`, but only the first half of that — that a
+wrapper routes to the file, and only for the `docs/agents/code-style/` catalog.
+Listing the file in the index table that owns it stays yours to do.
+
+A file that needs no route by design says so in itself, on a line of its own
+reading `Routed from: none — <reason>`. The reason is not optional: without it
+the line is a silent mute, and the next reader — the one deciding whether to
+route the file or delete it — learns that it stands apart but not why. The
+refusal lives in the file rather than in a list inside the checker, because that
+is where the person weighing it is already looking; and it is not a baseline
+record, because a baseline record means "debt some leaf will pay", which a
+deliberate decision never becomes. A file carrying both a route and the refusal
+is reported like an unrouted one: a refusal that outlived its truth misleads the
+reader exactly as much as no route at all.
 
 When adding a rule file, walk the route the way an agent would — from the task
 shape to the wrapper, from the wrapper to the file — and confirm no `.md` link on
-that path is broken. The walk is manual today; the reachability guard that makes
-it automatic belongs in
-[code-style/automated-checks.md](code-style/automated-checks.md).
+that path is broken. Both halves of that walk are now machine-checked — the route
+by `DOC-ROUTE`, the links by `DOC-LINK` — but only what a machine can judge:
+see [code-style/automated-checks.md](code-style/automated-checks.md) for what
+each of them deliberately leaves to you.
 
 ## Adapter Shape
 
