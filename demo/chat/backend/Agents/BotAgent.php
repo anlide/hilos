@@ -317,7 +317,7 @@ final class BotAgent extends AbstractLlmChatAgent
      */
     private function topicMatches(ViewBot $bot): bool
     {
-        $botTopics = $this->parseTopics($bot->topics ?? '');
+        $botTopics = $this->parseTopics($bot->topics);
         if ($botTopics === []) {
             return true;
         }
@@ -335,11 +335,15 @@ final class BotAgent extends AbstractLlmChatAgent
     /**
      * Parses topics from a JSON array or comma/semicolon-separated string.
      *
-     * @param string $topics Topics as JSON or comma/semicolon-separated string
+     * @param ?string $topics Topics as JSON or comma/semicolon-separated string, or null when the bot restricts none
      * @return list<string> List of topic strings
      */
-    private function parseTopics(string $topics): array
+    private function parseTopics(?string $topics): array
     {
+        if ($topics === null) {
+            return [];
+        }
+
         $trimmed = trim($topics);
         if ($trimmed === '') {
             return [];
@@ -438,7 +442,7 @@ final class BotAgent extends AbstractLlmChatAgent
         if (Hilos::$rt->chatContext->topic !== null && Hilos::$rt->chatContext->topic !== '') {
             $userParts[] = "Current topic: " . Hilos::$rt->chatContext->topic;
         }
-        if (Hilos::$rt->chatContext->summary !== '') {
+        if (Hilos::$rt->chatContext->summary !== null) {
             $userParts[] = "Summary: " . Hilos::$rt->chatContext->summary;
         }
 

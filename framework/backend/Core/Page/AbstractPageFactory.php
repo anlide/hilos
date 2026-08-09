@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
@@ -80,6 +81,7 @@ abstract class AbstractPageFactory
      * @param string $action Action name
      * @param array<string, mixed> $data Payload data (key-value pairs)
      * @return ActionPayloadDTO Action payload DTO
+     * @throws ValidationException When a DTO the override builds refuses this payload
      */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
     {

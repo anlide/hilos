@@ -172,9 +172,11 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         foreach (Hilos::$rt->connections as $connection) {
+            $message = $connection->outboundModerationMessage;
             if (
                 $connection->outboundModerationPhase
                 !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+                || $message === null
             ) {
                 continue;
             }
@@ -182,7 +184,7 @@ final class ModeratorAgent extends AbstractAgent
             $this->startModerationRequest(
                 $connection,
                 self::REQUEST_TYPE_MESSAGE,
-                $connection->outboundModerationMessage,
+                $message,
                 $connection->outboundModerationUpdatedAt,
             );
 
@@ -190,9 +192,11 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         foreach (Hilos::$rt->connections as $connection) {
+            $newName = $connection->renameModerationName;
             if (
                 $connection->renameModerationPhase
                 !== ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
+                || $newName === null
             ) {
                 continue;
             }
@@ -200,7 +204,7 @@ final class ModeratorAgent extends AbstractAgent
             $this->startModerationRequest(
                 $connection,
                 self::REQUEST_TYPE_RENAME,
-                $connection->renameModerationName,
+                $newName,
                 $connection->renameModerationUpdatedAt,
             );
 

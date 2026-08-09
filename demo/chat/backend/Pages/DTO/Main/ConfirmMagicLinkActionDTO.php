@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ConfirmMagicLinkActionDTO - DTO for submitting an email magic-link token (HIL-283).
@@ -44,15 +45,13 @@ final class ConfirmMagicLinkActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $email = $data['email'] ?? null;
-        $token = $data['token'] ?? null;
-
         return new static(
-            email: is_string($email) ? trim($email) : '',
-            token: is_string($token) ? trim($token) : '',
+            email: trim(self::requireString($data, 'email')),
+            token: trim(self::requireString($data, 'token')),
         );
     }
 

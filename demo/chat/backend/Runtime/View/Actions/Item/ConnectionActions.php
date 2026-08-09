@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -37,8 +38,9 @@ final class ConnectionActions extends RtActions
      */
     public function unregister(): void
     {
-        if ($this->state->fileSessionUploadId !== null) {
-            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        $quarantineBasename = $this->state->fileSessionQuarantineBasename;
+        if ($quarantineBasename !== null) {
+            Hilos::$fs->tmp[$quarantineBasename]->unlink();
         }
 
         $this->remove();
@@ -76,7 +78,7 @@ final class ConnectionActions extends RtActions
 
         $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
-        $this->state->outboundModerationReason = '';
+        $this->state->outboundModerationReason = null;
         $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
@@ -113,8 +115,8 @@ final class ConnectionActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
-        $this->state->outboundModerationMessage = '';
-        $this->state->outboundModerationReason = '';
+        $this->state->outboundModerationMessage = null;
+        $this->state->outboundModerationReason = null;
         $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
@@ -133,7 +135,7 @@ final class ConnectionActions extends RtActions
 
         $this->state->renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING;
         $this->state->renameModerationName = $newName;
-        $this->state->renameModerationReason = '';
+        $this->state->renameModerationReason = null;
         $this->state->renameModerationUpdatedAt = time();
 
         $this->sync();
@@ -170,8 +172,8 @@ final class ConnectionActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE;
-        $this->state->renameModerationName = '';
-        $this->state->renameModerationReason = '';
+        $this->state->renameModerationName = null;
+        $this->state->renameModerationReason = null;
         $this->state->renameModerationUpdatedAt = time();
 
         $this->sync();
@@ -226,8 +228,9 @@ final class ConnectionActions extends RtActions
      */
     public function discardActiveBinaryUploadSessionAndProgressUi(): void
     {
-        if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionQuarantineBasename !== '') {
-            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        $quarantineBasename = $this->state->fileSessionQuarantineBasename;
+        if ($quarantineBasename !== null) {
+            Hilos::$fs->tmp[$quarantineBasename]->unlink();
         }
 
         $this->clearBinaryUploadSessionAndProgressUi();
@@ -293,7 +296,7 @@ final class ConnectionActions extends RtActions
     /**
      * Delete the active tmp file, clear session fields, and expose a retryable upload failure.
      *
-     * @param ?string $fallbackClientUploadId Client correlation id when the session field is already empty
+     * @param ?string $fallbackClientUploadId Client correlation id when the session no longer carries one
      * @param string $code Short failure code for frontend behavior
      * @param string $message User-facing failure message
      * @throws FileDeleteException When the active tmp file cannot be deleted
@@ -302,12 +305,11 @@ final class ConnectionActions extends RtActions
      */
     public function failActiveBinaryFileUpload(?string $fallbackClientUploadId, string $code, string $message): void
     {
-        $clientUploadId = $this->state->fileSessionClientUploadId !== ''
-            ? $this->state->fileSessionClientUploadId
-            : $fallbackClientUploadId;
+        $clientUploadId = $this->state->fileSessionClientUploadId ?? $fallbackClientUploadId;
 
-        if ($this->state->fileSessionQuarantineBasename !== '') {
-            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        $quarantineBasename = $this->state->fileSessionQuarantineBasename;
+        if ($quarantineBasename !== null) {
+            Hilos::$fs->tmp[$quarantineBasename]->unlink();
         }
 
         $this->failBinaryFileUpload($clientUploadId, $code, $message);
@@ -335,6 +337,7 @@ final class ConnectionActions extends RtActions
      * @param string $payload Raw websocket binary frame payload
      * @param float $progressMinIntervalSec Minimum progress notification interval in seconds
      * @return bool True when received bytes reached the declared upload size
+     * @throws FileNotFoundException When no upload session is open, so no tmp file is named
      * @throws FsException When the tmp file cannot be appended
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -343,7 +346,10 @@ final class ConnectionActions extends RtActions
     {
         $this->ensureCanWrite();
 
-        Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->append($payload);
+        $quarantineBasename = $this->state->fileSessionQuarantineBasename
+            ?? throw new FileNotFoundException('No upload session is open on this connection');
+
+        Hilos::$fs->tmp[$quarantineBasename]->append($payload);
 
         $this->state->fileSessionReceivedBytes += strlen($payload);
         $this->state->fileProgressUploadedBytes = $this->state->fileSessionReceivedBytes;
@@ -374,6 +380,7 @@ final class ConnectionActions extends RtActions
     /**
      * Move the completed tmp upload to quarantine, create a draft row, and clear upload UI state.
      *
+     * @throws FileNotFoundException When no upload session is open, so there is nothing to complete
      * @throws FsException When the completed tmp file cannot be moved to quarantine
      * @throws RtActionsCallbackNotSetException When attachment draft creation is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -384,22 +391,33 @@ final class ConnectionActions extends RtActions
     {
         $this->ensureCanWrite();
 
-        $quarantineBasename = $this->state->fileSessionUploadId
-            . FsFile::extensionForMime($this->state->fileSessionMimeType);
-        Hilos::$fs->quarantine->createFromTmp(
-            $quarantineBasename,
-            $this->state->fileSessionQuarantineBasename,
-        );
+        $uploadId = $this->state->fileSessionUploadId;
+        $tmpBasename = $this->state->fileSessionQuarantineBasename;
+        $mimeType = $this->state->fileSessionMimeType;
+        $originalFilename = $this->state->fileSessionOriginalFilename;
+        $normalizedFilename = $this->state->fileSessionNormalizedFilename;
+        if (
+            $uploadId === null
+            || $tmpBasename === null
+            || $mimeType === null
+            || $originalFilename === null
+            || $normalizedFilename === null
+        ) {
+            throw new FileNotFoundException('No upload session is open on this connection');
+        }
+
+        $quarantineBasename = $uploadId . FsFile::extensionForMime($mimeType);
+        Hilos::$fs->quarantine->createFromTmp($quarantineBasename, $tmpBasename);
 
         Hilos::$rt->attachmentDrafts->actions->create(
-            draftId: (string)$this->state->fileSessionUploadId,
+            draftId: $uploadId,
             acceptKey: $this->state->acceptKey,
             userId: (int)$this->state->userId,
             quarantineBasename: $quarantineBasename,
-            originalFilename: $this->state->fileSessionOriginalFilename,
-            mimeType: $this->state->fileSessionMimeType,
+            originalFilename: $originalFilename,
+            mimeType: $mimeType,
             size: $this->state->fileSessionDeclaredSize,
-            normalizedFilename: $this->state->fileSessionNormalizedFilename,
+            normalizedFilename: $normalizedFilename,
             uploadedAt: time(),
         );
 
@@ -433,11 +451,11 @@ final class ConnectionActions extends RtActions
         $this->state->fileSessionUploadId = null;
         $this->state->fileSessionDeclaredSize = 0;
         $this->state->fileSessionReceivedBytes = 0;
-        $this->state->fileSessionQuarantineBasename = '';
-        $this->state->fileSessionOriginalFilename = '';
-        $this->state->fileSessionMimeType = '';
-        $this->state->fileSessionClientUploadId = '';
-        $this->state->fileSessionNormalizedFilename = '';
+        $this->state->fileSessionQuarantineBasename = null;
+        $this->state->fileSessionOriginalFilename = null;
+        $this->state->fileSessionMimeType = null;
+        $this->state->fileSessionClientUploadId = null;
+        $this->state->fileSessionNormalizedFilename = null;
     }
 
     private function resetUploadStateFields(): void

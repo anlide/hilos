@@ -1149,13 +1149,13 @@ final class BackupAgent extends AbstractAgent
         }
 
         $durationSeconds = (int)round(microtime(true) - $this->startedAt);
-        $stderr = $this->childProcess !== null ? trim($this->childProcess->getStdErr()) : '';
+        $stderr = $this->childStdErr();
 
         if ($success) {
             $this->logAgentInfo("Restore {$id} completed in {$durationSeconds}s");
             $this->restoreView()?->actions->finish(BackupStatus::SUCCESS);
         } else {
-            $detail = $stderr !== '' ? "{$failureReason}: {$stderr}" : (string)$failureReason;
+            $detail = $stderr !== null ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Restore {$id} failed: {$detail}");
             $this->restoreView()?->actions->finish(BackupStatus::ERROR, $detail);
         }
@@ -1232,12 +1232,12 @@ final class BackupAgent extends AbstractAgent
 
         $scope = $this->currentScope;
         $durationSeconds = (int)round(microtime(true) - $this->startedAt);
-        $stderr = $this->childProcess !== null ? trim($this->childProcess->getStdErr()) : '';
+        $stderr = $this->childStdErr();
 
         if ($success) {
             $this->logAgentInfo("Backup {$id} completed in {$durationSeconds}s");
         } else {
-            $detail = $stderr !== '' ? "{$failureReason}: {$stderr}" : (string)$failureReason;
+            $detail = $stderr !== null ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Backup {$id} failed: {$detail}");
             $this->notifyInitiatorOfFailure($id, $detail);
             if ($scope !== null) {
@@ -1589,5 +1589,23 @@ final class BackupAgent extends AbstractAgent
                 $this->logAgentWarning($message);
             }
         }
+    }
+
+    /**
+     * What the child process said on stderr, trimmed. A child that said nothing
+     * and no child at all are the same thing to the caller: there is no detail to
+     * append to the failure reason.
+     *
+     * @return ?string Trimmed stderr text, or null when there is none
+     */
+    private function childStdErr(): ?string
+    {
+        if ($this->childProcess === null) {
+            return null;
+        }
+
+        $stderr = trim($this->childProcess->getStdErr());
+
+        return $stderr === '' ? null : $stderr;
     }
 }

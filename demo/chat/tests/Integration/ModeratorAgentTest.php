@@ -14,6 +14,7 @@ use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\Exception\LLMClientBusyException;
@@ -269,7 +270,7 @@ final class UnavailableModerationChatClient implements AsyncChatLLMInterface
 
     public function consumeResult(): string
     {
-        return '';
+        throw new LLMResultUnavailableException('This client never produces a result');
     }
 
     public function isBusy(): bool
@@ -328,8 +329,11 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
         $result = $this->result;
         $this->hasResult = false;
         $this->result = null;
+        if ($result === null) {
+            throw new LLMResultUnavailableException('No scripted result is available');
+        }
 
-        return $result ?? '';
+        return $result;
     }
 
     public function isBusy(): bool

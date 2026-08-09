@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for bot_create action payload.
@@ -49,16 +50,21 @@ final class BotCreateActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+        if (!is_array($inner)) {
+            $inner = [];
+        }
+
+        if (isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
         return new static(
-            name: is_string($inner[ObjectBot::name] ?? null) ? trim($inner[ObjectBot::name]) : '',
+            name: trim(self::requireString($inner, ObjectBot::name)),
             description: isset($inner[ObjectBot::description]) && is_string($inner[ObjectBot::description]) ? $inner[ObjectBot::description] : null,
             style: isset($inner[ObjectBot::style]) && is_string($inner[ObjectBot::style]) ? $inner[ObjectBot::style] : null,
             topics: isset($inner[ObjectBot::topics]) && is_string($inner[ObjectBot::topics]) ? $inner[ObjectBot::topics] : null,

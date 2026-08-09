@@ -52,6 +52,7 @@ class ColumnFilter implements FilterInterface
      */
     public function toSql(string $table, string $alias = ''): string
     {
+        // external-boundary: the neutral element of the column reference — an unaliased column needs no prefix
         $prefix = $alias ? "{$alias}." : '';
         // Convert camelCase to snake_case for SQL
         $sqlColumn = $this->camelToSnake($this->column);

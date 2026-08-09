@@ -49,7 +49,7 @@ final class Connection extends RtState
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
+        $instance->acceptKey = (string)$row[self::acceptKey];
         $instance->userId = (int)($row[self::userId] ?? 0);
         $instance->markRtSyncBaseline();
 

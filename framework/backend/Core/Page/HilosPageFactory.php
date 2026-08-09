@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
@@ -160,6 +161,7 @@ class HilosPageFactory extends AbstractPageFactory
      * @param string $action Action name
      * @param array<string, mixed> $data Payload data
      * @return ActionPayloadDTO Action payload DTO
+     * @throws ValidationException When the declared DTO refuses this payload
      */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
     {

@@ -106,7 +106,7 @@ final class NullableOffsetRtState extends RtState
 
     public static function fromRow(array $row): static
     {
-        return self::create((string)($row['id'] ?? ''));
+        return self::create((string)$row['id']);
     }
 
     public function getId(): string

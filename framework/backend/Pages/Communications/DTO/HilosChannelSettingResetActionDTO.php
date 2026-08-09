@@ -6,6 +6,7 @@ namespace Hilos\Pages\Communications\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -44,6 +45,7 @@ final class HilosChannelSettingResetActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
@@ -53,8 +55,8 @@ final class HilosChannelSettingResetActionDTO extends ActionPayloadDTO
         }
 
         return new static(
-            channel: is_string($inner[self::channel] ?? null) ? trim($inner[self::channel]) : '',
-            field: is_string($inner[self::field] ?? null) ? trim($inner[self::field]) : '',
+            channel: trim(self::requireString($inner, self::channel)),
+            field: trim(self::requireString($inner, self::field)),
         );
     }
 

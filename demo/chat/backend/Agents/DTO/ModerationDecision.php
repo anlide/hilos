@@ -67,8 +67,8 @@ final readonly class ModerationDecision
         // than rejecting the whole decision (which would block benign messages).
         $reason = property_exists($decoded, self::KEY_REASON) && is_string($decoded->{self::KEY_REASON})
             ? trim($decoded->{self::KEY_REASON})
-            : '';
-        if ($reason === '') {
+            : null;
+        if ($reason === null || $reason === '') {
             $reason = $allow ? self::REASON_ALLOWED : self::REASON_BLOCKED;
         }
 

@@ -63,6 +63,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
         $acceptLanguage = HttpHeaderHelper::get(
             $request[HttpConstants::REQUEST_KEY_HEADERS] ?? [],
             HttpConstants::HEADER_ACCEPT_LANGUAGE,
+            // external-boundary: a browser may send no Accept-Language, and no preference is a legal answer
         ) ?? '';
 
         $resolved = $this->resolver->resolve($path, $acceptLanguage);
@@ -98,6 +99,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
     private function parseRequest(string $raw): array
     {
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $raw);
+        // external-boundary: the raw bytes come off the socket and need not carry a request line
         $firstLine = $lines[0] ?? '';
         $parts = explode(' ', $firstLine);
 
@@ -111,16 +113,16 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
     /**
      * Build HTTP response string from status, headers and body.
      *
-     * @param array{status?: int, headers?: array<string, string>, body?: string} $response Response data
+     * @param array{status: int, headers: array<string, string>, body: string} $response Response data
      * @return string Raw HTTP response
      */
     private function buildResponse(array $response): string
     {
-        $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? HttpConstants::HTTP_OK;
+        $status = $response[HttpConstants::RESPONSE_KEY_STATUS];
         $statusText = HttpConstants::HTTP_STATUS_TEXTS[$status]
             ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
-        $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
-        $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
+        $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS];
+        $body = $response[HttpConstants::RESPONSE_KEY_BODY];
 
         $headers[HttpConstants::HEADER_CONTENT_LENGTH] = strlen($body);
 

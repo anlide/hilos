@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Pages\Communications\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Pages\Communications\DTO\HilosChannelSettingResetActionDTO;
 use Hilos\Pages\Communications\DTO\HilosChannelSettingUpdateActionDTO;
 use Hilos\Pages\Communications\DTO\HilosChannelTestActionDTO;
@@ -16,7 +17,8 @@ use PHPUnit\Framework\TestCase;
  *
  * Locks payload parsing for the three channel-config actions: FIELD_DATA-wrapped and
  * flat payloads both parse, channel/field are trimmed to strings, the set value passes
- * through untyped, and each DTO reports its own action name.
+ * through untyped, a payload naming no setting is refused, and each DTO reports its own
+ * action name.
  */
 final class ChannelActionDTOTest extends TestCase
 {
@@ -51,13 +53,21 @@ final class ChannelActionDTOTest extends TestCase
         ], $dto->toArray());
     }
 
-    public function testSetDefaultsMissingFieldsToEmptyAndNull(): void
+    public function testSetKeepsAnOmittedValueNull(): void
     {
-        $dto = HilosChannelSettingUpdateActionDTO::fromArray([]);
+        $dto = HilosChannelSettingUpdateActionDTO::fromArray([
+            HilosChannelSettingUpdateActionDTO::channel => 'email',
+            HilosChannelSettingUpdateActionDTO::field => 'smtp_host',
+        ]);
 
-        self::assertSame('', $dto->channel);
-        self::assertSame('', $dto->field);
         self::assertNull($dto->value);
+    }
+
+    public function testSetRefusesAPayloadThatNamesNoSetting(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        HilosChannelSettingUpdateActionDTO::fromArray([]);
     }
 
     public function testResetParsesAndReportsAction(): void

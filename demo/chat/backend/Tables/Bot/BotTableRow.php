@@ -89,7 +89,7 @@ final class BotTableRow extends AbstractTableRow
     {
         return new static(
             id: (int) ($data[self::id] ?? 0),
-            name: (string) ($data[self::name] ?? ''),
+            name: (string) $data[self::name],
             description: isset($data[self::description]) ? (string) $data[self::description] : null,
             style: isset($data[self::style]) ? (string) $data[self::style] : null,
             topics: isset($data[self::topics]) ? (string) $data[self::topics] : null,

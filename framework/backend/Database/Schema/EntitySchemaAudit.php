@@ -661,6 +661,7 @@ final class EntitySchemaAudit
      */
     private static function describeIndex(array $columns, bool $unique): string
     {
+        // external-boundary: the neutral element of the signature — a plain index is spelled without the word
         return ($unique ? 'unique' : '') . '(' . implode(',', $columns) . ')';
     }
 }

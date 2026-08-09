@@ -94,6 +94,7 @@ final class WebPushRequestFactory
         }
 
         $useTls = ($parts['scheme'] ?? 'https') !== 'http';
+        // external-boundary: the neutral element of the request target — an endpoint may carry no query
         $path = ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
 
         return [$parts['host'], $parts['port'] ?? ($useTls ? 443 : 80), $path === '' ? '/' : $path, $useTls];

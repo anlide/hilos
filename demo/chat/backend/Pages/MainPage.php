@@ -1310,7 +1310,7 @@ final class MainPage extends AbstractPage
         // it resolves to the asserted credential's owner (defense-in-depth — the
         // credential id stays authoritative). The username-first path (HIL-284)
         // sends no handle, so validate only when present.
-        if ($dto->userHandle !== '') {
+        if ($dto->userHandle !== null) {
             $userHandle = Base64Url::decode($dto->userHandle);
             if ($userHandle === null) {
                 throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);

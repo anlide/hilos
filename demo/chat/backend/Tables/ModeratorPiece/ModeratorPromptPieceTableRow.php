@@ -54,8 +54,8 @@ final class ModeratorPromptPieceTableRow extends AbstractTableRow
     {
         return new static(
             id: (int) ($data[self::id] ?? 0),
-            section: (string) ($data[self::section] ?? ''),
-            promptPiece: (string) ($data[self::promptPiece] ?? ''),
+            section: (string) $data[self::section],
+            promptPiece: (string) $data[self::promptPiece],
         );
     }
 }

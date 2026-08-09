@@ -89,6 +89,7 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
+        // external-boundary: a positional argument the operator may omit; the error below rejects it
         $id = $args[0] ?? '';
         if ($id === '') {
             fwrite(STDERR, "backup:restore-run requires a backup id as the first argument\n");
@@ -104,6 +105,7 @@ HELP;
             return ExitCode::ERROR;
         }
 
+        // external-boundary: an option the operator may omit; the error below rejects it
         $decisionRaw = (string)($options[BackupConstants::FIELD_DECISION] ?? '');
         $decision = RestoreEnvDecision::tryFrom($decisionRaw);
         if ($decision === null) {

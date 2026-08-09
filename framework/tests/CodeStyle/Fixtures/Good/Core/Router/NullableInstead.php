@@ -6,9 +6,9 @@ namespace Hilos\Tests\CodeStyle\Fixtures\Good\Core\Router;
 
 /**
  * Negative sample inside the checked zone: a missing value stays null, a check for
- * emptiness on an input is not the minting of one, and a ternary that renders an
- * optional fragment into a concatenation is the very case the rule leaves to
- * review rather than to the machine.
+ * emptiness on an input is not the minting of one, and an optional fragment is
+ * rendered by branching on the absence rather than by concatenating an empty
+ * piece — the machine judges the branch that hands back `''` wherever it sits.
  */
 final class NullableInstead
 {
@@ -26,6 +26,6 @@ final class NullableInstead
         }
 
         // A fallback of `?? ''` written in a comment is text too.
-        return [$agentType, $page . ($index !== null ? ':' . $index : '')];
+        return [$agentType, $index === null ? $page : $page . ':' . $index];
     }
 }

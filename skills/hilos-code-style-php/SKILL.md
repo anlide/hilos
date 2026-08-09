@@ -19,7 +19,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/framework-development.md` | changing framework-level APIs, facade globals, extension points, or framework subsystem exceptions — via `$hilos-framework-development` |
 | `docs/agents/code-style/phpdoc.md` | creating a method, changing a signature, visibility, parameters, return type, or thrown exceptions, overriding a method, or adding `@see` links |
 | `docs/agents/code-style/exceptions.md` | choosing an exception class, documenting `@throws`, handling validation or business errors |
-| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns `?? ''` as a "no value" marker |
+| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker |
 | `docs/agents/code-style/static-factories.md` | adding or changing `fromArray`, `fromRow`, `create`, or another named constructor |
 | `docs/agents/code-style/internal-backend-api.md` | changing backend contracts, DB actions, table actions, DTO/value-object boundaries, or typed collections |
 | `docs/agents/code-style/magic-values.md` | writing a bare number or string into production code |
@@ -50,7 +50,8 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   camelCase too; the `WIRE-KEY-CASE` guard fails `test:framework:unit` otherwise
   (`cross-layer-field-names.md`).
 - Do not return `bool` as a success flag from a method that performs work, and do
-  not write `?? ''` as a "no value" marker (`method-contracts.md`).
+  not mint a "no value" marker with `?? ''`, a ternary branch or a `match`
+  `default` arm — in a test suite either (`method-contracts.md`).
 - A factory typed `: static` or `@return static` returns `new static()`, never
   `new self()` (`static-factories.md`).
 - A surviving `@` carries `// warning-suppressed: <what is checked instead>` on

@@ -188,7 +188,7 @@ final class ChatAgent extends AbstractAgent
      */
     private function handleImpersonateStart(CommandRequestDTO $data): void
     {
-        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+        $sessionToken = (string)$data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN];
         $targetUserId = (int)($data->payload[ChatCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
 
         try {
@@ -220,7 +220,7 @@ final class ChatAgent extends AbstractAgent
      */
     private function handleImpersonateStop(CommandRequestDTO $data): void
     {
-        $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
+        $sessionToken = (string)$data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN];
 
         try {
             // Captured before the core clears the marker; the restored effective user.

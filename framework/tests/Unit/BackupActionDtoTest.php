@@ -8,6 +8,7 @@ use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
@@ -39,10 +40,16 @@ final class BackupActionDtoTest extends TestCase
         $this->assertSame('full', $dto->scope);
     }
 
-    public function testCreateTrimsAndDefaultsAMissingScopeToEmpty(): void
+    public function testCreateTrimsTheScope(): void
     {
         $this->assertSame('full', BackupCreateActionDTO::fromArray([BackupCreateActionDTO::scope => '  full  '])->scope);
-        $this->assertSame('', BackupCreateActionDTO::fromArray([])->scope);
+    }
+
+    public function testCreateRefusesAPayloadThatNamesNoScope(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        BackupCreateActionDTO::fromArray([]);
     }
 
     public function testDeleteRoundTripsTheBackupId(): void

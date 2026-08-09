@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * LinkOAuthStartActionDTO - DTO for the profile OAuth link-start action payload (HIL-401).
@@ -43,13 +44,12 @@ final class LinkOAuthStartActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static OAuth link-start DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $provider = $data['provider'] ?? null;
-
         return new static(
-            provider: is_string($provider) ? $provider : '',
+            provider: self::requireString($data, 'provider'),
         );
     }
 

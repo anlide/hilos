@@ -18,12 +18,12 @@ final readonly class ChatContextUpdateData
      *
      * @param ?string $topic Current topic, or null when unknown
      * @param float $topicConfidence Topic confidence in the 0..1 range
-     * @param string $summary Current chat summary
+     * @param ?string $summary Current chat summary, null when the model produced none
      */
     public function __construct(
         public ?string $topic,
         public float $topicConfidence,
-        public string $summary,
+        public ?string $summary,
     ) {
     }
 }

@@ -60,7 +60,7 @@ final class AdminUserTableRow extends AbstractTableRow
     {
         return new static(
             id: (int) ($data[self::id] ?? 0),
-            name: (string) ($data[self::name] ?? ''),
+            name: (string) $data[self::name],
             lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
             onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),
             presence: isset($data[self::presence]) ? (string) $data[self::presence] : null,

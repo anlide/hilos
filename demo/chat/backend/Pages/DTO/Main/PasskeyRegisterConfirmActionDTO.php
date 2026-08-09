@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * PasskeyRegisterConfirmActionDTO - DTO for submitting a WebAuthn registration (HIL-284).
@@ -49,24 +50,23 @@ final class PasskeyRegisterConfirmActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $signedChallenge = $data['signedChallenge'] ?? null;
-        $attestationObject = $data['attestationObject'] ?? null;
-        $clientDataJson = $data['clientDataJson'] ?? null;
-        $transports = $data['transports'] ?? null;
+        $reported = $data['transports'] ?? null;
+        $transports = [];
+        foreach (is_array($reported) ? $reported : [] as $transport) {
+            if (is_string($transport) && $transport !== '') {
+                $transports[] = $transport;
+            }
+        }
 
         return new static(
-            signedChallenge: is_string($signedChallenge) ? $signedChallenge : '',
-            attestationObject: is_string($attestationObject) ? $attestationObject : '',
-            clientDataJson: is_string($clientDataJson) ? $clientDataJson : '',
-            transports: is_array($transports)
-                ? array_values(array_filter(array_map(
-                    static fn(mixed $transport): string => is_string($transport) ? $transport : '',
-                    $transports,
-                ), static fn(string $transport): bool => $transport !== ''))
-                : [],
+            signedChallenge: self::requireString($data, 'signedChallenge'),
+            attestationObject: self::requireString($data, 'attestationObject'),
+            clientDataJson: self::requireString($data, 'clientDataJson'),
+            transports: $transports,
         );
     }
 

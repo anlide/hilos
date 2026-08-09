@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * MessageActionDTO - DTO for message action payload.
@@ -41,18 +42,16 @@ final class MessageActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Message DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $content = $data['content'] ?? null;
-
-        if ($content === null && isset($data['data']) && is_array($data['data'])) {
-            $content = $data['data']['message'] ?? null;
+        $legacy = $data['data'] ?? null;
+        if (($data['content'] ?? null) === null && is_array($legacy)) {
+            return new static(content: trim(self::requireString($legacy, 'message')));
         }
 
-        return new static(
-            content: is_string($content) ? trim($content) : '',
-        );
+        return new static(content: trim(self::requireString($data, 'content')));
     }
 
     /**

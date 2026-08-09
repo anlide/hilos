@@ -122,6 +122,7 @@ final class GenericOAuthProvider implements HttpOAuthProvider
         }
 
         $emailRaw = $decoded[$this->config->emailKey] ?? null;
+        // external-boundary: the provider's userinfo JSON may carry no address at all
         $email = is_string($emailRaw) ? strtolower($emailRaw) : '';
 
         return new OAuthUserInfo((string)$subjectRaw, $email);

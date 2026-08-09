@@ -125,7 +125,7 @@ final class HilosConnectionTestFixture extends HilosConnection
     {
         $instance = new static();
         $instance->hydrateBase($row);
-        $instance->label = (string)($row[self::label] ?? '');
+        $instance->label = (string)$row[self::label];
         $instance->markRtSyncBaseline();
 
         return $instance;

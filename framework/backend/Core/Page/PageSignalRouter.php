@@ -214,6 +214,12 @@ class PageSignalRouter
      * failure — and a reply it returns is undeliverable, so it is dropped with a
      * warning.
      *
+     * A payload the DTO refuses is one of those failures, which is why the DTO
+     * is built inside the try: the client is owed the same fail-ack it gets for
+     * an action that threw. The one thing such a failure cannot do is reach
+     * onActionException(), since the DTO that hook is handed is the very thing
+     * that could not be built; an untracked action then leaves only the log line.
+     *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      */
@@ -231,10 +237,11 @@ class PageSignalRouter
             return;
         }
 
-        // Create typed DTO via PageFactory
-        $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
+        $dto = null;
 
         try {
+            // Create typed DTO via PageFactory
+            $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
             $this->assertPageAccessLevel($pageInstance, $data->acceptKey);
             $this->assertActionAuthorized($pageInstance, $data->action, $data->acceptKey);
             $pageInstance->beginActionDispatch();
@@ -281,7 +288,7 @@ class PageSignalRouter
                     $errorCode,
                     $retryAfter,
                 );
-            } else {
+            } elseif ($dto !== null) {
                 $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
             }
         }
@@ -521,14 +528,19 @@ class PageSignalRouter
         }
 
         $action = $actionErrorData->getActionErrorName();
-        $pageInstance->onActionException(
-            $acceptKey,
-            $action,
-            $this->pageFactory->createActionPayloadDTO(
+
+        try {
+            $dto = $this->pageFactory->createActionPayloadDTO(
                 $action,
                 $actionErrorData->getActionErrorPayload(),
-            ),
-            $e,
-        );
+            );
+        } catch (ValidationException) {
+            // The payload the signal carried back no longer parses, so the hook
+            // has no DTO to be handed. The failure the client is waiting for is
+            // still the original one, not this one.
+            throw $e;
+        }
+
+        $pageInstance->onActionException($acceptKey, $action, $dto, $e);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\SimpleTodo\Socket\WebSocket\DTO;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -55,20 +56,25 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * Create DTO from wire payload.
      *
+     * The payload is the one `toArray()` writes, so both keys of the current-user
+     * fragment are always there. A payload without them names no user at all, and
+     * an anonymous handshake is not the same thing as a user with no name.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no current-user fragment
      */
     public static function fromArray(array $data): static
     {
         $entities = $data[self::entities] ?? null;
         $currentUser = is_array($entities) ? ($entities[self::currentUser] ?? null) : null;
-        if (!is_array($currentUser)) {
-            $currentUser = [];
+        if (!is_array($currentUser) || !isset($currentUser[self::id], $currentUser[self::name])) {
+            throw new InvalidFormatException('Handshake response payload carries no current-user fragment.');
         }
 
         return new static(
-            selfId: (int)($currentUser[self::id] ?? 0),
-            selfName: (string)($currentUser[self::name] ?? ''),
+            selfId: (int)$currentUser[self::id],
+            selfName: (string)$currentUser[self::name],
         );
     }
 }

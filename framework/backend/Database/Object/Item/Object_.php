@@ -160,15 +160,21 @@ abstract class Object_
     public function delete(): void
     {
         $collectionKey = static::getCollectionKey();
-        $idString = $collectionKey !== '' ? $this->getIdString() : '';
+        if ($collectionKey === '') {
+            $this->entity->delete();
+
+            return;
+        }
+
+        $idString = $this->getIdString();
 
         // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
         // available from the object collection after the physical delete.
-        $row = $collectionKey !== '' && $idString !== '' ? $this->toArray() : [];
+        $row = $idString !== '' ? $this->toArray() : [];
 
         $this->entity->delete();
 
-        if ($collectionKey !== '' && $idString !== '') {
+        if ($idString !== '') {
             $this->queueDbSyncDeleted($collectionKey, $idString, $row);
         }
     }

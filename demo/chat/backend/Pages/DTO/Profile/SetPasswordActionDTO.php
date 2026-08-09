@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * SetPasswordActionDTO - DTO for the profile set-password action payload (HIL-402).
@@ -47,12 +48,13 @@ final class SetPasswordActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            currentPassword: is_string($data[self::CURRENT_PASSWORD] ?? null) ? $data[self::CURRENT_PASSWORD] : '',
-            newPassword: is_string($data[self::NEW_PASSWORD] ?? null) ? $data[self::NEW_PASSWORD] : '',
+            currentPassword: self::requireString($data, self::CURRENT_PASSWORD),
+            newPassword: self::requireString($data, self::NEW_PASSWORD),
         );
     }
 

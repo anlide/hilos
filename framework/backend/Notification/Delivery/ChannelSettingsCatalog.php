@@ -79,6 +79,7 @@ final class ChannelSettingsCatalog implements CatalogProviderInterface
             SettingsCatalogConstants::TYPE_INTEGER => 0,
             SettingsCatalogConstants::TYPE_FLOAT => 0.0,
             SettingsCatalogConstants::TYPE_BOOLEAN => false,
+            // external-boundary: the empty default of a string setting, as 0 is of an integer one
             default => '',
         };
     }

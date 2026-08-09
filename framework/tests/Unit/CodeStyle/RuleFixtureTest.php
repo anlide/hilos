@@ -23,6 +23,18 @@ use PHPUnit\Framework\TestCase;
  */
 final class RuleFixtureTest extends TestCase
 {
+    /**
+     * Segments the fixture tree repeats from the real zone. Two of them are enough
+     * to prove a zone is honored — what the remaining segments would add is more
+     * paths, not another decision.
+     *
+     * @var array<int, string>
+     */
+    private const array ZONE_SEGMENTS = ['Core/Router', 'Tables'];
+
+    /** Fixture root judged with no zone at all, kept out of the scan above. */
+    private const string WHOLE_ROOT_FIXTURES = 'WholeRoot';
+
     public function testRulesReportExactlyTheSeededViolations(): void
     {
         $this->assertSame(
@@ -35,6 +47,18 @@ final class RuleFixtureTest extends TestCase
                     . '(see docs/agents/code-style/method-contracts.md)',
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/EmptySentinel.php:26 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/MatchDefault.php:23 — match falls back to \'\' '
+                    . 'where the value is missing; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:22 — a ternary branch hands back '
+                    . '\'\' where the value is missing; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:23 — a ternary branch hands back '
+                    . '\'\' where the value is missing; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/TernaryBranch.php:24 — a ternary branch hands back '
+                    . '\'\' where the value is missing; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:20 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
@@ -97,7 +121,10 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
-                'EMPTY-STRING-SENTINEL Bad/Tables/MarkerWithoutReason.php:21 — the `// external-boundary:` '
+                'EMPTY-STRING-SENTINEL Bad/Tables/MarkerWithoutReason.php:22 — the `// external-boundary:` '
+                    . 'marker above the fallback names no reason '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Tables/MarkerWithoutReason.php:32 — the `// external-boundary:` '
                     . 'marker above the fallback names no reason '
                     . '(see docs/agents/code-style/method-contracts.md)',
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:15 — field key \'created_at\' is not camelCase; '
@@ -115,6 +142,9 @@ final class RuleFixtureTest extends TestCase
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:21 — field key \'default_kind\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'EMPTY-STRING-SENTINEL WholeRoot/Playground/JudgedAnyway.php:22 — ?? \'\' turns a missing '
+                    . 'value into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
             ],
             $this->reportFixtureViolations(),
             'Fixture report drifted: a rule either stopped catching a seeded case or started '
@@ -124,12 +154,33 @@ final class RuleFixtureTest extends TestCase
 
     /**
      * Scans the fixture tree with the same scanner and rules the guard test uses.
+     * The whole-root mode of the empty-string rule needs a root where nothing is
+     * outside a zone, so it gets a fixture root of its own — judged separately and
+     * reported under its own prefix, the way the guard test names its roots.
      *
      * @return array<int, string> Reported lines, ordered by file path and then by occurrence
      */
     private function reportFixtureViolations(): array
     {
-        $scanner = new SourceScanner(dirname(__DIR__, 2) . '/CodeStyle/Fixtures');
+        $fixtures = dirname(__DIR__, 2) . '/CodeStyle/Fixtures';
+        $lines = $this->reportRoot(new SourceScanner($fixtures, [self::WHOLE_ROOT_FIXTURES]), $this->rules());
+        $wholeRoot = $this->reportRoot(
+            new SourceScanner($fixtures . '/' . self::WHOLE_ROOT_FIXTURES),
+            [EmptyStringSentinelRule::forWholeRoot()],
+            self::WHOLE_ROOT_FIXTURES,
+        );
+
+        return array_merge($lines, $wholeRoot);
+    }
+
+    /**
+     * @param SourceScanner $scanner Scanner over one fixture root
+     * @param array<int, CodeStyleRule> $rules Rules to run over that root, in report order
+     * @param string|null $prefix Path put back in front of every reported file, when the root is not the top one
+     * @return array<int, string> Reported lines, ordered by file path and then by occurrence
+     */
+    private function reportRoot(SourceScanner $scanner, array $rules, ?string $prefix = null): array
+    {
         $sources = [];
         foreach ($scanner->files() as $file) {
             $sources[$scanner->relativePath($file)] = (string)file_get_contents($file->getPathname());
@@ -139,9 +190,10 @@ final class RuleFixtureTest extends TestCase
         $lines = [];
         foreach ($sources as $relativePath => $contents) {
             $tokens = token_get_all($contents);
-            foreach ($this->rules() as $rule) {
+            foreach ($rules as $rule) {
                 foreach ($rule->check($relativePath, $tokens) as $violation) {
-                    $lines[] = $violation->describe($rule->doc());
+                    $reported = $prefix === null ? $violation : $violation->withPathPrefix($prefix);
+                    $lines[] = $reported->describe($rule->doc());
                 }
             }
         }
@@ -159,7 +211,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new MagicRepeatRule(),
-            new EmptyStringSentinelRule(),
+            EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
             new WireKeyCaseRule(),
         ];
     }

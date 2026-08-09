@@ -15,6 +15,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\ViewportTable;
@@ -388,11 +389,12 @@ final class SourceFanoutWindowUnitTable extends TableDefinition implements Viewp
      *
      * @param AbstractTableRow $row Viewport row
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
      */
     public function browserRow(AbstractTableRow $row): array
     {
         return [
-            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [
                 self::SLOT => $row->toArray(),
             ],
@@ -452,8 +454,8 @@ final class SourceFanoutWindowUnitRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         return new static(
-            (string) ($data['key'] ?? ''),
-            (string) ($data['label'] ?? ''),
+            (string) $data['key'],
+            (string) $data['label'],
         );
     }
 }

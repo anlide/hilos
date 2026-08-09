@@ -20,6 +20,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -92,11 +93,12 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
      *
      * @param AbstractTableRow $row Prompt piece row from this table's window or mutation
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
      */
     public function browserRow(AbstractTableRow $row): array
     {
         return [
-            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [
                 ChatDbContext::moderatorPromptPieces => $row->toArray(),
             ],

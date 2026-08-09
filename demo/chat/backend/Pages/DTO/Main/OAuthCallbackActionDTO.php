@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * OAuthCallbackActionDTO - DTO for the OAuth login callback action payload.
@@ -46,17 +47,14 @@ final class OAuthCallbackActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static OAuth callback DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $provider = $data['provider'] ?? null;
-        $code = $data['code'] ?? null;
-        $state = $data['state'] ?? null;
-
         return new static(
-            provider: is_string($provider) ? $provider : '',
-            code: is_string($code) ? $code : '',
-            state: is_string($state) ? $state : '',
+            provider: self::requireString($data, 'provider'),
+            code: self::requireString($data, 'code'),
+            state: self::requireString($data, 'state'),
         );
     }
 

@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Pages\DTO\Profile\ConfirmSmsAddCodeActionDTO;
 use Demo\Chat\Pages\DTO\Profile\RequestSmsAddCodeActionDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -16,13 +17,31 @@ use PHPUnit\Framework\TestCase;
 final class ProfileAddSmsActionDTOTest extends TestCase
 {
     /**
-     * The request DTO trims the phone and treats a non-string as empty.
+     * The request DTO trims the phone it was sent.
      */
-    public function testRequestFromArrayTrimsPhoneAndCoercesNonString(): void
+    public function testRequestFromArrayTrimsPhone(): void
     {
         $this->assertSame('+15551234', RequestSmsAddCodeActionDTO::fromArray(['phone' => '  +15551234  '])->phone);
-        $this->assertSame('', RequestSmsAddCodeActionDTO::fromArray(['phone' => 123])->phone);
-        $this->assertSame('', RequestSmsAddCodeActionDTO::fromArray([])->phone);
+    }
+
+    /**
+     * A payload with no phone at all is refused, not read as a blank one.
+     */
+    public function testRequestFromArrayRefusesAPayloadWithoutAPhone(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        RequestSmsAddCodeActionDTO::fromArray([]);
+    }
+
+    /**
+     * A phone that is not a string is refused the same way an absent one is.
+     */
+    public function testRequestFromArrayRefusesANonStringPhone(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        RequestSmsAddCodeActionDTO::fromArray(['phone' => 123]);
     }
 
     /**
@@ -43,17 +62,23 @@ final class ProfileAddSmsActionDTOTest extends TestCase
     }
 
     /**
-     * The confirm DTO trims both fields and coerces non-strings to empty.
+     * The confirm DTO trims both fields.
      */
     public function testConfirmFromArrayTrimsPhoneAndCode(): void
     {
         $dto = ConfirmSmsAddCodeActionDTO::fromArray(['phone' => '  +15551234  ', 'code' => '  123456  ']);
         $this->assertSame('+15551234', $dto->phone);
         $this->assertSame('123456', $dto->code);
+    }
 
-        $coerced = ConfirmSmsAddCodeActionDTO::fromArray(['phone' => null, 'code' => 42]);
-        $this->assertSame('', $coerced->phone);
-        $this->assertSame('', $coerced->code);
+    /**
+     * A confirm payload whose fields are not strings is refused.
+     */
+    public function testConfirmFromArrayRefusesNonStringFields(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        ConfirmSmsAddCodeActionDTO::fromArray(['phone' => null, 'code' => 42]);
     }
 
     /**

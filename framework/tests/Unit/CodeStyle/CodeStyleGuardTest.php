@@ -45,6 +45,52 @@ final class CodeStyleGuardTest extends TestCase
      */
     private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID, MagicRepeatRule::ID];
 
+    /**
+     * The root the empty-string rule judges by a list of segments rather than whole.
+     * A framework subsystem is turned on one phase at a time, so the zone below is
+     * the part of it already cleaned; every other root is judged entire.
+     */
+    private const string PHASED_EMPTY_STRING_ROOT = 'framework/backend';
+
+    /**
+     * Segments of {@see self::PHASED_EMPTY_STRING_ROOT} the empty-string rule judges,
+     * listed here for the same reason {@see self::BACKEND_ONLY_RULES} is: the rule is
+     * handed a path relative to its root and never learns which root that is. The
+     * list grows one leaf at a time — turned on at once, the baseline of the root
+     * would become a list of exceptions rather than a list of owed work.
+     *
+     * @var array<int, string>
+     */
+    private const array PHASED_EMPTY_STRING_ZONE = [
+        'Core/Router',
+        'Core/Page',
+        'Core/Sync',
+        'Core/Agent/DTO',
+        'Core/Daemon',
+        'Core/Table/DTO',
+        'Core/Source',
+        'Socket/WebSocket/DTO',
+        'Socket/Worker/DTO',
+        'Socket/Command/DTO',
+        'Cluster/Peer/DTO',
+        'API',
+        'Auth',
+        'Backup',
+        'Database',
+        'LLM',
+        'Log',
+        'Mail',
+        'Notification',
+        'Pages',
+        'ProtectedMode',
+        'Push',
+        'Runtime',
+        'Sms',
+        'Tables',
+        'Utils',
+        'Hilos.php',
+    ];
+
 
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
     {
@@ -109,16 +155,23 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
+     * A demo and a test suite have no subsystem outside the mechanism to phase, and
+     * a new demo root arrives through the glob with no activation step — so only the
+     * framework backend is judged by a segment list, and every other root entire.
+     *
+     * @param string $root Scanned root, relative to the repository root
      * @return array<int, CodeStyleRule> Rules under the guard, in report order
      */
-    private function rules(): array
+    private function rules(string $root): array
     {
         return [
             new PhpDocFqnRule(),
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new MagicRepeatRule(),
-            new EmptyStringSentinelRule(),
+            $root === self::PHASED_EMPTY_STRING_ROOT
+                ? EmptyStringSentinelRule::forZone(self::PHASED_EMPTY_STRING_ZONE)
+                : EmptyStringSentinelRule::forWholeRoot(),
             new WireKeyCaseRule(),
         ];
     }
@@ -130,11 +183,11 @@ final class CodeStyleGuardTest extends TestCase
     private function rulesFor(string $root): array
     {
         if (str_ends_with($root, '/backend')) {
-            return $this->rules();
+            return $this->rules($root);
         }
 
         return array_values(array_filter(
-            $this->rules(),
+            $this->rules($root),
             static fn(CodeStyleRule $rule): bool => !in_array($rule->id(), self::BACKEND_ONLY_RULES, true),
         ));
     }
@@ -146,6 +199,7 @@ final class CodeStyleGuardTest extends TestCase
     {
         $path = $this->repositoryRoot() . '/' . Baseline::PATH;
 
+        // external-boundary: no baseline file yet is a baseline of no entries, which empty text parses to
         return is_file($path) ? (string)file_get_contents($path) : '';
     }
 

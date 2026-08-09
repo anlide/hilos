@@ -91,6 +91,7 @@ final class PasskeyCredentialsRepresentedAccessorTest extends TestCase
             return $type === null ? null : (string)$type;
         }
 
+        // external-boundary: the neutral element of the type spelling — a non-nullable type carries no mark
         return ($type->allowsNull() ? '?' : '') . $type->getName();
     }
 }

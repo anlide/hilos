@@ -13,6 +13,7 @@ use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
@@ -119,14 +120,17 @@ final class UserPage extends AbstractHilosUserPage
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserUpdateActionDTO $dto Update action payload
+     * @throws ItemNotFoundForUpdateException When the target user is missing
      * @throws HilosException When the rename, audit write, or success ack fails
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        $dbUser = Hilos::$db->users[$dto->id];
-        $oldName = $dbUser?->name ?? '';
+        $dbUser = Hilos::$db->users[$dto->id]
+            ?? throw new ItemNotFoundForUpdateException("User #{$dto->id} not found");
+
+        $oldName = $dbUser->name;
         Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
-        $newName = $dbUser?->name ?? $oldName;
+        $newName = $dbUser->name;
 
         Hilos::$db->userRenames->actions->add($dto->id, $oldName, $newName);
 

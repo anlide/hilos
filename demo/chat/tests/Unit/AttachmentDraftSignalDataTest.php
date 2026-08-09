@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,8 +26,16 @@ final class AttachmentDraftSignalDataTest extends TestCase
         $this->assertTrue($dto->isValid());
         $this->assertSame('draft-1', $dto->draftId);
         $this->assertSame(['draftId' => 'draft-1'], $dto->toArray());
+    }
 
-        $this->assertFalse(AttachmentDraftDeleteActionDTO::fromArray(['draftId' => 1])->isValid());
+    /**
+     * A draft id that is not a string names no draft, so the payload is refused.
+     */
+    public function testAttachmentDraftDeleteActionRefusesANonStringDraftId(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        AttachmentDraftDeleteActionDTO::fromArray(['draftId' => 1]);
     }
 
     /**

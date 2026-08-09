@@ -201,31 +201,31 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $params = [];
 
         $channel = $this->filterString($query, self::FILTER_CHANNEL);
-        if ($channel !== '') {
+        if ($channel !== null) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::channel . ' = ?';
             $params[] = $channel;
         }
 
         $status = $this->filterString($query, self::FILTER_STATUS);
-        if ($status !== '' && DeliveryStatus::isValid($status)) {
+        if ($status !== null && DeliveryStatus::isValid($status)) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::status . ' = ?';
             $params[] = $status;
         }
 
         $from = $this->filterString($query, self::FILTER_FROM);
-        if ($from !== '') {
+        if ($from !== null) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::created_at . ' >= ?';
             $params[] = $from;
         }
 
         $to = $this->filterString($query, self::FILTER_TO);
-        if ($to !== '') {
+        if ($to !== null) {
             $conditions[] = 'nd.' . EntityNotificationDelivery::created_at . ' <= ?';
             $params[] = $this->endOfDayBound($to);
         }
 
-        $search = $query->search === null ? '' : trim($query->search);
-        if ($search !== '') {
+        $search = $query->search !== null ? trim($query->search) : null;
+        if ($search !== null && $search !== '') {
             $like = '%' . $search . '%';
             $searchConditions = [
                 'n.' . EntityNotification::type . ' LIKE ?',
@@ -292,13 +292,18 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      *
      * @param TableQueryDTO $query Window query
      * @param string $key Filter key
-     * @return string Trimmed string value, or an empty string when absent/non-scalar
+     * @return ?string Trimmed string value, or null when the window filters on nothing here
      */
-    private function filterString(TableQueryDTO $query, string $key): string
+    private function filterString(TableQueryDTO $query, string $key): ?string
     {
         $value = $query->filter[$key] ?? null;
+        if (!is_scalar($value)) {
+            return null;
+        }
 
-        return is_scalar($value) ? trim((string) $value) : '';
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     /**

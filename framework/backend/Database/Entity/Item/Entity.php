@@ -332,6 +332,7 @@ abstract class Entity
             $orderByParts[] = "`{$column}` {$direction}";
         }
 
+        // external-boundary: the neutral element of the SQL being built — no ordering adds no clause
         return !empty($orderByParts) ? " ORDER BY " . implode(', ', $orderByParts) : '';
     }
 

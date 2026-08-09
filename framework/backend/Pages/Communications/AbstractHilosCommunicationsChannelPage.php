@@ -278,7 +278,9 @@ abstract class AbstractHilosCommunicationsChannelPage extends AbstractHilosPage
                 ? (float) $value
                 : throw new TableActionException('Value must be a number'),
             SettingsCatalogConstants::TYPE_BOOLEAN => (bool) $value,
-            default => is_scalar($value) ? (string) $value : '',
+            default => is_scalar($value)
+                ? (string) $value
+                : throw new TableActionException('Value must be text'),
         };
     }
 

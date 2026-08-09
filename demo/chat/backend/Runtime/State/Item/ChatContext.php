@@ -26,8 +26,8 @@ final class ChatContext extends RtState
     /** Topic confidence 0..1. */
     public float $topicConfidence = 0.0;
 
-    /** LLM-generated summary of recent messages. */
-    public string $summary = '';
+    /** LLM-generated summary of recent messages (null until one is produced). */
+    public ?string $summary = null;
 
     /**
      * Create empty chat context instance.
@@ -54,7 +54,8 @@ final class ChatContext extends RtState
         $topicVal = $row[self::topic] ?? null;
         $instance->topic = $topicVal !== null && $topicVal !== '' ? (string)$topicVal : null;
         $instance->topicConfidence = (float)($row[self::topicConfidence] ?? 0.0);
-        $instance->summary = (string)($row[self::summary] ?? '');
+        $summaryVal = $row[self::summary] ?? null;
+        $instance->summary = $summaryVal !== null && $summaryVal !== '' ? (string)$summaryVal : null;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -85,7 +86,8 @@ final class ChatContext extends RtState
             $this->topicConfidence = (float)$diff[self::topicConfidence];
         }
         if (array_key_exists(self::summary, $diff)) {
-            $this->summary = (string)$diff[self::summary];
+            $v = $diff[self::summary];
+            $this->summary = $v !== null && $v !== '' ? (string)$v : null;
         }
     }
 

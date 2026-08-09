@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RenameActionDTO - DTO for rename action payload.
@@ -39,11 +40,12 @@ final class RenameActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            newName: is_string($data['newName'] ?? null) ? trim($data['newName']) : '',
+            newName: trim(self::requireString($data, 'newName')),
         );
     }
 

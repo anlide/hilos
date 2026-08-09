@@ -131,6 +131,7 @@ final class ChatAttachmentDownloadHandler
             return '';
         }
 
+        // external-boundary: a browser is free to send no session cookie; the caller answers 401 for it
         return HttpHeaderHelper::parseCookies($headers)[CookieNames::SESSION_TOKEN] ?? '';
     }
 

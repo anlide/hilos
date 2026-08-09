@@ -53,6 +53,15 @@ new inbound path there rather than repeating the class-string check and the
 (`ActionPayloadDTO`, with `UnknownActionPayloadDTO` as its passthrough) and does
 not go through the hydrator.
 
+An action DTO reads the fields its action is defined by with
+`ActionPayloadDTO::requireString()`, which throws `InvalidFormatException` when the
+key is absent or holds a non-string; an empty string passes through, because a
+field the user left blank is real input and the handler validates it itself.
+`PageSignalRouter::dispatchAction()` builds the DTO inside its action try, so the
+refusal becomes the tracked action's fail-ack. The one place it cannot reach is
+`onActionException()` — that hook is handed the DTO that could not be built — so
+an untracked action's refused payload leaves only the log line.
+
 The parsers take the payload's data with `SignalDataInterface::toArray()`, which
 the interface guarantees. Do not gate that call behind `instanceof BaseDTO`:
 `BaseDTO` only adds `toJson()`/`fromJson()`, so the check silently replaced the

@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Client action payload for deleting one uploaded attachment draft.
@@ -35,12 +36,11 @@ final class AttachmentDraftDeleteActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $draftId = $data['draftId'] ?? '';
-
-        return new static(is_string($draftId) ? $draftId : '');
+        return new static(self::requireString($data, 'draftId'));
     }
 
     /**

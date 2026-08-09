@@ -199,7 +199,7 @@ final class AccessGuardTestUserState extends RtState
     public static function fromRow(array $row): static
     {
         return new static(
-            (string) ($row['id'] ?? ''),
+            (string) $row['id'],
             (bool) ($row['admin'] ?? false),
         );
     }

@@ -59,6 +59,14 @@ if ($agentType === '') {
 }
 ```
 
+The operator does not matter — a ternary branch and a `match` `default` arm mint
+the same label, and are the same violation:
+
+```php
+$reason = isset($payload['reason']) ? $payload['reason'] : '';   // wrong, the same way
+$group = match ($signal) { 'chat_message' => 'chat', default => '' };   // wrong, the same way
+```
+
 The cure is the type, not a constant and not `empty()`:
 
 - **Optional field** — the one whose emptiness means "take the default": make it
@@ -92,6 +100,27 @@ Samples of the convention already in the tree: `Cluster/Peer/DTO/**` (an empty
 required field raises `PeerTransportException`, an optional one is normalized
 `'' -> null`) and `Socket/Client/WebSocketClient::onFrame()` (an empty frame field
 raises `InvalidFrameException`).
+
+Action payloads share one spelling of the required-field cure:
+`ActionPayloadDTO::requireString()` refuses a key that is absent or holds a
+non-string, and `PageSignalRouter::dispatchAction()` builds the DTO inside the try
+that turns an action failure into the client's fail-ack — so a broken payload is
+answered like any other failed action. An empty string passes the check on
+purpose: a field the user left blank is real input, and the handler answers it
+with its own validation message. See
+[signals/dto-convention.md](../signals/dto-convention.md).
+
+### Test code is judged by the same rule
+
+A suite is allowed things production is not, but this is not one of them. The rule
+reads the **minting** of the value and never the data a test writes down, so a
+fixture array that carries an empty string on purpose — a deliberately incomplete
+payload, a binary vector whose tail is empty — is invisible to it and always was.
+What it does see in a suite is a test double of a production hydrator, and that
+double has to repeat the cure of its original: a `getRowKey()` that falls back to
+`''` collapses two rows of a window into one in the double exactly as it does in
+the real table. Left alone, such a double preserves in the suite the very defect
+the production code was cleaned of, and offers it back for copying.
 
 ### Naming a legal empty string in place: `// external-boundary:`
 

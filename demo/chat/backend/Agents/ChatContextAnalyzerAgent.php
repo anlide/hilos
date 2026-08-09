@@ -116,11 +116,11 @@ final class ChatContextAnalyzerAgent extends AbstractLlmChatAgent
     private function handleDbSyncChange(string $collectionKey, array $row): void
     {
         if ($collectionKey === ChatDbContext::events) {
-            $eventType = $row[ObjectEvent::type] ?? '';
+            $eventType = $row[ObjectEvent::type] ?? null;
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
                 $this->chatClient->reset();
-                Hilos::$rt->chatContext->actions->update(new ChatContextUpdateData(null, 0.0, ''));
+                Hilos::$rt->chatContext->actions->update(new ChatContextUpdateData(null, 0.0, null));
             } elseif ($eventType === ChatEventType::MESSAGE_SENT->value) {
                 $this->pendingSummarize = true;
             }
@@ -242,7 +242,8 @@ PROMPT;
         $confidence = isset($decoded[ChatContextUpdateData::topicConfidence])
             ? (float)$decoded[ChatContextUpdateData::topicConfidence]
             : 0.0;
-        $summary = isset($decoded[ChatContextUpdateData::summary]) ? (string)$decoded[ChatContextUpdateData::summary] : '';
+        $summaryRaw = $decoded[ChatContextUpdateData::summary] ?? null;
+        $summary = $summaryRaw !== null && $summaryRaw !== '' ? (string)$summaryRaw : null;
 
         return new ChatContextUpdateData(
             topic: $topic,

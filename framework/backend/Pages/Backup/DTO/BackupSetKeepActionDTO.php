@@ -6,6 +6,7 @@ namespace Hilos\Pages\Backup\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -42,6 +43,7 @@ final class BackupSetKeepActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
@@ -51,7 +53,7 @@ final class BackupSetKeepActionDTO extends ActionPayloadDTO
         }
 
         return new static(
-            backupId: is_string($inner[self::backupId] ?? null) ? trim($inner[self::backupId]) : '',
+            backupId: trim(self::requireString($inner, self::backupId)),
             keep: (bool)($inner[self::keep] ?? false),
         );
     }

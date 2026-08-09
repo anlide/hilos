@@ -685,8 +685,10 @@ final class ChatTopologyRegistryTest extends TestCase
      */
     private function expectedSignalName(array $browserConfig): string
     {
+        // external-boundary: a page declaration need not name a SIGNAL, and the assert mirrors that
         $signalName = $browserConfig[BrowserConfigKey::SIGNAL] ?? '';
 
+        // external-boundary: same declaration, same mirror — a non-string SIGNAL is no name either
         return is_string($signalName) ? $signalName : '';
     }
 

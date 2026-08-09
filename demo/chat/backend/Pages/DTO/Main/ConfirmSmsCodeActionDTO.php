@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ConfirmSmsCodeActionDTO - DTO for submitting an SMS one-time login code (HIL-280).
@@ -43,15 +44,13 @@ final class ConfirmSmsCodeActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $phone = $data['phone'] ?? null;
-        $code = $data['code'] ?? null;
-
         return new static(
-            phone: is_string($phone) ? trim($phone) : '',
-            code: is_string($code) ? trim($code) : '',
+            phone: trim(self::requireString($data, 'phone')),
+            code: trim(self::requireString($data, 'code')),
         );
     }
 

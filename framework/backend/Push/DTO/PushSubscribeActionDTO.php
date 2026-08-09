@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Push\DTO;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Push\PushSubscriptionAction;
 
@@ -81,6 +82,7 @@ final class PushSubscribeActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
@@ -92,12 +94,9 @@ final class PushSubscribeActionDTO extends ActionPayloadDTO
         $userAgent = $inner[self::userAgent] ?? null;
 
         return new static(
-            // external-boundary: the action payload comes from the browser and isValid() rejects an empty endpoint
-            endpoint: (string)($inner[self::endpoint] ?? ''),
-            // external-boundary: the action payload comes from the browser and isValid() rejects an empty p256dh
-            p256dh: (string)($inner[self::p256dh] ?? ''),
-            // external-boundary: the action payload comes from the browser and isValid() rejects an empty auth
-            auth: (string)($inner[self::auth] ?? ''),
+            endpoint: self::requireString($inner, self::endpoint),
+            p256dh: self::requireString($inner, self::p256dh),
+            auth: self::requireString($inner, self::auth),
             userAgent: $userAgent === null ? null : (string)$userAgent,
         );
     }

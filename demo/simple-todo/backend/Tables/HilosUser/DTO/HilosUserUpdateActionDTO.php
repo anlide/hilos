@@ -7,6 +7,7 @@ namespace Demo\SimpleTodo\Tables\HilosUser\DTO;
 use Demo\SimpleTodo\Database\Object\Item\User as ObjectUser;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -30,15 +31,20 @@ final class HilosUserUpdateActionDTO extends ActionPayloadDTO
 
     /**
      * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+        if (!is_array($inner)) {
+            $inner = [];
+        }
+
+        if (isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
-        $name = isset($inner[ObjectUser::name]) && is_string($inner[ObjectUser::name]) ? trim($inner[ObjectUser::name]) : '';
+        $name = trim(self::requireString($inner, ObjectUser::name));
 
         return new static(
             id: (int) ($inner[ObjectUser::id] ?? 0),

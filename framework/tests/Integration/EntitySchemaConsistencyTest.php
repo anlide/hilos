@@ -215,6 +215,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
      */
     private static function stubPath(string $table, bool $down): string
     {
+        // external-boundary: the neutral element of the name being built — the up file carries no suffix
         $suffix = $down ? '_down' : '';
         return dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
     }

@@ -19,17 +19,19 @@ final class OutboundModerationBrowserPayload
      */
     public static function forConnection(Connection $connection): ?array
     {
+        $text = $connection->outboundModerationMessage;
         if (
             $connection->outboundModerationPhase
             === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE
+            || $text === null
         ) {
             return null;
         }
 
         return [
             'phase' => $connection->outboundModerationPhase,
-            'text' => $connection->outboundModerationMessage,
-            'reason' => $connection->outboundModerationReason !== '' ? $connection->outboundModerationReason : null,
+            'text' => $text,
+            'reason' => $connection->outboundModerationReason,
             'updatedAt' => $connection->outboundModerationUpdatedAt,
         ];
     }

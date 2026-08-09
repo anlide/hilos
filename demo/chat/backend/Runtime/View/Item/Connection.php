@@ -28,21 +28,21 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read ?int $userId Authenticated user id, or null while anonymous
  * @property-read int $connectedAt Unix timestamp when connected
  * @property-read string $outboundModerationPhase Current moderation phase
- * @property-read string $outboundModerationMessage Submitted message text
- * @property-read string $outboundModerationReason Rejection or unavailable reason
+ * @property-read ?string $outboundModerationMessage Submitted message text, or null when none is
+ * @property-read ?string $outboundModerationReason Rejection or unavailable reason, or null
  * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
  * @property-read string $renameModerationPhase Current rename moderation phase
- * @property-read string $renameModerationName Requested display name
- * @property-read string $renameModerationReason Rename rejection or unavailable reason
+ * @property-read ?string $renameModerationName Requested display name, or null when none is
+ * @property-read ?string $renameModerationReason Rename rejection or unavailable reason, or null
  * @property-read int $renameModerationUpdatedAt Last rename moderation update unix time
  * @property-read ?string $fileSessionUploadId Active binary upload id or null
  * @property-read int $fileSessionDeclaredSize Declared total bytes for current upload session
  * @property-read int $fileSessionReceivedBytes Bytes received for current upload session
- * @property-read string $fileSessionQuarantineBasename Quarantine basename (.part)
- * @property-read string $fileSessionOriginalFilename Original filename for current session
- * @property-read string $fileSessionMimeType MIME type for current session
- * @property-read string $fileSessionClientUploadId Client upload correlation id
- * @property-read string $fileSessionNormalizedFilename Normalized basename for dedup
+ * @property-read ?string $fileSessionQuarantineBasename Quarantine basename (.part), or null when idle
+ * @property-read ?string $fileSessionOriginalFilename Original filename for current session, or null when idle
+ * @property-read ?string $fileSessionMimeType MIME type for current session, or null when idle
+ * @property-read ?string $fileSessionClientUploadId Client upload correlation id, or null when idle
+ * @property-read ?string $fileSessionNormalizedFilename Normalized basename for dedup, or null when idle
  * @property-read string $fileUploadPhase Upload UI phase, or empty when idle
  * @property-read ?string $fileUploadClientUploadId Upload UI client correlation id
  * @property-read ?string $fileUploadErrorCode Upload failure code

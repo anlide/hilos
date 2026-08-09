@@ -17,7 +17,7 @@ use Hilos\Runtime\View\Item\RtItem;
  *
  * @property-read ?string $topic
  * @property-read float $topicConfidence
- * @property-read string $summary
+ * @property-read ?string $summary
  * @property-read ChatContextActions $actions Write operations for this chat context
  */
 final class ChatContext extends RtItem

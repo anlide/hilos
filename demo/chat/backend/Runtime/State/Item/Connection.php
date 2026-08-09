@@ -59,11 +59,14 @@ final class Connection extends HilosConnection
     /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
     public string $outboundModerationPhase = '';
 
-    /** Submitted message text associated with the moderation state. */
-    public string $outboundModerationMessage = '';
+    /**
+     * Submitted message text associated with the moderation state — empty when
+     * the submit carried attachments and no text — or null while none is.
+     */
+    public ?string $outboundModerationMessage = null;
 
-    /** Moderation rejection or unavailable reason. */
-    public string $outboundModerationReason = '';
+    /** Moderation rejection or unavailable reason, or null while the verdict names none. */
+    public ?string $outboundModerationReason = null;
 
     /** Unix time of last moderation state update. */
     public int $outboundModerationUpdatedAt = 0;
@@ -71,11 +74,11 @@ final class Connection extends HilosConnection
     /** Rename moderation phase: checking, rejected, unavailable, or empty when clear. */
     public string $renameModerationPhase = '';
 
-    /** Requested display name associated with rename moderation. */
-    public string $renameModerationName = '';
+    /** Requested display name associated with rename moderation, or null while none is. */
+    public ?string $renameModerationName = null;
 
-    /** Rename moderation rejection or unavailable reason. */
-    public string $renameModerationReason = '';
+    /** Rename moderation rejection or unavailable reason, or null while the verdict names none. */
+    public ?string $renameModerationReason = null;
 
     /** Unix time of last rename moderation state update. */
     public int $renameModerationUpdatedAt = 0;
@@ -89,20 +92,20 @@ final class Connection extends HilosConnection
     /** Bytes appended so far for current upload. */
     public int $fileSessionReceivedBytes = 0;
 
-    /** Quarantine file basename. */
-    public string $fileSessionQuarantineBasename = '';
+    /** Quarantine file basename, or null when no upload session is open. */
+    public ?string $fileSessionQuarantineBasename = null;
 
-    /** Client original filename for session. */
-    public string $fileSessionOriginalFilename = '';
+    /** Client original filename for session, or null when no upload session is open. */
+    public ?string $fileSessionOriginalFilename = null;
 
-    /** MIME type for session. */
-    public string $fileSessionMimeType = '';
+    /** MIME type for session, or null when no upload session is open. */
+    public ?string $fileSessionMimeType = null;
 
-    /** Client-side upload correlation id. */
-    public string $fileSessionClientUploadId = '';
+    /** Client-side upload correlation id, or null when no upload session is open. */
+    public ?string $fileSessionClientUploadId = null;
 
-    /** Normalized basename for duplicate-name checks. */
-    public string $fileSessionNormalizedFilename = '';
+    /** Normalized basename for duplicate-name checks, or null when no upload session is open. */
+    public ?string $fileSessionNormalizedFilename = null;
 
     /** Upload UI phase: ready, uploading, failed, or empty when idle. */
     public string $fileUploadPhase = '';
@@ -139,21 +142,21 @@ final class Connection extends HilosConnection
         $instance->initBase($acceptKey, $userId, $sessionToken);
         $instance->connectedAt = time();
         $instance->outboundModerationPhase = '';
-        $instance->outboundModerationMessage = '';
-        $instance->outboundModerationReason = '';
+        $instance->outboundModerationMessage = null;
+        $instance->outboundModerationReason = null;
         $instance->outboundModerationUpdatedAt = 0;
         $instance->renameModerationPhase = '';
-        $instance->renameModerationName = '';
-        $instance->renameModerationReason = '';
+        $instance->renameModerationName = null;
+        $instance->renameModerationReason = null;
         $instance->renameModerationUpdatedAt = 0;
         $instance->fileSessionUploadId = null;
         $instance->fileSessionDeclaredSize = 0;
         $instance->fileSessionReceivedBytes = 0;
-        $instance->fileSessionQuarantineBasename = '';
-        $instance->fileSessionOriginalFilename = '';
-        $instance->fileSessionMimeType = '';
-        $instance->fileSessionClientUploadId = '';
-        $instance->fileSessionNormalizedFilename = '';
+        $instance->fileSessionQuarantineBasename = null;
+        $instance->fileSessionOriginalFilename = null;
+        $instance->fileSessionMimeType = null;
+        $instance->fileSessionClientUploadId = null;
+        $instance->fileSessionNormalizedFilename = null;
         $instance->fileUploadPhase = '';
         $instance->fileUploadClientUploadId = null;
         $instance->fileUploadErrorCode = null;
@@ -176,35 +179,32 @@ final class Connection extends HilosConnection
         $instance->hydrateBase($row);
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
-        $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
-        $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
+        $instance->outboundModerationMessage = self::stringOrNull($row[self::outboundModerationMessage] ?? null);
+        $instance->outboundModerationReason = self::nonEmptyStringOrNull($row[self::outboundModerationReason] ?? null);
         $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
         $instance->renameModerationPhase = (string)($row[self::renameModerationPhase] ?? '');
-        $instance->renameModerationName = (string)($row[self::renameModerationName] ?? '');
-        $instance->renameModerationReason = (string)($row[self::renameModerationReason] ?? '');
+        $instance->renameModerationName = self::nonEmptyStringOrNull($row[self::renameModerationName] ?? null);
+        $instance->renameModerationReason = self::nonEmptyStringOrNull($row[self::renameModerationReason] ?? null);
         $instance->renameModerationUpdatedAt = (int)($row[self::renameModerationUpdatedAt] ?? 0);
-        $uid = $row[self::fileSessionUploadId] ?? null;
-        $instance->fileSessionUploadId = is_string($uid) && $uid !== '' ? $uid : null;
+        $instance->fileSessionUploadId = self::nonEmptyStringOrNull($row[self::fileSessionUploadId] ?? null);
         $instance->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
         $instance->fileSessionReceivedBytes = (int)($row[self::fileSessionReceivedBytes] ?? 0);
-        $instance->fileSessionQuarantineBasename = (string)($row[self::fileSessionQuarantineBasename] ?? '');
-        $instance->fileSessionOriginalFilename = (string)($row[self::fileSessionOriginalFilename] ?? '');
-        $instance->fileSessionMimeType = (string)($row[self::fileSessionMimeType] ?? '');
-        $instance->fileSessionClientUploadId = (string)($row[self::fileSessionClientUploadId] ?? '');
-        $instance->fileSessionNormalizedFilename = (string)($row[self::fileSessionNormalizedFilename] ?? '');
+        $instance->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
+            $row[self::fileSessionQuarantineBasename] ?? null,
+        );
+        $instance->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
+            $row[self::fileSessionOriginalFilename] ?? null,
+        );
+        $instance->fileSessionMimeType = self::nonEmptyStringOrNull($row[self::fileSessionMimeType] ?? null);
+        $instance->fileSessionClientUploadId = self::nonEmptyStringOrNull($row[self::fileSessionClientUploadId] ?? null);
+        $instance->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
+            $row[self::fileSessionNormalizedFilename] ?? null,
+        );
         $instance->fileUploadPhase = (string)($row[self::fileUploadPhase] ?? '');
-        $uploadClientId = $row[self::fileUploadClientUploadId] ?? null;
-        $instance->fileUploadClientUploadId = is_string($uploadClientId) && $uploadClientId !== ''
-            ? $uploadClientId
-            : null;
-        $errorCode = $row[self::fileUploadErrorCode] ?? null;
-        $instance->fileUploadErrorCode = is_string($errorCode) && $errorCode !== '' ? $errorCode : null;
-        $errorMessage = $row[self::fileUploadErrorMessage] ?? null;
-        $instance->fileUploadErrorMessage = is_string($errorMessage) && $errorMessage !== ''
-            ? $errorMessage
-            : null;
-        $pfn = $row[self::fileProgressFilename] ?? null;
-        $instance->fileProgressFilename = is_string($pfn) && $pfn !== '' ? $pfn : null;
+        $instance->fileUploadClientUploadId = self::nonEmptyStringOrNull($row[self::fileUploadClientUploadId] ?? null);
+        $instance->fileUploadErrorCode = self::nonEmptyStringOrNull($row[self::fileUploadErrorCode] ?? null);
+        $instance->fileUploadErrorMessage = self::nonEmptyStringOrNull($row[self::fileUploadErrorMessage] ?? null);
+        $instance->fileProgressFilename = self::nonEmptyStringOrNull($row[self::fileProgressFilename] ?? null);
         $instance->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
         $instance->fileProgressTotalBytes = (int)($row[self::fileProgressTotalBytes] ?? 0);
         $instance->uploadProgressLastSentAt = (float)($row[self::uploadProgressLastSentAt] ?? 0.0);
@@ -235,11 +235,11 @@ final class Connection extends HilosConnection
         if (isset($diff[self::outboundModerationPhase])) {
             $this->outboundModerationPhase = (string)$diff[self::outboundModerationPhase];
         }
-        if (isset($diff[self::outboundModerationMessage])) {
-            $this->outboundModerationMessage = (string)$diff[self::outboundModerationMessage];
+        if (array_key_exists(self::outboundModerationMessage, $diff)) {
+            $this->outboundModerationMessage = self::stringOrNull($diff[self::outboundModerationMessage]);
         }
-        if (isset($diff[self::outboundModerationReason])) {
-            $this->outboundModerationReason = (string)$diff[self::outboundModerationReason];
+        if (array_key_exists(self::outboundModerationReason, $diff)) {
+            $this->outboundModerationReason = self::nonEmptyStringOrNull($diff[self::outboundModerationReason]);
         }
         if (isset($diff[self::outboundModerationUpdatedAt])) {
             $this->outboundModerationUpdatedAt = (int)$diff[self::outboundModerationUpdatedAt];
@@ -247,18 +247,17 @@ final class Connection extends HilosConnection
         if (isset($diff[self::renameModerationPhase])) {
             $this->renameModerationPhase = (string)$diff[self::renameModerationPhase];
         }
-        if (isset($diff[self::renameModerationName])) {
-            $this->renameModerationName = (string)$diff[self::renameModerationName];
+        if (array_key_exists(self::renameModerationName, $diff)) {
+            $this->renameModerationName = self::nonEmptyStringOrNull($diff[self::renameModerationName]);
         }
-        if (isset($diff[self::renameModerationReason])) {
-            $this->renameModerationReason = (string)$diff[self::renameModerationReason];
+        if (array_key_exists(self::renameModerationReason, $diff)) {
+            $this->renameModerationReason = self::nonEmptyStringOrNull($diff[self::renameModerationReason]);
         }
         if (isset($diff[self::renameModerationUpdatedAt])) {
             $this->renameModerationUpdatedAt = (int)$diff[self::renameModerationUpdatedAt];
         }
         if (array_key_exists(self::fileSessionUploadId, $diff)) {
-            $v = $diff[self::fileSessionUploadId];
-            $this->fileSessionUploadId = is_string($v) && $v !== '' ? $v : null;
+            $this->fileSessionUploadId = self::nonEmptyStringOrNull($diff[self::fileSessionUploadId]);
         }
         if (isset($diff[self::fileSessionDeclaredSize])) {
             $this->fileSessionDeclaredSize = (int)$diff[self::fileSessionDeclaredSize];
@@ -266,39 +265,41 @@ final class Connection extends HilosConnection
         if (isset($diff[self::fileSessionReceivedBytes])) {
             $this->fileSessionReceivedBytes = (int)$diff[self::fileSessionReceivedBytes];
         }
-        if (isset($diff[self::fileSessionQuarantineBasename])) {
-            $this->fileSessionQuarantineBasename = (string)$diff[self::fileSessionQuarantineBasename];
+        if (array_key_exists(self::fileSessionQuarantineBasename, $diff)) {
+            $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
+                $diff[self::fileSessionQuarantineBasename],
+            );
         }
-        if (isset($diff[self::fileSessionOriginalFilename])) {
-            $this->fileSessionOriginalFilename = (string)$diff[self::fileSessionOriginalFilename];
+        if (array_key_exists(self::fileSessionOriginalFilename, $diff)) {
+            $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
+                $diff[self::fileSessionOriginalFilename],
+            );
         }
-        if (isset($diff[self::fileSessionMimeType])) {
-            $this->fileSessionMimeType = (string)$diff[self::fileSessionMimeType];
+        if (array_key_exists(self::fileSessionMimeType, $diff)) {
+            $this->fileSessionMimeType = self::nonEmptyStringOrNull($diff[self::fileSessionMimeType]);
         }
-        if (isset($diff[self::fileSessionClientUploadId])) {
-            $this->fileSessionClientUploadId = (string)$diff[self::fileSessionClientUploadId];
+        if (array_key_exists(self::fileSessionClientUploadId, $diff)) {
+            $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($diff[self::fileSessionClientUploadId]);
         }
-        if (isset($diff[self::fileSessionNormalizedFilename])) {
-            $this->fileSessionNormalizedFilename = (string)$diff[self::fileSessionNormalizedFilename];
+        if (array_key_exists(self::fileSessionNormalizedFilename, $diff)) {
+            $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
+                $diff[self::fileSessionNormalizedFilename],
+            );
         }
         if (isset($diff[self::fileUploadPhase])) {
             $this->fileUploadPhase = (string)$diff[self::fileUploadPhase];
         }
         if (array_key_exists(self::fileUploadClientUploadId, $diff)) {
-            $v = $diff[self::fileUploadClientUploadId];
-            $this->fileUploadClientUploadId = is_string($v) && $v !== '' ? $v : null;
+            $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($diff[self::fileUploadClientUploadId]);
         }
         if (array_key_exists(self::fileUploadErrorCode, $diff)) {
-            $v = $diff[self::fileUploadErrorCode];
-            $this->fileUploadErrorCode = is_string($v) && $v !== '' ? $v : null;
+            $this->fileUploadErrorCode = self::nonEmptyStringOrNull($diff[self::fileUploadErrorCode]);
         }
         if (array_key_exists(self::fileUploadErrorMessage, $diff)) {
-            $v = $diff[self::fileUploadErrorMessage];
-            $this->fileUploadErrorMessage = is_string($v) && $v !== '' ? $v : null;
+            $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($diff[self::fileUploadErrorMessage]);
         }
         if (array_key_exists(self::fileProgressFilename, $diff)) {
-            $f = $diff[self::fileProgressFilename];
-            $this->fileProgressFilename = is_string($f) && $f !== '' ? $f : null;
+            $this->fileProgressFilename = self::nonEmptyStringOrNull($diff[self::fileProgressFilename]);
         }
         if (isset($diff[self::fileProgressUploadedBytes])) {
             $this->fileProgressUploadedBytes = (int)$diff[self::fileProgressUploadedBytes];
@@ -343,5 +344,34 @@ final class Connection extends HilosConnection
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
             self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
         ]);
+    }
+
+    /**
+     * Reads one optional field of a runtime row or diff. A row written by a node
+     * that has not been restarted yet still spells "no value" as the empty string
+     * where this class now writes null, and the two say the same thing.
+     *
+     * @param mixed $value Raw row or diff value
+     * @return ?string The value, or null when the field holds none
+     */
+    private static function nonEmptyStringOrNull(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Reads one field whose empty string is the value itself, not a spelling of
+     * absence. The submitted message is the only such field here: a message sent
+     * with attachments and no text carries an empty text on purpose, and the
+     * moderation state it starts must survive the trip to the other workers.
+     * Absence is spelled by the phase field beside it, which such a row leaves
+     * clear, so the two are never confused.
+     *
+     * @param mixed $value Raw row or diff value
+     * @return ?string The value, or null when the field holds no string at all
+     */
+    private static function stringOrNull(mixed $value): ?string
+    {
+        return is_string($value) ? $value : null;
     }
 }

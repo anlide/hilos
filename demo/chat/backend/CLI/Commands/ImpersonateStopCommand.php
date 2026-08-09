@@ -53,6 +53,7 @@ HELP;
 
     protected function buildPayload(array $args): ?array
     {
+        // external-boundary: a positional argument the operator may omit; the usage hint below rejects it
         $sessionToken = (string) ($args[0] ?? '');
 
         if ($sessionToken === '') {

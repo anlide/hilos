@@ -6,6 +6,7 @@ namespace Demo\Chat\Agents;
 
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\Exception\LLMResultUnavailableException;
 
 /**
  * Deterministic moderation client for the Docker test environment.
@@ -48,13 +49,17 @@ final class TestModerationChatClient implements AsyncChatLLMInterface
      * Returns and clears the synthetic moderation result.
      *
      * @return string Moderation decision JSON
+     * @throws LLMResultUnavailableException When consumed before a generation produced anything
      */
     public function consumeResult(): string
     {
         $result = $this->result;
         $this->result = null;
+        if ($result === null) {
+            throw new LLMResultUnavailableException('No synthetic moderation result is available');
+        }
 
-        return $result ?? '';
+        return $result;
     }
 
     /**

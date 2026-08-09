@@ -68,6 +68,7 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
+        // external-boundary: a positional argument the operator may omit; the error below rejects it
         $id = $args[0] ?? '';
         if ($id === '') {
             fwrite(STDERR, "backup:run requires a backup id as the first argument\n");

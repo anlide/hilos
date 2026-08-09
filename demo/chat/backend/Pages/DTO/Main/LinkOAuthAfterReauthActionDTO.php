@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * LinkOAuthAfterReauthActionDTO - DTO for the OAuth account-link action payload (HIL-282).
@@ -43,13 +44,12 @@ final class LinkOAuthAfterReauthActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static OAuth link DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $token = $data['token'] ?? null;
-
         return new static(
-            token: is_string($token) ? $token : '',
+            token: self::requireString($data, 'token'),
         );
     }
 

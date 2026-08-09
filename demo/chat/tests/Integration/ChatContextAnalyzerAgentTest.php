@@ -16,6 +16,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\Exception\LLMClientBusyException;
@@ -108,7 +109,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             $this->assertSame(1, $chatClient->resetCalls);
             $this->assertNull(Hilos::$rt->chatContext->topic);
             $this->assertSame(0.0, Hilos::$rt->chatContext->topicConfidence);
-            $this->assertSame('', Hilos::$rt->chatContext->summary);
+            $this->assertNull(Hilos::$rt->chatContext->summary);
         } finally {
             Hilos::$db->events->actions->deleteAll();
         }
@@ -214,8 +215,11 @@ final class ControlledAnalyzerChatClient implements AsyncChatLLMInterface
         $result = $this->result;
         $this->hasResult = false;
         $this->result = null;
+        if ($result === null) {
+            throw new LLMResultUnavailableException('No scripted result is available');
+        }
 
-        return $result ?? '';
+        return $result;
     }
 
     public function isBusy(): bool

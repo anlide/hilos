@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Notification;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\Schema;
@@ -91,13 +92,11 @@ final class NotificationPreferenceTest extends TestCase
         self::assertTrue($dto->enabled);
     }
 
-    public function testChannelPreferenceActionDtoDefaultsToMutedAndInvalidWhenChannelMissing(): void
+    public function testChannelPreferenceActionDtoRefusesAPayloadThatNamesNoChannel(): void
     {
-        $dto = NotificationChannelPreferenceActionDTO::fromArray([]);
+        $this->expectException(InvalidFormatException::class);
 
-        self::assertSame('', $dto->channel);
-        self::assertFalse($dto->enabled);
-        self::assertFalse($dto->isValid());
+        NotificationChannelPreferenceActionDTO::fromArray([]);
     }
 
     public function testPreferencesChangedSignalDataRoundTrips(): void

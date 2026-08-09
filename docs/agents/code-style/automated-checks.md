@@ -12,7 +12,7 @@ rule.
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
-| `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only, and unless a `// external-boundary: <reason>` marker on the line directly above names the outside source the value comes from. | [method-contracts.md](method-contracts.md) |
+| `EMPTY-STRING-SENTINEL` | An empty string literal is minted where a value is absent: `??` falls back to it, a ternary branch hands it back, or a `match` `default` arm does. Inside the checked zone only, and unless a `// external-boundary: <reason>` marker on the line directly above names the outside source the value comes from. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -34,11 +34,20 @@ hit is to argue with the document, and an argument needs to know what the rule
 actually does.
 
 `EMPTY-STRING-SENTINEL` is narrower than its document in the same way, and on
-purpose. It judges `??` and not the `: ''` branch of a ternary, because that
-branch is also how an optional fragment is rendered into a concatenation, and
-tokens cannot tell the two apart. It says nothing about `=== ''` either: those
-comparisons are how legitimate input is checked, and a machine ban on them would
-report the very code the document calls correct.
+purpose. It reads the three spellings that mint the literal — `??`, the branch of
+a ternary after the colon, and a `match` `default` arm — and stops there. It says
+nothing about `=== ''`: those comparisons are how legitimate input is checked, and
+a machine ban on them would report the very code the document calls correct. It
+also cannot see a bare `return '';`, which mints the same value out of a method
+whose caller cannot tell it from data.
+
+Reading a colon costs bookkeeping, because four other constructs spell one: a
+named argument, a return type, the alternative syntax, and a `case` label. The
+rule counts a colon as a ternary branch only while a `?` of the same bracket depth
+is still open, and it tells that `?` from the one of a nullable type by what
+stands before it — only a ternary follows something an expression can end with. A
+`match` arm is told from a `switch` label the same way: by the double arrow, never
+by the arrow alone, which is also how an array element is written.
 
 `WIRE-KEY-CASE` judges the case of a key and nothing else — not the words, not
 whether the two sides agree on them — and it sees only the keys declared in a
@@ -89,15 +98,26 @@ followed; that difference is the rule, not an oversight.
 
 ### Why the rule reads a zone and not the whole tree
 
-`EMPTY-STRING-SENTINEL` fires only inside the path zone listed in the rule class —
-the signal spine (`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent/DTO`,
-`Core/Daemon`, `Core/Table/DTO`, `Core/Source`), the wire DTOs (`Socket/*/DTO`,
+`EMPTY-STRING-SENTINEL` is the one rule whose reach depends on the root it is
+handed, and the choice is made in `CodeStyleGuardTest`, which is the only place
+that knows which root is being scanned.
+
+Inside `framework/backend` it fires only within a path zone — the signal spine
+(`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent/DTO`, `Core/Daemon`,
+`Core/Table/DTO`, `Core/Source`), the wire DTOs (`Socket/*/DTO`,
 `Cluster/Peer/DTO`), the application subsystems (`API`, `Auth`, `Backup`,
 `Database`, `LLM`, `Log`, `Mail`, `Notification`, `Pages`, `ProtectedMode`,
-`Push`, `Runtime`, `Sms`, `Tables`, `Utils`) and `Hilos.php`. The zone is read
-relative to the scanned root, so a demo's own `Core/Router` is judged by the same
-entry as the framework's, and the fixtures repeat the same segments to be judged
-by the same code.
+`Push`, `Runtime`, `Sms`, `Tables`, `Utils`) and `Hilos.php`. The framework is
+cleaned one subsystem at a time: turned on across the root at once, its baseline
+would become a list of exceptions rather than a list of owed work.
+
+Every other root — `demo/*/backend`, `framework/tests`, `demo/*/tests` — is judged
+entire. A demo is an application on the framework and has no subsystem outside the
+mechanism to phase, and a new demo root arrives through the glob with no
+activation step, so a segment list would be forever chasing directories that
+already exist. The zone is read relative to the scanned root, so the fixtures
+repeat the segments of the framework zone to be judged by the same code, and a
+fixture root of their own carries what the whole-root mode has to prove.
 
 Inside the zone, a legal reading of outside input is named in place with a
 `// external-boundary: <reason>` marker rather than frozen in the baseline: the

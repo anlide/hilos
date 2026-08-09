@@ -79,6 +79,7 @@ final class WebAuthnTestVectors
      */
     public function authenticatorData(int $flags, int $signCount, ?string $attestedCredentialData = null): string
     {
+        // external-boundary: authenticatorData legitimately ends after the sign counter, appending nothing
         return $this->rpIdHash . chr($flags) . pack('N', $signCount) . ($attestedCredentialData ?? '');
     }
 

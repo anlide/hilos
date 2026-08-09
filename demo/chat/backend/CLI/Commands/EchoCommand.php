@@ -101,7 +101,7 @@ HELP;
             return ExitCode::ERROR;
         }
 
-        $echoed = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? '');
+        $echoed = (string) $reply->payload[CommandConstants::FIELD_MESSAGE];
         echo "Reply (ok): {$echoed}\n";
 
         return ExitCode::SUCCESS;

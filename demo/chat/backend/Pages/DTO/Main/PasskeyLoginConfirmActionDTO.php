@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * PasskeyLoginConfirmActionDTO - DTO for submitting a WebAuthn login assertion (HIL-284).
@@ -19,9 +20,9 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
  *
  * The optional `userHandle` is the base64url WebAuthn user handle a discoverable
  * (usernameless) assertion carries (HIL-400) — the username-first path (HIL-284)
- * sends none, so it defaults to empty. When present the handler cross-checks it
- * against the credential owner as defense-in-depth; the credential id stays
- * authoritative.
+ * sends none, and an authenticator that holds none sends an empty one, so both
+ * arrive as null. When present the handler cross-checks it against the credential
+ * owner as defense-in-depth; the credential id stays authoritative.
  */
 final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
 {
@@ -33,7 +34,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
      * @param string $authenticatorData base64url authenticatorData bytes
      * @param string $clientDataJson base64url clientDataJSON bytes
      * @param string $signature base64url ECDSA (DER) signature bytes
-     * @param string $userHandle base64url WebAuthn user handle from a discoverable assertion, or '' for username-first (HIL-400)
+     * @param ?string $userHandle base64url WebAuthn user handle from a discoverable assertion, or null for username-first (HIL-400)
      */
     public function __construct(
         public readonly string $signedChallenge,
@@ -41,7 +42,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
         public readonly string $authenticatorData,
         public readonly string $clientDataJson,
         public readonly string $signature,
-        public readonly string $userHandle = '',
+        public readonly ?string $userHandle = null,
     ) {
     }
 
@@ -60,30 +61,26 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $signedChallenge = $data['signedChallenge'] ?? null;
-        $credentialId = $data['credentialId'] ?? null;
-        $authenticatorData = $data['authenticatorData'] ?? null;
-        $clientDataJson = $data['clientDataJson'] ?? null;
-        $signature = $data['signature'] ?? null;
         $userHandle = $data['userHandle'] ?? null;
 
         return new static(
-            signedChallenge: is_string($signedChallenge) ? $signedChallenge : '',
-            credentialId: is_string($credentialId) ? $credentialId : '',
-            authenticatorData: is_string($authenticatorData) ? $authenticatorData : '',
-            clientDataJson: is_string($clientDataJson) ? $clientDataJson : '',
-            signature: is_string($signature) ? $signature : '',
-            userHandle: is_string($userHandle) ? $userHandle : '',
+            signedChallenge: self::requireString($data, 'signedChallenge'),
+            credentialId: self::requireString($data, 'credentialId'),
+            authenticatorData: self::requireString($data, 'authenticatorData'),
+            clientDataJson: self::requireString($data, 'clientDataJson'),
+            signature: self::requireString($data, 'signature'),
+            userHandle: is_string($userHandle) && $userHandle !== '' ? $userHandle : null,
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string, clientDataJson: string, signature: string, userHandle: string} Confirm payload
+     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string, clientDataJson: string, signature: string, userHandle: ?string} Confirm payload
      */
     public function toArray(): array
     {

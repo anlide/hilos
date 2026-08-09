@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * FileUploadInitActionDTO - Start a binary WebSocket file upload.
@@ -25,13 +26,18 @@ final class FileUploadInitActionDTO extends ChatActionPayloadDTO
         return ChatSignalConstants::FILE_UPLOAD_INIT;
     }
 
+    /**
+     * @param array<string, mixed> $data Payload data
+     * @return static Upload init DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
+     */
     public static function fromArray(array $data): static
     {
         $clientId = $data['clientUploadId'] ?? null;
 
         return new static(
-            filename: is_string($data['filename'] ?? null) ? $data['filename'] : '',
-            mimeType: is_string($data['mimeType'] ?? null) ? $data['mimeType'] : '',
+            filename: self::requireString($data, 'filename'),
+            mimeType: self::requireString($data, 'mimeType'),
             size: is_int($data['size'] ?? null) ? $data['size'] : (int)($data['size'] ?? 0),
             clientUploadId: is_string($clientId) && $clientId !== '' ? $clientId : null,
         );

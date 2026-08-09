@@ -72,7 +72,9 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: a positional argument the operator may omit; the usage hint below rejects it
         $key = $args[0] ?? '';
+        // external-boundary: a positional argument the operator may omit; the usage hint below rejects it
         $type = $args[1] ?? '';
         if ($key === '' || $type === '') {
             echo "Usage: {$this->getName()} <key> <type> [value]  (type: string|integer|float|boolean)\n";

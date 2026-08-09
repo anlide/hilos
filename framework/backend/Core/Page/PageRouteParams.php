@@ -273,6 +273,7 @@ final class PageRouteParams
             return $parsed === 0;
         }
 
+        // external-boundary: the neutral element of the concatenation — a positive number carries no sign
         return (string) $parsed === ($sign === '-' ? '-' : '') . $digits;
     }
 }

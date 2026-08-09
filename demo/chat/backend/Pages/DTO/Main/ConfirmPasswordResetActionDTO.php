@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ConfirmPasswordResetActionDTO - DTO for submitting a password-reset code.
@@ -46,17 +47,14 @@ final class ConfirmPasswordResetActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $email = $data['email'] ?? null;
-        $code = $data['code'] ?? null;
-        $newPassword = $data['newPassword'] ?? null;
-
         return new static(
-            email: is_string($email) ? trim($email) : '',
-            code: is_string($code) ? trim($code) : '',
-            newPassword: is_string($newPassword) ? $newPassword : '',
+            email: trim(self::requireString($data, 'email')),
+            code: trim(self::requireString($data, 'code')),
+            newPassword: self::requireString($data, 'newPassword'),
         );
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -45,12 +46,13 @@ final class MessageActionDTOTest extends TestCase
     }
 
     /**
-     * Non-string content is treated as an empty string after coercion.
+     * Content that is not a string is refused, not coerced into a blank message.
      */
-    public function testFromArrayTreatsNonStringContentAsEmpty(): void
+    public function testFromArrayRefusesNonStringContent(): void
     {
-        $dto = MessageActionDTO::fromArray(['content' => 123]);
-        $this->assertSame('', $dto->content);
+        $this->expectException(InvalidFormatException::class);
+
+        MessageActionDTO::fromArray(['content' => 123]);
     }
 
     /**

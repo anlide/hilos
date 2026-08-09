@@ -165,6 +165,7 @@ class Logger
     private static function log(string $level, string $message, array $context = [], bool $useStderr = false): void
     {
         $timestamp = TimeHelper::getTimestampWithMs();
+        // external-boundary: the neutral element of the concatenation below — no context prints nothing
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
 
         // Determine prefix for main log file:
@@ -175,6 +176,7 @@ class Logger
         } else {
             $mainLogPrefix = ($level === self::LEVEL_INFO) ? '' : "{$level}:";
         }
+        // external-boundary: the neutral element of this concatenation — an unprefixed level adds nothing
         $mainLogLine = "[{$timestamp}]" . ($mainLogPrefix !== '' ? " {$mainLogPrefix}" : '') . " {$message}{$contextStr}";
 
         // For error log file: no prefix (only errors there)

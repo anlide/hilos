@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ConfirmRegisterActionDTO - DTO for submitting an email-confirmation code.
@@ -41,13 +42,12 @@ final class ConfirmRegisterActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $code = $data['code'] ?? null;
-
         return new static(
-            code: is_string($code) ? trim($code) : '',
+            code: trim(self::requireString($data, 'code')),
         );
     }
 

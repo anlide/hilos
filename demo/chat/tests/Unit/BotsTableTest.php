@@ -10,6 +10,8 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -63,5 +65,39 @@ final class BotsTableTest extends TestCase
             ],
             $table->browserRow($row),
         );
+    }
+
+    public function testBrowserRowRefusesAKeylessRowInsteadOfSendingAnEmptyKey(): void
+    {
+        $table = new BotsTable();
+        $keyless = new class extends AbstractTableRow {
+            /**
+             * @return string|int|null Row key, absent because this row is a placeholder
+             */
+            public function getRowKey(): string|int|null
+            {
+                return null;
+            }
+
+            /**
+             * @return array<string, mixed> Row payload
+             */
+            public function toArray(): array
+            {
+                return [];
+            }
+
+            /**
+             * @param array<string, mixed> $data Source data
+             * @return static Row instance
+             */
+            public static function fromArray(array $data): static
+            {
+                return new static();
+            }
+        };
+
+        $this->expectException(TableRowKeyMissingException::class);
+        $table->browserRow($keyless);
     }
 }

@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ConfirmAddPasswordActionDTO - DTO for the profile add-password confirm payload (HIL-406).
@@ -52,13 +53,14 @@ final class ConfirmAddPasswordActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Confirm DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            email: is_string($data[self::EMAIL] ?? null) ? trim($data[self::EMAIL]) : '',
-            code: is_string($data[self::CODE] ?? null) ? trim($data[self::CODE]) : '',
-            newPassword: is_string($data[self::NEW_PASSWORD] ?? null) ? $data[self::NEW_PASSWORD] : '',
+            email: trim(self::requireString($data, self::EMAIL)),
+            code: trim(self::requireString($data, self::CODE)),
+            newPassword: self::requireString($data, self::NEW_PASSWORD),
         );
     }
 

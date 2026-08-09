@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RequestSmsCodeActionDTO - DTO for an SMS one-time-code request payload (HIL-280).
@@ -42,13 +43,12 @@ final class RequestSmsCodeActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Request DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $phone = $data['phone'] ?? null;
-
         return new static(
-            phone: is_string($phone) ? trim($phone) : '',
+            phone: trim(self::requireString($data, 'phone')),
         );
     }
 

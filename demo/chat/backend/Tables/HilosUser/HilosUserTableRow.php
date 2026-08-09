@@ -54,7 +54,7 @@ final class HilosUserTableRow extends AbstractHilosUserTableRow
             id: (int) ($data[self::id] ?? 0),
             admin: (bool) ($data[self::admin] ?? false),
             block: (bool) ($data[self::block] ?? false),
-            name: (string) ($data[self::name] ?? ''),
+            name: (string) $data[self::name],
             lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
             onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),
             presence: isset($data[self::presence]) ? (string) $data[self::presence] : null,

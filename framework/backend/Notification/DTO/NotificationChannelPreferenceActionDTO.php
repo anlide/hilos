@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\DTO;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Notification\NotificationPreferenceAction;
 
@@ -67,6 +68,7 @@ final class NotificationChannelPreferenceActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
@@ -76,8 +78,7 @@ final class NotificationChannelPreferenceActionDTO extends ActionPayloadDTO
         }
 
         return new static(
-            // external-boundary: the action payload comes from the browser and isValid() rejects an empty channel
-            channel: (string)($inner[self::channel] ?? ''),
+            channel: self::requireString($inner, self::channel),
             enabled: (bool)($inner[self::enabled] ?? false),
         );
     }

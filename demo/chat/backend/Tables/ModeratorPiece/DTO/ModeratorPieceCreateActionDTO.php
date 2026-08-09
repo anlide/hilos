@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for moderator_piece_create action payload.
@@ -41,17 +42,22 @@ final class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
         $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+        if (!is_array($inner)) {
+            $inner = [];
+        }
+
+        if (isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
         return new static(
-            section: is_string($inner[ObjectModeratorPromptPiece::section] ?? null) ? trim($inner[ObjectModeratorPromptPiece::section]) : '',
-            promptPiece: is_string($inner[ObjectModeratorPromptPiece::promptPiece] ?? null) ? trim($inner[ObjectModeratorPromptPiece::promptPiece]) : '',
+            section: trim(self::requireString($inner, ObjectModeratorPromptPiece::section)),
+            promptPiece: trim(self::requireString($inner, ObjectModeratorPromptPiece::promptPiece)),
         );
     }
 

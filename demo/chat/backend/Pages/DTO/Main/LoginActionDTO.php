@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * LoginActionDTO - DTO for the email+password login action payload.
@@ -43,15 +44,13 @@ final class LoginActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Login DTO instance
+     * @throws InvalidFormatException When a field the action needs is absent or not a string
      */
     public static function fromArray(array $data): static
     {
-        $email = $data['email'] ?? null;
-        $password = $data['password'] ?? null;
-
         return new static(
-            email: is_string($email) ? trim($email) : '',
-            password: is_string($password) ? $password : '',
+            email: trim(self::requireString($data, 'email')),
+            password: self::requireString($data, 'password'),
         );
     }
 
