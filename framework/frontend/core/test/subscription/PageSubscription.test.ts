@@ -53,6 +53,7 @@ describe('PageSubscription', () => {
   it('subscribing while disconnected sends on the next connected transition', () => {
     const connection = fakeConnection('disconnected')
     const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
 
     pages.subscribe('main', { tab: 'open' })
     expect(connection.sent).toEqual([])
@@ -67,6 +68,7 @@ describe('PageSubscription', () => {
   it('re-sends the current subscription after a reconnect', () => {
     const connection = fakeConnection()
     const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
     pages.subscribe('main')
 
     connection.setState('reconnecting')
@@ -214,6 +216,7 @@ describe('PageSubscription', () => {
   it('clears the page error in place without leaving the page', () => {
     const connection = fakeConnection()
     const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
     pages.subscribe('user', { id: '9' })
     pages.handleSubscriptionError({
       page: 'user',
