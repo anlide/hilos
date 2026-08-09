@@ -14,6 +14,14 @@ final class LLMConstants
     /** @var float Default request timeout in seconds */
     public const float DEFAULT_TIMEOUT_SEC = 20.0;
 
+    /**
+     * @var int Floor a configured request timeout is raised to, in milliseconds
+     *
+     * Both chat providers hold the same floor, so it has one owner here rather
+     * than a private copy in each of them.
+     */
+    public const int MIN_REQUEST_TIMEOUT_MS = 1000;
+
     /** @var string Default local (Ollama) base URL */
     public const string DEFAULT_LOCAL_URL = 'http://127.0.0.1:11434';
 

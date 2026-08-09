@@ -28,6 +28,12 @@ final class AttestationVerifier
     private const string ATTESTATION_KEY_AUTH_DATA = 'authData';
 
     /**
+     * The 8-4-4-4-12 hex groups of a canonical UUID, written once as an unpack
+     * format instead of as a run of offsets and lengths whose digits repeat.
+     */
+    private const string AAGUID_UNPACK_FORMAT = 'H8timeLow/H4timeMid/H4timeHigh/H4clockSeq/H12node';
+
+    /**
      * @param WebAuthnConfig $config Resolved WebAuthn configuration
      */
     public function __construct(
@@ -108,12 +114,15 @@ final class AttestationVerifier
      *
      * @param string $aaguid 16 raw AAGUID bytes
      * @return string Canonical UUID (8-4-4-4-12 lowercase hex)
+     * @throws WebAuthnVerificationException When the AAGUID is shorter than the five groups
      */
     private function formatAaguid(string $aaguid): string
     {
-        $hex = bin2hex($aaguid);
+        $groups = unpack(self::AAGUID_UNPACK_FORMAT, $aaguid);
+        if ($groups === false) {
+            throw new WebAuthnVerificationException('AAGUID is not 16 bytes');
+        }
 
-        return substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4)
-            . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
+        return implode('-', $groups);
     }
 }

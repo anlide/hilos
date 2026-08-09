@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\PendingLeadership;
+use Hilos\Constants\TimeConstants;
 
 /**
  * Self-written raft-like consensus for the master set: leader election and
@@ -373,7 +374,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
 
         if ($now >= $this->heartbeatDueAt) {
             $this->mesh->broadcastToMasters(new PeerHeartbeatDTO($this->currentTerm, $this->config->selfNodeId));
-            $this->heartbeatDueAt = $now + $this->config->heartbeatIntervalMs / 1000.0;
+            $this->heartbeatDueAt = $now + $this->config->heartbeatIntervalMs / TimeConstants::MS_PER_SECOND;
         }
     }
 
@@ -445,6 +446,6 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      */
     private function randomElectionTimeout(): float
     {
-        return mt_rand($this->config->electionTimeoutMinMs, $this->config->electionTimeoutMaxMs) / 1000.0;
+        return mt_rand($this->config->electionTimeoutMinMs, $this->config->electionTimeoutMaxMs) / TimeConstants::MS_PER_SECOND;
     }
 }

@@ -19,4 +19,19 @@ final class TimeConstants
 
     /** @var int Microseconds in one second */
     public const int US_PER_SECOND = 1_000_000;
+
+    /**
+     * @var int Nanoseconds in one millisecond, the divisor an `hrtime(true)` span needs
+     *
+     * Equal to {@see self::US_PER_SECOND} today and unrelated to it: one converts a
+     * span of nanoseconds, the other a count of seconds. Sharing a declaration would
+     * claim the two move together.
+     */
+    public const int NS_PER_MILLISECOND = 1_000_000;
+
+    /** @var int Seconds in one minute */
+    public const int SECONDS_PER_MINUTE = 60;
+
+    /** @var int Seconds in one hour */
+    public const int SECONDS_PER_HOUR = 3600;
 }

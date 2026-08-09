@@ -11,6 +11,8 @@ use Demo\Cluster\Hilos;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
@@ -117,7 +119,7 @@ final class ClusterDaemonManager extends DaemonManager
     protected function httpRoutes(DaemonContext $context): iterable
     {
         return [
-            ['GET', '/status', new StatusHandler($this->workerServer)],
+            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
         ];
     }
 
@@ -149,7 +151,7 @@ final class ClusterDaemonManager extends DaemonManager
     {
         parent::onBecameLeader($term);
 
-        $heartbeatSec = Hilos::$env->int(EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS) / 1000.0;
+        $heartbeatSec = Hilos::$env->int(EnvConstants::CLUSTER_HEARTBEAT_INTERVAL_MS) / TimeConstants::MS_PER_SECOND;
         $this->placeSettleDeadline = microtime(true) + $heartbeatSec * self::PLACE_SETTLE_HEARTBEATS;
     }
 

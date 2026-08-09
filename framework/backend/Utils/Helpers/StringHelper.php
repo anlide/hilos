@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use Hilos\Constants\TimeConstants;
+
 /**
  * StringHelper - string manipulation utilities.
  *
@@ -13,6 +15,9 @@ namespace Hilos\Utils\Helpers;
  */
 class StringHelper
 {
+    /** Step between the byte units this helper formats into (B, KB, MB, GB). */
+    private const int BYTES_PER_UNIT_STEP = 1024;
+
     /**
      * Format bytes to human readable format.
      *
@@ -27,8 +32,8 @@ class StringHelper
         $units = ['B', 'KB', 'MB', 'GB'];
         $unitIndex = 0;
 
-        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
-            $bytes /= 1024;
+        while ($bytes >= self::BYTES_PER_UNIT_STEP && $unitIndex < count($units) - 1) {
+            $bytes /= self::BYTES_PER_UNIT_STEP;
             $unitIndex++;
         }
 
@@ -45,9 +50,9 @@ class StringHelper
      */
     public static function formatUptime(int $seconds): string
     {
-        $hours = floor($seconds / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        $secs = $seconds % 60;
+        $hours = floor($seconds / TimeConstants::SECONDS_PER_HOUR);
+        $minutes = floor(($seconds % TimeConstants::SECONDS_PER_HOUR) / TimeConstants::SECONDS_PER_MINUTE);
+        $secs = $seconds % TimeConstants::SECONDS_PER_MINUTE;
 
         return sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
     }

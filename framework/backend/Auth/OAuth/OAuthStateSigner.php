@@ -33,6 +33,15 @@ final class OAuthStateSigner
     private const string FIELD_SEPARATOR = '|';
     private const string PART_SEPARATOR = '.';
 
+    /** Fields a state minted before the mode existed carries; still accepted on read. */
+    private const int PAYLOAD_FIELD_COUNT_LEGACY = 3;
+
+    /** Fields a state minted today carries. */
+    private const int PAYLOAD_FIELD_COUNT = 4;
+
+    /** Index the mode sits at: one past the last legacy field, which is why it can be absent. */
+    private const int PAYLOAD_INDEX_MODE = self::PAYLOAD_FIELD_COUNT_LEGACY;
+
     /**
      * @param string $secret HMAC signing secret (env-sourced by the caller)
      */
@@ -95,7 +104,7 @@ final class OAuthStateSigner
         }
 
         $fields = explode(self::FIELD_SEPARATOR, $payload);
-        if (count($fields) !== 3 && count($fields) !== 4) {
+        if (count($fields) !== self::PAYLOAD_FIELD_COUNT_LEGACY && count($fields) !== self::PAYLOAD_FIELD_COUNT) {
             throw new OAuthStateException('OAuth state payload is malformed');
         }
 
@@ -108,7 +117,7 @@ final class OAuthStateSigner
             throw new OAuthStateException('OAuth state has expired');
         }
 
-        $mode = $fields[3] ?? self::MODE_LOGIN;
+        $mode = $fields[self::PAYLOAD_INDEX_MODE] ?? self::MODE_LOGIN;
         if ($mode !== self::MODE_LOGIN && $mode !== self::MODE_LINK) {
             throw new OAuthStateException('OAuth state carries an unknown mode');
         }

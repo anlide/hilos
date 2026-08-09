@@ -15,6 +15,15 @@ namespace Hilos\Mail\Smtp;
  */
 final class SmtpReply
 {
+    /** Digits of the status code every reply line opens with (RFC 5321). */
+    private const int CODE_LENGTH = 3;
+
+    /** Offset of the character telling a continuation line from the last one. */
+    private const int SEPARATOR_OFFSET = self::CODE_LENGTH;
+
+    /** Offset the reply text starts at, past the code and its separator. */
+    private const int TEXT_OFFSET = self::CODE_LENGTH + 1;
+
     /**
      * @param int $code Three-digit status code
      * @param string $text Reply text, continuation lines joined by "\n"
@@ -43,10 +52,10 @@ final class SmtpReply
 
             $line = substr($buffer, $offset, $eol - $offset);
             $offset = $eol + 2;
-            $code = (int)substr($line, 0, 3);
-            $lines[] = trim(substr($line, 4));
+            $code = (int)substr($line, 0, self::CODE_LENGTH);
+            $lines[] = trim(substr($line, self::TEXT_OFFSET));
 
-            if (strlen($line) <= 3 || $line[3] === ' ') {
+            if (strlen($line) <= self::CODE_LENGTH || $line[self::SEPARATOR_OFFSET] === ' ') {
                 $buffer = substr($buffer, $offset);
                 return new self($code, implode("\n", $lines));
             }

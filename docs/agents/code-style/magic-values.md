@@ -75,6 +75,8 @@ one value.
 - **`0`, `1`, `2`, `-1` and the empty string in a structural role**: an index, an
   increment, a half, "not found", "nothing yet". They carry no unit and mean the
   same everywhere.
+- **A default sitting next to the name of the setting it belongs to**: the
+  entries of a data catalog, below.
 
 The pair that draws the line, both on one line of code:
 
@@ -83,6 +85,28 @@ $router->add('GET', '/status', $handler);
 //            ^ closed set, owned by HttpConstants — test 3 fires
 //                   ^ unique description read once — data, stays a literal
 ```
+
+### Data catalogs
+
+A catalog of defaults — the table a `CatalogProviderInterface` implementation
+hands back, mapping a setting name to the value it takes when the environment
+says nothing — is data all the way through, and none of the three tests fires on
+it. The default already stands next to the name that describes it, so there is
+nothing left for a constant to say. And when two settings hold the same number,
+that is a coincidence between two decisions taken apart from each other rather
+than one value written twice: `MAIL_TIMEOUT_MS` and `SMS_TIMEOUT_MS` are two
+timeouts, and four retention windows that all read `90` are four windows.
+
+Naming such a pair once would do the damage the section below describes, one
+setting away from the reader — it would rule that changing the mail timeout also
+changes the SMS one, which nobody agreed to.
+
+The checker agrees, by a rule wider than catalogs: it never counts a number
+inside the value of a keyed array entry, however deep in that value the number
+sits. Every entry of a catalog hangs on the setting's name, so the whole table
+is out of its reach, and
+`framework/tests/CodeStyle/Fixtures/Good/EnvCatalogLookAlike.php` pins that it
+stays so.
 
 ## The same value is not one quantity
 
@@ -117,6 +141,7 @@ file at a time and cannot see either half of this.
 | Category | Example | Cure |
 |---|---|---|
 | Route path | `'/status'` in one route declaration | none — data |
+| Catalog default | `'MAIL_TIMEOUT_MS' => entry(10000)` in a data catalog | none — data |
 | HTTP method name | `'GET'`, `'POST'` | `HttpConstants` |
 | HTTP status | `500` handed to an error responder | `HttpConstants::HTTP_INTERNAL_ERROR` |
 | Time units | `microtime(true) * 1000` | `TimeConstants::MS_PER_SECOND` |

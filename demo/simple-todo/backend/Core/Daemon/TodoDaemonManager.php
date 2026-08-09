@@ -9,6 +9,7 @@ use Demo\SimpleTodo\Core\Socket\Server\TodoWebSocketServer;
 use Demo\SimpleTodo\Core\Socket\Server\TodoWorkerServer;
 use Demo\SimpleTodo\Hilos;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
@@ -90,7 +91,7 @@ final class TodoDaemonManager extends DaemonManager
     protected function httpRoutes(DaemonContext $context): iterable
     {
         return [
-            ['GET', '/status', new StatusHandler($this->workerServer)],
+            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
         ];
     }
 

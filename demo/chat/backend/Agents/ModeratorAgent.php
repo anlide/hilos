@@ -15,7 +15,9 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -67,7 +69,7 @@ final class ModeratorAgent extends AbstractAgent
     public function __construct()
     {
         $this->profile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_MODERATION);
-        $this->chatClient = Hilos::$env[EnvConstants::APP_ENV] === 'test'
+        $this->chatClient = AppEnv::fromString(Hilos::$env[EnvConstants::APP_ENV]) === AppEnv::TEST
             ? new TestModerationChatClient()
             : ClientFactory::createChatClientForProfile($this->profile);
     }
@@ -132,7 +134,7 @@ final class ModeratorAgent extends AbstractAgent
     public function onTick(): void
     {
         try {
-            $this->chatClient->tick(microtime(true) * 1000);
+            $this->chatClient->tick(microtime(true) * TimeConstants::MS_PER_SECOND);
         } catch (LLMException $e) {
             $this->logAgentError($e->getMessage());
             if ($this->currentAcceptKey !== null) {

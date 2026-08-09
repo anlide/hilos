@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Mail;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\Constants\TimeConstants;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 use Hilos\Mail\Smtp\SmtpAction;
@@ -401,7 +402,7 @@ class SmtpMailTransport implements MailTransportInterface
      */
     private function stampHeaders(string $encoded, float $nowMs): string
     {
-        $seconds = (int)($nowMs / 1000);
+        $seconds = (int)($nowMs / TimeConstants::MS_PER_SECOND);
         $messageId = '<' . substr(hash('sha256', $encoded . $nowMs), 0, 32) . '@' . $this->messageIdDomain() . '>';
 
         return 'Date: ' . date('r', $seconds) . self::CRLF

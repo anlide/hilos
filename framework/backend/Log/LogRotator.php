@@ -24,6 +24,9 @@ use Hilos\Utils\Logger;
  */
 final class LogRotator
 {
+    /** Mode the rotator creates its archive directories with; unrelated to the modes other subsystems pick. */
+    private const int ARCHIVE_DIR_PERMISSIONS = 0755;
+
     /**
      * @param string $logDirectory Directory holding the live *.log files and the archive subtree
      */
@@ -94,14 +97,14 @@ final class LogRotator
 
         $archiveDir = $this->logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
         if (!is_dir($archiveDir)) {
-            if (!mkdir($archiveDir, 0755, true)) {
+            if (!mkdir($archiveDir, self::ARCHIVE_DIR_PERMISSIONS, true)) {
                 throw new LogRotationException("Cannot create archive directory: $archiveDir");
             }
         }
 
         $timestamp = date(LogRotationConstants::TIMESTAMP_FORMAT);
         $timestampDir = $archiveDir . DIRECTORY_SEPARATOR . $timestamp;
-        if (!mkdir($timestampDir, 0755, true)) {
+        if (!mkdir($timestampDir, self::ARCHIVE_DIR_PERMISSIONS, true)) {
             throw new LogRotationException("Cannot create timestamp directory: $timestampDir");
         }
 

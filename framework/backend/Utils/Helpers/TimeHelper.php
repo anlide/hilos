@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use Hilos\Constants\TimeConstants;
+
 /**
  * TimeHelper - Utility functions for time formatting.
  */
@@ -28,7 +30,7 @@ class TimeHelper
     {
         $microtime = microtime(true);
         $timestamp = (int) $microtime;
-        $milliseconds = (int) (($microtime - $timestamp) * 1000);
+        $milliseconds = (int) (($microtime - $timestamp) * TimeConstants::MS_PER_SECOND);
         return date('Y-m-d H:i:s', $timestamp) . '.' . str_pad((string) $milliseconds, 3, '0', STR_PAD_LEFT);
     }
 }

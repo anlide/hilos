@@ -13,6 +13,7 @@ use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
 use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
@@ -119,8 +120,12 @@ final class ChatDaemonManager extends DaemonManager
     protected function httpRoutes(DaemonContext $context): iterable
     {
         return [
-            ['GET', '/status', new StatusHandler($this->workerServer)],
-            ['GET', '/chat/attachment', static fn (array $args): array => ChatAttachmentDownloadHandler::handle($args)],
+            [HttpConstants::METHOD_GET, '/status', new StatusHandler($this->workerServer)],
+            [
+                HttpConstants::METHOD_GET,
+                '/chat/attachment',
+                static fn (array $args): array => ChatAttachmentDownloadHandler::handle($args),
+            ],
         ];
     }
 

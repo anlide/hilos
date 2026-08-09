@@ -7,6 +7,7 @@ namespace Hilos\Sms\Delivery;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Router\AgentSignalData;
@@ -143,7 +144,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     {
         parent::onTick();
 
-        $nowMs = microtime(true) * 1000;
+        $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->pumpRawInFlight($nowMs);
         $this->startRawQueued($nowMs);
     }
@@ -192,7 +193,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             ],
         );
 
-        return $this->buildAttempt($this->buildMessage($address, $text), microtime(true) * 1000);
+        return $this->buildAttempt($this->buildMessage($address, $text), microtime(true) * TimeConstants::MS_PER_SECOND);
     }
 
     /**

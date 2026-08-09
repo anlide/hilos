@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\LLM\Agent;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Hilos;
 use Hilos\LLM\ClientFactory;
@@ -95,7 +96,7 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
     public function onTick(): void
     {
         try {
-            $this->chatClient->tick(microtime(true) * 1000);
+            $this->chatClient->tick(microtime(true) * TimeConstants::MS_PER_SECOND);
         } catch (LLMException $error) {
             $this->onLlmError($error);
             $this->chatClient->reset();

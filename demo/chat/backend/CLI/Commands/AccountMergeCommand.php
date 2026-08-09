@@ -10,6 +10,7 @@ use Hilos\API\AsyncCommandClient;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -135,9 +136,9 @@ HELP;
         try {
             $client->startRequest($request);
 
-            $startedAtMs = microtime(true) * 1000;
+            $startedAtMs = microtime(true) * TimeConstants::MS_PER_SECOND;
             while (!$client->hasResult()) {
-                if ((microtime(true) * 1000 - $startedAtMs) > self::MAX_WAIT_MS) {
+                if ((microtime(true) * TimeConstants::MS_PER_SECOND - $startedAtMs) > self::MAX_WAIT_MS) {
                     return null;
                 }
 

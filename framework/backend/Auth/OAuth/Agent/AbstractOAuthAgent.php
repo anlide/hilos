@@ -17,6 +17,7 @@ use Hilos\Auth\OAuth\OfflineOAuthProvider;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -133,7 +134,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        $nowMs = microtime(true) * 1000;
+        $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->adoptPendingOps($this->pending, $nowMs);
         $this->pumpExchanges($this->pending, $nowMs);
     }

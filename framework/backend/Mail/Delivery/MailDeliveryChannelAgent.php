@@ -7,6 +7,7 @@ namespace Hilos\Mail\Delivery;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Router\AgentSignalData;
@@ -142,7 +143,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     {
         parent::onTick();
 
-        $nowMs = microtime(true) * 1000;
+        $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->pumpRawInFlight($nowMs);
         $this->startRawQueued($nowMs);
     }
@@ -195,7 +196,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         return new MailDeliveryAttempt(
             $this->createTransport(),
             new EmailMessage($address, $content->subject, $content->text, html: $content->html),
-            microtime(true) * 1000,
+            microtime(true) * TimeConstants::MS_PER_SECOND,
         );
     }
 

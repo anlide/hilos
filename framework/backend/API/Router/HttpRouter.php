@@ -6,6 +6,7 @@ namespace Hilos\API\Router;
 
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -90,14 +91,14 @@ class HttpRouter
         $startedAt = hrtime(true);
         try {
             $response = $this->resolver->resolve($route, $request);
-            $durationMs = (int)round((hrtime(true) - $startedAt) / 1_000_000);
+            $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
             $statusCode = isset($response[HttpConstants::RESPONSE_KEY_STATUS])
                 ? (int)$response[HttpConstants::RESPONSE_KEY_STATUS]
                 : HttpConstants::HTTP_OK;
             Hilos::$ac?->finishApiRequest($apiRequestId, $statusCode, $durationMs);
             return $response;
         } catch (\Throwable $e) {
-            $durationMs = (int)round((hrtime(true) - $startedAt) / 1_000_000);
+            $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
             Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
             return [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_INTERNAL_ERROR,

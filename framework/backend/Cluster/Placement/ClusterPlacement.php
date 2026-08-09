@@ -13,6 +13,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
@@ -123,8 +124,8 @@ final class ClusterPlacement implements WorkerPlacement
         $this->mesh = $mesh;
         $this->executor = $executor;
         $this->observer = $observer ?? new NullPlacementObserver();
-        $this->failoverGraceSec = $failoverGraceMs / 1000.0;
-        $this->slaveWorkGraceSec = $slaveWorkGraceMs / 1000.0;
+        $this->failoverGraceSec = $failoverGraceMs / TimeConstants::MS_PER_SECOND;
+        $this->slaveWorkGraceSec = $slaveWorkGraceMs / TimeConstants::MS_PER_SECOND;
         $this->policy = $policy ?? new BestFitPlacementPolicy();
         $this->registry = new PlacementRegistry();
     }

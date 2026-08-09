@@ -57,25 +57,30 @@ final class SmtpDialog
     public function onReply(SmtpReply $reply): SmtpAction
     {
         return match ($this->state) {
-            SmtpState::GREETING => $this->expect($reply, 220, 'SMTP server did not accept the connection')
+            SmtpState::GREETING => $this->expect($reply, SmtpReplyCode::SERVICE_READY, 'SMTP server did not accept the connection')
                 ?? $this->sendEhlo(SmtpState::EHLO),
-            SmtpState::EHLO, SmtpState::EHLO_TLS => $this->expect($reply, 250, 'SMTP server rejected the EHLO handshake')
+            SmtpState::EHLO, SmtpState::EHLO_TLS => $this->expect($reply, SmtpReplyCode::ACTION_OK, 'SMTP server rejected the EHLO handshake')
                 ?? $this->afterEhlo($reply),
-            SmtpState::STARTTLS => $this->expect($reply, 220, 'SMTP server refused STARTTLS')
+            SmtpState::STARTTLS => $this->expect($reply, SmtpReplyCode::SERVICE_READY, 'SMTP server refused STARTTLS')
                 ?? SmtpAction::startTls(),
-            SmtpState::AUTH_PLAIN, SmtpState::AUTH_LOGIN_PASSWORD => $this->expect($reply, 235, 'SMTP authentication failed')
+            SmtpState::AUTH_PLAIN, SmtpState::AUTH_LOGIN_PASSWORD
+                => $this->expect($reply, SmtpReplyCode::AUTH_SUCCEEDED, 'SMTP authentication failed')
                 ?? $this->sendMailFrom(),
-            SmtpState::AUTH_LOGIN => $this->expect($reply, 334, 'SMTP authentication failed')
+            SmtpState::AUTH_LOGIN => $this->expect($reply, SmtpReplyCode::AUTH_CHALLENGE, 'SMTP authentication failed')
                 ?? $this->send(SmtpState::AUTH_LOGIN_USERNAME, base64_encode((string)$this->config->username)),
-            SmtpState::AUTH_LOGIN_USERNAME => $this->expect($reply, 334, 'SMTP authentication failed')
+            SmtpState::AUTH_LOGIN_USERNAME => $this->expect($reply, SmtpReplyCode::AUTH_CHALLENGE, 'SMTP authentication failed')
                 ?? $this->send(SmtpState::AUTH_LOGIN_PASSWORD, base64_encode((string)$this->config->password)),
-            SmtpState::MAIL_FROM => $this->expect($reply, 250, 'SMTP server rejected the sender')
+            SmtpState::MAIL_FROM => $this->expect($reply, SmtpReplyCode::ACTION_OK, 'SMTP server rejected the sender')
                 ?? $this->send(SmtpState::RCPT_TO, 'RCPT TO:<' . $this->message->to . '>'),
-            SmtpState::RCPT_TO => $this->expectAny($reply, [250, 251], 'SMTP server rejected the recipient')
+            SmtpState::RCPT_TO => $this->expectAny(
+                $reply,
+                [SmtpReplyCode::ACTION_OK, SmtpReplyCode::USER_NOT_LOCAL_FORWARDED],
+                'SMTP server rejected the recipient',
+            )
                 ?? $this->send(SmtpState::DATA, 'DATA'),
-            SmtpState::DATA => $this->expect($reply, 354, 'SMTP server refused the message data')
+            SmtpState::DATA => $this->expect($reply, SmtpReplyCode::START_MAIL_INPUT, 'SMTP server refused the message data')
                 ?? $this->send(SmtpState::DATA_BODY, $this->dataPayload(), terminated: true),
-            SmtpState::DATA_BODY => $this->expect($reply, 250, 'SMTP server did not accept the message')
+            SmtpState::DATA_BODY => $this->expect($reply, SmtpReplyCode::ACTION_OK, 'SMTP server did not accept the message')
                 ?? $this->sendQuit(),
             SmtpState::QUIT, SmtpState::DONE => SmtpAction::finish(MailSendOutcome::delivered()),
         };
@@ -235,7 +240,7 @@ final class SmtpDialog
      */
     private function fail(SmtpReply $reply, string $sentence): SmtpAction
     {
-        return SmtpAction::finish(MailSendOutcome::failed($sentence, $reply->code >= 500));
+        return SmtpAction::finish(MailSendOutcome::failed($sentence, $reply->code >= SmtpReplyCode::PERMANENT_FAILURE_MIN));
     }
 
     /**

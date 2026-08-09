@@ -7,6 +7,8 @@ namespace Hilos\LLM\External\Chat;
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\LLMConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -118,8 +120,8 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
             );
         }
 
-        $timeoutMs = (int) ceil($options->timeoutSec * 1000);
-        $this->httpClient->timeout = (float) max($timeoutMs, 1000);
+        $timeoutMs = (int) ceil($options->timeoutSec * TimeConstants::MS_PER_SECOND);
+        $this->httpClient->timeout = (float) max($timeoutMs, LLMConstants::MIN_REQUEST_TIMEOUT_MS);
         $this->httpClient->setRequestOptions(
             HttpConstants::METHOD_POST,
             null,
@@ -130,7 +132,7 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
             ],
         );
 
-        $currentTimeMs = microtime(true) * 1000;
+        $currentTimeMs = microtime(true) * TimeConstants::MS_PER_SECOND;
 
         try {
             $this->httpClient->startNewRequest($currentTimeMs);

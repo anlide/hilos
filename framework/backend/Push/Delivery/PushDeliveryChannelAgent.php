@@ -9,6 +9,7 @@ use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Database\Context\HilosDbContext;
@@ -168,7 +169,7 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             $client = new AsyncHttpClient($request->host, $request->port, $request->path, $request->useTls);
             $client->timeout = $this->config->timeoutMs;
             $client->setRequestOptions(HttpConstants::METHOD_POST, $request->path, $request->body, $request->headers);
-            $client->startNewRequest(microtime(true) * 1000);
+            $client->startNewRequest(microtime(true) * TimeConstants::MS_PER_SECOND);
 
             return new PushEndpointSend($subscription->endpoint, $client);
         } catch (PushException | AsyncHttpException | SocketException $e) {

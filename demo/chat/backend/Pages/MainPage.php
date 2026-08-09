@@ -54,6 +54,7 @@ use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -971,7 +972,7 @@ final class MainPage extends AbstractPage
                 $connection->sessionToken,
                 $dto->provider,
                 $dto->code,
-                microtime(true) * 1000 + ChatOAuthConfig::EXCHANGE_TTL_MS,
+                microtime(true) * TimeConstants::MS_PER_SECOND + ChatOAuthConfig::EXCHANGE_TTL_MS,
                 $mode,
                 $linkUserId,
             ),

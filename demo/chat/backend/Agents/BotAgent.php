@@ -54,6 +54,9 @@ final class BotAgent extends AbstractLlmChatAgent
 
     private const int MAX_RESPONSE_TOKENS = 256;
 
+    /** Top of the percent scale a bot's reaction chance is drawn against. */
+    private const int REACTION_CHANCE_MAX_PERCENT = 100;
+
     private float $scheduledReactAt = 0.0;
 
     private float $lastMessageSentAt = 0.0;
@@ -290,7 +293,10 @@ final class BotAgent extends AbstractLlmChatAgent
         if ($reactionChance <= 0) {
             return false;
         }
-        if ($reactionChance < 100 && RandomHelper::integer(1, 100) > $reactionChance) {
+        if (
+            $reactionChance < self::REACTION_CHANCE_MAX_PERCENT
+            && RandomHelper::integer(1, self::REACTION_CHANCE_MAX_PERCENT) > $reactionChance
+        ) {
             return false;
         }
 

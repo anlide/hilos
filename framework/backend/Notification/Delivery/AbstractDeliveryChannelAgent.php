@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
@@ -124,7 +125,7 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        $nowMs = microtime(true) * 1000;
+        $nowMs = microtime(true) * TimeConstants::MS_PER_SECOND;
         $this->pumpInFlight($nowMs);
         $this->startQueued($nowMs);
     }
@@ -233,7 +234,12 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $notification = $this->notifications()->get($notificationId);
         if (!$notification instanceof ObjectNotification) {
             $deliveries->beginAttempt($delivery);
-            $this->failOrRetry($delivery, 'notification unavailable', $notificationId, microtime(true) * 1000);
+            $this->failOrRetry(
+                $delivery,
+                'notification unavailable',
+                $notificationId,
+                microtime(true) * TimeConstants::MS_PER_SECOND,
+            );
 
             return;
         }
@@ -241,7 +247,12 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
         $deliveries->beginAttempt($delivery);
         $address = $this->channel()->resolveAddress($notification->userId);
         if ($address === null) {
-            $this->failOrRetry($delivery, 'address unresolved', $notificationId, microtime(true) * 1000);
+            $this->failOrRetry(
+                $delivery,
+                'address unresolved',
+                $notificationId,
+                microtime(true) * TimeConstants::MS_PER_SECOND,
+            );
 
             return;
         }
