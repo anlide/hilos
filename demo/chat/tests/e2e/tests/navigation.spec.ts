@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-import { signUp } from '../helpers/session'
+import { signUpAdmin } from '../helpers/adminGrant'
+import { expectPageReady } from '../helpers/page'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
 // and the brand moves back home through the core navigator (HilosRouter),
@@ -16,14 +17,19 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  // Sign in so the navbar carries the self user across the transitions; the
-  // register runs in place, so the load count settles here.
-  const user = await signUp(page)
-  await expect(page.getByTestId('self-user')).toHaveText(user.name)
+  // Sign in and take the admin grant: the gear's target is the framework
+  // dashboard, and /hilos is closed by default (HIL-441), so without the grant
+  // this spec would be asserting that a non-admin is shown the admin section.
+  // signUp asserts the self user itself, and both it and the grant run in
+  // place, so the load count settles here.
+  await signUpAdmin(page)
   const loadsAfterColdLoad = fullLoads
 
-  // Gear -> dashboard.
+  // Gear -> dashboard. Wait for the outlet to settle first: the page is held
+  // back until its subscription answers, so `ready` is the moment the dashboard
+  // on screen is the one that stays.
   await page.getByTestId('nav-admin').click()
+  await expectPageReady(page)
   await expect(page.getByTestId('dashboard-view')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -31,6 +37,7 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
 
   // Brand -> home.
   await page.getByTestId('nav-brand').click()
+  await expectPageReady(page)
   await expect(page.getByTestId('self-user')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')

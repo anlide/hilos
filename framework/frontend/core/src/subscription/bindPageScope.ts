@@ -54,7 +54,7 @@ export function bindPageScope(
       // Validated against pageResponseSchema at the parse boundary; this cast
       // is the declared typed selector for that schema's output.
       const response = signal.data as PageResponseWire
-      pages.ingestPageResponse(response.page, response.payload, options)
+      pages.ingestPageResponse(response.page, response.payload ?? {}, options)
     } else if (signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR) {
       // Validated against pageSubscriptionErrorSchema at the parse boundary;
       // the typed selector for that schema's output.

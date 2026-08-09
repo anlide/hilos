@@ -44,6 +44,9 @@ export class PageSubscription {
     null,
   )
 
+  /** True from a page's subscribe until that page's first answer of either kind. */
+  private readonly pageLoadingSignal = createSignal(false)
+
   constructor(
     private readonly connection: PageSubscriptionConnection,
     private readonly scopes: ScopeManager,
@@ -70,6 +73,21 @@ export class PageSubscription {
   }
 
   /**
+   * True while the subscribed page has not answered yet, so the routed view can
+   * hold the page back instead of showing it and taking it away again when a
+   * denial lands one round trip later.
+   *
+   * It is raised by {@link subscribe} — a navigation — and lowered by the first
+   * answer for that page, a page_response or a subscription_page_error alike.
+   * A reconnect's re-subscribe does NOT raise it: the page is already on screen
+   * and its content is being refreshed, not awaited, and blanking it on every
+   * socket flap would be worse than showing slightly stale rows.
+   */
+  get pageLoading(): ReadonlySignal<boolean> {
+    return this.pageLoadingSignal
+  }
+
+  /**
    * Subscribe the page, atomically replacing the previous subscription: the
    * old page scope drops, a fresh one opens, and one page_subscribe frame
    * goes out (immediately when connected, on the next `connected` transition
@@ -81,6 +99,7 @@ export class PageSubscription {
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
     this.current = { pageKey, params }
     this.pageErrorSignal.set(null)
+    this.pageLoadingSignal.set(true)
     const scope = this.scopes.openPage(pageKey)
     this.sendSubscribe()
 
@@ -94,6 +113,11 @@ export class PageSubscription {
    * clearing a 401 the moment the session authenticates un-gates the page with
    * no re-navigation — the resume half of the auth gate (HIL-165). A no-op when
    * no error is set.
+   *
+   * It does not raise {@link pageLoading} again: this subscription has already
+   * answered once, and the page is un-gated in place rather than awaited afresh.
+   * Raising it here would blank a page the user is looking at for as long as the
+   * re-delivery takes.
    */
   clearPageError(): void {
     this.pageErrorSignal.set(null)
@@ -107,6 +131,7 @@ export class PageSubscription {
     const left = this.current.pageKey
     this.current = null
     this.pageErrorSignal.set(null)
+    this.pageLoadingSignal.set(false)
     this.scopes.dropPage()
     this.connection.send(
       JSON.stringify({
@@ -135,6 +160,7 @@ export class PageSubscription {
       return false
     }
     ingest(scope, payload, options)
+    this.pageLoadingSignal.set(false)
 
     return true
   }
@@ -152,6 +178,7 @@ export class PageSubscription {
       return false
     }
     this.pageErrorSignal.set(error)
+    this.pageLoadingSignal.set(false)
 
     return true
   }

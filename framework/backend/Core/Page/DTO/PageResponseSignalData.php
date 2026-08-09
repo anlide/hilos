@@ -38,14 +38,23 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Converts the signal payload to its wire array.
      *
-     * @return array<string, mixed> DTO payload in the `{page, payload}` wire form
+     * An empty payload is omitted rather than sent as an empty map, the same
+     * rule {@see PagePayload::toArray()} applies to its own sections. It has to
+     * be: PHP encodes an empty array as the JSON array `[]`, which the client's
+     * object-shaped payload schema rejects, and the frame — the acknowledgement
+     * a subscribing page waits on — would die at the parse boundary. An absent
+     * key reads as "no payload" on both sides.
+     *
+     * @return array<string, mixed> DTO payload in the `{page, payload?}` wire form
      */
     public function toArray(): array
     {
-        return [
-            self::page => $this->pageKey,
-            self::payload => $this->payload->toArray(),
-        ];
+        $wire = [self::page => $this->pageKey];
+        if (!$this->payload->isEmpty()) {
+            $wire[self::payload] = $this->payload->toArray();
+        }
+
+        return $wire;
     }
 
     /**

@@ -6,6 +6,12 @@
 // page renders nothing. The router must be provided at the app root
 // (HILOS_ROUTER).
 //
+// A page is held back until its subscription answers (router.pageLoading):
+// showing it earlier means showing a page the server may be about to deny, and
+// taking it away again one round trip later. The `hilos-page-state` marker names
+// the outcome — loading, error or ready — so the state is readable from the DOM
+// rather than guessed from whichever element happened to render first.
+//
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 // the `authGate`'s modal shows the same surface over the live page for a gated
@@ -40,13 +46,18 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgComponentOutlet, ErrorPage, HilosModal],
   template: `
+    <div
+      data-id="hilos-page-state"
+      [attr.data-state]="pageState()"
+      hidden
+    ></div>
     @if (pageError(); as error) {
       @if (error.httpCode === 401 && authSurfaceType()) {
         <ng-container [ngComponentOutlet]="authSurfaceType()" />
       } @else {
         <hilos-error-page [error]="error" />
       }
-    } @else {
+    } @else if (!pageLoading()) {
       <ng-container [ngComponentOutlet]="view()" />
     }
     @if (authSurfaceType() && authGate()) {
@@ -76,6 +87,15 @@ export class HilosView {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
   protected readonly pageError = hilosSignal(this.router.pageError)
+  protected readonly pageLoading = hilosSignal(this.router.pageLoading)
+
+  // The one place the three outcomes of a navigation are named. The marker
+  // element carries it so a test waits for the page to be settled instead of
+  // polling for an element that renders before the answer and disappears when
+  // it lands.
+  protected readonly pageState = computed<string>(() =>
+    this.pageError() ? 'error' : this.pageLoading() ? 'loading' : 'ready',
+  )
 
   protected readonly view = computed<Type<unknown> | null>(
     () => this.pages()[this.route().page] ?? null,

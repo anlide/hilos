@@ -61,13 +61,32 @@ final class AbstractPagePageResponseEmitTest extends TestCase
         );
     }
 
-    public function testSubscribeEmitsNothingForADefaultPage(): void
+    /**
+     * A page that contributes nothing still answers. The frame is what the
+     * client waits on before it shows the page, so silence would leave it with
+     * nothing to wait for — and only the option of showing the page ahead of a
+     * denial that may still be in flight.
+     */
+    public function testSubscribeEmitsAnEmptyPageResponseForADefaultPage(): void
     {
         $page = new AbstractPagePageResponseEmitTestDefaultPage(new AbstractPagePageResponseEmitTestAgent());
 
         $page->onSubscribe('ak-1', new PageRouteParams([]));
 
-        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(PageResponseSignalData::class, $signal->data->data);
+        // No payload key at all: an empty PHP array would cross as the JSON
+        // array `[]` and the client's object-shaped schema would reject the
+        // frame it is waiting on.
+        $this->assertSame(
+            [PageResponseSignalData::page => AbstractPagePageResponseEmitTestDefaultPage::PAGE],
+            $signal->data->data->toArray(),
+        );
     }
 }
 

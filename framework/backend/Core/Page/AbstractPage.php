@@ -173,6 +173,17 @@ abstract class AbstractPage
      * them into an AbstractPageSubscribeParamsDTO subclass before
      * dispatching to a page-specific hook.
      *
+     * The page_response frame closes every ACCEPTED subscription, carrying an
+     * empty payload when the page contributes none. It is the answer the client
+     * waits on before it shows the page, so a page that has nothing to say must
+     * still say that — otherwise the client has no event to wait for and can
+     * only show the page optimistically, ahead of a denial that may still be in
+     * flight. It goes out LAST, after the browser snapshot, because it means
+     * "this subscription is answered in full": sent first, it would release the
+     * page while its snapshot was still on the wire. A subscription that throws
+     * sends no answer at all — the PageSubscriptionException becomes a
+     * subscription_page_error, which the client waits on the same way.
+     *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
      * @throws PageSubscriptionException When browser snapshot rejects the subscription
@@ -180,14 +191,12 @@ abstract class AbstractPage
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $payload = $this->buildPagePayload($params);
-        if ($payload !== null && !$payload->isEmpty()) {
-            $this->sendToUser(
-                SignalTypeConstants::PAGE_RESPONSE,
-                $acceptKey,
-                new PageResponseSignalData(static::PAGE, $payload),
-            );
-        }
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
+        $this->sendToUser(
+            SignalTypeConstants::PAGE_RESPONSE,
+            $acceptKey,
+            new PageResponseSignalData(static::PAGE, $payload ?? new PagePayload()),
+        );
     }
 
     /**

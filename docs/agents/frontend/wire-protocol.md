@@ -278,6 +278,16 @@ each optional and omitted when empty:
   `items`. A slot is an entity fragment (told apart by its `id`) or a plain
   value; the normalizer references the former and keeps the latter inline.
 
+**Every accepted subscription is answered exactly once**, and the answer is the
+last frame the subscription produces: a page that contributes no payload sends
+`page_response` with an empty one, after its browser snapshot. The frame is
+therefore an acknowledgement as much as a delivery — it is what the client waits
+on before it shows the page (`router.pageLoading`), so that a page is never shown
+and then taken away again by a denial still in flight. A subscription that is
+refused answers with `subscription_page_error` instead, and the client waits on
+that the same way; a page that answered neither would leave the client with
+nothing to wait for.
+
 A page contributes the payload from the framework default `onSubscribe` via the
 `buildPagePayload` hook, so a page never hand-rolls the signal. The `tables`
 section rides the same envelope but the frontend consumes it last (the heavy

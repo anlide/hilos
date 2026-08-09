@@ -46,10 +46,12 @@ function fakeEnvironment(initial: string) {
 }
 
 // A fake page subscription that records what it was asked to subscribe and
-// carries a writable page-error signal the navigator proxies.
+// carries the writable page-error and page-loading signals the navigator
+// proxies.
 function fakePages() {
   const calls: Array<{ page: string; params: Record<string, string> }> = []
   const pageError = createSignal<PageSubscriptionError | null>(null)
+  const pageLoading = createSignal(false)
   let cleared = 0
   const pages: NavigablePages = {
     subscribe: (page, params = {}) => {
@@ -58,6 +60,7 @@ function fakePages() {
       return null
     },
     pageError,
+    pageLoading,
     clearPageError: () => {
       cleared += 1
       pageError.set(null)

@@ -99,7 +99,10 @@ export type ScopePayloadWire = z.infer<typeof scopePayloadSchema>
  */
 export const pageResponseSchema = z.looseObject({
   page: z.string().min(1),
-  payload: scopePayloadSchema,
+  // Optional because a page that contributes nothing still answers: the frame
+  // is the acknowledgement the routed outlet waits on, and it carries no
+  // payload key at all rather than an empty map.
+  payload: scopePayloadSchema.optional(),
 })
 
 export type PageResponseWire = z.infer<typeof pageResponseSchema>
