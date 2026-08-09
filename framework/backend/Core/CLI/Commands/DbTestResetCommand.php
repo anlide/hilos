@@ -26,8 +26,12 @@ use mysqli_sql_exception;
  * Resets test database: DROP DATABASE, CREATE DATABASE, migrate up, apply seeds.
  * Requires Migration and Seed paths to be configured in CLI bootstrap.
  * Uses DB_* and APP_ENV from environment. Seeds are allowed when APP_ENV=test.
+ *
+ * Database-free by contract: it opens its own server-level connection, because the
+ * database named by DB_DATABASE is the one it drops and recreates — and on a fresh volume
+ * does not exist yet.
  */
-class DbTestResetCommand implements CommandInterface
+class DbTestResetCommand implements CommandInterface, DatabaseFreeCommand
 {
     private const string DEFAULT_TEST_DATABASE = 'hilos_demo_test';
 

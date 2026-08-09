@@ -14,11 +14,6 @@ use Hilos\Core\CLI\CliManager;
  *
  * Provides db:*, daemon:status, cluster:test:inspect (test-only), and help. The
  * multi-node harness drives cluster:test:inspect per node over the command channel.
- *
- * cluster:test:inspect only talks to the local daemon's command socket, so it skips the
- * database connect entirely — that lets the harness inspect a NETWORK-PARTITIONED node
- * from inside its own container (which cannot reach MySQL either), as the split-brain
- * scenario needs to confirm the isolated minority stepped down.
  */
 
 CliApplication::run(
@@ -27,6 +22,5 @@ CliApplication::run(
     hilosClass: Hilos::class,
     cliManagerClass: CliManager::class,
     argv: $argv,
-    databaseInit: static fn (bool $initHilos) => Database::initialize(initHilos: $initHilos),
-    commandsWithoutDb: ['cluster:test:inspect'],
+    databaseInit: static fn () => Database::initialize(),
 );

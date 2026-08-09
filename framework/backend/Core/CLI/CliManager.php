@@ -16,6 +16,7 @@ use Hilos\Core\CLI\Commands\ClusterReloadCommand;
 use Hilos\Core\CLI\Commands\ClusterTestInspectCommand;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
+use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\DbWaitCommand;
@@ -113,6 +114,11 @@ class CliManager
      *
      * Override point for a project: a CliManager subclass overrides this and calls
      * addCommand() for each project command. The default registers none.
+     *
+     * A registered command's constructor must not touch the database or Hilos state. The
+     * whole registry is built before the CLI bootstrap connects — it is
+     * {@see requiresDatabase()}, asked of the built registry, that decides whether the
+     * bootstrap connects at all.
      */
     protected function registerProjectCommands(): void
     {
@@ -133,6 +139,27 @@ class CliManager
     public function hasCommand(string $name): bool
     {
         return isset($this->commands[$name]);
+    }
+
+    /**
+     * Answers the CLI bootstrap's one question about a command: connect the database first,
+     * or leave it alone. The registry itself stays private — only the yes/no leaves, so the
+     * marker knowledge stays with the registry owner.
+     *
+     * An unregistered name answers false, so a typo reaches the "Unknown command" reply
+     * instead of dying earlier in a connection failure.
+     *
+     * @param ?string $command Command name from argv, or null when none was named
+     * @return bool True when the bootstrap must connect before running the command
+     */
+    public function requiresDatabase(?string $command): bool
+    {
+        $name = $command ?? CliCommands::HELP;
+        if (!isset($this->commands[$name])) {
+            return false;
+        }
+
+        return !($this->commands[$name] instanceof DatabaseFreeCommand);
     }
 
     /**

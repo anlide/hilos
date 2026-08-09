@@ -16,8 +16,9 @@ use Hilos\Hilos;
  * the environment accessor from the project root, apply the test-env override when the
  * Docker test stack requests it, then run the caller's persistence init. Because the
  * concrete facade determines the env/cluster catalogs (late static binding), the project
- * Hilos subclass is passed in rather than assumed. Reused by the daemon spine today and
- * by the worker/cli/docker entrypoints once they adopt it.
+ * Hilos subclass is passed in rather than assumed. Reused by the daemon, worker and docker
+ * spines; the CLI spine calls {@see initEnvironment()} alone, because it must build its
+ * command manager between the env and the connect.
  */
 final class EntrypointPrelude
 {
@@ -30,13 +31,24 @@ final class EntrypointPrelude
      */
     public static function run(string $hilosClass, string $projectRoot, callable $persistenceInit): void
     {
+        self::initEnvironment($hilosClass, $projectRoot);
+
+        $persistenceInit();
+    }
+
+    /**
+     * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
+     * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
+     * @throws EnvInvalidValueException When the test env file is requested but missing
+     * @throws EnvException When the APP_ENV value cannot be read
+     */
+    public static function initEnvironment(string $hilosClass, string $projectRoot): void
+    {
         $hilosClass::initEnv($projectRoot);
 
         // The test Docker stack loads tests/.env over the default project .env.
         if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
             $hilosClass::loadEnv($projectRoot . '/tests/.env');
         }
-
-        $persistenceInit();
     }
 }

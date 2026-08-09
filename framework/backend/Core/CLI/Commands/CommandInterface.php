@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Core\CLI\CliManager;
+
 /**
  * CommandInterface - Interface for CLI commands.
  *
  * Defines contract for all CLI command implementations.
  * Each command must implement execute method that returns exit code.
+ *
+ * An implementation's constructor must not touch the database or Hilos state. Every
+ * command is constructed before the CLI bootstrap connects, because the answer of
+ * {@see CliManager::requiresDatabase()} — read off the constructed command — is what
+ * decides whether it connects at all. Work needing a connection belongs in execute().
  */
 interface CommandInterface
 {

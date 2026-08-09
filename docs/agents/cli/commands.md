@@ -27,8 +27,8 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 
 | Command | Description |
 |---|---|
-| `db:test:reset` | DROP all tables → migrate → seed (test env only) |
-| `db:wait` | Wait until MySQL is accepting connections |
+| `db:test:reset` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
+| `db:wait` | Wait until MySQL is accepting connections — runs while the server is still down |
 
 ## System commands
 
@@ -36,7 +36,7 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 |---|---|
 | `daemon:status` | Show daemon status (workers, memory, uptime) |
 | `daemon:monitor` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
-| `help` | List available commands |
+| `help` | List available commands — runs while the server is still down |
 
 ## Test-only commands
 
@@ -80,6 +80,26 @@ So each time-based feature gets its **own** narrow test-only command that ages t
 timestamp it needs, making the scheduled logic fire now. For example `test:account:force-purge`
 writes the deletion timestamp into the past so the scheduled purge runs immediately. Write these
 per-feature and carefully; never generalise them into a shared time-travel utility.
+
+## Database-free commands
+
+The CLI bootstrap connects the database before running a command. A command that must work
+when there is no database to connect to declares that itself, by implementing the empty
+marker `Hilos\Core\CLI\Commands\DatabaseFreeCommand` — the same "implementing it is the
+whole declaration" shape as `TestOnlyCommand`, and a project command declares it the same
+way. `CliApplication` asks `CliManager::requiresDatabase()` and skips the connect; an
+unregistered command name skips it too, so a typo answers `Unknown command` instead of a
+connection failure.
+
+Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
+answers), `db:test:reset` (opens its own server-level connection, because it drops and
+recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed) and
+`cluster:test:inspect` (talks only to the local command socket, so the multi-node harness
+can inspect a network-partitioned node that cannot reach MySQL either). Everything else
+keeps the full connect plus `Hilos::init()`.
+
+Because the whole registry is now constructed *before* the connect, a command constructor
+must not touch the database or Hilos state. Do that work in `execute()`.
 
 ## Typical development flow
 

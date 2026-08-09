@@ -25,8 +25,12 @@ use JsonException;
  * command channel; the daemon answers synchronously with that node's own view —
  * membership, its consensus verdicts (leader / term / role / quorum) and lifecycle
  * phase, and the leader-tracked placements. It only reads state; it never forces any.
+ *
+ * Database-free by contract: it talks to nothing but the local command socket, which is
+ * what lets the harness inspect a network-partitioned node from inside its own container —
+ * that node cannot reach MySQL either, and its answer is the point of the scenario.
  */
-class ClusterTestInspectCommand extends TestOnlyCommand
+class ClusterTestInspectCommand extends TestOnlyCommand implements DatabaseFreeCommand
 {
     /** @var float Wall-clock wait budget for a reply in milliseconds */
     private const float MAX_WAIT_MS = 2000.0;

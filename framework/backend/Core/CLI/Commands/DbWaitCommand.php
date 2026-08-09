@@ -15,8 +15,12 @@ use mysqli_sql_exception;
  *
  * Waits for MySQL to become ready. Polls connection until success.
  * Uses DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD from environment.
+ *
+ * Database-free by contract: the poll is the command's own connect, and it has to work
+ * before the server answers at all — a bootstrap connect would fail first and there would
+ * be nothing left to wait for.
  */
-class DbWaitCommand implements CommandInterface
+class DbWaitCommand implements CommandInterface, DatabaseFreeCommand
 {
     /** @var int Poll interval in seconds */
     private const int DEFAULT_INTERVAL_SEC = 2;

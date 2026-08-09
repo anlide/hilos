@@ -23,5 +23,5 @@ CliApplication::run(
     hilosClass: Hilos::class,
     cliManagerClass: CliManager::class,
     argv: $argv,
-    databaseInit: static fn (bool $initHilos) => Database::initialize(initHilos: $initHilos),
+    databaseInit: static fn () => Database::initialize(),
 );

@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
+use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Hilos;
@@ -18,21 +19,20 @@ use Hilos\Utils\Logger;
  *
  * A cli.php collapses to a single {@see run()} call naming its Hilos facade, its CLI
  * manager class, and its database connect. The spine runs the env prelude, configures the
- * migration/seed paths, connects the database under the command gating the bootstraps
- * carried, constructs the manager, and returns its exit code — all under one try/catch
- * that logs and exits ERROR.
+ * migration/seed paths, constructs the manager, connects the database when the command
+ * asks for one, and returns its exit code — all under one try/catch that logs and exits
+ * ERROR.
  *
- * Two gates shape the database connect. Some bootstrap commands must run before the Hilos
- * context exists (they prepare the very schema Hilos reads), so they connect with Hilos
- * init skipped. Other commands talk only to the daemon's command socket and need no
- * database at all, so a caller may name them to skip the connect entirely — the cluster
- * demo uses this to inspect a network-partitioned node that cannot reach MySQL.
+ * One gate shapes the database connect, and the command owns it: the manager is built
+ * before any connection, then answers whether the named command needs one. A command
+ * marked {@see DatabaseFreeCommand} runs with the database untouched — that is what lets
+ * db:wait poll a MySQL that is still down, db:test:reset create a database that does not
+ * exist yet, and the cluster demo inspect a network-partitioned node that cannot reach
+ * MySQL either. An unregistered name skips the connect too, so a typo answers "unknown
+ * command" instead of a connection failure.
  */
 final class CliApplication
 {
-    /** @var list<string> Commands that prepare the schema and so connect with Hilos init skipped. */
-    private const array COMMANDS_WITHOUT_HILOS_INIT = ['db:wait', 'db:test:reset'];
-
     /**
      * Runs the CLI from its thin entrypoint. Terminates the process; never returns.
      *
@@ -41,8 +41,7 @@ final class CliApplication
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param class-string<CliManager> $cliManagerClass CLI manager to construct and run
      * @param list<string> $argv Command-line arguments; $argv[1] is the command name
-     * @param callable(bool): void $databaseInit Database connect, receiving whether to init the Hilos context
-     * @param list<string> $commandsWithoutDb Commands that skip the database connect entirely
+     * @param callable(): void $databaseInit Database connect, run only for a command that needs one
      * @return never
      */
     public static function run(
@@ -52,31 +51,23 @@ final class CliApplication
         string $cliManagerClass,
         array $argv,
         callable $databaseInit,
-        array $commandsWithoutDb = [],
     ): void {
-        // $argv[1] is the command; some commands gate how (or whether) the database connects.
-        $command = $argv[1] ?? '';
+        // $argv[1] is the command; null means none was named, which the manager reads as help.
+        $command = $argv[1] ?? null;
 
         try {
-            EntrypointPrelude::run($hilosClass, $projectRoot, static function () use (
-                $bootstrapDir,
-                $command,
-                $databaseInit,
-                $commandsWithoutDb,
-            ): void {
-                Migration::setMigrationListPath($bootstrapDir . '/../Database/Migration');
-                Migration::setMigrationName('Schema');
-                Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
-                Seed::setSeedPath($bootstrapDir . '/../Database/Migration/Seed');
+            EntrypointPrelude::initEnvironment($hilosClass, $projectRoot);
 
-                if (in_array($command, $commandsWithoutDb, true)) {
-                    return;
-                }
-
-                $databaseInit(!in_array($command, self::COMMANDS_WITHOUT_HILOS_INIT, true));
-            });
+            Migration::setMigrationListPath($bootstrapDir . '/../Database/Migration');
+            Migration::setMigrationName('Schema');
+            Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
+            Seed::setSeedPath($bootstrapDir . '/../Database/Migration/Seed');
 
             $cliManager = new $cliManagerClass($argv);
+
+            if ($cliManager->requiresDatabase($command)) {
+                $databaseInit();
+            }
 
             exit($cliManager->run());
         } catch (\Throwable $e) {

@@ -11,8 +11,12 @@ use Hilos\Constants\ExitCode;
  * HelpCommand - Display help information.
  *
  * Shows available commands and usage information for CLI interface.
+ *
+ * Database-free by contract: it prints the registry it was handed, so it stays useful on a
+ * machine whose database is down — which is also where someone is most likely to be
+ * looking for the name of the command that fixes it.
  */
-class HelpCommand implements CommandInterface
+class HelpCommand implements CommandInterface, DatabaseFreeCommand
 {
     /** @var array<string, CommandInterface> map of command name to command instance */
     private array $commands;
