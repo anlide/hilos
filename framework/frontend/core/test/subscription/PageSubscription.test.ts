@@ -226,3 +226,19 @@ describe('PageSubscription', () => {
     expect(connection.sent.length).toBe(sentBefore)
   })
 })
+
+describe('pageLoading', () => {
+  it('is raised by a subscribe and lowered by an empty answer', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+
+    pages.subscribe('hilos_about')
+    expect(pages.pageLoading.get()).toBe(true)
+
+    const applied = pages.ingestPageResponse('hilos_about', {})
+
+    expect(applied).toBe(true)
+    expect(pages.pageLoading.get()).toBe(false)
+  })
+})
