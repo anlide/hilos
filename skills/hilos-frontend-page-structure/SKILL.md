@@ -19,6 +19,8 @@ frontend page, or when you place a frontend TypeScript type. Start with
 - The agnostic core and per-framework view adapters: `docs/agents/frontend/multiframework-core.md`
 - Row-payload key ownership — where a table column key is declared and what the
   core barrel exports: `docs/agents/code-style/wire-key-ownership.md`
+- How each page file itself must look: `$hilos-code-style-typescript` (and its
+  `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Code Style — TypeScript"
+  short_description: "Import paths, wire keys, TSDoc, and frontend TS style rules"
+  default_prompt: "Use $hilos-code-style-typescript to apply Hilos frontend TypeScript code style rules."

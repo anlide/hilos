@@ -151,6 +151,42 @@ A Hilos skill wrapper should stay small:
 
 Do not copy full canonical rule files into `SKILL.md`.
 
+## Choosing The Wrapper: By Language, Then By Framework
+
+Style wrappers are cut by language first and by view framework second, and the
+trigger is the *shape of the task* — the file extension and the path — not a
+judgment the agent has to make about which rules might apply. Editing a `.php`
+file under `framework/backend/**` fires `$hilos-code-style-php`; editing a `.vue`
+file under `demo/*/frontend/vue/**` fires `$hilos-code-style-vue`.
+
+- A framework wrapper's first `Read First` route is its language wrapper
+  (`$hilos-code-style-vue` → `$hilos-code-style-typescript`), and it carries only
+  what is specific to its view layer.
+- Cut a wrapper for a framework even when its slot is nearly empty. A thin
+  wrapper costs a file; a missing one costs the route, and the agent silently
+  edits with no style rules loaded at all.
+- State an empty slot in words ("this framework has no code-shape rule of its
+  own today"). Never fill it by routing to another framework's rules: those
+  describe a different view layer, and following them produces code that matches
+  no canon.
+- A subject that has no language side — a field name crossing DB, wire, and view
+  — stays one rule file, routed from both language wrappers. Split rule files by
+  subject; express the language boundary with the *Applies to* column in
+  [code-style/README.md](code-style/README.md), not with folders.
+
+## Every Rule File Is Reachable From A Wrapper
+
+A new or moved rule file under `docs/agents/` must be reachable from at least one
+`hilos-*` skill wrapper, and listed in the index table that owns it (`agents.md`,
+or the catalog `README.md` for a code-style rule). An unrouted rule file is
+unreachable at code time: it is canonical, correct, and never read.
+
+When adding a rule file, walk the route the way an agent would — from the task
+shape to the wrapper, from the wrapper to the file — and confirm no `.md` link on
+that path is broken. The walk is manual today; the reachability guard that makes
+it automatic belongs in
+[code-style/automated-checks.md](code-style/automated-checks.md).
+
 ## Adapter Shape
 
 Tool adapters should be thinner than skill wrappers. They should only establish

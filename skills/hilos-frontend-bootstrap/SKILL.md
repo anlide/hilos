@@ -15,6 +15,8 @@ Start with `agents.md`, then read the canonical rule.
 - The page registry the boot wires (keys, routes, entity types): `docs/agents/frontend/page-registry.md`
 - One folder per page; where view files and types live: `docs/agents/frontend/page-module-structure.md`
 - The agnostic core and per-framework view adapters: `docs/agents/frontend/multiframework-core.md`
+- How the boot files themselves must look: `$hilos-code-style-typescript` (and
+  its `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
 

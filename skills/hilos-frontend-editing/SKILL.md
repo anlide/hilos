@@ -20,6 +20,8 @@ rules below. Every edit surface is a modal — never an inline form.
 - Where the edit view and its files live: `docs/agents/frontend/page-module-structure.md`
 - Row-payload key ownership — the constant a field is read and rendered by:
   `docs/agents/code-style/wire-key-ownership.md`
+- How the edit view itself must look: `$hilos-code-style-typescript` (and its
+  `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
 

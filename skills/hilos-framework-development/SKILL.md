@@ -13,7 +13,7 @@ that match the affected subsystem.
 
 - Framework development rules: `docs/agents/framework-development.md`
 - App topology registry: `docs/agents/app-topology.md`
-- Style and PHPDoc contracts: use `$hilos-code-style`
+- Style and PHPDoc contracts: use `$hilos-code-style-php`
 - Exception families and `@throws`: use `$hilos-exception`
 - Facade, magic, array, and key-based accessors: use `$hilos-accessor-contracts`
 - DB model changes: use `$hilos-orm` and respect the contract approval gate

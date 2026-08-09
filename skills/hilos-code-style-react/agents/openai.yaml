@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Code Style — React"
+  short_description: "React view style: the shared TypeScript rules, nothing else"
+  default_prompt: "Use $hilos-code-style-react to apply Hilos React component code style rules."

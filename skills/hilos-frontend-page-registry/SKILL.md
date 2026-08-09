@@ -17,6 +17,8 @@ canonical rule.
 - One page's view files (the related but separate rule): `docs/agents/frontend/page-module-structure.md`
 - Frontend routing matrix and overview: `docs/agents/frontend/README.md`
 - Entity store, scopes, and the page entity-slot types: `docs/agents/frontend/data-model.md`
+- How the registry files themselves must look: `$hilos-code-style-typescript`
+  (and its `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
 

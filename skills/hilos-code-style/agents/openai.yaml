@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hilos Code Style"
-  short_description: "PHPDoc, method contracts, strict types, and style rules"
-  default_prompt: "Use $hilos-code-style to apply Hilos code style and PHPDoc contract rules."

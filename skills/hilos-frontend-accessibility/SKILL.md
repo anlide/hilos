@@ -17,6 +17,8 @@ target is **WCAG 2.1 AA**, in full, from v1.
 - The rare a11y e2e category: `docs/agents/testing.md`
 - Components: `framework/frontend/{vue,react,angular}/src/*` — `HilosLayout`,
   `HilosModal`, `HilosViewportTable`, `LoadingButton`, `HilosLink`
+- How the file itself must look once the a11y shape is decided:
+  `$hilos-code-style-typescript` (and its `-vue` / `-react` / `-angular` wrapper)
 
 ## Workflow
 

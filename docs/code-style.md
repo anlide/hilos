@@ -7,15 +7,9 @@ the current change.
 ## Agent Rule Catalog
 
 Use [docs/agents/code-style/README.md](agents/code-style/README.md) as the
-catalog for small code-style rules.
-
-| Rule | Read when... |
-|---|---|
-| [PHPDoc](agents/code-style/phpdoc.md) | writing or changing PHPDoc, overrides, `@see` links |
-| [Page Action Handlers](agents/code-style/page-action-handlers.md) | editing `Page::onAction()` and action handlers |
-| [Internal Backend API](agents/code-style/internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
-| [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
-| [PHP Class Members](agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
+catalog for small code-style rules. It lists every rule file with the language it
+applies to (PHP / frontend / both); this page does not repeat that list, so the
+catalog stays the single place a rule is routed from.
 
 ## Baseline
 

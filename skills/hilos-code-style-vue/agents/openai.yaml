@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Code Style — Vue"
+  short_description: "Vue SFC style: no <style> block, Bootstrap classes only"
+  default_prompt: "Use $hilos-code-style-vue to apply Hilos Vue single-file component code style rules."

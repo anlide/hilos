@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Code Style — Angular"
+  short_description: "Angular component style: data-id in the template, not host"
+  default_prompt: "Use $hilos-code-style-angular to apply Hilos Angular component code style rules."

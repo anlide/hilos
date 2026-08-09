@@ -135,22 +135,24 @@ Minimum ORM rules before editing:
 
 ## Code Style Rules
 
-| File | Read when... |
-|---|---|
-| [code-style/README.md](docs/agents/code-style/README.md) | choosing which small style rule applies to a code change |
-| [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | writing PHPDoc, overriding inherited methods, adding `@see` links |
-| [code-style/static-factories.md](docs/agents/code-style/static-factories.md) | writing or changing static factories (`fromArray`, `fromRow`, `create`) and their `self`/`static` return contract |
-| [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
-| [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
-| [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
-| [code-style/frontend-import-paths.md](docs/agents/code-style/frontend-import-paths.md) | adding or changing a relative import in frontend TS — explicit `.js`, the barrel `index.js`, the "Import can be shortened" warning |
-| [code-style/cross-layer-field-names.md](docs/agents/code-style/cross-layer-field-names.md) | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TS field |
-| [code-style/table-names.md](docs/agents/code-style/table-names.md) | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
-| [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
-| [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
-| [code-style/reflection.md](docs/agents/code-style/reflection.md) | adding or changing a Reflection call in production PHP, or judging an existing one |
-| [code-style/error-suppression.md](docs/agents/code-style/error-suppression.md) | writing `@` in front of a PHP call in production, or deciding how a failing builtin reports |
-| [code-style/magic-values.md](docs/agents/code-style/magic-values.md) | writing a bare number or a bare string into production PHP, or judging whether a literal is magic or data |
+| File | Applies to | Read when... |
+|---|---|---|
+| [code-style/README.md](docs/agents/code-style/README.md) | both | choosing which small style rule applies to a code change — the full catalog, with the same *Applies to* column on every rule |
+| [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | PHP | writing PHPDoc, overriding inherited methods, adding `@see` links |
+| [code-style/static-factories.md](docs/agents/code-style/static-factories.md) | PHP | writing or changing static factories (`fromArray`, `fromRow`, `create`) and their `self`/`static` return contract |
+| [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | PHP | editing `Page::onAction()`, action DTO routing, page action acks/errors |
+| [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | PHP | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
+| [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | PHP | adding or changing PHP import aliases or helper method names |
+| [code-style/frontend-import-paths.md](docs/agents/code-style/frontend-import-paths.md) | frontend | adding or changing a relative import in frontend TS — explicit `.js`, the barrel `index.js`, the "Import can be shortened" warning |
+| [code-style/wire-key-ownership.md](docs/agents/code-style/wire-key-ownership.md) | frontend | naming a row-payload key in a frontend admin module — adding or renaming a table column, writing a row resolver, deciding what the core barrel exports |
+| [code-style/warnings-and-ide.md](docs/agents/code-style/warnings-and-ide.md) | frontend | silencing a toolchain or IDE warning — the zero-warning bar, canonical shape over suppression, TSDoc-all-params, Angular `data-id` placement |
+| [code-style/cross-layer-field-names.md](docs/agents/code-style/cross-layer-field-names.md) | both | naming a data field that crosses layers — one concept name from DB column to PHP entity to wire key to TS field |
+| [code-style/table-names.md](docs/agents/code-style/table-names.md) | PHP | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
+| [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | PHP | adding or reordering PHP class constants, properties, or methods |
+| [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | PHP | introducing temporary variables or reviewing one-use locals |
+| [code-style/reflection.md](docs/agents/code-style/reflection.md) | PHP | adding or changing a Reflection call in production PHP, or judging an existing one |
+| [code-style/error-suppression.md](docs/agents/code-style/error-suppression.md) | PHP | writing `@` in front of a PHP call in production, or deciding how a failing builtin reports |
+| [code-style/magic-values.md](docs/agents/code-style/magic-values.md) | PHP | writing a bare number or a bare string into production PHP, or judging whether a literal is magic or data |
 
 ## AI Tool Integration
 
