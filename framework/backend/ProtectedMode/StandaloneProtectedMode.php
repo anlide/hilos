@@ -63,7 +63,7 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         if ($this->runtimeView() === null) {
             Logger::error(
                 "Protected mode: cannot enter for '{$data->operation}' requested by agent "
-                . "'{$data->initiatorAgentType}' — this project mounts no protected mode runtime state"
+                . "'{$data->initiatorAgentType}' — this process holds no protected mode runtime state"
             );
             return;
         }
@@ -108,11 +108,12 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     }
 
     /**
-     * Resolves the protected-mode runtime singleton, or null when this project mounted none.
+     * Resolves the protected-mode runtime singleton, or null when this process holds no runtime state.
      *
      * Read here as well as in {@see DaemonProtectedModeExecutor} because the two ask different
      * questions of the same row: the executor asks where to write, this asks whether entering the
-     * mode is possible at all and who the recorded initiator is.
+     * mode is possible at all and who the recorded initiator is. Null never means a project turned
+     * the mode off - the framework mounts this row for every project that has an RT context.
      *
      * @return ?ProtectedModeRuntime Runtime singleton view, or null when runtime state is unavailable
      */

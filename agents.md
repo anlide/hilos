@@ -41,6 +41,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/page-access-control.md](docs/agents/architecture/page-access-control.md) | gating a page subscription: DB_EXISTS / ACCESS guards, the resolveCurrentUserId identity hook, 403/404/401 errors, guards on every delivery path, the cross-agent guard rule |
 | [architecture/command-server.md](docs/agents/architecture/command-server.md) | CLI↔daemon control plane: the command socket, request/reply DTOs, held-parking, routing a command to an agent, admin:grant as the worked example |
 | [architecture/llm-routing.md](docs/agents/architecture/llm-routing.md) | choosing an LLM provider or adding an agent that talks to an LLM: named-profile routing, provider decoupled from credentials, env-default+settings-override resolution, the reserved worker/node placement seam |
+| [architecture/protected-mode.md](docs/agents/architecture/protected-mode.md) | freezing a node for a destructive operation: the unconditional freeze row and its RtContext boundary, the agent-only entry with CLI as trigger, fail-closed guards, what null means to the RT readers |
 
 ## Framework Development
 

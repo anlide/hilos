@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\ProtectedMode;
 
+use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,6 +23,9 @@ use PHPUnit\Framework\TestCase;
  * without a live cluster: a leader collects quiesced reports before signalling ready, a single-node
  * cluster activates at once, a follower freezes and reports back, and the leader role is gated on
  * holding leadership. The wire frames and the daemon wiring are covered by their own slices.
+ *
+ * Every case runs with the framework-owned freeze row mounted, as a real project boot leaves it;
+ * the fail-closed cases unmount it to stand in for a process that carries no runtime state at all.
  */
 final class ClusterProtectedModeTest extends TestCase
 {
@@ -36,6 +42,14 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh = new FakeProtectedModeMesh();
         $this->executor = new FakeProtectedModeExecutor();
         $this->coordinator = new ClusterProtectedMode(self::SELF, $this->mesh, $this->executor);
+        $this->mount();
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$rt = null;
+
+        parent::tearDown();
     }
 
     public function testLeaderWithFollowersActivatesOnlyAfterEveryQuiescedReport(): void
@@ -311,6 +325,59 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
+    public function testLeaderWithoutRuntimeStateRefusesToEnter(): void
+    {
+        // Fail-closed: the initiator waits for ready before it destroys anything, so a refusal
+        // leaves it waiting safely, where an inert entry would report a freeze that never happened.
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        Hilos::$rt = null;
+
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testARefusedEnterLeavesNoFreezeBehind(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        Hilos::$rt = null;
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->mount();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        // The guard runs above activeFreeze, so the refused attempt left no trace to drop this one
+        // against; a leader that recorded the freeze first would reject every later enable forever.
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
+    }
+
+    public function testFollowerWithoutRuntimeStateRefusesAndReportsNothing(): void
+    {
+        // Reporting quiesced for a freeze this node never entered would let the leader hand ready
+        // to the initiator and run the destructive operation across a node still serving clients.
+        Hilos::$rt = null;
+
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    /**
+     * Mounts the framework-owned protected mode runtime row, as a real project boot does.
+     *
+     * @throws StateCollectionNotFoundException When a feature definition names a collection it did not mount
+     */
+    private function mount(): void
+    {
+        Hilos::$rt = new ClusterProtectedModeTestRtContext();
+        Hilos::$rt->mountFeatureRuntime([]);
+    }
+
     private function enableData(): ProtectedModeEnableSignalData
     {
         return $this->enableDataFrom('node-b');
@@ -333,6 +400,23 @@ final class ClusterProtectedModeTest extends TestCase
             initiatorAgentIndex: 0,
             initiatorNodeId: $initiatorNodeId,
         );
+    }
+}
+
+/**
+ * Project context that registers no runtime state of its own: the framework mount supplies the
+ * freeze row.
+ *
+ * Named apart from its standalone counterpart on purpose - both test files share the namespace, so
+ * one context name could not carry two classes and the suite would not load.
+ */
+final class ClusterProtectedModeTestRtContext extends RtContext
+{
+    /**
+     * Registers no project runtime state: the framework mount supplies the freeze row.
+     */
+    public function configure(): void
+    {
     }
 }
 

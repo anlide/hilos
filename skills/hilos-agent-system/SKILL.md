@@ -13,6 +13,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Writing or reviewing `onTick()`: `docs/agents/agent-system/ontick-rule.md`
 - Truth sources, shared state, long operations: `docs/agents/agent-system/monopolistic-agent.md`
 - Agent lifecycle and signal methods: `docs/agents/architecture/agent-lifecycle.md`
+- Asking for a node freeze before a destructive operation: `docs/agents/architecture/protected-mode.md`
 - Blocking anti-patterns: `docs/agents/antipatterns/blocking-in-ontick.md`
 - Signal routing changes: use `$hilos-signals`
 

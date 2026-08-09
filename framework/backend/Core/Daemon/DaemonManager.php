@@ -1796,15 +1796,16 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
 
     /**
      * Registers the daemon master as the non-agent truth source for the protected-mode
-     * runtime singleton, when the project mounts it.
+     * runtime singleton, on every process that carries runtime state.
      *
      * Protected mode is a daemon-owned framework singleton: the leader master writes the
      * freeze row by its own decision and each follower master writes it in reaction to the
      * peer QUIESCE/LIFT frames, so no owner agent stands behind the write. The RT write-guard
      * accepts such an agent-less writer only for a collection-wide source, so every node's
      * master registers one here (this runs on the master, so the guard checks against this
-     * process's registry). A project that does not mount the runtime item in its RT context
-     * opts out and registers nothing.
+     * process's registry). The early return is not a project opting out - the framework mounts
+     * the row for every project that has an RT context, so it means Hilos::$rt is null and there
+     * is no runtime state in this process to own.
      */
     private function registerProtectedModeTruthSource(): void
     {

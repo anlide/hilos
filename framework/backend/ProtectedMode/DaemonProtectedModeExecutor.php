@@ -19,9 +19,10 @@ use Hilos\Utils\Logger;
  * It writes the {@see ProtectedModeRuntime} singleton through Hilos::$rt — the daemon truth source
  * registered in HIL-267 slice 2a — so every worker on this node sees the current phase and the
  * master's welcome path and the browser page guards can lock connections out. Both the leader
- * (freezing itself) and every follower own one, and both release the same way. A node that never
- * mounted the runtime item writes nothing and says so in the log, so the executor is inert there
- * rather than failing.
+ * (freezing itself) and every follower own one, and both release the same way. A process holding no
+ * runtime state writes nothing and says so in the log; entering the mode is refused before it gets
+ * this far ({@see ClusterProtectedMode}, {@see StandaloneProtectedMode}), so that branch is defense
+ * in depth rather than a state a freeze can normally reach.
  *
  * {@see notifyInitiatorReady()} relays the leader's ready to the initiator agent by addressing the
  * worker hosting it through {@see ProtectedModeReadyRelay}, reading the initiator identity back from
@@ -136,13 +137,14 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     }
 
     /**
-     * Resolves the protected-mode runtime singleton, or null when this node never mounted it.
+     * Resolves the protected-mode runtime singleton, or null when this process holds no runtime state.
      *
-     * An executor asked to freeze a node that carries no runtime row cannot freeze it, and the
-     * caller has already decided the operation needs protecting - so the miss is logged rather
-     * than passed over in silence, and the node stays open instead of pretending it quiesced.
+     * Null is not a project opting out: the framework mounts this row for every project that has an
+     * RT context at all, and both entries into the mode refuse before they reach the executor. What
+     * is left here is defense in depth - an executor asked to freeze a node it cannot write to says
+     * so and leaves the node open, instead of pretending it quiesced.
      *
-     * @return ?ProtectedModeRuntime Runtime singleton view, or null when it is not mounted
+     * @return ?ProtectedModeRuntime Runtime singleton view, or null when runtime state is unavailable
      */
     private function runtimeView(): ?ProtectedModeRuntime
     {
@@ -151,10 +153,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return $view;
         }
 
-        Logger::warning(
-            'Protected mode: the runtime singleton is not mounted, this node cannot freeze;'
-            . ' mount it in the project RtContext',
-        );
+        Logger::warning('Protected mode: this process holds no runtime state, this node cannot freeze');
 
         return null;
     }

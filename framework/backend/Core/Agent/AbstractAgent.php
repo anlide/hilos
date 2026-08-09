@@ -307,6 +307,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * is a topology decision that lives in the daemon. A single node names no node id - it has none,
      * and asking for one off-cluster throws.
      *
+     * This is the only entry into the mode, and no second one is to be added: there is no facade
+     * method, no static switch and no env lever, in production or in a test. A CLI command never
+     * enters the mode itself either - it asks the agent that owns the destructive operation over the
+     * command channel, the way `backup:restore-request` reaches BackupAgent. The initiator identity
+     * recorded here is why: it authorizes the later release and is what the agent-start gate lets
+     * through, so a synthetic caller would exercise a path production does not have. The whole
+     * contract is in docs/agents/architecture/protected-mode.md.
+     *
      * @param string $operation Operation name the freeze protects (for example a restore)
      * @param string $initiatorAcceptKey Accept key of the connection driving the operation
      * @throws EnvException When a cluster environment value cannot be read

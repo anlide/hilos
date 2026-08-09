@@ -465,8 +465,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Reads the protected-mode runtime row and reports whether this connection is locked out.
      *
      * A light in-memory lookup of the daemon-owned singleton on this master process (the same
-     * Hilos::$rt the daemon writes the freeze into): false whenever runtime state is absent or
-     * the item was never mounted, so a project that does not use protected mode is unaffected.
+     * Hilos::$rt the daemon writes the freeze into): false whenever this process holds no runtime
+     * state. There is no project that does not use protected mode - the framework mounts the row
+     * for every project that has an RT context.
      *
      * @param string $acceptKey This connection's accept key, compared against the initiator's
      * @return bool Whether an active freeze locks this connection out

@@ -1915,7 +1915,8 @@ abstract class BrowserContext
      * Whether the protected-mode freeze locks this connection out of all page data.
      *
      * Reads the daemon-owned runtime singleton synced into this worker; false (open)
-     * when no project mounted the item, so a non-cluster project is unaffected. Same
+     * when this process holds no runtime state, which is not a project declining the
+     * mode - the row is mounted for every project that has an RT context. Same
      * lightweight in-memory read the master welcome path uses.
      *
      * @param string $acceptKey Subscriber accept key

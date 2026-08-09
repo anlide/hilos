@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
 /**
@@ -38,6 +40,12 @@ use Hilos\Utils\Logger;
  * sibling, the leadership hooks ({@see ProtectedModeLeadership}) and the peer frames
  * ({@see ProtectedModeCoordinator}) exist only in a cluster. Watchdog policy for a stalled
  * initiator or follower (timeouts, escalation) is HIL-266, not here.
+ *
+ * Entering is fail-closed on both sides, the same way {@see StandaloneProtectedMode} enters: a node
+ * whose process carries no runtime state refuses the freeze loudly - the leader before it records
+ * anything, a follower before it reports quiesced - instead of standing inert. The initiator waits
+ * for ready before it destroys anything, so a refusal leaves it waiting safely, while a node that
+ * confirmed a freeze it never entered would run the operation over live clients.
  */
 final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedModeSwitch, ProtectedModeLeadership
 {
@@ -178,6 +186,16 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — a '{$this->activeFreeze->operation}' freeze is already in flight");
             return;
         }
+        // Last of the entry checks, and deliberately above every trace of entry: a leader that
+        // recorded the freeze before refusing would stay half-frozen forever, dropping each later
+        // attempt as already in flight, and a disable cannot clear that - it needs a live initiator.
+        if ($this->runtimeView() === null) {
+            Logger::error(
+                "Protected mode: cannot enter for '{$data->operation}' requested by agent "
+                . "'{$data->initiatorAgentType}' — node '{$this->selfNodeId}' holds no protected mode runtime state"
+            );
+            return;
+        }
 
         $this->activeFreeze = new ProtectedModeQuiesceData(
             $data->operation,
@@ -234,6 +252,10 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * re-rolls the stopped-agent set the lift will resume against an already-emptied roster, so the second
      * pass would shrink it and strand agents. Mirrors the in-flight guard on {@see onEnable()}.
      *
+     * A node that holds no runtime state refuses the quiesce and answers nothing, mirroring the
+     * leader's entry guard: silence keeps the leader in activating, which is the safe half of the
+     * trade, while a quiesced report would unfreeze the whole operation's premise.
+     *
      * @param string $fromNodeId Node id of the leader that ordered the freeze
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
      */
@@ -241,6 +263,16 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     {
         if ($this->freezingLeaderId !== null) {
             Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}' — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
+            return;
+        }
+        // The leader's guard, from the follower side, and the refusal stays off the wire: reporting
+        // quiesced for a freeze this node never entered would let the leader hand ready to the
+        // initiator and run the destructive operation across a node still serving its clients.
+        if ($this->runtimeView() === null) {
+            Logger::error(
+                "Protected mode: cannot freeze for '{$data->operation}' ordered by '{$fromNodeId}' — "
+                . "node '{$this->selfNodeId}' holds no protected mode runtime state"
+            );
             return;
         }
 
@@ -332,5 +364,21 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
         $this->activeFreeze = null;
         $this->pendingNodes = [];
         $this->active = false;
+    }
+
+    /**
+     * Resolves the protected-mode runtime singleton, or null when this process holds no runtime state.
+     *
+     * Mirrors {@see StandaloneProtectedMode::runtimeView()} instead of sharing a helper with it: the
+     * two read the same row to gate different entries - a single-node freeze that completes in one
+     * tick against a leader round that commits followers - so what matches is the value, not the
+     * context. Null is never a project opting out: the framework mounts this row for every project
+     * that has an RT context at all.
+     *
+     * @return ?ProtectedModeRuntime Runtime singleton view, or null when runtime state is unavailable
+     */
+    private function runtimeView(): ?ProtectedModeRuntime
+    {
+        return Hilos::$rt?->hilosProtectedModeRuntime;
     }
 }
