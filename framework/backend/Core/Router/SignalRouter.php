@@ -11,6 +11,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
@@ -274,6 +275,7 @@ class SignalRouter
      * @param SignalTypeInterface $signalType Signal type (e.g., 'frame', 'handshake', 'close')
      * @param SignalNameInterface $signalName Signal name
      * @param SignalDataInterface $signalData Signal data DTO
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function queueSignal(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalNameInterface $signalName, SignalDataInterface $signalData): void
     {
@@ -739,15 +741,11 @@ class SignalRouter
             return [];
         }
 
-        $actionName = $signal->signalName->getName();
-        if ($actionName === '') {
-            return [];
-        }
-
         if ($signal->signalSource->getSource() !== SignalSource::WEBSOCKET) {
             return [];
         }
 
+        $actionName = $signal->signalName->getName();
         $agentType = $this->hilosClass()::getActionAgentRoutes()[$actionName]
             ?? $this->hilosClass()::getAgentActionRoutes()[$actionName]
             ?? null;
@@ -811,11 +809,9 @@ class SignalRouter
             SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : null,
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : null,
             SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
-            // Unsubscribe carries the page in the signal name, which is a plain
-            // string off the wire: an empty one is normalized here, not below.
-            SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName() === ''
-                ? null
-                : $signal->signalName->getName(),
+            // Unsubscribe carries the page in the signal name, which SignalDTO
+            // guarantees is non-empty.
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),
             default => null,
         };
 
@@ -869,11 +865,10 @@ class SignalRouter
         $group = match ($signalType) {
             SignalTypeConstants::GROUP_SUBSCRIBE => $data instanceof WebSocketGroupSubscribeSignalDTO ? $data->group : null,
             SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $data instanceof WebSocketGroupUpdateSubscriptionSignalDTO ? $data->group : null,
-            // The name is a plain string off the wire; an empty one is normalized
-            // here so the check below has a single shape to read.
+            // Falling back to the name is safe: SignalDTO guarantees it is non-empty.
             SignalTypeConstants::GROUP_UNSUBSCRIBE => $data instanceof WebSocketGroupUnsubscribeSignalDTO
                 ? $data->group
-                : ($signal->signalName->getName() === '' ? null : $signal->signalName->getName()),
+                : $signal->signalName->getName(),
             default => null,
         };
 

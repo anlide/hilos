@@ -68,7 +68,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
-                new SignalName(SignalName::EMPTY),
+                new SignalName(SignalTypeConstants::FRAME_BINARY),
                 new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
             )),
         );
@@ -96,7 +96,7 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::DAEMON),
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
-                new SignalName(SignalName::EMPTY),
+                new SignalName(SignalTypeConstants::FRAME_BINARY),
                 new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
             )),
         );
@@ -195,12 +195,14 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testPageSubscribeWithoutAPageBuildsNoRoute(): void
     {
+        // The name carries a routable page on purpose: subscribe reads the page
+        // from its payload, so a payload without one builds no route regardless.
         $this->assertSame(
             [],
             new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
-                new SignalName(SignalName::EMPTY),
+                new SignalName(SignalRouterTopologyTestPage::PAGE),
                 new WebSocketPageSubscribeSignalDTO('accept-key'),
             )),
         );
@@ -208,12 +210,13 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 
     public function testTableViewportWithoutAPageBuildsNoRoute(): void
     {
+        // Same as above: the routable name must not stand in for the missing page.
         $this->assertSame(
             [],
             new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
-                new SignalName(SignalName::EMPTY),
+                new SignalName(SignalRouterTopologyTestPage::PAGE),
                 new WebSocketTableViewportSignalDTO('accept-key', tableKey: 'settings'),
             )),
         );

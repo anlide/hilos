@@ -11,6 +11,7 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -980,7 +981,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::FRAME_BINARY),
-            new SignalName(SignalName::EMPTY),
+            new SignalName(SignalTypeConstants::FRAME_BINARY),
             $dto,
         );
         $this->onFrameBinaryQueued($dto);
@@ -1075,6 +1076,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /**
      * Called when socket connection is successfully closed.
+     *
+     * Announces the close and drops every subscription the accept key held. The
+     * page the connection sat on is unsubscribed on the worker side by
+     * {@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()},
+     * which is the only side that knows which page that was.
      */
     protected function onClose(): void
     {
@@ -1096,19 +1102,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
-            new SignalName(SignalName::EMPTY),
+            new SignalName(SignalTypeConstants::CONNECTION_CLOSE),
             $closeDto,
-        );
-
-        $pageDto = new WebSocketPageUnsubscribeSignalDTO(
-            acceptKey: $this->acceptKey,
-        );
-
-        Hilos::$sr->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
-            new SignalName(SignalName::EMPTY),
-            $pageDto,
         );
 
         Hilos::$sr->unsubscribeFromAll($this->acceptKey);

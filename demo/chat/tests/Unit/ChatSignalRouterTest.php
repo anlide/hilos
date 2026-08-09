@@ -240,7 +240,7 @@ final class ChatSignalRouterTest extends TestCase
         $destinations = new ChatSignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::FRAME_BINARY),
-            new SignalName(SignalName::EMPTY),
+            new SignalName(SignalTypeConstants::FRAME_BINARY),
             new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
         ));
 

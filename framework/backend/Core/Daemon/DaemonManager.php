@@ -1336,9 +1336,6 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                     return;
                 }
                 $page = $signal->signalName->getName();
-                if ($page === '') {
-                    return;
-                }
                 Hilos::$sr->unsubscribeFromPage($page, $signal->data);
                 Hilos::$ac?->closePageSession($signal->data->acceptKey);
                 break;

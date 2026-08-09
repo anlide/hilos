@@ -985,7 +985,7 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::CONNECTION_CLOSE:
                 if ($signalData instanceof WebSocketCloseSignalDTO) {
-                    $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source, $name);
+                    $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source);
                     if ($signalData->acceptKey !== '') {
                         Hilos::$sr?->unsubscribeFromAll($signalData->acceptKey);
                     }
@@ -1389,14 +1389,12 @@ abstract class WorkerManager extends BaseManager
      * @param AgentInterface $agent Agent receiving the signal
      * @param WebSocketCloseSignalDTO $dto Close payload (acceptKey)
      * @param string $source Signal source identifier
-     * @param string $name Signal name (passed to router; typically empty for connection close)
      */
     private function dispatchPageUnsubscribeIfTrackedOnConnectionClose(
         string $agentId,
         AgentInterface $agent,
         WebSocketCloseSignalDTO $dto,
         string $source,
-        string $name,
     ): void {
         $acceptKey = $dto->acceptKey;
         if ($acceptKey === '' || !isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {

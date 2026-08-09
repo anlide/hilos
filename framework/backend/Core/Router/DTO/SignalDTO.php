@@ -26,11 +26,17 @@ class SignalDTO extends BaseDTO
     /**
      * Creates signal DTO with source, type, name and data.
      *
+     * The name is checked by value and not left to {@see SignalName}: the core is
+     * typed by the interface, so a project is free to bring its own implementation,
+     * and the guarantee every reader of signalName relies on has to hold on the
+     * envelope rather than on one class.
+     *
      * @param SignalSourceInterface $signalSource Signal source (agent, worker, etc.)
      * @param SignalTypeInterface $signalType Signal type (frame, handshake, action, etc.)
      * @param SignalNameInterface $signalName Signal name
      * @param SignalDataInterface $data Signal payload data
      * @param array<string, int|string> $meta Analytics correlation metadata
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function __construct(
         public readonly SignalSourceInterface $signalSource,
@@ -39,6 +45,9 @@ class SignalDTO extends BaseDTO
         public readonly SignalDataInterface $data,
         public readonly array $meta = [],
     ) {
+        if ($signalName->getName() === '') {
+            throw new InvalidArgumentException('Signal name must not be empty');
+        }
     }
 
     /**
@@ -91,6 +100,21 @@ class SignalDTO extends BaseDTO
             throw new InvalidArgumentException("Missing required field: signalName");
         }
 
+        // isset('') is true, so the presence check above lets an empty name through:
+        // the field is what a signal is routed by, so it is checked by value here.
+        $signalNameValue = $data['signalName'] instanceof SignalNameInterface
+            ? $data['signalName']->getName()
+            : $data['signalName'];
+        if (!is_string($signalNameValue)) {
+            throw new InvalidArgumentException(
+                "Field 'signalName' must be a string or SignalNameInterface, got: " . gettype($data['signalName']),
+            );
+        }
+
+        if ($signalNameValue === '') {
+            throw new InvalidArgumentException("Field 'signalName' must not be empty");
+        }
+
         // Validate data field type
         if (isset($data['data']) && !is_array($data['data'])) {
             throw new InvalidArgumentException("Field 'data' must be an array, got: " . gettype($data['data']));
@@ -132,7 +156,7 @@ class SignalDTO extends BaseDTO
         if ($data['signalName'] instanceof SignalNameInterface) {
             $signalName = $data['signalName'];
         } else {
-            $signalName = new SignalName($data['signalName']);
+            $signalName = new SignalName($signalNameValue);
         }
 
         // Deserialize signalData

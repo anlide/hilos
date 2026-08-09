@@ -63,7 +63,7 @@ final class CommandSignalRoutingTest extends TestCase
         $destinations = new SignalRouter()->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::AGENT),
             new SignalType(SignalTypeConstants::COMMAND_REPLY),
-            new SignalName(''),
+            new SignalName(SignalTypeConstants::COMMAND_REPLY),
             CommandReplyDTO::ok('', []),
         ));
 

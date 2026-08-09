@@ -77,7 +77,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         ], $router->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
-            new SignalName('accept-key'),
+            new SignalName(SignalTypeConstants::CONNECTION_CLOSE),
             new WebSocketCloseSignalDTO('accept-key'),
         )));
 

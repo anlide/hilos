@@ -88,12 +88,14 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
 
     public function testGroupSubscribeWithoutAGroupBuildsNoRoute(): void
     {
+        // The name carries a routable group on purpose: subscribe reads the group
+        // from its payload, so a payload without one builds no route regardless.
         $this->assertSame(
             [],
             new SignalRouterGroupTopologyTestRouter()->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
-                new SignalName(SignalName::EMPTY),
+                new SignalName(SignalRouterTopologyTestGroup::GROUP),
                 new WebSocketGroupSubscribeSignalDTO('accept-key'),
             )),
         );

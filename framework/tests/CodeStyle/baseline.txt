@@ -21,7 +21,6 @@ EMPTY-STRING-SENTINEL framework/backend/Auth/OAuth/DTO/OAuthResultSignalData.php
 EMPTY-STRING-SENTINEL framework/backend/Backup/Agent/DTO/BackupCreateSignalData.php 1 # HIL-532
 EMPTY-STRING-SENTINEL framework/backend/Backup/Agent/DTO/BackupDeleteSignalData.php 1 # HIL-532
 EMPTY-STRING-SENTINEL framework/backend/Backup/Agent/DTO/BackupSetKeepSignalData.php 1 # HIL-532
-EMPTY-STRING-SENTINEL framework/backend/Core/Agent/DTO/AgentResponseSignalDTO.php 3 # HIL-532
 EMPTY-STRING-SENTINEL framework/backend/Core/Agent/DTO/MessageFromAgentDTO.php 2 # HIL-532
 EMPTY-STRING-SENTINEL framework/backend/Core/Agent/DTO/MessageFromDaemonDTO.php 1 # HIL-532
 EMPTY-STRING-SENTINEL framework/backend/Core/Agent/DTO/MessageFromUserDTO.php 2 # HIL-532

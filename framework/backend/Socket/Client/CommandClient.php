@@ -77,6 +77,22 @@ class CommandClient extends AbstractClient implements CommandClientInterface
 
             $request = CommandRequestDTO::fromJson($message);
 
+            // Both fields are required, and CommandRequestDTO::fromArray() reads a
+            // missing one as the empty string - so a request that names nothing is
+            // refused here, the same way the WebSocket boundary refuses an empty
+            // action, page or group. Left through, an empty command reaches
+            // new SignalName() and throws where nothing on the read path catches it,
+            // and an empty correlation id parks a request no reply can be addressed
+            // to. An undecodable line is a different failure and still throws out of
+            // fromJson() above; that one is older than this guard (see P-039).
+            if ($request->correlationId === '' || $request->command === '') {
+                $this->writeBuffer .= CommandReplyDTO::error(
+                    $request->correlationId,
+                    'Command request must carry a correlation id and a command name',
+                )->toJson() . "\n";
+                continue;
+            }
+
             if ($request->command === CommandConstants::COMMAND_PING) {
                 $this->writeBuffer .= CommandReplyDTO::ok($request->correlationId, $request->payload)->toJson() . "\n";
                 continue;
