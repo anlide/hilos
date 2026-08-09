@@ -78,6 +78,14 @@ describe('bootHilos', () => {
 
     expect(connection.connectCalls).toBe(1)
     expect(hilosRouter.currentRoute.get().page).toBe('main')
+    // The route resolves at once, but the frame waits: a subscribe that overtook
+    // the handshake was judged against a connection nobody had heard of yet.
+    expect(connection.sent).toEqual([])
+
+    connection.emitProjectSignal('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+    })
+
     expect(connection.sent).toEqual([
       { type: 'page_subscribe', page: 'main', params: {} },
     ])

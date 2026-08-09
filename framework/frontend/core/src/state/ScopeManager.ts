@@ -117,36 +117,53 @@ export class ScopeManager {
   }
 
   /**
-   * Resolve an entity reference most-specific-first — Page → Session → User →
-   * Group, groups in opening order — reactively: the selector re-resolves when
-   * the entity changes in the winning scope, appears in a more specific one,
-   * or its scope is dropped and a less specific copy takes over.
+   * Resolve an entity reference across the scopes that hold a copy of it,
+   * FIELD-WISE, most-specific-last — Group (opening order) → User → Session →
+   * Page — reactively: the selector re-resolves when the entity changes in any
+   * contributing scope, appears in a more specific one, or its scope is dropped.
+   *
+   * Precedence is per field, not per scope, because a scope's copy carries only
+   * the fields ITS source selected: the chat's main page lists users as
+   * id/name/lastActivity, while the session's current user also carries `admin`.
+   * Taking the most specific copy WHOLE let that page copy shadow the session
+   * one and silently drop `admin` — the same "a field ABSENT is left untouched,
+   * absence is not null" rule {@link EntityStore.upsert} already applies within
+   * a scope, now applied between them.
+   *
+   * The merged `revision` is the sum over the contributing scopes, so any
+   * upsert in any of them moves it forward.
    *
    * @param ref The entity reference to resolve.
    */
   entitySignal(ref: EntityRef): ReadonlySignal<EntitySnapshot | undefined> {
     return computedSignal(() => {
-      const page = this.pageSignal.get()
-      const fromPage = page?.entities.signal(ref).get()
-      if (fromPage) {
-        return fromPage
-      }
-      const fromSession = this.session.entities.signal(ref).get()
-      if (fromSession) {
-        return fromSession
-      }
-      const fromUser = this.user.entities.signal(ref).get()
-      if (fromUser) {
-        return fromUser
-      }
-      for (const scope of this.groupsSignal.get().values()) {
-        const fromGroup = scope.entities.signal(ref).get()
-        if (fromGroup) {
-          return fromGroup
-        }
+      // Least specific first, so a more specific scope's fields land on top.
+      // Groups resolve in opening order, so they layer in reverse.
+      const groups = [...this.groupsSignal.get().values()].reverse()
+      const layers = [
+        ...groups.map((scope) => scope.entities.signal(ref).get()),
+        this.user.entities.signal(ref).get(),
+        this.session.entities.signal(ref).get(),
+        this.pageSignal.get()?.entities.signal(ref).get(),
+      ]
+
+      // Only ONE scope holds the entity in the common case; hand its snapshot
+      // back untouched so its identity survives. Merging would mint a fresh
+      // object on every re-resolution — opening an unrelated page scope would
+      // then notify every subscriber of an entity that had not changed.
+      const present = layers.filter((layer) => layer !== undefined)
+      if (present.length <= 1) {
+        return present[0]
       }
 
-      return undefined
+      let fields: Record<string, unknown> = {}
+      let revision = 0
+      for (const layer of present) {
+        fields = { ...fields, ...layer.fields }
+        revision += layer.revision
+      }
+
+      return { type: ref.type, id: String(ref.id), fields, revision }
     })
   }
 

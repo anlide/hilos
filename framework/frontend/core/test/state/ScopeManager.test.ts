@@ -57,6 +57,36 @@ describe('ScopeManager entity resolution', () => {
     expect(nameIn(manager)).toBe('from-session')
   })
 
+  it('merges fields across scopes: a partial copy does not drop what a less specific one knows', () => {
+    const manager = new ScopeManager()
+    // The session's current user carries the admin flag the shell reads.
+    manager.session.entities.upsert(ref, { name: 'Ada', admin: true })
+    // The page lists the SAME user, but its source selects only id/name/
+    // lastActivity — absence of `admin` here is not a denial of admin.
+    manager
+      .openPage('main')
+      .entities.upsert(ref, { name: 'Ada', lastActivity: 123 })
+
+    const snapshot = manager.entitySignal(ref).get()
+    expect(snapshot?.fields['admin']).toBe(true)
+    expect(snapshot?.fields['lastActivity']).toBe(123)
+  })
+
+  it('pushes a field the page copy does not carry when its own scope changes', () => {
+    const manager = new ScopeManager()
+    manager.session.entities.upsert(ref, { name: 'Ada', admin: false })
+    manager.openPage('main').entities.upsert(ref, { name: 'Ada' })
+
+    const seen: unknown[] = []
+    subscribeSignal(manager.entitySignal(ref), (snapshot) =>
+      seen.push(snapshot?.fields['admin']),
+    )
+
+    // A grant re-sends the handshake, which updates the session copy only.
+    manager.session.entities.upsert(ref, { admin: true })
+    expect(seen).toEqual([true])
+  })
+
   it('resolves groups in opening order, after the user scope', () => {
     const manager = new ScopeManager()
     manager.openGroup('first').entities.upsert(ref, { name: 'from-first' })

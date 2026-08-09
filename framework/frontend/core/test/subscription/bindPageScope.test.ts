@@ -101,6 +101,7 @@ describe('bindPageScope', () => {
       connection as unknown as HilosConnection,
       new ScopeManager(),
     )
+    pages.releaseOnSession()
 
     pages.subscribe('main')
 
