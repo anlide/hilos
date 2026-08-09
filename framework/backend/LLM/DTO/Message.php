@@ -6,6 +6,7 @@ namespace Hilos\LLM\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\LLM\Constants\LLMApiConstants;
+use Hilos\LLM\Exception\LLMMessageContentMissingException;
 
 /**
  * Message - Chat message DTO for LLM.
@@ -56,12 +57,13 @@ class Message extends BaseDTO
      *
      * @param array<string, mixed> $data Source data with role and content keys
      * @return static DTO instance
+     * @throws LLMMessageContentMissingException When the payload carries no content
      */
     public static function fromArray(array $data): static
     {
         return new static(
             role: $data[LLMApiConstants::KEY_ROLE] ?? self::ROLE_USER,
-            content: (string) ($data[LLMApiConstants::KEY_CONTENT] ?? ''),
+            content: self::requireContent($data),
         );
     }
 
@@ -72,6 +74,7 @@ class Message extends BaseDTO
      *
      * @param Message|array{role: string, content: string} $message Message instance or array
      * @return array{role: string, content: string} Normalized array with role and content
+     * @throws LLMMessageContentMissingException When an array message carries no content
      */
     public static function toProviderFormat(Message|array $message): array
     {
@@ -81,7 +84,24 @@ class Message extends BaseDTO
 
         return [
             LLMApiConstants::KEY_ROLE => $message[LLMApiConstants::KEY_ROLE] ?? self::ROLE_USER,
-            LLMApiConstants::KEY_CONTENT => (string) ($message[LLMApiConstants::KEY_CONTENT] ?? ''),
+            LLMApiConstants::KEY_CONTENT => self::requireContent($message),
         ];
+    }
+
+    /**
+     * Reads the content a chat turn is made of, refusing a turn that says nothing.
+     *
+     * @param array<string, mixed> $data Message payload
+     * @return string Non-empty message content
+     * @throws LLMMessageContentMissingException When the payload carries no content
+     */
+    private static function requireContent(array $data): string
+    {
+        $content = $data[LLMApiConstants::KEY_CONTENT] ?? null;
+        if (!is_scalar($content) || (string)$content === '') {
+            throw new LLMMessageContentMissingException('Chat message carries no content');
+        }
+
+        return (string)$content;
     }
 }

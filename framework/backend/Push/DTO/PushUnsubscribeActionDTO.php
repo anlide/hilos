@@ -70,6 +70,7 @@ final class PushUnsubscribeActionDTO extends ActionPayloadDTO
         }
 
         return new static(
+            // external-boundary: the action payload comes from the browser and isValid() rejects an empty endpoint
             endpoint: (string)($inner[self::endpoint] ?? ''),
         );
     }

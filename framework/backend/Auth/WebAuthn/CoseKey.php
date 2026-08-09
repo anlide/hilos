@@ -82,7 +82,9 @@ final class CoseKey
             throw new WebAuthnVerificationException('Unsupported credential curve (expected P-256)');
         }
 
+        // external-boundary: the CBOR map arrives from the browser and may carry no x coordinate
         $x = $map[self::COSE_X] ?? '';
+        // external-boundary: the CBOR map arrives from the browser and may carry no y coordinate
         $y = $map[self::COSE_Y] ?? '';
         if (!is_string($x) || !is_string($y) || strlen($x) !== self::COORDINATE_BYTES || strlen($y) !== self::COORDINATE_BYTES) {
             throw new WebAuthnVerificationException('Credential key coordinates are malformed');

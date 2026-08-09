@@ -48,8 +48,8 @@ class AsyncHttpClient
     /** @var string Request path for next/current request */
     private string $requestPath;
 
-    /** @var string Request body for next/current request */
-    private string $requestBody = '';
+    /** @var ?string Request body for next/current request; null when the request carries no body */
+    private ?string $requestBody = null;
 
     /** @var array<string, string> Extra headers for next/current request */
     private array $requestHeaders = [];
@@ -120,7 +120,7 @@ class AsyncHttpClient
     ): self {
         $this->requestMethod = $method;
         $this->requestPath = $path ?? $this->defaultPath;
-        $this->requestBody = $body ?? '';
+        $this->requestBody = $body;
         $this->requestHeaders = $headers;
 
         return $this;
@@ -367,13 +367,14 @@ class AsyncHttpClient
             $lines[] = $name . ': ' . $value;
         }
 
-        if ($this->requestBody !== '' && !isset($this->requestHeaders[HttpConstants::HEADER_CONTENT_LENGTH])) {
-            $lines[] = HttpConstants::HEADER_CONTENT_LENGTH . ': ' . strlen($this->requestBody);
+        $body = $this->requestBody;
+        if ($body !== null && !isset($this->requestHeaders[HttpConstants::HEADER_CONTENT_LENGTH])) {
+            $lines[] = HttpConstants::HEADER_CONTENT_LENGTH . ': ' . strlen($body);
         }
 
         return implode(HttpConstants::HTTP_LINE_SEPARATOR, $lines)
             . HttpConstants::HTTP_DELIMITER
-            . $this->requestBody;
+            . ($body === null ? '' : $body);
     }
 
     /**
@@ -595,7 +596,7 @@ class AsyncHttpClient
     {
         $this->requestMethod = HttpConstants::METHOD_GET;
         $this->requestPath = $this->defaultPath;
-        $this->requestBody = '';
+        $this->requestBody = null;
         $this->requestHeaders = [];
     }
 

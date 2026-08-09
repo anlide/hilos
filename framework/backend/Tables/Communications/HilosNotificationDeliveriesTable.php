@@ -11,6 +11,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
@@ -40,7 +41,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * A project activates the table by registering it under a table key and binding
  * that key to the deliveries page in {@see Hilos::PAGE_TABLES}. A project that
  * can resolve recipient display names subclasses and overrides {@see resolveUserLabel()};
- * the framework has no concrete user table, so the default label is empty.
+ * the framework has no concrete user table, so the default label is null.
  */
 class HilosNotificationDeliveriesTable extends TableDefinition implements ViewportTable
 {
@@ -102,11 +103,12 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      *
      * @param AbstractTableRow $row Delivery table row from this table's window
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
      */
     public function browserRow(AbstractTableRow $row): array
     {
         return [
-            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
@@ -169,18 +171,18 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Resolves a recipient's display label for the journal, empty by default.
+     * Resolves a recipient's display label for the journal, unnamed by default.
      *
      * The framework owns no concrete user table, so it cannot name a recipient; a
      * project with a user model subclasses this table and overrides this seam to
      * return a display name. The journal still shows the recipient's user id either way.
      *
      * @param int $userId Recipient user id
-     * @return string Display label, or an empty string when the project resolves none
+     * @return ?string Display label, or null when the project resolves none
      */
-    protected function resolveUserLabel(int $userId): string
+    protected function resolveUserLabel(int $userId): ?string
     {
-        return '';
+        return null;
     }
 
     /**
@@ -222,7 +224,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             $params[] = $this->endOfDayBound($to);
         }
 
-        $search = trim($query->search);
+        $search = $query->search === null ? '' : trim($query->search);
         if ($search !== '') {
             $like = '%' . $search . '%';
             $searchConditions = [
@@ -253,13 +255,14 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      */
     protected function buildOrderBy(TableQueryDTO $query): string
     {
-        $column = self::SORTABLE[$query->orderBy] ?? null;
+        $sort = $query->sort;
+        $column = $sort === null ? null : (self::SORTABLE[$sort->field] ?? null);
         if ($column === null) {
             return ' ORDER BY nd.' . EntityNotificationDelivery::created_at . ' ' . SqlSortDirection::DESC
                 . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;
         }
 
-        $direction = $query->orderDirection === TableConstants::ORDER_ASC
+        $direction = $sort->direction === TableConstants::ORDER_ASC
             ? SqlSortDirection::ASC
             : SqlSortDirection::DESC;
 
@@ -304,22 +307,26 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * @param array<string, mixed> $row Joined SQL row (delivery columns + notification type/title/user_id)
      * @return HilosNotificationDeliveryTableRow Delivery table row
      */
-    private function rowFromSql(array $row): HilosNotificationDeliveryTableRow
+    protected function rowFromSql(array $row): HilosNotificationDeliveryTableRow
     {
         $userId = isset($row['user_id']) && $row['user_id'] !== null ? (int) $row['user_id'] : null;
 
         return new HilosNotificationDeliveryTableRow(
             rowKey: (int) ($row['id'] ?? 0),
+            // external-boundary: created_at is NOT NULL, so the driver always hands its stored value over
             createdAt: (string) ($row['created_at'] ?? ''),
+            // external-boundary: channel is NOT NULL, so the driver always hands its stored value over
             channel: (string) ($row['channel'] ?? ''),
+            // external-boundary: status is NOT NULL, so the driver always hands its stored value over
             status: (string) ($row['status'] ?? ''),
             attempts: (int) ($row['attempts'] ?? 0),
             deliveredAt: $row['delivered_at'] !== null ? (string) $row['delivered_at'] : null,
             lastError: $row['last_error'] !== null ? (string) $row['last_error'] : null,
             userId: $userId,
-            userLabel: $userId !== null ? $this->resolveUserLabel($userId) : '',
-            notificationType: (string) ($row['notification_type'] ?? ''),
-            notificationTitle: (string) ($row['notification_title'] ?? ''),
+            userLabel: $userId !== null ? $this->resolveUserLabel($userId) : null,
+            // A LEFT JOIN miss is a notification the retention job already removed, not an empty title.
+            notificationType: isset($row['notification_type']) ? (string) $row['notification_type'] : null,
+            notificationTitle: isset($row['notification_title']) ? (string) $row['notification_title'] : null,
         );
     }
 }

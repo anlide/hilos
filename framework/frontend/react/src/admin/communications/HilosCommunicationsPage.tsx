@@ -132,7 +132,7 @@ export function HilosCommunicationsPage({
               )}
             </td>
             <td>
-              <code className="small">{row.driver}</code>
+              <code className="small">{row.driver ?? '—'}</code>
             </td>
             <td className="text-end">
               <HilosLink

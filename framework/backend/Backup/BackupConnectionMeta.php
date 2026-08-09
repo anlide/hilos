@@ -39,6 +39,7 @@ final class BackupConnectionMeta extends BaseDTO
     {
         return new self(
             (int)($data[self::index] ?? 0),
+            // external-boundary: the sidecar is read from disk and an older one names no database
             (string)($data[self::database] ?? ''),
             (int)($data[self::migrationIndex] ?? 0),
         );

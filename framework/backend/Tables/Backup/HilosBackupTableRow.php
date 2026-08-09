@@ -49,8 +49,8 @@ final class HilosBackupTableRow extends AbstractTableRow
     /**
      * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
      * @param string $createdAt ISO-8601 creation/start timestamp
-     * @param string $env Application environment the backup was taken in
-     * @param string $scope Backup scope value
+     * @param ?string $env Application environment the backup was taken in; null when the record names none
+     * @param ?string $scope Backup scope value; null when the record names none
      * @param int $sizeBytes Archive size in bytes (0 while in progress)
      * @param int $durationSeconds Capture duration in seconds (0 while in progress)
      * @param bool $keep Whether the backup is pinned out of rotation
@@ -64,8 +64,8 @@ final class HilosBackupTableRow extends AbstractTableRow
     public function __construct(
         public string $rowKey,
         public string $createdAt,
-        public string $env,
-        public string $scope,
+        public ?string $env,
+        public ?string $scope,
         public int $sizeBytes,
         public int $durationSeconds,
         public bool $keep,
@@ -121,14 +121,14 @@ final class HilosBackupTableRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         return new static(
-            rowKey: (string) ($data[self::rowKey] ?? ''),
-            createdAt: (string) ($data[self::createdAt] ?? ''),
-            env: (string) ($data[self::env] ?? ''),
-            scope: (string) ($data[self::scope] ?? ''),
+            rowKey: (string) $data[self::rowKey],
+            createdAt: (string) $data[self::createdAt],
+            env: isset($data[self::env]) ? (string) $data[self::env] : null,
+            scope: isset($data[self::scope]) ? (string) $data[self::scope] : null,
             sizeBytes: (int) ($data[self::sizeBytes] ?? 0),
             durationSeconds: (int) ($data[self::durationSeconds] ?? 0),
             keep: (bool) ($data[self::keep] ?? false),
-            status: (string) ($data[self::status] ?? ''),
+            status: (string) $data[self::status],
             finished: array_key_exists(self::finished, $data) ? self::toTriState($data[self::finished]) : null,
             failureReason: isset($data[self::failureReason]) ? (string) $data[self::failureReason] : null,
             // An unknown or absent state reads back as "no digest": a row that cannot say it was

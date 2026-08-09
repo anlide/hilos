@@ -154,7 +154,11 @@ onMounted(async () => {
     }
   })
   unsubscribeFailure = subscribeOAuthFailure((data) => {
-    if (data.reason === OAUTH_REASON_REAUTH_REQUIRED && data.linkToken !== '') {
+    if (
+      data.reason === OAUTH_REASON_REAUTH_REQUIRED &&
+      data.email !== null &&
+      data.linkToken !== null
+    ) {
       reauthToLink(data.email, data.linkToken)
 
       return

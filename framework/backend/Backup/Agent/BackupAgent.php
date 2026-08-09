@@ -256,6 +256,11 @@ final class BackupAgent extends AbstractAgent
             // startBackup, and a stopping agent must not spawn a child nobody will poll.
             $this->pendingScope = null;
             $this->pendingInitiator = null;
+            // A restore admitted but not yet spawned holds the freeze under its pending id
+            // alone, so the finalizer is given that id the same way expireStalePendingRestore()
+            // gives it: without one it refuses to run, and the node stays frozen with nobody
+            // left to lift it.
+            $this->currentBackupId ??= $this->pendingRestoreId;
             // Through the one finalizer, so a stopping agent records the outcome and lifts
             // the freeze exactly like any other failed run.
             $this->finishRestore(false, 'backup agent stopped during restore');
@@ -390,6 +395,7 @@ final class BackupAgent extends AbstractAgent
      */
     private function handleRunScheduleCommand(CommandRequestDTO $data): void
     {
+        // external-boundary: the payload is the operator's command line, which may name no schedule
         $name = (string)($data->payload[BackupConstants::FIELD_SCHEDULE_NAME] ?? '');
         if ($name === '') {
             $name = BackupConstants::DEFAULT_SCHEDULE_NAME;
@@ -452,8 +458,11 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
+        // external-boundary: the payload is the operator's command line and a missing id is rejected below
         $id = (string)($data->payload[BackupConstants::FIELD_BACKUP_ID] ?? '');
+        // external-boundary: the payload is the operator's command line and a missing scope is rejected below
         $scope = BackupScope::fromString((string)($data->payload[BackupConstants::FIELD_SCOPE] ?? ''));
+        // external-boundary: the payload is the operator's command line and a missing decision is rejected below
         $decision = RestoreEnvDecision::tryFrom((string)($data->payload[BackupConstants::FIELD_DECISION] ?? ''));
         if ($id === '' || $scope === null || $decision === null) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Malformed restore request'));
@@ -1129,7 +1138,16 @@ final class BackupAgent extends AbstractAgent
      */
     private function finishRestore(bool $success, ?string $failureReason): void
     {
-        $id = $this->currentBackupId ?? '';
+        $id = $this->currentBackupId;
+        if ($id === null) {
+            // A restore only finishes after one started, so this is a broken invariant
+            // rather than an unnamed backup: an empty id would flow on into the log,
+            // the initiator notice and the failure record.
+            $this->logAgentError('Restore finished with no backup in progress');
+
+            return;
+        }
+
         $durationSeconds = (int)round(microtime(true) - $this->startedAt);
         $stderr = $this->childProcess !== null ? trim($this->childProcess->getStdErr()) : '';
 
@@ -1202,7 +1220,16 @@ final class BackupAgent extends AbstractAgent
      */
     private function finishRun(bool $success, ?string $failureReason): void
     {
-        $id = $this->currentBackupId ?? '';
+        $id = $this->currentBackupId;
+        if ($id === null) {
+            // A run only finishes after one started, so this is a broken invariant
+            // rather than an unnamed backup: an empty id would flow on into the log,
+            // the initiator notice and the failure record.
+            $this->logAgentError('Backup run finished with no backup in progress');
+
+            return;
+        }
+
         $scope = $this->currentScope;
         $durationSeconds = (int)round(microtime(true) - $this->startedAt);
         $stderr = $this->childProcess !== null ? trim($this->childProcess->getStdErr()) : '';

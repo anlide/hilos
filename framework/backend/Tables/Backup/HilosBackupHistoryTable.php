@@ -15,6 +15,7 @@ use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -75,11 +76,12 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * @param AbstractTableRow $row Backup table row from this table's window or mutation
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
      */
     public function browserRow(AbstractTableRow $row): array
     {
         return [
-            BrowserPageSignalData::rowKey => $row->getRowKey() ?? '',
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
@@ -221,16 +223,19 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     private function runningRow(): ?HilosBackupTableRow
     {
+        // A run records its start time together with the running flag, so the second
+        // half of the guard is dead — and a row that cannot say when it started is
+        // not a row the journal can order.
         $runtime = $this->runtimeView();
-        if ($runtime === null || !$runtime->running) {
+        if ($runtime === null || !$runtime->running || $runtime->startedAt === null) {
             return null;
         }
 
         return new HilosBackupTableRow(
             rowKey: HilosBackupTableRow::RUNNING_ROW_KEY,
-            createdAt: $runtime->startedAt ?? '',
+            createdAt: $runtime->startedAt,
             env: $this->currentEnv(),
-            scope: $runtime->scope ?? '',
+            scope: $runtime->scope,
             sizeBytes: 0,
             durationSeconds: 0,
             keep: false,
@@ -248,16 +253,16 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      *
      * The in-progress backup runs in the current environment, which the runtime
      * singleton does not carry. APP_ENV is always cataloged and set, so a failure
-     * is not expected; it degrades to an empty ENV cell rather than dropping the row.
+     * is not expected; it degrades to an unnamed ENV cell rather than dropping the row.
      *
-     * @return string Current application environment, or an empty string when unreadable
+     * @return ?string Current application environment, or null when unreadable
      */
-    private function currentEnv(): string
+    private function currentEnv(): ?string
     {
         try {
-            return Hilos::$env?->string(EnvConstants::APP_ENV) ?? '';
+            return Hilos::$env?->string(EnvConstants::APP_ENV);
         } catch (Throwable) {
-            return '';
+            return null;
         }
     }
 

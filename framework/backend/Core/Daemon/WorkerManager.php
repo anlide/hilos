@@ -13,6 +13,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
@@ -358,6 +359,7 @@ abstract class WorkerManager extends BaseManager
      * @param WorkerDTO $data Daemon message DTO
      * @throws AgentCreationFailedException When agent creation fails
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
+     * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -916,6 +918,7 @@ abstract class WorkerManager extends BaseManager
      *
      * @param DaemonAgentMessageDTO $data Daemon-to-worker agent signal
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
+     * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {

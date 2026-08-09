@@ -34,8 +34,8 @@ final class OAuthResultSignalDataTest extends TestCase
                 'acceptKey' => 'accept-1',
                 'provider' => 'oauth:github',
                 'reason' => 'oauth_login_failed',
-                'email' => '',
-                'linkToken' => '',
+                'email' => null,
+                'linkToken' => null,
             ],
             $data->toArray(),
         );

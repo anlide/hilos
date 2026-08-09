@@ -35,18 +35,18 @@ final class HilosCommunicationsChannelsTableRow extends AbstractTableRow
 
     /**
      * @param string $channel Channel name (registry key and row key)
-     * @param string $label Human channel label
+     * @param ?string $label Human channel label; null when the registry declares none
      * @param bool $enabled Whether the channel is globally enabled
      * @param bool $configured Whether every config field resolved to a value
-     * @param string $driver Transport/driver name
+     * @param ?string $driver Transport/driver name; null when the channel names none
      * @param int $missingFields Count of config fields that did not resolve (source default)
      */
     public function __construct(
         public string $channel,
-        public string $label,
+        public ?string $label,
         public bool $enabled,
         public bool $configured,
-        public string $driver,
+        public ?string $driver,
         public int $missingFields,
     ) {
     }
@@ -87,11 +87,11 @@ final class HilosCommunicationsChannelsTableRow extends AbstractTableRow
     public static function fromArray(array $data): static
     {
         return new static(
-            channel: (string) ($data[self::channel] ?? ''),
-            label: (string) ($data[self::label] ?? ''),
+            channel: (string) $data[self::channel],
+            label: isset($data[self::label]) ? (string) $data[self::label] : null,
             enabled: (bool) ($data[self::enabled] ?? false),
             configured: (bool) ($data[self::configured] ?? false),
-            driver: (string) ($data[self::driver] ?? ''),
+            driver: isset($data[self::driver]) ? (string) $data[self::driver] : null,
             missingFields: (int) ($data[self::missingFields] ?? 0),
         );
     }

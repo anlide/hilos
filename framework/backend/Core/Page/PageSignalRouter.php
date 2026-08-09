@@ -25,6 +25,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -180,6 +181,7 @@ class PageSignalRouter
      * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
+     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
      */
     public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -190,8 +192,7 @@ class PageSignalRouter
         $viewport = new TableViewportSubscription(
             tableKey: $data->tableKey,
             filter: $data->filter,
-            sortField: $data->sortField,
-            sortDirection: $data->sortDirection,
+            sort: $data->sort,
             offset: $data->offset,
             limit: $data->limit,
         );

@@ -137,6 +137,7 @@ class Schema
             $nullable = $column[self::COL_NULL] === self::MYSQL_NULL_YES;
             $default = $column[self::COL_DEFAULT];
             $key = $column[self::COL_KEY];
+            // external-boundary: DESCRIBE prints an empty Extra cell for a column with no attributes
             $extra = $column[self::COL_EXTRA] ?? '';
 
             $phpType = self::mysqlTypeToPhp($type);

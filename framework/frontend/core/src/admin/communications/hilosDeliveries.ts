@@ -22,7 +22,11 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readNumber, readString } from '../../state/fieldReaders.js'
+import {
+  readNumber,
+  readString,
+  readStringOrNull,
+} from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -48,11 +52,11 @@ export interface HilosDeliveryRow {
   /** Recipient user id, or null when the notification is gone. */
   readonly userId: number | null
   /** Recipient display label (empty when the project resolves none). */
-  readonly userLabel: string
+  readonly userLabel: string | null
   /** Notification machine type. */
-  readonly notificationType: string
+  readonly notificationType: string | null
   /** Notification title (the body is never shown — it may carry personal detail). */
-  readonly notificationTitle: string
+  readonly notificationTitle: string | null
 }
 
 /** Row payload key of the recipient user id. */
@@ -192,9 +196,12 @@ export function resolveHilosDeliveryRow(row: TableRow): HilosDeliveryRow {
     deliveredAt: readString(slot, DELIVERY_DELIVERED_AT_FIELD),
     lastError: readString(slot, DELIVERY_LAST_ERROR_FIELD),
     userId: readUserId(slot),
-    userLabel: readString(slot, DELIVERY_USER_LABEL_FIELD),
-    notificationType: readString(slot, DELIVERY_NOTIFICATION_TYPE_FIELD),
-    notificationTitle: readString(slot, DELIVERY_NOTIFICATION_TITLE_FIELD),
+    userLabel: readStringOrNull(slot, DELIVERY_USER_LABEL_FIELD),
+    notificationType: readStringOrNull(slot, DELIVERY_NOTIFICATION_TYPE_FIELD),
+    notificationTitle: readStringOrNull(
+      slot,
+      DELIVERY_NOTIFICATION_TITLE_FIELD,
+    ),
   }
 }
 

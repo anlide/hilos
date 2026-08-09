@@ -193,6 +193,7 @@ class PushDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
         return json_encode([
             self::PAYLOAD_KEY_TITLE => $notification->title,
+            // external-boundary: body is a nullable column, and a push with no body carries an empty one
             self::PAYLOAD_KEY_BODY => $notification->body ?? '',
             self::PAYLOAD_KEY_DATA => $data,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';

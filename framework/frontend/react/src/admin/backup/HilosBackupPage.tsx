@@ -87,12 +87,10 @@ function statusCell(row: HilosBackupRow) {
     )
   }
   if (row.finished === true) {
-    return (
-      <span className="badge text-bg-success">{row.status || 'success'}</span>
-    )
+    return <span className="badge text-bg-success">{row.status}</span>
   }
 
-  return <span className="badge text-bg-danger">{row.status || 'error'}</span>
+  return <span className="badge text-bg-danger">{row.status}</span>
 }
 
 /**

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Tables\Communications;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
+use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -111,8 +113,7 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertSame(
             ' ORDER BY nd.attempts ASC, nd.id DESC',
             $this->table()->exposedBuildOrderBy(new TableQueryDTO(
-                orderBy: 'attempts',
-                orderDirection: TableConstants::ORDER_ASC,
+                sort: new TableSortDTO('attempts', TableConstants::ORDER_ASC),
             )),
         );
     }
@@ -121,14 +122,34 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     {
         self::assertSame(
             ' ORDER BY nd.created_at DESC, nd.id DESC',
-            $this->table()->exposedBuildOrderBy(new TableQueryDTO(orderBy: 'note; DROP TABLE')),
+            $this->table()->exposedBuildOrderBy(new TableQueryDTO(sort: new TableSortDTO('note; DROP TABLE'))),
         );
+    }
+
+    public function testALeftJoinMissCarriesNullRatherThanAnEmptyTitle(): void
+    {
+        $row = $this->table()->exposedRowFromSql([
+            'id' => 7,
+            'created_at' => '2026-08-09 10:00:00',
+            'channel' => 'email',
+            'status' => 'failed',
+            'attempts' => 1,
+            'delivered_at' => null,
+            'last_error' => null,
+            'user_id' => null,
+        ]);
+
+        // The notification was removed by retention: no type, no title, and nobody to label.
+        self::assertNull($row->notificationType);
+        self::assertNull($row->notificationTitle);
+        self::assertNull($row->userLabel);
+        self::assertSame('failed', $row->status);
     }
 
     /**
      * Builds a table subclass that exposes the protected SQL builders for testing.
      *
-     * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy: callable} Table with exposed builders
+     * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy: callable, exposedRowFromSql: callable} Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
     {
@@ -149,6 +170,15 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             public function exposedBuildOrderBy(TableQueryDTO $query): string
             {
                 return $this->buildOrderBy($query);
+            }
+
+            /**
+             * @param array<string, mixed> $row Joined SQL row
+             * @return HilosNotificationDeliveryTableRow Projected delivery row
+             */
+            public function exposedRowFromSql(array $row): HilosNotificationDeliveryTableRow
+            {
+                return $this->rowFromSql($row);
             }
         };
     }

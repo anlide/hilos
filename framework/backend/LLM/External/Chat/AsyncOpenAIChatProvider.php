@@ -66,6 +66,7 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
         $parsed = parse_url($url);
         $host = $parsed['host'] ?? 'api.openai.com';
         $port = $parsed['port'] ?? 443;
+        // external-boundary: parse_url reads a configured URL, which usually carries no path at all
         $basePath = ($parsed['path'] ?? '') ?: '/v1';
         $path = rtrim($basePath, '/') . '/chat/completions';
 

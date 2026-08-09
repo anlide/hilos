@@ -76,6 +76,7 @@ final class NotificationChannelPreferenceActionDTO extends ActionPayloadDTO
         }
 
         return new static(
+            // external-boundary: the action payload comes from the browser and isValid() rejects an empty channel
             channel: (string)($inner[self::channel] ?? ''),
             enabled: (bool)($inner[self::enabled] ?? false),
         );

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Sms\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -49,6 +50,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $templateKey Template key, or null for an inline message
      * @param array<string, mixed> $params Template render params
      * @param ?string $locale Render locale, or null for the project default
+     * @throws ValidationException When the payload names neither a template nor an inline text
      */
     public function __construct(
         public readonly string $to,
@@ -58,6 +60,9 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
         public readonly array $params = [],
         public readonly ?string $locale = null,
     ) {
+        if ($this->templateKey === null && $this->text === null) {
+            throw new ValidationException('SMS raw send needs a template key or an inline text');
+        }
     }
 
     /**
@@ -78,6 +83,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws ValidationException When the payload names neither a template nor an inline text
      */
     public static function fromArray(array $data): static
     {

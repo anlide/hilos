@@ -16,17 +16,15 @@ readonly class TableQueryDTO
     /**
      * Creates query parameters for full snapshot construction.
      *
-     * @param string $search Full-text search across row values
-     * @param string $orderBy Field name to order by (empty = no ordering)
-     * @param string $orderDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
+     * @param ?string $search Full-text search across row values, or null when the window asked for none
+     * @param ?TableSortDTO $sort Ordering the window asked for, or null for the table's own default order
      * @param int $offset Zero-based offset for pagination
      * @param int $limit Page size (TableConstants::NO_LIMIT = all rows)
      * @param array<string, mixed> $filter Open viewport filter map a concrete table resolves into its own WHERE (e.g. the delivery-logs channel/status/period filters, HIL-201); `search` is lifted out into {@see $search}
      */
     public function __construct(
-        public string $search = '',
-        public string $orderBy = '',
-        public string $orderDirection = TableConstants::ORDER_ASC,
+        public ?string $search = null,
+        public ?TableSortDTO $sort = null,
         public int $offset = 0,
         public int $limit = TableConstants::NO_LIMIT,
         public array $filter = [],

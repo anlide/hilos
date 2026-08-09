@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Mail\Template;
 
 use Hilos\Mail\EmailContent;
+use Hilos\Mail\Exception\MailTemplateParamMissingException;
 
 /**
  * Renders a durable notification (HIL-196) as an email (HIL-197).
@@ -26,11 +27,20 @@ final class GenericNotificationMailTemplate implements MailTemplate
      * @param array<string, mixed> $params Template params; reads {@see PARAM_TITLE} and {@see PARAM_BODY}
      * @param ?string $locale Target locale, ignored today (reserved for i18n)
      * @return EmailContent Rendered subject and text body
+     * @throws MailTemplateParamMissingException When the params carry no notification title
      */
     public function render(array $params, ?string $locale): EmailContent
     {
+        $title = $params[self::PARAM_TITLE] ?? null;
+        if (!is_scalar($title) || (string)$title === '') {
+            throw new MailTemplateParamMissingException(
+                'Generic notification mail template needs a non-empty ' . self::PARAM_TITLE . ' param',
+            );
+        }
+
         return new EmailContent(
-            (string)($params[self::PARAM_TITLE] ?? ''),
+            (string)$title,
+            // external-boundary: an empty body means there is nothing to print under the title
             (string)($params[self::PARAM_BODY] ?? ''),
         );
     }

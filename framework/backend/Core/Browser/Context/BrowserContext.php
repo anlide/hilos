@@ -50,6 +50,7 @@ use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -193,6 +194,7 @@ abstract class BrowserContext
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param TableViewportSubscription $viewport Window descriptor; its delivered row-id set is updated
+     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
      */
     public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): void
     {
@@ -266,12 +268,11 @@ abstract class BrowserContext
      */
     private function viewportQuery(TableViewportSubscription $viewport): TableQueryDTO
     {
-        $search = $viewport->filter[TableConstants::FILTER_KEY_SEARCH] ?? '';
+        $search = $viewport->filter[TableConstants::FILTER_KEY_SEARCH] ?? null;
 
         return new TableQueryDTO(
-            search: is_string($search) ? $search : '',
-            orderBy: $viewport->sortField,
-            orderDirection: $viewport->sortDirection,
+            search: is_string($search) ? $search : null,
+            sort: $viewport->sort,
             offset: $viewport->offset,
             limit: $viewport->limit,
             filter: $viewport->filter,
@@ -299,6 +300,8 @@ abstract class BrowserContext
 
     /**
      * Drains browser source changes at the end of the worker tick.
+     *
+     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      */
     public function flushToSignalRouter(): void
     {
@@ -400,6 +403,8 @@ abstract class BrowserContext
 
     /**
      * Emits browser signals produced from grouped DB/RT source changes in $this->changes.
+     *
+     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      */
     protected function emitBrowserSignals(): void
     {
@@ -1022,6 +1027,7 @@ abstract class BrowserContext
      * @param string $acceptKey Target accept key
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
+     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
      */
     private function emitViewportDelta(
         ViewportTable $table,
@@ -1070,6 +1076,7 @@ abstract class BrowserContext
      * @param string $page Subscribed page key
      * @param string $browserKey Browser table key
      * @return bool Whether the row was appended (and no further signal is needed)
+     * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
     private function tryEmitViewportAppend(
         ViewportTable $table,
@@ -1085,7 +1092,7 @@ abstract class BrowserContext
         if ($viewport->hasRow((string) $mutation->rowKey)) {
             return false;
         }
-        if ($this->viewportQuery($viewport)->search !== '' || !$this->viewportIsLastPageWithRoom($viewport)) {
+        if ($this->viewportQuery($viewport)->search !== null || !$this->viewportIsLastPageWithRoom($viewport)) {
             return false;
         }
 
@@ -1177,7 +1184,7 @@ abstract class BrowserContext
         TableViewportSubscription $viewport,
         TableRowMutationDTO $mutation,
     ): ?int {
-        if ($this->viewportQuery($viewport)->search !== '') {
+        if ($this->viewportQuery($viewport)->search !== null) {
             return $this->viewportFilteredTotal($table, $viewport);
         }
 
@@ -1219,6 +1226,7 @@ abstract class BrowserContext
      * @param string $browserKey Browser table key
      * @param bool $own Whether this receiver authored the change (applies at once, never gated)
      * @return ?TableViewportDeltaDTO Pending row delta, or null when no row in the window changed
+     * @throws TableRowKeyMissingException When the mutated row is a placeholder and carries no key
      */
     private function rowDeltaForMutation(
         TableViewportSubscription $viewport,

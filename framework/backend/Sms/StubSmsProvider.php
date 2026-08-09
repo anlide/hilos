@@ -41,8 +41,9 @@ final class StubSmsProvider implements DirectSmsProvider
      */
     public function send(SmsMessage $message, float $nowMs): SmsSendResult
     {
-        if ($this->config->fileDir !== '') {
-            $result = $this->write($message, $nowMs);
+        $fileDir = $this->config->fileDir;
+        if ($fileDir !== null && $fileDir !== '') {
+            $result = $this->write($message, $nowMs, $fileDir);
             if (!$result->delivered) {
                 return $result;
             }
@@ -61,16 +62,17 @@ final class StubSmsProvider implements DirectSmsProvider
      *
      * @param SmsMessage $message Recipient message to write
      * @param float $nowMs Current time in milliseconds, used to name the artifact
+     * @param string $fileDir Stub directory the caller has already confirmed is configured
      * @return SmsSendResult Delivered on success, or a permanent failure when the write fails
      */
-    private function write(SmsMessage $message, float $nowMs): SmsSendResult
+    private function write(SmsMessage $message, float $nowMs, string $fileDir): SmsSendResult
     {
-        if (!is_dir($this->config->fileDir) && !mkdir($this->config->fileDir, 0o775, true) && !is_dir($this->config->fileDir)) {
+        if (!is_dir($fileDir) && !mkdir($fileDir, 0o775, true) && !is_dir($fileDir)) {
             return SmsSendResult::failed('sms file directory is not writable', true);
         }
 
         $content = "To: {$message->to}\nFrom: {$this->config->from}\nText: {$message->text}\n";
-        $path = $this->config->fileDir . '/' . (int)$nowMs . '-' . substr(hash('sha256', $content), 0, 16) . '.txt';
+        $path = $fileDir . '/' . (int)$nowMs . '-' . substr(hash('sha256', $content), 0, 16) . '.txt';
         if (file_put_contents($path, $content) === false) {
             return SmsSendResult::failed('sms file could not be written', true);
         }

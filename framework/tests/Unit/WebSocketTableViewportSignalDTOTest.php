@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -20,8 +21,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
             page: 'hilos_settings',
             tableKey: 'settings',
             filter: ['search' => 'theme'],
-            sortField: 'key',
-            sortDirection: TableConstants::ORDER_DESC,
+            sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
             offset: 10,
             limit: 10,
         );
@@ -32,8 +32,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertSame('hilos_settings', $restored->page);
         $this->assertSame('settings', $restored->tableKey);
         $this->assertSame(['search' => 'theme'], $restored->filter);
-        $this->assertSame('key', $restored->sortField);
-        $this->assertSame(TableConstants::ORDER_DESC, $restored->sortDirection);
+        $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $restored->sort);
         $this->assertSame(10, $restored->offset);
         $this->assertSame(10, $restored->limit);
     }
@@ -43,8 +42,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $array = new WebSocketTableViewportSignalDTO(
             acceptKey: 'ak',
             tableKey: 't',
-            sortField: 'name',
-            sortDirection: TableConstants::ORDER_ASC,
+            sort: new TableSortDTO('name', TableConstants::ORDER_ASC),
         )->toArray();
 
         $this->assertSame(
@@ -53,7 +51,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         );
     }
 
-    public function testNoSortKeyWithoutASortField(): void
+    public function testNoSortKeyWithoutASort(): void
     {
         $array = new WebSocketTableViewportSignalDTO(acceptKey: 'ak', tableKey: 't')->toArray();
 
@@ -68,9 +66,19 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertNull($dto->page);
         $this->assertSame('', $dto->tableKey);
         $this->assertSame([], $dto->filter);
-        $this->assertSame('', $dto->sortField);
+        $this->assertNull($dto->sort);
         $this->assertSame(0, $dto->offset);
         $this->assertSame(TableConstants::NO_LIMIT, $dto->limit);
+    }
+
+    public function testASortPayloadNamingNoFieldDecodesToNoSort(): void
+    {
+        $dto = WebSocketTableViewportSignalDTO::fromArray([
+            'acceptKey' => 'ak',
+            WebSocketTableViewportSignalDTO::SORT => [TableSortDTO::DIRECTION => TableConstants::ORDER_DESC],
+        ]);
+
+        $this->assertNull($dto->sort);
     }
 
     public function testGetAcceptKey(): void

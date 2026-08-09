@@ -19,6 +19,7 @@ use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\BackupVerifyResult;
 use Hilos\Backup\Exception\BackupDumpFailedException;
 use Hilos\Backup\Exception\BackupException;
+use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
@@ -320,7 +321,7 @@ HELP;
     }
 
     /**
-     * Reads one sidecar off disk, or null when it cannot be read or parsed.
+     * Reads one sidecar off disk, or null when it cannot be read, parsed, or names no backup.
      *
      * @param string $sidecarPath Absolute sidecar path
      * @return ?BackupMetadata Decoded metadata, or null when the sidecar is unusable
@@ -333,8 +334,15 @@ HELP;
 
         $raw = file_get_contents($sidecarPath);
         $decoded = $raw === false ? null : json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
 
-        return is_array($decoded) ? BackupMetadata::fromArray($decoded) : null;
+        try {
+            return BackupMetadata::fromArray($decoded);
+        } catch (BackupMetadataIncompleteException) {
+            return null;
+        }
     }
 
     /**

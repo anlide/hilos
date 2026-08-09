@@ -56,6 +56,7 @@ enum PhpType: string
         }
 
         preg_match('/^([a-z_]+)/', $type, $matches);
+        // external-boundary: COLUMN_TYPE comes from the server and may not start with a type word
         $baseType = $matches[1] ?? '';
 
         return match ($baseType) {

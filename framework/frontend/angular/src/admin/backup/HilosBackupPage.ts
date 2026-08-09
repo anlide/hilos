@@ -140,13 +140,9 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
                 </div>
               </div>
             } @else if (row.finished === true) {
-              <span class="badge text-bg-success">{{
-                row.status || 'success'
-              }}</span>
+              <span class="badge text-bg-success">{{ row.status }}</span>
             } @else {
-              <span class="badge text-bg-danger">{{
-                row.status || 'error'
-              }}</span>
+              <span class="badge text-bg-danger">{{ row.status }}</span>
             }
           </td>
           <td class="text-center">

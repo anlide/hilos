@@ -9,6 +9,8 @@ use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
+use Hilos\Backup\Exception\BackupMetadataIncompleteException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -89,7 +91,7 @@ final class BackupMetadataTest extends TestCase
         $restored = BackupMetadata::fromArray($withWarning->toArray());
 
         $this->assertSame($withWarning->warnings, $restored->warnings);
-        $this->assertSame([], BackupMetadata::fromArray([BackupMetadata::id => 'x'])->warnings);
+        $this->assertSame([], BackupMetadata::fromArray($this->minimalSidecar())->warnings);
     }
 
     public function testFailureReasonRoundTripsAndDefaultsToNull(): void
@@ -118,7 +120,7 @@ final class BackupMetadataTest extends TestCase
         $this->assertArrayHasKey(BackupMetadata::failureReason, $successArray);
 
         // A legacy sidecar written before the field existed carries no key and reads back as null.
-        $this->assertNull(BackupMetadata::fromArray([BackupMetadata::id => 'x'])->failureReason);
+        $this->assertNull(BackupMetadata::fromArray($this->minimalSidecar())->failureReason);
     }
 
     public function testDumpBytesRoundTripsAndLegacySidecarReadsZero(): void
@@ -141,7 +143,7 @@ final class BackupMetadataTest extends TestCase
         $this->assertArrayHasKey(BackupMetadata::dumpBytes, $metadata->toArray());
 
         // A legacy sidecar written before the field existed carries no key and reads back as 0.
-        $this->assertSame(0, BackupMetadata::fromArray([BackupMetadata::id => 'x'])->dumpBytes);
+        $this->assertSame(0, BackupMetadata::fromArray($this->minimalSidecar())->dumpBytes);
     }
 
     public function testVerificationFieldsRoundTripAndLegacySidecarReadsThemAsNull(): void
@@ -173,7 +175,7 @@ final class BackupMetadataTest extends TestCase
         $this->assertArrayHasKey(BackupMetadata::verifyOutcome, $payload);
 
         // A sidecar written before this ticket has no digest at all: nothing to check, not corrupt.
-        $legacy = BackupMetadata::fromArray([BackupMetadata::id => 'x']);
+        $legacy = BackupMetadata::fromArray($this->minimalSidecar());
         $this->assertNull($legacy->sha256);
         $this->assertNull($legacy->verifiedAt);
         $this->assertNull($legacy->verifyOutcome);
@@ -181,10 +183,9 @@ final class BackupMetadataTest extends TestCase
 
     public function testAnUnknownStoredVerifyOutcomeReadsBackAsNull(): void
     {
-        $metadata = BackupMetadata::fromArray([
-            BackupMetadata::id => 'x',
-            BackupMetadata::verifyOutcome => 'nonsense',
-        ]);
+        $metadata = BackupMetadata::fromArray(
+            $this->minimalSidecar([BackupMetadata::verifyOutcome => 'nonsense']),
+        );
 
         $this->assertNull($metadata->verifyOutcome);
         $this->assertSame(BackupVerifyOutcome::MISMATCH, BackupVerifyOutcome::fromString('mismatch'));
@@ -227,11 +228,10 @@ final class BackupMetadataTest extends TestCase
 
     public function testUnknownScopeAndStatusFallBackToDefaults(): void
     {
-        $metadata = BackupMetadata::fromArray([
-            BackupMetadata::id => 'x',
+        $metadata = BackupMetadata::fromArray($this->minimalSidecar([
             BackupMetadata::scope => 'nonsense',
             BackupMetadata::status => '',
-        ]);
+        ]));
 
         $this->assertSame(BackupScope::FULL, $metadata->scope);
         $this->assertSame(BackupStatus::SUCCESS, $metadata->status);
@@ -246,5 +246,47 @@ final class BackupMetadataTest extends TestCase
         $this->assertNull(BackupScope::fromString(''));
         $this->assertSame(BackupStatus::ERROR, BackupStatus::fromString('error'));
         $this->assertNull(BackupStatus::fromString(null));
+    }
+
+    /**
+     * @return list<array{0: string}> One case per field the sidecar cannot be read without
+     */
+    public static function identityFieldProvider(): array
+    {
+        return [[BackupMetadata::id], [BackupMetadata::createdAt], [BackupMetadata::env]];
+    }
+
+    #[DataProvider('identityFieldProvider')]
+    public function testASidecarMissingAnIdentityFieldIsRefused(string $field): void
+    {
+        $payload = $this->minimalSidecar();
+        unset($payload[$field]);
+
+        $this->expectException(BackupMetadataIncompleteException::class);
+        BackupMetadata::fromArray($payload);
+    }
+
+    #[DataProvider('identityFieldProvider')]
+    public function testASidecarWithAnEmptyIdentityFieldIsRefused(string $field): void
+    {
+        $this->expectException(BackupMetadataIncompleteException::class);
+        BackupMetadata::fromArray($this->minimalSidecar([$field => '']));
+    }
+
+    /**
+     * Builds the smallest payload the sidecar reader accepts: the three fields that address the
+     * backup, plus whatever the case under test adds.
+     *
+     * @param array<string, mixed> $extra Fields layered on top of the identity trio
+     * @return array<string, mixed> Sidecar payload
+     */
+    private function minimalSidecar(array $extra = []): array
+    {
+        return [
+            BackupMetadata::id => 'x',
+            BackupMetadata::createdAt => '2026-08-09T00:00:00+00:00',
+            BackupMetadata::env => 'prod',
+            ...$extra,
+        ];
     }
 }

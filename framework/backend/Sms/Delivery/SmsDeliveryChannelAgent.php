@@ -23,6 +23,7 @@ use Hilos\Sms\DirectSmsProvider;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Sms\Exception\SmsException;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 use Hilos\Sms\HttpSmsProvider;
 use Hilos\Sms\SmsChannelConfig;
 use Hilos\Sms\SmsMessage;
@@ -178,6 +179,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param ObjectNotification $notification Notification to render and deliver
      * @return DeliveryAttempt The started SMS send
      * @throws SmsTemplateNotInCatalogException When the generic notification template is absent from the catalog
+     * @throws SmsTemplateParamMissingException When the notification carries no title to head the line with
      */
     protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt
     {
@@ -185,6 +187,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             SmsTemplateCatalogConstants::NOTIFICATION_GENERIC,
             [
                 GenericNotificationSmsTemplate::PARAM_TITLE => $notification->title,
+                // external-boundary: body is a nullable column, and the template prints nothing for an empty one
                 GenericNotificationSmsTemplate::PARAM_BODY => $notification->body ?? '',
             ],
         );
@@ -300,10 +303,11 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     }
 
     /**
-     * Renders the raw send and queues it, or drops it when its template is unknown.
+     * Renders the raw send and queues it, or drops it when its template cannot be rendered.
      *
-     * An unknown template key is a caller error and is dropped with a domain-only log (masked
-     * number and key, never the params); a well-formed send joins the raw pool.
+     * An unknown template key, or one asked to render without a param it needs, is a caller error
+     * and is dropped with a domain-only log (masked number and key, never the params); a
+     * well-formed send joins the raw pool.
      *
      * @param SmsSendSignalData $signal Raw-send payload (inline text or template)
      */
@@ -314,6 +318,12 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         } catch (SmsTemplateNotInCatalogException) {
             $this->logAgentWarning(
                 'raw send to ' . SmsText::maskNumber($signal->to) . " dropped: unknown template '{$signal->templateKey}'",
+            );
+
+            return;
+        } catch (SmsTemplateParamMissingException $failure) {
+            $this->logAgentWarning(
+                'raw send to ' . SmsText::maskNumber($signal->to) . " dropped: {$failure->getMessage()}",
             );
 
             return;
@@ -328,12 +338,16 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param SmsSendSignalData $signal Raw-send payload
      * @return SmsMessage The message to hand a provider
      * @throws SmsTemplateNotInCatalogException When a named template is absent from the catalog
+     * @throws SmsTemplateParamMissingException When a named template needs a param the payload lacks
      */
     private function buildRawMessage(SmsSendSignalData $signal): SmsMessage
     {
+        // The payload invariant guarantees an inline text whenever no template names the content,
+        // so it is passed through as it is: a broken invariant has to fail loudly here rather than
+        // send an empty segment.
         $text = $signal->templateKey !== null
             ? $this->templateRegistry()->render($signal->templateKey, $signal->params, $signal->locale)
-            : ($signal->text ?? '');
+            : $signal->text;
 
         return $this->buildMessage($signal->to, $text);
     }

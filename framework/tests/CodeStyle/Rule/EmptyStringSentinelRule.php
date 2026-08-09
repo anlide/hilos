@@ -17,6 +17,11 @@ use Hilos\Tests\CodeStyle\Violation;
  * judges `??` alone and leaves the `: ''` branch of a ternary to review, because
  * that branch is also how a legitimate optional fragment is rendered into a
  * concatenation.
+ *
+ * A place where the empty string arrives from outside the process is legal, and a
+ * `// external-boundary: <reason>` marker on the line directly above says so. The
+ * form is the one `ErrorSuppressionRule` already uses, so the repository carries
+ * one way of legalizing a single occurrence rather than two.
  */
 final class EmptyStringSentinelRule implements CodeStyleRule
 {
@@ -26,6 +31,9 @@ final class EmptyStringSentinelRule implements CodeStyleRule
 
     /** Both spellings of the literal; `token_get_all()` keeps the quotes. */
     private const array EMPTY_STRING_LITERALS = ["''", '""'];
+
+    /** The marker that legalizes one occurrence; the reason after the colon is the point of it. */
+    private const string MARKER_PATTERN = '~^//\s*external-boundary:(?<reason>.*)$~';
 
     /**
      * Path fragments the rule judges, relative to the scanned root. The zone grows
@@ -38,10 +46,27 @@ final class EmptyStringSentinelRule implements CodeStyleRule
         'Core/Sync',
         'Core/Agent/DTO',
         'Core/Daemon',
+        'Core/Table/DTO',
+        'Core/Source',
         'Socket/WebSocket/DTO',
         'Socket/Worker/DTO',
         'Socket/Command/DTO',
         'Cluster/Peer/DTO',
+        'API',
+        'Auth',
+        'Backup',
+        'Database',
+        'LLM',
+        'Log',
+        'Mail',
+        'Notification',
+        'Pages',
+        'ProtectedMode',
+        'Push',
+        'Runtime',
+        'Sms',
+        'Tables',
+        'Utils',
         'Hilos.php',
     ];
 
@@ -75,22 +100,40 @@ final class EmptyStringSentinelRule implements CodeStyleRule
             return;
         }
 
+        $lines = $this->lineNumbers($tokens);
+
         foreach ($tokens as $index => $token) {
             if (!is_array($token) || $token[0] !== T_COALESCE) {
                 continue;
             }
 
-            $fallback = $this->significantToken($tokens, $index, 1);
+            $fallbackIndex = $this->significantIndex($tokens, $index);
+            $fallback = $fallbackIndex === null ? null : $tokens[$fallbackIndex];
             if (!is_array($fallback) || $fallback[0] !== T_CONSTANT_ENCAPSED_STRING) {
                 continue;
             }
 
-            if (in_array($fallback[1], self::EMPTY_STRING_LITERALS, true)) {
+            if (!in_array($fallback[1], self::EMPTY_STRING_LITERALS, true)) {
+                continue;
+            }
+
+            $reason = $this->markerReason($tokens, $lines, (int)$fallbackIndex);
+            if ($reason === null) {
                 yield new Violation(
                     self::ID,
                     $relativePath,
                     $fallback[2],
                     '?? \'\' turns a missing value into an empty string; keep it null or make the field required',
+                );
+                continue;
+            }
+
+            if (trim($reason) === '') {
+                yield new Violation(
+                    self::ID,
+                    $relativePath,
+                    $fallback[2],
+                    'the `// external-boundary:` marker above the fallback names no reason',
                 );
             }
         }
@@ -120,17 +163,71 @@ final class EmptyStringSentinelRule implements CodeStyleRule
 
     /**
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @param int $index Index to walk away from
-     * @param int $step Direction to walk in
-     * @return string|array{0: int, 1: string, 2: int}|null Nearest token that is not whitespace or a comment
+     * @param int $index Index to walk forward from
+     * @return int|null Index of the nearest token that is not whitespace or a comment
      */
-    private function significantToken(array $tokens, int $index, int $step): string|array|null
+    private function significantIndex(array $tokens, int $index): ?int
     {
-        for ($cursor = $index + $step; isset($tokens[$cursor]); $cursor += $step) {
+        for ($cursor = $index + 1; isset($tokens[$cursor]); $cursor++) {
             $token = $tokens[$cursor];
             if (!is_array($token) || !in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-                return $tokens[$cursor];
+                return $cursor;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Single-character tokens carry no line of their own, so the walk keeps the
+     * line the last multi-character token ended on.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @return array<int, int> Start line of every token, single-character ones included
+     */
+    private function lineNumbers(array $tokens): array
+    {
+        $lines = [];
+        $line = 1;
+
+        foreach ($tokens as $index => $token) {
+            if (!is_array($token)) {
+                $lines[$index] = $line;
+                continue;
+            }
+
+            $lines[$index] = $token[2];
+            $line = $token[2] + substr_count($token[1], "\n");
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Reads the marker that legalizes one fallback. The walk gives up as soon as it
+     * passes above the previous line: the marker has to sit directly above the very
+     * occurrence it explains, or it stops being a classification of that place.
+     *
+     * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
+     * @param array<int, int> $lines Start line of every token
+     * @param int $index Index of the empty string literal
+     * @return string|null Text after the colon, or null when no marker covers the fallback
+     */
+    private function markerReason(array $tokens, array $lines, int $index): ?string
+    {
+        $markerLine = $lines[$index] - 1;
+
+        for ($cursor = $index - 1; $cursor >= 0; $cursor--) {
+            if ($lines[$cursor] < $markerLine) {
+                return null;
+            }
+
+            $token = $tokens[$cursor];
+            if (!is_array($token) || $token[0] !== T_COMMENT || $lines[$cursor] !== $markerLine) {
+                continue;
+            }
+
+            return preg_match(self::MARKER_PATTERN, rtrim($token[1]), $found) === 1 ? $found['reason'] : null;
         }
 
         return null;

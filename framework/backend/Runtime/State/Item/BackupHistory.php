@@ -47,10 +47,10 @@ final class BackupHistory extends RtState
     public string $createdAt = '';
 
     /** Application environment the backup was taken in. */
-    public string $env = '';
+    public ?string $env = null;
 
     /** Scope value ({@see BackupScope}). */
-    public string $scope = '';
+    public ?string $scope = null;
 
     /** @var list<BackupConnectionMeta> Connections captured in the backup. */
     public array $connections = [];
@@ -127,15 +127,15 @@ final class BackupHistory extends RtState
         }
 
         $instance = new static();
-        $instance->id = (string)($row[self::id] ?? '');
-        $instance->createdAt = (string)($row[self::createdAt] ?? '');
-        $instance->env = (string)($row[self::env] ?? '');
-        $instance->scope = (string)($row[self::scope] ?? '');
+        $instance->id = (string)$row[self::id];
+        $instance->createdAt = (string)$row[self::createdAt];
+        $instance->env = self::stringOrNull($row[self::env] ?? null);
+        $instance->scope = self::stringOrNull($row[self::scope] ?? null);
         $instance->connections = $connections;
         $instance->sizeBytes = (int)($row[self::sizeBytes] ?? 0);
         $instance->durationSeconds = (int)($row[self::durationSeconds] ?? 0);
         $instance->keep = (bool)($row[self::keep] ?? false);
-        $instance->status = (string)($row[self::status] ?? '');
+        $instance->status = (string)$row[self::status];
         $instance->failureReason = isset($row[self::failureReason]) ? (string)$row[self::failureReason] : null;
         $instance->dumpBytes = (int)($row[self::dumpBytes] ?? 0);
         $instance->sha256 = isset($row[self::sha256]) ? (string)$row[self::sha256] : null;
@@ -243,5 +243,14 @@ final class BackupHistory extends RtState
             self::verifiedAt => $this->verifiedAt,
             self::verifyOutcome => $this->verifyOutcome,
         ];
+    }
+
+    /**
+     * @param mixed $value Raw row value
+     * @return ?string String value, or null
+     */
+    private static function stringOrNull(mixed $value): ?string
+    {
+        return $value === null ? null : (string)$value;
     }
 }

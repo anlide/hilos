@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Template;
 
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
+
 /**
  * Renders a durable notification (HIL-196) as an SMS line (HIL-285).
  *
@@ -25,12 +27,19 @@ final class GenericNotificationSmsTemplate implements SmsTemplate
      * @param array<string, mixed> $params Template params; reads {@see PARAM_TITLE} and {@see PARAM_BODY}
      * @param ?string $locale Target locale, ignored today (reserved for i18n)
      * @return string Rendered one-line notification message
+     * @throws SmsTemplateParamMissingException When the params carry no notification title
      */
     public function render(array $params, ?string $locale): string
     {
-        $title = (string)($params[self::PARAM_TITLE] ?? '');
+        $title = $params[self::PARAM_TITLE] ?? null;
+        if (!is_scalar($title) || (string)$title === '') {
+            throw new SmsTemplateParamMissingException(
+                'Generic notification SMS template needs a non-empty ' . self::PARAM_TITLE . ' param',
+            );
+        }
+        // external-boundary: an empty body means there is nothing to print after the title
         $body = (string)($params[self::PARAM_BODY] ?? '');
 
-        return $body === '' ? $title : trim($title . ': ' . $body);
+        return $body === '' ? (string)$title : trim((string)$title . ': ' . $body);
     }
 }

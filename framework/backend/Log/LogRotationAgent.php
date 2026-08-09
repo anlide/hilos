@@ -54,10 +54,9 @@ final class LogRotationAgent extends AbstractAgent
         $this->policy = LogRotationTriggerPolicy::fromEnv();
         $this->rotator = LogRotator::fromEnv();
         $this->cronRule = $this->policy->createCronRule();
-        if ($this->cronRule === null && trim($this->policy->cronExpression) !== '') {
-            $this->logAgentError(
-                "Log rotation: ignoring invalid cron expression '{$this->policy->cronExpression}'",
-            );
+        $expression = $this->policy->cronExpression;
+        if ($this->cronRule === null && $expression !== null && trim($expression) !== '') {
+            $this->logAgentError("Log rotation: ignoring invalid cron expression '{$expression}'");
         }
         $now = microtime(true);
         $this->lastRotationAt = $now;

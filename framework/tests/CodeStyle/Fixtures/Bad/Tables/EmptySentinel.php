@@ -2,14 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Tests\CodeStyle\Fixtures\Good\Tables;
+namespace Hilos\Tests\CodeStyle\Fixtures\Bad\Tables;
 
 /**
- * Negative sample outside the checked zone: the same fallback the Bad sample is
- * reported for is silent here, because the zone grows one phase at a time and
- * `Tables/` belongs to a later one.
+ * Deliberately broken sample: `Tables/` joined the checked zone in the second
+ * phase, so the fallback below is reported here and was silent before.
  */
-final class OutsideZone
+final class EmptySentinel
 {
     /**
      * @param array<string, string> $columns Column titles keyed by field name

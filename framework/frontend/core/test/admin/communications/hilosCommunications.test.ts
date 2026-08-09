@@ -52,10 +52,12 @@ describe('resolveHilosChannelRow', () => {
     const row = resolveHilosChannelRow(channelRow('sms', undefined))
 
     expect(row.channel).toBe('sms')
-    expect(row.label).toBe('')
+    // An unlabelled channel shows its key, not a blank cell.
+    expect(row.label).toBe('sms')
     expect(row.enabled).toBe(false)
     expect(row.configured).toBe(false)
-    expect(row.driver).toBe('')
+    // No driver is null — "none configured", not "configured with nothing".
+    expect(row.driver).toBeNull()
     expect(row.missingFields).toBe(0)
   })
 })

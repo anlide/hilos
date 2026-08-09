@@ -9,6 +9,7 @@ use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmRouter;
 use Hilos\Mail\EmailContent;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
+use Hilos\Mail\Exception\MailTemplateParamMissingException;
 
 /**
  * Resolves a mail template key to its class and renders it (HIL-197).
@@ -40,6 +41,7 @@ class MailTemplateRegistry
      * @param ?string $locale Target locale, or null for the project default (reserved for i18n)
      * @return EmailContent Rendered subject and bodies
      * @throws MailTemplateNotInCatalogException When the key is not declared in the catalog
+     * @throws MailTemplateParamMissingException When the template needs a param the caller did not pass
      */
     public function render(string $key, array $params, ?string $locale = null): EmailContent
     {

@@ -18,6 +18,7 @@ use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailConfigException;
 use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
+use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Mail\FailedMailTransport;
 use Hilos\Mail\MailTransportConfig;
 use Hilos\Mail\MailTransportFactory;
@@ -177,6 +178,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param ObjectNotification $notification Notification to render and deliver
      * @return DeliveryAttempt The started email send
      * @throws MailTemplateNotInCatalogException When the generic notification template is absent from the catalog
+     * @throws MailTemplateParamMissingException When the notification carries no title to head the email with
      * @throws MailBusyException When the freshly built transport is not idle (never in practice)
      */
     protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt
@@ -185,6 +187,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
             [
                 GenericNotificationMailTemplate::PARAM_TITLE => $notification->title,
+                // external-boundary: body is a nullable column, and the template prints nothing for an empty one
                 GenericNotificationMailTemplate::PARAM_BODY => $notification->body ?? '',
             ],
         );
@@ -267,10 +270,11 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     }
 
     /**
-     * Renders the raw send and queues it, or drops it when its template is unknown.
+     * Renders the raw send and queues it, or drops it when its template cannot be rendered.
      *
-     * An unknown template key is a caller error and is dropped with a domain-only log
-     * (address and key, never the params); a well-formed send joins the raw pool.
+     * An unknown template key, or one asked to render without a param it needs, is a caller
+     * error and is dropped with a domain-only log (address and key, never the params); a
+     * well-formed send joins the raw pool.
      *
      * @param MailSendSignalData $signal Raw-send payload (inline message or template)
      */
@@ -281,6 +285,12 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         } catch (MailTemplateNotInCatalogException) {
             $this->logAgentWarning(
                 "raw send to '{$signal->to}' dropped: unknown template '{$signal->templateKey}'",
+            );
+
+            return;
+        } catch (MailTemplateParamMissingException $failure) {
+            $this->logAgentWarning(
+                "raw send to '{$signal->to}' dropped: {$failure->getMessage()}",
             );
 
             return;
@@ -295,6 +305,7 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param MailSendSignalData $signal Raw-send payload
      * @return EmailMessage The message to hand a transport
      * @throws MailTemplateNotInCatalogException When a named template is absent from the catalog
+     * @throws MailTemplateParamMissingException When a named template needs a param the payload lacks
      */
     private function buildRawMessage(MailSendSignalData $signal): EmailMessage
     {
@@ -304,7 +315,10 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             return new EmailMessage($signal->to, $content->subject, $content->text, html: $content->html);
         }
 
-        return new EmailMessage($signal->to, $signal->subject ?? '', $signal->text ?? '', html: $signal->html);
+        // The payload invariant guarantees the inline pair whenever no template names the content,
+        // so the pair is passed through as it is: a broken invariant has to fail loudly here rather
+        // than mail an empty subject.
+        return new EmailMessage($signal->to, $signal->subject, $signal->text, html: $signal->html);
     }
 
     /**

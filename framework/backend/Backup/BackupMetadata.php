@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\BaseDTO;
+use Hilos\Runtime\RtSyncApplicator;
 
 /**
  * BackupMetadata - the JSON sidecar written next to a backup archive.
@@ -128,6 +130,8 @@ final class BackupMetadata extends BaseDTO
     /**
      * @param array<string, mixed> $data Sidecar payload
      * @return static Restored backup metadata (unknown scope/status fall back to full/success)
+     * @throws BackupMetadataIncompleteException When the sidecar carries no id, creation
+     *                                          timestamp, or environment
      */
     public static function fromArray(array $data): static
     {
@@ -144,14 +148,16 @@ final class BackupMetadata extends BaseDTO
         }
 
         return new self(
-            (string)($data[self::id] ?? ''),
-            (string)($data[self::createdAt] ?? ''),
-            (string)($data[self::env] ?? ''),
+            self::identityField($data, self::id),
+            self::identityField($data, self::createdAt),
+            self::identityField($data, self::env),
+            // external-boundary: the sidecar is read from disk and an unnamed scope collapses into the default
             BackupScope::fromString((string)($data[self::scope] ?? '')) ?? BackupScope::FULL,
             $connections,
             (int)($data[self::sizeBytes] ?? 0),
             (int)($data[self::durationSeconds] ?? 0),
             (bool)($data[self::keep] ?? false),
+            // external-boundary: the sidecar is read from disk and an unnamed status collapses into the default
             BackupStatus::fromString((string)($data[self::status] ?? '')) ?? BackupStatus::SUCCESS,
             $warnings,
             isset($data[self::failureReason]) ? (string)$data[self::failureReason] : null,
@@ -162,6 +168,29 @@ final class BackupMetadata extends BaseDTO
                 isset($data[self::verifyOutcome]) ? (string)$data[self::verifyOutcome] : null,
             ),
         );
+    }
+
+    /**
+     * Reads a sidecar field the backup is addressed by, refusing a record that carries none.
+     *
+     * Unlike scope or status, these fields have no meaningful default: an empty one would travel
+     * on as an empty runtime row id (which {@see RtSyncApplicator} drops, so the
+     * row never appears), as a "no time" marker retention reads as unprunable, and as a hole in
+     * the archive base name, making prune and delete miss the file they were aimed at.
+     *
+     * @param array<string, mixed> $data Sidecar payload
+     * @param string $key Field name
+     * @return string Non-empty field value
+     * @throws BackupMetadataIncompleteException When the field is absent or empty
+     */
+    private static function identityField(array $data, string $key): string
+    {
+        $value = $data[$key] ?? null;
+        if (!is_scalar($value) || (string)$value === '') {
+            throw new BackupMetadataIncompleteException("Backup sidecar carries no '{$key}'");
+        }
+
+        return (string)$value;
     }
 
     /**

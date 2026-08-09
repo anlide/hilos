@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Backup\Exception\BackupMetadataIncompleteException;
+
 /**
  * BackupHistoryScanner - the sidecar-driven read path for the backup index.
  *
@@ -12,7 +14,7 @@ namespace Hilos\Backup;
  * index is built from sidecars, archives are only checked for existence.
  *
  * Pairing rules:
- * - unreadable/unparseable sidecar → {@see BackupScanAnomalyType::BROKEN_SIDECAR}, skipped;
+ * - unreadable/unparseable sidecar, or one that names no backup → {@see BackupScanAnomalyType::BROKEN_SIDECAR}, skipped;
  * - sidecar with status=error → included as a failure row regardless of archive;
  * - success sidecar without archive → {@see BackupScanAnomalyType::SIDECAR_WITHOUT_TAR}, skipped;
  * - success sidecar with archive → included;
@@ -73,7 +75,13 @@ final class BackupHistoryScanner
                 continue;
             }
 
-            $metadata = BackupMetadata::fromArray($decoded);
+            try {
+                $metadata = BackupMetadata::fromArray($decoded);
+            } catch (BackupMetadataIncompleteException) {
+                $anomalies[] = new BackupScanAnomaly(BackupScanAnomalyType::BROKEN_SIDECAR, $sidecarPath);
+                continue;
+            }
+
             if ($metadata->status === BackupStatus::ERROR) {
                 $metadatas[] = $metadata;
                 continue;

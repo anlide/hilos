@@ -14,6 +14,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Exception\LLMMessageContentMissingException;
 use Hilos\LLM\Exception\LLMPayloadEncodeException;
 use Hilos\LLM\Exception\LLMRequestException;
 use Hilos\LLM\Exception\LLMResponseException;
@@ -63,6 +64,7 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         $parsed = parse_url($url);
         $host = $parsed['host'] ?? '127.0.0.1';
         $port = $parsed['port'] ?? 11434;
+        // external-boundary: parse_url reads a configured URL, which usually carries no path at all
         $path = ($parsed['path'] ?? '') ?: self::ENDPOINT;
         if ($path !== self::ENDPOINT && !str_ends_with($path, 'api/generate')) {
             $path = rtrim($path, '/') . self::ENDPOINT;
@@ -208,6 +210,7 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
      *
      * @param list<Message|array{role: string, content: string}> $messages Chat messages
      * @return string Concatenated prompt for Ollama
+     * @throws LLMMessageContentMissingException When an array message carries no content
      */
     private function messagesToPrompt(array $messages): string
     {

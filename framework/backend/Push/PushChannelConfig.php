@@ -40,15 +40,17 @@ final class PushChannelConfig
 
     /**
      * @param string $publicKey VAPID application-server public key (base64url), or empty when unconfigured
-     * @param string $privateKey VAPID application-server private key (base64url), or empty when unconfigured
-     * @param string $subject VAPID contact subject (`mailto:` or URL), or empty when unconfigured
+     * @param ?string $privateKey VAPID application-server private key (base64url), empty when the env
+     *                            variable carries no key, null when there is no env accessor at all
+     * @param ?string $subject VAPID contact subject (`mailto:` or URL), empty when the env variable
+     *                         carries no subject, null when there is no env accessor at all
      * @param float $timeoutMs Per-endpoint network timeout in milliseconds
      * @param int $ttlSeconds Time-to-live in seconds for an undelivered message
      */
     public function __construct(
         public readonly string $publicKey,
-        public readonly string $privateKey,
-        public readonly string $subject,
+        public readonly ?string $privateKey,
+        public readonly ?string $subject,
         public readonly float $timeoutMs = self::DEFAULT_TIMEOUT_MS,
         public readonly int $ttlSeconds = self::DEFAULT_TTL_SECONDS,
     ) {
@@ -75,8 +77,8 @@ final class PushChannelConfig
 
         return new self(
             publicKey: (string)new ChannelConfigResolver()->resolve($channel->name(), $publicField)->value,
-            privateKey: Hilos::$env?->string(EnvConstants::VAPID_PRIVATE) ?? '',
-            subject: Hilos::$env?->string(EnvConstants::VAPID_SUBJECT) ?? '',
+            privateKey: Hilos::$env?->string(EnvConstants::VAPID_PRIVATE),
+            subject: Hilos::$env?->string(EnvConstants::VAPID_SUBJECT),
         );
     }
 
@@ -85,7 +87,9 @@ final class PushChannelConfig
      */
     public function isConfigured(): bool
     {
-        return $this->publicKey !== '' && $this->privateKey !== '' && $this->subject !== '';
+        return $this->publicKey !== ''
+            && $this->privateKey !== null && $this->privateKey !== ''
+            && $this->subject !== null && $this->subject !== '';
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Sms;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -59,11 +60,21 @@ final class SmsSendSignalDataTest extends TestCase
         $restored = SmsSendSignalData::fromArray([
             SmsSendSignalData::to => '+10000000000',
             SmsSendSignalData::shardKey => '7',
+            SmsSendSignalData::text => 'Your code is 999',
             SmsSendSignalData::params => 'not-an-array',
         ]);
 
         self::assertSame('+10000000000', $restored->to);
         self::assertSame(7, $restored->shardKey);
         self::assertSame([], $restored->params);
+    }
+
+    public function testAPayloadWithNeitherTemplateNorInlineTextIsRefused(): void
+    {
+        $this->expectException(ValidationException::class);
+        SmsSendSignalData::fromArray([
+            SmsSendSignalData::to => '+10000000000',
+            SmsSendSignalData::shardKey => '7',
+        ]);
     }
 }

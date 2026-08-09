@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Closure;
+use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Constants\EnvConstants;
@@ -192,7 +193,7 @@ final class BackupRestorer
      *
      * @param string $archivePath Absolute archive path
      * @return BackupMetadata Decoded sidecar metadata
-     * @throws RestoreFailedException When the sidecar is missing or not valid JSON
+     * @throws RestoreFailedException When the sidecar is missing, not valid JSON, or names no backup
      */
     public static function readSidecarForArchive(string $archivePath): BackupMetadata
     {
@@ -209,7 +210,11 @@ final class BackupRestorer
             throw new RestoreFailedException("Backup sidecar is not valid JSON: {$sidecarPath}");
         }
 
-        return BackupMetadata::fromArray($decoded);
+        try {
+            return BackupMetadata::fromArray($decoded);
+        } catch (BackupMetadataIncompleteException $failure) {
+            throw new RestoreFailedException("Backup sidecar names no backup: {$sidecarPath}", 0, $failure);
+        }
     }
 
     /**

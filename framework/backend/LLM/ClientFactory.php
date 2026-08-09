@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\LLM;
 
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
 use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Routing\LlmProfile;
@@ -25,11 +26,23 @@ class ClientFactory
      *
      * @param LlmProfile $profile Resolved LLM profile
      * @return AsyncChatLLMInterface AsyncOpenAIChatProvider (external) or AsyncOllamaChatProvider (local)
+     * @throws LLMConfigurationException When an external profile carries no API key
      */
     public static function createChatClientForProfile(LlmProfile $profile): AsyncChatLLMInterface
     {
-        return $profile->provider === LlmProvider::EXTERNAL
-            ? new AsyncOpenAIChatProvider($profile->url, $profile->apiKey ?? '', $profile->model)
-            : new AsyncOllamaChatProvider($profile->url, $profile->model);
+        if ($profile->provider !== LlmProvider::EXTERNAL) {
+            return new AsyncOllamaChatProvider($profile->url, $profile->model);
+        }
+
+        $apiKey = $profile->apiKey;
+        if ($apiKey === null || $apiKey === '') {
+            // The same invariant LlmRouter::resolveBase() holds; a profile assembled anywhere else
+            // must not slip past it and reach the provider as an `Authorization: Bearer ` header.
+            throw new LLMConfigurationException(
+                "LLM profile '{$profile->key}' selects the external provider but has no API key",
+            );
+        }
+
+        return new AsyncOpenAIChatProvider($profile->url, $apiKey, $profile->model);
     }
 }

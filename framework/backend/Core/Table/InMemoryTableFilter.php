@@ -24,18 +24,19 @@ final class InMemoryTableFilter
      */
     public static function apply(array $rows, TableQueryDTO $query): TableSnapshotDTO
     {
-        if ($query->search !== '') {
+        if ($query->search !== null && $query->search !== '') {
             $search = mb_strtolower($query->search);
             $rows = array_values(array_filter($rows, static function (array $row) use ($search): bool {
                 return array_any($row, fn($value) => $value !== null && str_contains(mb_strtolower((string) $value), $search));
             }));
         }
 
-        if ($query->orderBy !== '') {
-            $dir = strtolower($query->orderDirection) === TableConstants::ORDER_DESC ? -1 : 1;
-            usort($rows, static function (array $a, array $b) use ($query, $dir): int {
-                $va = $a[$query->orderBy] ?? null;
-                $vb = $b[$query->orderBy] ?? null;
+        $sort = $query->sort;
+        if ($sort !== null) {
+            $dir = strtolower($sort->direction) === TableConstants::ORDER_DESC ? -1 : 1;
+            usort($rows, static function (array $a, array $b) use ($sort, $dir): int {
+                $va = $a[$sort->field] ?? null;
+                $vb = $b[$sort->field] ?? null;
                 if ($va === null && $vb === null) return 0;
                 if ($va === null) return $dir;
                 if ($vb === null) return -$dir;

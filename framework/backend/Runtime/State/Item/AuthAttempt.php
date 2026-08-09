@@ -96,8 +96,8 @@ final class AuthAttempt extends RtState
     {
         $instance = new static();
         $instance->scope = (string)($row[self::scope] ?? ThrottleScope::IP);
-        $instance->identity = (string)($row[self::identity] ?? '');
-        $instance->action = (string)($row[self::action] ?? '');
+        $instance->identity = (string)$row[self::identity];
+        $instance->action = (string)$row[self::action];
         $instance->count = (int)($row[self::count] ?? 0);
         $instance->windowStartedAt = (float)($row[self::windowStartedAt] ?? 0.0);
         $instance->level = (int)($row[self::level] ?? 0);

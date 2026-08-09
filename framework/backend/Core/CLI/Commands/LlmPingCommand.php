@@ -128,16 +128,15 @@ HELP;
         try {
             $base = $router->resolveBase($profileKey);
             $profile = $router->resolve($profileKey);
+            $this->printResolution($base, $profile, $catalog[$profileKey]);
+
+            if (($options[self::OPTION_PROBE] ?? false) === true) {
+                return $this->probe($profile);
+            }
         } catch (LLMConfigurationException $e) {
             echo "Configuration error: {$e->getMessage()}\n";
             echo 'Responsible env vars: ' . $this->envVarNames($catalog[$profileKey]) . "\n";
             return ExitCode::CONFIG_ERROR;
-        }
-
-        $this->printResolution($base, $profile, $catalog[$profileKey]);
-
-        if (($options[self::OPTION_PROBE] ?? false) === true) {
-            return $this->probe($profile);
         }
 
         return ExitCode::SUCCESS;
@@ -261,6 +260,7 @@ HELP;
      *
      * @param LlmProfile $profile Effective profile to probe
      * @return int Exit code (SUCCESS, TIMEOUT, or ERROR)
+     * @throws LLMConfigurationException When an external profile carries no API key
      */
     private function probe(LlmProfile $profile): int
     {

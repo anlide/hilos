@@ -7,6 +7,7 @@ namespace Hilos\Socket\WebSocket\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -17,8 +18,8 @@ use Hilos\Core\Table\TableConstants;
  * wants for one table on its current page; the server answers with a table
  * window snapshot and remembers the delivered row-ids for live deltas.
  *
- * The sort rides the wire as a nested `{field, direction}` object and is held
- * here as the flat sortField / sortDirection pair.
+ * The sort rides the wire as a nested `{field, direction}` object and is held here as one
+ * {@see TableSortDTO}, null when the window asked for no ordering.
  */
 class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
@@ -28,8 +29,6 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     public const string TABLE_KEY = 'tableKey';
     public const string FILTER = 'filter';
     public const string SORT = 'sort';
-    public const string SORT_FIELD = 'field';
-    public const string SORT_DIRECTION = 'direction';
     public const string OFFSET = 'offset';
     public const string LIMIT = 'limit';
 
@@ -40,8 +39,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * @param ?string $page Page the table belongs to, null when the signal name carries it
      * @param string $tableKey Table key the viewport scopes
      * @param array<string, mixed> $filter Open filter map resolved by the concrete table
-     * @param string $sortField Sort field, or '' for backend arrival order
-     * @param string $sortDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
+     * @param ?TableSortDTO $sort Requested ordering, or null for backend arrival order
      * @param int $offset Zero-based window offset
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
      */
@@ -50,8 +48,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
         public readonly ?string $page = null,
         public readonly string $tableKey = '',
         public readonly array $filter = [],
-        public readonly string $sortField = '',
-        public readonly string $sortDirection = TableConstants::ORDER_ASC,
+        public readonly ?TableSortDTO $sort = null,
         public readonly int $offset = 0,
         public readonly int $limit = TableConstants::NO_LIMIT,
     ) {
@@ -84,11 +81,8 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
             $result[self::FILTER] = $this->filter;
         }
 
-        if ($this->sortField !== '') {
-            $result[self::SORT] = [
-                self::SORT_FIELD => $this->sortField,
-                self::SORT_DIRECTION => $this->sortDirection,
-            ];
+        if ($this->sort !== null) {
+            $result[self::SORT] = $this->sort->toArray();
         }
 
         return $result;
@@ -103,10 +97,6 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     public static function fromArray(array $data): static
     {
         $filter = $data[self::FILTER] ?? [];
-        $sort = $data[self::SORT] ?? [];
-        if (!is_array($sort)) {
-            $sort = [];
-        }
         $page = $data[self::PAGE] ?? null;
 
         return new static(
@@ -114,8 +104,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
             page: $page === null || $page === '' ? null : (string) $page,
             tableKey: (string) ($data[self::TABLE_KEY] ?? ''),
             filter: is_array($filter) ? $filter : [],
-            sortField: is_string($sort[self::SORT_FIELD] ?? null) ? $sort[self::SORT_FIELD] : '',
-            sortDirection: is_string($sort[self::SORT_DIRECTION] ?? null) ? $sort[self::SORT_DIRECTION] : TableConstants::ORDER_ASC,
+            sort: TableSortDTO::fromWire($data[self::SORT] ?? null),
             offset: (int) ($data[self::OFFSET] ?? 0),
             limit: (int) ($data[self::LIMIT] ?? TableConstants::NO_LIMIT),
         );

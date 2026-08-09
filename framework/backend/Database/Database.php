@@ -539,7 +539,7 @@ class Database
             }
         } catch (mysqli_sql_exception $e) {
             self::$resultSets[$index] = null;
-            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), self::$lastSql[$index] ?? '');
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), self::$lastSql[$index]);
         }
 
         // No more result sets

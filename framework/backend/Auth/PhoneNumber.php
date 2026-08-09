@@ -41,8 +41,11 @@ final class PhoneNumber
      */
     public static function normalize(string $raw): ?string
     {
-        $stripped = preg_replace('/[\s\-().]/', '', trim($raw)) ?? '';
-        if ($stripped === '') {
+        // preg_replace answers null on a PCRE failure, which is not outside input and not an
+        // empty number: a value that could not be stripped was never normalized, and the only
+        // honest answer for it is the same "not a valid number" an empty one gets.
+        $stripped = preg_replace('/[\s\-().]/', '', trim($raw));
+        if ($stripped === null || $stripped === '') {
             return null;
         }
 

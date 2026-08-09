@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
@@ -20,8 +21,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $registry->setTableViewport('ak', new TableViewportSubscription(
             tableKey: 'settings',
             filter: ['search' => 'theme'],
-            sortField: 'key',
-            sortDirection: TableConstants::ORDER_DESC,
+            sort: new TableSortDTO('key', TableConstants::ORDER_DESC),
             offset: 10,
             limit: 10,
         ));
@@ -31,8 +31,7 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
         $this->assertNotNull($viewport);
         $this->assertSame('settings', $viewport->tableKey);
         $this->assertSame(['search' => 'theme'], $viewport->filter);
-        $this->assertSame('key', $viewport->sortField);
-        $this->assertSame(TableConstants::ORDER_DESC, $viewport->sortDirection);
+        $this->assertEquals(new TableSortDTO('key', TableConstants::ORDER_DESC), $viewport->sort);
         $this->assertSame(10, $viewport->offset);
         $this->assertSame(10, $viewport->limit);
     }

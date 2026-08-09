@@ -65,14 +65,14 @@ export const oauthAuthorizeSignalSchema = z.object({
  * and a stable, non-sensitive reason code (network/provider detail stays in the
  * agent log). On {@link OAUTH_REASON_REAUTH_REQUIRED} it also carries the colliding
  * account `email` (to pre-fill the re-auth form) and the signed `linkToken` to
- * redeem after; both default to empty on the plain failure arm.
+ * redeem after; both are null on the arms that carry neither.
  */
 export const oauthResultSignalSchema = z.object({
   acceptKey: z.string(),
   provider: z.string(),
   reason: z.string(),
-  email: z.string().default(''),
-  linkToken: z.string().default(''),
+  email: z.string().nullable().default(null),
+  linkToken: z.string().nullable().default(null),
 })
 
 /** Typed authorize-reply payload (the schema's output). */

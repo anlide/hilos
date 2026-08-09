@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -28,16 +29,14 @@ final class TableViewportSubscription
     /**
      * @param string $tableKey Table the viewport scopes
      * @param array<string, mixed> $filter Open filter map, resolved to a query by the concrete table
-     * @param string $sortField Sort field, or '' for backend arrival order
-     * @param string $sortDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
+     * @param ?TableSortDTO $sort Requested ordering, or null for backend arrival order
      * @param int $offset Zero-based window offset
      * @param int $limit Window size (TableConstants::NO_LIMIT = all rows)
      */
     public function __construct(
         public readonly string $tableKey,
         public readonly array $filter = [],
-        public readonly string $sortField = '',
-        public readonly string $sortDirection = TableConstants::ORDER_ASC,
+        public readonly ?TableSortDTO $sort = null,
         public readonly int $offset = 0,
         public readonly int $limit = TableConstants::NO_LIMIT,
     ) {

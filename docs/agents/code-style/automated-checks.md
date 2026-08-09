@@ -12,7 +12,7 @@ rule.
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
-| `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only. | [method-contracts.md](method-contracts.md) |
+| `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only, and unless a `// external-boundary: <reason>` marker on the line directly above names the outside source the value comes from. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -91,10 +91,19 @@ followed; that difference is the rule, not an oversight.
 
 `EMPTY-STRING-SENTINEL` fires only inside the path zone listed in the rule class —
 the signal spine (`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent/DTO`,
-`Core/Daemon`), the wire DTOs (`Socket/*/DTO`, `Cluster/Peer/DTO`) and `Hilos.php`.
-The zone is read relative to the scanned root, so a demo's own `Core/Router` is
-judged by the same entry as the framework's, and the fixtures repeat the same
-segments to be judged by the same code.
+`Core/Daemon`, `Core/Table/DTO`, `Core/Source`), the wire DTOs (`Socket/*/DTO`,
+`Cluster/Peer/DTO`), the application subsystems (`API`, `Auth`, `Backup`,
+`Database`, `LLM`, `Log`, `Mail`, `Notification`, `Pages`, `ProtectedMode`,
+`Push`, `Runtime`, `Sms`, `Tables`, `Utils`) and `Hilos.php`. The zone is read
+relative to the scanned root, so a demo's own `Core/Router` is judged by the same
+entry as the framework's, and the fixtures repeat the same segments to be judged
+by the same code.
+
+Inside the zone, a legal reading of outside input is named in place with a
+`// external-boundary: <reason>` marker rather than frozen in the baseline: the
+baseline records owed work, and a legal site owes none. The marker covers one
+occurrence and its reason is mandatory; see
+[method-contracts.md](method-contracts.md) for the convention and its cost.
 
 The zone grows one phase at a time, and each phase pays off the records its
 predecessor froze. Turned on everywhere at once, the rule would have reported

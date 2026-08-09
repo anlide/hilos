@@ -220,11 +220,9 @@ async function submitDelete(): Promise<void> {
           <span
             v-else-if="row.finished === true"
             class="badge text-bg-success"
-            >{{ row.status || 'success' }}</span
+            >{{ row.status }}</span
           >
-          <span v-else class="badge text-bg-danger">{{
-            row.status || 'error'
-          }}</span>
+          <span v-else class="badge text-bg-danger">{{ row.status }}</span>
         </td>
         <td class="text-center">
           <div

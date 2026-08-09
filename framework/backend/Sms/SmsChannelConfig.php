@@ -57,7 +57,8 @@ final class SmsChannelConfig
     public const string MAP_KEY_FROM = 'from';
 
     /**
-     * @param string $provider Forced driver `generic`|`stub`, or empty to auto-select
+     * @param ?string $provider Forced driver `generic`|`stub`, empty to auto-select, null when
+     *                          there is no env accessor at all
      * @param string $endpointUrl Gateway endpoint URL, empty when no gateway is configured
      * @param string $httpMethod HTTP method for the gateway request (GET|POST)
      * @param string $authMode Gateway auth mode (none|query|header|basic)
@@ -66,12 +67,15 @@ final class SmsChannelConfig
      * @param string $from Sender id applied to outgoing messages, or empty for none
      * @param int $timeoutMs Per-send timeout in milliseconds
      * @param int $maxLength Single-segment GSM-7 length budget
-     * @param string $fileDir Directory the stub writes .txt artifacts to
-     * @param string $apiKey Gateway API key/token (env-only secret)
-     * @param string $apiPassword Gateway API password for basic auth (env-only secret)
+     * @param ?string $fileDir Directory the stub writes .txt artifacts to, null when there is no
+     *                         env accessor at all
+     * @param ?string $apiKey Gateway API key/token (env-only secret), null when there is no env
+     *                        accessor at all
+     * @param ?string $apiPassword Gateway API password for basic auth (env-only secret), null when
+     *                             there is no env accessor at all
      */
     public function __construct(
-        public readonly string $provider,
+        public readonly ?string $provider,
         public readonly string $endpointUrl,
         public readonly string $httpMethod,
         public readonly string $authMode,
@@ -80,9 +84,9 @@ final class SmsChannelConfig
         public readonly string $from,
         public readonly int $timeoutMs,
         public readonly int $maxLength,
-        public readonly string $fileDir,
-        public readonly string $apiKey,
-        public readonly string $apiPassword,
+        public readonly ?string $fileDir,
+        public readonly ?string $apiKey,
+        public readonly ?string $apiPassword,
     ) {
     }
 
@@ -149,6 +153,7 @@ final class SmsChannelConfig
      */
     public function gatewayParam(string $logicalKey): string
     {
+        // external-boundary: the field map is JSON typed into settings and may name a key with an empty value
         $mapped = $this->fieldMap[$logicalKey] ?? '';
 
         return $mapped === '' ? $logicalKey : $mapped;
@@ -158,12 +163,12 @@ final class SmsChannelConfig
      * Reads an env string, tolerating an unset env accessor.
      *
      * @param EnvConstants $key Env variable
-     * @return string Env value, or empty when the accessor is unset
+     * @return ?string Env value, or null when the accessor is unset
      * @throws EnvException When the env value is invalid for its type
      */
-    private static function envString(EnvConstants $key): string
+    private static function envString(EnvConstants $key): ?string
     {
-        return Hilos::$env?->string($key) ?? '';
+        return Hilos::$env?->string($key);
     }
 
     /**

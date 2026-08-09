@@ -53,9 +53,9 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
      * @param ?string $deliveredAt ISO-8601 delivered timestamp, or null when not sent
      * @param ?string $lastError Last failure detail, or null
      * @param ?int $userId Recipient user id, or null when the notification is gone
-     * @param string $userLabel Recipient display label (empty when the project resolves none)
-     * @param string $notificationType Notification machine type
-     * @param string $notificationTitle Notification title
+     * @param ?string $userLabel Recipient display label; null when the project resolves none
+     * @param ?string $notificationType Notification machine type; null when the notification is gone
+     * @param ?string $notificationTitle Notification title; null when the notification is gone
      */
     public function __construct(
         public int $rowKey,
@@ -66,9 +66,9 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
         public ?string $deliveredAt,
         public ?string $lastError,
         public ?int $userId,
-        public string $userLabel,
-        public string $notificationType,
-        public string $notificationTitle,
+        public ?string $userLabel,
+        public ?string $notificationType,
+        public ?string $notificationTitle,
     ) {
     }
 
@@ -116,16 +116,16 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
     {
         return new static(
             rowKey: (int) ($data[self::rowKey] ?? 0),
-            createdAt: (string) ($data[self::createdAt] ?? ''),
-            channel: (string) ($data[self::channel] ?? ''),
-            status: (string) ($data[self::status] ?? ''),
+            createdAt: (string) $data[self::createdAt],
+            channel: (string) $data[self::channel],
+            status: (string) $data[self::status],
             attempts: (int) ($data[self::attempts] ?? 0),
             deliveredAt: isset($data[self::deliveredAt]) ? (string) $data[self::deliveredAt] : null,
             lastError: isset($data[self::lastError]) ? (string) $data[self::lastError] : null,
             userId: isset($data[self::userId]) ? (int) $data[self::userId] : null,
-            userLabel: (string) ($data[self::userLabel] ?? ''),
-            notificationType: (string) ($data[self::notificationType] ?? ''),
-            notificationTitle: (string) ($data[self::notificationTitle] ?? ''),
+            userLabel: isset($data[self::userLabel]) ? (string) $data[self::userLabel] : null,
+            notificationType: isset($data[self::notificationType]) ? (string) $data[self::notificationType] : null,
+            notificationTitle: isset($data[self::notificationTitle]) ? (string) $data[self::notificationTitle] : null,
         );
     }
 }

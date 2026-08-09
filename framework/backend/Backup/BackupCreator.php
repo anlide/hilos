@@ -424,7 +424,7 @@ final class BackupCreator
      *
      * @param string $sidecarPath Absolute sidecar path
      * @return BackupMetadata Decoded sidecar metadata
-     * @throws BackupException When the sidecar is missing or not valid JSON
+     * @throws BackupException When the sidecar is missing, not valid JSON, or names no backup
      */
     private function readSidecar(string $sidecarPath): BackupMetadata
     {

@@ -94,6 +94,12 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:23 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Tables/MarkerWithoutReason.php:21 — the `// external-boundary:` '
+                    . 'marker above the fallback names no reason '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:15 — field key \'created_at\' is not camelCase; '
                     . 'one spelling has to serve PHP, the wire and TS '
                     . '(see docs/agents/code-style/cross-layer-field-names.md)',

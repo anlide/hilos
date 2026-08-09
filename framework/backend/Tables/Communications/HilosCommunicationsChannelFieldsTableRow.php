@@ -43,7 +43,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
      * @param string $rowKey Field settings key (row key, globally unique)
      * @param string $channel Owning channel name
      * @param string $field Field key
-     * @param string $label Human field label
+     * @param ?string $label Human field label; null when the channel declares none
      * @param string $type Field value type (see SettingsCatalogConstants::TYPE_*)
      * @param bool|float|int|string|null $value Effective value, or null for a secret field
      * @param string $valueSource Where the effective value came from (settings|env|default)
@@ -54,7 +54,7 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
         public string $rowKey,
         public string $channel,
         public string $field,
-        public string $label,
+        public ?string $label,
         public string $type,
         public bool|float|int|string|null $value,
         public string $valueSource,
@@ -104,13 +104,13 @@ final class HilosCommunicationsChannelFieldsTableRow extends AbstractTableRow
         $value = $data[self::value] ?? null;
 
         return new static(
-            rowKey: (string) ($data[self::rowKey] ?? ''),
-            channel: (string) ($data[self::channel] ?? ''),
-            field: (string) ($data[self::field] ?? ''),
-            label: (string) ($data[self::label] ?? ''),
-            type: (string) ($data[self::type] ?? ''),
+            rowKey: (string) $data[self::rowKey],
+            channel: (string) $data[self::channel],
+            field: (string) $data[self::field],
+            label: isset($data[self::label]) ? (string) $data[self::label] : null,
+            type: (string) $data[self::type],
             value: is_scalar($value) ? $value : null,
-            valueSource: (string) ($data[self::valueSource] ?? ''),
+            valueSource: (string) $data[self::valueSource],
             secret: (bool) ($data[self::secret] ?? false),
             editable: (bool) ($data[self::editable] ?? false),
         );

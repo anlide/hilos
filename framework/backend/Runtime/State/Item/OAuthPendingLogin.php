@@ -101,10 +101,10 @@ final class OAuthPendingLogin extends RtState
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
-        $instance->sessionToken = (string)($row[self::sessionToken] ?? '');
-        $instance->provider = (string)($row[self::provider] ?? '');
-        $instance->code = (string)($row[self::code] ?? '');
+        $instance->acceptKey = (string)$row[self::acceptKey];
+        $instance->sessionToken = (string)$row[self::sessionToken];
+        $instance->provider = (string)$row[self::provider];
+        $instance->code = (string)$row[self::code];
         $instance->deadlineMs = (float)($row[self::deadlineMs] ?? 0.0);
         $instance->mode = (string)($row[self::mode] ?? self::MODE_LOGIN);
         $instance->linkUserId = (int)($row[self::linkUserId] ?? 0);

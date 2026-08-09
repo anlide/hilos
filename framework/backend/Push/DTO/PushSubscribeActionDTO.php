@@ -92,8 +92,11 @@ final class PushSubscribeActionDTO extends ActionPayloadDTO
         $userAgent = $inner[self::userAgent] ?? null;
 
         return new static(
+            // external-boundary: the action payload comes from the browser and isValid() rejects an empty endpoint
             endpoint: (string)($inner[self::endpoint] ?? ''),
+            // external-boundary: the action payload comes from the browser and isValid() rejects an empty p256dh
             p256dh: (string)($inner[self::p256dh] ?? ''),
+            // external-boundary: the action payload comes from the browser and isValid() rejects an empty auth
             auth: (string)($inner[self::auth] ?? ''),
             userAgent: $userAgent === null ? null : (string)$userAgent,
         );

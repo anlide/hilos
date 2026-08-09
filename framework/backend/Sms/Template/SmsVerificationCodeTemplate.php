@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Template;
 
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
+
 /**
  * SmsVerificationCodeTemplate - renders a one-time verification code as one SMS line (HIL-285).
  *
@@ -22,9 +24,17 @@ final class SmsVerificationCodeTemplate implements SmsTemplate
      * @param array<string, mixed> $params Template params; reads {@see PARAM_CODE}
      * @param ?string $locale Target locale, ignored today (reserved for i18n)
      * @return string Rendered one-line code message
+     * @throws SmsTemplateParamMissingException When the params carry no code to embed
      */
     public function render(array $params, ?string $locale): string
     {
-        return 'Your verification code is: ' . (string)($params[self::PARAM_CODE] ?? '');
+        $code = $params[self::PARAM_CODE] ?? null;
+        if (!is_scalar($code) || (string)$code === '') {
+            throw new SmsTemplateParamMissingException(
+                'Verification SMS template needs a non-empty ' . self::PARAM_CODE . ' param',
+            );
+        }
+
+        return 'Your verification code is: ' . (string)$code;
     }
 }

@@ -56,6 +56,7 @@ class HttpHeaderHelper
         $cookies = [];
 
         // Cookie header format: "name1=value1; name2=value2".
+        // external-boundary: the Cookie header comes from the client, which may send it empty
         $cookieHeader = self::get($headers, HttpConstants::HEADER_COOKIE) ?? '';
         if ($cookieHeader === '') {
             return $cookies;

@@ -211,6 +211,7 @@ abstract class DbContext
             return null;
         }
 
+        // external-boundary: information_schema leaves both cells empty for a database with no tables
         return (string)($row['create_time'] ?? '') . ':' . (string)($row['table_count'] ?? '');
     }
 

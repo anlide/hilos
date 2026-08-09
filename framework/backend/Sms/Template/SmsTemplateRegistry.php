@@ -7,6 +7,7 @@ namespace Hilos\Sms\Template;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Mail\Template\MailTemplateRegistry;
 use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 
 /**
  * Resolves an SMS template key to its class and renders it (HIL-285).
@@ -37,6 +38,7 @@ class SmsTemplateRegistry
      * @param ?string $locale Target locale, or null for the project default (reserved for i18n)
      * @return string Rendered message text
      * @throws SmsTemplateNotInCatalogException When the key is not declared in the catalog
+     * @throws SmsTemplateParamMissingException When the template needs a param the caller did not pass
      */
     public function render(string $key, array $params, ?string $locale = null): string
     {

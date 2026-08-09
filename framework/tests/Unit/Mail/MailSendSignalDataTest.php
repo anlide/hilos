@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Mail;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -47,13 +48,29 @@ final class MailSendSignalDataTest extends TestCase
         $restored = MailSendSignalData::fromArray([
             MailSendSignalData::to => 'user@example.com',
             MailSendSignalData::shardKey => '7',
+            MailSendSignalData::templateKey => 'auth.register_confirm',
         ]);
 
         $this->assertSame('user@example.com', $restored->to);
         $this->assertSame(7, $restored->shardKey);
         $this->assertNull($restored->subject);
-        $this->assertNull($restored->templateKey);
+        $this->assertSame('auth.register_confirm', $restored->templateKey);
         $this->assertSame([], $restored->params);
         $this->assertNull($restored->locale);
+    }
+
+    public function testAPayloadWithNeitherTemplateNorInlineContentIsRefused(): void
+    {
+        $this->expectException(ValidationException::class);
+        MailSendSignalData::fromArray([
+            MailSendSignalData::to => 'user@example.com',
+            MailSendSignalData::shardKey => '7',
+        ]);
+    }
+
+    public function testAnInlinePayloadCarryingOnlyASubjectIsRefused(): void
+    {
+        $this->expectException(ValidationException::class);
+        new MailSendSignalData(to: 'user@example.com', shardKey: 1, subject: 'Hi');
     }
 }

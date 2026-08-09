@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Mail\Template;
 
 use Hilos\Mail\EmailContent;
+use Hilos\Mail\Exception\MailTemplateParamMissingException;
 
 /**
  * Shared base for the code-carrying auth templates (HIL-197).
@@ -24,13 +25,18 @@ abstract class AbstractVerificationCodeMailTemplate implements MailTemplate
      * @param array<string, mixed> $params Template params; reads {@see PARAM_CODE}
      * @param ?string $locale Target locale, ignored today (reserved for i18n)
      * @return EmailContent Rendered subject and text body
+     * @throws MailTemplateParamMissingException When the params carry no code to embed
      */
     public function render(array $params, ?string $locale): EmailContent
     {
-        return new EmailContent(
-            $this->subject(),
-            $this->body((string)($params[self::PARAM_CODE] ?? '')),
-        );
+        $code = $params[self::PARAM_CODE] ?? null;
+        if (!is_scalar($code) || (string)$code === '') {
+            throw new MailTemplateParamMissingException(
+                'Verification mail template needs a non-empty ' . self::PARAM_CODE . ' param',
+            );
+        }
+
+        return new EmailContent($this->subject(), $this->body((string)$code));
     }
 
     /**

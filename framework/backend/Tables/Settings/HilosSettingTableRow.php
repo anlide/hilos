@@ -6,6 +6,7 @@ namespace Hilos\Tables\Settings;
 
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 
 /**
  * Backend row payload for the framework settings table.
@@ -86,8 +87,8 @@ final class HilosSettingTableRow extends AbstractTableRow
     {
         return new static(
             id: isset($data[self::id]) ? (int) $data[self::id] : null,
-            key: (string) ($data[self::key] ?? ''),
-            type: (string) ($data[self::type] ?? ''),
+            key: (string) $data[self::key],
+            type: (string) ($data[self::type] ?? SettingsCatalogConstants::TYPE_STRING),
             value: isset($data[self::value]) ? (string) $data[self::value] : null,
             overrideValue: isset($data[self::overrideValue]) ? (string) $data[self::overrideValue] : null,
             defaultValue: isset($data[self::defaultValue]) ? (string) $data[self::defaultValue] : null,

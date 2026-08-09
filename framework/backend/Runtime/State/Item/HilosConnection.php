@@ -30,7 +30,7 @@ abstract class HilosConnection extends RtState
     private(set) string $acceptKey = '';
 
     /** Session cookie token this connection belongs to. */
-    private(set) string $sessionToken = '';
+    private(set) ?string $sessionToken = null;
 
     /** Authenticated database user id, or null while the session is anonymous. */
     public ?int $userId = null;
@@ -53,9 +53,9 @@ abstract class HilosConnection extends RtState
      *
      * @param string $acceptKey WebSocket accept key (unique identifier)
      * @param ?int $userId Authenticated user id, or null for an anonymous session
-     * @param string $sessionToken Session cookie token this connection belongs to
+     * @param ?string $sessionToken Session cookie token this connection belongs to, or null when it belongs to none
      */
-    protected function initBase(string $acceptKey, ?int $userId, string $sessionToken): void
+    protected function initBase(string $acceptKey, ?int $userId, ?string $sessionToken): void
     {
         $this->acceptKey = $acceptKey;
         $this->sessionToken = $sessionToken;
@@ -72,8 +72,8 @@ abstract class HilosConnection extends RtState
      */
     protected function hydrateBase(array $row): void
     {
-        $this->acceptKey = (string)($row[self::acceptKey] ?? '');
-        $this->sessionToken = (string)($row[self::sessionToken] ?? '');
+        $this->acceptKey = (string)$row[self::acceptKey];
+        $this->sessionToken = self::stringOrNull($row[self::sessionToken] ?? null);
         $this->userId = isset($row[self::userId]) ? (int)$row[self::userId] : null;
     }
 
@@ -103,10 +103,19 @@ abstract class HilosConnection extends RtState
     protected function applyBaseDiff(array $diff): void
     {
         if (array_key_exists(self::sessionToken, $diff)) {
-            $this->sessionToken = (string)$diff[self::sessionToken];
+            $this->sessionToken = self::stringOrNull($diff[self::sessionToken]);
         }
         if (array_key_exists(self::userId, $diff)) {
             $this->userId = $diff[self::userId] === null ? null : (int)$diff[self::userId];
         }
+    }
+
+    /**
+     * @param mixed $value Raw row value
+     * @return ?string String value, or null
+     */
+    private static function stringOrNull(mixed $value): ?string
+    {
+        return $value === null ? null : (string)$value;
     }
 }

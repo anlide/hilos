@@ -20,7 +20,7 @@ enum BackupScanAnomalyType: string
     /** Success sidecar present with no archive: a phantom the index must not show. */
     case SIDECAR_WITHOUT_TAR = 'sidecar_without_tar';
 
-    /** Sidecar could not be read or parsed as JSON. */
+    /** Sidecar could not be read, parsed as JSON, or names no backup it belongs to. */
     case BROKEN_SIDECAR = 'broken_sidecar';
 
     /**

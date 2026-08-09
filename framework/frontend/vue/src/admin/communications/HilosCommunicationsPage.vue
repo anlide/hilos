@@ -117,7 +117,7 @@ function toggleEnabled(row: HilosChannelRow, event: Event): void {
           </span>
         </td>
         <td>
-          <code class="small">{{ row.driver }}</code>
+          <code class="small">{{ row.driver ?? '—' }}</code>
         </td>
         <td class="text-end">
           <HilosLink

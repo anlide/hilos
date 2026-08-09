@@ -21,6 +21,7 @@ import {
   readBoolean,
   readNumber,
   readString,
+  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { hilosToasts } from '../../state/toasts.js'
@@ -34,10 +35,10 @@ export interface HilosBackupRow {
   readonly id: string
   /** ISO-8601 creation timestamp (the start time for an in-progress backup). */
   readonly createdAt: string
-  /** Application environment the backup was taken in. */
-  readonly env: string
-  /** Backup scope value (`full` | `schema-seed` | `schema-only`). */
-  readonly scope: string
+  /** Application environment the backup was taken in, or null when the record names none. */
+  readonly env: string | null
+  /** Backup scope value (`full` | `schema-seed` | `schema-only`), or null when the record names none. */
+  readonly scope: string | null
   /** Archive size in bytes (0 while in progress). */
   readonly sizeBytes: number
   /** Capture duration in seconds (0 while in progress). */
@@ -266,8 +267,8 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     // reference, which would strip every other field off the row (normalizer.ts).
     id: String(row.rowKey),
     createdAt: readString(slot, BACKUP_CREATED_AT_FIELD),
-    env: readString(slot, BACKUP_ENV_FIELD),
-    scope: readString(slot, BACKUP_SCOPE_FIELD),
+    env: readStringOrNull(slot, BACKUP_ENV_FIELD),
+    scope: readStringOrNull(slot, BACKUP_SCOPE_FIELD),
     sizeBytes: readNumber(slot, BACKUP_SIZE_BYTES_FIELD),
     durationSeconds: readNumber(slot, BACKUP_DURATION_SECONDS_FIELD),
     keep: readBoolean(slot, BACKUP_KEEP_FIELD),

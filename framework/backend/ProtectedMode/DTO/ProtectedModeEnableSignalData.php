@@ -36,7 +36,8 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
 
     /**
      * @param string $operation Operation the initiator will run under the freeze
-     * @param string $initiatorAcceptKey Accept key of the initiator connection
+     * @param ?string $initiatorAcceptKey Accept key of the initiator connection, or null when the
+     *                                    freeze was asked for by something without a connection
      * @param string $initiatorAgentType Agent type left running during the freeze
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
      * @param ?string $initiatorNodeId Node id that hosts the initiator agent, or null on a
@@ -44,7 +45,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
      */
     public function __construct(
         public readonly string $operation,
-        public readonly string $initiatorAcceptKey,
+        public readonly ?string $initiatorAcceptKey,
         public readonly string $initiatorAgentType,
         public readonly ?int $initiatorAgentIndex,
         public readonly ?string $initiatorNodeId,
@@ -73,10 +74,11 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     {
         $agentIndex = $data[self::initiatorAgentIndex] ?? null;
         $nodeId = $data[self::initiatorNodeId] ?? null;
+        $acceptKey = $data[self::initiatorAcceptKey] ?? null;
 
         return new static(
             operation: (string)($data[self::operation] ?? ''),
-            initiatorAcceptKey: (string)($data[self::initiatorAcceptKey] ?? ''),
+            initiatorAcceptKey: $acceptKey === null ? null : (string)$acceptKey,
             initiatorAgentType: (string)($data[self::initiatorAgentType] ?? ''),
             initiatorAgentIndex: $agentIndex === null ? null : (int)$agentIndex,
             initiatorNodeId: $nodeId === null ? null : (string)$nodeId,

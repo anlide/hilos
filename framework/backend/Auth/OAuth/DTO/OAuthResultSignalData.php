@@ -18,7 +18,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * EITHER a currentUser update (login) OR this signal, branching on {@see reason}:
  *
  * - {@see REASON_LOGIN_FAILED} — the exchange failed, timed out, or resolved no
- *   subject: a generic failure (HIL-281). {@see email} / {@see linkToken} are empty.
+ *   subject: a generic failure (HIL-281). {@see email} / {@see linkToken} are null.
  * - {@see REASON_REAUTH_REQUIRED} — the provider email collided with an existing
  *   verified identity (HIL-282): the surface must re-authenticate the owner (with
  *   {@see email} pre-filled) and then redeem {@see linkToken} through the link
@@ -27,7 +27,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  *   the terminal outcomes of a profile link-mode exchange (HIL-401), where the
  *   initiator is already signed in and the session is never touched, so every
  *   outcome (including success) must be signalled explicitly. {@see email} /
- *   {@see linkToken} are empty.
+ *   {@see linkToken} are null.
  *
  * The {@see reason} is a stable, non-sensitive code; network/provider failure
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
@@ -55,15 +55,16 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
      * @param string $acceptKey Initiating connection accept key the signal targets
      * @param string $provider Provider key the login was attempted against
      * @param string $reason Stable, non-sensitive result reason code
-     * @param string $email Colliding email to pre-fill for re-auth ('' for the failure arm)
-     * @param string $linkToken Signed link-capability token to redeem after re-auth ('' for the failure arm)
+     * @param ?string $email Colliding email to pre-fill for re-auth, null for the arms that carry none
+     * @param ?string $linkToken Signed link-capability token to redeem after re-auth, null for the
+     *                           arms that carry none
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $provider,
         public readonly string $reason = self::REASON_LOGIN_FAILED,
-        public readonly string $email = '',
-        public readonly string $linkToken = '',
+        public readonly ?string $email = null,
+        public readonly ?string $linkToken = null,
     ) {
     }
 
@@ -76,7 +77,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * @return array<string, string> DTO payload for transport
+     * @return array<string, ?string> DTO payload for transport
      */
     public function toArray(): array
     {
@@ -99,8 +100,8 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             acceptKey: (string)($data['acceptKey'] ?? ''),
             provider: (string)($data['provider'] ?? ''),
             reason: (string)($data['reason'] ?? self::REASON_LOGIN_FAILED),
-            email: (string)($data['email'] ?? ''),
-            linkToken: (string)($data['linkToken'] ?? ''),
+            email: isset($data['email']) ? (string)$data['email'] : null,
+            linkToken: isset($data['linkToken']) ? (string)$data['linkToken'] : null,
         );
     }
 }

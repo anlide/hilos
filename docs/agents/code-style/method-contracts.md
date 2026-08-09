@@ -93,6 +93,28 @@ required field raises `PeerTransportException`, an optional one is normalized
 `'' -> null`) and `Socket/Client/WebSocketClient::onFrame()` (an empty frame field
 raises `InvalidFrameException`).
 
+### Naming a legal empty string in place: `// external-boundary:`
+
+A legal reading of outside input sometimes sits inside a directory the rule scans.
+Mark that one occurrence with a reason on the line above it:
+
+```php
+// external-boundary: created_at is NOT NULL, so the driver always hands its stored value over
+createdAt: (string) ($row['created_at'] ?? ''),
+```
+
+The marker covers **one occurrence**, not the method and not the file, and the
+reason after the colon is mandatory — a marker without one is itself a violation.
+Both rules exist for the same purpose: the reason is the classification (why this
+value comes from outside), and a marker that covered a whole method would stop
+being a classification and become a mute button.
+
+This is the same device as `// warning-suppressed:` in
+[error-suppression](automated-checks.md), deliberately: one marker convention in
+the repository, so a reader who knows either one reads the other without the docs.
+Its cost is the same, too — it is also the way to get past the rule, so a marker
+whose reason does not name an outside source is a review finding.
+
 ## Polling APIs
 
 For async polling APIs, keep state checks separate from state consumption:

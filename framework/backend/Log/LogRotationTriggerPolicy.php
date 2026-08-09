@@ -30,12 +30,13 @@ final class LogRotationTriggerPolicy
     /**
      * @param int $maxAgeSeconds Elapsed-since-last-rotation threshold in seconds; 0 disables the age axis
      * @param int $maxLiveSizeBytes Summed live *.log size threshold in bytes; 0 disables the size axis
-     * @param string $cronExpression Five-field cron expression for the schedule axis; empty or malformed disables it
+     * @param ?string $cronExpression Five-field cron expression for the schedule axis; empty or
+     *                                malformed disables it, null means no expression was configured
      */
     public function __construct(
         public readonly int $maxAgeSeconds,
         public readonly int $maxLiveSizeBytes,
-        public readonly string $cronExpression = '',
+        public readonly ?string $cronExpression = null,
     ) {
     }
 
@@ -49,7 +50,7 @@ final class LogRotationTriggerPolicy
         return new self(
             max(0, Hilos::$env?->int(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS) ?? 0),
             max(0, Hilos::$env?->int(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES) ?? 0),
-            Hilos::$env?->string(EnvConstants::LOG_ROTATION_CRON) ?? '',
+            Hilos::$env?->string(EnvConstants::LOG_ROTATION_CRON),
         );
     }
 
@@ -74,11 +75,12 @@ final class LogRotationTriggerPolicy
      */
     public function createCronRule(): ?CronRule
     {
-        if (!$this->hasSchedule()) {
+        $expression = $this->scheduleExpression();
+        if ($expression === null) {
             return null;
         }
 
-        return new CronRule(self::CRON_RULE_NAME, trim($this->cronExpression));
+        return new CronRule(self::CRON_RULE_NAME, $expression);
     }
 
     /**
@@ -127,11 +129,26 @@ final class LogRotationTriggerPolicy
      */
     private function hasSchedule(): bool
     {
-        $expression = trim($this->cronExpression);
-        if ($expression === '') {
-            return false;
+        return $this->scheduleExpression() !== null;
+    }
+
+    /**
+     * Normalizes the configured expression down to the schedule the cron rule can run.
+     *
+     * @return ?string Trimmed expression, or null when none was configured, it is empty, or it does
+     *                 not carry exactly {@see self::CRON_FIELD_COUNT} whitespace-separated fields
+     */
+    private function scheduleExpression(): ?string
+    {
+        if ($this->cronExpression === null) {
+            return null;
         }
 
-        return count(preg_split('/\s+/', $expression) ?: []) === self::CRON_FIELD_COUNT;
+        $expression = trim($this->cronExpression);
+        if ($expression === '' || count(preg_split('/\s+/', $expression) ?: []) !== self::CRON_FIELD_COUNT) {
+            return null;
+        }
+
+        return $expression;
     }
 }

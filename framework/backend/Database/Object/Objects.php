@@ -236,12 +236,13 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         $filters = '';
         $filtersParam = [];
 
-        if ($query->search !== '') {
+        $search = $query->search;
+        if ($search !== null && $search !== '') {
             $columns = $this->getSearchableColumns();
             $likeParts = [];
             foreach ($columns as $column) {
                 $likeParts[] = "`{$column}` LIKE ?";
-                $filtersParam[] = SqlParam::string("%{$query->search}%");
+                $filtersParam[] = SqlParam::string("%{$search}%");
             }
             if (!empty($likeParts)) {
                 $filters = '(' . implode(' OR ', $likeParts) . ')';
@@ -249,8 +250,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         }
 
         $orderBy = [];
-        if ($query->orderBy !== '') {
-            $orderBy[$query->orderBy] = $query->orderDirection;
+        if ($query->sort !== null) {
+            $orderBy[$query->sort->field] = $query->sort->direction;
         }
 
         $entityCollection = $entityClass::get(

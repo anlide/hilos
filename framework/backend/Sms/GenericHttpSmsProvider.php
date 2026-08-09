@@ -51,7 +51,8 @@ final class GenericHttpSmsProvider implements HttpSmsProvider
      *
      * @param SmsMessage $message Recipient message to send
      * @return SmsHttpRequest Request the agent replays to the gateway
-     * @throws SmsConfigException When the endpoint URL has no host
+     * @throws SmsConfigException When the endpoint URL has no host, or the auth mode needs
+     *                            credentials the config does not carry
      */
     public function buildRequest(SmsMessage $message): SmsHttpRequest
     {
@@ -107,23 +108,63 @@ final class GenericHttpSmsProvider implements HttpSmsProvider
      *
      * @param array<string, string> $params Request params (query auth adds the key here)
      * @param array<string, string> $headers Request headers (header/basic auth add here)
+     * @throws SmsConfigException When the auth mode needs credentials the config does not carry
      */
     private function applyAuth(array &$params, array &$headers): void
     {
         switch ($this->config->authMode) {
             case SmsChannelConfig::AUTH_MODE_QUERY:
-                $params[self::API_KEY_PARAM] = $this->config->apiKey;
+                $params[self::API_KEY_PARAM] = $this->requireApiKey();
                 break;
             case SmsChannelConfig::AUTH_MODE_HEADER:
-                $headers[self::HEADER_AUTHORIZATION] = 'Bearer ' . $this->config->apiKey;
+                $headers[self::HEADER_AUTHORIZATION] = 'Bearer ' . $this->requireApiKey();
                 break;
             case SmsChannelConfig::AUTH_MODE_BASIC:
                 $headers[self::HEADER_AUTHORIZATION]
-                    = 'Basic ' . base64_encode($this->config->apiKey . ':' . $this->config->apiPassword);
+                    = 'Basic ' . base64_encode($this->requireApiKey() . ':' . $this->requireApiPassword());
                 break;
             default:
                 break;
         }
+    }
+
+    /**
+     * Reads the configured gateway API key, refusing a send the gateway would reject anyway.
+     *
+     * Every auth mode but {@see SmsChannelConfig::AUTH_MODE_NONE} is a promise that credentials
+     * exist; sending `Bearer ` or `api_key=` instead spends a paid attempt on a request the
+     * gateway cannot authenticate.
+     *
+     * @return string Non-empty gateway API key
+     * @throws SmsConfigException When no API key is configured
+     */
+    private function requireApiKey(): string
+    {
+        $apiKey = $this->config->apiKey;
+        if ($apiKey === null || $apiKey === '') {
+            throw new SmsConfigException("SMS auth mode '{$this->config->authMode}' needs an API key, none is configured");
+        }
+
+        return $apiKey;
+    }
+
+    /**
+     * Reads the configured gateway API password for basic auth.
+     *
+     * An explicitly empty password is a legitimate gateway convention (the key rides the user
+     * half of the pair); an absent one is not, and would otherwise be sent as if it were empty.
+     *
+     * @return string Gateway API password, possibly empty
+     * @throws SmsConfigException When no API password is configured
+     */
+    private function requireApiPassword(): string
+    {
+        $apiPassword = $this->config->apiPassword;
+        if ($apiPassword === null) {
+            throw new SmsConfigException("SMS auth mode '{$this->config->authMode}' needs an API password, none is configured");
+        }
+
+        return $apiPassword;
     }
 
     /**
@@ -145,6 +186,7 @@ final class GenericHttpSmsProvider implements HttpSmsProvider
         $useTls = ($parts['scheme'] ?? 'https') === 'https';
         $port = (int)($parts['port'] ?? ($useTls ? 443 : 80));
         $path = $parts['path'] ?? '/';
+        // external-boundary: parse_url reads the configured endpoint, which usually carries no query at all
         $query = $parts['query'] ?? '';
         $encoded = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 

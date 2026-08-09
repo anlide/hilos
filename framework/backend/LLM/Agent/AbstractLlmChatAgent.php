@@ -8,6 +8,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Hilos;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\LLM\Routing\LlmProfile;
 
@@ -30,6 +31,9 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
 
     /**
      * Resolves the agent's profile and builds its chat client.
+     *
+     * @throws LLMConfigurationException When the profile cannot be resolved, or an external one
+     *                                   carries no API key
      */
     public function __construct()
     {
@@ -68,6 +72,7 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      * Overridable so an agent can inject a test double (e.g. moderation tests).
      *
      * @return AsyncChatLLMInterface Async chat client for the profile
+     * @throws LLMConfigurationException When an external profile carries no API key
      */
     protected function createChatClient(): AsyncChatLLMInterface
     {

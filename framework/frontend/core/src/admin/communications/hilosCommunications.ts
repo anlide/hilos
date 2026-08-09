@@ -22,7 +22,11 @@ import {
 } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
-import { readBoolean, readString } from '../../state/fieldReaders.js'
+import {
+  readBoolean,
+  readString,
+  readStringOrNull,
+} from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -33,14 +37,14 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 export interface HilosChannelRow {
   /** Channel name; also the table row key and the {channelId} route param. */
   readonly channel: string
-  /** Human-readable channel label. */
+  /** Human-readable channel label; falls back to the channel key when the row names none. */
   readonly label: string
   /** Whether the channel is globally enabled (a persisted settings override). */
   readonly enabled: boolean
   /** Whether every config field resolved to a value (no field on its bare default). */
   readonly configured: boolean
-  /** Transport / driver name (e.g. `smtp`). */
-  readonly driver: string
+  /** Transport / driver name (e.g. `smtp`), or null when the channel names none. */
+  readonly driver: string | null
   /** Count of config fields still on their bare default (unresolved). */
   readonly missingFields: number
 }
@@ -62,7 +66,7 @@ export interface HilosChannelFieldRow {
   readonly channel: string
   /** Field key within its channel (e.g. `smtp_host`). */
   readonly field: string
-  /** Human-readable field label. */
+  /** Human-readable field label; falls back to the field key when the row names none. */
   readonly label: string
   /** Value type: `string` | `integer` | `float` | `boolean`. */
   readonly type: string
@@ -210,15 +214,19 @@ function readFieldValue(
  */
 export function resolveHilosChannelRow(row: TableRow): HilosChannelRow {
   const slot = recordSlot(row.slots[CHANNELS_SLOT]) ?? {}
+  // Identity is the fragment's row key; it never rides the slot as `id`, which the
+  // normalizer would treat as an entity reference and strip the row (normalizer.ts).
+  const channel =
+    readString(slot, HilosChannelRowKey.channel) || String(row.rowKey)
 
   return {
-    // Identity is the fragment's row key; it never rides the slot as `id`, which the
-    // normalizer would treat as an entity reference and strip the row (normalizer.ts).
-    channel: readString(slot, HilosChannelRowKey.channel) || String(row.rowKey),
-    label: readString(slot, HilosChannelRowKey.label),
+    channel,
+    // An unlabelled channel is shown by its key rather than as a blank cell: the key is a
+    // real name a reader can act on, which an empty string standing in for "no label" is not.
+    label: readStringOrNull(slot, HilosChannelRowKey.label) ?? channel,
     enabled: readBoolean(slot, HilosChannelRowKey.enabled),
     configured: readBoolean(slot, HilosChannelRowKey.configured),
-    driver: readString(slot, HilosChannelRowKey.driver),
+    driver: readStringOrNull(slot, HilosChannelRowKey.driver),
     missingFields: Number(slot[HilosChannelRowKey.missingFields] ?? 0),
   }
 }
@@ -233,12 +241,14 @@ export function resolveHilosChannelFieldRow(
   row: TableRow,
 ): HilosChannelFieldRow {
   const slot = recordSlot(row.slots[FIELDS_SLOT]) ?? {}
+  const field = readString(slot, HilosChannelFieldRowKey.field)
 
   return {
     key: String(row.rowKey),
     channel: readString(slot, HilosChannelFieldRowKey.channel),
-    field: readString(slot, HilosChannelFieldRowKey.field),
-    label: readString(slot, HilosChannelFieldRowKey.label),
+    field,
+    // Same rule as the channel row: an unlabelled field is shown by its own key.
+    label: readStringOrNull(slot, HilosChannelFieldRowKey.label) ?? field,
     type: readString(slot, HilosChannelFieldRowKey.type),
     value: readFieldValue(slot),
     valueSource: toValueSource(slot[HilosChannelFieldRowKey.valueSource]),
