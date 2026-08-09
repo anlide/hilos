@@ -26,6 +26,7 @@ use Hilos\Core\CLI\Commands\MigrationDownCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
+use Hilos\Core\CLI\Commands\NotificationTestEmitCommand;
 use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\PingCommand;
@@ -96,6 +97,7 @@ class CliManager
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
+        $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();

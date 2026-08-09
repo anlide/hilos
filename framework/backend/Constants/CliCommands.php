@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+
 /**
  * CliCommands - CLI command name constants.
  *
@@ -83,4 +85,15 @@ final class CliCommands
 
     /** @var string Command: Bulk-seed N fixture users with password identities (test-only) */
     public const string USER_TEST_SEED = 'test:user:seed';
+
+    /**
+     * Emit one durable notification to a user through the live daemon (test-only).
+     *
+     * Doubles as the command-channel wire name routed to
+     * {@see AbstractHilosIndexAgent}: unlike the backup pair, the CLI name and the
+     * wire name are one string because there is exactly one route for it.
+     *
+     * @var string Command: Emit one notification to a user through the live daemon (test-only)
+     */
+    public const string NOTIFICATION_TEST_EMIT = 'test:notification:emit';
 }

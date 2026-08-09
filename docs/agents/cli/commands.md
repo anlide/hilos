@@ -49,6 +49,12 @@ to run unless `APP_ENV` is non-production (same guard as `Seed::isProduction`). 
 is the marker: a reader sees `extends TestOnlyCommand` and knows the command must never run
 on prod. Subclasses implement `run()`.
 
+**A test-only command whose work happens in an agent has to refuse twice.** The CLI class
+guards the CLI process, but the command reaches the agent over the command socket, which
+authenticates nobody and whose route exists in every project — so the class is not on the
+path a stray caller takes. Such a handler repeats the `APP_ENV` verdict itself before doing
+anything; `AbstractHilosIndexAgent::handleNotificationEmit()` is the worked example.
+
 A project registers its own commands by subclassing `CliManager` and overriding
 `registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
 news the project manager:
@@ -93,10 +99,12 @@ connection failure.
 
 Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `db:test:reset` (opens its own server-level connection, because it drops and
-recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed) and
+recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
 `cluster:test:inspect` (talks only to the local command socket, so the multi-node harness
-can inspect a network-partitioned node that cannot reach MySQL either). Everything else
-keeps the full connect plus `Hilos::init()`.
+can inspect a network-partitioned node that cannot reach MySQL either) and
+`test:notification:emit` (every row it causes is written by the agent that answers it, so
+the CLI process itself has nothing to read or write). Everything else keeps the full
+connect plus `Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
 must not touch the database or Hilos state. Do that work in `execute()`.

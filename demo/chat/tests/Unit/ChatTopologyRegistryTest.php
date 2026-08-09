@@ -26,6 +26,7 @@ use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Mail\DTO\MailSendSignalData;
@@ -325,6 +326,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::IMPERSONATE_START => AgentType::CHAT,
             ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
             ChatCommandConstants::ACCOUNT_MERGE => AgentType::CHAT,
+            CliCommands::NOTIFICATION_TEST_EMIT => AgentType::HILOS_INDEX,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::REFRESH_HISTORY_COMMAND => AgentType::HILOS_BACKUP,
