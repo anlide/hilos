@@ -30,6 +30,9 @@ use Hilos\Core\CLI\Commands\NotificationTestEmitCommand;
 use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\PingCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
@@ -104,6 +107,9 @@ class CliManager
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
+        $this->commands[CliCommands::PROTECTED_MODE_TEST_INSPECT] = new ProtectedModeTestInspectCommand();
+        $this->commands[CliCommands::PROTECTED_MODE_TEST_ENTER] = new ProtectedModeTestEnterCommand();
+        $this->commands[CliCommands::PROTECTED_MODE_TEST_LEAVE] = new ProtectedModeTestLeaveCommand();
         $this->commands[CliCommands::LLM_PING] = new LlmPingCommand();
 
         $this->registerProjectCommands();

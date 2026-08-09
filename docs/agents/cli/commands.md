@@ -55,6 +55,14 @@ authenticates nobody and whose route exists in every project — so the class is
 path a stray caller takes. Such a handler repeats the `APP_ENV` verdict itself before doing
 anything; `AbstractHilosIndexAgent::handleNotificationEmit()` is the worked example.
 
+The protected-mode drive pair (`test:protected-mode:enter` / `:leave`, HIL-344) is the
+standing exception: it guards the CLI process and **not** the agent handler. That was the
+leaf's explicit decision — the socket path is left ungated, as it already is for `setAdmin`
+and `connection:test:drop` — and it is written down here rather than left to be inferred,
+so the next reader does not take it for an oversight. Weigh it before copying either way:
+the exposure is whoever can open `COMMAND_PORT`, and what it buys on a production node is a
+freeze of that node.
+
 A project registers its own commands by subclassing `CliManager` and overriding
 `registerProjectCommands()`, calling `addCommand()` for each; the project's `cli.php` then
 news the project manager:
@@ -101,10 +109,13 @@ Marked today: `db:wait` (its poll *is* the connect, and it has to run before the
 answers), `db:test:reset` (opens its own server-level connection, because it drops and
 recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
 `cluster:test:inspect` (talks only to the local command socket, so the multi-node harness
-can inspect a network-partitioned node that cannot reach MySQL either) and
+can inspect a network-partitioned node that cannot reach MySQL either),
 `test:notification:emit` (every row it causes is written by the agent that answers it, so
-the CLI process itself has nothing to read or write). Everything else keeps the full
-connect plus `Hilos::init()`.
+the CLI process itself has nothing to read or write) and the protected-mode trio
+`test:protected-mode:inspect` / `:enter` / `:leave` (the inspector reads in-memory state and
+has to answer on a frozen node, which is exactly where a connect would hang; the drive pair
+writes nothing from this process). Everything else keeps the full connect plus
+`Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
 must not touch the database or Hilos state. Do that work in `execute()`.

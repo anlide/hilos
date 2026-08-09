@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Cluster\ClusterCommandConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
@@ -129,6 +130,20 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // A misconfigured cluster must reply an error, not throw inside the master loop.
                 try {
                     $reply = CommandReplyDTO::ok($request->correlationId, Hilos::$cluster?->inspect() ?? []);
+                } catch (HilosException $e) {
+                    $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
+                }
+                $this->writeBuffer .= $reply->toJson() . "\n";
+                continue;
+            }
+
+            if ($request->command === CliCommands::PROTECTED_MODE_TEST_INSPECT) {
+                // Test-only read of the master's own view of protected mode. Answered here and
+                // not parked, because parking routes to an agent and a freeze stops every agent
+                // but the initiator - the inspector would go silent in the one phase it exists
+                // to report on. A subsystem failure must reply an error, not throw in the loop.
+                try {
+                    $reply = CommandReplyDTO::ok($request->correlationId, $this->server->protectedModeSnapshot());
                 } catch (HilosException $e) {
                     $reply = CommandReplyDTO::error($request->correlationId, $e->getMessage());
                 }

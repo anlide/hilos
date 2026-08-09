@@ -9,6 +9,7 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -38,6 +39,8 @@ use Throwable;
  */
 abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
+    use ProtectedModeTestDriverTrait;
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 
     /**
@@ -51,9 +54,16 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * CLI already performs: the route exists in every project, and the command socket
      * authenticates nobody, so the CLI-side guard alone would leave the emit reachable on a
      * production node by anyone who can open the port.
+     *
+     * The protected-mode pair (HIL-344) rides the same inheritance for the same reason - chat,
+     * simple-todo and simple-poll get a freeze they can drive by extending this class alone.
+     * The inspector is not among them: it is answered by the master, because a freeze stops
+     * every agent but the initiator.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::NOTIFICATION_TEST_EMIT,
+        CliCommands::PROTECTED_MODE_TEST_ENTER,
+        CliCommands::PROTECTED_MODE_TEST_LEAVE,
     ];
 
     /** Cron expression for the daily delivery-log prune (03:20). */
@@ -72,11 +82,13 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     /**
-     * Runs the due-once-a-day delivery-log prune.
+     * Runs the due-once-a-day delivery-log prune and finishes any protected-mode drive in flight.
      */
     public function onTick(): void
     {
         parent::onTick();
+
+        $this->tickProtectedModeTestDriver();
 
         if ($this->deliveryLogPruneRule !== null && $this->deliveryLogPruneRule->shouldRun()) {
             $this->pruneDeliveryLog();
@@ -86,8 +98,8 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     /**
      * Routes the command-channel commands declared in {@see AGENT_COMMANDS}.
      *
-     * One branch today, and every path answers exactly once: a CLI parked on the command
-     * socket learns the outcome instead of timing out.
+     * Every path answers exactly once: a CLI parked on the command socket learns the outcome
+     * instead of timing out.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -95,6 +107,12 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($this->isProtectedModeTestCommand($data->command)) {
+            $this->handleProtectedModeTestCommand($data);
+
+            return;
+        }
+
         if ($data->command !== CliCommands::NOTIFICATION_TEST_EMIT) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
 

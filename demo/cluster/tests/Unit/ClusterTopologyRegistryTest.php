@@ -10,6 +10,7 @@ use Demo\Cluster\Core\Agent\Daemon\WorkerAgentDaemon;
 use Demo\Cluster\Core\Router\ClusterSignalRouter;
 use Demo\Cluster\Hilos;
 use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
+use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
@@ -31,15 +32,22 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([], Hilos::getPageRoutes());
     }
 
-    public function testRoutingSurfaceIsEmpty(): void
+    public function testRoutingSurfaceIsEmptyApartFromTheProtectedModeDrive(): void
     {
-        // Nothing routes: no page/agent actions, no server-driven signals, no commands.
+        // Nothing routes: no page/agent actions, no server-driven signals.
         $this->assertSame([], Hilos::getPageActionRoutes());
         $this->assertSame([], Hilos::getActionAgentRoutes());
         $this->assertSame([], Hilos::getPageSignalAgentRoutes());
         $this->assertSame([], Hilos::getAgentSignalRoutes());
-        $this->assertSame([], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getGroupRoutes());
+
+        // The one exception, and the reason it is here: this demo is headless and has no Hilos
+        // index, so the worker agent is the only carrier that can drive the clustered entry
+        // path - the leader's quiesce round and a follower's fail-closed refusal.
+        $this->assertSame([
+            CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::WORKER,
+            CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::WORKER,
+        ], Hilos::getCommandAgentRoutes());
     }
 
     public function testAgentRegistryHasOnlyThePlaceableWorker(): void

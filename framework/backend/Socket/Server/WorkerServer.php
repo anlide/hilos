@@ -16,6 +16,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -1244,6 +1245,29 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         Logger::info(
             'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
             . count($this->protectedModeStoppedAgents) . ' agent(s)',
+        );
+    }
+
+    /**
+     * Names the agents {@see stopAgentsForProtectedMode()} stopped for the freeze in flight.
+     *
+     * Read-only: this is what the test-only inspector reports as this node's own view of the
+     * freeze ({@see ProtectedModeSnapshotSource}), next to the runtime row. The row alone
+     * would not answer the question a test actually asks - it says the mode is on, while this
+     * says the roster it took down here, which is the difference between a decision to freeze
+     * and a freeze that took hold.
+     *
+     * Returns the ids rather than the parsed pairs so the reply speaks the same vocabulary as
+     * the freeze log and the agent-start gate, and so the id spelling stays owned by the one
+     * class that builds it.
+     *
+     * @return list<string> Agent ids stopped for the current freeze, empty outside one
+     */
+    public function getProtectedModeStoppedAgents(): array
+    {
+        return array_map(
+            fn(AgentId $agent): string => $this->buildAgentId($agent->type, $agent->index),
+            $this->protectedModeStoppedAgents,
         );
     }
 

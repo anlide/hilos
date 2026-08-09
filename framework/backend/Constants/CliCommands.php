@@ -96,4 +96,32 @@ final class CliCommands
      * @var string Command: Emit one notification to a user through the live daemon (test-only)
      */
     public const string NOTIFICATION_TEST_EMIT = 'test:notification:emit';
+
+    /**
+     * Print this node's protected-mode snapshot as JSON (test-only).
+     *
+     * Answered synchronously by the master, so unlike its two siblings below it is
+     * never routed to an agent: during a freeze every agent but the initiator is
+     * stopped, so an agent-answered inspector would go silent in exactly the phase
+     * it exists to report on.
+     *
+     * @var string Command: Print this node's protected-mode snapshot as JSON (test-only)
+     */
+    public const string PROTECTED_MODE_TEST_INSPECT = 'test:protected-mode:inspect';
+
+    /**
+     * Enter protected mode through the live initiator agent (test-only).
+     *
+     * Doubles as the command-channel wire name routed to the agents that declare it
+     * ({@see AbstractHilosIndexAgent} and the cluster demo's worker agent), the same
+     * one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses. The freeze has
+     * exactly one entry and this command does not add a second: it asks an agent to
+     * call the same request every production initiator calls.
+     *
+     * @var string Command: Enter protected mode through the live initiator agent (test-only)
+     */
+    public const string PROTECTED_MODE_TEST_ENTER = 'test:protected-mode:enter';
+
+    /** @var string Command: Leave protected mode through the initiator agent that entered it (test-only) */
+    public const string PROTECTED_MODE_TEST_LEAVE = 'test:protected-mode:leave';
 }

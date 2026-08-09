@@ -55,6 +55,7 @@ use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\RtSyncApplicator;
@@ -109,7 +110,7 @@ use Hilos\Utils\Logger;
  * and {@see onPlacementDegraded()} when failover cannot re-place an orphaned agent. The
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper, ProtectedModeClientNotifier
+abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper, ProtectedModeSnapshotSource, ProtectedModeClientNotifier
 {
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
@@ -475,6 +476,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         // decoupled from the concrete manager.
         if ($server instanceof CommandServer) {
             $server->setConnectionDropper($this);
+            $server->setProtectedModeSnapshotSource($this);
         }
     }
 
@@ -514,6 +516,62 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         }
 
         return false;
+    }
+
+    /**
+     * Reports this node's own view of protected mode for the test-only inspector.
+     *
+     * Joins the two halves of the answer that only the master holds together: the runtime row
+     * ({@see StateProtectedModeRuntime}, the freeze's own account of itself) and this node's
+     * agent roster ({@see WorkerServer::getProtectedModeStoppedAgents()}, what the freeze
+     * actually did here). A test asserting that the mode took hold needs both - the row can say
+     * active on a node whose roster the freeze never reached.
+     *
+     * A project with no runtime context answers an explicit false flag rather than an error or
+     * an empty reply, because "protected mode is not taken" and "this project has no protected
+     * mode at all" are different verdicts and an assertion cannot tell them apart otherwise.
+     *
+     * Every read here is in-memory by construction - the row is runtime state and the roster is
+     * a private array - which is what makes the call safe on the master's accept path.
+     *
+     * @return array<string, mixed> Snapshot keyed by {@see ProtectedModeCommandConstants} fields
+     */
+    public function protectedModeSnapshot(): array
+    {
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        $stopped = $this->findWorkerServer()?->getProtectedModeStoppedAgents() ?? [];
+
+        if ($freeze === null) {
+            return [
+                ProtectedModeCommandConstants::FIELD_RT_MOUNTED => false,
+                ProtectedModeCommandConstants::FIELD_PHASE => StateProtectedModeRuntime::PHASE_INACTIVE,
+                ProtectedModeCommandConstants::FIELD_OPERATION => null,
+                ProtectedModeCommandConstants::FIELD_INITIATOR_AGENT_TYPE => null,
+                ProtectedModeCommandConstants::FIELD_INITIATOR_AGENT_INDEX => null,
+                ProtectedModeCommandConstants::FIELD_INITIATOR_NODE_ID => null,
+                ProtectedModeCommandConstants::FIELD_STARTED_AT => null,
+                ProtectedModeCommandConstants::FIELD_ACTIVATED_AT => null,
+                ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
+                ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED => false,
+            ];
+        }
+
+        return [
+            ProtectedModeCommandConstants::FIELD_RT_MOUNTED => true,
+            ProtectedModeCommandConstants::FIELD_PHASE => $freeze->phase,
+            ProtectedModeCommandConstants::FIELD_OPERATION => $freeze->operation,
+            ProtectedModeCommandConstants::FIELD_INITIATOR_AGENT_TYPE => $freeze->initiatorAgentType,
+            ProtectedModeCommandConstants::FIELD_INITIATOR_AGENT_INDEX => $freeze->initiatorAgentIndex,
+            ProtectedModeCommandConstants::FIELD_INITIATOR_NODE_ID => $freeze->initiatorNodeId,
+            ProtectedModeCommandConstants::FIELD_STARTED_AT => $freeze->startedAt,
+            ProtectedModeCommandConstants::FIELD_ACTIVATED_AT => $freeze->activatedAt,
+            ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
+            // The same verdict the agent-start gate reaches, and deliberately derived from the
+            // phase the way the gate derives it: every non-inactive phase holds the gate shut,
+            // including deactivating.
+            ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED
+                => $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE,
+        ];
     }
 
     /**

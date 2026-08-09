@@ -6,6 +6,8 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
+use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -35,6 +37,9 @@ class CommandServer extends AbstractServer
 
     /** @var ?ConnectionDropper Master seam that force-closes a WebSocket connection, wired at registration */
     private ?ConnectionDropper $connectionDropper = null;
+
+    /** @var ?ProtectedModeSnapshotSource Master seam that reports the protected-mode state, wired at registration */
+    private ?ProtectedModeSnapshotSource $protectedModeSnapshotSource = null;
 
     /**
      * Called when a new command client connection is accepted.
@@ -121,6 +126,35 @@ class CommandServer extends AbstractServer
     public function dropWebSocketConnection(string $acceptKey): bool
     {
         return $this->connectionDropper?->dropWebSocketConnection($acceptKey) ?? false;
+    }
+
+    /**
+     * Wires the master seam used to report this node's protected-mode state.
+     *
+     * Set by {@see DaemonManager::registerServer()} so the test-only inspect command can read
+     * the master-owned freeze state through the command channel.
+     *
+     * @param ProtectedModeSnapshotSource $protectedModeSnapshotSource Master seam reporting the freeze state
+     */
+    public function setProtectedModeSnapshotSource(ProtectedModeSnapshotSource $protectedModeSnapshotSource): void
+    {
+        $this->protectedModeSnapshotSource = $protectedModeSnapshotSource;
+    }
+
+    /**
+     * Reports this node's protected-mode state through the master seam.
+     *
+     * Answers an empty snapshot when no source is wired, so a daemon that exposes no such
+     * seam reads as "nothing to report" rather than failing the command: the caller then
+     * sees the absent {@see ProtectedModeCommandConstants::FIELD_RT_MOUNTED} flag and knows
+     * the subsystem is not there, which is the same distinction the flag draws inside a
+     * wired snapshot.
+     *
+     * @return array<string, mixed> Snapshot keyed by {@see ProtectedModeCommandConstants} fields
+     */
+    public function protectedModeSnapshot(): array
+    {
+        return $this->protectedModeSnapshotSource?->protectedModeSnapshot() ?? [];
     }
 
     /**

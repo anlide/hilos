@@ -1,0 +1,79 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\ProtectedMode;
+
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+
+/**
+ * ProtectedModeCommandConstants - the wire vocabulary of the protected-mode test commands.
+ *
+ * The CLI side builds the request payload and reads the reply, the agent side and the
+ * master side write it, so every half names its keys from here and they cannot drift
+ * apart - the arrangement {@see NotificationCommandConstants} established.
+ *
+ * Two vocabularies live here because the three commands share one subsystem: the drive
+ * pair ({@see CliCommands::PROTECTED_MODE_TEST_ENTER} / {@see CliCommands::PROTECTED_MODE_TEST_LEAVE})
+ * speaks the request/reply fields, and {@see CliCommands::PROTECTED_MODE_TEST_INSPECT}
+ * speaks the snapshot fields the master fills in {@see DaemonManager::protectedModeSnapshot()}.
+ *
+ * The snapshot names the {@see ProtectedModeRuntime} row's fields with the row's own
+ * spelling, so an assertion reads the same word in the JSON and in the state class -
+ * with one deliberate omission. {@see ProtectedModeRuntime::$initiatorAcceptKey} is NOT
+ * published: that key is the pass through the lockdown
+ * ({@see ProtectedModeRuntime::locksOut()}), and the command socket authenticates
+ * nobody, so putting it in a reply would hand every reader of the port the one
+ * credential the freeze is built to withhold. Nothing needs it - a test drives the
+ * mode through the agent and asserts on the phase.
+ */
+final class ProtectedModeCommandConstants
+{
+    /**
+     * @var string Request key: operation name the freeze is entered for
+     *
+     * The accept key the initiator may keep working through has no key of its own here:
+     * the drive commands pass it as {@see CommandConstants::FIELD_ACCEPT_KEY}, the same
+     * field `connection:test:drop` already puts on this channel.
+     */
+    public const string FIELD_OPERATION = 'operation';
+
+    /** @var string Reply key: phase the agent observed when it answered */
+    public const string FIELD_PHASE = 'phase';
+
+    /** @var string Snapshot key: whether this node has the protected-mode runtime row mounted */
+    public const string FIELD_RT_MOUNTED = 'rtMounted';
+
+    /** @var string Snapshot key: agent type of the initiator, or null outside a freeze */
+    public const string FIELD_INITIATOR_AGENT_TYPE = 'initiatorAgentType';
+
+    /** @var string Snapshot key: agent index of the initiator, or null for a singleton initiator */
+    public const string FIELD_INITIATOR_AGENT_INDEX = 'initiatorAgentIndex';
+
+    /** @var string Snapshot key: node id hosting the initiator, or null off-cluster */
+    public const string FIELD_INITIATOR_NODE_ID = 'initiatorNodeId';
+
+    /** @var string Snapshot key: epoch seconds the freeze began activating at, or null */
+    public const string FIELD_STARTED_AT = 'startedAt';
+
+    /** @var string Snapshot key: epoch seconds the freeze reached active at, or null */
+    public const string FIELD_ACTIVATED_AT = 'activatedAt';
+
+    /** @var string Snapshot key: agent ids this node stopped for the freeze, empty outside one */
+    public const string FIELD_STOPPED_AGENTS = 'stoppedAgents';
+
+    /**
+     * @var string Snapshot key: whether the freeze currently refuses agent starts
+     *
+     * Reported rather than left to be derived from the phase, because it is the master's
+     * own answer: the gate ({@see ProtectedModeSnapshotSource}) is what a test asserting
+     * "the freeze really took hold on this node" is asking about, and a node that never
+     * mounted the row answers false here while its phase reads inactive for a different
+     * reason.
+     */
+    public const string FIELD_AGENT_START_GATE_CLOSED = 'agentStartGateClosed';
+}

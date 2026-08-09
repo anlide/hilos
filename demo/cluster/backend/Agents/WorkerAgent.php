@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Demo\Cluster\Agents;
 
 use Demo\Cluster\Constants\AgentType;
+use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
 
 /**
@@ -25,7 +29,24 @@ use Hilos\Utils\Logger;
  */
 final class WorkerAgent extends AbstractAgent
 {
+    use ProtectedModeTestDriverTrait;
+
     public const string AGENT_TYPE = AgentType::WORKER;
+
+    /**
+     * The protected-mode drive pair (HIL-344), carried here as well as on the Hilos index agent.
+     *
+     * This demo is headless and has no Hilos index, so without a carrier of its own the
+     * clustered entry path - the leader's quiesce/quiesced round and the fail-closed refusal a
+     * follower gives - would be unreachable from a live run and stay proven by unit tests
+     * alone. That path is exactly what this harness exists to exercise.
+     *
+     * The inspector is not listed: it is answered by the master, not by an agent.
+     */
+    public const array AGENT_COMMANDS = [
+        CliCommands::PROTECTED_MODE_TEST_ENTER,
+        CliCommands::PROTECTED_MODE_TEST_LEAVE,
+    ];
 
     /** @var int Shortest synthetic job, in microseconds */
     private const int JOB_MIN_USEC = 50000;
@@ -66,10 +87,16 @@ final class WorkerAgent extends AbstractAgent
     }
 
     /**
-     * Runs one synthetic job, then reports throughput once per report interval.
+     * Finishes any protected-mode drive in flight, runs one synthetic job, then reports
+     * throughput once per report interval.
+     *
+     * The drive is served before the synthetic job, not after: the job blocks this worker for
+     * up to a quarter of a second, and the drive's own wait window is measured in seconds.
      */
     public function onTick(): void
     {
+        $this->tickProtectedModeTestDriver();
+
         usleep(mt_rand(self::JOB_MIN_USEC, self::JOB_MAX_USEC));
         $this->jobsDone++;
 
@@ -82,6 +109,27 @@ final class WorkerAgent extends AbstractAgent
             . self::REPORT_INTERVAL_SEC . 's');
         $this->jobsDone = 0;
         $this->reportDueAt = $now + self::REPORT_INTERVAL_SEC;
+    }
+
+    /**
+     * Routes the command-channel commands declared in {@see AGENT_COMMANDS}.
+     *
+     * Every path answers exactly once, so a CLI parked on the command socket learns the
+     * outcome instead of timing out.
+     *
+     * @param CommandRequestDTO $data Command request payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused; the routing is on $data->command)
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if (!$this->isProtectedModeTestCommand($data->command)) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+
+            return;
+        }
+
+        $this->handleProtectedModeTestCommand($data);
     }
 
     /**

@@ -63,6 +63,47 @@ initiator agent and ask for the mode through it, rather than poking the daemon
 past the agent. The precedent is the backup test commands, which ride
 `AGENT_COMMANDS` of the live `BackupAgent`.
 
+### The Test Tool That Obligation Produced
+
+Three test-only commands, and the split between them is the whole design:
+
+| Command | Answered by | Why there |
+|---|---|---|
+| `test:protected-mode:inspect` | the master, synchronously | during a freeze every agent but the initiator is stopped, so an agent-answered inspector would go silent in exactly the phase worth inspecting |
+| `test:protected-mode:enter <operation> [--accept-key=<k>]` | the initiator agent | it calls `requestProtectedModeEnable()` — the one entry, unchanged |
+| `test:protected-mode:leave` | the initiator agent | authorized by initiator identity, exactly as in production |
+
+`ProtectedModeTestDriverTrait` carries the agent half. A trait, because its two
+carriers share no ancestor but `AbstractAgent`, and putting the commands there
+would hand a test-drive of the freeze to every agent of every project. The
+carriers are `AbstractHilosIndexAgent` (so chat, simple-todo and simple-poll get
+it by inheritance) and the cluster demo's `WorkerAgent` (that demo is headless
+and has no Hilos index, so without it the clustered entry path — the leader's
+quiesce round and a follower's fail-closed refusal — has no live carrier).
+
+Two properties are worth keeping when this code is touched:
+
+- **Both drive commands answer on the move, not on acceptance.** Enter answers
+  from `onProtectedModeReady()`, leave when this node's row is back to inactive.
+  That is what makes the reply a verdict and lets a test act on the next line
+  instead of polling.
+- **The pre-checks exist because the core answers nobody.** A repeat enable, a
+  disable with no freeze and a disable from the wrong agent are all
+  log-and-return paths. Reading the row first turns each into a stated reason
+  rather than a mute timeout. The agent's wait window is deliberately the
+  innermost of three (agent, then CLI, then the channel's held request), so the
+  informative refusal is the one that fires first.
+
+There is deliberately **no production-environment refusal on the agent side**.
+The CLI half refuses (`TestOnlyCommand`), but the command socket authenticates
+nobody and e2e reaches it directly over TCP, since the Playwright runner has no
+PHP. That ungated socket path is an existing property of the command channel,
+shared with `setAdmin` and `connection:test:drop` — recorded here so it is not
+mistaken for an oversight and "fixed" at the cost of the e2e.
+
+The snapshot never carries `initiatorAcceptKey`. It is the pass through the
+lockdown, and the port that would publish it authenticates nobody.
+
 ## Entry Is Fail-Closed In Both Branches
 
 A node that cannot freeze refuses loudly; it never stands inert while reporting
@@ -154,7 +195,11 @@ Refuse loudly and before any trace of entry, as above.
 ## Validation
 
 - `composer run test:framework:unit` — covers the entry guards
-  (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`) and the
-  unconditional mount (`ProtectedModeRuntimeMountTest`).
-- The mode is not driven from a browser until the test CLI exists (HIL-344), so
-  there is no e2e coverage of it to run or to add.
+  (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`), the unconditional
+  mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
+  (`ProtectedModeSnapshotTest`) and the agent driver
+  (`ProtectedModeTestDriverTest`).
+- `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:
+  enter, the live window showing the stub with the operation the caller named,
+  leave, the window working again. It freezes the whole node, so its teardown
+  lifts unconditionally; the runner is serialized (`CI=1`).

@@ -327,6 +327,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::IMPERSONATE_STOP => AgentType::CHAT,
             ChatCommandConstants::ACCOUNT_MERGE => AgentType::CHAT,
             CliCommands::NOTIFICATION_TEST_EMIT => AgentType::HILOS_INDEX,
+            CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
+            CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::REFRESH_HISTORY_COMMAND => AgentType::HILOS_BACKUP,
