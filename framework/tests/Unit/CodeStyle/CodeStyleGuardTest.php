@@ -11,6 +11,7 @@ use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
+use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
 
@@ -118,6 +119,7 @@ final class CodeStyleGuardTest extends TestCase
             new ErrorSuppressionRule(),
             new MagicRepeatRule(),
             new EmptyStringSentinelRule(),
+            new WireKeyCaseRule(),
         ];
     }
 

@@ -32,9 +32,14 @@ skill wrappers. Start with `agents.md`, then read
    matching section.
 8. When changing triggers or read order, update the matching `SKILL.md` and
    `agents/openai.yaml`.
-9. When a rule touches DB entity shape, RT item shape, signal DTO payloads, or
-   routes, preserve the contract approval gate and stop before implementation
-   changes to those surfaces.
+9. When a rule should stop depending on memory, follow "Adding a rule" in
+   `docs/agents/code-style/automated-checks.md`. A rule whose subject crosses the
+   PHP↔TypeScript boundary is written twice under one rule id — `WIRE-KEY-CASE`
+   is the worked example, with its TypeScript half in
+   `framework/frontend/codestyle/`.
+10. When a rule touches DB entity shape, RT item shape, signal DTO payloads, or
+    routes, preserve the contract approval gate and stop before implementation
+    changes to those surfaces.
 
 ## Hard Rules
 

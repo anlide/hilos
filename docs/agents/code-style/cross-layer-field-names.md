@@ -8,6 +8,10 @@ English dialect of identifiers see [spelling.md](spelling.md).
 
 ## Core Rule
 
+Checked automatically: `WIRE-KEY-CASE` — the case of the key and nothing else,
+on both sides of the boundary
+(see [automated-checks.md](automated-checks.md)).
+
 One data field carries one concept name through every layer it crosses
 (DB or RT state → PHP → wire → TS). Use the same word or words at each layer and
 change only the case convention — `snake_case` for the SQL column and the PHP

@@ -28,7 +28,7 @@ use Hilos\Database\View\Collection\DbCollection;
 abstract class DbItem
 {
     public const string actions = 'actions';
-    public const string object = '_object';
+    public const string object = 'object';
 
     /**
      * Reference to Object instance

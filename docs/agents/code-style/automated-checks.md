@@ -13,6 +13,7 @@ rule.
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
 | `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only. | [method-contracts.md](method-contracts.md) |
+| `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 
@@ -38,6 +39,35 @@ branch is also how an optional fragment is rendered into a concatenation, and
 tokens cannot tell the two apart. It says nothing about `=== ''` either: those
 comparisons are how legitimate input is checked, and a machine ban on them would
 report the very code the document calls correct.
+
+`WIRE-KEY-CASE` judges the case of a key and nothing else — not the words, not
+whether the two sides agree on them — and it sees only the keys declared in a
+form it can recognize. Three blind spots follow from that, and a green run must
+not be read as "the convention is kept":
+
+1. **`FIELD_*` constants are outside the rule.** The form carries two meanings at
+   once: `FIELD_REQUEST_ID = 'requestId'` names a key of the signal envelope,
+   while `FIELD_ENDPOINT_URL = 'endpoint_url'` travels as the *value* of a field
+   named `field`. Judging the form would report nineteen legitimate sites across
+   the mail, SMS and push channels. The lexical test stays free of exceptions,
+   and what it leaves out is a static set of envelope keys rather than anything
+   that grows.
+2. **A key written as a literal at the place it is used is invisible.** That is
+   ownership, not case — [wire-key-ownership.md](wire-key-ownership.md) — and a
+   key nobody declared has no declaration to judge.
+3. **A `.vue` SFC is not read.** The TypeScript half parses `.ts` files, and no
+   SFC declares a row-payload key today; a key that appears in one is a violation
+   of ownership before it is ever a question of case.
+
+The PHP half has the opposite gap, and the same sentence governs it: a rule may
+never be wider than its document. It reads a camelCase constant name as the
+declaration of a field key, which is what that name means in this repository —
+but a camelCase constant holding a string that was never a key (`dateFormat =
+'Y-m-d H:i:s'`, a URL, a format template) is reported all the same. No such site
+exists in the scanned roots today, and the way out of a hit is to argue with the
+document, so the argument needs to know what the rule actually does. The rename
+that settles it is usually the honest one: a constant that names no wire key is
+`UPPER_SNAKE` by the same convention that makes the camelCase name meaningful.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.
@@ -85,8 +115,16 @@ loop and inside `test:framework:all` on Verify without a target of its own:
 composer run test:framework:unit
 ```
 
+A rule with a TypeScript half rides the frontend unit suite the same way, so it
+too needs no target of its own:
+
+```bash
+composer run test:framework:frontend:unit
+```
+
 A failure lists every unbaselined hit as
-`<RULE-ID> <path>:<line> — <what is wrong> (see <doc>)`.
+`<RULE-ID> <path>:<line> — <what is wrong> (see <doc>)`, whichever of the two
+suites produced it.
 
 ## Why guard tests and not PHPStan
 
@@ -159,6 +197,26 @@ A rule that judges production code only is listed in `BACKEND_ONLY_RULES` in the
 same test. It cannot decide that for itself: `check()` receives the path relative
 to the scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and
 is indistinguishable from a backend file. The root is known to the guard.
+
+### A rule with a second half in another language
+
+A rule whose subject crosses the PHP↔TypeScript boundary is written twice, once
+per side, under **one** rule id and one owning document — `WIRE-KEY-CASE` is the
+first. Each half judges by the convention of its own side, because what declares
+a field key is written down differently there, and the two halves print the same
+line so a report reads the same whichever produced it.
+
+The TypeScript half lives in `framework/frontend/codestyle/`, a vitest project of
+its own like `framework/frontend/scripts/` and, like it, not an npm workspace: it
+ships no package and is not type-checked by `npm run check`. Register it by
+adding its directory to `projects` in `framework/frontend/vitest.config.ts`; from
+then on it runs inside `test:framework:frontend:unit` with no target of its own.
+Read sources through the TypeScript compiler API (`ts.createSourceFile`) for the
+same reason the PHP half reads tokens — a name quoted inside a string or written
+in a comment is not a declaration.
+
+The one entry in the table above stays one entry. Two rows would let the halves
+drift apart in the register that exists to show they have not.
 
 ### A rule that reads markdown
 

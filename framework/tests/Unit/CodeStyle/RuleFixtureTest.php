@@ -10,6 +10,7 @@ use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
+use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
 
@@ -93,6 +94,21 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:23 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:15 — field key \'created_at\' is not camelCase; '
+                    . 'one spelling has to serve PHP, the wire and TS '
+                    . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:17 — field key \'ValueSource\' is not camelCase; '
+                    . 'one spelling has to serve PHP, the wire and TS '
+                    . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:19 — field key \'override_value\' is not camelCase; '
+                    . 'one spelling has to serve PHP, the wire and TS '
+                    . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:19 — field key \'default_value\' is not camelCase; '
+                    . 'one spelling has to serve PHP, the wire and TS '
+                    . '(see docs/agents/code-style/cross-layer-field-names.md)',
+                'WIRE-KEY-CASE Bad/WireKeyCaseSamples.php:21 — field key \'default_kind\' is not camelCase; '
+                    . 'one spelling has to serve PHP, the wire and TS '
+                    . '(see docs/agents/code-style/cross-layer-field-names.md)',
             ],
             $this->reportFixtureViolations(),
             'Fixture report drifted: a rule either stopped catching a seeded case or started '
@@ -138,6 +154,7 @@ final class RuleFixtureTest extends TestCase
             new ErrorSuppressionRule(),
             new MagicRepeatRule(),
             new EmptyStringSentinelRule(),
+            new WireKeyCaseRule(),
         ];
     }
 }

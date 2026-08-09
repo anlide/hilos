@@ -36,6 +36,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 - A row-payload key is declared once as a named constant in the `@hilos/core`
   module owning the view-model it resolves into; every site reads that constant
   (`wire-key-ownership.md`).
+- Declare that constant as `<NAME>_FIELD` or as an entry of an `as const`
+  `*RowKey` map: the form is what the `WIRE-KEY-CASE` guard reads, and a key
+  declared outside it is judged by nobody (`wire-key-ownership.md`).
 - Keep `tsc` / `vue-tsc` / `eslint` / `prettier` green, and a TSDoc block that
   carries any `@param` lists **every** parameter (`warnings-and-ide.md`).
 - One data field keeps the same words through every layer — only the case

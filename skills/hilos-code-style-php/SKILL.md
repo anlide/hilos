@@ -46,6 +46,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
   here (`phpdoc.md`).
 - Two quantities that merely happen to be equal get two constants, and a repeated
   number is cured by a name carrying the unit, never the digits (`magic-values.md`).
+- A constant named in camelCase declares a wire field key, so its value is
+  camelCase too; the `WIRE-KEY-CASE` guard fails `test:framework:unit` otherwise
+  (`cross-layer-field-names.md`).
 - Do not return `bool` as a success flag from a method that performs work, and do
   not write `?? ''` as a "no value" marker (`method-contracts.md`).
 - A factory typed `: static` or `@return static` returns `new static()`, never

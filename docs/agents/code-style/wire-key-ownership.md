@@ -51,6 +51,16 @@ Flat constants are the default. Use a `const` map (`HilosChannelRowKey`) only
 when one module owns more than one row shape and their field names overlap, so
 flat constants would need a disambiguating prefix per shape.
 
+## The form is load-bearing
+
+The `_FIELD` suffix and the `*RowKey` map name are not house style: they are how
+`WIRE-KEY-CASE` tells a row-payload key from a signal type, an action name, a
+table key or a slot name, none of which share the key's camelCase convention (see
+[automated-checks.md](automated-checks.md)). A key declared outside the form is
+invisible to the checker — it keeps the ownership rule above and loses the
+machine that would catch a snake spelling on its way to the wire. Declare a new
+key in the form even when a shorter name reads better at the use site.
+
 ## Anti-Patterns
 
 ```ts

@@ -5,6 +5,14 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    projects: ['core', 'angular', 'react', 'vue', 'prerender', 'scripts'],
+    projects: [
+      'core',
+      'angular',
+      'react',
+      'vue',
+      'prerender',
+      'scripts',
+      'codestyle',
+    ],
   },
 })
