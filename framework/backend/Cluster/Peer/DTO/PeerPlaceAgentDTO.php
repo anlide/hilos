@@ -68,8 +68,9 @@ final class PeerPlaceAgentDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $agentType = trim((string)($data[self::FIELD_AGENT_TYPE] ?? ''));
-        if ($agentType === '') {
+        $agentTypeValue = $data[self::FIELD_AGENT_TYPE] ?? null;
+        $agentType = is_string($agentTypeValue) ? trim($agentTypeValue) : null;
+        if ($agentType === null || $agentType === '') {
             throw new PeerTransportException('Peer place-agent frame is missing the agent type');
         }
 

@@ -9,5 +9,10 @@ namespace Hilos\Socket\WebSocket\DTO;
  */
 interface WebSocketAcceptKeySignalDTO
 {
-    public function getAcceptKey(): string;
+    /**
+     * Accept key of the connection this signal is bound to.
+     *
+     * @return ?string Accept key, or null when the signal carries none
+     */
+    public function getAcceptKey(): ?string;
 }

@@ -73,8 +73,9 @@ final class PeerVoteReplyDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $voterId = trim((string)($data[self::FIELD_VOTER_ID] ?? ''));
-        if ($voterId === '') {
+        $voterIdValue = $data[self::FIELD_VOTER_ID] ?? null;
+        $voterId = is_string($voterIdValue) ? trim($voterIdValue) : null;
+        if ($voterId === null || $voterId === '') {
             throw new PeerTransportException('Peer vote-reply frame is missing the voter id');
         }
 

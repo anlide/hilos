@@ -332,7 +332,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $headers,
             $acceptKey,
             $cookies,
-            $this->getClientIp(),
+            $this->resolveClientIp(),
             $queryParams,
             $sessionToken,
         );
@@ -1005,7 +1005,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
-     * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
+     * @param ?string $clientIp Client IP (IPv4 or IPv6), or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      * @param string $sessionToken Session token resolved on the 101 (cookie value or freshly minted)
      */
@@ -1013,7 +1013,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         array $headers,
         string $acceptKey,
         array $cookies,
-        string $clientIp,
+        ?string $clientIp,
         RequestQueryParams $queryParams,
         string $sessionToken = '',
     ): void {
@@ -1053,14 +1053,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
-     * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
+     * @param ?string $clientIp Client IP (IPv4 or IPv6), or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     abstract protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
-        string $clientIp,
+        ?string $clientIp,
         RequestQueryParams $queryParams,
     ): void;
 
@@ -1114,6 +1114,21 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         Hilos::$sr->unsubscribeFromAll($this->acceptKey);
     }
 
+    /**
+     * Reads the peer address, turning the "no peer name" answer into an absent one.
+     *
+     * {@see AbstractClient::getClientIp()} reports an unavailable peer as a blank
+     * string, so the blank is normalized here and never travels any further.
+     *
+     * @return ?string Client IP (IPv4 or IPv6), or null when the peer name is unavailable
+     */
+    private function resolveClientIp(): ?string
+    {
+        $clientIp = $this->getClientIp();
+
+        return $clientIp !== '' ? $clientIp : null;
+    }
+
     private function trackCurrentClientIp(): void
     {
         if ($this->acceptKey === '') {
@@ -1121,7 +1136,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         try {
-            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->getClientIp());
+            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->resolveClientIp());
         } catch (\Throwable) {
             // Ignore peer-name lookup errors during analytics tracking.
         }

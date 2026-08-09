@@ -126,14 +126,17 @@ final class PeerAgentStatusDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $agentType = trim((string)($data[self::FIELD_AGENT_TYPE] ?? ''));
-        if ($agentType === '') {
+        $agentTypeValue = $data[self::FIELD_AGENT_TYPE] ?? null;
+        $agentType = is_string($agentTypeValue) ? trim($agentTypeValue) : null;
+        if ($agentType === null || $agentType === '') {
             throw new PeerTransportException('Peer agent-status frame is missing the agent type');
         }
 
-        $state = PlacementState::tryFrom((string)($data[self::FIELD_STATE] ?? ''));
+        $stateValue = $data[self::FIELD_STATE] ?? null;
+        $state = is_string($stateValue) ? PlacementState::tryFrom($stateValue) : null;
         if ($state === null) {
-            throw new PeerTransportException("Peer agent-status frame has an invalid state '" . (string)($data[self::FIELD_STATE] ?? '') . "'");
+            $shownState = is_string($stateValue) ? $stateValue : get_debug_type($stateValue);
+            throw new PeerTransportException("Peer agent-status frame has an invalid state '{$shownState}'");
         }
 
         $workerId = $data[self::FIELD_WORKER_ID] ?? null;

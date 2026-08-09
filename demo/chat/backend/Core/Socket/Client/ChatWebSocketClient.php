@@ -38,14 +38,14 @@ final class ChatWebSocketClient extends WebSocketClient
      * @param array<string, string> $headers All HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Daemon-minted connection identifier
      * @param array<string, string> $cookies Parsed cookies
-     * @param string $clientIp Client IP address
+     * @param ?string $clientIp Client IP address, or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
-        string $clientIp,
+        ?string $clientIp,
         RequestQueryParams $queryParams,
     ): void {
         // No additional handshake handling needed for chat demo

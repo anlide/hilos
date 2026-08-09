@@ -29,6 +29,29 @@ final class WebSocketHandshakeSignalDTOTest extends TestCase
         $this->assertSame(['token' => 'abc'], $restored->toArray()[WebSocketHandshakeSignalDTO::QUERY_PARAMS]);
     }
 
+    public function testPayloadWithoutClientIpReadsBackAsAbsent(): void
+    {
+        $restored = WebSocketHandshakeSignalDTO::fromArray([
+            WebSocketHandshakeSignalDTO::ACCEPT_KEY => 'unit-ak',
+        ]);
+
+        $this->assertNull($restored->clientIp);
+    }
+
+    public function testRoundtripPreservesAbsentClientIp(): void
+    {
+        $original = new WebSocketHandshakeSignalDTO(
+            headers: [],
+            acceptKey: 'unit-ak',
+            cookies: [],
+            clientIp: null,
+        );
+
+        $restored = WebSocketHandshakeSignalDTO::fromArray($original->toArray());
+
+        $this->assertNull($restored->clientIp);
+    }
+
     public function testRoundtripPreservesSessionToken(): void
     {
         $original = new WebSocketHandshakeSignalDTO(

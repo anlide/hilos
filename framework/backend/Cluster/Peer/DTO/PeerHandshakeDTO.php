@@ -75,23 +75,27 @@ abstract class PeerHandshakeDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $nodeId = trim((string)($data[self::FIELD_NODE_ID] ?? ''));
-        if ($nodeId === '') {
+        $nodeIdValue = $data[self::FIELD_NODE_ID] ?? null;
+        $nodeId = is_string($nodeIdValue) ? trim($nodeIdValue) : null;
+        if ($nodeId === null || $nodeId === '') {
             throw new PeerTransportException('Peer handshake is missing the node id');
         }
 
-        $roleValue = (string)($data[self::FIELD_NODE_ROLE] ?? '');
-        $role = NodeRole::tryFrom($roleValue);
+        $roleValue = $data[self::FIELD_NODE_ROLE] ?? null;
+        $role = is_string($roleValue) ? NodeRole::tryFrom($roleValue) : null;
         if ($role === null) {
-            throw new PeerTransportException("Peer handshake has an invalid node role '{$roleValue}'");
+            $shownRole = is_string($roleValue) ? $roleValue : get_debug_type($roleValue);
+            throw new PeerTransportException("Peer handshake has an invalid node role '{$shownRole}'");
         }
+
+        $address = $data[self::FIELD_ADDRESS] ?? null;
 
         return new static(
             protocolVersion: (int)($data[self::FIELD_PROTOCOL_VERSION] ?? 0),
             nodeId: $nodeId,
             role: $role,
             capabilities: PeerDTO::normalizeCapabilities($data[self::FIELD_NODE_CAPABILITIES] ?? []),
-            address: PeerAddress::fromString((string)($data[self::FIELD_ADDRESS] ?? '')),
+            address: is_string($address) ? PeerAddress::fromString($address) : null,
         );
     }
 }

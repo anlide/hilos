@@ -55,8 +55,9 @@ final class PeerPlacedAgentEntry extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        $agentType = trim((string)($data[self::FIELD_AGENT_TYPE] ?? ''));
-        if ($agentType === '') {
+        $agentTypeValue = $data[self::FIELD_AGENT_TYPE] ?? null;
+        $agentType = is_string($agentTypeValue) ? trim($agentTypeValue) : null;
+        if ($agentType === null || $agentType === '') {
             throw new PeerTransportException('Peer placed-agent entry is missing the agent type');
         }
 

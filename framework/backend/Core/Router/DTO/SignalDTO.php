@@ -125,14 +125,14 @@ class SignalDTO extends BaseDTO
         if ($data['signalType'] instanceof SignalTypeInterface) {
             $signalType = $data['signalType'];
         } else {
-            $signalType = new SignalType($data['signalType'] ?? '');
+            $signalType = new SignalType($data['signalType']);
         }
 
         // Deserialize signalName
         if ($data['signalName'] instanceof SignalNameInterface) {
             $signalName = $data['signalName'];
         } else {
-            $signalName = new SignalName($data['signalName'] ?? '');
+            $signalName = new SignalName($data['signalName']);
         }
 
         // Deserialize signalData

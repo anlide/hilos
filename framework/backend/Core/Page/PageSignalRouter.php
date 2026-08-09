@@ -515,7 +515,7 @@ class PageSignalRouter
         }
 
         $acceptKey = $actionErrorData->getAcceptKey();
-        if ($acceptKey === '') {
+        if ($acceptKey === null) {
             throw $e;
         }
 

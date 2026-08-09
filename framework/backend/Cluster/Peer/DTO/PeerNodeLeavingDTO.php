@@ -78,17 +78,22 @@ final class PeerNodeLeavingDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $nodeId = trim((string)($data[self::FIELD_NODE_ID] ?? ''));
-        if ($nodeId === '') {
+        $nodeIdValue = $data[self::FIELD_NODE_ID] ?? null;
+        $nodeId = is_string($nodeIdValue) ? trim($nodeIdValue) : null;
+        if ($nodeId === null || $nodeId === '') {
             throw new PeerTransportException('Peer node-leaving frame is missing the node id');
         }
 
-        $successor = trim((string)($data[self::FIELD_DESIGNATED_SUCCESSOR] ?? ''));
+        $successorValue = $data[self::FIELD_DESIGNATED_SUCCESSOR] ?? null;
+        $successor = is_string($successorValue) ? trim($successorValue) : null;
+        if ($successor === '') {
+            $successor = null;
+        }
 
         return new static(
             nodeId: $nodeId,
             wasLeader: (bool)($data[self::FIELD_WAS_LEADER] ?? false),
-            designatedSuccessor: $successor === '' ? null : $successor,
+            designatedSuccessor: $successor,
         );
     }
 }

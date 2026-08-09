@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerAddress;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -78,6 +79,62 @@ final class PeerHandshakeDTOTest extends TestCase
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'overlord',
         ]);
+    }
+
+    /**
+     * A required field that arrives as something other than a string is a broken
+     * payload, not a value to coerce: 42 must not read back as the node id '42'.
+     *
+     * @param mixed $nodeId Non-string node id from the wire
+     */
+    #[DataProvider('nonStringNodeIds')]
+    public function testFromArrayRejectsNonStringNodeId(mixed $nodeId): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => $nodeId,
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+        ]);
+    }
+
+    /**
+     * @return array<string, array{mixed}> Node ids no producer of this frame writes
+     */
+    public static function nonStringNodeIds(): array
+    {
+        return [
+            'number' => [42],
+            'array' => [['node-a']],
+            'bool' => [true],
+        ];
+    }
+
+    public function testFromArrayRejectsNonStringRole(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => ['master'],
+        ]);
+    }
+
+    /**
+     * A non-string address is absent, not a host: it must not reach PeerAddress.
+     */
+    public function testFromArrayReadsNonStringAddressAsAbsent(): void
+    {
+        $hello = PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_ADDRESS => ['10.0.0.1', 8095],
+        ]);
+
+        $this->assertNull($hello->address);
     }
 
     public function testHandshakeCarriesTheAdvertisedAddress(): void

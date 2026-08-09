@@ -59,8 +59,22 @@ final class PeerSignalDTOTest extends TestCase
     public function testRejectsMissingTargetNodeId(): void
     {
         $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer signal is missing the target node id');
 
         PeerSignalDTO::fromArray([
+            PeerSignalDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerSignalDTO::FIELD_AGENT_TYPE => 'chat_agent',
+            PeerSignalDTO::FIELD_SIGNAL => $this->signal()->toArray(),
+        ]);
+    }
+
+    public function testRejectsMissingOriginNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer signal is missing the origin node id');
+
+        PeerSignalDTO::fromArray([
+            PeerSignalDTO::FIELD_TARGET_NODE_ID => 'node-B',
             PeerSignalDTO::FIELD_AGENT_TYPE => 'chat_agent',
             PeerSignalDTO::FIELD_SIGNAL => $this->signal()->toArray(),
         ]);
@@ -69,8 +83,10 @@ final class PeerSignalDTOTest extends TestCase
     public function testRejectsMissingInnerSignal(): void
     {
         $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer signal is missing the inner signal payload');
 
         PeerSignalDTO::fromArray([
+            PeerSignalDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
             PeerSignalDTO::FIELD_TARGET_NODE_ID => 'node-B',
             PeerSignalDTO::FIELD_AGENT_TYPE => 'chat_agent',
         ]);

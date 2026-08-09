@@ -36,6 +36,12 @@ final class WebSocketClientTestProbe extends WebSocketClient
     /** @var string Accept key captured from onHandshake() */
     public string $capturedAcceptKey = '';
 
+    /** @var ?string Client IP captured from onHandshake() */
+    public ?string $capturedClientIp = null;
+
+    /** @var string Peer address the probe reports; blank stands for "no peer name" */
+    public string $peerIp = '127.0.0.1';
+
     /**
      * Build a probe without invoking the socket/env constructor chain.
      *
@@ -120,7 +126,7 @@ final class WebSocketClientTestProbe extends WebSocketClient
      */
     protected function getClientIp(): string
     {
-        return '127.0.0.1';
+        return $this->peerIp;
     }
 
     /**
@@ -129,18 +135,19 @@ final class WebSocketClientTestProbe extends WebSocketClient
      * @param array<string, string> $headers HTTP headers from handshake request (lowercase header names)
      * @param string $acceptKey Daemon-minted connection identifier (not the RFC Sec-WebSocket-Accept value)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
-     * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
+     * @param ?string $clientIp Client IP (IPv4 or IPv6), or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
-        string $clientIp,
+        ?string $clientIp,
         RequestQueryParams $queryParams,
     ): void {
         $this->capturedHeaders = $headers;
         $this->capturedCookies = $cookies;
         $this->capturedAcceptKey = $acceptKey;
+        $this->capturedClientIp = $clientIp;
     }
 }

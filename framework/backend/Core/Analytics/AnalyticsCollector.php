@@ -223,10 +223,10 @@ final class AnalyticsCollector
      *
      * @param string $acceptKey WebSocket accept key; empty yields null
      * @param ?string $sessionToken Browser session token, or null for anonymous
-     * @param string $clientIp Client IP address (IPv4 or IPv6)
+     * @param ?string $clientIp Client IP address (IPv4 or IPv6), or null when unknown
      * @return ?int WS connection id, or null when the accept key is empty or collection is disabled
      */
-    public function openWsConnection(string $acceptKey, ?string $sessionToken, string $clientIp): ?int
+    public function openWsConnection(string $acceptKey, ?string $sessionToken, ?string $clientIp): ?int
     {
         if ($acceptKey === '') {
             return null;
@@ -237,7 +237,7 @@ final class AnalyticsCollector
                 ? (($this->browserSessions[$sessionToken] ?? null)?->id ?? $this->ensureBrowserSession($sessionToken, null, null))
                 : null;
 
-            $ip = $this->parseIp($clientIp);
+            $ip = $clientIp !== null ? $this->parseIp($clientIp) : new ParsedIp(null, null);
             $nowTs = $this->nowTs();
 
             Database::sql(
@@ -258,11 +258,11 @@ final class AnalyticsCollector
      * Records IPv4/IPv6 changes for an open WS connection against its cached state.
      *
      * @param string $acceptKey WebSocket accept key; empty is ignored
-     * @param string $clientIp Current client IP address; empty is ignored
+     * @param ?string $clientIp Current client IP address; null is ignored
      */
-    public function trackWsConnectionIpChange(string $acceptKey, string $clientIp): void
+    public function trackWsConnectionIpChange(string $acceptKey, ?string $clientIp): void
     {
-        if ($acceptKey === '' || $clientIp === '') {
+        if ($acceptKey === '' || $clientIp === null) {
             return;
         }
 

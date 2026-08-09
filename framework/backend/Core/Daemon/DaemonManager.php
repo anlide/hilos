@@ -1005,9 +1005,14 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                         continue;
                     }
 
+                    $broadcastFrame = $this->encodeSignalFrame($signal);
+                    if ($broadcastFrame === null) {
+                        continue;
+                    }
+
                     $this->sendToAllClients(
                         $webSocketServer,
-                        $this->encodeSignalFrame($signal),
+                        $broadcastFrame,
                         $destination->excludeAcceptKey,
                     );
                 } elseif ($destination instanceof CommandReplyDestination) {
@@ -1165,7 +1170,12 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      */
     private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
     {
-        $this->sendToClient($server, $acceptKey, $this->encodeSignalFrame($signal));
+        $message = $this->encodeSignalFrame($signal);
+        if ($message === null) {
+            return;
+        }
+
+        $this->sendToClient($server, $acceptKey, $message);
     }
 
     /**
@@ -1176,9 +1186,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * single-client and all-clients delivery so both send an identical frame.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return string Frame JSON ready for sendFrame(), or '' if encoding fails
+     * @return ?string Frame JSON ready for sendFrame(), or null when it cannot be encoded
      */
-    private function encodeSignalFrame(SignalDTO $signal): string
+    private function encodeSignalFrame(SignalDTO $signal): ?string
     {
         $signalData = $signal->data;
 
@@ -1194,8 +1204,13 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
         $this->mergeEnvelopeMetadata($message, $innerData);
 
         $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($messageJson === false) {
+            Logger::error("Signal frame dropped: {$signal->signalName->getName()} cannot be encoded - " . json_last_error_msg());
 
-        return $messageJson !== false ? $messageJson : '';
+            return null;
+        }
+
+        return $messageJson;
     }
 
     /**

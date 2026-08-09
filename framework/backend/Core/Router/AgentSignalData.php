@@ -27,13 +27,13 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
     }
 
     /**
-     * Accept key from the inner payload, or empty string when it carries none.
+     * Accept key from the inner payload.
      *
-     * @return string Inner payload accept key, or empty string
+     * @return ?string Inner payload accept key, or null when it carries none
      */
-    public function getAcceptKey(): string
+    public function getAcceptKey(): ?string
     {
-        return $this->data instanceof WebSocketAcceptKeySignalDTO ? $this->data->getAcceptKey() : '';
+        return $this->data instanceof WebSocketAcceptKeySignalDTO ? $this->data->getAcceptKey() : null;
     }
 
     /**

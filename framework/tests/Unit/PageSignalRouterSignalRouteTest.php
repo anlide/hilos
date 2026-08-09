@@ -178,6 +178,33 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $this->assertSame('Blocked by validation', $page->actionException?->getMessage());
     }
 
+    public function testValidationExceptionFromAgentSignalWithoutAcceptKeyBubbles(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            new SignalRouteConfig([
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    'validation_error' => PageSignalRouterTestPage::PAGE,
+                ],
+            ]),
+        );
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Blocked by validation');
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData(new PageSignalRouterActionErrorSignalData(
+                acceptKey: null,
+                action: 'message',
+                payload: ['content' => 'blocked'],
+            )),
+            'agent',
+            'validation_error',
+        );
+    }
+
     public function testValidationExceptionFromAgentSignalWithoutActionContextBubbles(): void
     {
         $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
@@ -483,19 +510,19 @@ final class PageSignalRouterTestAgent implements PageAgentInterface
 final class PageSignalRouterActionErrorSignalData extends SignalData implements ActionErrorSignalDataInterface
 {
     /**
-     * @param string $acceptKey WebSocket accept key for the client
+     * @param ?string $acceptKey WebSocket accept key for the client, or null when it carries none
      * @param string $action Action name that should receive the validation error
      * @param array<string, mixed> $payload Action payload data
      */
     public function __construct(
-        private readonly string $acceptKey,
+        private readonly ?string $acceptKey,
         private readonly string $action,
         private readonly array $payload,
     ) {
         parent::__construct();
     }
 
-    public function getAcceptKey(): string
+    public function getAcceptKey(): ?string
     {
         return $this->acceptKey;
     }

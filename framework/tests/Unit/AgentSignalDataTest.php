@@ -30,10 +30,10 @@ final class AgentSignalDataTest extends TestCase
         $this->assertSame('agent-ak', $restored->getAcceptKey());
     }
 
-    public function testReturnsEmptyAcceptKeyWhenInnerPayloadHasNone(): void
+    public function testReturnsNoAcceptKeyWhenInnerPayloadHasNone(): void
     {
         $data = new AgentSignalData(new SignalData(['message' => 'ok']));
 
-        $this->assertSame('', $data->getAcceptKey());
+        $this->assertNull($data->getAcceptKey());
     }
 }

@@ -68,8 +68,9 @@ final class PeerHeartbeatDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $leaderId = trim((string)($data[self::FIELD_LEADER_ID] ?? ''));
-        if ($leaderId === '') {
+        $leaderIdValue = $data[self::FIELD_LEADER_ID] ?? null;
+        $leaderId = is_string($leaderIdValue) ? trim($leaderIdValue) : null;
+        if ($leaderId === null || $leaderId === '') {
             throw new PeerTransportException('Peer heartbeat frame is missing the leader id');
         }
 

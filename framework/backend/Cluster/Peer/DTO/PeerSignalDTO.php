@@ -89,10 +89,15 @@ final class PeerSignalDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored forward frame
-     * @throws PeerTransportException When the target node id is missing or the inner signal is malformed
+     * @throws PeerTransportException When an id is missing or the inner signal is malformed
      */
     public static function fromArray(array $data): static
     {
+        $originNodeId = $data[self::FIELD_ORIGIN_NODE_ID] ?? null;
+        if (!is_string($originNodeId) || $originNodeId === '') {
+            throw new PeerTransportException('Peer signal is missing the origin node id');
+        }
+
         $targetNodeId = $data[self::FIELD_TARGET_NODE_ID] ?? null;
         if (!is_string($targetNodeId) || $targetNodeId === '') {
             throw new PeerTransportException('Peer signal is missing the target node id');
@@ -117,7 +122,7 @@ final class PeerSignalDTO extends PeerDTO
         $agentIndex = $data[self::FIELD_AGENT_INDEX] ?? null;
 
         return new static(
-            originNodeId: (string)($data[self::FIELD_ORIGIN_NODE_ID] ?? ''),
+            originNodeId: $originNodeId,
             targetNodeId: $targetNodeId,
             agentType: $agentType,
             agentIndex: is_string($agentIndex) && $agentIndex !== '' ? $agentIndex : null,

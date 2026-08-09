@@ -31,7 +31,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      * @param array<string, string> $headers HTTP headers (lowercase header names)
      * @param string $acceptKey Daemon-minted connection identifier
      * @param array<string, string> $cookies Cookies
-     * @param string $clientIp Client IP address
+     * @param ?string $clientIp Client IP address, or null when the transport exposes none
      * @param RequestQueryParams $queryParams Query string params
      * @param string $sessionToken Session token resolved by the daemon (from the cookie, or freshly issued on the handshake)
      */
@@ -39,7 +39,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
         public readonly array $headers,
         public readonly string $acceptKey,
         public readonly array $cookies,
-        public readonly string $clientIp,
+        public readonly ?string $clientIp,
         public readonly RequestQueryParams $queryParams = new RequestQueryParams(),
         public readonly string $sessionToken = '',
     ) {
@@ -80,7 +80,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             headers: $data[self::HEADERS] ?? [],
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],
-            clientIp: $data[self::CLIENT_IP] ?? '',
+            clientIp: $data[self::CLIENT_IP] ?? null,
             queryParams: RequestQueryParams::fromStringMap(
                 is_array($data[self::QUERY_PARAMS] ?? null) ? $data[self::QUERY_PARAMS] : [],
             ),

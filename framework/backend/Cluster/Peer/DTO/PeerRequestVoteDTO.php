@@ -68,8 +68,9 @@ final class PeerRequestVoteDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $candidateId = trim((string)($data[self::FIELD_CANDIDATE_ID] ?? ''));
-        if ($candidateId === '') {
+        $candidateIdValue = $data[self::FIELD_CANDIDATE_ID] ?? null;
+        $candidateId = is_string($candidateIdValue) ? trim($candidateIdValue) : null;
+        if ($candidateId === null || $candidateId === '') {
             throw new PeerTransportException('Peer request-vote frame is missing the candidate id');
         }
 

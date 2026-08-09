@@ -56,7 +56,8 @@ abstract class PeerDTO extends BaseDTO
             throw new PeerTransportException('Peer frame is not a JSON object');
         }
 
-        $type = (string)($data[self::TYPE] ?? '');
+        $typeValue = $data[self::TYPE] ?? null;
+        $type = is_string($typeValue) ? $typeValue : null;
 
         return match ($type) {
             PeerHelloDTO::MESSAGE_TYPE => PeerHelloDTO::fromArray($data),
@@ -81,7 +82,9 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeLiftDTO::MESSAGE_TYPE => PeerProtectedModeLiftDTO::fromArray($data),
             PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
             PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),
-            default => throw new PeerTransportException("Unknown peer frame type: '{$type}'"),
+            default => throw new PeerTransportException(
+                "Unknown peer frame type: '" . ($type ?? get_debug_type($typeValue)) . "'",
+            ),
         };
     }
 

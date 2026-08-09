@@ -70,6 +70,9 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
 
     /**
      * Decode payload from JSON transport (strict base64) or pass through legacy raw string.
+     *
+     * The blank answer is not an absent one: a frame with no bytes IS the empty
+     * payload, so it is returned as itself rather than normalized to null.
      */
     private static function decodePayloadFromTransport(string $encoded): string
     {
