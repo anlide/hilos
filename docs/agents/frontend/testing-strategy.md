@@ -48,9 +48,12 @@ e2e robust against copy and layout changes.
 
 ## Opening a page — `gotoPage`, never `goto`
 
-A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, or
-**`gotoRefusedPage(page, path)`** when the point of the spec is that the server
-refuses it. **Never call Playwright's `goto` directly**; `E2E-PAGE-GOTO`
+A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, which
+waits for the subscription's answer — the answer, not a good answer, since a page
+closed to a guest answers with a refusal and the specs that walk into one are
+asserting exactly that. Pass `PAGE_REFUSED` (or `PAGE_READY`) as the third
+argument only when the spec is about which answer came. **Never call Playwright's
+`goto` directly**; `E2E-PAGE-GOTO`
 (`framework/frontend/codestyle/e2eGoto.ts`) reports every direct call outside the
 `helpers/page.ts` that owns the wrappers.
 

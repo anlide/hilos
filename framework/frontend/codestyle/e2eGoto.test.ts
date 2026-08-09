@@ -22,8 +22,8 @@ const FIXTURES = 'framework/frontend/codestyle/fixtures'
 
 /** The tail every report line carries, kept in one place so a test reads short. */
 const REASON =
-  ' — a spec opens a page through gotoPage() or gotoRefusedPage(), not through' +
-  " goto(), which waits for the document and not for the subscription's answer" +
+  ' — a spec opens a page through gotoPage(), not through goto(), which waits' +
+  " for the document and not for the subscription's answer" +
   ' (see docs/agents/frontend/testing-strategy.md)'
 
 /**

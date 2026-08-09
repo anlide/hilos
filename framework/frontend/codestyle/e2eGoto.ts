@@ -1,7 +1,6 @@
 // E2E-PAGE-GOTO, the machine half of the navigation rule in
 // docs/agents/frontend/testing-strategy.md: an e2e spec opens a page through the
-// `gotoPage` / `gotoRefusedPage` wrappers, never through Playwright's own
-// `goto`.
+// `gotoPage` wrapper, never through Playwright's own `goto`.
 //
 // `goto` waits for the document and nothing else. The page behind it is a live
 // subscription whose answer — the payload or a refusal — arrives one round trip
@@ -114,7 +113,7 @@ function report(
 
   return (
     `${E2E_PAGE_GOTO_RULE_ID} ${relativePath}:${line} — a spec opens a page` +
-    ' through gotoPage() or gotoRefusedPage(), not through goto(), which waits' +
+    ' through gotoPage(), not through goto(), which waits' +
     ` for the document and not for the subscription's answer (see ${DOC})`
   )
 }

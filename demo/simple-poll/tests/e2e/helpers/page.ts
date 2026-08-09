@@ -18,6 +18,14 @@ import { expect, type Page } from '@playwright/test'
 const PAGE_STATE = 'hilos-page-state'
 
 /**
+ * Either settled state. `gotoPage` waits for the answer, not for a good answer:
+ * a page closed to a guest answers with a refusal, and the specs that walk into
+ * one on purpose are asserting exactly that. A spec that cares which answer came
+ * says so with {@link expectPageReady} or {@link expectPageRefused}.
+ */
+const SETTLED = /^(ready|error)$/
+
+/**
  * Wait until the routed outlet reports the state named.
  *
  * @param page The Playwright page.
@@ -31,12 +39,25 @@ async function expectPageState(page: Page, state: string): Promise<void> {
 }
 
 /**
+ * The settled states a navigation can end in, for a spec that cares which one it
+ * got. Passing neither is the common case: wait for the answer, then let the
+ * spec's own assertions say what it expected to find.
+ */
+export const PAGE_READY = 'ready'
+
+/** The other settled state: the server refused the subscription. */
+export const PAGE_REFUSED = 'error'
+
+/** Either settled state, as {@link gotoPage} requires when given no preference. */
+export type PageOutcome = typeof PAGE_READY | typeof PAGE_REFUSED
+
+/**
  * Wait until the routed outlet has settled on the page it is showing.
  *
  * @param page The Playwright page.
  */
 export async function expectPageReady(page: Page): Promise<void> {
-  await expectPageState(page, 'ready')
+  await expectPageState(page, PAGE_READY)
 }
 
 /**
@@ -46,28 +67,30 @@ export async function expectPageReady(page: Page): Promise<void> {
  * @param page The Playwright page.
  */
 export async function expectPageRefused(page: Page): Promise<void> {
-  await expectPageState(page, 'error')
+  await expectPageState(page, PAGE_REFUSED)
 }
 
 /**
  * Open a page and wait for its subscription to answer.
  *
- * @param page The Playwright page.
- * @param path Path to open, as the address bar would hold it.
- */
-export async function gotoPage(page: Page, path: string): Promise<void> {
-  await page.goto(path)
-  await expectPageReady(page)
-}
-
-/**
- * Open a page the server is expected to refuse, and wait for that refusal. The
- * spec then asserts which refusal it is — the status, the code, the copy.
+ * The answer, not a good answer: a page closed to a guest answers with a
+ * refusal, and the specs that walk into one on purpose are asserting exactly
+ * that. Name the outcome only when the spec is about which answer came — a
+ * refusal it means to pin, or a page it wants reported as refused rather than as
+ * a missing element.
  *
  * @param page The Playwright page.
  * @param path Path to open, as the address bar would hold it.
+ * @param expected The settled state to require, or undefined for either.
  */
-export async function gotoRefusedPage(page: Page, path: string): Promise<void> {
+export async function gotoPage(
+  page: Page,
+  path: string,
+  expected?: PageOutcome,
+): Promise<void> {
   await page.goto(path)
-  await expectPageRefused(page)
+  await expect(page.getByTestId(PAGE_STATE)).toHaveAttribute(
+    'data-state',
+    expected ?? SETTLED,
+  )
 }

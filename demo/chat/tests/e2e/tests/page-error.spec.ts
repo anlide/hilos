@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoRefusedPage } from '../helpers/page'
+import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Page subscription error e2e: subscribing a page whose guard rejects the
 // request renders the SDK's full-page ErrorPage in place of the page, over the
@@ -7,7 +7,7 @@ import { gotoRefusedPage } from '../helpers/page'
 // page's DB_EXISTS 404 guard; "Back to home" navigates in place and clears it.
 
 test('shows the 404 error page for a non-existent user', async ({ page }) => {
-  await gotoRefusedPage(page, '/user/999999')
+  await gotoPage(page, '/user/999999', PAGE_REFUSED)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   const error = page.getByTestId('page-error')
@@ -23,7 +23,7 @@ test('clears the error page when navigating home in place', async ({ page }) => 
     fullLoads += 1
   })
 
-  await gotoRefusedPage(page, '/user/999999')
+  await gotoPage(page, '/user/999999', PAGE_REFUSED)
   await expect(page.getByTestId('page-error')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
