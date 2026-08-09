@@ -19,7 +19,7 @@ import { computedSignal, type ReadonlySignal } from '../state/signal.js'
  * session scope payload. Each project keeps its backend signal byte-equal (e.g.
  * `ChatSignalConstants::HANDSHAKE_RESPONSE`).
  */
-const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
+export const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
 const DEFAULT_CURRENT_USER_ENTITY_TYPE = 'user'

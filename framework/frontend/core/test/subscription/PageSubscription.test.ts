@@ -39,6 +39,7 @@ describe('PageSubscription', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
 
     pages.subscribe('main')
 
@@ -83,6 +84,7 @@ describe('PageSubscription', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
 
     const first = pages.subscribe('main')
     first.data.set('marker', 1)
@@ -100,6 +102,7 @@ describe('PageSubscription', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
     pages.subscribe('main')
 
     pages.unsubscribe()
@@ -116,6 +119,7 @@ describe('PageSubscription', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
     pages.subscribe('main')
 
     const applied = pages.ingestPageResponse('main', {
@@ -133,6 +137,7 @@ describe('PageSubscription', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
     pages.subscribe('main')
     pages.subscribe('profile')
 
@@ -227,11 +232,29 @@ describe('PageSubscription', () => {
   })
 })
 
+describe('holding the subscribe until the session answers', () => {
+  it('sends nothing until released, then sends the held page', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const held = new PageSubscription(connection, scopes)
+
+    held.subscribe('hilos_settings')
+    expect(connection.sent).toEqual([])
+
+    held.releaseOnSession()
+
+    expect(connection.sent).toMatchObject([
+      { type: 'page_subscribe', page: 'hilos_settings' },
+    ])
+  })
+})
+
 describe('pageLoading', () => {
   it('is raised by a subscribe and lowered by an empty answer', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
 
     pages.subscribe('hilos_about')
     expect(pages.pageLoading.get()).toBe(true)

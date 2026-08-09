@@ -19,6 +19,7 @@ import { resolvePageTitle } from '../routing/pageTitle.js'
 import { type PageRouter } from '../routing/PageRouter.js'
 import {
   bindSessionScope,
+  SIGNAL_HANDSHAKE_RESPONSE,
   sessionUserId,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
@@ -93,6 +94,16 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     (pageKey) =>
       resolvePageTitle(pageKey, config.pageTitles ?? {}, config.appName ?? ''),
   )
+  // The page subscribe is held until the session answers: the connection's
+  // identity is established by the handshake and reaches the other workers on
+  // its own, so a subscribe that overtook it was judged against a connection
+  // nobody had heard of yet and refused as anonymous. The route still resolves
+  // now — only the frame waits.
+  config.connection.on('projectSignal', (signal) => {
+    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
+      pages.releaseOnSession()
+    }
+  })
   config.connection.connect()
   hilosRouter.start()
 

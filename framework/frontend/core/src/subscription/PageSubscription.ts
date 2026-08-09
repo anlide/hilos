@@ -47,6 +47,17 @@ export class PageSubscription {
   /** True from a page's subscribe until that page's first answer of either kind. */
   private readonly pageLoadingSignal = createSignal(false)
 
+  /**
+   * Whether the session has answered. A page_subscribe sent before it says who
+   * this connection is asks a question the backend cannot answer yet: the
+   * connection's identity is established by the handshake and reaches the other
+   * workers on its own, so a subscribe that overtakes it is read as anonymous
+   * and refused — a false 401 the client then has to live with. Holding the
+   * frame until the answer lands costs one round trip the page is waiting on
+   * anyway, and removes the question rather than racing it.
+   */
+  private sessionAnswered = false
+
   constructor(
     private readonly connection: PageSubscriptionConnection,
     private readonly scopes: ScopeManager,
@@ -183,8 +194,22 @@ export class PageSubscription {
     return true
   }
 
+  /**
+   * Release the held subscription: the session has answered, so the backend
+   * knows who this connection is and a page subscribe can be judged. Called
+   * once, by the boot sequence, on the first handshake response; a no-op after
+   * that.
+   */
+  releaseOnSession(): void {
+    if (this.sessionAnswered) {
+      return
+    }
+    this.sessionAnswered = true
+    this.sendSubscribe()
+  }
+
   private sendSubscribe(): void {
-    if (!this.current) {
+    if (!this.current || !this.sessionAnswered) {
       return
     }
     this.connection.send(
