@@ -550,7 +550,13 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $this->runAgentStopHook($agent);
+        try {
+            $this->runAgentStopHook($agent);
+        } catch (Throwable $e) {
+            // A failing stop hook must not crash the worker on a daemon stop request;
+            // truth sources are already unregistered in the hook's finally.
+            Logger::logAgentError($agent->getId(), "Stop hook failed on agent stop request: {$e->getMessage()}");
+        }
         Logger::logAgentStop($agent->getId(), $agent->getType());
         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
@@ -1475,12 +1481,21 @@ abstract class WorkerManager extends BaseManager
 
     /**
      * Stops local agents, closes daemon transport, and shuts down analytics.
+     *
+     * A failing agent stop hook is contained per agent, so the remaining agents,
+     * the daemon transport, and analytics are always released.
      */
-    private function cleanup(): void
+    protected function cleanup(): void
     {
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
-            $this->runAgentStopHook($agent);
+            try {
+                $this->runAgentStopHook($agent);
+            } catch (Throwable $e) {
+                // A failing stop hook must not abort the cleanup of the remaining agents,
+                // the daemon transport, and analytics.
+                Logger::logAgentError($agent->getId(), "Stop hook failed during worker cleanup: {$e->getMessage()}");
+            }
             Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
             Logger::info("Agent {$agentId} stopped during cleanup");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");

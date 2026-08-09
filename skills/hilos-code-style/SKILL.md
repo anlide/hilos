@@ -16,7 +16,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - PHPDoc and inherited method docs: `docs/agents/code-style/phpdoc.md` -
   read when creating a PHP method, changing a method signature, changing
   visibility/parameters/return type, changing thrown exceptions, overriding a
-  method, or substantially changing what a documented method does.
+  method, or substantially changing what a documented method does. No guard checks
+  `@throws` propagation, so the callee audit in that file is the only thing keeping
+  the contract honest — never skip it because the tests are green.
 - Exception taxonomy and `@throws`: `docs/agents/code-style/exceptions.md`
 - `Page::onAction()` and action handler routing: `docs/agents/code-style/page-action-handlers.md`
 - Named signal handler routing (`onSignalAgent()`, `onSignalCron()`):

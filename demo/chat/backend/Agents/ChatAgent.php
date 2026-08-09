@@ -36,7 +36,9 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -148,7 +150,6 @@ final class ChatAgent extends AbstractAgent
      * resulting state, or an error when the user is unknown or the write fails.
      *
      * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
-     * @throws HilosException On an unexpected database failure outside the caught write path
      */
     private function handleSetAdmin(CommandRequestDTO $data): void
     {
@@ -179,10 +180,11 @@ final class ChatAgent extends AbstractAgent
      * CLI command wrapper over {@see self::startImpersonation()}: parses the token
      * and target from the command payload, runs the shared core, and replies ok
      * with the effective user and the recorded admin, or an error message on a
-     * guard rejection.
+     * guard rejection or a database / runtime failure. The reply lookup runs inside
+     * the caught path too: a command failure must not reach the worker loop, which
+     * catches neither HilosException nor its database children.
      *
      * @param CommandRequestDTO $data Command request carrying the session token and target user id
-     * @throws HilosException On an unexpected database or runtime failure outside the caught core path
      */
     private function handleImpersonateStart(CommandRequestDTO $data): void
     {
@@ -191,7 +193,8 @@ final class ChatAgent extends AbstractAgent
 
         try {
             $this->startImpersonation($sessionToken, $targetUserId);
-        } catch (ValidationException $e) {
+            $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
+        } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
             return;
@@ -200,7 +203,7 @@ final class ChatAgent extends AbstractAgent
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             ChatCommandConstants::FIELD_SESSION_TOKEN => $sessionToken,
             ChatCommandConstants::FIELD_EFFECTIVE_USER_ID => $targetUserId,
-            ChatCommandConstants::FIELD_IMPERSONATOR => Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId,
+            ChatCommandConstants::FIELD_IMPERSONATOR => $impersonatorId,
         ]));
     }
 
@@ -208,21 +211,22 @@ final class ChatAgent extends AbstractAgent
      * CLI command wrapper over {@see self::stopImpersonation()}: parses the token
      * from the command payload, captures the admin to restore before the marker is
      * cleared, runs the shared core, and replies ok with the restored effective
-     * user, or an error message on a guard rejection.
+     * user, or an error message on a guard rejection or a database / runtime
+     * failure. The marker lookup runs inside the caught path too: a command failure
+     * must not reach the worker loop, which catches neither HilosException nor its
+     * database children.
      *
      * @param CommandRequestDTO $data Command request carrying the session token
-     * @throws HilosException On an unexpected database or runtime failure outside the caught core path
      */
     private function handleImpersonateStop(CommandRequestDTO $data): void
     {
         $sessionToken = (string)($data->payload[ChatCommandConstants::FIELD_SESSION_TOKEN] ?? '');
 
-        // Captured before the core clears the marker; the restored effective user.
-        $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
-
         try {
+            // Captured before the core clears the marker; the restored effective user.
+            $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
             $this->stopImpersonation($sessionToken);
-        } catch (ValidationException $e) {
+        } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
             return;
@@ -346,7 +350,6 @@ final class ChatAgent extends AbstractAgent
      * command channel; authorization is the channel's (operator-only) job.
      *
      * @param CommandRequestDTO $data Command request carrying the survivor and loser user ids
-     * @throws HilosException On an unexpected failure outside the caught merge path
      */
     private function handleAccountMergeCommand(CommandRequestDTO $data): void
     {
@@ -621,6 +624,8 @@ final class ChatAgent extends AbstractAgent
      *
      * @param string $acceptKey Connection accept key to re-point
      * @param ?int $userId User id to bind the connection to, or null for anonymous
+     * @throws RtActionsCollectionNameNullException When the runtime connection collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the connection truth source
      */
     protected function bindConnectionUser(string $acceptKey, ?int $userId): void
     {

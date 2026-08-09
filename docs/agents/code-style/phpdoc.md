@@ -138,6 +138,33 @@ changed `@throws`. Verify where each exception originates, whether the callee
 documents it, whether the caller can act on it, and whether any kept summary
 still describes the local behavior.
 
+### Why this rule is the one that rots
+
+`@throws` is missed more systematically than any other rule in this guide, and
+the four reasons are worth knowing, because they say where to spend the effort:
+
+1. **Nothing pushes back while you write.** PHP has no checked exceptions, the
+   IDE stays quiet, and the tests stay green. Breaking this rule produces no
+   feedback at all, at any point.
+2. **It is the only style rule you cannot satisfy from one screen.** Declaring
+   `@throws` means reading the PHPDoc of every callee, and of *their* callees.
+   The cost of compliance grows with stack depth; the cost of violation is zero.
+3. **The contract rots at a distance.** It breaks not when this method is
+   edited, but when a `throw` appears two floors below it. Nobody walks the
+   callers of the callers at that moment.
+4. **A wrong tag is worse than a missing one.** A gap reads as "the author did
+   not say"; a wrong tag reads as a reliable answer, so the caller catches the
+   wrong thing — or, worse, catches nothing. `ServerInterface::start()`
+   declaring no throws over an `AbstractServer::start()` that throws
+   `SocketException` was exactly this, and everyone reading through the
+   interface was sure the call was safe.
+
+Consequence: **until there is a machine check, the callee audit on every edit is
+the only defense** — which is why it is written above as a step, not as advice.
+The machine check itself is a leaf of its own: propagating documented `@throws`
+through call chains needs type resolution, not tokens, so it cannot join the
+token guards in [automated-checks.md](automated-checks.md).
+
 ## Example
 
 ```php

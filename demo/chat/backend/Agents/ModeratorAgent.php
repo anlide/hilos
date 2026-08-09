@@ -332,7 +332,6 @@ final class ModeratorAgent extends AbstractAgent
      * Builds user display-name moderation prompt messages.
      *
      * @return list<Message> System and user messages for LLM
-     * @throws HilosException When moderation rule lookup fails
      */
     private function buildRenameModerationMessages(): array
     {

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
+use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
+use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\Exception\BackupScheduleException;
@@ -294,6 +297,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * @throws AgentException When routing a signal to its agent fails (no suitable
      *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws SocketException When the WebSocket server cannot be opened for the ready workers
      */
     public function run(): void
     {
@@ -575,6 +579,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Start WebSocket server
      *
      * Starts WebSocket server when workers are ready.
+     *
+     * @throws SocketException When the WebSocket socket cannot be created, bound or listened on
      */
     private function startWebSocketServer(): void
     {
@@ -612,6 +618,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Runs every main-loop iteration after the workers are ready. Opens the socket when every
      * required agent has reported agent_started; while they are pending it logs at most once per
      * READINESS_LOG_INTERVAL, and opens the socket degraded once readinessTimeout elapses.
+     *
+     * @throws SocketException When opening the WebSocket server fails; a daemon without its only
+     *     client entry point must not keep running
      */
     private function tickReadiness(): void
     {
@@ -1271,9 +1280,14 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
      * Updates subscriptions in Hilos::$sr for subscribe/unsubscribe/update_subscription signals.
      * This must be called BEFORE routing, as routing may depend on current subscriptions.
      *
+     * An update aimed at a subscription the client does not hold is logged and dropped:
+     * the signal arrives from the browser, so it must not escape into the daemon loop.
+     * Only the three subscription exceptions are contained here - a broader catch would
+     * hide real router failures.
+     *
      * @param SignalDTO $signal Signal DTO
      */
-    private function updateSubscriptions(SignalDTO $signal): void
+    protected function updateSubscriptions(SignalDTO $signal): void
     {
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
@@ -1292,7 +1306,13 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 if (!($signal->data instanceof WebSocketPageUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->updatePageSubscription($signal->data->page ?? $signalName, $signal->data);
+                $updatedPage = $signal->data->page ?? $signalName;
+                try {
+                    Hilos::$sr->updatePageSubscription($updatedPage, $signal->data);
+                } catch (PageSubscriptionMismatchException | PageSubscriptionNotFoundException $e) {
+                    Logger::error("Dropped {$signalType} for page '{$updatedPage}': {$e->getMessage()}");
+                    return;
+                }
                 Hilos::$ac?->updatePageSession($signal->data->acceptKey, $signal->data->params);
                 break;
 
@@ -1319,7 +1339,13 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 if (!($signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->updateGroupSubscription($signal->data->group ?? $signalName, $signal->data);
+                $updatedGroup = $signal->data->group ?? $signalName;
+                try {
+                    Hilos::$sr->updateGroupSubscription($updatedGroup, $signal->data);
+                } catch (GroupSubscriptionNotFoundException $e) {
+                    Logger::error("Dropped {$signalType} for group '{$updatedGroup}': {$e->getMessage()}");
+                    return;
+                }
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:

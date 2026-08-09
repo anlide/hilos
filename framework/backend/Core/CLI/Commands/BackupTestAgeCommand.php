@@ -15,6 +15,11 @@ use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Environment\Exception\EnvKeyInvalidException;
+use Hilos\Environment\Exception\EnvNotInCatalogException;
+use Hilos\Environment\Exception\EnvTypeMismatchException;
+use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
@@ -95,6 +100,11 @@ HELP;
      * @param array<string, mixed> $options Parsed options (--at | --days, optional --scope)
      * @param list<string> $args Positional args: [0] backup id
      * @return int Exit code (0 on success)
+     * @throws EnvInvalidValueException When the backup-directory catalog entry or value is invalid
+     * @throws EnvKeyInvalidException When the backup-directory key is invalid
+     * @throws EnvNotInCatalogException When the backup-directory key is not declared in the catalog
+     * @throws EnvTypeMismatchException When the backup-directory key is not cataloged as string
+     * @throws MissingEnvironmentVariableException When the backup directory is required but missing
      */
     protected function run(array $options, array $args): int
     {

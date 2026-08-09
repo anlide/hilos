@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\SocketException;
 
 /**
  * ServerInterface - Interface for all server implementations.
@@ -20,6 +21,7 @@ interface ServerInterface
      * Start server - create and bind socket.
      *
      * @return bool True on success
+     * @throws SocketException When socket create, bind or listen fails
      */
     public function start(): bool;
 
