@@ -24,12 +24,12 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
      * Creates group update subscription signal DTO.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param string $group Group name (empty for default)
+     * @param ?string $group Group name, null for the default
      * @param array<string, string> $params Route params for group
      */
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $group = '',
+        public readonly ?string $group = null,
         public readonly array $params = [],
     ) {
     }
@@ -50,7 +50,7 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
             self::ACCEPT_KEY => $this->acceptKey,
         ];
 
-        if ($this->group !== '') {
+        if ($this->group !== null) {
             $result[self::GROUP] = $this->group;
         }
 
@@ -69,9 +69,11 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
      */
     public static function fromArray(array $data): static
     {
+        $group = $data[self::GROUP] ?? null;
+
         return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            group: $data[self::GROUP] ?? '',
+            group: $group === '' ? null : $group,
             params: $data[self::PARAMS] ?? [],
         );
     }

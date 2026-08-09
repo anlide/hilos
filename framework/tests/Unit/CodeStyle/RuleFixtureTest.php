@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
@@ -25,6 +26,15 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/EmptySentinel.php:23 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/EmptySentinel.php:24 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'EMPTY-STRING-SENTINEL Bad/Core/Router/EmptySentinel.php:26 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:20 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
                     . '(see docs/agents/code-style/error-suppression.md)',
@@ -122,6 +132,12 @@ final class RuleFixtureTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule(), new MagicRepeatRule()];
+        return [
+            new PhpDocFqnRule(),
+            new RtStateReachRule(),
+            new ErrorSuppressionRule(),
+            new MagicRepeatRule(),
+            new EmptyStringSentinelRule(),
+        ];
     }
 }

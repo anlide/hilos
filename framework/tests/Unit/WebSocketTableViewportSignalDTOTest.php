@@ -65,7 +65,7 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $dto = WebSocketTableViewportSignalDTO::fromArray(['acceptKey' => 'ak']);
 
         $this->assertSame('ak', $dto->acceptKey);
-        $this->assertSame('', $dto->page);
+        $this->assertNull($dto->page);
         $this->assertSame('', $dto->tableKey);
         $this->assertSame([], $dto->filter);
         $this->assertSame('', $dto->sortField);

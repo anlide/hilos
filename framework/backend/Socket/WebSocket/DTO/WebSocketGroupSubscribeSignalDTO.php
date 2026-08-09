@@ -24,12 +24,12 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
      * Creates group subscribe signal DTO.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param string $group Group name
+     * @param ?string $group Group name, null when the signal name carries it
      * @param array<string, string> $params Route params
      */
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $group = '',
+        public readonly ?string $group = null,
         public readonly array $params = [],
     ) {
     }
@@ -50,7 +50,7 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
             self::ACCEPT_KEY => $this->acceptKey,
         ];
 
-        if ($this->group !== '') {
+        if ($this->group !== null) {
             $result[self::GROUP] = $this->group;
         }
 
@@ -69,9 +69,11 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
      */
     public static function fromArray(array $data): static
     {
+        $group = $data[self::GROUP] ?? null;
+
         return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            group: $data[self::GROUP] ?? '',
+            group: $group === '' ? null : $group,
             params: $data[self::PARAMS] ?? [],
         );
     }

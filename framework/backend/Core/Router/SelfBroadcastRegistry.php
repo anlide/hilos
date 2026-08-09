@@ -32,18 +32,15 @@ final class SelfBroadcastRegistry
     /**
      * Records a broadcast id so the originating worker can skip re-applying it.
      *
-     * No-op when either part is empty. Re-registering refreshes recency, and the
-     * oldest registration is evicted once the cap is exceeded.
+     * The queue methods of {@see SignalRouter} call this only when the payload names
+     * both parts, so this one holds no guard of its own. Re-registering refreshes
+     * recency, and the oldest registration is evicted once the cap is exceeded.
      *
      * @param string $collectionKey Collection key for sync
      * @param string $id Entity id (idString for DB, stateId for RT)
      */
     public function register(string $collectionKey, string $id): void
     {
-        if ($collectionKey === '' || $id === '') {
-            return;
-        }
-
         $key = $collectionKey . ':' . $id;
         unset($this->ids[$key]);
         $this->ids[$key] = true;

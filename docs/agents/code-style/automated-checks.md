@@ -12,6 +12,7 @@ rule.
 | `RT-STATE-REACH` | `getStateCollection()`, `getStateItem()`, and `$this->stateCollection` are used only in files under `Database/` or `Runtime/`, whatever the caller's role. | [rt-state.md](../runtime/rt-state.md) |
 | `ERROR-SUPPRESSION` | `@` silences a warning only under a `// warning-suppressed: <reason>` marker on the line directly above the call. Production roots only. | [error-suppression.md](error-suppression.md) |
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry, and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
+| `EMPTY-STRING-SENTINEL` | `??` falls back to an empty string literal, turning an absent value into a value. Inside the checked zone only. | [method-contracts.md](method-contracts.md) |
 
 `MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
 green run must not be read as "the magic-value rule is satisfied". It counts
@@ -28,6 +29,28 @@ twice and is reported. No such site exists in the scanned roots today. It is
 written down here rather than left to be rediscovered, because the way out of a
 hit is to argue with the document, and an argument needs to know what the rule
 actually does.
+
+`EMPTY-STRING-SENTINEL` is narrower than its document in the same way, and on
+purpose. It judges `??` and not the `: ''` branch of a ternary, because that
+branch is also how an optional fragment is rendered into a concatenation, and
+tokens cannot tell the two apart. It says nothing about `=== ''` either: those
+comparisons are how legitimate input is checked, and a machine ban on them would
+report the very code the document calls correct.
+
+### Why the rule reads a zone and not the whole tree
+
+`EMPTY-STRING-SENTINEL` fires only inside the path zone listed in the rule class —
+the signal spine (`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent/DTO`,
+`Core/Daemon`), the wire DTOs (`Socket/*/DTO`, `Cluster/Peer/DTO`) and `Hilos.php`.
+The zone is read relative to the scanned root, so a demo's own `Core/Router` is
+judged by the same entry as the framework's, and the fixtures repeat the same
+segments to be judged by the same code.
+
+The zone grows one phase at a time, and each phase pays off the records its
+predecessor froze. Turned on everywhere at once, the rule would have reported
+several hundred sites in one go: the baseline would then hold more exceptions
+than the tree holds clean code, and a list that large is read as a mute list
+rather than as owed work — which is the one thing the baseline must never become.
 
 The checker is not a second source of truth. Each rule points back at the
 document that owns it, and the failure line carries that path. Change the rule in

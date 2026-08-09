@@ -928,6 +928,10 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                     // Send signal to agent via worker server
                     $agentType = $destination->agentType;
                     $agentIndex = $destination->agentIndex;
+                    // Kept as it was: agentId is a required field of the message DTO,
+                    // and whether an incomplete payload must be rejected is HIL-532's
+                    // call. The destination always names an agent type here, so the
+                    // fallback is unreachable in practice.
                     $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex) ?? '';
                     $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
 
@@ -1279,15 +1283,16 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 if (!($signal->data instanceof WebSocketPageSubscribeSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->subscribeToPage($signal->data->page, $signal->data);
-                Hilos::$ac?->openPageSession($signal->data->acceptKey, $signal->data->page, $signal->data->params);
+                $page = $signal->data->page ?? $signalName;
+                Hilos::$sr->subscribeToPage($page, $signal->data);
+                Hilos::$ac?->openPageSession($signal->data->acceptKey, $page, $signal->data->params);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if (!($signal->data instanceof WebSocketPageUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->updatePageSubscription($signal->data->page, $signal->data);
+                Hilos::$sr->updatePageSubscription($signal->data->page ?? $signalName, $signal->data);
                 Hilos::$ac?->updatePageSession($signal->data->acceptKey, $signal->data->params);
                 break;
 
@@ -1307,21 +1312,21 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                 if (!($signal->data instanceof WebSocketGroupSubscribeSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->subscribeToGroup($signal->data->group, $signal->data);
+                Hilos::$sr->subscribeToGroup($signal->data->group ?? $signalName, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if (!($signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->updateGroupSubscription($signal->data->group, $signal->data);
+                Hilos::$sr->updateGroupSubscription($signal->data->group ?? $signalName, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
                 if (!($signal->data instanceof WebSocketGroupUnsubscribeSignalDTO)) {
                     return;
                 }
-                Hilos::$sr->unsubscribeFromGroup($signal->data->group, $signal->data);
+                Hilos::$sr->unsubscribeFromGroup($signal->data->group ?? $signalName, $signal->data);
                 break;
         }
     }

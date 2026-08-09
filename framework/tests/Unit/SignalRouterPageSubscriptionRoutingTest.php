@@ -193,6 +193,32 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
         );
     }
 
+    public function testPageSubscribeWithoutAPageBuildsNoRoute(): void
+    {
+        $this->assertSame(
+            [],
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                new SignalName(SignalName::EMPTY),
+                new WebSocketPageSubscribeSignalDTO('accept-key'),
+            )),
+        );
+    }
+
+    public function testTableViewportWithoutAPageBuildsNoRoute(): void
+    {
+        $this->assertSame(
+            [],
+            new SignalRouterTopologyTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::TABLE_VIEWPORT),
+                new SignalName(SignalName::EMPTY),
+                new WebSocketTableViewportSignalDTO('accept-key', tableKey: 'settings'),
+            )),
+        );
+    }
+
     /**
      * Creates a page subscribe signal for routing tests.
      *

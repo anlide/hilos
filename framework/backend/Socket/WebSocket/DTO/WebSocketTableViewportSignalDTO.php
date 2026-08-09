@@ -37,7 +37,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      * Creates a table viewport signal DTO.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param string $page Page the table belongs to
+     * @param ?string $page Page the table belongs to, null when the signal name carries it
      * @param string $tableKey Table key the viewport scopes
      * @param array<string, mixed> $filter Open filter map resolved by the concrete table
      * @param string $sortField Sort field, or '' for backend arrival order
@@ -47,7 +47,7 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
      */
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $page = '',
+        public readonly ?string $page = null,
         public readonly string $tableKey = '',
         public readonly array $filter = [],
         public readonly string $sortField = '',
@@ -71,11 +71,14 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     {
         $result = [
             self::ACCEPT_KEY => $this->acceptKey,
-            self::PAGE => $this->page,
             self::TABLE_KEY => $this->tableKey,
             self::OFFSET => $this->offset,
             self::LIMIT => $this->limit,
         ];
+
+        if ($this->page !== null) {
+            $result[self::PAGE] = $this->page;
+        }
 
         if ($this->filter !== []) {
             $result[self::FILTER] = $this->filter;
@@ -104,10 +107,11 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
         if (!is_array($sort)) {
             $sort = [];
         }
+        $page = $data[self::PAGE] ?? null;
 
         return new static(
             acceptKey: (string) ($data[self::ACCEPT_KEY] ?? ''),
-            page: (string) ($data[self::PAGE] ?? ''),
+            page: $page === null || $page === '' ? null : (string) $page,
             tableKey: (string) ($data[self::TABLE_KEY] ?? ''),
             filter: is_array($filter) ? $filter : [],
             sortField: is_string($sort[self::SORT_FIELD] ?? null) ? $sort[self::SORT_FIELD] : '',

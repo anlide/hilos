@@ -86,6 +86,19 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         );
     }
 
+    public function testGroupSubscribeWithoutAGroupBuildsNoRoute(): void
+    {
+        $this->assertSame(
+            [],
+            new SignalRouterGroupTopologyTestRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
+                new SignalName(SignalName::EMPTY),
+                new WebSocketGroupSubscribeSignalDTO('accept-key'),
+            )),
+        );
+    }
+
     /**
      * Creates a group subscribe signal for routing tests.
      *

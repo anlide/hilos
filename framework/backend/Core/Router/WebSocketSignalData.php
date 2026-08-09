@@ -15,8 +15,21 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class WebSocketSignalData extends BaseDTO implements SignalDataInterface
 {
+    /** @var ?string Target connection accept key (user delivery), null when unaddressed */
+    public readonly ?string $targetAcceptKey;
+
+    /** @var ?string Target group name (group delivery), null when unaddressed */
+    public readonly ?string $targetGroup;
+
+    /** @var ?string Accept key to exclude from broadcast, null when nothing is excluded */
+    public readonly ?string $excludeAcceptKey;
+
     /**
      * Creates WebSocket signal data with targeting metadata.
+     *
+     * An empty target is folded into null here, at the one place every delivery
+     * path passes through, so no reader below has to treat the empty string as a
+     * second spelling of "not addressed".
      *
      * @param SignalDataInterface $data Inner signal payload
      * @param ?string $targetAcceptKey Target connection accept key (user delivery)
@@ -25,10 +38,13 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      */
     public function __construct(
         public readonly SignalDataInterface $data,
-        public readonly ?string $targetAcceptKey = null,
-        public readonly ?string $targetGroup = null,
-        public readonly ?string $excludeAcceptKey = null,
+        ?string $targetAcceptKey = null,
+        ?string $targetGroup = null,
+        ?string $excludeAcceptKey = null,
     ) {
+        $this->targetAcceptKey = $targetAcceptKey === '' ? null : $targetAcceptKey;
+        $this->targetGroup = $targetGroup === '' ? null : $targetGroup;
+        $this->excludeAcceptKey = $excludeAcceptKey === '' ? null : $excludeAcceptKey;
     }
 
     /**

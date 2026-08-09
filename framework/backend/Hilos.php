@@ -509,8 +509,8 @@ abstract class Hilos
         $pageRoutes = static::getPageRoutes();
         $actionAgentRoutes = [];
         foreach (static::getPageActionRoutes() as $action => $page) {
-            $agentType = $pageRoutes[$page] ?? '';
-            if ($agentType === '') {
+            $agentType = $pageRoutes[$page] ?? null;
+            if ($agentType === null) {
                 continue;
             }
 
@@ -585,8 +585,8 @@ abstract class Hilos
         $signalAgentRoutes = [];
         foreach (static::getPageSignalRoutes() as $signalType => $route) {
             if (is_string($route)) {
-                $agentType = $pageRoutes[$route] ?? '';
-                if ($agentType !== '') {
+                $agentType = $pageRoutes[$route] ?? null;
+                if ($agentType !== null) {
                     $signalAgentRoutes[$signalType] = $agentType;
                 }
                 continue;
@@ -594,8 +594,8 @@ abstract class Hilos
 
             $signalAgentRoutes[$signalType] = [];
             foreach ($route as $signalName => $page) {
-                $agentType = $pageRoutes[$page] ?? '';
-                if ($agentType !== '') {
+                $agentType = $pageRoutes[$page] ?? null;
+                if ($agentType !== null) {
                     $signalAgentRoutes[$signalType][$signalName] = $agentType;
                 }
             }

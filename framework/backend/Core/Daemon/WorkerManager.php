@@ -756,6 +756,11 @@ abstract class WorkerManager extends BaseManager
      * state when it sent the sync to the daemon. The echoed worker message
      * must therefore neither re-apply nor re-emit the same fact.
      *
+     * The emptiness check stays until HIL-532 rules on whether an incomplete
+     * signal payload must be rejected by fromArray(): this side reads a payload
+     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * code minted.
+     *
      * @param DbSyncSignalDataInterface $signalData DB sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
@@ -778,6 +783,11 @@ abstract class WorkerManager extends BaseManager
      * row-sync sibling this consumes nothing: the payload carries the emitter
      * identity and the check is a comparison with this process's own.
      *
+     * The emptiness check stays until HIL-532 rules on whether an incomplete
+     * signal payload must be rejected by fromArray(): this side reads a payload
+     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * code minted.
+     *
      * @param DbSyncClearedSignalData $signalData DB clear sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
@@ -792,6 +802,11 @@ abstract class WorkerManager extends BaseManager
 
     /**
      * Consume an RT sync self-broadcast marker before applying a daemon echo.
+     *
+     * The emptiness check stays until HIL-532 rules on whether an incomplete
+     * signal payload must be rejected by fromArray(): this side reads a payload
+     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * code minted.
      *
      * @param RtSyncSignalDataInterface $signalData RT sync payload
      * @return bool True when this worker should ignore the daemon echo
@@ -1072,7 +1087,7 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::GROUP_SUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupSubscribeSignalDTO) {
                     $agent->onSignalGroupSubscribe($signalData, $source, $name);
-                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    $group = $signalData->group ?? $name;
                     Hilos::$sr?->subscribeToGroup($group, $signalData);
                 } else {
                     Logger::error("onSignalGroupSubscribe - invalid signal data type: " . get_class($signalData));
@@ -1082,7 +1097,7 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupUnsubscribeSignalDTO) {
                     $agent->onSignalGroupUnsubscribe($signalData, $source, $name);
-                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    $group = $signalData->group ?? $name;
                     Hilos::$sr?->unsubscribeFromGroup($group, $signalData);
                 } else {
                     Logger::error("onSignalGroupUnsubscribe - invalid signal data type: " . get_class($signalData));
@@ -1092,7 +1107,7 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketGroupUpdateSubscriptionSignalDTO) {
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
-                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    $group = $signalData->group ?? $name;
                     try {
                         Hilos::$sr?->updateGroupSubscription($group, $signalData);
                     } catch (Throwable $e) {
@@ -1277,7 +1292,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $newPage = $dto->page !== '' ? $dto->page : $name;
+        $newPage = $dto->page ?? $name;
         $newParams = $dto->params;
         if (!isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
             return;
@@ -1318,7 +1333,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $page = $dto->page !== '' ? $dto->page : $name;
+        $page = $dto->page ?? $name;
         $this->pageSubscriptionByAcceptKey[$acceptKey] = [
             'page' => $page,
             'params' => $dto->params,
@@ -1345,7 +1360,7 @@ abstract class WorkerManager extends BaseManager
             $this->pageSubscriptionByAcceptKey[$acceptKey]['params'],
             $dto->params,
         );
-        $page = $dto->page !== '' ? $dto->page : $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
+        $page = $dto->page ?? $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
         try {
             Hilos::$sr?->updatePageSubscription($page, $dto);
         } catch (Throwable $e) {
@@ -1614,6 +1629,11 @@ abstract class WorkerManager extends BaseManager
             // SignalDTO by its signal type and WebSocket target metadata.
             $agentType = $signal->signalSource->getType();
             $agentIndex = $signal->signalSource->getIndex();
+            // An unaddressed message is the normal case here, not a missing value:
+            // BrowserContext flushes carry SignalSource::WORKER with no agent type,
+            // and AgentManagerDaemon::handleAgentMessage() never reads this field.
+            // Making it optional is HIL-532's call, so the empty id stays for now
+            // and is recorded in the code-style baseline under that leaf.
             $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex) ?? '';
 
             $this->daemonClient->send(new WorkerAgentMessageDTO(

@@ -24,12 +24,12 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
      * Creates page update subscription signal DTO.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param string $page Page name to update subscription for
+     * @param ?string $page Page name to update subscription for, null when the signal name carries it
      * @param array<string, string> $params Route params for the page
      */
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $page = '',
+        public readonly ?string $page = null,
         public readonly array $params = [],
     ) {
     }
@@ -50,7 +50,7 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
             self::ACCEPT_KEY => $this->acceptKey,
         ];
 
-        if ($this->page !== '') {
+        if ($this->page !== null) {
             $result[self::PAGE] = $this->page;
         }
 
@@ -69,9 +69,11 @@ class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements Signal
      */
     public static function fromArray(array $data): static
     {
+        $page = $data[self::PAGE] ?? null;
+
         return new static(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            page: $data[self::PAGE] ?? '',
+            page: $page === '' ? null : $page,
             params: $data[self::PARAMS] ?? [],
         );
     }

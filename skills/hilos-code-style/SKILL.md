@@ -33,7 +33,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
   one file at a time.
 - Internal backend API contracts: `docs/agents/code-style/internal-backend-api.md`
 - Method command/predicate/result contracts:
-  `docs/agents/code-style/method-contracts.md`
+  `docs/agents/code-style/method-contracts.md` - also owns the empty string as a
+  marker for "no value": read the section before writing `?? ''`. Checked
+  automatically by `EMPTY-STRING-SENTINEL` inside its path zone.
 - Static factory `self`/`static` return contract:
   `docs/agents/code-style/static-factories.md` - read when adding or changing a
   static factory (`fromArray`, `fromRow`, `create`, named constructors).

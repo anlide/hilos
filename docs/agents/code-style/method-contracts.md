@@ -43,6 +43,56 @@ By contrast, `startRequest(): bool` or `consumeResult(): ?Result` should be
 `void`/`Result` with exceptions for busy clients, transport failures, malformed
 responses, or missing required configuration.
 
+## The empty string is not a value meaning "no value"
+
+Checked automatically: `EMPTY-STRING-SENTINEL`
+(see [automated-checks.md](automated-checks.md)).
+
+A violation is an empty string the code **mints itself** in place of a value that
+is absent, on an internal boundary — between framework components, in a DTO, on
+the worker-daemon pipe:
+
+```php
+$agentType = $pageRoutes[$page] ?? '';   // wrong: absence becomes a value
+if ($agentType === '') {
+    continue;
+}
+```
+
+The cure is the type, not a constant and not `empty()`:
+
+- **Optional field** — the one whose emptiness means "take the default": make it
+  `?string` and let it be `null`.
+- **Required field** — the one whose emptiness means "the payload is broken":
+  make it a field that cannot be left unfilled, and reject a payload without it
+  with an exception.
+
+```php
+$agentType = $pageRoutes[$page] ?? null;
+if ($agentType === null) {
+    continue;
+}
+```
+
+`empty()` is not a shorter spelling of either check: it also treats `'0'`, `0`
+and `[]` as absent, so it answers a different question than the one asked.
+
+### What is not a violation
+
+Checking an incoming string for emptiness is the opposite of minting one, and
+stays right where it is. Input is anything the process did not author itself:
+project topology constants (`PAGES`, `AGENTS`, `ACTIONS`, `AGENT_SIGNALS`) and
+their validators, env, argv, `/proc`, the output of an external process, strings
+read from the database, HTTP and SMTP responses, and user input. Normalizing such
+an input to `null` at the boundary is how it stops being an input problem:
+`ActionRouteConfig::getPageForAction()` and `SignalRouteConfig::getPageForSignal()`
+both answer `?string` and never hand an empty page name downstream.
+
+Samples of the convention already in the tree: `Cluster/Peer/DTO/**` (an empty
+required field raises `PeerTransportException`, an optional one is normalized
+`'' -> null`) and `Socket/Client/WebSocketClient::onFrame()` (an empty frame field
+raises `InvalidFrameException`).
+
 ## Polling APIs
 
 For async polling APIs, keep state checks separate from state consumption:

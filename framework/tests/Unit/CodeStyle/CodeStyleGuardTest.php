@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
@@ -111,7 +112,13 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function rules(): array
     {
-        return [new PhpDocFqnRule(), new RtStateReachRule(), new ErrorSuppressionRule(), new MagicRepeatRule()];
+        return [
+            new PhpDocFqnRule(),
+            new RtStateReachRule(),
+            new ErrorSuppressionRule(),
+            new MagicRepeatRule(),
+            new EmptyStringSentinelRule(),
+        ];
     }
 
     /**

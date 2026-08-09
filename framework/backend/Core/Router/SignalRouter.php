@@ -290,7 +290,10 @@ class SignalRouter
 
     /**
      * Queue DB sync signal (from Object_::sync/delete).
-     * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply skip.
+     * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply
+     * skip when the payload names both; an unnamed one is broadcast without the
+     * self-apply guard, exactly as before, because a payload that cannot be deduped
+     * still has to reach the other processes.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
@@ -301,7 +304,9 @@ class SignalRouter
             return;
         }
 
-        $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
+        if ($signalData->collectionKey !== '' && $signalData->idString !== '') {
+            $this->dbSelfBroadcast->register($signalData->collectionKey, $signalData->idString);
+        }
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
@@ -360,14 +365,19 @@ class SignalRouter
 
     /**
      * Queue RT sync signal (from RtActions write operations).
-     * Registers (collectionKey, stateId) for self-apply skip.
+     * Registers (collectionKey, stateId) for self-apply skip when the payload names
+     * both; an unnamed one is broadcast without the self-apply guard, exactly as
+     * before, because a payload that cannot be deduped still has to reach the other
+     * processes.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
      * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId
      */
     public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
     {
-        $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
+        if ($signalData->collectionKey !== '' && $signalData->stateId !== '') {
+            $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
+        }
 
         $this->queueSignal(
             signalSource: new SignalSource(SignalSource::RT),
@@ -688,17 +698,22 @@ class SignalRouter
         $seen = [];
         $unique = [];
         foreach ($destinations as $destination) {
-            $key = match (true) {
+            $keyParts = match (true) {
                 $destination instanceof AgentDestination =>
-                    AgentDestination::class . self::DESTINATION_KEY_SEPARATOR . $destination->agentType
-                        . self::DESTINATION_KEY_SEPARATOR . ($destination->agentIndex ?? ''),
+                    [AgentDestination::class, $destination->agentType, $destination->agentIndex],
                 $destination instanceof WebSocketDestination =>
-                    WebSocketDestination::class . self::DESTINATION_KEY_SEPARATOR . $destination->acceptKey,
+                    [WebSocketDestination::class, $destination->acceptKey],
                 $destination instanceof AllClientsDestination =>
-                    AllClientsDestination::class . self::DESTINATION_KEY_SEPARATOR
-                        . ($destination->excludeAcceptKey ?? ''),
-                default => (string) spl_object_id($destination),
+                    [AllClientsDestination::class, $destination->excludeAcceptKey],
+                default => [(string) spl_object_id($destination)],
             };
+            // A part that is absent contributes nothing to the key rather than an
+            // empty segment: the key is built from typed fields, not from strings
+            // that had to stand in for a missing one.
+            $key = implode(self::DESTINATION_KEY_SEPARATOR, array_filter(
+                $keyParts,
+                static fn(string|int|null $part): bool => $part !== null,
+            ));
             if (isset($seen[$key])) {
                 continue;
             }
@@ -793,14 +808,18 @@ class SignalRouter
         $data = $signal->data;
 
         $page = match ($signalType) {
-            SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : '',
-            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : '',
-            SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : '',
-            SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),
-            default => '',
+            SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : null,
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : null,
+            SignalTypeConstants::TABLE_VIEWPORT => $data instanceof WebSocketTableViewportSignalDTO ? $data->page : null,
+            // Unsubscribe carries the page in the signal name, which is a plain
+            // string off the wire: an empty one is normalized here, not below.
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName() === ''
+                ? null
+                : $signal->signalName->getName(),
+            default => null,
         };
 
-        if ($page === '') {
+        if ($page === null) {
             return [];
         }
 
@@ -848,15 +867,17 @@ class SignalRouter
         $data = $signal->data;
 
         $group = match ($signalType) {
-            SignalTypeConstants::GROUP_SUBSCRIBE => $data instanceof WebSocketGroupSubscribeSignalDTO ? $data->group : '',
-            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $data instanceof WebSocketGroupUpdateSubscriptionSignalDTO ? $data->group : '',
+            SignalTypeConstants::GROUP_SUBSCRIBE => $data instanceof WebSocketGroupSubscribeSignalDTO ? $data->group : null,
+            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $data instanceof WebSocketGroupUpdateSubscriptionSignalDTO ? $data->group : null,
+            // The name is a plain string off the wire; an empty one is normalized
+            // here so the check below has a single shape to read.
             SignalTypeConstants::GROUP_UNSUBSCRIBE => $data instanceof WebSocketGroupUnsubscribeSignalDTO
                 ? $data->group
-                : $signal->signalName->getName(),
-            default => '',
+                : ($signal->signalName->getName() === '' ? null : $signal->signalName->getName()),
+            default => null,
         };
 
-        if ($group === '') {
+        if ($group === null) {
             return [];
         }
 
@@ -972,7 +993,7 @@ class SignalRouter
         switch ($signalType) {
             case SignalTypeConstants::WS_USER:
                 // Return single client destination
-                if ($targetAcceptKey !== null && $targetAcceptKey !== '') {
+                if ($targetAcceptKey !== null) {
                     $destinations[] = new WebSocketDestination($targetAcceptKey);
                 }
                 break;
@@ -994,7 +1015,7 @@ class SignalRouter
 
             case SignalTypeConstants::WS_GROUP:
                 // Return clients subscribed to targetGroup, excluding excludeAcceptKey
-                if ($targetGroup !== null && $targetGroup !== '') {
+                if ($targetGroup !== null) {
                     foreach ($this->subscriptions->acceptKeysForGroup($targetGroup) as $acceptKey) {
                         if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                             continue;

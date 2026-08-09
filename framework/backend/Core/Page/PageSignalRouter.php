@@ -74,7 +74,7 @@ class PageSignalRouter
      */
     public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
-        $page = $data->page !== '' ? $data->page : $name;
+        $page = $data->page ?? $name;
         if ($page === '') {
             Logger::error('Page subscribe without page name');
             return;
@@ -218,9 +218,9 @@ class PageSignalRouter
      */
     public function dispatchAction(WebSocketActionSignalDTO $data, string $source): void
     {
-        $page = $this->actionRoutes->getPageForAction($data->action) ?? '';
+        $page = $this->actionRoutes->getPageForAction($data->action);
 
-        if ($page === '') {
+        if ($page === null) {
             Logger::error("Action routing failed: action={$data->action}, acceptKey={$data->acceptKey}");
             return;
         }

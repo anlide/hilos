@@ -28,16 +28,6 @@ final class SelfBroadcastRegistryTest extends TestCase
         $this->assertFalse($registry->consume('users', '5'));
     }
 
-    public function testEmptyPartsAreIgnored(): void
-    {
-        $registry = new SelfBroadcastRegistry();
-        $registry->register('', '5');
-        $registry->register('users', '');
-
-        $this->assertFalse($registry->consume('', '5'));
-        $this->assertFalse($registry->consume('users', ''));
-    }
-
     public function testEvictsOldestWhenCapExceeded(): void
     {
         $registry = new SelfBroadcastRegistry(maxEntries: 2);

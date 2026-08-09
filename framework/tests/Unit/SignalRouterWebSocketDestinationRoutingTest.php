@@ -40,6 +40,43 @@ final class SignalRouterWebSocketDestinationRoutingTest extends TestCase
         );
     }
 
+    public function testAnEmptyTargetIsFoldedIntoNullOnConstruction(): void
+    {
+        $data = new WebSocketSignalData(
+            data: new SignalData(),
+            targetAcceptKey: '',
+            targetGroup: '',
+            excludeAcceptKey: '',
+        );
+
+        $this->assertNull($data->targetAcceptKey);
+        $this->assertNull($data->targetGroup);
+        $this->assertNull($data->excludeAcceptKey);
+    }
+
+    public function testAnEmptyTargetAcceptKeyAddressesNobodyRatherThanEveryone(): void
+    {
+        $this->assertSame(
+            [],
+            new SignalRouter()->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::WS_USER),
+                new SignalName('user_signal'),
+                new WebSocketSignalData(data: new SignalData(), targetAcceptKey: ''),
+            )),
+        );
+    }
+
+    public function testAnEmptyExcludeKeyBroadcastsToEveryConnection(): void
+    {
+        $this->assertEquals(
+            [
+                new AllClientsDestination(null),
+            ],
+            new SignalRouter()->getDestinations($this->broadcastSignal('')),
+        );
+    }
+
     /**
      * Builds a ws_all_connected broadcast signal as emitted by sendToAllConnected().
      *
