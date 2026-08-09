@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import { login, logout, PASSWORD, register, uniqueEmail } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
 // the live daemon and built frontend. It covers the surfaces that landed with the
@@ -25,14 +26,14 @@ test('registers through the gated profile surface, auto-logs-in, and resumes it 
 }) => {
   const email = uniqueEmail()
 
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   // Anonymous: no session user yet, so the chat composer prompts to sign in.
   await expect(page.getByTestId('message-signin')).toBeVisible()
 
   // The framework profile page is AUTHENTICATED-guarded: an anonymous subscribe
   // 401s and the gate mounts the sign-in surface in place of the profile view.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
@@ -52,7 +53,7 @@ test('registers through the gated profile surface, auto-logs-in, and resumes it 
   // Logout reverts to anonymous; re-reaching the gated profile 401s again and the
   // surface mounts anew.
   await logout(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
@@ -63,7 +64,7 @@ test('signs in through the gated profile surface and resumes the preserved subsc
   const email = uniqueEmail()
 
   // Seed an account through the surface, then return to anonymous.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await register(page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -72,7 +73,7 @@ test('signs in through the gated profile surface and resumes the preserved subsc
   // Anonymous again: the gated profile re-mounts the surface (login mode by
   // default). Signing in with the seeded credentials resumes the same preserved
   // subscription in place — no navigation.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await login(page, email, PASSWORD)
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -98,7 +99,7 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
   // current-user fan-out (HIL-161) that signs the visitor in. This is the login-path
   // e2e that was missing while the callback handed the pending op to the agent
   // through a never-synced runtime collection — the copy the agent read stayed empty.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
@@ -111,7 +112,7 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
 
   // The upgraded session persists: the gated profile now resolves in place, with the
   // OAuth identity bound to the freshly created account.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
@@ -122,13 +123,13 @@ test('rejects a wrong password and an unknown email with the same generic messag
   const email = uniqueEmail()
 
   // Seed a known account, then log out so the login path is exercised.
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await register(page, email)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await logout(page)
 
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // Wrong password for a real email → generic rejection, still gated.
@@ -150,7 +151,7 @@ test('rejects a wrong password and an unknown email with the same generic messag
 test('lets an anonymous visitor read the chat but gates sending behind the sign-in surface', async ({
   page,
 }) => {
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // Anonymous read: the live event stream renders without a session.

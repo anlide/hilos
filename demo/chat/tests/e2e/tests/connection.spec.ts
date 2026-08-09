@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test'
 
 import { signUp } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the
 // live daemon through the test nginx /ws WebSocket upgrade proxy, and the
 // Connection machine reports `connected` on the page.
 test('websocket transport reaches connected', async ({ page }) => {
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
 
@@ -32,7 +33,7 @@ test('subscribes the URL page on load', async ({ page }) => {
     })
   })
 
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await expect
@@ -85,7 +86,7 @@ test('renders the own registration notice in the event stream', async ({
 // bots seeded the section still renders with its empty state, proving the list
 // is wired end-to-end.
 test('renders the bot list section', async ({ page }) => {
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await expect(page.getByTestId('bots-header')).toBeVisible()

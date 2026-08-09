@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { setAdmin } from '../helpers/adminGrant'
 import { signUp } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Backup admin e2e (/hilos/backup): the one flow a human would try — press the
 // button, watch the run, read the row, delete it. It is deliberately end-to-end
@@ -18,7 +19,7 @@ async function openBackups(page: import('@playwright/test').Page): Promise<void>
   const { userId } = await signUp(page)
   await setAdmin(userId, true)
 
-  await page.goto('/hilos/backup')
+  await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -30,7 +31,7 @@ async function openBackups(page: import('@playwright/test').Page): Promise<void>
 test('closes the backup page to a guest', async ({ page }) => {
   // Anonymous: the ADMIN level denies the subscription with a 401 before any
   // page payload is sent; the auth gate renders sign-in in place of the page.
-  await page.goto('/hilos/backup')
+  await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
@@ -48,7 +49,7 @@ test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
 
   // Signed in but not admin: 403, the error page replaces the backup surface.
   await signUp(page)
-  await page.goto('/hilos/backup')
+  await gotoPage(page, '/hilos/backup')
   const error = page.getByTestId('page-error')
   await expect(error).toBeVisible()
   await expect(error).toHaveAttribute('data-error-code', '403')

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoPage } from '../helpers/page'
 
 // Footer + framework static pages e2e: the SDK shell renders the framework's
 // footer links (HILOS_FOOTER_LINKS), and clicking one navigates — over the live
@@ -11,7 +12,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
     fullLoads += 1
   })
 
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   const loadsAfterColdLoad = fullLoads
 
@@ -43,7 +44,7 @@ test('footer links navigate to framework static pages', async ({ page }) => {
 // region (the min-h-0 flex chain), so messages scroll inside the card rather
 // than growing the document.
 test('the event stream is its own scroll region', async ({ page }) => {
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   const overflowY = await page

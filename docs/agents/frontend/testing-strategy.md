@@ -46,6 +46,28 @@ e2e interacts through **stable element ids** only: every interactive element
 carries an id, and tests never use text- or position-based selectors. This keeps
 e2e robust against copy and layout changes.
 
+## Opening a page — `gotoPage`, never `goto`
+
+A spec opens a page through the demo's **`gotoPage(page, path)`** wrapper, or
+**`gotoRefusedPage(page, path)`** when the point of the spec is that the server
+refuses it. **Never call Playwright's `goto` directly**; `E2E-PAGE-GOTO`
+(`framework/frontend/codestyle/e2eGoto.ts`) reports every direct call outside the
+`helpers/page.ts` that owns the wrappers.
+
+`goto` waits for the document and nothing else. The page behind it is a live
+subscription, and its answer — the payload, or a refusal the gate raises — comes
+one round trip later; until it lands the routed outlet holds the page back. A
+spec that navigated and asserted straight away was therefore racing the round
+trip: it passed while the DOM query outran the answer, and failed when it did
+not. That failure reads as a flaky element, which is why such a race can sit in a
+suite for days being retried instead of being fixed. The wrappers wait on the
+outlet's own state (`hilos-page-state`: `loading` → `ready` or `error`), so the
+spec resumes exactly when the page is settled and a refusal is reported as a
+refusal rather than as a missing element.
+
+The same applies to the second window of a two-window spec, and to any helper
+that navigates on a spec's behalf.
+
 ## Filling inputs — keyboard, not `fill`
 
 Enter values the way a user does. **Do not set a value with `fill(value)`** — a

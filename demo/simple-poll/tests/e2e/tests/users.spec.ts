@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { gotoPage } from '../helpers/page'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own self-registered row is present, search filters
@@ -7,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Open the users admin and wait for the live table's first row. */
 async function openUsers(page: Page): Promise<void> {
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -30,7 +31,7 @@ test('lists users in the framework table and opens a detail page', async ({
     fullLoads += 1
   })
 
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -56,7 +57,7 @@ test('filters the users table from the search box', async ({ page }) => {
   // deleting these lines once HIL-553 lands the demo identity + grant.
   test.fixme()
 
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
     page.locator('[data-id^="hilos-users-open-"]').first(),
@@ -82,7 +83,7 @@ test('renames a user from the detail page and re-renders live', async ({
   // deleting these lines once HIL-553 lands the demo identity + grant.
   test.fixme()
 
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
@@ -105,7 +106,7 @@ test('renames a user from the detail page and re-renders live', async ({
 test.fixme('shows the connected user as online with a live session', async ({
   page,
 }) => {
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 

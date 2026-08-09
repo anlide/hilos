@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
 import { signUp } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -13,7 +14,7 @@ import { signUp } from '../helpers/session'
 
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
-  await page.goto('/hilos/settings')
+  await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -64,7 +65,7 @@ test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos')
+  await gotoPage(page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The skip link targets the main landmark.

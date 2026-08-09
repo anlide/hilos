@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
+import { gotoPage } from '../helpers/page'
 
 // Moderation admin e2e: /hilos/admin_moderator renders the prompt-pieces table
 // over the live socket, and the create / edit / delete dialogs round-trip through
@@ -10,7 +11,7 @@ import { signUpAdmin } from '../helpers/adminGrant'
 
 /** Open the moderation admin and wait for the live table. */
 async function openModerator(page: Page): Promise<void> {
-  await page.goto('/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -28,7 +29,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
     fullLoads += 1
   })
 
-  await page.goto('/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('admin-moderator-view')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -69,7 +70,7 @@ test('creates, edits, and deletes a prompt piece through the live table', async 
 test('saving an edit with no changes still closes the dialog', async ({
   page,
 }) => {
-  await page.goto('/hilos/admin_moderator')
+  await gotoPage(page, '/hilos/admin_moderator')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
@@ -87,7 +88,7 @@ test('saving an edit with no changes still closes the dialog', async ({
 
 test('reaches the moderation admin from the dashboard', async ({ page }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos')
+  await gotoPage(page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await page.getByTestId('dashboard-card-admin_moderator').click()

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
+import { gotoPage } from '../helpers/page'
 
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
@@ -14,7 +15,7 @@ import { signUpAdmin } from '../helpers/adminGrant'
 
 /** Open the settings page and wait for the live table. */
 async function openSettings(page: Page): Promise<void> {
-  await page.goto('/hilos/settings')
+  await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }

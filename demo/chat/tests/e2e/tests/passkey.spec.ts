@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import { logout, signUp } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Passkey (WebAuthn) e2e (HIL-284): the register -> login round-trip driven
 // through the live daemon and built frontend, with a CDP virtual authenticator
@@ -57,7 +58,7 @@ test('enrolls a passkey in the profile and signs back in with it username-first'
 
   // Establish a password account and land signed-in on the gated profile.
   const { email } = await signUp(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 
   // REGISTER: enroll a passkey; the virtual authenticator auto-approves, the
@@ -71,7 +72,7 @@ test('enrolls a passkey in the profile and signs back in with it username-first'
   // Back to anonymous: the gated profile re-mounts the sign-in surface (login
   // mode), from which the passkey method is reachable.
   await logout(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // LOGIN: switch to the passkey method and enter the account email. Type key by
@@ -107,7 +108,7 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   // ceremony (HIL-284) mints one, so enroll a passkey first, then sign out.
   await addVirtualAuthenticator(page)
   await signUp(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await page.getByTestId('profile-passkey-add').click()
   await expect(
@@ -115,7 +116,7 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   ).toBeVisible()
 
   await logout(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"

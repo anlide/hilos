@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
+import { gotoPage } from '../helpers/page'
 
 // Bots admin e2e: /hilos/admin_bots renders the bots table over the live socket,
 // and the create / edit / delete dialogs round-trip through the backend
@@ -17,7 +18,7 @@ import { signUpAdmin } from '../helpers/adminGrant'
 
 /** Open the bots admin and wait for the live window's first row. */
 async function openBots(page: Page): Promise<void> {
-  await page.goto('/hilos/admin_bots')
+  await gotoPage(page, '/hilos/admin_bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -164,7 +165,7 @@ test.fixme('creating a bot applies at once in the creating tab with no Apply gat
 // NOT itself flaky — re-enable it once the live-table append flake root is fixed.
 test.fixme('reaches the bots admin from the dashboard', async ({ page }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos')
+  await gotoPage(page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   await page.getByTestId('dashboard-card-admin_bots').click()

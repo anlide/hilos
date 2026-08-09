@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoPage } from '../helpers/page'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
 // and the brand moves back home through the core navigator (HilosRouter),
@@ -21,7 +22,7 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
     fullLoads += 1
   })
 
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('self-user')).toBeVisible()
   const loadsAfterColdLoad = fullLoads

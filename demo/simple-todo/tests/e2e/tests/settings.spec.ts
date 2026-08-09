@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoPage } from '../helpers/page'
 
 // Hilos settings admin e2e for the todo demo: activating the framework settings
 // feature configure-only (a catalog + a thin page + a project BrowserContext)
@@ -21,7 +22,7 @@ test('lists settings in the framework table and filters from the search box', as
   // deleting these lines once HIL-553 lands the demo identity + grant.
   test.fixme()
 
-  await page.goto('/hilos/settings')
+  await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Settings')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -60,7 +61,7 @@ test('sets a custom value on a catalog key from its row and resets it, live', as
     fullLoads += 1
   })
 
-  await page.goto('/hilos/settings')
+  await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads

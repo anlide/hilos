@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test'
+import { gotoPage } from './page'
 
 // Shared sign-in helpers for the session≠user model (HIL-360). Since auto-guest
 // was dropped, a fresh browser context is anonymous: it reads the chat but has
@@ -131,7 +132,7 @@ export interface SignedInUser {
 export async function signUp(page: Page): Promise<SignedInUser> {
   const email = uniqueEmail()
 
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.getByTestId('message-signin').click()
   await register(page, email)

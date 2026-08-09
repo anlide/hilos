@@ -1,6 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test'
 
 import { PASSWORD, signUp } from '../helpers/session'
+import { gotoPage } from '../helpers/page'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
 // reactivity a bare fill() can miss actually fires (see helpers/session).
@@ -40,7 +41,7 @@ test('the navbar links the current user to the profile page', async ({
 
 test('renames the current user through the edit modal', async ({ page }) => {
   await signUp(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 
@@ -75,7 +76,7 @@ test.fixme('links a GitHub account to the current profile (HIL-401)', async ({
   // bounces straight back to /auth/callback, the framework agent binds the
   // identity, and the explicit link-ok result returns the user to their profile.
   await signUp(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-name')).toBeVisible()
 
@@ -106,12 +107,12 @@ test('surfaces a conflict when the name changes in another tab', async ({
   // registering in the first tab signs both in.
   const tabA = await context.newPage()
   await signUp(tabA)
-  await tabA.goto('/profile')
+  await gotoPage(tabA, '/profile')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabA.getByTestId('profile-name')).toBeVisible()
 
   const tabB = await context.newPage()
-  await tabB.goto('/profile')
+  await gotoPage(tabB, '/profile')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('profile-name')).toBeVisible()
 
@@ -139,7 +140,7 @@ test('changes the current user password from the profile (HIL-402)', async ({
   // A registered account already has a password, so the profile shows the Change
   // form (current + new). The change re-auths the current password server-side.
   await signUp(page)
-  await page.goto('/profile')
+  await gotoPage(page, '/profile')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('profile-password-current')).toBeVisible()
 

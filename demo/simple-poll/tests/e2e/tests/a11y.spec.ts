@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { gotoPage } from '../helpers/page'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
@@ -10,7 +11,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Open the users admin and wait for the live table. */
 async function openUsers(page: Page): Promise<void> {
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 }
@@ -72,7 +73,7 @@ test('a sortable header reports aria-sort and sorts from the keyboard', async ({
 test('the shell exposes a skip link and marks the active nav item', async ({
   page,
 }) => {
-  await page.goto('/hilos')
+  await gotoPage(page, '/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
   // The skip link targets the main landmark.
@@ -114,7 +115,7 @@ test('each page titles the tab and announces the page on navigation', async ({
 })
 
 test('the home page exposes a single top-level heading', async ({ page }) => {
-  await page.goto('/')
+  await gotoPage(page, '/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
 })

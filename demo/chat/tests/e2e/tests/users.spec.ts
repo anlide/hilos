@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant'
+import { gotoPage } from '../helpers/page'
 
 // Hilos users admin e2e: /hilos/users renders the framework table (the first
 // real table in the new frontend) over the live socket, a registered user's row
@@ -18,7 +19,7 @@ test('lists users in the framework table and opens a detail page', async ({
   })
 
   await signUpAdmin(page)
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -38,7 +39,7 @@ test('lists users in the framework table and opens a detail page', async ({
 
 test('filters the users table from the search box', async ({ page }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
     page.locator('[data-id^="hilos-users-open-"]').first(),
@@ -58,7 +59,7 @@ test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
@@ -81,7 +82,7 @@ test('shows the connected user as online with a live session', async ({
   // need not be on the first viewport page of /hilos/users.
   const userId = await signUpAdmin(page)
 
-  await page.goto(`/hilos/user/${userId}`)
+  await gotoPage(page, `/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
@@ -100,7 +101,7 @@ test('shows the connected user as online with a live session', async ({
 // run against more than one page — the case a single registered user can never reach.
 test('windows, paginates, and searches the seeded users', async ({ page }) => {
   await signUpAdmin(page)
-  await page.goto('/hilos/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   // The window holds exactly one page of rows regardless of how large the table is.
