@@ -8,6 +8,7 @@ import {
   sessionImpersonatedByName,
   sessionImpersonating,
   sessionUserId,
+  sessionUserIsAdmin,
   sessionUserName,
 } from '@hilos/core'
 
@@ -19,6 +20,9 @@ export const currentUserName = sessionUserName(scopes)
 
 /** The current user's id; null until the handshake response lands. */
 export const currentUserId = sessionUserId(scopes)
+
+/** Whether the current user holds the admin privilege; false until the handshake says so. */
+export const currentUserIsAdmin = sessionUserIsAdmin(scopes)
 
 /** Whether this session is currently being impersonated by an admin. */
 export const impersonating = sessionImpersonating(scopes)

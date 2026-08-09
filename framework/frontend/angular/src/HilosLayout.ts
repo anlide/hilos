@@ -101,15 +101,17 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           <div class="d-flex align-items-center gap-3">
             @if (!underMaintenance()) {
               <ng-content select="[user]" />
-              <a
-                [hilosLink]="adminHref"
-                class="nav-link d-inline-flex align-items-center p-0 fs-5"
-                data-id="nav-admin"
-                aria-label="Hilos dashboard"
-              >
-                <i class="bi bi-gear-fill" aria-hidden="true"></i>
-                <span class="visually-hidden">Hilos dashboard</span>
-              </a>
+              @if (isAdmin()) {
+                <a
+                  [hilosLink]="adminHref"
+                  class="nav-link d-inline-flex align-items-center p-0 fs-5"
+                  data-id="nav-admin"
+                  aria-label="Hilos dashboard"
+                >
+                  <i class="bi bi-gear-fill" aria-hidden="true"></i>
+                  <span class="visually-hidden">Hilos dashboard</span>
+                </a>
+              }
             }
             <span
               [class]="connSpanClass()"
@@ -165,6 +167,12 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
 export class HilosLayout {
   /** The connection whose live state the shell indicator mirrors. */
   readonly connection = input.required<HilosConnection>()
+  /**
+   * Whether the signed-in user holds the admin privilege. The admin entry is
+   * drawn for an admin and for nobody else, so a project that answers no admin
+   * identity (the default) shows no way into a surface the gate would refuse.
+   */
+  readonly isAdmin = input(false)
 
   // The gear targets the framework's own dashboard page; its URL is owned by
   // the framework page catalog, not restated here as a literal.

@@ -31,7 +31,15 @@ import { useConnectionState } from './useConnectionState.js'
 import { useProtectedMode } from './useProtectedMode.js'
 import { useSignal } from './useSignal.js'
 
-const props = defineProps<{ connection: HilosConnection }>()
+const props = defineProps<{
+  connection: HilosConnection
+  /**
+   * Whether the signed-in user holds the admin privilege. The admin entry is
+   * drawn for an admin and for nobody else, so a project that answers no admin
+   * identity (the default) shows no way into a surface the gate would refuse.
+   */
+  isAdmin?: boolean
+}>()
 
 const connectionState = useConnectionState(props.connection)
 
@@ -127,6 +135,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           <template v-if="!underMaintenance">
             <slot name="user" />
             <HilosLink
+              v-if="props.isAdmin"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
               :to="adminHref"
               data-id="nav-admin"

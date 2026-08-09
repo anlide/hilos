@@ -24,6 +24,7 @@ const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
 const DEFAULT_CURRENT_USER_ENTITY_TYPE = 'user'
 const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
+const DEFAULT_CURRENT_USER_ADMIN_FIELD = 'admin'
 const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'
 
 /**
@@ -139,6 +140,36 @@ export function sessionUserId(
     const id = Number(ref.id)
 
     return Number.isFinite(id) ? id : null
+  })
+}
+
+/**
+ * Whether the current user holds the admin privilege, false until the handshake
+ * response says otherwise. The single source the shell derives its admin entry
+ * from, so a project never restates it — and false by default, so a project that
+ * answers no admin identity shows no way into a surface it would refuse anyway.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Current-user slot override.
+ */
+export function sessionUserIsAdmin(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<boolean> {
+  const slot = options.currentUserSlot ?? DEFAULT_CURRENT_USER_SLOT
+  // The normalizer leaves an EntityRef under the slot's sourceKey.
+  const currentUserRef = scopes.session.data.signal(slot) as ReadonlySignal<
+    EntityRef | undefined
+  >
+
+  return computedSignal(() => {
+    const ref = currentUserRef.get()
+    if (!ref) {
+      return false
+    }
+    const snapshot = scopes.entitySignal(ref).get()
+
+    return snapshot?.fields[DEFAULT_CURRENT_USER_ADMIN_FIELD] === true
   })
 }
 

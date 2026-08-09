@@ -30,6 +30,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string impersonatedBy = 'impersonatedBy';
     public const string id = 'id';
     public const string name = 'name';
+    public const string admin = 'admin';
 
     /**
      * Creates handshake response signal data.
@@ -39,14 +40,22 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * and name. The impersonator fields are null unless the session is being
      * impersonated, in which case they carry the admin behind the impersonation.
      *
+     * The admin flag travels with the identity because the shell decides what to
+     * show from it — the admin entry is drawn for an admin and for nobody else.
+     * It is false for an anonymous session and for a project that answers no
+     * admin identity, so a shell that was told nothing shows no admin entry:
+     * the same fail-closed default the page access gate takes.
+     *
      * @param ?int $selfId Authenticated user id, or null when the session is anonymous
      * @param ?string $selfName Authenticated user display name, or null when anonymous
+     * @param bool $selfAdmin Whether the authenticated user holds the admin privilege
      * @param ?int $impersonatorId Impersonating admin's user id, or null when not impersonating
      * @param ?string $impersonatorName Impersonating admin's display name, or null when not impersonating
      */
     public function __construct(
         public readonly ?int $selfId = null,
         public readonly ?string $selfName = null,
+        public readonly bool $selfAdmin = false,
         public readonly ?int $impersonatorId = null,
         public readonly ?string $impersonatorName = null,
     ) {
@@ -66,6 +75,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                     : [
                         self::id => $this->selfId,
                         self::name => $this->selfName,
+                        self::admin => $this->selfAdmin,
                     ],
                 self::impersonatedBy => $this->impersonatorId === null
                     ? null
@@ -96,6 +106,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         return new static(
             selfId: (int)($currentUser[self::id] ?? 0),
             selfName: (string)($currentUser[self::name] ?? ''),
+            selfAdmin: (bool)($currentUser[self::admin] ?? false),
             impersonatorId: is_array($impersonatedBy) ? (int)($impersonatedBy[self::id] ?? 0) : null,
             impersonatorName: is_array($impersonatedBy) ? (string)($impersonatedBy[self::name] ?? '') : null,
         );

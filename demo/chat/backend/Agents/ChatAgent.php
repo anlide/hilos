@@ -170,6 +170,12 @@ final class ChatAgent extends AbstractAgent
             return;
         }
 
+        // The grant changes what this user's shell may show, and the shell learns
+        // its identity from the handshake response alone. Without this the change
+        // reaches the user only on their next reload, and until then they are an
+        // admin who is shown no way in — the same silence a revoke would leave.
+        $this->broadcastHandshakeResponseToUser($userId);
+
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             ChatCommandConstants::FIELD_USER_ID => $userId,
             ChatCommandConstants::FIELD_ADMIN => $admin,
@@ -598,6 +604,7 @@ final class ChatAgent extends AbstractAgent
         return new HandshakeResponseSignalData(
             selfId: (int)$user->id,
             selfName: $user->name,
+            selfAdmin: $user->admin,
             impersonatorId: $impersonator !== null ? (int)$impersonator->id : null,
             impersonatorName: $impersonator?->name,
         );
@@ -613,6 +620,29 @@ final class ChatAgent extends AbstractAgent
      * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      */
+    /**
+     * Re-sends the handshake response to every live connection of one user, so a
+     * change to their identity reaches the shell without a reload.
+     *
+     * Built per connection rather than once: two connections of the same user can
+     * sit on different sessions, and one of them may be impersonated, which the
+     * response carries.
+     *
+     * @param int $userId User whose connections are told
+     */
+    private function broadcastHandshakeResponseToUser(int $userId): void
+    {
+        $signalName = $this->handshakeResponseSignalName();
+        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
+            $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
+            $this->sendToUser(
+                $signalName,
+                $connection->acceptKey,
+                $this->handshakeResponseFor($session),
+            );
+        }
+    }
+
     protected function sessionConnectionKeys(string $sessionToken): array
     {
         return Hilos::$rt->connections->acceptKeysForSessionToken($sessionToken);

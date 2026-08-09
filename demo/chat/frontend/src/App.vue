@@ -23,7 +23,11 @@ import AuthSurface from './auth/AuthSurface.vue'
 import MagicLink from './auth/MagicLink.vue'
 import OAuthCallback from './auth/OAuthCallback.vue'
 import { connection } from './bootstrap/connection'
-import { currentUserName, impersonating } from './bootstrap/session'
+import {
+  currentUserIsAdmin,
+  currentUserName,
+  impersonating,
+} from './bootstrap/session'
 import {
   PAGE_ADMIN_BOTS,
   PAGE_ADMIN_MODERATOR,
@@ -116,6 +120,7 @@ const isOAuthCallbackRoute = computed(
 // profile page (its route owned by the page catalog), shown once the handshake
 // names the user.
 const userName = useSignal(currentUserName)
+const isAdmin = useSignal(currentUserIsAdmin)
 const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 
 // The shell logout control. Logout is page-independent, so it sends the
@@ -209,7 +214,7 @@ watch(isImpersonating, (value) => {
 </script>
 
 <template>
-  <HilosLayout :connection="connection">
+  <HilosLayout :connection="connection" :is-admin="isAdmin">
     <template #brand>Hilos Chat</template>
     <template #banner>
       <div

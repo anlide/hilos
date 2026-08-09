@@ -30,6 +30,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'currentUser' => [
                         'id' => 7,
                         'name' => 'User 7',
+                        'admin' => false,
                     ],
                     'impersonatedBy' => null,
                 ],
@@ -87,6 +88,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'currentUser' => [
                         'id' => 7,
                         'name' => 'User 7',
+                        'admin' => false,
                     ],
                     'impersonatedBy' => [
                         'id' => 3,

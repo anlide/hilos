@@ -40,6 +40,12 @@ import { useSignal } from './useSignal.js'
 export interface HilosLayoutProps {
   /** The connection whose live state the shell indicator mirrors. */
   connection: HilosConnection
+  /**
+   * Whether the signed-in user holds the admin privilege. The admin entry is
+   * drawn for an admin and for nobody else, so a project that answers no admin
+   * identity (the default) shows no way into a surface the gate would refuse.
+   */
+  isAdmin?: boolean
   /** The home-linked brand region content. Defaults to `Hilos`. */
   brand?: ReactNode
   /** The navigation region placed next to the brand. */
@@ -82,6 +88,7 @@ const NO_TITLE = createSignal('')
  */
 export function HilosLayout({
   connection,
+  isAdmin = false,
   brand = 'Hilos',
   nav,
   user,
@@ -156,15 +163,17 @@ export function HilosLayout({
             {!underMaintenance && (
               <>
                 {user}
-                <HilosLink
-                  className="nav-link d-inline-flex align-items-center p-0 fs-5"
-                  to={ADMIN_HREF}
-                  data-id="nav-admin"
-                  aria-label="Hilos dashboard"
-                >
-                  <i className="bi bi-gear-fill" aria-hidden="true" />
-                  <span className="visually-hidden">Hilos dashboard</span>
-                </HilosLink>
+                {isAdmin ? (
+                  <HilosLink
+                    className="nav-link d-inline-flex align-items-center p-0 fs-5"
+                    to={ADMIN_HREF}
+                    data-id="nav-admin"
+                    aria-label="Hilos dashboard"
+                  >
+                    <i className="bi bi-gear-fill" aria-hidden="true" />
+                    <span className="visually-hidden">Hilos dashboard</span>
+                  </HilosLink>
+                ) : null}
               </>
             )}
             <span

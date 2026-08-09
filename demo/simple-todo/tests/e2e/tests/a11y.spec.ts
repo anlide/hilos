@@ -83,11 +83,11 @@ test('the shell exposes a skip link and marks the active nav item', async ({
   )
   await expect(page.locator('main#hilos-main-content')).toBeVisible()
 
-  // The admin gear points at /hilos, the current page, so it is aria-current.
-  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
+  // No admin entry: this demo answers no admin identity (its browser context
+  // keeps the framework's deny-default), so the shell draws no way into a
+  // surface the page access gate would refuse. The demo wires that identity
+  // under HIL-553, and the aria-current assertion belongs with it.
+  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 })
 
 test('each page titles the tab and announces the page on navigation', async ({

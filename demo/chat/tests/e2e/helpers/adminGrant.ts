@@ -1,6 +1,6 @@
 import net from 'node:net'
 import { randomBytes } from 'node:crypto'
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 import { signUp } from './session'
 
@@ -33,6 +33,13 @@ const REPLY_TIMEOUT_MS = 5_000
 export async function signUpAdmin(page: Page): Promise<number> {
   const { userId } = await signUp(page)
   await setAdmin(userId, true)
+  // The command channel answers when the daemon has written the grant, which is
+  // not the same as this browser knowing about it. The daemon re-sends the
+  // handshake response to the granted user's live connections, and the shell
+  // draws the admin entry from it — so the gear appearing is the proof that the
+  // grant reached this page, rather than merely the server.
+  await expect(page.getByTestId('nav-admin')).toBeVisible()
+
   return userId
 }
 

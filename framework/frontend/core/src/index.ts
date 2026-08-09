@@ -98,6 +98,7 @@ export {
   bindSessionScope,
   sessionUserName,
   sessionUserId,
+  sessionUserIsAdmin,
   sessionImpersonating,
   sessionImpersonatedByName,
   SESSION_SIGNAL_SCHEMAS,
