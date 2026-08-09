@@ -39,7 +39,7 @@ final class HilosSettingsTableTest extends TestCase
         $this->assertSame('on', $slot[HilosSettingTableRow::value]);
         $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $slot[HilosSettingTableRow::valueSource]);
         // The frontend reads persisted-ness from this flag, since the id is stripped
-        // above and value_source cannot tell a stored NULL from an absent row.
+        // above and valueSource cannot tell a stored NULL from an absent row.
         $this->assertTrue($slot[HilosSettingTableRow::persisted]);
     }
 }

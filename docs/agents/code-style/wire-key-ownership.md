@@ -55,7 +55,7 @@ flat constants would need a disambiguating prefix per shape.
 
 ```ts
 // Wrong: the same key written in the resolver and again in each of three views.
-value: readStringOrNull(slot, 'override_value')
+value: readStringOrNull(slot, 'overrideValue')
 const COLUMNS: HilosTableColumn[] = [{ key: 'key', label: 'Key' }]
 
 // Wrong: two keys of different roles folded into one constant because the

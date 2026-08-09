@@ -28,10 +28,10 @@ final class HilosSettingTableRow extends AbstractTableRow
     public const string key = ObjectSetting::key;
     public const string type = ObjectSetting::type;
     public const string value = ObjectSetting::value;
-    public const string overrideValue = 'override_value';
-    public const string defaultValue = 'default_value';
-    public const string defaultReferenceKey = 'default_reference_key';
-    public const string valueSource = 'value_source';
+    public const string overrideValue = 'overrideValue';
+    public const string defaultValue = 'defaultValue';
+    public const string defaultReferenceKey = 'defaultReferenceKey';
+    public const string valueSource = 'valueSource';
     public const string persisted = 'persisted';
 
     public function __construct(

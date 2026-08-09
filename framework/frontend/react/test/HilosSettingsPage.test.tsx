@@ -27,23 +27,23 @@ interface SettingSlot {
   key: string
   type: string
   value: string | null
-  override_value: string | null
-  default_value: string | null
-  default_reference_key: string | null
-  value_source: string
+  overrideValue: string | null
+  defaultValue: string | null
+  defaultReferenceKey: string | null
+  valueSource: string
 }
 
 // Build one inline settings slot, defaulting the catalog fields a test does not
 // care about so each case states only what it asserts on.
 function slot(
-  over: Partial<SettingSlot> & { key: string; value_source: string },
+  over: Partial<SettingSlot> & { key: string; valueSource: string },
 ): SettingSlot {
   return {
     type: 'string',
     value: 'v',
-    override_value: null,
-    default_value: 'd',
-    default_reference_key: null,
+    overrideValue: null,
+    defaultValue: 'd',
+    defaultReferenceKey: null,
     ...over,
   }
 }
@@ -117,16 +117,16 @@ describe('HilosSettingsPage', () => {
       seededContext([
         slot({
           key: 'site_name',
-          value_source: 'override',
+          valueSource: 'override',
           value: 'Hilos',
-          override_value: 'Hilos',
+          overrideValue: 'Hilos',
         }),
         slot({
           key: 'max_items',
-          value_source: 'default',
+          valueSource: 'default',
           type: 'integer',
           value: '10',
-          default_value: '10',
+          defaultValue: '10',
         }),
       ]),
     )
@@ -143,14 +143,14 @@ describe('HilosSettingsPage', () => {
       seededContext([
         slot({
           key: 'site_name',
-          value_source: 'override',
-          override_value: 'Hilos',
+          valueSource: 'override',
+          overrideValue: 'Hilos',
         }),
         slot({
           key: 'legacy',
-          value_source: 'orphan',
-          override_value: 'x',
-          default_value: null,
+          valueSource: 'orphan',
+          overrideValue: 'x',
+          defaultValue: null,
         }),
       ]),
     )
@@ -167,8 +167,8 @@ describe('HilosSettingsPage', () => {
       seededContext([
         slot({
           key: 'site_name',
-          value_source: 'override',
-          override_value: 'Hilos',
+          valueSource: 'override',
+          overrideValue: 'Hilos',
         }),
       ]),
     )

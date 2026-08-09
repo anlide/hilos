@@ -189,7 +189,7 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
      * carrying a non-null id as a referenced entity, but settings rows are
      * page-scoped, keyed by the setting key, and carry a nullable id (catalog
      * placeholders have none). The row's own `persisted` flag carries that fact
-     * instead — value_source cannot, since a stored NULL and an absent row both
+     * instead — valueSource cannot, since a stored NULL and an absent row both
      * read as default/reference.
      *
      * @param AbstractTableRow $row Settings table row from this table's snapshot or mutation

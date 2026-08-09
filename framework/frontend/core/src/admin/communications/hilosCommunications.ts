@@ -154,7 +154,7 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-/** Narrow an unknown value_source to the typed union, defaulting to default. */
+/** Narrow an unknown valueSource to the typed union, defaulting to default. */
 function toValueSource(value: unknown): ChannelValueSource {
   return VALUE_SOURCES.includes(value as ChannelValueSource)
     ? (value as ChannelValueSource)

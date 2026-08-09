@@ -220,7 +220,7 @@ A **cataloged table** has a fixed key set defined by a PHP catalog — an array 
 constants on the backend (settings is the first: `SettingsCatalog::getCatalog()`,
 keyed by setting-key constants). The backend merges that catalog with the
 persisted override rows into **one row per cataloged key**, so every key is always
-present even with no DB row behind it; each row carries a `value_source`:
+present even with no DB row behind it; each row carries a `valueSource`:
 `default` / `reference` (on the catalog default), `override` (a persisted custom
 value), or `orphan` (a persisted key no longer in the catalog).
 

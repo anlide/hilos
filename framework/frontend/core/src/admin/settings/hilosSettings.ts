@@ -70,8 +70,7 @@ const SETTING_DELETE_ACTION = 'setting_delete'
 // Row payload keys of the settings slot. They are declared here because this
 // module owns the view-model they resolve into, and exported where a view also
 // names them as a column key, so the wire name has one owner instead of a copy
-// per view. The snake_case ones are the backend's spelling and stay verbatim —
-// aligning them with the view-model field names is HIL-531, not this pass.
+// per view.
 
 /** Row payload key of the setting key (also the table's default sort field). */
 export const SETTING_KEY_FIELD = 'key'
@@ -83,16 +82,16 @@ const SETTING_TYPE_FIELD = 'type'
 export const SETTING_VALUE_FIELD = 'value'
 
 /** Row payload key of the persisted override value. */
-const SETTING_OVERRIDE_VALUE_FIELD = 'override_value'
+const SETTING_OVERRIDE_VALUE_FIELD = 'overrideValue'
 
 /** Row payload key of the catalog default value. */
-const SETTING_DEFAULT_VALUE_FIELD = 'default_value'
+const SETTING_DEFAULT_VALUE_FIELD = 'defaultValue'
 
 /** Row payload key of the key a referencing default points at. */
-const SETTING_DEFAULT_REFERENCE_KEY_FIELD = 'default_reference_key'
+const SETTING_DEFAULT_REFERENCE_KEY_FIELD = 'defaultReferenceKey'
 
 /** Row payload key of the effective value's origin. */
-const SETTING_VALUE_SOURCE_FIELD = 'value_source'
+const SETTING_VALUE_SOURCE_FIELD = 'valueSource'
 
 /** Row payload key of the backing-row flag. */
 const SETTING_PERSISTED_FIELD = 'persisted'
@@ -144,7 +143,7 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-/** Narrow an unknown value_source to the typed union, defaulting to orphan. */
+/** Narrow an unknown valueSource to the typed union, defaulting to orphan. */
 function toValueSource(value: unknown): SettingValueSource {
   return VALUE_SOURCES.includes(value as SettingValueSource)
     ? (value as SettingValueSource)

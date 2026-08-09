@@ -41,10 +41,10 @@ describe('resolveHilosSettingRow', () => {
         key: 'chat_bot_timeout_sec',
         type: 'float',
         value: '1.5',
-        override_value: '1.5',
-        default_value: '1.0',
-        default_reference_key: 'default_bot_timeout_sec',
-        value_source: 'reference',
+        overrideValue: '1.5',
+        defaultValue: '1.0',
+        defaultReferenceKey: 'default_bot_timeout_sec',
+        valueSource: 'reference',
         persisted: true,
       }),
     )
@@ -74,9 +74,9 @@ describe('resolveHilosSettingRow', () => {
     expect(row.persisted).toBe(false)
   })
 
-  it('narrows an unknown value_source to orphan', () => {
+  it('narrows an unknown valueSource to orphan', () => {
     const row = resolveHilosSettingRow(
-      settingsRow('weird', { key: 'weird', value_source: 'not-a-source' }),
+      settingsRow('weird', { key: 'weird', valueSource: 'not-a-source' }),
     )
 
     expect(row.valueSource).toBe('orphan')
