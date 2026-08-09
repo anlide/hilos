@@ -154,6 +154,14 @@ ticket for the entries that are genuinely foreign.
   e2e); the full pass (`test:all` / `test:e2e-full`) resets for you. **Do not treat a
   failure on a repeated run *without* a reset as a bug** — reset is the contract;
   re-running against a dirty database is not a supported scenario.
+- `test:e2e-full` **tears the stack down before it starts**, so it never inherits a
+  daemon from an earlier run. It has to own that itself rather than trust its
+  caller: `up -d` is idempotent, so a container left running is *kept* running, and
+  a PHP daemon holds the code it loaded at boot. A backend change would then be
+  measured against the process that predates it — with the frontend rebuilt around
+  it, which reads as a plausible result rather than an obviously stale one. The
+  stack is most likely to still be up exactly when it matters: a red run aborts the
+  chain before `@test:e2e-down`.
 - To test an **irreversible or time-delayed** operation repeatedly (deleting an
   orphan row, an account deleted N days after the request), do **not** engineer
   idempotency into the test. The designed path is a **test-only CLI command** —

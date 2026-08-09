@@ -86,6 +86,7 @@
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm poll-e2e-runner npx playwright test",
         "test:e2e-down": "@test:down",
         "test:e2e-full": [
+            "@test:down",
             "@test:up",
             "@test:e2e-build",
             "@test:e2e-install",
