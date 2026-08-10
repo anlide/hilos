@@ -8,13 +8,15 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Backup\BackupChecksumState;
-use Hilos\Runtime\State\Collection\BackupHistories;
+use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Backup\HilosBackupTableRow;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Unit tests for the framework backup list table.
@@ -338,18 +340,46 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertNull($mutation->row?->verifiedAt);
     }
 
+    public function testAnUnmountedIndexLeavesTheInProgressRowAlone(): void
+    {
+        // A project that never declared the BACKUP feature has no index to walk. The snapshot then
+        // holds what the table does know - the run in flight - and reaching for the absent index
+        // is not a step on the way there, so no warning is raised getting to it.
+        set_error_handler(static function (int $severity, string $message): bool {
+            throw new RuntimeException("PHP raised: {$message}");
+        });
+
+        try {
+            $snapshot = $this->table(runtime: $this->runningRuntime())->getFullSnapshot();
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertCount(1, $snapshot->rows);
+        $row = $snapshot->rows[0];
+        $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+        $this->assertSame(HilosBackupTableRow::RUNNING_ROW_KEY, $row->requireRowKey());
+    }
+
     /**
-     * Builds a backup index collection seeded with the given rows.
+     * Builds a backup index the way the table reads one: a view over a seeded state collection.
+     *
+     * The fixture builds the backing rows because that is what the index is made of; the table
+     * itself only ever sees the view, so that is what the seam hands it.
      *
      * @param BackupHistory ...$rows Stored backup index rows
-     * @return BackupHistories Seeded backup index collection
+     * @return BackupHistories Seeded backup index view
      */
     private function historiesWith(BackupHistory ...$rows): BackupHistories
     {
-        $histories = BackupHistories::init();
+        $state = StateBackupHistories::init();
         foreach ($rows as $row) {
-            $histories->add($row);
+            $state->add($row);
         }
+
+        $histories = BackupHistories::init();
+        $histories->setStateCollection($state);
+        $histories->setCollectionName(BackupHistory::RT_COLLECTION);
 
         return $histories;
     }
@@ -374,7 +404,7 @@ final class HilosBackupHistoryTableTest extends TestCase
     /**
      * Builds a backup table bound to in-memory runtime sources.
      *
-     * @param ?BackupHistories $histories Stored backup index, or null when unavailable
+     * @param ?BackupHistories $histories Stored backup index view, or null when unmounted
      * @param ?BackupRuntime $runtime In-progress runtime singleton, or null when idle
      * @return HilosBackupHistoryTable Table over the bound sources
      */

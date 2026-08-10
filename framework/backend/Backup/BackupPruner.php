@@ -6,7 +6,7 @@ namespace Hilos\Backup;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 use Throwable;
 
 /**

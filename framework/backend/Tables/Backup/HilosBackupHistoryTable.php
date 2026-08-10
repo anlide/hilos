@@ -20,9 +20,10 @@ use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Collection\BackupHistories;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Runtime\View\Item\BackupHistory;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Throwable;
 
@@ -60,7 +61,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey === BackupHistory::RT_COLLECTION) {
+        if ($change->sourceKey === StateBackupHistory::RT_COLLECTION) {
             return $this->historyMutation($change);
         }
 
@@ -97,8 +98,13 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $rows = [];
-        foreach ($this->histories() as $history) {
-            $rows[] = $this->rowFromHistory($history)->toArray();
+        // The index is resolved before it is walked: an unmounted one leaves the snapshot to the
+        // in-progress row alone, where iterating null would only have added a warning to that.
+        $histories = $this->histories();
+        if ($histories !== null) {
+            foreach ($histories as $history) {
+                $rows[] = $this->rowFromHistory($history)->toArray();
+            }
         }
 
         $running = $this->runningRow();
@@ -126,7 +132,8 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     private function historyMutation(SourceChange $change): TableRowMutationDTO
     {
         $id = $change->sourceId;
-        $history = $this->histories()?->get($id);
+        $histories = $this->histories();
+        $history = $histories === null ? null : $histories[$id];
         if ($history === null) {
             return $this->mutation(TableMutationType::Delete, $id);
         }
@@ -270,14 +277,15 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * Resolves the backup index runtime collection, or null when unavailable.
      *
      * A seam the framework reads from the runtime facade; tests bind in-memory state.
+     * The `??` is what makes an unmounted index a null rather than a throw: it asks the
+     * runtime context's `__isset()` first, where a bare read would raise
+     * RtCollectionNotFoundException.
      *
-     * @return ?BackupHistories Backup index collection, or null
+     * @return ?BackupHistories Backup index collection, or null when the BACKUP feature is inactive
      */
     protected function histories(): ?BackupHistories
     {
-        $collection = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-
-        return $collection instanceof BackupHistories ? $collection : null;
+        return Hilos::$rt?->hilosBackupHistories ?? null;
     }
 
     /**

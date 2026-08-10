@@ -42,12 +42,12 @@ use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Collection\BackupHistories;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
-use Hilos\Runtime\View\Collection\BackupHistories as BackupHistoriesView;
+use Hilos\Runtime\View\Collection\BackupHistories;
+use Hilos\Runtime\View\Item\BackupHistory;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -225,7 +225,7 @@ final class BackupAgent extends AbstractAgent
             $this->logAgentError("Backups are enabled but {$key} is not configured; no backup can be created");
         }
 
-        $this->registerRtTruthSource(BackupHistory::RT_COLLECTION);
+        $this->registerRtTruthSource(StateBackupHistory::RT_COLLECTION);
         $this->registerRtTruthSource(StateBackupRuntime::RT_ITEM);
         $this->registerRtTruthSource(StateRestoreRuntime::RT_ITEM);
 
@@ -638,12 +638,12 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-        if (!$histories instanceof BackupHistories) {
+        $histories = $this->historiesView();
+        if ($histories === null) {
             return;
         }
 
-        $row = $histories->get($id);
+        $row = $histories[$id];
         if ($row === null) {
             $this->logAgentInfo("Backup {$id} already deleted; no-op");
 
@@ -656,7 +656,7 @@ final class BackupAgent extends AbstractAgent
             // removal applies at once while other tabs keep the pending gate.
             ExecutionContext::withAcceptKey(
                 $data->initiatorAcceptKey,
-                fn () => $this->historiesView()?->actions->forget($id),
+                fn () => $histories->actions->forget($id),
             );
             $this->logAgentInfo("Backup deleted: {$id}");
         } catch (Throwable $e) {
@@ -684,12 +684,12 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-        if (!$histories instanceof BackupHistories) {
+        $histories = $this->historiesView();
+        if ($histories === null) {
             return;
         }
 
-        $row = $histories->get($id);
+        $row = $histories[$id];
         if ($row === null) {
             $this->logAgentInfo("Backup {$id} not found; keep toggle no-op");
 
@@ -1528,26 +1528,24 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Snapshots the runtime backup index as a plain list of state rows.
+     * Snapshots the runtime backup index as a plain list of index rows.
      *
      * The single reader used by both rotation ({@see pruneHistory()}) and the space estimate
-     * ({@see admitBySpace()}): the RT collection is walked once, non-backup entries skipped, so
-     * both consumers see the same set. Empty when runtime state or the collection is unavailable.
+     * ({@see admitBySpace()}): the RT collection is walked once, so both consumers see the same
+     * set. Empty when runtime state or the index is unavailable.
      *
      * @return list<BackupHistory> Current backup index rows
      */
     private function indexRows(): array
     {
-        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-        if (!$histories instanceof BackupHistories) {
+        $histories = $this->historiesView();
+        if ($histories === null) {
             return [];
         }
 
         $rows = [];
         foreach ($histories as $row) {
-            if ($row instanceof BackupHistory) {
-                $rows[] = $row;
-            }
+            $rows[] = $row;
         }
 
         return $rows;
@@ -1565,8 +1563,8 @@ final class BackupAgent extends AbstractAgent
      */
     private function pruneHistory(): int
     {
-        $histories = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-        if (!$histories instanceof BackupHistories) {
+        $histories = $this->historiesView();
+        if ($histories === null) {
             return 0;
         }
 
@@ -1583,11 +1581,10 @@ final class BackupAgent extends AbstractAgent
             }
 
             $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
-            $view = $this->historiesView();
             $pruned = [];
             foreach ($doomed as $row) {
                 $pruner->deleteStored($row, $root);
-                $view?->actions->forget($row->getId());
+                $histories->actions->forget($row->getId());
                 $pruned[] = $row->getId();
             }
 
@@ -1606,31 +1603,32 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Resolves the backup index's runtime representation, or null when it is not bound.
+     * Resolves the backup index, or null when the project mounted none.
      *
-     * Every index write goes through this view's actions rather than the state collection:
-     * the actions are what put a create / update / delete on the RT sync wire, and this agent
-     * runs on its own monopolistic worker while the backup page is served by another. Written
-     * any other way the index would exist in this process and nowhere else — no other worker,
-     * and no browser table, would ever see a backup.
+     * The agent's single door to the index, for reads as much as for writes. Every write goes
+     * through this view's actions rather than the state collection: the actions are what put a
+     * create / update / delete on the RT sync wire, and this agent runs on its own monopolistic
+     * worker while the backup page is served by another. Written any other way the index would
+     * exist in this process and nowhere else — no other worker, and no browser table, would
+     * ever see a backup.
      *
-     * Null means the project registered the state collection but never bound the framework
-     * representation to it ({@see RtContext::setRepresent()}); the backup page would be
-     * permanently empty, so say so rather than write into the void.
+     * The same forgotten-activation logic as {@see runtimeView()}. The `??` is what makes an
+     * unmounted index a null rather than a throw: it asks the runtime context's `__isset()`
+     * first, where a bare read would raise RtCollectionNotFoundException.
      *
-     * @return ?BackupHistoriesView Backup index view, or null when unrepresented
+     * @return ?BackupHistories Backup index view, or null when it is not mounted
      */
-    private function historiesView(): ?BackupHistoriesView
+    private function historiesView(): ?BackupHistories
     {
-        $collection = Hilos::$rt?->{BackupHistory::RT_COLLECTION} ?? null;
-        if ($collection instanceof BackupHistoriesView) {
-            return $collection;
+        $view = Hilos::$rt?->hilosBackupHistories ?? null;
+        if ($view !== null) {
+            return $view;
         }
 
         $this->logAgentError(
-            'Backup index has no runtime representation: register it with setRepresent('
-            . BackupHistory::RT_COLLECTION
-            . ', BackupHistories::class, BackupHistoriesActions::class, BackupHistoryActions::class)',
+            'Backup index is not mounted: declaring HilosFeature::BACKUP mounts '
+            . StateBackupHistory::RT_COLLECTION
+            . ' via BackupFeature::mount(); the project runtime context must not replace it',
         );
 
         return null;

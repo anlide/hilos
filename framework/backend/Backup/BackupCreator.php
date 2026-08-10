@@ -19,7 +19,7 @@ use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 use Throwable;
 
 /**
@@ -335,7 +335,7 @@ final class BackupCreator
      */
     public function setStoredKeep(BackupHistory $row, string $root, bool $keep): void
     {
-        $sidecarPath = $this->storedSidecarPath($row, $root);
+        $sidecarPath = $this->storedSidecarPath($row->getId(), $row->env, $row->scope, $root);
 
         $metadata = $this->readSidecar($sidecarPath);
         if ($metadata->keep === $keep) {
@@ -355,7 +355,11 @@ final class BackupCreator
      * last-write-wins, which is accepted: both fields are re-read from the same file on the
      * next rescan.
      *
-     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * The caller names the backup with the sidecar it just read rather than an index row: the
+     * verify CLI works straight off storage and has no runtime index to look one up in. The file
+     * is re-read here all the same, so a keep pin written between the check and the stamp survives.
+     *
+     * @param BackupMetadata $checked Sidecar that was checked, naming the backup (its id, env, and scope)
      * @param string $root Backup storage root
      * @param BackupVerifyOutcome $outcome What the verification concluded (ok or mismatch)
      * @param string $verifiedAt ISO-8601 instant the verification ran
@@ -363,12 +367,12 @@ final class BackupCreator
      * @throws BackupDumpFailedException When the rewritten sidecar cannot be published
      */
     public function recordVerification(
-        BackupHistory $row,
+        BackupMetadata $checked,
         string $root,
         BackupVerifyOutcome $outcome,
         string $verifiedAt,
     ): void {
-        $sidecarPath = $this->storedSidecarPath($row, $root);
+        $sidecarPath = $this->storedSidecarPath($checked->id, $checked->env, $checked->scope->value, $root);
         $metadata = $this->readSidecar($sidecarPath);
 
         $this->republishSidecar(
@@ -379,25 +383,30 @@ final class BackupCreator
     }
 
     /**
-     * Resolves the stored sidecar path of an indexed backup.
+     * Resolves the stored sidecar path of a backup named by its identity fields.
      *
-     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * Scalars rather than a row, so the agent path (which holds a runtime index row) and the
+     * CLI path (which holds only the sidecar it read) resolve the same name the same way.
+     *
+     * @param string $id Backup id
+     * @param ?string $env Application environment the backup was taken in
+     * @param ?string $scope Backup scope value
      * @param string $root Backup storage root
      * @return string Absolute sidecar path
      * @throws BackupException When the scope or root is invalid
      */
-    private function storedSidecarPath(BackupHistory $row, string $root): string
+    private function storedSidecarPath(string $id, ?string $env, ?string $scope, string $root): string
     {
-        $scope = BackupScope::fromString($row->scope);
-        if ($scope === null) {
-            throw new BackupException("Invalid backup scope: {$row->scope}");
+        $backupScope = BackupScope::fromString($scope);
+        if ($backupScope === null) {
+            throw new BackupException("Invalid backup scope: {$scope}");
         }
         if ($root === '') {
             throw new BackupException('Backup directory (BACKUP_DIR) is not configured');
         }
 
-        return $root . '/' . $scope->value . '/'
-            . self::archiveBaseName($row->getId(), $row->env, $scope) . self::SIDECAR_EXTENSION;
+        return $root . '/' . $backupScope->value . '/'
+            . self::archiveBaseName($id, $env, $backupScope) . self::SIDECAR_EXTENSION;
     }
 
     /**

@@ -6,7 +6,7 @@ namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Core\Table\Row\AbstractTableRow;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 
 /**
  * Backend row payload for the framework backup list table.

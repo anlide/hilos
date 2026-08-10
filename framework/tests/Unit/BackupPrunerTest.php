@@ -11,7 +11,8 @@ use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -249,7 +250,7 @@ final class BackupPrunerTest extends TestCase
         BackupStatus $status = BackupStatus::SUCCESS,
         bool $keep = false,
     ): BackupHistory {
-        return BackupHistory::fromMetadata(new BackupMetadata(
+        $state = StateBackupHistory::fromMetadata(new BackupMetadata(
             $id,
             $createdAt,
             'test',
@@ -260,5 +261,7 @@ final class BackupPrunerTest extends TestCase
             $keep,
             $status,
         ));
+
+        return new BackupHistory($state);
     }
 }

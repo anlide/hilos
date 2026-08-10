@@ -24,8 +24,7 @@ use Hilos\Hilos;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
-use Hilos\Runtime\State\Collection\BackupHistories;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\View\Collection\BackupHistories;
 
 /**
  * AbstractHilosBackupPage - Abstract base for the Hilos backup list page.
@@ -200,7 +199,8 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
             throw new TableActionException('Cannot pin a backup that is in progress');
         }
 
-        $row = $this->histories()?->get($dto->backupId);
+        $histories = $this->histories();
+        $row = $histories === null ? null : $histories[$dto->backupId];
         if ($row === null) {
             throw new TableActionException("Backup not found: {$dto->backupId}");
         }
@@ -228,12 +228,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     /**
      * Resolves the runtime backup index collection, or null when unavailable.
      *
-     * @return ?BackupHistories Backup history index, or null when runtime state is unavailable
+     * The `??` is what makes an unmounted index a null rather than a throw: it asks the
+     * runtime context's `__isset()` first, where a bare read would raise
+     * RtCollectionNotFoundException.
+     *
+     * @return ?BackupHistories Backup history index, or null when the BACKUP feature is inactive
      */
     private function histories(): ?BackupHistories
     {
-        $collection = Hilos::$rt?->getStateCollection(BackupHistory::RT_COLLECTION);
-
-        return $collection instanceof BackupHistories ? $collection : null;
+        return Hilos::$rt?->hilosBackupHistories ?? null;
     }
 }

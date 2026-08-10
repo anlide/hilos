@@ -9,7 +9,8 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -177,7 +178,7 @@ final class BackupSpaceGuardTest extends TestCase
         BackupStatus $status = BackupStatus::SUCCESS,
         string $createdAt = '2026-07-20T00:00:00+00:00',
     ): BackupHistory {
-        return BackupHistory::fromMetadata(new BackupMetadata(
+        $state = StateBackupHistory::fromMetadata(new BackupMetadata(
             id: $scope->value . '-' . $createdAt . '-' . $dumpBytes,
             createdAt: $createdAt,
             env: 'test',
@@ -189,5 +190,7 @@ final class BackupSpaceGuardTest extends TestCase
             status: $status,
             dumpBytes: $dumpBytes,
         ));
+
+        return new BackupHistory($state);
     }
 }

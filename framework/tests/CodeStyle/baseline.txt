@@ -82,6 +82,3 @@ EMPTY-STRING-SENTINEL framework/backend/Socket/Worker/DTO/WorkerAgentStoppedDTO.
 EMPTY-STRING-SENTINEL framework/tests/Unit/PageSignalPayloadDtoTest.php 1 # HIL-532
 EMPTY-STRING-SENTINEL framework/tests/Unit/SignalDataEnvelopeTest.php 1 # HIL-532
 EMPTY-STRING-SENTINEL framework/tests/Unit/SignalRouterIndexedAgentSignalTest.php 2 # HIL-532
-RT-STATE-REACH framework/backend/Backup/Agent/BackupAgent.php 4 # HIL-507
-RT-STATE-REACH framework/backend/Pages/Backup/AbstractHilosBackupPage.php 1 # HIL-507
-RT-STATE-REACH framework/backend/Tables/Backup/HilosBackupHistoryTable.php 1 # HIL-507

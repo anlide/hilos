@@ -16,7 +16,8 @@ use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -301,7 +302,7 @@ final class BackupCreatorTest extends TestCase
         $this->writeSidecar($root, $original);
 
         new BackupCreator()->recordVerification(
-            $this->rowFor($original),
+            $original,
             $root,
             BackupVerifyOutcome::MISMATCH,
             '2026-08-02T06:00:00+00:00',
@@ -321,7 +322,7 @@ final class BackupCreatorTest extends TestCase
         $this->expectException(BackupException::class);
 
         new BackupCreator()->recordVerification(
-            $this->rowFor($this->metadata()),
+            $this->metadata(),
             $this->makeRoot(),
             BackupVerifyOutcome::OK,
             '2026-08-02T06:00:00+00:00',
@@ -353,7 +354,9 @@ final class BackupCreatorTest extends TestCase
      */
     private function rowFor(BackupMetadata $metadata): BackupHistory
     {
-        return BackupHistory::fromMetadata($metadata);
+        $state = StateBackupHistory::fromMetadata($metadata);
+
+        return new BackupHistory($state);
     }
 
     /**

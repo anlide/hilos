@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
-use Hilos\Runtime\State\Item\BackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 
 /**
  * BackupSpaceGuard - the pure admit/refuse decision for a backup about to run.

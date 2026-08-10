@@ -25,7 +25,6 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\BackupHistory;
 
 /**
  * BackupVerifyCommand - check stored archives against the digests recorded when they were written.
@@ -372,12 +371,7 @@ HELP;
     {
         $verifiedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
 
-        new BackupCreator()->recordVerification(
-            BackupHistory::fromMetadata($metadata),
-            $root,
-            $outcome,
-            $verifiedAt,
-        );
+        new BackupCreator()->recordVerification($metadata, $root, $outcome, $verifiedAt);
     }
 
     /**
