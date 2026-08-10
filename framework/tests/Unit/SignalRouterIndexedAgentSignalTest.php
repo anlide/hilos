@@ -13,6 +13,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -168,6 +169,22 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         }
     }
 
+    public function testIncompletePayloadIsRefusedRatherThanHydratedWithAStub(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+
+        try {
+            $router->createAgentSignalPayloadDTO(
+                IndexedAgentSignalDtoTestAgent::HELPER_SIGNAL,
+                new AgentSignalData(new SignalData(['other' => 'hello'])),
+            );
+            $this->fail('Expected InvalidAgentSignalPayloadException');
+        } catch (InvalidAgentSignalPayloadException $e) {
+            $this->assertInstanceOf(InvalidFormatException::class, $e->getPrevious());
+            $this->assertStringContainsString('message', $e->getMessage());
+        }
+    }
+
     public function testHydratesAgentSignalPayloadThatDoesNotExtendBaseDto(): void
     {
         $router = new IndexedAgentSignalDtoTestRouter();
@@ -294,6 +311,8 @@ final class IndexedAgentSignalDtoTestAgent extends AbstractAgent
 
     public const string INDEXED_TYPED_SIGNAL = 'indexed_typed_test_signal';
 
+    public const string HELPER_SIGNAL = 'helper_field_test_signal';
+
     public const string BROKEN_DTO_SIGNAL = 'broken_dto_test_signal';
 
     public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\IndexedAgentSignalTestMissingPayload';
@@ -304,6 +323,7 @@ final class IndexedAgentSignalDtoTestAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => 'entityId',
             AgentSignalConfigKey::DTO => IndexedAgentSignalDtoTestPayload::class,
         ],
+        self::HELPER_SIGNAL => IndexedAgentSignalHelperPayload::class,
         self::BROKEN_DTO_SIGNAL => self::MISSING_DTO_CLASS,
     ];
 
@@ -435,6 +455,37 @@ final class IndexedAgentSignalTestPlainPayload implements SignalDataInterface
     public static function fromArray(array $data): static
     {
         return new static(is_string($data['message'] ?? null) ? $data['message'] : '');
+    }
+}
+
+/**
+ * Inner payload DTO reading its required field through the shared BaseDTO helper.
+ */
+final class IndexedAgentSignalHelperPayload extends BaseDTO implements SignalDataInterface
+{
+    /**
+     * @param string $message Required payload message
+     */
+    public function __construct(public readonly string $message)
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload
+     */
+    public function toArray(): array
+    {
+        return ['message' => $this->message];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no message
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(self::requireString($data, 'message'));
     }
 }
 

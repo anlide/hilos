@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * MessageFromAgentDTO - DTO for messages from another agent.
@@ -51,13 +52,14 @@ class MessageFromAgentDTO extends BaseDTO implements AgentMessageDTOInterface
      *
      * @param array<string, mixed> $data Source data with fromAgentId, action, payload keys
      * @return static DTO instance
+     * @throws InvalidFormatException When the sender, the action or the payload is missing or of another type
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            fromAgentId: $data[self::FROM_AGENT_ID] ?? '',
-            action: $data[self::ACTION] ?? '',
-            payload: $data[self::PAYLOAD] ?? [],
+            fromAgentId: self::requireString($data, self::FROM_AGENT_ID),
+            action: self::requireString($data, self::ACTION),
+            payload: self::requireArray($data, self::PAYLOAD),
         );
     }
 }

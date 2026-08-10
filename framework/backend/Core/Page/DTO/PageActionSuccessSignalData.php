@@ -6,6 +6,7 @@ namespace Hilos\Core\Page\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 
@@ -62,18 +63,21 @@ final class PageActionSuccessSignalData extends BaseDTO implements SignalDataInt
     }
 
     /**
+     * The reply is what correlates the confirmation with the request that is
+     * waiting for it, so a frame carrying neither the action nor the request id
+     * confirms nothing and is refused. The sentence and the domain reply are the
+     * two {@see self::toArray()} omits when absent.
+     *
      * @param array<string, mixed> $data
+     * @throws InvalidFormatException When the action or the request id is missing, or an optional field is of another type
      */
     public static function fromArray(array $data): static
     {
-        $message = $data[SignalPayloadConstants::FIELD_MESSAGE] ?? null;
-        $reply = $data[SignalPayloadConstants::FIELD_REPLY] ?? null;
-
         return new static(
-            action: (string)($data[SignalPayloadConstants::FIELD_ACTION] ?? ''),
-            requestId: (string)($data[SignalPayloadConstants::FIELD_REQUEST_ID] ?? ''),
-            message: $message !== null ? (string)$message : null,
-            reply: is_array($reply) ? $reply : null,
+            action: self::requireString($data, SignalPayloadConstants::FIELD_ACTION),
+            requestId: self::requireString($data, SignalPayloadConstants::FIELD_REQUEST_ID),
+            message: self::optionalString($data, SignalPayloadConstants::FIELD_MESSAGE),
+            reply: self::optionalArray($data, SignalPayloadConstants::FIELD_REPLY),
         );
     }
 

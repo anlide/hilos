@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
@@ -60,6 +62,19 @@ final class CommandPayloadDtoTest extends TestCase
         }
     }
 
+    public function testIncompletePayloadIsRefusedRatherThanHydratedWithAStub(): void
+    {
+        $request = new CommandRequestDTO('corr-6', 'helper', ['other' => 'hi']);
+
+        try {
+            new CommandPayloadTestRouter()->createCommandPayloadDTO('helper', $request);
+            $this->fail('Expected InvalidCommandPayloadException');
+        } catch (InvalidCommandPayloadException $e) {
+            $this->assertInstanceOf(InvalidFormatException::class, $e->getPrevious());
+            $this->assertStringContainsString('value', $e->getMessage());
+        }
+    }
+
     public function testBrokenDeclaredClassIsNotReportedAsAnInvalidPayload(): void
     {
         $request = new CommandRequestDTO('corr-5', 'broken', ['value' => 'hi']);
@@ -107,6 +122,37 @@ final class RequireFieldCommandData implements SignalDataInterface
 }
 
 /**
+ * Test payload DTO reading its required field through the shared BaseDTO helper.
+ */
+final class HelperFieldCommandData extends BaseDTO implements SignalDataInterface
+{
+    /**
+     * @param string $value Required payload value
+     */
+    public function __construct(public readonly string $value)
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload
+     */
+    public function toArray(): array
+    {
+        return ['value' => $this->value];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no value
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(self::requireString($data, 'value'));
+    }
+}
+
+/**
  * Test facade declaring a DTO route for the 'typed' command and a broken one for 'broken'.
  */
 final class CommandPayloadTestHilos extends \Hilos\Hilos
@@ -120,6 +166,7 @@ final class CommandPayloadTestHilos extends \Hilos\Hilos
     {
         return [
             'typed' => RequireFieldCommandData::class,
+            'helper' => HelperFieldCommandData::class,
             'broken' => self::MISSING_DTO_CLASS,
         ];
     }

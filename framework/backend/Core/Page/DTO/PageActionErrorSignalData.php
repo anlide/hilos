@@ -6,6 +6,7 @@ namespace Hilos\Core\Page\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 
@@ -67,22 +68,22 @@ class PageActionErrorSignalData extends BaseDTO implements SignalDataInterface, 
     }
 
     /**
+     * The three optional fields are the ones {@see self::toArray()} omits when
+     * they are null; the two the failure is described by are not optional, and a
+     * frame without them is refused rather than turned into an error that names
+     * no action and gives no reason.
+     *
      * @param array<string, mixed> $data
+     * @throws InvalidFormatException When the action or the reason is missing, or an optional field is of another type
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            action: (string)($data['action'] ?? ''),
-            reason: (string)($data['reason'] ?? ''),
-            requestId: isset($data[SignalPayloadConstants::FIELD_REQUEST_ID]) && is_string($data[SignalPayloadConstants::FIELD_REQUEST_ID])
-                ? $data[SignalPayloadConstants::FIELD_REQUEST_ID]
-                : null,
-            errorCode: isset($data[self::errorCode]) && is_string($data[self::errorCode])
-                ? $data[self::errorCode]
-                : null,
-            retryAfter: isset($data[self::retryAfter]) && is_int($data[self::retryAfter])
-                ? $data[self::retryAfter]
-                : null,
+            action: self::requireString($data, 'action'),
+            reason: self::requireString($data, 'reason'),
+            requestId: self::optionalString($data, SignalPayloadConstants::FIELD_REQUEST_ID),
+            errorCode: self::optionalString($data, self::errorCode),
+            retryAfter: self::optionalInt($data, self::retryAfter),
         );
     }
 

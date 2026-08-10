@@ -8,6 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalData;
@@ -74,6 +75,21 @@ final class PageSignalPayloadDtoTest extends TestCase
         } catch (InvalidAgentSignalPayloadException $e) {
             $this->assertInstanceOf(\InvalidArgumentException::class, $e->getPrevious());
             $this->assertStringContainsString('message is required', $e->getMessage());
+        }
+    }
+
+    public function testIncompletePayloadIsRefusedRatherThanHydratedWithAStub(): void
+    {
+        try {
+            $this->factory()->createPageSignalPayloadDTO(
+                SignalTypeConstants::AGENT_SIGNAL,
+                PageSignalPayloadTestHilos::HELPER_SIGNAL,
+                new SignalData(['other' => 'hello']),
+            );
+            $this->fail('Expected InvalidAgentSignalPayloadException');
+        } catch (InvalidAgentSignalPayloadException $e) {
+            $this->assertInstanceOf(InvalidFormatException::class, $e->getPrevious());
+            $this->assertStringContainsString('message', $e->getMessage());
         }
     }
 
@@ -155,6 +171,37 @@ final class PageSignalPayloadTestData extends BaseDTO implements SignalDataInter
 }
 
 /**
+ * Test payload DTO reading its required field through the shared BaseDTO helper.
+ */
+final class PageSignalPayloadTestHelperData extends BaseDTO implements SignalDataInterface
+{
+    /**
+     * @param string $message Required payload message
+     */
+    public function __construct(public readonly string $message)
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload
+     */
+    public function toArray(): array
+    {
+        return ['message' => $this->message];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no message
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(self::requireString($data, 'message'));
+    }
+}
+
+/**
  * Inbound payload implementing the interface without extending BaseDTO.
  */
 final class PageSignalPayloadTestPlainData implements SignalDataInterface
@@ -191,6 +238,8 @@ final class PageSignalPayloadTestHilos extends HilosFacade
 {
     public const string TYPED_SIGNAL = 'typed_test_signal';
 
+    public const string HELPER_SIGNAL = 'helper_field_test_signal';
+
     public const string BROKEN_SIGNAL = 'broken_dto_test_signal';
 
     public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\PageSignalPayloadTestMissingData';
@@ -204,6 +253,7 @@ final class PageSignalPayloadTestHilos extends HilosFacade
         return [
             SignalTypeConstants::AGENT_SIGNAL => [
                 self::TYPED_SIGNAL => PageSignalPayloadTestData::class,
+                self::HELPER_SIGNAL => PageSignalPayloadTestHelperData::class,
                 self::BROKEN_SIGNAL => self::MISSING_DTO_CLASS,
             ],
         ];

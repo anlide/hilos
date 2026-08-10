@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -68,7 +69,7 @@ final class SignalDTOTest extends TestCase
 
     public function testRejectsANonStringNameOffTheWire(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException(InvalidFormatException::class);
 
         SignalDTO::fromArray($this->wireArray(7));
     }
@@ -78,7 +79,7 @@ final class SignalDTOTest extends TestCase
         $payload = $this->wireArray('chat_message');
         unset($payload['signalName']);
 
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException(InvalidFormatException::class);
 
         SignalDTO::fromArray($payload);
     }

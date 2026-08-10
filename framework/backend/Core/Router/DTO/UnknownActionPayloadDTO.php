@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router\DTO;
 
+use Hilos\Core\Exception\InvalidFormatException;
+
 /**
  * UnknownActionPayloadDTO - DTO for unrecognized actions.
  *
@@ -47,14 +49,20 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     /**
      * Creates DTO from array.
      *
+     * The action is what this DTO exists to report as unrecognized, so a payload
+     * without it carries nothing to report. The raw data is legitimately absent:
+     * a payload that was never wrapped in a `data` key is kept whole, which is
+     * what preserves it for the log.
+     *
      * @param array<string, mixed> $data Data array (action key required, data optional)
      * @return static DTO instance
+     * @throws InvalidFormatException When the action is missing, or the data key is present and not an array
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            $data['action'] ?? '',
-            $data['data'] ?? $data,
+            self::requireString($data, 'action'),
+            self::optionalArray($data, 'data') ?? $data,
         );
     }
 

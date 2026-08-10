@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataEnvelope;
 use Hilos\Core\Router\SignalDataInterface;
@@ -46,6 +48,50 @@ final class SignalDataEnvelopeTest extends TestCase
 
         $this->assertInstanceOf(SignalData::class, $decoded);
         $this->assertSame(['value' => 'kept'], $decoded->toArray());
+    }
+
+    public function testDecodeFallsBackWithAWarningWhenAKnownTypeRefusesThePayload(): void
+    {
+        ob_start();
+        $decoded = SignalDataEnvelope::decode(['other' => 'kept'], EnvelopeTestRequiredFieldPayload::class);
+        $logged = (string)ob_get_clean();
+
+        $this->assertInstanceOf(SignalData::class, $decoded);
+        $this->assertSame(['other' => 'kept'], $decoded->toArray());
+        $this->assertStringContainsString(EnvelopeTestRequiredFieldPayload::class, $logged);
+        $this->assertStringContainsString(InvalidFormatException::class, $logged);
+        $this->assertStringContainsString('value', $logged);
+    }
+}
+
+/**
+ * Signal payload reading its required field through the shared BaseDTO helper.
+ */
+final class EnvelopeTestRequiredFieldPayload extends BaseDTO implements SignalDataInterface
+{
+    /**
+     * @param string $value Required payload value
+     */
+    public function __construct(public readonly string $value)
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Wire payload
+     */
+    public function toArray(): array
+    {
+        return ['value' => $this->value];
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload
+     * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no value
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(self::requireString($data, 'value'));
     }
 }
 

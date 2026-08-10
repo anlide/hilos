@@ -101,14 +101,13 @@ required field raises `PeerTransportException`, an optional one is normalized
 `'' -> null`) and `Socket/Client/WebSocketClient::onFrame()` (an empty frame field
 raises `InvalidFrameException`).
 
-Action payloads share one spelling of the required-field cure:
-`ActionPayloadDTO::requireString()` refuses a key that is absent or holds a
-non-string, and `PageSignalRouter::dispatchAction()` builds the DTO inside the try
-that turns an action failure into the client's fail-ack — so a broken payload is
-answered like any other failed action. An empty string passes the check on
-purpose: a field the user left blank is real input, and the handler answers it
-with its own validation message. See
-[signals/dto-convention.md](../signals/dto-convention.md).
+Every DTO shares one spelling of the required-field cure: `BaseDTO::requireString()`
+and its siblings refuse a key that is absent or holds the wrong type, and
+`PageSignalRouter::dispatchAction()` builds an action DTO inside the try that turns
+an action failure into the client's fail-ack — so a broken payload is answered like
+any other failed action. An empty string passes the check on purpose: a field the
+user left blank is real input, and the handler answers it with its own validation
+message. See [signals/dto-convention.md](../signals/dto-convention.md).
 
 ### Test code is judged by the same rule
 
@@ -143,6 +142,65 @@ This is the same device as `// warning-suppressed:` in
 the repository, so a reader who knows either one reads the other without the docs.
 Its cost is the same, too — it is also the way to get past the rule, so a marker
 whose reason does not name an outside source is a review finding.
+
+## Reading a payload does not mint a stub
+
+Checked automatically: `PAYLOAD-SENTINEL`
+(see [automated-checks.md](automated-checks.md)).
+
+The rule above is about a value the code mints anywhere. This one is about the
+one place where minting is most tempting and most expensive: `fromArray()` and
+`fromJson()`, where a frame somebody else sent is turned into an object.
+
+**A payload field has two roles and no third one.**
+
+- **Required** — the signal has no meaning without it. An absent key, or a key
+  holding another type, means the frame is broken, and the reader refuses it
+  with `InvalidFormatException`.
+- **Legitimately absent** — the sender is allowed to leave it out, which is what
+  an omitted optional field or an empty payload section means. The property is
+  nullable and the reader answers `null`.
+
+```php
+// wrong: three fields the signal is defined by, and a frame missing any of them
+// still builds an object that reads as data
+return new static(
+    page: (string)($data['page'] ?? ''),
+    httpCode: (int)($data['httpCode'] ?? 500),
+    requestId: (string)($data['requestId'] ?? ''),
+);
+
+// right: two required, one legitimately absent
+return new static(
+    page: self::requireString($data, 'page'),
+    httpCode: self::requireInt($data, 'httpCode'),
+    requestId: self::optionalString($data, 'requestId'),
+);
+```
+
+`BaseDTO` owns both halves, so a DTO neither writes the check nor picks the
+exception: `requireString()`, `requireInt()` and `requireArray()` refuse an
+absent or mistyped key; `optionalString()`, `optionalInt()` and `optionalArray()`
+answer `null` to an absent key and refuse a present one of the wrong type. The
+set grows on demand — add the reader the payload needs, not the six it might.
+The type is checked and never cast: `(int)` turns `null`, `false` and `'abc'`
+into a `0` indistinguishable from a sent one.
+
+`''`, `0` and `0.0` are the three values that quietly pretend to be a third role,
+and the machine reads the three spellings that mint them — `??`, a ternary
+branch, and a `match` `default` arm. `?? null` and `?? []` are neither: the first
+is how a legitimately absent field arrives, and the second is what an omitted
+section of a payload means.
+
+What the check does **not** judge is agreement between fields — that one field is
+required only because another one is set, or that two of them cannot both be
+filled. That stays in the constructor, where the whole object is visible;
+`MailSendSignalData` is the sample. `fromArray()` answers presence and type, and
+nothing else.
+
+The `// external-boundary: <reason>` marker legalizes one occurrence here as
+well, and means the same thing: the value really did arrive from outside as that
+literal.
 
 ## Polling APIs
 

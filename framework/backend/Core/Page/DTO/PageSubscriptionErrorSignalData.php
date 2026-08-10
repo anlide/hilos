@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -49,16 +50,22 @@ class PageSubscriptionErrorSignalData extends BaseDTO implements SignalDataInter
     /**
      * Creates error data from array.
      *
+     * Every field is what the client shows the user, and none of the four has a
+     * value that could stand in for a missing one: a subscription failure that
+     * arrived without its status or its code is a broken frame, and inventing a
+     * generic 500 for it would hide the break behind a plausible error page.
+     *
      * @param array<string, mixed> $data Source data
      * @return static Error data instance
+     * @throws InvalidFormatException When any of the four fields is missing or of another type
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            page: (string) ($data['page'] ?? ''),
-            httpCode: (int) ($data['httpCode'] ?? 500),
-            errorCode: (string) ($data['errorCode'] ?? 'error'),
-            message: (string) ($data['message'] ?? 'Unknown error'),
+            page: self::requireString($data, 'page'),
+            httpCode: self::requireInt($data, 'httpCode'),
+            errorCode: self::requireString($data, 'errorCode'),
+            message: self::requireString($data, 'message'),
         );
     }
 }

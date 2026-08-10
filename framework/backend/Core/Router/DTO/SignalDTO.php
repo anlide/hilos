@@ -6,6 +6,7 @@ namespace Hilos\Core\Router\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -81,96 +82,89 @@ class SignalDTO extends BaseDTO
     /**
      * Creates DTO from array.
      *
+     * The three fields a signal is routed by are required and read through the
+     * shared payload helpers, so a frame missing one is refused with the same
+     * exception every other DTO refuses with. Each of them may also arrive as
+     * the object it will become — a signal built in process and handed over
+     * without a serialization round trip — and that form is taken as it is.
+     *
+     * The empty name is the one check the helpers cannot make: an empty string
+     * is a value a payload is allowed to carry, and it is the constructor that
+     * holds the line for every reader of a signal name.
+     *
      * @param array<string, mixed> $data Source data (signalSource, signalType, signalName, data required)
      * @return static DTO instance
-     * @throws InvalidArgumentException If required fields are missing or invalid
+     * @throws InvalidFormatException When a required field is missing, or a field holds another type
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public static function fromArray(array $data): static
     {
-        // Validate required fields
-        if (!isset($data['signalSource'])) {
-            throw new InvalidArgumentException("Missing required field: signalSource");
-        }
-
-        if (!isset($data['signalType'])) {
-            throw new InvalidArgumentException("Missing required field: signalType");
-        }
-
-        if (!isset($data['signalName'])) {
-            throw new InvalidArgumentException("Missing required field: signalName");
-        }
-
-        // isset('') is true, so the presence check above lets an empty name through:
-        // the field is what a signal is routed by, so it is checked by value here.
-        $signalNameValue = $data['signalName'] instanceof SignalNameInterface
-            ? $data['signalName']->getName()
-            : $data['signalName'];
-        if (!is_string($signalNameValue)) {
-            throw new InvalidArgumentException(
-                "Field 'signalName' must be a string or SignalNameInterface, got: " . gettype($data['signalName']),
-            );
-        }
-
-        if ($signalNameValue === '') {
-            throw new InvalidArgumentException("Field 'signalName' must not be empty");
-        }
-
-        // Validate data field type
-        if (isset($data['data']) && !is_array($data['data'])) {
-            throw new InvalidArgumentException("Field 'data' must be an array, got: " . gettype($data['data']));
-        }
-
-        // Validate dataType field type - must be string or null
-        if (array_key_exists('dataType', $data) && $data['dataType'] !== null && !is_string($data['dataType'])) {
-            throw new InvalidArgumentException("Field 'dataType' must be string or null, got: " . gettype($data['dataType']));
-        }
-
-        if (array_key_exists('meta', $data) && !is_array($data['meta'])) {
-            throw new InvalidArgumentException("Field 'meta' must be an array, got: " . gettype($data['meta']));
-        }
-
-        // Deserialize signalSource
-        $signalSourceData = $data['signalSource'];
-        if ($signalSourceData instanceof SignalSourceInterface) {
-            $signalSource = $signalSourceData;
-        } elseif (is_array($signalSourceData)) {
-            // From JSON deserialization - array with source, type, index
-            $signalSource = new SignalSource(
-                source: $signalSourceData['source'] ?? '',
-                type: $signalSourceData['type'] ?? null,
-                index: $signalSourceData['index'] ?? null,
-            );
-        } else {
-            // Fallback: treat as string
-            $signalSource = new SignalSource((string)$signalSourceData);
-        }
-
-        // Deserialize signalType
-        if ($data['signalType'] instanceof SignalTypeInterface) {
-            $signalType = $data['signalType'];
-        } else {
-            $signalType = new SignalType($data['signalType']);
-        }
-
-        // Deserialize signalName
-        if ($data['signalName'] instanceof SignalNameInterface) {
-            $signalName = $data['signalName'];
-        } else {
-            $signalName = new SignalName($signalNameValue);
-        }
-
-        // Deserialize signalData
-        $dataArray = $data['data'] ?? [];
-        $dataType = $data['dataType'] ?? null;
-        $signalData = self::deserializeSignalData($dataArray, $dataType);
-
         return new static(
-            signalSource: $signalSource,
-            signalType: $signalType,
-            signalName: $signalName,
-            data: $signalData,
-            meta: $data['meta'] ?? [],
+            signalSource: self::readSignalSource($data),
+            signalType: self::readSignalType($data),
+            signalName: self::readSignalName($data),
+            data: self::deserializeSignalData(
+                self::optionalArray($data, 'data') ?? [],
+                self::optionalString($data, 'dataType'),
+            ),
+            meta: self::optionalArray($data, 'meta') ?? [],
         );
+    }
+
+    /**
+     * Reads the source a signal came from, in either the object or the wire form.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return SignalSourceInterface Signal source
+     * @throws InvalidFormatException When the field is missing, or its parts hold another type
+     */
+    private static function readSignalSource(array $data): SignalSourceInterface
+    {
+        $signalSource = $data['signalSource'] ?? null;
+        if ($signalSource instanceof SignalSourceInterface) {
+            return $signalSource;
+        }
+
+        $parts = self::requireArray($data, 'signalSource');
+
+        return new SignalSource(
+            source: self::requireString($parts, 'source'),
+            type: self::optionalString($parts, 'type'),
+            index: self::optionalString($parts, 'index'),
+        );
+    }
+
+    /**
+     * Reads the signal type, in either the object or the wire form.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return SignalTypeInterface Signal type
+     * @throws InvalidFormatException When the field is missing or holds another type
+     */
+    private static function readSignalType(array $data): SignalTypeInterface
+    {
+        $signalType = $data['signalType'] ?? null;
+
+        return $signalType instanceof SignalTypeInterface
+            ? $signalType
+            : new SignalType(self::requireString($data, 'signalType'));
+    }
+
+    /**
+     * Reads the signal name, in either the object or the wire form.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return SignalNameInterface Signal name
+     * @throws InvalidFormatException When the field is missing or holds another type
+     * @throws InvalidArgumentException When the name is empty
+     */
+    private static function readSignalName(array $data): SignalNameInterface
+    {
+        $signalName = $data['signalName'] ?? null;
+
+        return $signalName instanceof SignalNameInterface
+            ? $signalName
+            : new SignalName(self::requireString($data, 'signalName'));
     }
 
     /**

@@ -9,6 +9,7 @@ use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
+use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
@@ -100,6 +101,24 @@ final class RuleFixtureTest extends TestCase
                     . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
                 'MAGIC-REPEAT Bad/MagicRepeatSamples.php:62 — 4000 occurs 2 times in this file; name it '
                     . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadMarkerWithoutReason.php:28 — the `// external-boundary:` '
+                    . 'marker above the fallback names no reason '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadSentinelSamples.php:33 — ?? \'\' mints a stub where the payload '
+                    . 'field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadSentinelSamples.php:34 — ?? 0 mints a stub where the payload '
+                    . 'field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadSentinelSamples.php:35 — ?? 0.0 mints a stub where the payload '
+                    . 'field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadSentinelSamples.php:47 — a ternary branch hands back "" where '
+                    . 'the payload field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
+                'PAYLOAD-SENTINEL Bad/PayloadSentinelSamples.php:50 — match falls back to 0 where the payload '
+                    . 'field is missing; refuse the payload or let the field be null '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:13 — @property-read references \Hilos\Core\Hilos '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:14 — @method references \Hilos\Tests\CodeStyle\Violation '
@@ -228,6 +247,7 @@ final class RuleFixtureTest extends TestCase
             new ErrorSuppressionRule(),
             new MagicRepeatRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
+            new PayloadSentinelRule(),
             new WireKeyCaseRule(),
             new LineLengthRule(),
         ];

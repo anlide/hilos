@@ -1,6 +1,6 @@
 ---
 name: hilos-code-style-php
-description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, or `tests/**`, or when a PHP style guard fails. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
+description: Apply Hilos code style to backend PHP — PHPDoc and `@throws` contracts, exception choice, method contracts, payload readers (`fromArray`/`fromJson`), static factories, magic values, class member order, local variables, Reflection, and error suppression. Use when writing, reviewing, or refactoring a `.php` file under `framework/backend/**`, `demo/*/backend/**`, `scripts/**`, or `tests/**`, or when a PHP style guard fails. For frontend code use `$hilos-code-style-typescript` and its per-framework wrappers.
 ---
 
 # Hilos Code Style — PHP
@@ -19,7 +19,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/framework-development.md` | changing framework-level APIs, facade globals, extension points, or framework subsystem exceptions — via `$hilos-framework-development` |
 | `docs/agents/code-style/phpdoc.md` | creating a method, changing a signature, visibility, parameters, return type, or thrown exceptions, overriding a method, or adding `@see` links |
 | `docs/agents/code-style/exceptions.md` | choosing an exception class, documenting `@throws`, handling validation or business errors |
-| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker |
+| `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker, and reading a field inside `fromArray()` / `fromJson()` |
 | `docs/agents/code-style/static-factories.md` | adding or changing `fromArray`, `fromRow`, `create`, or another named constructor |
 | `docs/agents/code-style/internal-backend-api.md` | changing backend contracts, DB actions, table actions, DTO/value-object boundaries, or typed collections |
 | `docs/agents/code-style/magic-values.md` | writing a bare number or string into production code |
@@ -53,6 +53,10 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 - Do not return `bool` as a success flag from a method that performs work, and do
   not mint a "no value" marker with `?? ''`, a ternary branch or a `match`
   `default` arm — in a test suite either (`method-contracts.md`).
+- A payload field has two roles and no third: `BaseDTO::require*` for one the
+  signal has no meaning without, `optional*` for one the sender may omit. Falling
+  back to `''`, `0` or `0.0` inside `fromArray()` / `fromJson()` fails the
+  `PAYLOAD-SENTINEL` guard in `test:framework:unit` (`method-contracts.md`).
 - A factory typed `: static` or `@return static` returns `new static()`, never
   `new self()` (`static-factories.md`).
 - A surviving `@` carries `// warning-suppressed: <what is checked instead>` on

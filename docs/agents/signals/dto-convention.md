@@ -54,9 +54,10 @@ new inbound path there rather than repeating the class-string check and the
 not go through the hydrator.
 
 An action DTO reads the fields its action is defined by with
-`ActionPayloadDTO::requireString()`, which throws `InvalidFormatException` when the
-key is absent or holds a non-string; an empty string passes through, because a
-field the user left blank is real input and the handler validates it itself.
+`BaseDTO::requireString()` (see the section below), which throws
+`InvalidFormatException` when the key is absent or holds a non-string; an empty
+string passes through, because a field the user left blank is real input and the
+handler validates it itself.
 `PageSignalRouter::dispatchAction()` builds the DTO inside its action try, so the
 refusal becomes the tracked action's fail-ack. The one place it cannot reach is
 `onActionException()` — that hook is handed the DTO that could not be built — so
@@ -80,6 +81,33 @@ Topology mismatch after declaration is a contract error:
 `InvalidAgentSignalPayloadException` for agent and page-routed agent signals,
 `InvalidCommandPayloadException` for CLI commands, `InvalidActionPayloadException`
 for actions.
+
+### Reading the payload in `fromArray()`
+
+A `fromArray()` refuses a payload it cannot be built from; it does not fill the
+gap. The full rule, with the reasoning and the machine check that enforces it,
+is in [code-style/method-contracts.md](../code-style/method-contracts.md); what
+a signal DTO needs from it is three sentences:
+
+- A field the signal has no meaning without is **required**: absent, or of
+  another type, and the reader throws `InvalidFormatException`.
+- A field the sender may legitimately leave out is **nullable**, and its absence
+  arrives as `null` — not as `''`, `0` or an empty section standing in for one.
+- Agreement *between* fields stays in the constructor, where the whole object is
+  visible; `MailSendSignalData` is the sample. `fromArray()` answers presence and
+  type, and nothing else.
+
+`BaseDTO` carries the readers — `requireString()`, `requireInt()`,
+`requireArray()`, `optionalString()`, `optionalInt()`, `optionalArray()` — so a
+DTO neither writes the check nor picks the exception. The set grows on demand.
+
+The refusal is invisible from outside the DTO, and deliberately so. On the
+hydrated paths `SignalPayloadHydrator` wraps it as
+`InvalidAgentSignalPayloadException` or `InvalidCommandPayloadException` (the
+table below), and on the envelope path `SignalDataEnvelope::decode()` catches it,
+logs a warning naming the class and the cause, and degrades to an untyped
+`SignalData` — the same handling a frame of an unknown type gets. A payload that
+would have become a DTO full of zeros now becomes a logged refusal instead.
 
 ### Broken declaration vs rejected payload
 
