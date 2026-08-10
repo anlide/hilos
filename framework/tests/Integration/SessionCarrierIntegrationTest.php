@@ -9,8 +9,8 @@ use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Collection\HilosConnections;
-use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -220,10 +220,11 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
     /**
      * @throws HilosException When the snapshot fails
      */
-    public function testAProjectWithoutFrameworkConnectionsCarriesNothing(): void
+    public function testAProjectWithoutSessionConnectionsCarriesNothing(): void
     {
-        // simple-poll and simple-todo extend RtStates directly and have no sessions to speak of;
-        // the mechanism is expected to stay silent there rather than report a broken activation.
+        // simple-poll and simple-todo stand on the presence stage and have no sessions to speak
+        // of; the mechanism is expected to stay silent there rather than report a broken
+        // activation, and their rows do not even carry a token it could photograph.
         $rt = new SessionCarrierNoConnectionsRtContext();
         $rt->configure();
         Hilos::$rt = $rt;
@@ -285,35 +286,13 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
 
 /**
  * The smallest concrete connection row: the framework session triple and nothing else.
+ *
+ * It stands on the session stage because that is where the token this mechanism
+ * photographs lives; a row with nothing of its own leaves all four project hooks
+ * empty, which is exactly what the two simple demos do.
  */
-final class SessionCarrierTestConnection extends HilosConnection
+final class SessionCarrierTestConnection extends HilosSessionConnection
 {
-    /**
-     * @param string $acceptKey WebSocket accept key
-     * @param ?int $userId Bound user id, or null for an anonymous connection
-     * @param string $sessionToken Session cookie token
-     * @return static Connection row
-     */
-    public static function create(string $acceptKey, ?int $userId, string $sessionToken): static
-    {
-        $state = new static();
-        $state->initBase($acceptKey, $userId, $sessionToken);
-
-        return $state;
-    }
-
-    /**
-     * @param array<string, mixed> $row Serialized runtime row
-     * @return static Connection row
-     */
-    public static function fromRow(array $row): static
-    {
-        $state = new static();
-        $state->hydrateBase($row);
-
-        return $state;
-    }
-
     /**
      * @return string Runtime collection key
      */
@@ -322,21 +301,39 @@ final class SessionCarrierTestConnection extends HilosConnection
         return SessionCarrierTestRtContext::connections;
     }
 
-    /**
-     * @return array<string, mixed> Serialized runtime row
-     */
-    public function toArray(): array
+    protected function initOwn(): void
     {
-        return $this->baseToArray();
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Always empty: the row is the framework base
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
     }
 }
 
 /**
  * A project connections collection, as every project that has sessions declares one.
  *
- * @extends HilosConnections<SessionCarrierTestConnection>
+ * @extends HilosSessionConnections<SessionCarrierTestConnection>
  */
-final class SessionCarrierTestConnections extends HilosConnections
+final class SessionCarrierTestConnections extends HilosSessionConnections
 {
     public const string STATE_CLASS = SessionCarrierTestConnection::class;
 }

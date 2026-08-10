@@ -5,21 +5,22 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Extends the framework {@see HilosConnection} base, which owns the session
- * triple (acceptKey / sessionToken / userId) and its hydrate/diff helpers; this
- * subclass adds chat's own in-memory moderation, file upload session, and
- * progress UI state for this socket only, delegating the triple to the base
- * {@see HilosConnection::initBase()} / {@see HilosConnection::hydrateBase()} /
- * {@see HilosConnection::baseToArray()} / {@see HilosConnection::applyBaseDiff()}.
- * Inbound RT updates use `applyDiff()`; local writes from item actions use typed
- * properties and `sync()`. Public string constants name row keys.
+ * Stands on the framework {@see HilosSessionConnection} base — the session stage,
+ * because chat carries browser sessions — which owns the session triple
+ * (acceptKey / sessionToken / userId) and the whole create/hydrate/serialize/diff
+ * template. This subclass adds chat's own in-memory moderation, file upload
+ * session, and progress UI state for this socket only, and reaches them through
+ * the four hooks the base leaves it: {@see initOwn()}, {@see hydrateOwn()},
+ * {@see ownToArray()}, {@see applyOwnDiff()}. Inbound RT updates arrive through
+ * the base `applyDiff()`; local writes from item actions use typed properties and
+ * `sync()`. Public string constants name row keys.
  */
-final class Connection extends HilosConnection
+final class Connection extends HilosSessionConnection
 {
     public const string connectedAt = 'connectedAt';
 
@@ -132,85 +133,50 @@ final class Connection extends HilosConnection
     public float $uploadProgressLastSentAt = 0.0;
 
     /**
-     * @param string $acceptKey WebSocket accept key (unique identifier)
-     * @param ?int $userId Authenticated user id, or null for an anonymous session
-     * @param string $sessionToken Session cookie token this connection belongs to
+     * Stamps the moment the socket was registered; every other chat field opens
+     * on the value its declaration already carries.
      */
-    public static function create(string $acceptKey, ?int $userId, string $sessionToken = ''): static
+    protected function initOwn(): void
     {
-        $instance = new static();
-        $instance->initBase($acceptKey, $userId, $sessionToken);
-        $instance->connectedAt = time();
-        $instance->outboundModerationPhase = '';
-        $instance->outboundModerationMessage = null;
-        $instance->outboundModerationReason = null;
-        $instance->outboundModerationUpdatedAt = 0;
-        $instance->renameModerationPhase = '';
-        $instance->renameModerationName = null;
-        $instance->renameModerationReason = null;
-        $instance->renameModerationUpdatedAt = 0;
-        $instance->fileSessionUploadId = null;
-        $instance->fileSessionDeclaredSize = 0;
-        $instance->fileSessionReceivedBytes = 0;
-        $instance->fileSessionQuarantineBasename = null;
-        $instance->fileSessionOriginalFilename = null;
-        $instance->fileSessionMimeType = null;
-        $instance->fileSessionClientUploadId = null;
-        $instance->fileSessionNormalizedFilename = null;
-        $instance->fileUploadPhase = '';
-        $instance->fileUploadClientUploadId = null;
-        $instance->fileUploadErrorCode = null;
-        $instance->fileUploadErrorMessage = null;
-        $instance->fileProgressFilename = null;
-        $instance->fileProgressUploadedBytes = 0;
-        $instance->fileProgressTotalBytes = 0;
-        $instance->uploadProgressLastSentAt = 0.0;
-        $instance->markRtSyncBaseline();
-
-        return $instance;
+        $this->connectedAt = time();
     }
 
     /**
      * @param array<string, mixed> $row Serialized runtime row (string keys match this class field constants)
      */
-    public static function fromRow(array $row): static
+    protected function hydrateOwn(array $row): void
     {
-        $instance = new static();
-        $instance->hydrateBase($row);
-        $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
-        $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
-        $instance->outboundModerationMessage = self::stringOrNull($row[self::outboundModerationMessage] ?? null);
-        $instance->outboundModerationReason = self::nonEmptyStringOrNull($row[self::outboundModerationReason] ?? null);
-        $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
-        $instance->renameModerationPhase = (string)($row[self::renameModerationPhase] ?? '');
-        $instance->renameModerationName = self::nonEmptyStringOrNull($row[self::renameModerationName] ?? null);
-        $instance->renameModerationReason = self::nonEmptyStringOrNull($row[self::renameModerationReason] ?? null);
-        $instance->renameModerationUpdatedAt = (int)($row[self::renameModerationUpdatedAt] ?? 0);
-        $instance->fileSessionUploadId = self::nonEmptyStringOrNull($row[self::fileSessionUploadId] ?? null);
-        $instance->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
-        $instance->fileSessionReceivedBytes = (int)($row[self::fileSessionReceivedBytes] ?? 0);
-        $instance->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
+        $this->connectedAt = (int)($row[self::connectedAt] ?? time());
+        $this->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
+        $this->outboundModerationMessage = self::stringOrNull($row[self::outboundModerationMessage] ?? null);
+        $this->outboundModerationReason = self::nonEmptyStringOrNull($row[self::outboundModerationReason] ?? null);
+        $this->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
+        $this->renameModerationPhase = (string)($row[self::renameModerationPhase] ?? '');
+        $this->renameModerationName = self::nonEmptyStringOrNull($row[self::renameModerationName] ?? null);
+        $this->renameModerationReason = self::nonEmptyStringOrNull($row[self::renameModerationReason] ?? null);
+        $this->renameModerationUpdatedAt = (int)($row[self::renameModerationUpdatedAt] ?? 0);
+        $this->fileSessionUploadId = self::nonEmptyStringOrNull($row[self::fileSessionUploadId] ?? null);
+        $this->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
+        $this->fileSessionReceivedBytes = (int)($row[self::fileSessionReceivedBytes] ?? 0);
+        $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
             $row[self::fileSessionQuarantineBasename] ?? null,
         );
-        $instance->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
+        $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
             $row[self::fileSessionOriginalFilename] ?? null,
         );
-        $instance->fileSessionMimeType = self::nonEmptyStringOrNull($row[self::fileSessionMimeType] ?? null);
-        $instance->fileSessionClientUploadId = self::nonEmptyStringOrNull($row[self::fileSessionClientUploadId] ?? null);
-        $instance->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
+        $this->fileSessionMimeType = self::nonEmptyStringOrNull($row[self::fileSessionMimeType] ?? null);
+        $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($row[self::fileSessionClientUploadId] ?? null);
+        $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
             $row[self::fileSessionNormalizedFilename] ?? null,
         );
-        $instance->fileUploadPhase = (string)($row[self::fileUploadPhase] ?? '');
-        $instance->fileUploadClientUploadId = self::nonEmptyStringOrNull($row[self::fileUploadClientUploadId] ?? null);
-        $instance->fileUploadErrorCode = self::nonEmptyStringOrNull($row[self::fileUploadErrorCode] ?? null);
-        $instance->fileUploadErrorMessage = self::nonEmptyStringOrNull($row[self::fileUploadErrorMessage] ?? null);
-        $instance->fileProgressFilename = self::nonEmptyStringOrNull($row[self::fileProgressFilename] ?? null);
-        $instance->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
-        $instance->fileProgressTotalBytes = (int)($row[self::fileProgressTotalBytes] ?? 0);
-        $instance->uploadProgressLastSentAt = (float)($row[self::uploadProgressLastSentAt] ?? 0.0);
-        $instance->markRtSyncBaseline();
-
-        return $instance;
+        $this->fileUploadPhase = (string)($row[self::fileUploadPhase] ?? '');
+        $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($row[self::fileUploadClientUploadId] ?? null);
+        $this->fileUploadErrorCode = self::nonEmptyStringOrNull($row[self::fileUploadErrorCode] ?? null);
+        $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($row[self::fileUploadErrorMessage] ?? null);
+        $this->fileProgressFilename = self::nonEmptyStringOrNull($row[self::fileProgressFilename] ?? null);
+        $this->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
+        $this->fileProgressTotalBytes = (int)($row[self::fileProgressTotalBytes] ?? 0);
+        $this->uploadProgressLastSentAt = (float)($row[self::uploadProgressLastSentAt] ?? 0.0);
     }
 
     /**
@@ -226,9 +192,8 @@ final class Connection extends HilosConnection
     /**
      * @param array<string, mixed> $diff Partial update; keys are public `* = 'fieldName'` constants on this class
      */
-    public function applyDiff(array $diff): void
+    protected function applyOwnDiff(array $diff): void
     {
-        $this->applyBaseDiff($diff);
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
         }
@@ -313,11 +278,11 @@ final class Connection extends HilosConnection
     }
 
     /**
-     * @return array<string, mixed> Row for persistence / truth-source sync
+     * @return array<string, mixed> Chat's own fields of the row
      */
-    public function toArray(): array
+    protected function ownToArray(): array
     {
-        return array_merge($this->baseToArray(), [
+        return [
             self::connectedAt => $this->connectedAt,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,
@@ -343,7 +308,7 @@ final class Connection extends HilosConnection
             self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
             self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
-        ]);
+        ];
     }
 
     /**

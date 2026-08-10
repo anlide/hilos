@@ -7,39 +7,20 @@ namespace Hilos\Runtime\State\Collection;
 use Hilos\Runtime\State\Item\HilosConnection;
 
 /**
- * Inheritable runtime collection of WebSocket connection rows (HIL-361).
+ * Inheritable runtime collection of WebSocket connection rows — the presence stage (HIL-361, HIL-509).
  *
  * The framework-owned base of the connections runtime state: it holds the
- * session-scoped lookups the authenticate/deauthenticate seam needs, keyed off
- * the {@see HilosConnection} session triple. Projects subclass this, set
- * `STATE_CLASS` to their concrete connection, and add their own lookups.
+ * user-scoped lookups presence is made of, keyed off the {@see HilosConnection}
+ * accept key and user id. Projects subclass this, set `STATE_CLASS` to their
+ * concrete connection, and add their own lookups; a project that carries browser
+ * sessions subclasses {@see HilosSessionConnections} instead, the stage that adds
+ * the session-scoped lookup.
  *
  * @template T of HilosConnection
  * @extends RtStates<T>
  */
 abstract class HilosConnections extends RtStates
 {
-    /**
-     * Finds all connections belonging to a session token (indexed by accept key).
-     *
-     * The authenticate/deauthenticate seam re-points every live connection of a
-     * session token when its bound user changes.
-     *
-     * @param string $sessionToken Session cookie token
-     * @return array<string, T> Accept key => connection map (empty for an empty token)
-     */
-    public function findAllBySessionToken(string $sessionToken): array
-    {
-        if ($sessionToken === '') {
-            return [];
-        }
-
-        return array_filter(
-            $this->states,
-            static fn(HilosConnection $connection): bool => $connection->sessionToken === $sessionToken,
-        );
-    }
-
     /**
      * Finds every connection bound to some user (indexed by accept key).
      *

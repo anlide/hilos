@@ -17,18 +17,24 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Runtime\View\Actions\Item\RtActions;
+use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 
 /**
  * Write operations for a single connection (RtItem), mirroring DB item actions pattern.
  *
- * @extends RtActions<RuntimeConnection, StateConnection>
+ * Closing a socket and re-pointing its user are the framework's own writes; what
+ * is left here is chat's own file upload and moderation state for this socket.
+ *
+ * @extends HilosConnectionActions<RuntimeConnection>
  * @property-read StateConnection $state
  */
-final class ConnectionActions extends RtActions
+final class ConnectionActions extends HilosConnectionActions
 {
     /**
      * Remove this connection and its active quarantine `.part` file when present.
+     *
+     * The file is chat's own: an upload in flight leaves a `.part` behind that
+     * nothing else will ever claim once its socket is gone.
      *
      * @throws FileDeleteException When an active quarantine file cannot be deleted
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -43,26 +49,7 @@ final class ConnectionActions extends RtActions
             Hilos::$fs->tmp[$quarantineBasename]->unlink();
         }
 
-        $this->remove();
-    }
-
-    /**
-     * Re-points this connection to an authenticated user, or back to anonymous.
-     *
-     * The RT side of the session upgrade/downgrade seam: authenticateSession binds
-     * the live connection to the logged-in user id, logout reverts it to null.
-     *
-     * @param ?int $userId Authenticated user id, or null for anonymous
-     * @throws RtActionsCollectionNameNullException When collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     */
-    public function bindUser(?int $userId): void
-    {
-        $this->ensureCanWrite();
-
-        $this->state->userId = $userId;
-
-        $this->sync();
+        parent::unregister();
     }
 
     /**

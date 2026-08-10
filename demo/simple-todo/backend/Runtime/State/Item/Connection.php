@@ -5,57 +5,20 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Runtime\State\Item;
 
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
-use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\State\Item\HilosConnection;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Minimal presence core: only the accept key and the owning user id. Connection
- * rows are created on handshake and removed on close; their fields never change
- * while open, so no diff/update path is needed.
+ * Stands on the framework {@see HilosConnection} base — the presence stage,
+ * because this demo carries no browser sessions and therefore no session token.
+ * The base owns the accept key, the owning user id, and the whole
+ * create/hydrate/serialize/diff template; this demo adds no fields of its own,
+ * so all four of its hooks are empty. Connection rows are created on handshake
+ * and removed on close.
  */
-final class Connection extends RtState
+final class Connection extends HilosConnection
 {
-    public const string acceptKey = 'acceptKey';
-    public const string userId = 'userId';
-
-    /** WebSocket accept key (primary id). */
-    private(set) string $acceptKey = '';
-
-    /** Owning database user id. */
-    private(set) int $userId = 0;
-
-    /**
-     * Creates a connection state for a freshly opened socket.
-     *
-     * @param string $acceptKey WebSocket accept key (unique identifier)
-     * @param int $userId Owning user id
-     * @return static Connection state ready for the collection
-     */
-    public static function create(string $acceptKey, int $userId): static
-    {
-        $instance = new static();
-        $instance->acceptKey = $acceptKey;
-        $instance->userId = $userId;
-        $instance->markRtSyncBaseline();
-
-        return $instance;
-    }
-
-    /**
-     * @param array<string, mixed> $row Serialized runtime row (keys match this class field constants)
-     * @return static Connection state restored from a sync row
-     */
-    public static function fromRow(array $row): static
-    {
-        $instance = new static();
-        $instance->acceptKey = (string)$row[self::acceptKey];
-        $instance->userId = (int)($row[self::userId] ?? 0);
-        $instance->markRtSyncBaseline();
-
-        return $instance;
-    }
-
     /**
      * Runtime collection key for connection rows.
      *
@@ -67,21 +30,31 @@ final class Connection extends RtState
     }
 
     /**
-     * @return string Runtime collection key (same as the accept key)
+     * Nothing of this demo's own to seed: the row is the framework base.
      */
-    public function getId(): string
+    protected function initOwn(): void
     {
-        return $this->acceptKey;
     }
 
     /**
-     * @return array<string, mixed> Row for truth-source sync
+     * @param array<string, mixed> $row Serialized runtime row (nothing of this demo's own to read)
      */
-    public function toArray(): array
+    protected function hydrateOwn(array $row): void
     {
-        return [
-            self::acceptKey => $this->acceptKey,
-            self::userId => $this->userId,
-        ];
+    }
+
+    /**
+     * @return array<string, mixed> Always empty: the row is the framework base
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update (nothing of this demo's own to apply)
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
     }
 }

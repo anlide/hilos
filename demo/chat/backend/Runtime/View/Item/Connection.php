@@ -13,19 +13,19 @@ use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
-use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Runtime\View\Item\HilosSessionConnection;
 
 /**
  * Read-only runtime item for a connection state row plus virtual user links.
  *
- * Use `Hilos::$rt->connections` for collection access. Per-connection writes
- * go through this item's actions.
+ * Stands on the framework {@see HilosSessionConnection} base — the session stage,
+ * which reads the accept key, the session token, the bound user and the item's
+ * actions — and adds chat's own per-socket fields and the virtual links that turn
+ * a bound user id into rows. Use `Hilos::$rt->connections` for collection access.
+ * Per-connection writes go through this item's actions.
  *
- * @extends RtItem<StateConnection>
+ * @extends HilosSessionConnection<StateConnection>
  *
- * @property-read string $acceptKey WebSocket accept key
- * @property-read string $sessionToken Session cookie token this connection belongs to
- * @property-read ?int $userId Authenticated user id, or null while anonymous
  * @property-read int $connectedAt Unix timestamp when connected
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read ?string $outboundModerationMessage Submitted message text, or null when none is
@@ -56,7 +56,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read AttachmentDrafts $attachmentDrafts Uploaded drafts owned by this connection
  * @property-read ConnectionActions $actions Write operations for this connection
  */
-final class Connection extends RtItem
+final class Connection extends HilosSessionConnection
 {
     /**
      * @param StateConnection $state Backing state (by reference, same as parent contract)
@@ -67,17 +67,15 @@ final class Connection extends RtItem
     }
 
     /**
-     * Delegates known keys to the backing state; virtual links load DB user, runtime user state, and drafts.
+     * Delegates chat's own keys to the backing state; virtual links load DB user, runtime user
+     * state, and drafts. The base fields and the item actions are resolved by the framework base.
      *
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): array|string|int|float|User|ChatUserState|AttachmentDrafts|null|ConnectionActions
+    public function __get(string $name): mixed
     {
         return match ($name) {
-            StateConnection::acceptKey => $this->_state->acceptKey,
-            StateConnection::sessionToken => $this->_state->sessionToken,
-            StateConnection::userId => $this->_state->userId,
             StateConnection::connectedAt => $this->_state->connectedAt,
             StateConnection::outboundModerationPhase => $this->_state->outboundModerationPhase,
             StateConnection::outboundModerationMessage => $this->_state->outboundModerationMessage,
@@ -103,7 +101,6 @@ final class Connection extends RtItem
             StateConnection::fileProgressUploadedBytes => $this->_state->fileProgressUploadedBytes,
             StateConnection::fileProgressTotalBytes => $this->_state->fileProgressTotalBytes,
             StateConnection::uploadProgressLastSentAt => $this->_state->uploadProgressLastSentAt,
-            RtItem::actions => $this->getItemActions(),
             ChatDbContext::user => $this->_state->userId !== null ? Hilos::$db->users[$this->_state->userId] : null,
             ConnectionRuntimeConstants::userState => $this->_state->userId !== null
                 ? Hilos::$rt->userStates[$this->_state->userId]
@@ -113,13 +110,5 @@ final class Connection extends RtItem
             ),
             default => parent::__get($name),
         };
-    }
-
-    /**
-     * @return array<string, mixed> Full state row
-     */
-    public function toArray(): array
-    {
-        return $this->_state->toArray();
     }
 }

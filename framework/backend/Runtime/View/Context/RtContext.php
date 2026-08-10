@@ -15,6 +15,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -285,11 +286,10 @@ abstract class RtContext
     /**
      * Returns the mounted state collection of WebSocket connections, when there is one.
      *
-     * The mirror of {@see presenceSource()} one layer down: the session carry-over (HIL-479)
-     * needs the connection rows themselves, not a presence summary, and it runs inside the
-     * framework where the project's collection key is unknown. A project whose connections do
-     * not extend the framework base - or which keeps no connections at all - answers null, and
-     * the carry-over then has nothing to carry rather than an activation error to report.
+     * The mirror of {@see presenceSource()} one layer down: a framework seam that needs the
+     * connection rows themselves, not a presence summary, runs inside the framework where the
+     * project's collection key is unknown. A project whose connections do not extend the
+     * framework base - or which keeps no connections at all - answers null.
      *
      * @return ?HilosConnections First mounted collection of framework-based connections, or null when none is
      */
@@ -297,6 +297,28 @@ abstract class RtContext
     {
         foreach ($this->_stateCollections as $collection) {
             if ($collection instanceof HilosConnections) {
+                return $collection;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the mounted state collection of session-carrying connections, when there is one.
+     *
+     * The same question one stage up (HIL-509): a seam that reads the session token asks for the
+     * stage that has one, so a project standing on the presence stage answers null here while
+     * still answering {@see connectionsSource()}. That is how the session carry-over (HIL-479)
+     * finds the tokens it photographs, and why a project without sessions has nothing to carry
+     * rather than an activation error to report.
+     *
+     * @return ?HilosSessionConnections First mounted collection of session-stage connections, or null when none is
+     */
+    final public function sessionConnectionsSource(): ?HilosSessionConnections
+    {
+        foreach ($this->_stateCollections as $collection) {
+            if ($collection instanceof HilosSessionConnections) {
                 return $collection;
             }
         }

@@ -37,7 +37,6 @@ use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -611,22 +610,14 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Returns the accept keys of the live chat connections bound to a session token,
-     * resolved through the chat runtime connection View collection — the
-     * {@see HilosSessionHost} hook the authenticate/deauthenticate seam iterates to
-     * re-point and re-notify.
-     *
-     * @param string $sessionToken Session cookie token
-     * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
-     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
-     */
-    /**
      * Re-sends the handshake response to every live connection of one user, so a
      * change to their identity reaches the shell without a reload.
      *
      * Built per connection rather than once: two connections of the same user can
      * sit on different sessions, and one of them may be impersonated, which the
-     * response carries.
+     * response carries. A connection belonging to no session is skipped: there is
+     * no session row to describe, and asking for one by a null token is a type
+     * error rather than a miss.
      *
      * @param int $userId User whose connections are told
      */
@@ -634,18 +625,18 @@ final class ChatAgent extends AbstractAgent
     {
         $signalName = $this->handshakeResponseSignalName();
         foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
-            $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
+            $sessionToken = $connection->sessionToken;
+            if ($sessionToken === null) {
+                continue;
+            }
+
+            $session = Hilos::$db->sessions->findByToken($sessionToken);
             $this->sendToUser(
                 $signalName,
                 $connection->acceptKey,
                 $this->handshakeResponseFor($session),
             );
         }
-    }
-
-    protected function sessionConnectionKeys(string $sessionToken): array
-    {
-        return Hilos::$rt->connections->acceptKeysForSessionToken($sessionToken);
     }
 
     /**

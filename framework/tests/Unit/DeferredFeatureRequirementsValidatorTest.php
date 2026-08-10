@@ -15,7 +15,9 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
@@ -164,6 +166,45 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
         );
     }
 
+    public function testProjectThatServesPagesOnTheConnectionBasePasses(): void
+    {
+        DeferredRequirementsPagedHilos::validateDeferredFeatureRequirements(
+            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            DeferredRequirementsTestCliManager::class,
+            DeferredRequirementsConnectedContext::class,
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testProjectThatServesPagesWithoutFrameworkConnectionsIsReported(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'PAGES is not empty but no runtime state collection of '
+            . DeferredRequirementsPresentContext::class . ' extends ' . HilosConnections::class,
+        );
+
+        DeferredRequirementsPagedHilos::validateDeferredFeatureRequirements(
+            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            DeferredRequirementsTestCliManager::class,
+            DeferredRequirementsPresentContext::class,
+        );
+    }
+
+    public function testHeadlessProjectIsAskedForNoConnectionsAtAll(): void
+    {
+        // demo/cluster: PAGES = [], no WebSocket, no connections. The invariant reads the empty
+        // PAGES as the project saying it serves no browsers, and asks it for nothing.
+        DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
+            $this->migrationsPath(['001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),
+            DeferredRequirementsTestCliManager::class,
+            DeferredRequirementsPresentContext::class,
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testProjectWithoutFeaturesReadsNothingAtAll(): void
     {
         // Nothing declared means nothing owed: no directory is scanned, no CLI manager is built
@@ -290,6 +331,17 @@ class DeferredRequirementsValidHilos extends HilosFacade
 }
 
 /**
+ * Facade of a project that serves pages, over the same synthetic registry.
+ *
+ * The page class is never resolved here - the invariant reads only whether PAGES is empty, which
+ * is the project's own statement that browsers subscribe to it.
+ */
+final class DeferredRequirementsPagedHilos extends DeferredRequirementsValidHilos
+{
+    public const array PAGES = ['deferred_page' => 'DeferredRequirementsNoSuchPage'];
+}
+
+/**
  * DB context the synthetic facade hands back; never configured, never queried.
  */
 final class DeferredRequirementsTestDbContext extends DbContext
@@ -386,6 +438,27 @@ final class DeferredRequirementsPresentContext extends RtContext
 }
 
 /**
+ * Runtime context of a project that serves pages: presence and connections on the base.
+ */
+final class DeferredRequirementsConnectedContext extends RtContext
+{
+    public const string presences = 'deferredPresences';
+    public const string connections = 'deferredConnections';
+
+    /**
+     * Registers the presence-reporting collection and the connections the pages need.
+     *
+     * @throws StateCollectionNotFoundException When a collection is represented before it is mounted
+     */
+    public function configure(): void
+    {
+        $this->_stateCollections[self::presences] = DeferredRequirementsStates::init();
+        $this->setRepresent(self::presences, DeferredRequirementsPresenceCollection::class);
+        $this->_stateCollections[self::connections] = DeferredRequirementsConnections::init();
+    }
+}
+
+/**
  * Runtime context whose only collection says nothing about presence.
  */
 final class DeferredRequirementsAbsentContext extends RtContext
@@ -455,6 +528,48 @@ final class DeferredRequirementsPlainCollection extends RtCollection
 final class DeferredRequirementsStates extends RtStates
 {
     public const string STATE_CLASS = DeferredRequirementsState::class;
+}
+
+/**
+ * Connections state collection on the framework base, as a project serving pages keeps.
+ *
+ * @extends HilosConnections<DeferredRequirementsConnection>
+ */
+final class DeferredRequirementsConnections extends HilosConnections
+{
+    public const string STATE_CLASS = DeferredRequirementsConnection::class;
+}
+
+/**
+ * Connection row with nothing of its own: what the invariant asks for is the base.
+ */
+final class DeferredRequirementsConnection extends HilosConnection
+{
+    protected function initOwn(): void
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Always empty: the row is the framework base
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
 }
 
 /**

@@ -12,6 +12,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the session-scoped accept-key delegate the session-host seam
  * iterates instead of reaching into runtime state.
+ *
+ * The delegate itself is framework-owned since HIL-509 — it lives on the session
+ * stage of the connections View base — so what these cases prove of chat is that
+ * standing on that stage is all it takes to have it.
  */
 final class ConnectionsAcceptKeysForSessionTokenTest extends TestCase
 {

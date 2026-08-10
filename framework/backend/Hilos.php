@@ -821,7 +821,8 @@ abstract class Hilos
      * @param string $migrationsPath Directory holding this project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
-     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence source
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence
+     *     source, or when a project that serves pages keeps its connections off the framework base
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */

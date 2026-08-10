@@ -4,32 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\SimplePoll\Runtime\View\Actions\Item;
 
-use Demo\SimplePoll\Runtime\State\Item\Connection as StateConnection;
 use Demo\SimplePoll\Runtime\View\Item\Connection as RuntimeConnection;
-use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
-use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Runtime\View\Actions\Item\RtActions;
+use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 
 /**
  * Write operations for a single connection (RtItem).
  *
- * @extends RtActions<RuntimeConnection, StateConnection>
- * @property-read StateConnection $state
+ * Nothing of this demo's own: closing a socket and re-pointing its user are the
+ * framework's own writes, and this demo makes no others.
+ *
+ * @extends HilosConnectionActions<RuntimeConnection>
  */
-final class ConnectionActions extends RtActions
+final class ConnectionActions extends HilosConnectionActions
 {
-    /**
-     * Removes this connection from the runtime collection on socket close.
-     *
-     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
-     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
-     * @throws RtItemParentCollectionNullException When this connection is not attached to a collection
-     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
-     */
-    public function unregister(): void
-    {
-        $this->remove();
-    }
 }

@@ -41,6 +41,62 @@ final class MyState extends RtState {
 }
 ```
 
+## Inheriting a framework row: stages and the composition template
+
+Some runtime rows are declared by the framework and filled in by the project.
+Connections are the one such row today (`Hilos\Runtime\State\Item\HilosConnection`
+and the stage above it, `HilosSessionConnection`). Two rules govern them, and a
+future inheritable row is expected to follow both.
+
+**A project connects by inheritance, and declines a field by stage.** The
+framework finds these collections by type, not by name — `RtContext::presenceSource()`
+looks for the presence interface, `connectionsSource()` and
+`sessionConnectionsSource()` for the state base — so extending the base *is* the
+declaration "these are Hilos connections". PHP gives a subclass no way to drop a
+property its parent declares, so "I do not carry that field" cannot be said by
+removing it. It is said by standing on a lower stage:
+
+| Stage | Row carries | Seams it unlocks |
+|---|---|---|
+| `HilosConnection` | `acceptKey`, `?int userId` | `findAuthenticated()`, `findByUser()`, presence in the users table |
+| `HilosSessionConnection` | the above plus `?string sessionToken` | `findAllBySessionToken()`, the session-host re-point, the session carry-over |
+
+A new framework seam names the **minimum** stage it needs, never the fullest. A
+project that has not reached that stage then lacks the *method*, so the gap is a
+type error at the seam rather than an honest-looking empty result at runtime.
+The stages are mirrored on all four layers — State item, State collection, View
+item, View collection — so a project stands on one stage everywhere.
+
+**The base half of the row cannot be skipped.** `fromRow()`, `toArray()` and
+`applyDiff()` are `final` on the base and run the base half themselves, including
+`markRtSyncBaseline()`; the project half is four abstract hooks:
+
+```php
+final class Connection extends HilosSessionConnection {
+    protected function initOwn(): void { $this->connectedAt = time(); }
+    protected function hydrateOwn(array $row): void { ... }
+    protected function ownToArray(): array { return [ ... ]; }
+    protected function applyOwnDiff(array $diff): void { ... }
+}
+```
+
+The base runs first and the hook second, in all four. That order does not protect
+the base keys — `toArray()` merges the project half over the base one, so a
+project field named like a base field takes the key and hides it. Name project
+fields around the base; never restate one. Between stages the framework chains its
+own halves through
+`parent::` (`initBase`/`hydrateBase`/`baseToArray`/`applyBaseDiff`) — those are a
+detail of the base, not an API a project calls.
+
+`create()` is the single exception to `final`: the session stage widens its
+signature with the token, and a `final` method cannot be overridden. It is
+`final` on the last stage, so a project never overrides the factory.
+
+**A project that serves pages must stand on the base.** Non-empty `PAGES` means
+browsers subscribe, which means there are connections; the deferred activation
+check refuses a runtime context that answers `connectionsSource()` with null.
+A headless project (`PAGES = []`, demo cluster) is asked for none.
+
 ## Writing to state
 
 State fields must be real typed properties so PhpStorm and static analysis can

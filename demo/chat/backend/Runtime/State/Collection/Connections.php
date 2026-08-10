@@ -5,20 +5,22 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Collection;
 
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use OutOfBoundsException;
 
 /**
  * Connections - Stores all active WebSocket connections.
  *
  * This is the single source of truth for connection data.
- * RtCollection wrappers provide read-only access. Extends the framework
- * {@see HilosConnections} base, which provides the session-scoped lookups
- * (findAllBySessionToken / findByUser) the authenticate/deauthenticate seam needs.
+ * RtCollection wrappers provide read-only access. Stands on the framework
+ * {@see HilosSessionConnections} base — the session stage, matching the session
+ * stage of the row itself — which provides the lookups the presence and the
+ * authenticate/deauthenticate seams need (findAuthenticated / findByUser /
+ * findAllBySessionToken).
  *
- * @extends HilosConnections<Connection>
+ * @extends HilosSessionConnections<Connection>
  */
-final class Connections extends HilosConnections
+final class Connections extends HilosSessionConnections
 {
     public const string STATE_CLASS = Connection::class;
 

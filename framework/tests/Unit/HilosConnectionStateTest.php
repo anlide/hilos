@@ -5,158 +5,258 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the inheritable framework connection runtime base (HIL-361).
+ * Unit tests for the inheritable framework connection runtime base (HIL-361, HIL-509).
  *
- * Exercises the session-triple contract of {@see HilosConnection} and the
- * session-scoped lookups of {@see HilosConnections} through a minimal concrete
- * subclass that adds one field of its own, proving the base hydrate/diff helpers
- * compose with subclass state.
+ * Two things are under test and they are different questions. The composition
+ * template: a project cannot compose the base half wrongly, because the base runs
+ * it — always first, always including the sync baseline. And the two stages: what
+ * a project gets is decided by which stage it stands on, so a presence-stage row
+ * has no session token to forget and no token lookup to call.
  */
 final class HilosConnectionStateTest extends TestCase
 {
-    public function testCreateSeedsSessionTripleAndSubclassField(): void
+    public function testCreateRunsBaseThenOwnAndMarksTheBaseline(): void
     {
-        $connection = HilosConnectionTestFixture::create('ak-1', 42, 'tok-a', 'hello');
+        $connection = PresenceConnectionFixture::create('ak-1', 42);
 
         $this->assertSame('ak-1', $connection->getId());
         $this->assertSame('ak-1', $connection->acceptKey);
-        $this->assertSame('tok-a', $connection->sessionToken);
         $this->assertSame(42, $connection->userId);
-        $this->assertSame('hello', $connection->label);
+        $this->assertSame('seeded', $connection->label);
+        $this->assertSame(1, $connection->baselineMarks);
         $this->assertSame(
             [
                 HilosConnection::acceptKey => 'ak-1',
-                HilosConnection::sessionToken => 'tok-a',
                 HilosConnection::userId => 42,
-                HilosConnectionTestFixture::label => 'hello',
+                PresenceConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),
         );
     }
 
-    public function testFromRowRoundTripsSessionTriple(): void
+    public function testFromRowRunsBaseThenOwnAndMarksTheBaseline(): void
     {
-        $anonymous = HilosConnectionTestFixture::fromRow([
+        $connection = PresenceConnectionFixture::fromRow([
             HilosConnection::acceptKey => 'ak-2',
-            HilosConnection::sessionToken => 'tok-b',
             HilosConnection::userId => null,
-            HilosConnectionTestFixture::label => 'guest',
+            PresenceConnectionFixture::label => 'guest',
         ]);
 
-        $this->assertSame('ak-2', $anonymous->getId());
-        $this->assertSame('tok-b', $anonymous->sessionToken);
-        $this->assertNull($anonymous->userId);
-        $this->assertSame('guest', $anonymous->label);
+        $this->assertSame('ak-2', $connection->getId());
+        $this->assertNull($connection->userId);
+        $this->assertSame('guest', $connection->label);
+        $this->assertSame(1, $connection->baselineMarks);
     }
 
-    public function testApplyBaseDiffMovesTokenAndUserButNotAcceptKey(): void
+    public function testApplyDiffMovesTheUserAndTheOwnFieldButNotTheAcceptKey(): void
     {
-        $connection = HilosConnectionTestFixture::create('ak-3', null, 'tok-c', 'x');
+        $connection = PresenceConnectionFixture::create('ak-3', null);
 
         $connection->applyDiff([
             HilosConnection::acceptKey => 'ignored',
-            HilosConnection::sessionToken => 'tok-c2',
             HilosConnection::userId => 7,
-            HilosConnectionTestFixture::label => 'y',
+            PresenceConnectionFixture::label => 'moved',
         ]);
 
         $this->assertSame('ak-3', $connection->acceptKey);
-        $this->assertSame('tok-c2', $connection->sessionToken);
         $this->assertSame(7, $connection->userId);
-        $this->assertSame('y', $connection->label);
+        $this->assertSame('moved', $connection->label);
 
         $connection->applyDiff([HilosConnection::userId => null]);
         $this->assertNull($connection->userId);
     }
 
-    public function testCollectionLooksUpBySessionTokenAndUser(): void
+    public function testPresenceStageCarriesNoSessionToken(): void
     {
-        $connections = HilosConnectionTestFixtures::init();
-        $connections->add(HilosConnectionTestFixture::create('ak-a', 1, 'tok-x', 'a'));
-        $connections->add(HilosConnectionTestFixture::create('ak-b', 1, 'tok-x', 'b'));
-        $connections->add(HilosConnectionTestFixture::create('ak-c', 2, 'tok-y', 'c'));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionToken));
+        $this->assertFalse(method_exists(PresenceConnectionFixtures::class, 'findAllBySessionToken'));
+    }
+
+    public function testSessionStageCarriesTheTokenOnTopOfTheBaseFields(): void
+    {
+        $connection = SessionConnectionFixture::create('ak-4', 5, 'tok-a');
+
+        $this->assertSame('tok-a', $connection->sessionToken);
+        $this->assertSame(1, $connection->baselineMarks);
+        $this->assertSame(
+            [
+                HilosConnection::acceptKey => 'ak-4',
+                HilosConnection::userId => 5,
+                HilosSessionConnection::sessionToken => 'tok-a',
+                SessionConnectionFixture::label => 'seeded',
+            ],
+            $connection->toArray(),
+        );
+
+        $hydrated = SessionConnectionFixture::fromRow($connection->toArray());
+        $this->assertSame('tok-a', $hydrated->sessionToken);
+
+        $hydrated->applyDiff([HilosSessionConnection::sessionToken => 'tok-b']);
+        $this->assertSame('tok-b', $hydrated->sessionToken);
+    }
+
+    public function testSessionCreateLeavesTheTokenNullWhenTheSocketBelongsToNoSession(): void
+    {
+        $connection = SessionConnectionFixture::create('ak-5', null);
+
+        $this->assertNull($connection->sessionToken);
+    }
+
+    public function testPresenceCollectionLooksUpByUser(): void
+    {
+        $connections = PresenceConnectionFixtures::init();
+        $connections->add(PresenceConnectionFixture::create('ak-a', 1));
+        $connections->add(PresenceConnectionFixture::create('ak-b', 1));
+        $connections->add(PresenceConnectionFixture::create('ak-c', null));
+
+        $this->assertSame(['ak-a', 'ak-b'], array_keys($connections->findByUser(1)));
+        $this->assertSame([], $connections->findByUser(2));
+        $this->assertSame([], $connections->findByUser(null));
+        $this->assertSame(['ak-a', 'ak-b'], array_keys($connections->findAuthenticated()));
+    }
+
+    public function testSessionCollectionLooksUpByToken(): void
+    {
+        $connections = SessionConnectionFixtures::init();
+        $connections->add(SessionConnectionFixture::create('ak-a', 1, 'tok-x'));
+        $connections->add(SessionConnectionFixture::create('ak-b', 1, 'tok-x'));
+        $connections->add(SessionConnectionFixture::create('ak-c', 2, 'tok-y'));
 
         $this->assertSame(['ak-a', 'ak-b'], array_keys($connections->findAllBySessionToken('tok-x')));
         $this->assertSame(['ak-c'], array_keys($connections->findAllBySessionToken('tok-y')));
         $this->assertSame([], $connections->findAllBySessionToken(''));
-
         $this->assertSame(['ak-a', 'ak-b'], array_keys($connections->findByUser(1)));
-        $this->assertSame(['ak-c'], array_keys($connections->findByUser(2)));
-        $this->assertSame([], $connections->findByUser(null));
     }
 }
 
 /**
- * Minimal concrete connection: the session triple from the base plus one field.
+ * Minimal presence-stage connection: the base pair plus one field of its own.
+ *
+ * The baseline counter is what proves the base marks the sync baseline itself: a
+ * project row that had to mark it would be free to forget, which is the failure
+ * this template exists to make impossible.
  */
-final class HilosConnectionTestFixture extends HilosConnection
+final class PresenceConnectionFixture extends HilosConnection
 {
     public const string label = 'label';
 
-    /** Subclass-owned field to prove composition with the base helpers. */
+    /** Subclass-owned field, to prove composition with the base halves. */
     public string $label = '';
 
-    /**
-     * @param string $acceptKey WebSocket accept key
-     * @param ?int $userId Authenticated user id, or null for anonymous
-     * @param string $sessionToken Session cookie token
-     * @param string $label Subclass field
-     * @return static Seeded connection
-     */
-    public static function create(string $acceptKey, ?int $userId, string $sessionToken, string $label): static
-    {
-        $instance = new static();
-        $instance->initBase($acceptKey, $userId, $sessionToken);
-        $instance->label = $label;
-        $instance->markRtSyncBaseline();
+    /** How many times the base marked the sync baseline on this row. */
+    public int $baselineMarks = 0;
 
-        return $instance;
+    public function markRtSyncBaseline(): void
+    {
+        $this->baselineMarks++;
+        parent::markRtSyncBaseline();
+    }
+
+    protected function initOwn(): void
+    {
+        $this->label = 'seeded';
     }
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
-     * @return static Hydrated connection
      */
-    public static function fromRow(array $row): static
+    protected function hydrateOwn(array $row): void
     {
-        $instance = new static();
-        $instance->hydrateBase($row);
-        $instance->label = (string)$row[self::label];
-        $instance->markRtSyncBaseline();
+        $this->label = (string)$row[self::label];
+    }
 
-        return $instance;
+    /**
+     * @return array<string, mixed> Subclass-owned half of the row
+     */
+    protected function ownToArray(): array
+    {
+        return [self::label => $this->label];
     }
 
     /**
      * @param array<string, mixed> $diff Changed fields => values
      */
-    public function applyDiff(array $diff): void
+    protected function applyOwnDiff(array $diff): void
     {
-        $this->applyBaseDiff($diff);
         if (array_key_exists(self::label, $diff)) {
             $this->label = (string)$diff[self::label];
         }
     }
+}
+
+/**
+ * Minimal session-stage connection: the same own field, one stage up.
+ */
+final class SessionConnectionFixture extends HilosSessionConnection
+{
+    public const string label = 'label';
+
+    /** Subclass-owned field, to prove the chain reaches it through both stages. */
+    public string $label = '';
+
+    /** How many times the base marked the sync baseline on this row. */
+    public int $baselineMarks = 0;
+
+    public function markRtSyncBaseline(): void
+    {
+        $this->baselineMarks++;
+        parent::markRtSyncBaseline();
+    }
+
+    protected function initOwn(): void
+    {
+        $this->label = 'seeded';
+    }
 
     /**
-     * @return array<string, mixed> Full row (base triple + subclass field)
+     * @param array<string, mixed> $row Serialized runtime row
      */
-    public function toArray(): array
+    protected function hydrateOwn(array $row): void
     {
-        return $this->baseToArray() + [self::label => $this->label];
+        $this->label = (string)$row[self::label];
+    }
+
+    /**
+     * @return array<string, mixed> Subclass-owned half of the row
+     */
+    protected function ownToArray(): array
+    {
+        return [self::label => $this->label];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Changed fields => values
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
+        if (array_key_exists(self::label, $diff)) {
+            $this->label = (string)$diff[self::label];
+        }
     }
 }
 
 /**
- * Concrete collection over the test fixture connection.
+ * Concrete presence-stage collection over the presence fixture.
  *
- * @extends HilosConnections<HilosConnectionTestFixture>
+ * @extends HilosConnections<PresenceConnectionFixture>
  */
-final class HilosConnectionTestFixtures extends HilosConnections
+final class PresenceConnectionFixtures extends HilosConnections
 {
-    public const string STATE_CLASS = HilosConnectionTestFixture::class;
+    public const string STATE_CLASS = PresenceConnectionFixture::class;
+}
+
+/**
+ * Concrete session-stage collection over the session fixture.
+ *
+ * @extends HilosSessionConnections<SessionConnectionFixture>
+ */
+final class SessionConnectionFixtures extends HilosSessionConnections
+{
+    public const string STATE_CLASS = SessionConnectionFixture::class;
 }

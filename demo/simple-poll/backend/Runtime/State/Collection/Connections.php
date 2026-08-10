@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Runtime\State\Collection;
 
 use Demo\SimplePoll\Runtime\State\Item\Connection;
-use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Collection\HilosConnections;
 use OutOfBoundsException;
 
 /**
  * Connections - the single source of truth for active WebSocket connections.
  *
- * RtCollection wrappers provide read-only access.
+ * Stands on the framework {@see HilosConnections} base — the presence stage,
+ * matching the stage of the row itself — which provides the user-scoped lookups
+ * (findAuthenticated / findByUser). RtCollection wrappers provide read-only
+ * access.
  *
- * @extends RtStates<Connection>
+ * @extends HilosConnections<Connection>
  */
-final class Connections extends RtStates
+final class Connections extends HilosConnections
 {
     public const string STATE_CLASS = Connection::class;
 
@@ -45,22 +48,5 @@ final class Connections extends RtStates
 
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Connection runtime state not found: {$offset}");
-    }
-
-    /**
-     * Finds all connections for a given user (indexed by accept key).
-     *
-     * @param ?int $userId User id, or null for no connections
-     * @return array<string, Connection> Accept key => Connection map
-     */
-    public function findAllByUserId(?int $userId): array
-    {
-        if ($userId === null) {
-            return [];
-        }
-
-        return array_filter($this->states, static function (Connection $connection) use ($userId): bool {
-            return $connection->userId === $userId;
-        });
     }
 }

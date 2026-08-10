@@ -272,7 +272,9 @@ destructive steps. Tables absent from the dump are left in place (reconciliation
 HIL-436); the migration-index gate is HIL-430. A hot restore also carries the live
 authenticated sessions across the swap before it thaws the node (HIL-479), so the
 operator watching the restore is not logged out by it; a project whose runtime
-connections do not extend `HilosConnections` simply has nothing to carry.
+connections do not reach the session stage of the connection base
+(`HilosSessionConnections`) has no session tokens to photograph and simply
+nothing to carry.
 
 ### a future framework feature (roles, …)
 

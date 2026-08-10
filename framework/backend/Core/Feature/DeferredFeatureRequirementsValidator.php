@@ -10,6 +10,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -30,6 +31,12 @@ use Hilos\Runtime\View\Context\RtContext;
  * Missing here is as bad as missing at startup, only quieter: a project that declared
  * NOTIFICATIONS without migrating the preference table fails on the first send rather than at
  * boot, which is the half-activated state the whole registry exists to remove.
+ *
+ * One invariant checked here belongs to no feature (HIL-509): a project whose PAGES are not empty
+ * accepts browser subscriptions, and therefore has WebSocket connections, and therefore must keep
+ * them on the framework connection base. It is not in the registry because it is not optional and
+ * has nothing to declare - the non-empty PAGES is the declaration. A headless project (demo
+ * cluster, PAGES = []) legitimately has no connections and is not asked for any.
  */
 final class DeferredFeatureRequirementsValidator
 {
@@ -50,7 +57,8 @@ final class DeferredFeatureRequirementsValidator
      * @param string $migrationsPath Directory holding the project's schema migrations
      * @param class-string<CliManager> $cliManagerClass CLI manager the project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context the project builds, or null when it builds none
-     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence source
+     * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence
+     *     source, or when a project that serves pages keeps its connections off the framework base
      * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */
@@ -63,11 +71,13 @@ final class DeferredFeatureRequirementsValidator
         $errors = [];
         $createdTables = null;
         $cliManager = null;
-        $presenceSource = null;
         $definitions = array_map(
             fn(HilosFeature $feature): FeatureDefinition => $this->registry->definition($feature),
             $this->declaredFeatures($hilosClass),
         );
+        $context = $this->needsRuntimeContext($hilosClass, $definitions)
+            ? $this->buildRuntimeContext($rtContextClass, $definitions)
+            : null;
 
         foreach ($definitions as $definition) {
             $requirements = $definition->requirements();
@@ -87,19 +97,45 @@ final class DeferredFeatureRequirementsValidator
                 }
             }
 
-            if ($requirements->requiresPresenceSource) {
-                $presenceSource ??= $this->presenceSource($rtContextClass, $definitions);
-                if ($presenceSource === null) {
-                    $errors[] = "{$name} is declared but no runtime collection of "
-                        . ($rtContextClass ?? 'a project without a runtime context')
-                        . ' implements ' . HilosPresenceSource::class;
-                }
+            if ($requirements->requiresPresenceSource && $context?->presenceSource() === null) {
+                $errors[] = "{$name} is declared but no runtime collection of "
+                    . ($rtContextClass ?? 'a project without a runtime context')
+                    . ' implements ' . HilosPresenceSource::class;
             }
+        }
+
+        if ($hilosClass::PAGES !== [] && $context?->connectionsSource() === null) {
+            $errors[] = 'PAGES is not empty but no runtime state collection of '
+                . ($rtContextClass ?? 'a project without a runtime context')
+                . ' extends ' . HilosConnections::class;
         }
 
         if ($errors !== []) {
             throw IncompleteFeatureActivationException::forErrors($hilosClass, $errors);
         }
+    }
+
+    /**
+     * Tells whether anything checked here needs the project's runtime context built.
+     *
+     * Building it runs the project's whole `configure()`, so it is done once and only when
+     * something asks: a project that declares no pages and no feature wanting a presence source
+     * has nothing here to answer with it.
+     *
+     * @param class-string<Hilos> $hilosClass Project facade class
+     * @param list<FeatureDefinition> $definitions Definitions of the declared features
+     * @return bool True when a check below reads the built context
+     */
+    private function needsRuntimeContext(string $hilosClass, array $definitions): bool
+    {
+        if ($hilosClass::PAGES !== []) {
+            return true;
+        }
+
+        return array_filter(
+            $definitions,
+            static fn(FeatureDefinition $definition): bool => $definition->requirements()->requiresPresenceSource,
+        ) !== [];
     }
 
     /**
@@ -173,19 +209,19 @@ final class DeferredFeatureRequirementsValidator
     }
 
     /**
-     * Builds the project's runtime context the way the facade does and asks it for a presence source.
+     * Builds the project's runtime context the way the facade does.
      *
      * The context is built here rather than read off {@see Hilos::$rt} because the check runs in
      * a unit test, where no facade has been initialized; mounting the feature runtime first keeps
-     * the built context the same shape init() gives it, so a presence source a feature brought
-     * would count exactly as a project's own does.
+     * the built context the same shape init() gives it, so a collection a feature brought counts
+     * exactly as a project's own does.
      *
      * @param ?class-string<RtContext> $rtContextClass Runtime context the project builds, or null when it builds none
      * @param list<FeatureDefinition> $definitions Definitions of the declared features
-     * @return ?HilosPresenceSource Presence source the context mounts, or null when there is none
+     * @return ?RtContext Built runtime context, or null when the project builds none
      * @throws StateCollectionNotFoundException When the context represents a collection it did not mount
      */
-    private function presenceSource(?string $rtContextClass, array $definitions): ?HilosPresenceSource
+    private function buildRuntimeContext(?string $rtContextClass, array $definitions): ?RtContext
     {
         if ($rtContextClass === null) {
             return null;
@@ -195,6 +231,6 @@ final class DeferredFeatureRequirementsValidator
         $context->mountFeatureRuntime($definitions);
         $context->configure();
 
-        return $context->presenceSource();
+        return $context;
     }
 }

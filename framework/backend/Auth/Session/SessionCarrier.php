@@ -9,7 +9,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
@@ -42,8 +42,11 @@ final class SessionCarrier
      * because the right to look at someone else's account was granted in a database that is
      * about to stop existing.
      *
-     * A project whose runtime connections do not extend {@see HilosConnections} - or which is
-     * not running any - yields an empty snapshot, and the whole mechanism quietly does nothing.
+     * The session token is what is photographed, so the source asked for is the session stage
+     * of the connection base (HIL-509): a project whose runtime connections do not reach
+     * {@see HilosSessionConnections} - because it carries no browser sessions, or keeps no
+     * connections at all - yields an empty snapshot, and the whole mechanism quietly does
+     * nothing. There is nothing to carry over for a project that has no sessions to lose.
      *
      * @return list<SessionCarryover> Live authenticated sessions, deduplicated by token
      * @throws DatabaseException When a session or identity lookup fails
@@ -52,7 +55,7 @@ final class SessionCarrier
      */
     public static function capture(): array
     {
-        $connections = Hilos::$rt?->connectionsSource();
+        $connections = Hilos::$rt?->sessionConnectionsSource();
         if ($connections === null) {
             return [];
         }

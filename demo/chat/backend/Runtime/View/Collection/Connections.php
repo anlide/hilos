@@ -6,91 +6,32 @@ namespace Demo\Chat\Runtime\View\Collection;
 
 use Demo\Chat\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
-use Hilos\Runtime\View\Collection\HilosPresenceSource;
-use Hilos\Runtime\View\Collection\RtCollection;
-use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Runtime\View\Collection\HilosSessionConnections;
 
 /**
  * Connections - Read-only wrapper around Connections state.
  *
- * Provides high-level access to connection data.
- * Write operations go through ConnectionsActions.
+ * Stands on the framework {@see HilosSessionConnections} base — the session stage
+ * — which carries the user-scoped reads, the presence source the users table
+ * merges over its rows, and the session-token lookup the session host seam makes.
+ * What is left here is chat's own: the upload quota reads and the users a client
+ * needs rows for. Write operations go through ConnectionsActions.
  *
- * @extends RtCollection<Connection, ConnectionsActions>
+ * @extends HilosSessionConnections<Connection, ConnectionsActions>
  * @property-read ConnectionsActions $actions Actions for write operations
  * @property-read DbUsers $relevantUsers Users who are online or mentioned in events
  */
-final class Connections extends RtCollection implements HilosPresenceSource
+final class Connections extends HilosSessionConnections
 {
     public const string relevantUsers = 'relevantUsers';
-
-    /**
-     * @return StateConnections State collection instance
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
-     */
-    public function getStateCollection(): StateConnections
-    {
-        /** @var StateConnections */
-        return parent::getStateCollection();
-    }
-
-    /**
-     * Accept keys of the live connections belonging to a session token.
-     *
-     * The session-host seam re-points every live connection of a token; it takes
-     * plain accept keys, so this delegate keeps the RT state layer behind the View
-     * collection instead of handing state objects to the agent.
-     *
-     * @param string $sessionToken Session cookie token
-     * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
-     */
-    public function acceptKeysForSessionToken(string $sessionToken): array
-    {
-        return array_keys($this->getStateCollection()->findAllBySessionToken($sessionToken));
-    }
-
-    /**
-     * Get connections for a specific user.
-     *
-     * @param ?int $userId User ID, or null for an empty result
-     * @return self Connections collection filtered by user
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
-     */
-    public function forUser(?int $userId): self
-    {
-        $stateConnections = $this->getStateCollection();
-        $filteredState = StateConnections::init();
-        foreach ($stateConnections->findByUser($userId) as $stateConnection) {
-            $filteredState->add($stateConnection);
-        }
-
-        $collection = self::init();
-        $collection->setStateCollection($filteredState);
-        return $collection;
-    }
-
-    /**
-     * Builds the runtime connection summary used by user-facing table rows.
-     *
-     * @param ?int $userId User id to summarize active runtime connections for
-     * @return HilosUserPresenceSummary Runtime presence and session count summary
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
-     */
-    public function summaryForUser(?int $userId): HilosUserPresenceSummary
-    {
-        return new HilosUserPresenceSummary(count($this->forUser($userId)));
-    }
 
     /**
      * Sum of unreceived bytes across active file upload sessions.
@@ -150,51 +91,6 @@ final class Connections extends RtCollection implements HilosPresenceSource
     {
         /** @var ?Connection $item */
         $item = parent::offsetGet($offset);
-
-        return $item;
-    }
-
-    /**
-     * @return ?Connection First connection or null if empty
-     */
-    public function first(): ?Connection
-    {
-        /** @var ?Connection $item */
-        $item = parent::first();
-
-        return $item;
-    }
-
-    /**
-     * @return ?Connection Last connection or null if empty
-     */
-    public function last(): ?Connection
-    {
-        /** @var ?Connection $item */
-        $item = parent::last();
-
-        return $item;
-    }
-
-    /**
-     * @return ?Connection Current connection or null
-     */
-    public function current(): ?Connection
-    {
-        /** @var ?Connection $item */
-        $item = parent::current();
-
-        return $item;
-    }
-
-    /**
-     * @param string $key Accept key
-     * @return ?Connection Connection or null if not found
-     */
-    protected function getRtItemForKey(string $key): ?Connection
-    {
-        /** @var ?Connection $item */
-        $item = parent::getRtItemForKey($key);
 
         return $item;
     }

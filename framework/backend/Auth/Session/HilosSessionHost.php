@@ -10,7 +10,6 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -24,8 +23,10 @@ use Hilos\Utils\Helpers\TimeHelper;
  * (login/register), and reverting it to anonymous (logout). Each core drives the
  * framework-owned session ORM and re-points the session's live connections, then
  * delegates the project-specific parts — building the identity handshake payload,
- * reaching the project's runtime connection registry, and the emitted signal
- * name — through the abstract hooks below.
+ * writing one connection's bound user, and the emitted signal name — through the
+ * abstract hooks below. Finding the connections of a token is no longer among them
+ * (HIL-509): the rows stand on a framework base whose session stage carries the
+ * token, so the seam locates them by type.
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a
  * user; {@see deauthenticateSession()} is the symmetric downgrade that keeps the
@@ -52,16 +53,24 @@ trait HilosSessionHost
     /**
      * Returns the accept keys of the live connections belonging to a session token.
      *
-     * Project-owned because the runtime connection registry is a project runtime
-     * collection; the project resolves it through its own runtime View collection
-     * of connections. The hook deliberately yields plain accept keys, not runtime
-     * state objects, so the framework seam never touches the RT state layer.
+     * Framework-owned since HIL-509: the connection rows stand on a framework base
+     * whose session stage carries the token, so the registry is found by type
+     * rather than named by the project. A project whose connections do not reach
+     * that stage — or which keeps none — has no connections to re-point, and gets
+     * the empty list that says exactly that.
      *
      * @param string $sessionToken Session cookie token
      * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
-     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      */
-    abstract protected function sessionConnectionKeys(string $sessionToken): array;
+    final protected function sessionConnectionKeys(string $sessionToken): array
+    {
+        $connections = Hilos::$rt?->sessionConnectionsSource();
+        if ($connections === null) {
+            return [];
+        }
+
+        return array_keys($connections->findAllBySessionToken($sessionToken));
+    }
 
     /**
      * Re-points one live connection's bound user through the project runtime registry.
