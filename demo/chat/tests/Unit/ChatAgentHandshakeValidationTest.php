@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\ChatAgent;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -22,8 +21,8 @@ final class ChatAgentHandshakeValidationTest extends TestCase
 {
     public function testHandshakeWithoutSessionTokenThrows(): void
     {
-        $this->expectException(EmptyValueException::class);
-        $this->expectExceptionMessage('session token is required');
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
         new ChatAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
@@ -41,7 +40,7 @@ final class ChatAgentHandshakeValidationTest extends TestCase
     public function testHandshakeWithInvalidSessionTokenFormatThrows(): void
     {
         $this->expectException(InvalidFormatException::class);
-        $this->expectExceptionMessage('session token must be a 32-character lowercase hex token');
+        $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
         new ChatAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(

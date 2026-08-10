@@ -8,6 +8,7 @@ use Demo\SimplePoll\Database\Object\Collection\Users as ObjectUsers;
 use Demo\SimplePoll\Database\Object\Item\User as ObjectUser;
 use Demo\SimplePoll\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\SimplePoll\Database\View\Item\User;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -27,9 +28,9 @@ final class UsersActions extends DbActions
     /**
      * Registers a new user with the given session token.
      *
-     * @param string $sessionToken Session token (32 hex characters)
+     * @param string $sessionToken Session token (32 lowercase hex characters)
      * @return User Registered user
-     * @throws InvalidFormatException If token format invalid (not 32 hex characters)
+     * @throws InvalidFormatException If the token is not a 32-character lowercase hex string
      * @throws DuplicateValueException If user with session token already exists
      * @throws HilosException On database error
      */
@@ -37,9 +38,7 @@ final class UsersActions extends DbActions
     {
         $this->ensureCanWrite();
 
-        if (strlen($sessionToken) !== 32 || !ctype_xdigit($sessionToken)) {
-            throw new InvalidFormatException("Invalid session token format. Expected 32 hex characters.");
-        }
+        SessionToken::ensureValid($sessionToken);
 
         if ($this->objectCollection->findBySession($sessionToken) !== null) {
             throw new DuplicateValueException("User with session token already exists");

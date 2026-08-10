@@ -26,7 +26,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read string $name User name
  * @property-read bool $admin Whether the user is a panel admin operator
  * @property-read bool $block Whether the user is blocked from acting
- * @property-read ?string $sessionToken User session token (32 hex characters)
+ * @property-read ?string $sessionToken User session token (32 lowercase hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read UserActions $actions Actions for write operations on this user
  */

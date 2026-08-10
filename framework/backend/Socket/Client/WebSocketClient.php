@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
@@ -101,12 +102,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /** @var int Byte length of the minted connection identifier (128-bit) */
     private const int ACCEPT_KEY_RANDOM_BYTES = 16;
-
-    /** @var int Byte length of a minted session token (becomes 32 lowercase hex chars) */
-    private const int SESSION_TOKEN_RANDOM_BYTES = 16;
-
-    /** @var int Session-token cookie lifetime in seconds (two years) */
-    private const int SESSION_COOKIE_MAX_AGE_SECONDS = 63072000;
 
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
@@ -324,12 +319,12 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // choose or predict another connection's identity.
         $acceptKey = self::mintAcceptKey();
 
-        // Resolve the session token: reuse the client's cookie, or mint one and
-        // queue a Set-Cookie on the 101. Minting is in-memory (no I/O), so the
+        // Resolve the session token: reuse the client's cookie when it has the
+        // minted form, mint one otherwise. Minting is in-memory (no I/O), so the
         // master stays light; the worker handshake reads the token from the DTO.
         $cookies = $this->parseCookies($headers);
-        $setSessionCookie = null;
-        $sessionToken = $this->resolveSessionToken($cookies, $setSessionCookie);
+        $sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
+        $sessionToken = self::resolveSessionToken($cookies, $sessionCookieName);
 
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
@@ -349,9 +344,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $response .= HttpConstants::HEADER_UPGRADE . ": " . HttpConstants::WEBSOCKET_PROTOCOL . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $secWebSocketAccept . HttpConstants::HTTP_LINE_SEPARATOR;
-        if ($setSessionCookie !== null) {
-            $response .= $setSessionCookie;
-        }
+        $response .= $this->buildSessionCookieHeader($sessionCookieName, $sessionToken);
         $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
         $this->writeBuffer .= $response;
@@ -375,34 +368,30 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Resolve the session token cookie, minting one and queuing a Set-Cookie
-     * when the client sent none. In-memory only (random bytes, like the accept
-     * key), so the master stays light; the worker reads the token from the DTO.
+     * Resolve the session token for this connection: the value the client sent
+     * when it has the minted form, a fresh token otherwise. A value that does
+     * not pass is replaced silently - the client owns it, so a log line here is
+     * noise anyone outside can write - and the client leaves the handshake with
+     * a token that works instead of one the worker refuses on every reconnect.
+     * In-memory only (random bytes, like the accept key), so the master stays
+     * light; the worker reads the token from the DTO.
      *
      * @param array<string, string> $cookies Parsed request cookies
-     * @param ?string $setCookie Out: Set-Cookie header line for the 101, or null when nothing is issued
-     * @return string Session token (existing cookie value, or freshly minted)
+     * @param string $name Session cookie name
+     * @return string Session token (the client's cookie value, or freshly minted)
      */
-    private function resolveSessionToken(array $cookies, ?string &$setCookie): string
+    private static function resolveSessionToken(array $cookies, string $name): string
     {
-        $setCookie = null;
-        $name = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
-        $existing = $cookies[$name] ?? '';
-        if (!Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_ENABLED)) {
-            // Project opted out: pass the client's cookie through, never issue one.
-            return $existing;
-        }
-        if ($existing !== '') {
-            return $existing;
-        }
-        $token = bin2hex(RandomHelper::bytes(self::SESSION_TOKEN_RANDOM_BYTES));
-        $setCookie = $this->buildSessionCookieHeader($name, $token);
+        $sent = $cookies[$name] ?? null;
 
-        return $token;
+        return $sent !== null && SessionToken::isValid($sent) ? $sent : SessionToken::mint();
     }
 
     /**
-     * Build the Set-Cookie header line for a freshly issued session token.
+     * Build the Set-Cookie header line carrying the session token on the 101.
+     * Issued on every handshake, not only when the token is minted: the session
+     * row's expiry slides on each handshake, so the cookie has to slide with it
+     * or an active visitor loses the session the row still considers alive.
      * HttpOnly and SameSite=Strict always; Secure only when configured (TLS).
      *
      * @param string $name Cookie name
@@ -413,7 +402,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     {
         $cookie = $name . '=' . $token
             . '; Path=/; HttpOnly; SameSite=Strict'
-            . '; Max-Age=' . self::SESSION_COOKIE_MAX_AGE_SECONDS;
+            . '; Max-Age=' . Hilos::$env->int(EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE);
         if (Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_SECURE)) {
             $cookie .= '; Secure';
         }

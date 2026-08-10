@@ -43,7 +43,6 @@ EMPTY-STRING-SENTINEL framework/backend/ProtectedMode/DTO/ProtectedModeDisableSi
 EMPTY-STRING-SENTINEL framework/backend/ProtectedMode/DTO/ProtectedModeEnableSignalData.php 2 # HIL-564
 EMPTY-STRING-SENTINEL framework/backend/ProtectedMode/DTO/ProtectedModeQuiesceData.php 2 # HIL-564
 EMPTY-STRING-SENTINEL framework/backend/Sms/DTO/SmsSendSignalData.php 1 # HIL-564
-EMPTY-STRING-SENTINEL framework/backend/Socket/Client/WebSocketClient.php 1 # HIL-562
 EMPTY-STRING-SENTINEL framework/backend/Socket/Command/DTO/CommandReplyDTO.php 1 # HIL-562
 EMPTY-STRING-SENTINEL framework/backend/Socket/Command/DTO/CommandRequestDTO.php 2 # HIL-562
 EMPTY-STRING-SENTINEL framework/backend/Socket/WebSocket/DTO/HandshakeResponseSignalData.php 2 # HIL-562

@@ -205,11 +205,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 'hilos_session_token',
                 emptyIsMissing: true,
             ),
-            EnvConstants::HILOS_SESSION_COOKIE_ENABLED->name => self::entry(
-                EnvCatalogConstants::TYPE_BOOLEAN,
-                true,
-                emptyIsMissing: true,
-            ),
             EnvConstants::HILOS_SESSION_COOKIE_SECURE->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 false,
@@ -217,7 +212,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             ),
             EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
-                30 * 24 * 60 * 60,
+                730 * 24 * 60 * 60,
                 emptyIsMissing: true,
             ),
             EnvConstants::HILOS_VERIFICATION_CODE_LENGTH->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 6, emptyIsMissing: true),

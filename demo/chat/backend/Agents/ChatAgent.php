@@ -21,11 +21,11 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -73,8 +73,6 @@ final class ChatAgent extends AbstractAgent
         ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
         ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
-
-    private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
      * Registers chat truth sources and records chat startup.
@@ -532,7 +530,6 @@ final class ChatAgent extends AbstractAgent
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws EmptyValueException When the session token is empty
      * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws DuplicateValueException When a concurrent create already claimed a new token
      * @throws HilosException On database or runtime failure
@@ -544,15 +541,7 @@ final class ChatAgent extends AbstractAgent
         // inside the ValidationException family so the worker dispatcher contains
         // a bad token instead of crashing.
         $sessionToken = $data->sessionToken;
-        if ($sessionToken === '') {
-            throw new EmptyValueException('session token is required');
-        }
-
-        if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
-            throw new InvalidFormatException(
-                'session token must be a 32-character lowercase hex token',
-            );
-        }
+        SessionToken::ensureValid($sessionToken);
 
         $session = $this->resolveHandshakeSession($sessionToken);
         $userId = $session->userId;

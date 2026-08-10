@@ -223,20 +223,15 @@ enum EnvConstants
     case HILOS_SESSION_COOKIE_NAME;
 
     /**
-     * Whether the daemon issues the session-token cookie on the handshake.
-     * Default true; set false to opt a project out of framework-issued cookies.
-     */
-    case HILOS_SESSION_COOKIE_ENABLED;
-
-    /**
      * Whether the session-token cookie carries the Secure attribute. Default
      * false so it works over the plain-http dev stack; set true under TLS.
      */
     case HILOS_SESSION_COOKIE_SECURE;
 
     /**
-     * Session lifetime in seconds. Drives a session row's expiry (and tracks the
-     * session cookie Max-Age). Default 30 days.
+     * Session lifetime in seconds, the single number behind both halves of a
+     * session: the row's expiry and the cookie's Max-Age, each slid forward by
+     * the same handshake. Default two years; shorten it to tighten sessions.
      */
     case HILOS_SESSION_COOKIE_MAX_AGE;
 

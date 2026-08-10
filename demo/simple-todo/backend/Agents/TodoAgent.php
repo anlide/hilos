@@ -10,8 +10,8 @@ use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Hilos;
 use Demo\SimpleTodo\Runtime\View\Context\TodoRtContext;
 use Demo\SimpleTodo\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -28,9 +28,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 final class TodoAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::TODO;
-
-    /** @var string Session token cookie format: 32 lowercase hex characters */
-    private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
      * Registers the user table and the connections runtime collection as this
@@ -50,7 +47,6 @@ final class TodoAgent extends AbstractAgent
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws EmptyValueException When the session token is empty
      * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure while resolving the user or registering the connection
      */
@@ -61,15 +57,7 @@ final class TodoAgent extends AbstractAgent
         // inside the ValidationException family so the worker dispatcher contains
         // a bad token instead of crashing.
         $sessionToken = $data->sessionToken;
-        if ($sessionToken === '') {
-            throw new EmptyValueException('session token is required');
-        }
-
-        if (preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
-            throw new InvalidFormatException(
-                'session token must be a 32-character lowercase hex token',
-            );
-        }
+        SessionToken::ensureValid($sessionToken);
 
         $user = Hilos::$db->users->findBySession($sessionToken);
         if ($user === null) {

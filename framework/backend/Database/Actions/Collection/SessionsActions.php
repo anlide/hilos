@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -24,22 +25,19 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class SessionsActions extends DbActions
 {
-    /** @var int Length of a session cookie token in hex characters */
-    private const int TOKEN_HEX_LENGTH = 32;
-
     /**
      * Creates an anonymous session (no bound user) for a fresh cookie token.
      *
-     * @param string $token Session cookie token (32 hex characters)
+     * @param string $token Session cookie token (32 lowercase hex characters)
      * @return Session Created anonymous session
-     * @throws InvalidFormatException When the token is not a 32-character hex string
+     * @throws InvalidFormatException When the token is not a 32-character lowercase hex string
      * @throws DuplicateValueException When a session with this token already exists
      * @throws HilosException On database error
      */
     public function createAnonymous(string $token): Session
     {
         $this->ensureCanWrite();
-        self::ensureTokenFormat($token);
+        SessionToken::ensureValid($token);
 
         if ($this->objectCollection->findByToken($token) !== null) {
             throw new DuplicateValueException('Session with this token already exists');
@@ -72,18 +70,18 @@ final class SessionsActions extends DbActions
      * A token that already has a row came back with the archive and is consistent with the
      * restored database; the null return says "nothing to do", not "failed".
      *
-     * @param string $token Session cookie token (32 hex characters)
+     * @param string $token Session cookie token (32 lowercase hex characters)
      * @param int $userId User id the token resolved to in the restored database
      * @param string $createdAt Captured creation time as an SQL datetime
      * @param ?string $expiresAt Captured expiry as an SQL datetime, or null for an open-ended session
      * @return ?Session Created session, or null when the token already holds a row
-     * @throws InvalidFormatException When the token is not a 32-character hex string
+     * @throws InvalidFormatException When the token is not a 32-character lowercase hex string
      * @throws HilosException On database error
      */
     public function carryOver(string $token, int $userId, string $createdAt, ?string $expiresAt): ?Session
     {
         $this->ensureCanWrite();
-        self::ensureTokenFormat($token);
+        SessionToken::ensureValid($token);
 
         if ($this->objectCollection->findByToken($token) !== null) {
             return null;
@@ -134,18 +132,5 @@ final class SessionsActions extends DbActions
     public static function expiryFromNow(): string
     {
         return date('Y-m-d H:i:s', time() + Hilos::$env->int(EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE));
-    }
-
-    /**
-     * @param string $token Session cookie token to check
-     * @throws InvalidFormatException When the token is not a 32-character hex string
-     */
-    private static function ensureTokenFormat(string $token): void
-    {
-        if (strlen($token) !== self::TOKEN_HEX_LENGTH || !ctype_xdigit($token)) {
-            throw new InvalidFormatException(
-                'Invalid session token format. Expected ' . self::TOKEN_HEX_LENGTH . ' hex characters.'
-            );
-        }
     }
 }

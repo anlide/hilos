@@ -6,7 +6,6 @@ namespace Demo\SimplePoll\Tests\Unit;
 
 use Demo\SimplePoll\Agents\PollAgent;
 use Hilos\Core\Analytics\AnalyticsCollector;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalRouter;
@@ -44,8 +43,8 @@ final class PollAgentHandshakeTest extends TestCase
 
     public function testHandshakeWithoutSessionTokenThrows(): void
     {
-        $this->expectException(EmptyValueException::class);
-        $this->expectExceptionMessage('session token is required');
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
         new PollAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
@@ -63,7 +62,7 @@ final class PollAgentHandshakeTest extends TestCase
     public function testHandshakeWithInvalidSessionTokenFormatThrows(): void
     {
         $this->expectException(InvalidFormatException::class);
-        $this->expectExceptionMessage('session token must be a 32-character lowercase hex token');
+        $this->expectExceptionMessage('Invalid session token format. Expected 32 lowercase hex characters.');
 
         new PollAgent()->onSignalHandshake(
             new WebSocketHandshakeSignalDTO(
