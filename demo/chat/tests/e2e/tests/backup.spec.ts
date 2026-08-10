@@ -39,14 +39,6 @@ test('closes the backup page to a guest', async ({ page }) => {
 })
 
 test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
-  // TODO(HIL-554): parked 2026-08-08 — expects the 403 error page, but the
-  // signed-in user deterministically (3/3) receives a 401 and a stuck sign-in
-  // surface: the page subscribe appears to race the RT connection sync into the
-  // HILOS_INDEX worker, and the frontend never promotes past the error. Own
-  // test, written this ticket; attempt 1. The deciding measurement (parent
-  // commit) was not taken — HIL-554 owns it. Un-parking is deleting these lines.
-  test.fixme()
-
   // Signed in but not admin: 403, the error page replaces the backup surface.
   await signUp(page)
   await gotoPage(page, '/hilos/backup')
