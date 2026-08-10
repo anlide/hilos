@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
@@ -14,6 +15,7 @@ use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\BackupRestoreCommand;
+use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -58,9 +60,14 @@ final class BackupRestoreCommandProbe extends BackupRestoreCommand
  */
 final class BackupRestoreCommandTest extends TestCase
 {
+    /** Migration track the fixture files are written under. */
+    private const string MIGRATION_TRACK = 'main';
+
     private ?EnvAccessor $previousEnv = null;
 
     private string $root = '';
+
+    private string $migrationRoot = '';
 
     protected function setUp(): void
     {
@@ -72,6 +79,13 @@ final class BackupRestoreCommandTest extends TestCase
         $this->root = sys_get_temp_dir() . '/hilos-restore-cli-' . uniqid('', true);
         mkdir($this->root, 0700, true);
         putenv('BACKUP_DIR=' . $this->root);
+
+        // The migration gate reads the code's level off disk, so a test that wants a level
+        // has to give it files. Pointed at an empty tree by default: no migrations listed,
+        // which is what every pre-existing case in this suite ran with.
+        $this->migrationRoot = sys_get_temp_dir() . '/hilos-restore-cli-migrations-' . uniqid('', true);
+        Migration::setMigrationListPath($this->migrationRoot);
+        Migration::setMigrationName(self::MIGRATION_TRACK);
     }
 
     protected function tearDown(): void
@@ -85,6 +99,10 @@ final class BackupRestoreCommandTest extends TestCase
         if (is_dir($this->root)) {
             rmdir($this->root);
         }
+        // The path stays set on the static Migration for the rest of the process; removing the
+        // tree is what makes it harmless - an unreadable path lists no migrations, the state
+        // this suite found.
+        $this->removeTree($this->migrationRoot);
 
         Hilos::$env = $this->previousEnv;
         putenv('APP_ENV');
@@ -142,6 +160,60 @@ final class BackupRestoreCommandTest extends TestCase
 
         $this->assertSame(ExitCode::ERROR, $output['code']);
         $this->assertStringContainsString('must not overwrite production', $output['text']);
+    }
+
+    public function testArchiveAheadOfTheCodeIsRefusedBeforeTheDigestAndBeforeYes(): void
+    {
+        $this->listCodeMigrations(1, 2, 3);
+        $this->storeBackup('b1', 'archive payload', connections: [new BackupConnectionMeta(0, 'db', 5)]);
+        // Corrupted on purpose, and --yes withheld: whichever of those two the preflight
+        // reached first would answer instead of the gate.
+        file_put_contents($this->archivePath('b1'), 'archive paylOad');
+        $probe = new BackupRestoreCommandProbe();
+
+        $output = $this->runCommand($probe, ['b1']);
+
+        $this->assertSame(ExitCode::ERROR, $output['code']);
+        $this->assertStringContainsString('archive at migration 5, code expects 3 (2 ahead)', $output['text']);
+        $this->assertStringContainsString('no downgrade path', $output['text']);
+        $this->assertStringNotContainsString('verification', $output['text']);
+        $this->assertStringNotContainsString('--yes', $output['text']);
+        $this->assertSame([], $probe->sent, 'A refused restore must never reach the daemon');
+    }
+
+    public function testForceDoesNotLiftTheRefusalOfAnArchiveAheadOfTheCode(): void
+    {
+        $this->listCodeMigrations(1, 2, 3);
+        $this->storeBackup('b1', 'archive payload', connections: [new BackupConnectionMeta(0, 'db', 5)]);
+
+        $output = $this->runCommand(args: ['b1'], options: [
+            BackupConstants::YES_OPTION => true,
+            BackupConstants::FORCE_OPTION => true,
+        ]);
+
+        $this->assertSame(ExitCode::ERROR, $output['code']);
+        $this->assertStringContainsString('no downgrade path', $output['text']);
+    }
+
+    public function testArchiveBehindTheCodeAnnouncesTheMigrationsAndStillDispatches(): void
+    {
+        $this->listCodeMigrations(1, 2, 3);
+        $this->storeBackup('b1', 'archive payload', connections: [new BackupConnectionMeta(0, 'db', 1)]);
+        $probe = new BackupRestoreCommandProbe();
+        $probe->replies = [
+            CommandReplyDTO::ok('r1'),
+            CommandReplyDTO::ok('r2', [
+                BackupConstants::FIELD_RESTORE_RUNNING => false,
+                BackupConstants::FIELD_RESTORE_OUTCOME => BackupStatus::SUCCESS->value,
+            ]),
+        ];
+
+        $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
+
+        $this->assertSame(ExitCode::SUCCESS, $output['code']);
+        $this->assertStringContainsString('connection 0: archive at migration 1, code expects 3', $output['text']);
+        $this->assertStringContainsString('2 migration(s) will be applied after the import', $output['text']);
+        $this->assertSame(BackupConstants::RESTORE_REQUEST_COMMAND, $probe->sent[0]['command']);
     }
 
     public function testMissingYesIsAnInvalidArgumentAfterAllChecksPass(): void
@@ -308,9 +380,14 @@ final class BackupRestoreCommandTest extends TestCase
      * @param string $id Backup id
      * @param string $content Archive bytes
      * @param string $archiveEnv Environment recorded in the sidecar
+     * @param list<BackupConnectionMeta> $connections Connections recorded in the sidecar
      */
-    private function storeBackup(string $id, string $content, string $archiveEnv = 'test'): void
-    {
+    private function storeBackup(
+        string $id,
+        string $content,
+        string $archiveEnv = 'test',
+        array $connections = [],
+    ): void {
         $scopeDir = $this->root . '/' . BackupScope::FULL->value;
         if (!is_dir($scopeDir)) {
             mkdir($scopeDir, 0700, true);
@@ -324,7 +401,7 @@ final class BackupRestoreCommandTest extends TestCase
             createdAt: '2026-08-08T03:00:00+00:00',
             env: $archiveEnv,
             scope: BackupScope::FULL,
-            connections: [],
+            connections: $connections,
             sizeBytes: strlen($content),
             durationSeconds: 4,
             keep: false,
@@ -348,5 +425,44 @@ final class BackupRestoreCommandTest extends TestCase
         return $this->root . '/' . BackupScope::FULL->value . '/'
             . BackupCreator::archiveBaseName($id, $archiveEnv, BackupScope::FULL)
             . BackupCreator::ARCHIVE_EXTENSION;
+    }
+
+    /**
+     * Gives this code a migration level by writing the up-files the gate counts.
+     *
+     * The bodies stay empty: nothing here ever runs them, the gate only reads the indices
+     * off the file names.
+     *
+     * @param int ...$indices Migration indices the code lists
+     */
+    private function listCodeMigrations(int ...$indices): void
+    {
+        $trackDir = $this->migrationRoot . '/' . self::MIGRATION_TRACK;
+        if (!is_dir($trackDir)) {
+            mkdir($trackDir, 0700, true);
+        }
+        foreach ($indices as $index) {
+            file_put_contents($trackDir . '/' . $index . '_up.sql', "-- fixture\n");
+        }
+    }
+
+    /**
+     * Recursively removes a fixture tree (best effort).
+     *
+     * @param string $path Directory path
+     */
+    private function removeTree(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $child = $path . '/' . $entry;
+            is_dir($child) ? $this->removeTree($child) : unlink($child);
+        }
+        rmdir($path);
     }
 }

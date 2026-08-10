@@ -12,6 +12,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
@@ -30,15 +32,18 @@ use Throwable;
  * monopoly backup agent spawns under protected mode.
  *
  * The order of steps is the safety argument: everything that can refuse (locate,
- * sidecar read, digest check, anonymizer availability via the decision) runs before
- * the first import touches a database. Import replaces tables as the dump directs
- * (mysqldump's default DROP TABLE IF EXISTS + CREATE); tables present in the target
- * but absent from the dump are left alone - reconciling those is HIL-436, and the
- * migration-index gate is HIL-430.
+ * sidecar read, digest check, migration gate, anonymizer availability via the decision)
+ * runs before the first import touches a database. Import replaces tables as the dump
+ * directs (mysqldump's default DROP TABLE IF EXISTS + CREATE); tables present in the
+ * target but absent from the dump are left alone - reconciling those is HIL-436.
  *
  * The ENV decision is made by {@see RestoreEnvGuard} in the caller and arrives here
  * as a value: the engine acts on it (runs the anonymization seam or not) but does not
- * re-derive it, so both execution paths act on the same recorded verdict.
+ * re-derive it, so both execution paths act on the same recorded verdict. The migration
+ * gate is the opposite case and is re-run here rather than passed in: it reads only the
+ * sidecar and the migration files, both of which this process has, and the engine is the
+ * last thing standing before the data is overwritten - the same argument that makes it
+ * re-check the digest.
  */
 final class BackupRestorer
 {
@@ -84,6 +89,14 @@ final class BackupRestorer
         $archivePath = self::locateArchive($root, $id, $scope);
         $metadata = self::readSidecarForArchive($archivePath);
 
+        $migration = RestoreMigrationGuard::decide(
+            $metadata->connections,
+            RestoreMigrationGuard::codeMigrationIndex(),
+        );
+        if ($migration->decision === RestoreMigrationDecision::REFUSE) {
+            throw new RestoreFailedException("Restore refused by the migration guard: {$migration->reason}");
+        }
+
         // Anything that can refuse must run before the first destructive step, and an
         // unavailable anonymizer refuses: checked here, not after the imports, or a
         // REQUIRE_ANONYMIZATION run would commit raw production data before failing.
@@ -118,6 +131,15 @@ final class BackupRestorer
                 => $a->index <=> $b->index);
             foreach ($connections as $connection) {
                 $this->importConnection($connection, $workDir);
+            }
+
+            // Before anonymization, not after: the anonymizer (HIL-275) works against the
+            // schema the CODE knows, which is the schema these migrations produce.
+            if ($onPhase !== null) {
+                $onPhase(RestorePhase::MIGRATING);
+            }
+            foreach ($connections as $connection) {
+                $this->migrateConnection($connection);
             }
 
             if ($anonymizer !== null) {
@@ -321,6 +343,41 @@ final class BackupRestorer
         } finally {
             // warning-suppressed: teardown of the credentials file, no-op when it is already gone
             @unlink($iniPath);
+        }
+    }
+
+    /**
+     * Brings one restored database up to the migration level the code expects.
+     *
+     * Unconditional, including when the levels already match: `migrateUp` applies nothing
+     * then, and the alternative - deciding here whether to call it - would put a second
+     * copy of the gate's arithmetic in the engine. The archive can only be at or below the
+     * code level; anything ahead was refused before the first import.
+     *
+     * Opens the link when the process has not already, the way the create path does before
+     * reading the same table: the import before this one talks to the database through the
+     * mysql client, so a connection the caller never needed in PHP is still closed here.
+     *
+     * @param BackupConnectionMeta $connection Restored connection to migrate
+     * @throws RestoreFailedException When the connection is not configured, cannot be opened,
+     *     or a migration fails; the data is already imported at this point, so the run ends
+     *     partially restored (HIL-436)
+     */
+    private function migrateConnection(BackupConnectionMeta $connection): void
+    {
+        try {
+            Database::useConnection($connection->index);
+            if (!Database::isConnected($connection->index)) {
+                Database::connect($connection->index);
+            }
+            Migration::migrateUp();
+        } catch (DatabaseException $failure) {
+            throw new RestoreFailedException(
+                "Failed to migrate connection {$connection->index} after the import: "
+                . $failure->getMessage(),
+                0,
+                $failure,
+            );
         }
     }
 

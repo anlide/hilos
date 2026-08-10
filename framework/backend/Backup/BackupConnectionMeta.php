@@ -22,12 +22,14 @@ final class BackupConnectionMeta extends BaseDTO
     /**
      * @param int $index Connection index in the project database configuration
      * @param string $database Database name captured
-     * @param int $migrationIndex Migration index at capture time
+     * @param ?int $migrationIndex Migration index at capture time; null on a sidecar written
+     *     before the field existed - "not recorded", which the restore gate must tell from a
+     *     database that genuinely carries no migrations
      */
     public function __construct(
         public readonly int $index,
         public readonly string $database,
-        public readonly int $migrationIndex,
+        public readonly ?int $migrationIndex,
     ) {
     }
 
@@ -41,7 +43,7 @@ final class BackupConnectionMeta extends BaseDTO
             (int)($data[self::index] ?? 0),
             // external-boundary: the sidecar is read from disk and an older one names no database
             (string)($data[self::database] ?? ''),
-            (int)($data[self::migrationIndex] ?? 0),
+            isset($data[self::migrationIndex]) ? (int)$data[self::migrationIndex] : null,
         );
     }
 
@@ -53,6 +55,8 @@ final class BackupConnectionMeta extends BaseDTO
         return [
             self::index => $this->index,
             self::database => $this->database,
+            // Written even when null, the way BackupMetadata writes its digest: a reader tells
+            // "this connection recorded no level" from "this sidecar predates the field".
             self::migrationIndex => $this->migrationIndex,
         ];
     }

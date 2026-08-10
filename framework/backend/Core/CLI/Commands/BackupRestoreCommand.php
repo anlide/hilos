@@ -15,6 +15,9 @@ use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreEnvGuard;
+use Hilos\Backup\RestoreMigrationDecision;
+use Hilos\Backup\RestoreMigrationGap;
+use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
@@ -27,8 +30,8 @@ use Hilos\Hilos;
 /**
  * BackupRestoreCommand - restore a stored backup into this installation's databases.
  *
- * The preflight (resolve, digest check, ENV guard, explicit --yes) runs here in full on
- * both paths, so a doomed request is refused before anything is asked to freeze. Then the
+ * The preflight (resolve, ENV guard, migration gate, explicit --yes, digest check) runs here
+ * in full on both paths, so a doomed request is refused before anything is asked to freeze. Then the
  * paths split. The default HOT path assumes a live daemon: the request goes over the
  * command channel to the monopoly backup agent, which freezes the node through protected
  * mode and runs the restore in a spawned child; this process stays a monitor, and closing
@@ -38,8 +41,9 @@ use Hilos\Hilos;
  * daemon that is alive but busy must not have its restore run around the freeze.
  *
  * The ENV matrix is authoritative here (per the ticket): the agent receives the recorded
- * decision as a value, and the engine re-checks only the digest before its destructive
- * steps.
+ * decision as a value. The migration gate is not passed on the same way - it needs only the
+ * sidecar and the migration files, so the engine re-derives it, as it re-checks the digest,
+ * before its destructive steps.
  */
 class BackupRestoreCommand implements CommandInterface
 {
@@ -100,6 +104,11 @@ Description:
   archive -> prod is always refused; an archive with no recorded environment needs
   --force to enter prod.
 
+  Migration gate: each connection's migration level recorded in the archive is compared
+  with the level this code expects. Behind -> restored, then migrated forward; the gap is
+  printed before anything destructive runs. Ahead -> always refused, --force does not lift
+  it (there is no downgrade path). Not recorded -> restored with a printed warning.
+
 Usage:
   php cli.php backup:restore <id> [--scope=<scope>] [--yes] [--force] [--cold]
 
@@ -111,7 +120,7 @@ Options:
 
 Exit codes:
   0  restore completed (hot: reported by the agent; cold: engine returned)
-  1  refused (digest mismatch, ENV guard, daemon silent or busy) or failed
+  1  refused (digest mismatch, ENV guard, migration gate, daemon silent or busy) or failed
   2  unknown id/scope, or missing --yes
   3  BACKUP_DIR is not configured
 
@@ -185,6 +194,10 @@ HELP;
             return ExitCode::ERROR;
         }
 
+        if (!$this->reportMigrationGate($metadata)) {
+            return ExitCode::ERROR;
+        }
+
         if (!isset($options[BackupConstants::YES_OPTION])) {
             echo "Error: restoring is destructive; confirm with --yes\n";
 
@@ -237,6 +250,68 @@ HELP;
         }
 
         return $result->decision;
+    }
+
+    /**
+     * Applies the migration-index gate and tells the operator what it found.
+     *
+     * Runs before `--yes` and before the digest pass, on this preflight's cheap-refusals-first
+     * rule: the sidecar is already in hand, so the gate costs nothing, while hashing the archive
+     * costs a full read of it. An archive older than the code is not a refusal - the missing
+     * migrations are applied after the import - but the operator is told before anything
+     * destructive happens, because a silent migration is a surprise even when it is right.
+     *
+     * @param BackupMetadata $metadata Sidecar metadata carrying the per-connection levels
+     * @return bool Whether the restore may proceed
+     */
+    private function reportMigrationGate(BackupMetadata $metadata): bool
+    {
+        $result = RestoreMigrationGuard::decide(
+            $metadata->connections,
+            RestoreMigrationGuard::codeMigrationIndex(),
+        );
+        if ($result->decision === RestoreMigrationDecision::REFUSE) {
+            echo "Error: {$result->reason}\n";
+
+            return false;
+        }
+
+        foreach ($result->gaps as $gap) {
+            echo '  ' . self::describeGap($gap, $result->codeIndex) . "\n";
+        }
+
+        return true;
+    }
+
+    /**
+     * Words one migration gap for the operator.
+     *
+     * Only reached on an allowed run, so the archive is either behind the code or carries no
+     * comparable level; an archive ahead of the code was refused with the guard's own wording.
+     *
+     * @param RestoreMigrationGap $gap Connection whose level differs from the code's
+     * @param ?int $codeIndex Migration level this code expects; null when it lists no migrations
+     * @return string One operator-facing line
+     */
+    private static function describeGap(RestoreMigrationGap $gap, ?int $codeIndex): string
+    {
+        if ($gap->archiveIndex === null) {
+            return "connection {$gap->connectionIndex}: archive records no migration level"
+                . ' (sidecar predates the field); restoring without the compatibility check';
+        }
+        if ($codeIndex === null) {
+            return "connection {$gap->connectionIndex}: archive at migration {$gap->archiveIndex},"
+                . ' this installation lists no migrations; restoring without the compatibility check';
+        }
+
+        return sprintf(
+            'connection %d: archive at migration %d, code expects %d;'
+            . ' %d migration(s) will be applied after the import',
+            $gap->connectionIndex,
+            $gap->archiveIndex,
+            $codeIndex,
+            $codeIndex - $gap->archiveIndex,
+        );
     }
 
     /**

@@ -13,8 +13,13 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Backup\RestoreMigrationGuard;
+use Hilos\Backup\RestorePhase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -36,9 +41,27 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     /** Fixture backup id; also the stem of the stored archive/sidecar names. */
     private const string BACKUP_ID = '2026-08-08_12-00-00';
 
+    /** Migration track the fixture migration file is written under. */
+    private const string MIGRATION_TRACK = 'main';
+
+    /**
+     * Index of the fixture migration. Deliberately far above anything a real schema will
+     * reach: it is applied to the shared test database, so it must not collide with a real
+     * migration row, and tearDown deletes exactly this one.
+     */
+    private const int CODE_MIGRATION_INDEX = 9001;
+
+    /** Level the fixture archive records: one behind the code, the migrate-forward case. */
+    private const int ARCHIVE_MIGRATION_INDEX = 9000;
+
+    /** Column the fixture migration adds; the proof that migrations ran after the import. */
+    private const string MIGRATED_COLUMN = 'note';
+
     private string $storeRoot = '';
 
     private ?EnvAccessor $previousEnv = null;
+
+    private bool $fixtureMigrationListed = false;
 
     protected function setUp(): void
     {
@@ -53,14 +76,30 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
         putenv('BACKUP_DIR=' . $this->storeRoot);
+
+        // Point the migration list at an empty fixture tree: the gate then reads no code
+        // level, which is what the cases that are not about migrations want. The one case
+        // that is fills the tree itself.
+        Migration::setMigrationListPath($this->storeRoot . '/migrations');
+        Migration::setMigrationName(self::MIGRATION_TRACK);
+        $this->fixtureMigrationListed = false;
     }
 
+    /**
+     * @throws DatabaseException When the fixture migration row cannot be dropped
+     */
     protected function tearDown(): void
     {
         Hilos::$env = $this->previousEnv;
         putenv('BACKUP_DIR');
         $this->removeTree($this->storeRoot);
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        if ($this->fixtureMigrationListed) {
+            // The migration table is shared with every other suite against this database, so
+            // the fixture's row leaves with the fixture.
+            Migration::initialize();
+            Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [self::CODE_MIGRATION_INDEX]);
+        }
         parent::tearDown();
     }
 
@@ -114,6 +153,46 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertDirectoryDoesNotExist($workDir, 'The temp workdir must be swept even on failure');
     }
 
+    public function testAnArchiveBehindTheCodeIsMigratedForwardAfterTheImport(): void
+    {
+        $this->listFixtureMigration();
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]), self::ARCHIVE_MIGRATION_INDEX);
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+
+        $phases = [];
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            RestoreEnvDecision::ALLOW,
+            static function (RestorePhase $phase) use (&$phases): void {
+                $phases[] = $phase;
+            },
+        );
+
+        $this->assertContains(RestorePhase::MIGRATING, $phases);
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $this->assertContains(
+            self::MIGRATED_COLUMN,
+            $this->probeColumns(),
+            'The restored database must carry the schema the code expects, not the dump\'s',
+        );
+        $this->assertSame([['1', 'alpha']], $this->probeRows(), 'The imported rows must survive the migration');
+    }
+
+    public function testTheMigrateStepOpensALinkTheCallerNeverOpened(): void
+    {
+        $this->listFixtureMigration();
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]), self::ARCHIVE_MIGRATION_INDEX);
+        // Everything before the migrate step reaches the database through the mysql client,
+        // so a restore can arrive here with no PHP link open - which is the normal state of
+        // every connection the calling command did not itself need.
+        Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+    }
+
     public function testRefusedDecisionNeverTouchesStorage(): void
     {
         // No fixture is published on purpose: a refused restore must fail on the decision,
@@ -128,9 +207,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      * Builds and publishes one fixture backup exactly as the create path lays it out.
      *
      * @param string $dumpSql Contents of the connection-0 dump inside the archive
+     * @param ?int $migrationIndex Migration level recorded for connection 0
      * @return string Absolute path of the published archive
      */
-    private function publishFixtureBackup(string $dumpSql): string
+    private function publishFixtureBackup(string $dumpSql, ?int $migrationIndex = 0): string
     {
         $scopeDir = $this->storeRoot . '/' . BackupScope::FULL->value;
         $workDir = $this->storeRoot . '/build';
@@ -154,7 +234,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             createdAt: '2026-08-08T12:00:00+00:00',
             env: 'test',
             scope: BackupScope::FULL,
-            connections: [new BackupConnectionMeta(0, $this->databaseName(), 0)],
+            connections: [new BackupConnectionMeta(0, $this->databaseName(), $migrationIndex)],
             sizeBytes: (int)filesize($archivePath),
             durationSeconds: 1,
             keep: false,
@@ -186,6 +266,38 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         return 'DROP TABLE IF EXISTS `' . self::PROBE_TABLE . "`;\n"
             . 'CREATE TABLE `' . self::PROBE_TABLE . "` (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"
             . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES {$inserts};\n";
+    }
+
+    /**
+     * Writes the one migration file that gives this code a level above the archive's.
+     *
+     * Without it {@see RestoreMigrationGuard::codeMigrationIndex()} answers null, the gate
+     * takes its "level not comparable" branch, and the test quietly stops being about
+     * migrating forward at all.
+     */
+    private function listFixtureMigration(): void
+    {
+        $trackDir = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK;
+        mkdir($trackDir, 0700, true);
+        file_put_contents(
+            $trackDir . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
+            'ALTER TABLE `' . self::PROBE_TABLE . '` ADD COLUMN `' . self::MIGRATED_COLUMN . "` VARCHAR(32) NULL;\n",
+        );
+        $this->fixtureMigrationListed = true;
+    }
+
+    /**
+     * @return list<string> Column names of the probe table
+     */
+    private function probeColumns(): array
+    {
+        Database::sql('SHOW COLUMNS FROM `' . self::PROBE_TABLE . '`');
+        $columns = [];
+        while (($row = Database::row()) !== null) {
+            $columns[] = (string)$row['Field'];
+        }
+
+        return $columns;
     }
 
     /**

@@ -26,6 +26,9 @@ enum RestorePhase: string
     /** Importing the dumps into the configured connections. */
     case IMPORTING = 'importing';
 
+    /** Bringing each restored database up to the migration level the code expects. */
+    case MIGRATING = 'migrating';
+
     /** Running the anonymization pass over the imported data. */
     case ANONYMIZING = 'anonymizing';
 

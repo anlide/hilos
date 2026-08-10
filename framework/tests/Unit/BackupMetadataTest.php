@@ -226,6 +226,20 @@ final class BackupMetadataTest extends TestCase
         $this->assertSame(BackupScope::SCHEMA_SEED, $verified->scope);
     }
 
+    public function testLegacyConnectionRecordsNoMigrationLevelWhileAnExplicitZeroSurvives(): void
+    {
+        // The distinction the restore gate stands on: a sidecar written before the field
+        // must not read back as a database that genuinely carries no migrations.
+        $legacy = BackupConnectionMeta::fromArray([
+            BackupConnectionMeta::index => 0,
+            BackupConnectionMeta::database => 'db',
+        ]);
+        $this->assertNull($legacy->migrationIndex);
+
+        $zero = BackupConnectionMeta::fromArray(new BackupConnectionMeta(1, 'db', 0)->toArray());
+        $this->assertSame(0, $zero->migrationIndex);
+    }
+
     public function testUnknownScopeAndStatusFallBackToDefaults(): void
     {
         $metadata = BackupMetadata::fromArray($this->minimalSidecar([

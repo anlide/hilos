@@ -18,8 +18,17 @@ class Migration
     /** @var ?string Path to routines (stored procedures) directory */
     private static ?string $routinesPath = null;
 
-    /** @var bool Whether migration system is initialized */
-    private static bool $initialized = false;
+    /**
+     * Whether the migration table is ensured, keyed by database connection index.
+     *
+     * Per connection, not per process: the `migration` table lives inside each database,
+     * so a once-per-process flag makes the second connection migrated in one process skip
+     * initialize() and then fail in getCurrentIndex() on a table that was never created.
+     * A restore migrating every connection it imported is the first caller to hit that.
+     *
+     * @var array<int, bool> Connection index => migration table ensured
+     */
+    private static array $initialized = [];
 
     /**
      * @param string $path Path to migration list directory
@@ -50,14 +59,15 @@ class Migration
      */
     public static function initialize(): void
     {
-        if (self::$initialized) {
+        $connectionIndex = Database::getCurrentIndex();
+        if (self::$initialized[$connectionIndex] ?? false) {
             return;
         }
 
         try {
             // Check if table exists
             Database::sql(DatabaseSql::tableExistsProbe('migration'));
-            self::$initialized = true;
+            self::$initialized[$connectionIndex] = true;
             return;
         } catch (DatabaseException $e) {
             // Table doesn't exist, create it
@@ -72,7 +82,7 @@ class Migration
             ) ' . DatabaseConnectionDefaults::DDL_TABLE_SUFFIX
         );
 
-        self::$initialized = true;
+        self::$initialized[$connectionIndex] = true;
     }
 
     /**
