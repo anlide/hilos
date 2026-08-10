@@ -684,16 +684,19 @@ final class ChatTopologyRegistryTest extends TestCase
     /**
      * Extracts the expected browser signal name from a page config.
      *
+     * A page that names no SIGNAL declares no browser subscription, and that state
+     * is null here as it is in the config. Only strings are mirrored: a non-string
+     * SIGNAL is a broken declaration the config refuses outright, so no expectation
+     * of it belongs on this side of the assert.
+     *
      * @param array<string, mixed> $browserConfig Page BROWSER config
-     * @return string Browser signal name
+     * @return ?string Browser signal name, or null when the page declares no subscription
      */
-    private function expectedSignalName(array $browserConfig): string
+    private function expectedSignalName(array $browserConfig): ?string
     {
-        // external-boundary: a page declaration need not name a SIGNAL, and the assert mirrors that
-        $signalName = $browserConfig[BrowserConfigKey::SIGNAL] ?? '';
+        $signalName = $browserConfig[BrowserConfigKey::SIGNAL] ?? null;
 
-        // external-boundary: same declaration, same mirror — a non-string SIGNAL is no name either
-        return is_string($signalName) ? $signalName : '';
+        return is_string($signalName) ? $signalName : null;
     }
 
     /**

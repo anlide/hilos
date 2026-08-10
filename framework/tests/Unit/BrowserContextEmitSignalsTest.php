@@ -22,6 +22,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -456,6 +457,7 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Test page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
@@ -559,6 +561,7 @@ final class BrowserContextPageGuardTestContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
@@ -645,6 +648,7 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Browser page metadata
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {

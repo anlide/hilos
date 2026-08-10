@@ -104,13 +104,22 @@ handed, and the choice is made in `CodeStyleGuardTest`, which is the only place
 that knows which root is being scanned.
 
 Inside `framework/backend` it fires only within a path zone — the signal spine
-(`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent/DTO`, `Core/Daemon`,
-`Core/Table/DTO`, `Core/Source`), the wire DTOs (`Socket/*/DTO`,
-`Cluster/Peer/DTO`), the application subsystems (`API`, `Auth`, `Backup`,
+(`Core/Router`, `Core/Page`, `Core/Sync`, `Core/Agent`, `Core/Daemon`,
+`Core/Table/DTO`, `Core/Source`), the whole of `Socket` and `Cluster/Peer/DTO`,
+the operator and browser layers (`Core/Analytics`, `Core/Browser`, `Core/CLI`,
+`Core/Feature`), the application subsystems (`API`, `Auth`, `Backup`,
 `Database`, `LLM`, `Log`, `Mail`, `Notification`, `Pages`, `ProtectedMode`,
 `Push`, `Runtime`, `Sms`, `Tables`, `Utils`) and `Hilos.php`. The framework is
 cleaned one subsystem at a time: turned on across the root at once, its baseline
 would become a list of exceptions rather than a list of owed work.
+
+A zone entry matches a whole path segment wherever it sits, not a prefix, which
+is what lets `Socket` be taken entire: `Socket/WebSocket/WebSocketFrameDTO.php`
+and `Socket/Worker/WorkerDTO.php` sit BESIDE the `DTO` subdirectories the earlier
+phases named, and no `Socket/Client`-shaped segment reaches them. The fixture
+tree carries a file directly in a segment for exactly this reason — were the
+match ever narrowed to a prefix, the fixture report would break before any
+production file did.
 
 Every other root — `demo/*/backend`, `framework/tests`, `demo/*/tests` — is judged
 entire. A demo is an application on the framework and has no subsystem outside the

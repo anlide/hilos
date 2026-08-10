@@ -374,6 +374,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStart(string $agentType, ?string $agentIndex = null): void
     {
+        // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
 
@@ -392,6 +393,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
     {
+        // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
@@ -410,6 +412,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendProtectedModeReady(string $agentType, ?string $agentIndex = null): void
     {
+        // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending protected_mode_ready signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 

@@ -96,6 +96,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, checked on the very next line
         $operation = $args[0] ?? '';
         if ($operation === '') {
             echo "Usage: {$this->getName()} <operation> [--accept-key=<k>]  (operation: non-empty name)\n";

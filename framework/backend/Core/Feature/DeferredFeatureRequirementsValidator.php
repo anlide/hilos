@@ -6,6 +6,7 @@ namespace Hilos\Core\Feature;
 
 use Hilos\Core\CLI\CliApplication;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
@@ -50,6 +51,7 @@ final class DeferredFeatureRequirementsValidator
      * @param class-string<CliManager> $cliManagerClass CLI manager the project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context the project builds, or null when it builds none
      * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence source
+     * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */
     public function validate(
@@ -135,6 +137,7 @@ final class DeferredFeatureRequirementsValidator
      *
      * @param string $migrationsPath Directory holding the project's schema migrations
      * @return list<string> Table names created by the migrations
+     * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      */
     private function createdTables(string $migrationsPath): array
     {
@@ -149,7 +152,17 @@ final class DeferredFeatureRequirementsValidator
                 continue;
             }
 
-            $statements = preg_replace('/--[^\n]*/', '', $sql) ?? '';
+            // A null here is the PCRE engine refusing, not a file with nothing left after
+            // its comments. Read as an empty statement list it would say "these migrations
+            // create no table at all" — the one answer this validator must never invent,
+            // since its whole worth is that an intention cannot satisfy it.
+            $statements = preg_replace('/--[^\n]*/', '', $sql);
+            if ($statements === null) {
+                throw new LogicException(
+                    "Cannot strip the comments of migration file {$file}: " . preg_last_error_msg(),
+                );
+            }
+
             preg_match_all('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(\w+)`?/i', $statements, $matches);
             foreach ($matches[1] as $table) {
                 $tables[] = $table;

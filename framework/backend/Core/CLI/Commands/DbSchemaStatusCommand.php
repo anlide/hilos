@@ -187,9 +187,13 @@ HELP;
         echo "\nColumns:\n";
         foreach ($table->columns as $column) {
             $nullable = $column->nullable ? 'NULL' : 'NOT NULL';
+            // external-boundary: the neutral element of the printf row below — no default prints nothing
             $default = $column->default !== null ? " DEFAULT " . (is_string($column->default) ? "'{$column->default}'" : $column->default) : '';
+            // external-boundary: the neutral element of the printf row below
             $extra = $column->extra ? " {$column->extra}" : '';
+            // external-boundary: the neutral element of the printf row below
             $primary = $column->isPrimary ? ' [PK]' : '';
+            // external-boundary: the neutral element of the printf row below
             $unique = $column->isUnique ? ' [UNIQUE]' : '';
 
             printf(
@@ -208,6 +212,7 @@ HELP;
         if (!empty($table->indexes)) {
             echo "\nIndexes:\n";
             foreach ($table->indexes as $index) {
+                // external-boundary: the neutral element of the line below — a plain index has no qualifier
                 $unique = $index->unique ? 'UNIQUE ' : '';
                 $columns = implode(', ', $index->columns);
                 echo "  {$unique}{$index->name}: ({$columns})\n";

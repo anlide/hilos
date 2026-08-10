@@ -195,13 +195,14 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
-        $acceptKey = $data->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? '';
+        $acceptKey = $data->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
 
         $this->protectedModeTestCorrelationId = $data->correlationId;
         $this->protectedModeTestSince = microtime(true);
         $this->protectedModeTestLeaving = false;
 
         try {
+            // external-boundary: no accept key is a CLI initiator, the identity BackupAgent restores with
             $this->requestProtectedModeEnable($operation, is_string($acceptKey) ? $acceptKey : '');
         } catch (Throwable $e) {
             // Cluster config is read on this path, so the request can fail before it is even

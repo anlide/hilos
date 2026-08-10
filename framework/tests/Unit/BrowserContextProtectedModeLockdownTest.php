@@ -8,6 +8,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
@@ -145,6 +146,7 @@ final class ProtectedModeLockdownTestBrowserContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Guard-less page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {

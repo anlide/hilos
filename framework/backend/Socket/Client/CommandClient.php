@@ -155,8 +155,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // Test-only: the master force-closes the live WebSocket connection with the
                 // given acceptKey (simulating an unplanned drop). A socket-close failure must
                 // reply an error, not throw inside the master loop.
-                $acceptKey = (string) ($request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? '');
-                if ($acceptKey === '') {
+                $acceptKey = $request->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
+                if (!is_string($acceptKey) || $acceptKey === '') {
                     $reply = CommandReplyDTO::error($request->correlationId, 'Missing acceptKey');
                 } else {
                     try {

@@ -71,6 +71,14 @@ table contexts when they can read the project registry.
   name.
 - `Hilos::BROWSER_TABLES` registers browser-only table config classes keyed by
   each table class `::TABLE` value.
+- A page may declare **no** browser subscription at all, and most do not: leave
+  `BROWSER[BrowserConfigKey::SIGNAL]` unnamed and the page simply has no browser
+  data (`AbstractPage::BROWSER` defaults to none — the About, Terms, Privacy and
+  License pages are all in this state). That is a state with a name of its own:
+  the resolved config carries `signalName === null`. Naming something that is
+  not a signal is the other thing entirely, and is refused as a broken
+  declaration rather than read as "no subscription"; see
+  [page-access-control.md](architecture/page-access-control.md).
 - `Hilos::PAGE_TABLES` declares which registered table or browser-only table is
   used by each page, including browser table params. Page classes must not put
   table bindings in `BROWSER[BrowserConfigKey::TABLES]`.

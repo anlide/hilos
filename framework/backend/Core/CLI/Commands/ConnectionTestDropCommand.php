@@ -85,6 +85,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, checked on the very next line
         $acceptKey = $args[0] ?? '';
         if ($acceptKey === '') {
             echo "Error: acceptKey argument is required\n";

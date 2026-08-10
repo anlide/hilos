@@ -24,13 +24,16 @@ use PHPUnit\Framework\TestCase;
 final class RuleFixtureTest extends TestCase
 {
     /**
-     * Segments the fixture tree repeats from the real zone. Two of them are enough
-     * to prove a zone is honored — what the remaining segments would add is more
-     * paths, not another decision.
+     * Segments the fixture tree repeats from the real zone. Not all of them — a
+     * segment that only adds another path proves nothing the ones here do not.
+     * Each of these four stands for a decision the zone makes: a nested segment,
+     * a top-level one, a segment added by a later phase, and `Socket`, taken whole
+     * rather than by its subdirectories — the only one whose fixture sits DIRECTLY
+     * in the segment, which is what tells a segment match from a prefix match.
      *
      * @var array<int, string>
      */
-    private const array ZONE_SEGMENTS = ['Core/Router', 'Tables'];
+    private const array ZONE_SEGMENTS = ['Core/Router', 'Tables', 'Core/CLI', 'Socket'];
 
     /** Fixture root judged with no zone at all, kept out of the scan above. */
     private const string WHOLE_ROOT_FIXTURES = 'WholeRoot';
@@ -39,6 +42,9 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'EMPTY-STRING-SENTINEL Bad/Core/CLI/EmptySentinel.php:19 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'EMPTY-STRING-SENTINEL Bad/Core/Router/EmptySentinel.php:23 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -118,6 +124,9 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:23 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'EMPTY-STRING-SENTINEL Bad/Socket/EmptySentinel.php:25 — ?? \'\' turns a missing value '
+                    . 'into an empty string; keep it null or make the field required '
+                    . '(see docs/agents/code-style/method-contracts.md)',
                 'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',

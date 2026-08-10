@@ -91,6 +91,16 @@ browser table config classes. Declare every DB/RT source that materially
 changes the browser row so a source fact never has to be bridged by imperative
 agent/page fan-out.
 
+A source declaration that names no collection, or names one of an unknown kind,
+is a mistake in the config and is refused with `PageInternalErrorException` — on
+subscribe it reaches the client as a 500 `subscription_page_error`, and in the
+reactive fan-out it is logged and skips that one subscription. It used to be
+read as "this source is currently empty", which dropped the row fragment (or the
+whole collection) with nothing said, so a mistyped `KEY` looked exactly like a
+page whose data had not arrived yet. An unknown collection under a well-formed
+declaration is a different thing and stays silent: the project may mount it
+later, and the fan-out treats it as nothing to deliver yet.
+
 The separate `table_mutation` transport remains server-authoritative immediate
 table state. Use it for table-store mutations, not for new page-shaped browser
 payloads.

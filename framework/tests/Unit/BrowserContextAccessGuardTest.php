@@ -13,6 +13,7 @@ use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
@@ -125,6 +126,7 @@ final class AccessGuardTestBrowserContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {

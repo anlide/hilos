@@ -119,6 +119,7 @@ HELP;
                 $statusText = 'Pending';
             }
             
+            // external-boundary: the neutral element of the line below — only the current one is marked
             $current = $isCurrent ? ' (current)' : '';
             
             printf("  %s Migration %03d - %-10s%s\n", $marker, $index, $statusText, $current);

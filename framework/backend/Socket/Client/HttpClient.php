@@ -135,8 +135,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             return false;
         }
 
-        $conn = strtolower(trim(HttpHeaderHelper::get($headers, HttpConstants::HEADER_CONNECTION) ?? ''));
-        if ($conn !== '') {
+        $connection = HttpHeaderHelper::get($headers, HttpConstants::HEADER_CONNECTION);
+        if ($connection !== null) {
+            $conn = strtolower(trim($connection));
             if (str_contains($conn, HttpConstants::CONNECTION_VALUE_CLOSE)) {
                 return false;
             }
@@ -167,7 +168,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     private function parseRequest(string $rawRequest): array
     {
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $rawRequest);
-        $firstLine = $lines[0] ?? '';
+        $firstLine = $lines[0];
 
         // Parse: GET /path?a=1 HTTP/1.1
         $parts = explode(' ', $firstLine);
@@ -203,6 +204,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         $statusText = HttpConstants::HTTP_STATUS_TEXTS[$status]
             ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
+        // external-boundary: "no body" and "an empty body" are one state — it is counted, then concatenated
         $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 
         $http = HttpConstants::HTTP_VERSION . " {$status} {$statusText}" . HttpConstants::HTTP_LINE_SEPARATOR;

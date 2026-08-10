@@ -60,8 +60,8 @@ abstract class WorkerDTO extends BaseDTO
         $data = json_decode($json, true)
             ?? throw new InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
 
-        $type = $data[self::TYPE] ?? '';
-        if ($type === '') {
+        $type = $data[self::TYPE] ?? null;
+        if (!is_string($type) || $type === '') {
             throw new InvalidArgumentException('Message type is missing');
         }
 

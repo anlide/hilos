@@ -125,6 +125,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, checked on the very next line
         $userIdArg = $args[0] ?? '';
         if (preg_match('/^\d+$/', $userIdArg) !== 1 || (int)$userIdArg <= 0) {
             echo "Usage: {$this->getName()} <userId> <type> <title> [--body=<t>] [--severity=<s>]"
@@ -133,6 +134,7 @@ HELP;
             return ExitCode::INVALID_ARGUMENT;
         }
 
+        // external-boundary: the operator's command line, checked on the very next line
         $type = $args[1] ?? '';
         if ($type === '') {
             echo "Argument <type> must be a non-empty notification type.\n";
@@ -140,6 +142,7 @@ HELP;
             return ExitCode::INVALID_ARGUMENT;
         }
 
+        // external-boundary: the operator's command line, checked on the very next line
         $title = $args[2] ?? '';
         if ($title === '') {
             echo "Argument <title> must be a non-empty title.\n";

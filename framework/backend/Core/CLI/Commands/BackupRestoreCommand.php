@@ -154,6 +154,7 @@ HELP;
             return ExitCode::CONFIG_ERROR;
         }
 
+        // external-boundary: the operator's command line, checked on the very next line
         $id = $args[0] ?? '';
         if ($id === '') {
             echo "Error: backup id is required\n";
@@ -413,16 +414,17 @@ HELP;
             }
             $silentPolls = 0;
 
-            $phase = (string)($reply->payload[BackupConstants::FIELD_RESTORE_PHASE] ?? '');
-            if ($phase !== '' && $phase !== $lastPhase) {
+            // A run that has not named a phase yet, or a finished one that carries no outcome,
+            // is a legitimate answer during the poll — hence the null, not an empty string.
+            $phase = $reply->payload[BackupConstants::FIELD_RESTORE_PHASE] ?? null;
+            if (is_string($phase) && $phase !== '' && $phase !== $lastPhase) {
                 echo "  {$phase}...\n";
                 $lastPhase = $phase;
             }
 
             $running = (bool)($reply->payload[BackupConstants::FIELD_RESTORE_RUNNING] ?? false);
-            $outcome = BackupStatus::fromString(
-                (string)($reply->payload[BackupConstants::FIELD_RESTORE_OUTCOME] ?? ''),
-            );
+            $outcomeName = $reply->payload[BackupConstants::FIELD_RESTORE_OUTCOME] ?? null;
+            $outcome = is_string($outcomeName) ? BackupStatus::fromString($outcomeName) : null;
             if (!$running && $outcome !== null) {
                 if ($outcome === BackupStatus::SUCCESS) {
                     echo "Restore completed\n";
@@ -430,8 +432,10 @@ HELP;
                     return ExitCode::SUCCESS;
                 }
 
-                $failure = (string)($reply->payload[BackupConstants::FIELD_RESTORE_FAILURE] ?? '');
-                echo 'Error: restore failed' . ($failure !== '' ? ": {$failure}" : '') . "\n";
+                $failure = $reply->payload[BackupConstants::FIELD_RESTORE_FAILURE] ?? null;
+                // external-boundary: the neutral element of the message — an unnamed failure adds nothing
+                $detail = is_string($failure) && $failure !== '' ? ": {$failure}" : '';
+                echo "Error: restore failed{$detail}\n";
 
                 return ExitCode::ERROR;
             }

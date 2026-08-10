@@ -56,6 +56,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
+use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -130,8 +131,7 @@ abstract class BrowserContext
             return;
         }
 
-        $signalName = $pageConfig->signalName;
-        if ($signalName === '') {
+        if ($pageConfig->signalName === null) {
             return;
         }
 
@@ -210,12 +210,25 @@ abstract class BrowserContext
         // Re-check the page guards before serving the window: a guard-failed
         // subscription (kept alive for live-promotion) gets no table data while the
         // guard fails, and resumes the instant it passes.
-        $pageConfig = $this->pageConfig($page);
-        if ($pageConfig !== null) {
-            $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
-            if (!$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
-                return;
+        //
+        // Reading the declaration is inside the trap, not before it: this path is
+        // dispatched bare (PageSignalRouter::dispatchTableViewport, and the
+        // TABLE_VIEWPORT case in WorkerManager), so a broken declaration would reach
+        // the worker's exit and crash-loop it the same way the reactive fan-out would
+        // — see the catch in emitBrowserSignals() for why that costs every other
+        // subscriber too.
+        try {
+            $pageConfig = $this->pageConfig($page);
+            if ($pageConfig !== null) {
+                $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+                if (!$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
+                    return;
+                }
             }
+        } catch (PageInternalErrorException $e) {
+            Logger::error("Browser window skipped a broken declaration: page={$page}, error={$e->getMessage()}");
+
+            return;
         }
 
         try {
@@ -421,68 +434,15 @@ abstract class BrowserContext
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
                 $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
-                $pageConfig = $this->pageConfig($page);
-                if ($pageConfig === null) {
-                    continue;
-                }
-
-                $signalName = $pageConfig->signalName;
-                if ($signalName === '') {
-                    continue;
-                }
-
-                $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
-                $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
-                if (!$guardAllows[$acceptKey]) {
-                    continue;
-                }
-                foreach ($this->pageBindings($page) as $pageBinding) {
-                    $browserKey = $pageBinding->browserKey;
-
-                    $viewportTable = $this->viewportTable($browserKey);
-                    if ($viewportTable !== null) {
-                        $viewport = Hilos::$sr->getTableViewport($acceptKey, $browserKey);
-                        if ($viewport !== null) {
-                            $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
-                        }
-                        // A viewport table is delivered only through its window and
-                        // deltas; with or without an active viewport it never uses the
-                        // page_response table fan-out. Lists and data are not viewport
-                        // tables and fall through to the declarative path below.
-                        continue;
-                    }
-
-                    $browserConfig = $this->browserConfig($browserKey);
-                    if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
-                        continue;
-                    }
-
-                    if ($change->mutationType === TableMutationType::Clear) {
-                        $this->addBrowserClear($signalTables, $acceptKey, $page, $browserKey);
-                        continue;
-                    }
-
-                    $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
-                    $rowKey = $this->rowKeyForChange($browserConfig, $change, $browserParams);
-                    if ($rowKey === null) {
-                        continue;
-                    }
-
-                    $row = $this->buildBrowserRow(
-                        browserKey: $browserKey,
-                        browserConfig: $browserConfig,
-                        rowKey: $rowKey,
-                        acceptKey: $acceptKey,
-                        pageParams: $pageParams,
-                        browserParams: $browserParams,
-                    );
-
-                    if ($row === null) {
-                        $this->addBrowserDelete($signalTables, $acceptKey, $page, $browserKey, $rowKey);
-                        continue;
-                    }
-
-                    $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
+                try {
+                    $this->addBrowserChange($signalTables, $guardAllows, $change, $page, $acceptKey, $subscription);
+                } catch (PageInternalErrorException $e) {
+                    // A declaration this connection subscribes to is broken. Loudly, and for
+                    // this subscription only: on the reactive path there is no catch between
+                    // here and WorkerApplication's exit, so a static mistake in one page's
+                    // config would take the worker down on every flush and crash-loop it
+                    // through ensureMinWorkers, taking every other subscriber with it.
+                    Logger::error("Browser fan-out skipped a broken declaration: page={$page}, error={$e->getMessage()}");
                 }
             }
         }
@@ -504,6 +464,92 @@ abstract class BrowserContext
                     ),
                 );
             }
+        }
+    }
+
+    /**
+     * Collects one subscription's browser rows for one source change.
+     *
+     * Split out of {@see self::emitBrowserSignals()} so the fan-out can catch a broken
+     * declaration around exactly one subscription: the loop body is the unit that has
+     * to survive on its own, and a `try` wrapped around the whole flush would drop every
+     * other subscriber's data along with the offender's.
+     *
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Collected rows, keyed by accept key, page and browser key
+     * @param array<string, bool> $guardAllows Memoized page-guard result per accept key
+     * @param SourceChange $change Grouped DB/RT source change
+     * @param string $page Page name from the subscription mirror
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, mixed> $subscription Page subscription mirror entry
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     */
+    private function addBrowserChange(
+        array &$signalTables,
+        array &$guardAllows,
+        SourceChange $change,
+        string $page,
+        string $acceptKey,
+        array $subscription,
+    ): void {
+        $pageConfig = $this->pageConfig($page);
+        if ($pageConfig === null || $pageConfig->signalName === null) {
+            return;
+        }
+
+        $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
+        $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
+        if (!$guardAllows[$acceptKey]) {
+            return;
+        }
+
+        foreach ($this->pageBindings($page) as $pageBinding) {
+            $browserKey = $pageBinding->browserKey;
+
+            $viewportTable = $this->viewportTable($browserKey);
+            if ($viewportTable !== null) {
+                $viewport = Hilos::$sr?->getTableViewport($acceptKey, $browserKey);
+                if ($viewport !== null) {
+                    $this->emitViewportDelta($viewportTable, $viewport, $change, $acceptKey, $page, $browserKey);
+                }
+                // A viewport table is delivered only through its window and deltas; with or
+                // without an active viewport it never uses the page_response table fan-out.
+                // Lists and data are not viewport tables and fall through to the declarative
+                // path below.
+                continue;
+            }
+
+            $browserConfig = $this->browserConfig($browserKey);
+            if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
+                continue;
+            }
+
+            if ($change->mutationType === TableMutationType::Clear) {
+                $this->addBrowserClear($signalTables, $acceptKey, $page, $browserKey);
+                continue;
+            }
+
+            $browserParams = $this->browserParams($pageBinding, $acceptKey, $pageParams);
+            $rowKey = $this->rowKeyForChange($browserConfig, $change, $browserParams);
+            if ($rowKey === null) {
+                continue;
+            }
+
+            $row = $this->buildBrowserRow(
+                browserKey: $browserKey,
+                browserConfig: $browserConfig,
+                rowKey: $rowKey,
+                acceptKey: $acceptKey,
+                pageParams: $pageParams,
+                browserParams: $browserParams,
+            );
+
+            if ($row === null) {
+                $this->addBrowserDelete($signalTables, $acceptKey, $page, $browserKey, $rowKey);
+                continue;
+            }
+
+            $this->addBrowserRow($signalTables, $acceptKey, $page, $browserKey, $rowKey, $row);
         }
     }
 
@@ -542,6 +588,7 @@ abstract class BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Browser page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
@@ -607,6 +654,7 @@ abstract class BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Browser page metadata
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function pageConfig(string $page): ?BrowserPageConfig
     {
@@ -876,6 +924,7 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
      * @return ?array{rowKey: int|string, sources: array<string, mixed>} Browser row payload, or null when row is absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function buildBrowserRow(
         string $browserKey,
@@ -895,8 +944,8 @@ abstract class BrowserContext
             }
 
             $sourceKey = $this->sourceKey($source);
-            if ($sourceKey === '') {
-                continue;
+            if ($sourceKey === null) {
+                throw new PageInternalErrorException('Invalid browser source config: source names no key');
             }
 
             $isMany = ($rowConfig[BrowserFieldKey::MANY] ?? false) === true;
@@ -965,6 +1014,7 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params for this page subscription
      * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function buildBrowserSnapshotRows(
         string $browserKey,
@@ -1381,6 +1431,7 @@ abstract class BrowserContext
      *
      * @param array<string, mixed> $source Browser source declaration
      * @return list<mixed> Snapshot source items
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function sourceItemsForSnapshot(array $source): array
     {
@@ -1413,6 +1464,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return list<mixed> Current source items matching this row source
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function sourceItemsForRow(
         array $rowConfig,
@@ -1586,6 +1638,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return array<string, mixed> Projected source fragment
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function projectSourceItem(
         string $browserKey,
@@ -1637,21 +1690,23 @@ abstract class BrowserContext
      *
      * @param array<string, mixed> $source Browser source declaration
      * @return ?iterable Current source collection, or null when unavailable
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function sourceCollection(array $source): ?iterable
     {
         $sourceKey = $this->sourceKey($source);
-        if ($sourceKey === '') {
-            return null;
+        $sourceType = $this->sourceType($source);
+        if ($sourceKey === null || ($sourceType !== BrowserSourceType::DB && $sourceType !== BrowserSourceType::RT)) {
+            throw new PageInternalErrorException('Invalid browser source config: source names no known collection');
         }
 
         try {
-            return match ($this->sourceType($source)) {
-                BrowserSourceType::DB => Hilos::$db?->{$sourceKey},
-                BrowserSourceType::RT => Hilos::$rt?->{$sourceKey},
-                default => null,
-            };
+            return $sourceType === BrowserSourceType::DB
+                ? Hilos::$db?->{$sourceKey}
+                : Hilos::$rt?->{$sourceKey};
         } catch (Throwable) {
+            // An unknown collection under a well-formed declaration: the project may mount
+            // it later, and the caller reads that as "nothing to deliver yet".
             return null;
         }
     }
@@ -1662,6 +1717,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $source Browser source declaration
      * @param string $sourceId Source id from the DB/RT sync fact
      * @return mixed Source item or null
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     private function sourceItemById(array $source, string $sourceId): mixed
     {
@@ -1724,8 +1780,8 @@ abstract class BrowserContext
             return $value;
         }
 
-        $type = $value[BrowserRefKey::TYPE] ?? '';
-        $key = $value[BrowserRefKey::KEY] ?? '';
+        $type = $value[BrowserRefKey::TYPE] ?? null;
+        $key = $value[BrowserRefKey::KEY] ?? null;
 
         return match ($type) {
             BrowserRefType::ACCEPT_KEY => $acceptKey,
@@ -1757,26 +1813,26 @@ abstract class BrowserContext
      * Reads a source declaration type.
      *
      * @param array<string, mixed> $source Browser source declaration
-     * @return string Source type
+     * @return ?string Source type, or null when the declaration names none
      */
-    private function sourceType(array $source): string
+    private function sourceType(array $source): ?string
     {
-        $type = $source[BrowserSourceKey::TYPE] ?? '';
+        $type = $source[BrowserSourceKey::TYPE] ?? null;
 
-        return is_string($type) ? $type : '';
+        return is_string($type) ? $type : null;
     }
 
     /**
      * Reads a source declaration key.
      *
      * @param array<string, mixed> $source Browser source declaration
-     * @return string Source collection key
+     * @return ?string Source collection key, or null when the declaration names none
      */
-    private function sourceKey(array $source): string
+    private function sourceKey(array $source): ?string
     {
-        $key = $source[BrowserSourceKey::KEY] ?? '';
+        $key = $source[BrowserSourceKey::KEY] ?? null;
 
-        return is_string($key) ? $key : '';
+        return is_string($key) ? $key : null;
     }
 
     /**
@@ -1874,7 +1930,7 @@ abstract class BrowserContext
         }
 
         foreach ($pageConfig->guardConfigs() as $guard) {
-            match ($guard[BrowserGuardKey::TYPE] ?? '') {
+            match ($guard[BrowserGuardKey::TYPE] ?? null) {
                 BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
                 BrowserGuardType::ACCESS => $this->assertAccessGuard($guard, $acceptKey),
                 BrowserGuardType::AUTHENTICATED => $this->assertAuthenticatedGuard($acceptKey),
@@ -1978,7 +2034,7 @@ abstract class BrowserContext
         }
 
         $source = $guard[BrowserGuardKey::SOURCE] ?? [];
-        $field = $guard[BrowserGuardKey::FIELD] ?? '';
+        $field = $guard[BrowserGuardKey::FIELD] ?? null;
         if (!is_array($source) || !is_string($field) || $field === '') {
             throw new PageInternalErrorException('Invalid access guard config');
         }

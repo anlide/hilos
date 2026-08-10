@@ -82,7 +82,9 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, both checked on the very next line
         $type = $args[0] ?? '';
+        // external-boundary: the operator's command line, both checked on the very next line
         $identifier = $args[1] ?? '';
         if (!VerificationType::isValid($type) || $identifier === '') {
             echo "Usage: verification:test:expire <type> <identifier>\n";

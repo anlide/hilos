@@ -108,6 +108,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, checked on the very next line
         $id = $args[0] ?? '';
         if ($id === '') {
             echo "Usage: test:backup:age <id> (--at=<ISO-8601> | --days=<N>) [--scope=<scope>]\n";
@@ -123,7 +124,7 @@ HELP;
         $scope = null;
         $scopeOption = $options[BackupConstants::SCOPE_OPTION] ?? null;
         if ($scopeOption !== null) {
-            $scope = BackupScope::fromString(is_string($scopeOption) ? $scopeOption : '');
+            $scope = is_string($scopeOption) ? BackupScope::fromString($scopeOption) : null;
             if ($scope === null) {
                 echo "Unknown scope: {$scopeOption}\n";
                 return ExitCode::INVALID_ARGUMENT;
@@ -174,6 +175,7 @@ HELP;
         }
 
         if ($matches === []) {
+            // external-boundary: the neutral element of the message below — an unscoped search says so
             $where = $scope !== null ? " in scope '{$scope->value}'" : '';
             throw new BackupException("No backup sidecar found for id '{$id}'{$where}");
         }

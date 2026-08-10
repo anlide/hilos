@@ -286,7 +286,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // Parse request line to extract path and query parameters
         $requestLine = $this->parseRequestLine($request);
-        $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH] ?? '');
+        $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH]);
 
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
         $headers = $this->parseHeaders($lines);
@@ -298,9 +298,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         // Check WebSocket protocol version (RFC 6455 requires version 13)
-        $version = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_VERSION) ?? '';
+        $version = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_VERSION);
         if ($version !== WebSocketConstants::PROTOCOL_VERSION) {
-            throw new UnsupportedProtocolVersionException($version ?: 'not specified');
+            throw new UnsupportedProtocolVersionException($version ?? 'not specified');
         }
 
         // Generate WebSocket-Accept header value
@@ -309,8 +309,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // and encode it as base64 to get the Sec-WebSocket-Accept value. The value is
         // derivable from the client-chosen key, so it serves the 101 header ONLY and is
         // never the connection identity.
-        $key = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_KEY) ?? '';
-        if (empty($key)) {
+        // A blank header is refused alongside an absent one: RFC 6455 requires a
+        // base64 nonce, and hashing "" would still mint a well-formed accept value.
+        // Spelled out rather than left to empty(), which also calls '0' empty.
+        $key = HttpHeaderHelper::get($headers, HttpConstants::HEADER_SEC_WEBSOCKET_KEY);
+        if ($key === null || $key === '') {
             throw new HandshakeFailedException("Missing Sec-WebSocket-Key header");
         }
 
@@ -486,7 +489,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private function parseRequestLine(string $request): array
     {
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
-        $firstLine = $lines[0] ?? '';
+        $firstLine = $lines[0];
 
         // Parse: GET /path?query=params HTTP/1.1
         $parts = explode(' ', $firstLine);
@@ -550,6 +553,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return null;
         }
 
+        // external-boundary: an unmasked frame has no masking key, and only the masked branch reads it
         $maskKey = $masked ? substr($this->readBuffer, $headerLen, self::MASK_KEY_LENGTH) : '';
 
         // Payload

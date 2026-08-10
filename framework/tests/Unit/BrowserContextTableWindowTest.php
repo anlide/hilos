@@ -17,6 +17,7 @@ use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -141,11 +142,60 @@ final class BrowserContextTableWindowTest extends TestCase
             'a guard-failed subscription must receive no table window',
         );
     }
+
+    public function testSendTableWindowSkipsABrokenDeclarationInsteadOfLettingItEscape(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([
+            new TableWindowUnitRow('a', 'Alpha'),
+        ]);
+        Hilos::$table->configure();
+        Hilos::$sr->subscribeToPage(
+            TableWindowBrokenDeclarationBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowBrokenDeclarationBrowserContext::PAGE),
+        );
+
+        // This path is dispatched bare — PageSignalRouter::dispatchTableViewport and the
+        // TABLE_VIEWPORT case in WorkerManager both call straight through — so a throw
+        // escaping here would reach the worker's exit and crash-loop it on every window
+        // request, exactly as it would on the reactive fan-out.
+        new TableWindowBrokenDeclarationBrowserContext()->sendTableWindow(
+            TableWindowBrokenDeclarationBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),
+        );
+
+        $this->assertNull(
+            Hilos::$sr->getNextQueuedSignal(),
+            'a broken declaration must receive no table window',
+        );
+    }
 }
 
 final class TableWindowUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'table_window_unit_page';
+}
+
+final class TableWindowBrokenDeclarationBrowserContext extends BrowserContext
+{
+    public const string PAGE = 'table_window_broken_declaration_page';
+
+    /**
+     * Resolves a page whose declaration names something that is not a signal.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if ($page !== self::PAGE) {
+            return null;
+        }
+
+        return BrowserPageConfig::fromArray([BrowserConfigKey::SIGNAL => ['not', 'a', 'name']]);
+    }
 }
 
 final class TableWindowGuardUnitBrowserContext extends BrowserContext
@@ -159,6 +209,7 @@ final class TableWindowGuardUnitBrowserContext extends BrowserContext
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Guarded page metadata, or null when absent
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {

@@ -141,6 +141,13 @@ sent to the client as a `subscription_page_error` signal:
 - 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all.
   Raised by the `AUTHENTICATED`/`ADMIN` access levels and the `AUTHENTICATED`
   guard; the frontend mounts the in-place sign-in surface over the page.
+- 500 `internal_error` — `PageInternalErrorException`: **not** a guard verdict.
+  The declaration itself is broken — a `SIGNAL` that is not a name, a guard of an
+  unknown `TYPE`, an access guard with no `FIELD`, a source naming no collection.
+  Nothing the subscriber did produces it and no sign-in clears it; it is the
+  page's own `BROWSER` const that has to be fixed. It is reported rather than
+  read as "this page has no browser data", the silence that used to make a typo
+  indistinguishable from a plain page.
 
 ## Guards run on EVERY delivery path
 
@@ -155,6 +162,18 @@ delivers page data:
 - **viewport** — `sendTableWindow` runs the same check before sending a window.
 
 While a guard fails, the fan-out delivers **nothing** to that connection.
+
+A broken declaration is skipped the same way, but for one subscription only: the
+fan-out catches `PageInternalErrorException` around each subscription's turn,
+logs it, and moves on to the next; `sendTableWindow` does the same around the
+window it was asked for. Those traps are not tidiness — both paths are
+dispatched bare (nothing between them and the worker's `exit`), and a
+declaration is static, so without them one mistyped `BROWSER` const would take
+the worker down on every flush or window request and `ensureMinWorkers` would
+restart it straight back into the same one, with every other subscriber on that
+worker as collateral. Only the subscribe path lets it through, and on purpose:
+there it reaches the client as the 500 above, which is the one place a person
+sees it.
 
 ## Preserve-on-fail and live-promotion
 

@@ -101,7 +101,16 @@ HELP;
             return ExitCode::ERROR;
         }
 
-        $echoed = (string) ($reply->payload[CommandConstants::FIELD_MESSAGE] ?? '');
+        // The echo of the very field this command put on the wire, mirrored back by the master.
+        // A reply without it is a broken command channel, not a ping with nothing to say — and
+        // printing "Reply (ok): " would read as a healthy daemon.
+        $echoed = $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null;
+        if (!is_string($echoed)) {
+            echo "Command failed: the reply carries no echoed message\n";
+
+            return ExitCode::ERROR;
+        }
+
         echo "Reply (ok): {$echoed}\n";
 
         return ExitCode::SUCCESS;
@@ -110,11 +119,14 @@ HELP;
     /**
      * Sends a ping over the command channel and waits for the reply.
      *
+     * Protected for the same reason the sibling commands take their round-trip from a
+     * protected trait method: it is the seam a test stands a canned reply in at.
+     *
      * @param string $message Echo message
      * @return ?CommandReplyDTO Reply, or null on timeout / transport failure
      * @throws EnvException When daemon host/port env values are missing or invalid
      */
-    private function sendPing(string $message): ?CommandReplyDTO
+    protected function sendPing(string $message): ?CommandReplyDTO
     {
         $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
         $port = Hilos::$env->int(EnvConstants::COMMAND_PORT);

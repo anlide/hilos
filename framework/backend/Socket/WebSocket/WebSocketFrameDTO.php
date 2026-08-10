@@ -5,20 +5,21 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket;
 
 use Hilos\BaseDTO;
+use Hilos\Socket\Client\WebSocketClient;
 
 /**
  * WebSocketFrameDTO - Data Transfer Object for WebSocket frame data.
  *
  * Represents a parsed WebSocket frame with all its components.
+ *
+ * Not a {@see BaseDTO}: a frame never travels as an array. It is built from raw
+ * bytes in {@see WebSocketClient::parseFrame()} and read field by field in the
+ * same class, so the inherited array round-trip had no caller anywhere in the
+ * repository — and its `fromArray()` had to invent a value for every field a
+ * payload did not carry, which is the one thing a frame parser must not do.
  */
-class WebSocketFrameDTO extends BaseDTO
+class WebSocketFrameDTO
 {
-    // Field name constants
-    public const string FIN = 'fin';
-    public const string OPCODE = 'opcode';
-    public const string MASKED = 'masked';
-    public const string PAYLOAD = 'payload';
-
     /**
      * Creates WebSocket frame DTO.
      *
@@ -33,36 +34,5 @@ class WebSocketFrameDTO extends BaseDTO
         public readonly int $masked,
         public readonly string $payload,
     ) {
-    }
-
-    /**
-     * Converts DTO to array for transport.
-     *
-     * @return array<string, int|string> DTO data with fin, opcode, masked, payload keys
-     */
-    public function toArray(): array
-    {
-        return [
-            self::FIN => $this->fin,
-            self::OPCODE => $this->opcode,
-            self::MASKED => $this->masked,
-            self::PAYLOAD => $this->payload,
-        ];
-    }
-
-    /**
-     * Creates DTO from array.
-     *
-     * @param array<string, mixed> $data Source data with fin, opcode, masked, payload keys
-     * @return static DTO instance
-     */
-    public static function fromArray(array $data): static
-    {
-        return new static(
-            fin: $data[self::FIN] ?? 0,
-            opcode: $data[self::OPCODE] ?? 0,
-            masked: $data[self::MASKED] ?? 0,
-            payload: $data[self::PAYLOAD] ?? '',
-        );
     }
 }

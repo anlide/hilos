@@ -100,6 +100,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, checked on the very next line
         $countArg = $args[0] ?? '';
         if (preg_match('/^\d+$/', $countArg) !== 1 || (int)$countArg <= 0) {
             echo "Usage: {$this->getName()} <count> [--prefix=<p>] [--password=<p>]  (count: positive integer)\n";

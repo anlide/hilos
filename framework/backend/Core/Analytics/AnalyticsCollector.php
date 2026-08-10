@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Database;
 use Hilos\Utils\Logger;
@@ -1126,13 +1127,24 @@ final class AnalyticsCollector
     /**
      * Builds the cache key for an agent type/index pair.
      *
+     * A singleton agent keys apart from an agent whose index happens to be empty:
+     * collapsed onto one key, the second {@see self::openAgentSession()} would
+     * overwrite the first entry, every later `logAgent*` of both agents would land
+     * under one `agent_session_id`, and the first to stop would stamp the other's
+     * row and clear the key — leaving the survivor logging nothing at all for the
+     * rest of its life, and the first agent's row open forever.
+     *
+     * Keying the singleton by its bare type reads the two apart on the assumption
+     * the whole repository already runs on — that an agent type carries no
+     * separator of its own, which is what lets {@see AgentId::fromId()} split one.
+     *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      * @return string Composite cache key
      */
     private function buildAgentKey(string $agentType, ?string $agentIndex): string
     {
-        return $agentType . '::' . ($agentIndex ?? '');
+        return $agentIndex === null ? $agentType : $agentType . '::' . $agentIndex;
     }
 
     /**

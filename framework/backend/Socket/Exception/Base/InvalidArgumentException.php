@@ -20,6 +20,7 @@ class InvalidArgumentException extends SocketException
      */
     public function __construct(string $details = '', ?Throwable $previous = null)
     {
+        // external-boundary: the neutral element of the message — no detail leaves the bare reason
         $message = "Invalid socket argument" . ($details ? ": {$details}" : '');
         parent::__construct($message, 22, $previous); // EINVAL
     }

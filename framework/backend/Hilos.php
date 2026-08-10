@@ -11,6 +11,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\CLI\CliApplication;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Feature\DeferredFeatureRequirementsValidator;
 use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
@@ -821,6 +822,7 @@ abstract class Hilos
      * @param class-string<CliManager> $cliManagerClass CLI manager this project's entry point runs
      * @param ?class-string<RtContext> $rtContextClass Runtime context this project builds, or null when it builds none
      * @throws IncompleteFeatureActivationException When a declared feature misses a table, a command or a presence source
+     * @throws LogicException When the PCRE engine refuses to strip a migration file's comments
      * @throws StateCollectionNotFoundException When building the runtime context represents an unmounted collection
      */
     public static function validateDeferredFeatureRequirements(

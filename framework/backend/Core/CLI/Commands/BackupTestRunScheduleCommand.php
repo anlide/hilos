@@ -80,6 +80,7 @@ HELP;
      */
     protected function run(array $options, array $args): int
     {
+        // external-boundary: the operator's command line, where naming no entry runs them all
         $name = $args[0] ?? '';
         $payload = $name !== '' ? [BackupConstants::FIELD_SCHEDULE_NAME => $name] : [];
 
@@ -101,8 +102,16 @@ HELP;
             return ExitCode::ERROR;
         }
 
-        $id = (string)($reply->payload[BackupConstants::FIELD_BACKUP_ID] ?? '');
-        $scope = (string)($reply->payload[BackupConstants::FIELD_SCOPE] ?? '');
+        // Both fields are written on every successful reply by BackupAgent; a reply missing one
+        // is an incomplete answer, and "Started scheduled backup  (scope=)" would read as success.
+        $id = $reply->payload[BackupConstants::FIELD_BACKUP_ID] ?? null;
+        $scope = $reply->payload[BackupConstants::FIELD_SCOPE] ?? null;
+        if (!is_string($id) || !is_string($scope)) {
+            echo "Command failed: the reply names no started backup\n";
+
+            return ExitCode::ERROR;
+        }
+
         echo "Started scheduled backup {$id} (scope={$scope})\n";
 
         return ExitCode::SUCCESS;
