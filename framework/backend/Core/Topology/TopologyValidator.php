@@ -20,6 +20,8 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
+use Hilos\ProtectedMode\ProtectedModeStubConstants;
+use Hilos\ProtectedMode\ProtectedModeStubCopy;
 
 /**
  * Validates project topology registry constants before runtime layers use them.
@@ -42,6 +44,8 @@ final class TopologyValidator
     private const string SECTION_PAGE_LISTS = 'PAGE_LISTS';
 
     private const string SECTION_PAGE_DATA = 'PAGE_DATA';
+
+    private const string SECTION_PROTECTED_MODE_STUB = 'PROTECTED_MODE_STUB';
 
     /**
      * Validates topology constants declared by a Hilos facade subclass.
@@ -95,6 +99,10 @@ final class TopologyValidator
         $this->validatePageTables($pages, $tables, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
+        $this->validateProtectedModeStub(
+            Hilos::catalogConstantOf($hilosClass, self::SECTION_PROTECTED_MODE_STUB),
+            $errors,
+        );
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
@@ -1128,6 +1136,78 @@ final class TopologyValidator
                     $errors[] = "{$registry}[{$page}][{$table}] config must be an array";
                 }
             }
+        }
+    }
+
+    /**
+     * Validates the protected-mode stub registry against the copy the maintenance surface needs.
+     *
+     * Judged at startup because there is no later moment to judge it in: the registry is read
+     * while a node is frozen, and an entry that answers nothing turns into a maintenance screen
+     * without words in the middle of a restore, where nobody is left to report it. The state is
+     * judged, not the history - the framework default is subject to the same rule as an override.
+     *
+     * Read through {@see Hilos::catalogConstantOf()} rather than {@see constantArray()}: the
+     * constant is protected, so `defined()` answers false from this scope, the registry would
+     * read as an empty array, and the rule would refuse every project on startup over a default
+     * entry the facade does declare.
+     *
+     * @param mixed $registry Stub registry declared by the facade
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateProtectedModeStub(mixed $registry, array &$errors): void
+    {
+        if (!is_array($registry)) {
+            $errors[] = self::SECTION_PROTECTED_MODE_STUB . ' must be an array';
+            return;
+        }
+
+        if (!array_key_exists(ProtectedModeStubConstants::DEFAULT_OPERATION, $registry)) {
+            $errors[] = self::SECTION_PROTECTED_MODE_STUB . ' is missing the '
+                . ProtectedModeStubConstants::DEFAULT_OPERATION . ' entry';
+        }
+
+        foreach ($registry as $operation => $entry) {
+            if (!is_string($operation) || $operation === '') {
+                $errors[] = self::SECTION_PROTECTED_MODE_STUB . ' contains a non-string or empty operation key';
+                continue;
+            }
+
+            $this->validateProtectedModeStubEntry($operation, $entry, $errors);
+        }
+    }
+
+    /**
+     * Validates one stub registry entry: both copy fields as non-empty text, and nothing else.
+     *
+     * Empty strings and unknown fields are violations rather than shrugs because
+     * {@see ProtectedModeStubCopy} cannot report either one: it turns a non-string into null and
+     * hands an empty title to the surface as it stands, so a field misspelled `mesage` reaches
+     * the user as a screen with a heading and no sentence.
+     *
+     * @param string $operation Operation name the entry is keyed by
+     * @param mixed $entry Registry entry declared for that operation
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateProtectedModeStubEntry(string $operation, mixed $entry, array &$errors): void
+    {
+        $path = self::SECTION_PROTECTED_MODE_STUB . "[{$operation}]";
+        $copyFields = [ProtectedModeStubConstants::TITLE, ProtectedModeStubConstants::MESSAGE];
+        if (!is_array($entry)) {
+            $errors[] = "{$path} must be an array carrying " . implode(' and ', $copyFields);
+            return;
+        }
+
+        foreach ($copyFields as $field) {
+            $value = $entry[$field] ?? null;
+            if (!is_string($value) || $value === '') {
+                $errors[] = "{$path}[{$field}] must be a non-empty string";
+            }
+        }
+
+        $unknownFields = array_diff(array_keys($entry), $copyFields);
+        if ($unknownFields !== []) {
+            $errors[] = "{$path} contains unknown entry fields: " . implode(', ', $unknownFields);
         }
     }
 

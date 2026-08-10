@@ -20,6 +20,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
+use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -421,6 +422,60 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('PAGES[wrong_page] key must match');
 
         TopologyInitInvalidHilos::init();
+    }
+
+    public function testProtectedModeStubMissingDefaultEntryFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubMissingDefaultHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB is missing the ' . ProtectedModeStubConstants::DEFAULT_OPERATION . ' entry',
+            ],
+        );
+    }
+
+    public function testProtectedModeStubBrokenEntriesFail(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubBrokenEntryHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION . ']['
+                    . ProtectedModeStubConstants::TITLE . '] must be a non-empty string',
+                'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION . ']['
+                    . ProtectedModeStubConstants::MESSAGE . '] must be a non-empty string',
+                'PROTECTED_MODE_STUB[broken_entry_operation] must be an array carrying '
+                    . ProtectedModeStubConstants::TITLE . ' and ' . ProtectedModeStubConstants::MESSAGE,
+            ],
+        );
+    }
+
+    public function testProtectedModeStubUnknownEntryFieldFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubUnknownFieldHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB[' . ProtectedModeStubConstants::DEFAULT_OPERATION
+                    . '] contains unknown entry fields: mesage',
+            ],
+        );
+    }
+
+    public function testProtectedModeStubNonStringOperationKeyFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubNumericKeyHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB contains a non-string or empty operation key',
+            ],
+        );
     }
 
     /**
@@ -1533,5 +1588,98 @@ final class TopologyTestActionPayloadDTO extends ActionPayloadDTO
     public function toArray(): array
     {
         return [];
+    }
+}
+
+/**
+ * Facade whose stub registry names an operation but drops the default entry.
+ *
+ * The registry is a protected constant, so every stub case is stated by a facade subclass rather
+ * than by handing an array to the validator: a subclass is the only shape in which the validator
+ * sees what a project actually declares, and a read taken from the wrong scope sees an empty
+ * array instead - which is what these tests turn red on.
+ */
+final class TopologyProtectedModeStubMissingDefaultHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        'restore' => [
+            ProtectedModeStubConstants::TITLE => 'Restore in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyProtectedModeStubBrokenEntryHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => '',
+        ],
+        'broken_entry_operation' => 'Maintenance in progress',
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyProtectedModeStubUnknownFieldHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            'mesage' => 'The application is briefly unavailable.',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+        ],
+        7 => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
     }
 }

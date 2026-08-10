@@ -123,8 +123,11 @@ abstract class Hilos
      * {@see ProtectedModeStubConstants::DEFAULT_OPERATION} entry used by any operation that
      * registered none of its own. The framework ships the default; a project overrides the
      * constant WHOLESALE to speak in its own voice - the entries are not merged with the
-     * framework's, so an override that drops the default key leaves every unregistered
-     * operation without words. Unlike {@see NOTIFICATION_CHANNEL_REGISTRY} and
+     * framework's, so an override that drops the default key would leave every unregistered
+     * operation without words. That is refused at startup by {@see TopologyValidator}, together
+     * with an entry that is not an array, misses either copy field, or carries a field beyond
+     * them (HIL-555); until then this paragraph was the only thing standing between an override
+     * and a wordless maintenance screen. Unlike {@see NOTIFICATION_CHANNEL_REGISTRY} and
      * {@see BACKUP_CATALOG}, which name a class, this constant carries the content itself:
      * the copy is one sentence per operation and has nowhere else to live.
      *
@@ -392,6 +395,11 @@ abstract class Hilos
      * from {@see FeatureRequirements::$requiredCatalogConstant}, so a typo there must surface
      * as a named activation error - the feature points at no project catalog - and not as an
      * `Error` thrown out of the constant read.
+     *
+     * The second reader is {@see TopologyValidator}, which judges {@see PROTECTED_MODE_STUB}
+     * through here for the reason the reader exists at all: the constant is protected, so a
+     * `defined()` call from the validator's own scope answers false, and a rule reading it there
+     * would judge an empty registry and refuse every project at startup (HIL-555).
      *
      * @param class-string<Hilos> $hilosClass Facade class to read the constant off
      * @param string $constant Catalog constant name
