@@ -294,10 +294,21 @@ final class EntitySchemaAudit
      * a claim about the column and is checked in both directions: nullable over a
      * NOT NULL column means `saveInsert()` may send NULL where the column refuses
      * it, non-nullable over a NULL-able column means hydrating a stored NULL is a
-     * TypeError. A NOT NULL column the database fills on its own (DEFAULT,
-     * auto_increment, GENERATED — the {@see self::isInsertSafe()} predicate) is
-     * skipped in both directions: there the null in PHP means "let the database
-     * decide" and never reaches the column.
+     * TypeError.
+     *
+     * auto_increment is the one exemption, because `saveInsert()` omits a null
+     * primary key from the statement. A DEFAULT is NOT one: `saveInsert()` lists
+     * every mapped column, so the null leaves as an explicit NULL and the DEFAULT
+     * never applies — a db-defaulted column is either owned by the application
+     * through a non-nullable property or left out of `_columns` entirely (see
+     * docs/agents/orm/entity.md, "Who owns the value of a column with a DB-level
+     * DEFAULT"). That is why this reads EXTRA directly instead of asking the wider
+     * {@see self::isInsertSafe()}, which answers a different question: whether an
+     * UNMAPPED column can be left out of the insert.
+     *
+     * GENERATED needs no arm of its own: MariaDB refuses NULL / NOT NULL on a
+     * generated column outright, so such a column always reports IS_NULLABLE=YES
+     * and is judged above, by the NULL-able rule.
      *
      * @param list<EntitySchemaMismatch> $mismatches Accumulator, appended in place
      * @param class-string<Entity> $entityClass Entity being audited
@@ -346,16 +357,24 @@ final class EntitySchemaAudit
             return;
         }
 
-        if ($propertyNullable && !self::isInsertSafe($columnInfo)) {
-            $mismatches[] = new EntitySchemaMismatch(
-                EntitySchemaAxis::PROPERTY_NULLABLE,
-                $entityClass,
-                $table,
-                $column,
-                'non-nullable property',
-                'NOT NULL without default',
-            );
+        if (!$propertyNullable) {
+            return;
         }
+
+        if (stripos((string) $columnInfo[self::COL_EXTRA], self::EXTRA_AUTO_INCREMENT) !== false) {
+            return;
+        }
+
+        $mismatches[] = new EntitySchemaMismatch(
+            EntitySchemaAxis::PROPERTY_NULLABLE,
+            $entityClass,
+            $table,
+            $column,
+            'non-nullable property',
+            $columnInfo[self::COL_DEFAULT] !== null
+                ? 'NOT NULL with a DEFAULT an explicit NULL bypasses'
+                : 'NOT NULL without default',
+        );
     }
 
     /**

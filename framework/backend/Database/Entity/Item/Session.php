@@ -65,7 +65,7 @@ final class Session extends Entity
     public string $token;
     public ?int $user_id = null;
     public ?int $impersonator_user_id = null;
-    public ?string $created_at = null;
-    public ?string $last_seen_at = null;
+    public string $created_at;
+    public string $last_seen_at;
     public ?string $expires_at = null;
 }

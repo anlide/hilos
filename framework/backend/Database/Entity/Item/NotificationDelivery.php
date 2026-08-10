@@ -71,7 +71,7 @@ final class NotificationDelivery extends Entity
     public string $status = 'pending';
     public int $attempts = 0;
     public ?string $last_error = null;
-    public ?string $created_at = null;
-    public ?string $updated_at = null;
+    public string $created_at;
+    public string $updated_at;
     public ?string $delivered_at = null;
 }

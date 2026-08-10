@@ -21,8 +21,8 @@ use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDeliver
  * @property-read string $status
  * @property-read int $attempts
  * @property-read ?string $lastError
- * @property-read ?string $createdAt
- * @property-read ?string $updatedAt
+ * @property-read string $createdAt
+ * @property-read string $updatedAt
  * @property-read ?string $deliveredAt
  */
 final class NotificationDelivery extends DbItem

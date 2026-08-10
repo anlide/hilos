@@ -26,7 +26,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $body
  * @property ?string $data
  * @property ?string $readAt
- * @property-read ?string $createdAt
+ * @property-read string $createdAt
  */
 final class Notification extends Object_
 {
@@ -91,7 +91,7 @@ final class Notification extends Object_
             self::body => $this->entity->body = $value === null ? null : (string)$value,
             self::data => $this->entity->data = $value === null ? null : (string)$value,
             self::readAt => $this->entity->read_at = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = $value === null ? null : (string)$value,
+            self::createdAt => $this->entity->created_at = (string)$value,
             default => parent::__set($property, $value),
         };
     }

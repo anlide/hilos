@@ -24,7 +24,7 @@ use Hilos\Database\Object\Item\Notification as ObjectNotification;
  * @property-read ?string $body
  * @property-read ?array<string, mixed> $data
  * @property-read ?string $readAt
- * @property-read ?string $createdAt
+ * @property-read string $createdAt
  */
 final class Notification extends DbItem
 {

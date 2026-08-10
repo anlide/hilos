@@ -73,5 +73,5 @@ final class Notification extends Entity
     public ?string $body = null;
     public ?string $data = null;
     public ?string $read_at = null;
-    public ?string $created_at = null;
+    public string $created_at;
 }

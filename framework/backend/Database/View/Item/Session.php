@@ -19,8 +19,8 @@ use Hilos\Database\Object\Item\Session as ObjectSession;
  * @property-read string $token Session cookie token
  * @property-read ?int $userId Bound user id, or null when the session is anonymous
  * @property-read ?int $impersonatorUserId Admin behind an active impersonation, or null when acting as itself
- * @property-read ?string $createdAt Creation timestamp
- * @property-read ?string $lastSeenAt Last-seen timestamp
+ * @property-read string $createdAt Creation timestamp
+ * @property-read string $lastSeenAt Last-seen timestamp
  * @property-read ?string $expiresAt Expiry timestamp, or null when open-ended
  * @property-read SessionActions $actions Actions for write operations on this session
  */

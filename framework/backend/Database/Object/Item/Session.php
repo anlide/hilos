@@ -18,8 +18,8 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $token
  * @property ?int $userId
  * @property ?int $impersonatorUserId
- * @property ?string $createdAt
- * @property ?string $lastSeenAt
+ * @property string $createdAt
+ * @property string $lastSeenAt
  * @property ?string $expiresAt
  */
 final class Session extends Object_
@@ -78,8 +78,8 @@ final class Session extends Object_
             self::token => $this->entity->token = (string)$value,
             self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
             self::impersonatorUserId => $this->entity->impersonator_user_id = $value === null ? null : (int)$value,
-            self::createdAt => $this->entity->created_at = is_scalar($value) ? (string)$value : null,
-            self::lastSeenAt => $this->entity->last_seen_at = is_scalar($value) ? (string)$value : null,
+            self::createdAt => $this->entity->created_at = (string)$value,
+            self::lastSeenAt => $this->entity->last_seen_at = (string)$value,
             self::expiresAt => $this->entity->expires_at = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };

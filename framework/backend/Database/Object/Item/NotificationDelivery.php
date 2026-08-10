@@ -25,8 +25,8 @@ use Hilos\Notification\Delivery\DeliveryStatus;
  * @property string $status
  * @property int $attempts
  * @property ?string $lastError
- * @property-read ?string $createdAt
- * @property ?string $updatedAt
+ * @property-read string $createdAt
+ * @property string $updatedAt
  * @property ?string $deliveredAt
  */
 final class NotificationDelivery extends Object_
@@ -90,8 +90,8 @@ final class NotificationDelivery extends Object_
             self::status => $this->entity->status = (string)$value,
             self::attempts => $this->entity->attempts = (int)$value,
             self::lastError => $this->entity->last_error = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = $value === null ? null : (string)$value,
-            self::updatedAt => $this->entity->updated_at = $value === null ? null : (string)$value,
+            self::createdAt => $this->entity->created_at = (string)$value,
+            self::updatedAt => $this->entity->updated_at = (string)$value,
             self::deliveredAt => $this->entity->delivered_at = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };

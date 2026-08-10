@@ -18,7 +18,8 @@ use Hilos\Database\Schema\EntitySchemaAudit;
  * over correct entities is silent whether the predicate works or not. So this test
  * drives {@see EntitySchemaAudit} over fixture Entities declared below, mapped onto
  * tables it creates itself, each column shaped to hit exactly one branch: a finding
- * in each direction, and the two skips that must stay silent.
+ * in each direction, a finding over a column the database has a DEFAULT for, and the
+ * two shapes that must stay silent.
  *
  * The fixtures live in this file rather than under backend/Database/Entity/Item on
  * purpose — that directory is what EntitySchemaConsistencyTest discovers and audits,
@@ -49,9 +50,14 @@ final class EntitySchemaPropertyNullabilityTest extends FrameworkIntegrationTest
             . '`owner_id` INT UNSIGNED NOT NULL,'
             // NULL-able: a non-nullable property cannot hold what is stored here.
             . '`label` VARCHAR(64) NULL,'
-            // NOT NULL but self-filling: a nullable property means "let the
-            // database decide" and never reaches the column.
+            // NOT NULL with a DEFAULT: the property's null still leaves as an
+            // explicit NULL, so the DEFAULT never gets to fill it.
             . "`status` VARCHAR(32) NOT NULL DEFAULT 'new',"
+            // Generated, and therefore NULL-able whether we like it or not:
+            // MariaDB rejects a NULL / NOT NULL attribute on a generated column,
+            // so IS_NULLABLE stays YES and a nullable property is the right one.
+            // The expression may not name the auto_increment column, hence owner_id.
+            . "`slug` VARCHAR(64) GENERATED ALWAYS AS (CONCAT('row-', `owner_id`)) STORED,"
             . 'PRIMARY KEY (`id`)'
             . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4',
         );
@@ -80,10 +86,15 @@ final class EntitySchemaPropertyNullabilityTest extends FrameworkIntegrationTest
     }
 
     /**
-     * Both directions are reported, and neither self-filling column is.
+     * Both directions are reported, a DEFAULT does not excuse a nullable property,
+     * and the two columns that must stay silent do.
      *
-     * Asserting the whole mismatch list, not just a subset, is what makes the two
-     * skips (auto_increment primary key, column with a DEFAULT) part of the proof.
+     * Asserting the whole mismatch list, not just a subset, is what makes those
+     * skips part of the proof. The columns carrying the rule of HIL-518 are
+     * `status` (a DEFAULT is not a second owner of the value, so the nullable
+     * property is a finding) against `id`, where `saveInsert()` does omit a null
+     * primary key, and `slug`, which MariaDB reports NULL-able because a generated
+     * column may carry no nullability attribute at all.
      *
      * @throws DatabaseException When an introspection query fails
      */
@@ -97,6 +108,9 @@ final class EntitySchemaPropertyNullabilityTest extends FrameworkIntegrationTest
                 . ' expected <non-nullable property>, got <NOT NULL without default>',
                 '[property_nullable] hilos_property_nullability_fixture.label:'
                 . ' expected <nullable property>, got <NULL-able column>',
+                '[property_nullable] hilos_property_nullability_fixture.status:'
+                . ' expected <non-nullable property>,'
+                . ' got <NOT NULL with a DEFAULT an explicit NULL bypasses>',
             ],
             array_map(static fn($mismatch): string => $mismatch->describe(), $mismatches),
         );
@@ -134,26 +148,29 @@ final class EntitySchemaPropertyNullabilityTest extends FrameworkIntegrationTest
 /**
  * Fixture Entity: one column per branch of the property-nullability predicate.
  *
- * `id` is nullable over an auto_increment primary key and `status` is nullable over
- * a NOT NULL column with a DEFAULT — both legal, both must stay silent. `owner_id`
- * and `label` are the two findings.
+ * `id` (auto_increment primary key) and `slug` (generated, and so NULL-able on this
+ * engine) are the legal shapes that must stay silent. `owner_id`, `label` and
+ * `status` are the findings: a plain NOT NULL column, a NULL-able one, and a NOT
+ * NULL column with a DEFAULT the explicit NULL of `saveInsert()` would bypass.
  */
 final class PropertyNullabilityFixture extends Entity
 {
     public const string _table = 'hilos_property_nullability_fixture';
     public const string _primary = 'id';
-    public const array _columns = ['id', 'owner_id', 'label', 'status'];
+    public const array _columns = ['id', 'owner_id', 'label', 'status', 'slug'];
     public const array _types = [
         'id' => PhpType::INTEGER->value,
         'owner_id' => PhpType::INTEGER->value,
         'label' => PhpType::STRING->value,
         'status' => PhpType::STRING->value,
+        'slug' => PhpType::STRING->value,
     ];
 
     public ?int $id = null;
     public ?int $owner_id = null;
     public string $label = '';
     public ?string $status = null;
+    public ?string $slug = null;
 }
 
 /**

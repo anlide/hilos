@@ -26,7 +26,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property string $p256dh
  * @property string $auth
  * @property ?string $userAgent
- * @property ?string $createdAt
+ * @property string $createdAt
  * @property ?string $lastSeenAt
  */
 final class PushSubscription extends Object_
@@ -88,7 +88,7 @@ final class PushSubscription extends Object_
             self::p256dh => $this->entity->p256dh = (string)$value,
             self::auth => $this->entity->auth = (string)$value,
             self::userAgent => $this->entity->user_agent = $value === null ? null : (string)$value,
-            self::createdAt => $this->entity->created_at = $value === null ? null : (string)$value,
+            self::createdAt => $this->entity->created_at = (string)$value,
             self::lastSeenAt => $this->entity->last_seen_at = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };

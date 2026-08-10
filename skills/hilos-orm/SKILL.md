@@ -153,4 +153,6 @@ Hilos::$db->users->findBySession($sessionToken);
 - Never update or delete one known DB item through collection actions that
   accept that item's key; use the loaded `DbItem` actions.
 - Never put business logic or DB queries inside Entity classes.
+- Never map a nullable property over a NOT NULL column with a DB-level `DEFAULT`;
+  such a value has exactly one owner, and `docs/agents/orm/entity.md` decides which.
 - Only the truth source agent writes to its owned DB/RT collection.

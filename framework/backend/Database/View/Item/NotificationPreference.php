@@ -20,8 +20,8 @@ use Hilos\Database\Object\Item\NotificationPreference as ObjectNotificationPrefe
  * @property-read int $userId
  * @property-read string $channel
  * @property-read bool $enabled
- * @property-read ?string $createdAt
- * @property-read ?string $updatedAt
+ * @property-read string $createdAt
+ * @property-read string $updatedAt
  */
 final class NotificationPreference extends DbItem
 {

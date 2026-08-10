@@ -74,6 +74,6 @@ final class PushSubscription extends Entity
     public string $p256dh = '';
     public string $auth = '';
     public ?string $user_agent = null;
-    public ?string $created_at = null;
+    public string $created_at;
     public ?string $last_seen_at = null;
 }

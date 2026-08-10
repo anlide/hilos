@@ -72,8 +72,7 @@ final class SessionCarrier
             // The impersonator is the human being at the keyboard; the impersonated user is the
             // account being looked at, and it is not the one whose login has to survive.
             $userId = $session->impersonatorUserId ?? $session->userId;
-            $createdAt = $session->createdAt;
-            if ($userId === null || $createdAt === null) {
+            if ($userId === null) {
                 continue;
             }
 
@@ -84,7 +83,7 @@ final class SessionCarrier
 
             $snapshot[$token] = new SessionCarryover(
                 token: $token,
-                createdAt: $createdAt,
+                createdAt: $session->createdAt,
                 expiresAt: $session->expiresAt,
                 identities: $identities,
             );

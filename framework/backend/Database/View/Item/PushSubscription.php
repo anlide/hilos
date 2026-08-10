@@ -21,7 +21,7 @@ use Hilos\Database\Object\Item\PushSubscription as ObjectPushSubscription;
  * @property-read string $p256dh
  * @property-read string $auth
  * @property-read ?string $userAgent
- * @property-read ?string $createdAt
+ * @property-read string $createdAt
  * @property-read ?string $lastSeenAt
  */
 final class PushSubscription extends DbItem
