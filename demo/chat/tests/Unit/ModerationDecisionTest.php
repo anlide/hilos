@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\DTO\ModerationDecision;
 use Hilos\Core\Exception\InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -30,9 +31,8 @@ final class ModerationDecisionTest extends TestCase
      * @param string $text Raw model output
      * @param bool $allow Expected allow decision
      * @param string $reason Expected defaulted reason
-     *
-     * @dataProvider defaultedReasonProvider
      */
+    #[DataProvider('defaultedReasonProvider')]
     public function testFromModelOutputDefaultsMissingOrEmptyReason(string $text, bool $allow, string $reason): void
     {
         $decision = ModerationDecision::fromModelOutput($text);
@@ -56,9 +56,8 @@ final class ModerationDecisionTest extends TestCase
 
     /**
      * @param string $text Raw invalid model output
-     *
-     * @dataProvider invalidDecisionOutputProvider
      */
+    #[DataProvider('invalidDecisionOutputProvider')]
     public function testFromModelOutputRejectsInvalidDecisionShape(string $text): void
     {
         $this->expectException(InvalidArgumentException::class);
