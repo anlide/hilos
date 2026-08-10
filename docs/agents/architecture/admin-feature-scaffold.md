@@ -269,7 +269,10 @@ error, never a silent fallback to cold. The engine replays each `db-<index>.sql`
 into the connection of the same index — into that connection's *currently
 configured* database name — and re-verifies the digest immediately before its
 destructive steps. Tables absent from the dump are left in place (reconciliation is
-HIL-436); the migration-index gate is HIL-430.
+HIL-436); the migration-index gate is HIL-430. A hot restore also carries the live
+authenticated sessions across the swap before it thaws the node (HIL-479), so the
+operator watching the restore is not logged out by it; a project whose runtime
+connections do not extend `HilosConnections` simply has nothing to carry.
 
 ### a future framework feature (roles, …)
 

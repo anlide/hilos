@@ -14,11 +14,14 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -62,6 +65,7 @@ use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -446,6 +450,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleDbSyncClearedMessage($data);
                 break;
 
+            case WorkerConstants::MESSAGE_DB_REHYDRATE:
+                if (!$data instanceof WorkerDbReHydrateMessageDTO) {
+                    Logger::error("handleDbReHydrateMessage - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleDbReHydrateMessage();
+                break;
+
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
                 if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
                     Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
@@ -642,6 +654,25 @@ abstract class WorkerManager extends BaseManager
         }
         DbSyncApplicator::applyCleared($data->signalData, skipSelfBroadcastCheck: false);
         $this->recordBrowserSourceChange($data->signalData);
+    }
+
+    /**
+     * Re-reads every DB-backed collection after the database was replaced under the node (HIL-479).
+     *
+     * The whole-context sibling of {@see handleDbSyncClearedMessage()}: no payload, no browser
+     * source change and no agent fan-out, because the event names no collection and no row - the
+     * worker simply stops trusting everything it cached. A failed re-read is logged rather than
+     * thrown: the alternative is a worker that dies while the node is still finishing a restore,
+     * and the generation fallback in {@see DbContext::reHydrateIfDbChanged()} still catches the
+     * stale rows at their first collision.
+     */
+    private function handleDbReHydrateMessage(): void
+    {
+        try {
+            DbSyncApplicator::applyReHydrate();
+        } catch (DatabaseException | LogicException $e) {
+            Logger::error('handleDbReHydrateMessage - could not re-read the database: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -1618,6 +1649,15 @@ abstract class WorkerManager extends BaseManager
                     $this->dispatchSyncToLocalAgents($syncSignalData);
                     $this->daemonClient->send($syncDto);
                 }
+                continue;
+            }
+
+            // The re-hydrate announcement is the one sync-family event with no payload, so it
+            // takes its own branch rather than a null-carrying entry in the map above. The
+            // emitting worker has already re-read its own collections (HIL-479), so nothing is
+            // applied or fanned out locally here - the frame is purely for the other processes.
+            if ($signalType === SignalTypeConstants::DB_REHYDRATE) {
+                $this->daemonClient->send(new WorkerDbReHydrateMessageDTO());
                 continue;
             }
 

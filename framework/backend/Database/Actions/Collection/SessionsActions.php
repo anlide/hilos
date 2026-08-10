@@ -24,6 +24,9 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class SessionsActions extends DbActions
 {
+    /** @var int Length of a session cookie token in hex characters */
+    private const int TOKEN_HEX_LENGTH = 32;
+
     /**
      * Creates an anonymous session (no bound user) for a fresh cookie token.
      *
@@ -36,10 +39,7 @@ final class SessionsActions extends DbActions
     public function createAnonymous(string $token): Session
     {
         $this->ensureCanWrite();
-
-        if (strlen($token) !== 32 || !ctype_xdigit($token)) {
-            throw new InvalidFormatException('Invalid session token format. Expected 32 hex characters.');
-        }
+        self::ensureTokenFormat($token);
 
         if ($this->objectCollection->findByToken($token) !== null) {
             throw new DuplicateValueException('Session with this token already exists');
@@ -52,6 +52,49 @@ final class SessionsActions extends DbActions
         $session->createdAt = $now;
         $session->lastSeenAt = $now;
         $session->expiresAt = self::expiryFromNow();
+        $session->sync();
+
+        $this->addObjectToCollection($session);
+
+        return $this->createDbItemFromObject($session);
+    }
+
+    /**
+     * Re-inserts a session captured before the database was replaced (HIL-479).
+     *
+     * The write half of the session carry-over: unlike {@see createAnonymous()}, which stamps
+     * the row with now and a fresh expiry, this one restores the captured lifetime verbatim so
+     * a carried session neither outlives nor undercuts the one the person already had. Only
+     * `last_seen_at` is fresh. Impersonation is deliberately not carried - the row is written
+     * for the real person behind the takeover and its impersonator marker stays empty, because
+     * the right to view another account was granted in a database that no longer exists.
+     *
+     * A token that already has a row came back with the archive and is consistent with the
+     * restored database; the null return says "nothing to do", not "failed".
+     *
+     * @param string $token Session cookie token (32 hex characters)
+     * @param int $userId User id the token resolved to in the restored database
+     * @param string $createdAt Captured creation time as an SQL datetime
+     * @param ?string $expiresAt Captured expiry as an SQL datetime, or null for an open-ended session
+     * @return ?Session Created session, or null when the token already holds a row
+     * @throws InvalidFormatException When the token is not a 32-character hex string
+     * @throws HilosException On database error
+     */
+    public function carryOver(string $token, int $userId, string $createdAt, ?string $expiresAt): ?Session
+    {
+        $this->ensureCanWrite();
+        self::ensureTokenFormat($token);
+
+        if ($this->objectCollection->findByToken($token) !== null) {
+            return null;
+        }
+
+        $session = ObjectSession::create();
+        $session->token = $token;
+        $session->userId = $userId;
+        $session->createdAt = $createdAt;
+        $session->lastSeenAt = TimeHelper::getSqlDateTime();
+        $session->expiresAt = $expiresAt;
         $session->sync();
 
         $this->addObjectToCollection($session);
@@ -91,5 +134,18 @@ final class SessionsActions extends DbActions
     public static function expiryFromNow(): string
     {
         return date('Y-m-d H:i:s', time() + Hilos::$env->int(EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE));
+    }
+
+    /**
+     * @param string $token Session cookie token to check
+     * @throws InvalidFormatException When the token is not a 32-character hex string
+     */
+    private static function ensureTokenFormat(string $token): void
+    {
+        if (strlen($token) !== self::TOKEN_HEX_LENGTH || !ctype_xdigit($token)) {
+            throw new InvalidFormatException(
+                'Invalid session token format. Expected ' . self::TOKEN_HEX_LENGTH . ' hex characters.'
+            );
+        }
     }
 }

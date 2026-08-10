@@ -41,6 +41,23 @@ abstract class HilosConnections extends RtStates
     }
 
     /**
+     * Finds every connection bound to some user (indexed by accept key).
+     *
+     * The user-agnostic sibling of {@see findByUser()}: the session carry-over
+     * (HIL-479) asks "which live connections are logged in at all?" before the
+     * database is replaced under the daemon, having no user to name.
+     *
+     * @return array<string, T> Accept key => connection map (empty when every connection is anonymous)
+     */
+    public function findAuthenticated(): array
+    {
+        return array_filter(
+            $this->states,
+            static fn(HilosConnection $connection): bool => $connection->userId !== null,
+        );
+    }
+
+    /**
      * Finds all connections bound to a user (indexed by accept key).
      *
      * @param ?int $userId User id, or null for no connections

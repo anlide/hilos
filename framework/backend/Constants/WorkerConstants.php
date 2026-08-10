@@ -71,6 +71,9 @@ final class WorkerConstants
     /** @var string DB sync cleared (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_SYNC_CLEARED = SignalTypeConstants::DB_SYNC_CLEARED;
 
+    /** @var string Whole-database re-hydration (worker -> daemon -> workers); canonical value in SignalTypeConstants */
+    public const string MESSAGE_DB_REHYDRATE = SignalTypeConstants::DB_REHYDRATE;
+
     /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
 

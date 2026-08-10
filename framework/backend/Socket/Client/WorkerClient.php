@@ -18,6 +18,7 @@ use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -179,6 +180,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerDbSyncUpdatedMessageDTO => $this->handleWorkerDbSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncDeletedMessageDTO => $this->handleWorkerDbSyncDeletedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncClearedMessageDTO => $this->handleWorkerDbSyncClearedMessage($workerDTO),
+            $workerDTO instanceof WorkerDbReHydrateMessageDTO => $this->handleWorkerDbReHydrateMessage(),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
@@ -282,6 +284,18 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleWorkerDbSyncClearedMessage(WorkerDbSyncClearedMessageDTO $dto): void
     {
         $this->agentManager->handleWorkerDbSyncCleared($dto);
+    }
+
+    /**
+     * Handle the whole-database re-hydrate announcement from a worker (HIL-479).
+     *
+     * The frame carries no payload, so nothing is unwrapped here: the daemon only has to learn
+     * that the database was replaced and pass the fact on, which is why the DTO is not even
+     * taken as a parameter.
+     */
+    private function handleWorkerDbReHydrateMessage(): void
+    {
+        $this->agentManager->handleWorkerDbReHydrate();
     }
 
     /**

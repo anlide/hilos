@@ -6,6 +6,8 @@ namespace Hilos\Backup\Agent;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Hilos\Auth\Session\SessionCarrier;
+use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
@@ -150,6 +152,13 @@ final class BackupAgent extends AbstractAgent
 
     /** Monotonic-ish instant (microtime) the pending restore was admitted; 0.0 when none is pending. */
     private float $pendingRestoreSince = 0.0;
+
+    /**
+     * @var ?list<SessionCarryover> Live sessions photographed before the restore child ran, or null
+     *     when no restore is in flight. Held in memory on purpose: it is the one thing about the
+     *     pre-restore world that must outlive the database it was read from.
+     */
+    private ?array $pendingCarryover = null;
 
     /** Id of the in-flight backup, or null when idle. */
     private ?string $currentBackupId = null;
@@ -713,6 +722,10 @@ final class BackupAgent extends AbstractAgent
      * already runs. Spawn failure finishes the run as failed, which also lifts the freeze -
      * the node must never stay frozen for a child that never lived.
      *
+     * This is also where the live sessions are photographed (HIL-479): the node is frozen, so
+     * the set of connections is final, and the database the sessions live in is still the old
+     * one. A moment later the child starts replacing it.
+     *
      * @throws RtActionsCollectionNameNullException When the restore row's collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
      */
@@ -736,6 +749,7 @@ final class BackupAgent extends AbstractAgent
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = $this->pendingRestoreTimeout;
         $this->runKind = BackupRunKind::RESTORE;
+        $this->pendingCarryover = $this->captureSessions();
         // The coarse hot-path phase: the supervisor only sees its child's lifecycle, so the
         // whole verify/extract/import sequence reports as importing (per-step is HIL-277).
         $this->restoreView()?->actions->markPhase(RestorePhase::IMPORTING);
@@ -1154,6 +1168,7 @@ final class BackupAgent extends AbstractAgent
         if ($success) {
             $this->logAgentInfo("Restore {$id} completed in {$durationSeconds}s");
             $this->restoreView()?->actions->finish(BackupStatus::SUCCESS);
+            $this->carryOverSessions();
         } else {
             $detail = $stderr !== null ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Restore {$id} failed: {$detail}");
@@ -1362,6 +1377,52 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Photographs the live authenticated sessions before the child replaces the database.
+     *
+     * A snapshot that cannot be read must not stop a restore the operator asked for: the cost
+     * of an empty one is that people log in again, which is nothing beside a restore that
+     * refuses to run. Failures are therefore contained here rather than propagated.
+     *
+     * @return list<SessionCarryover> Sessions to re-create after the swap (empty when none could be read)
+     */
+    private function captureSessions(): array
+    {
+        try {
+            return SessionCarrier::capture();
+        } catch (Throwable $e) {
+            $this->logAgentError('Restore could not photograph live sessions: ' . $e->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
+     * Re-reads the restored database and re-creates the sessions photographed before it (HIL-479).
+     *
+     * The whole step lives in the window between a successful child and the thaw, and its order
+     * is the point: nothing may read the new database before this process has re-hydrated, and
+     * nothing may be written after the clients are told to reload, because the reloaded browser
+     * looks its session up immediately. The re-hydrate announcement goes out even when there is
+     * no session to carry - it is about the swap, not about the sessions.
+     *
+     * Contained like the snapshot: a restore that has already succeeded is not undone, and the
+     * freeze is not held, because sessions could not be written back.
+     */
+    private function carryOverSessions(): void
+    {
+        try {
+            $this->requestDbReHydrate();
+            $result = SessionCarrier::carryOver($this->pendingCarryover ?? []);
+        } catch (Throwable $e) {
+            $this->logAgentError('Restore could not carry sessions over: ' . $e->getMessage());
+
+            return;
+        }
+
+        $this->logAgentInfo("Restore carried over {$result->carried} session(s), dropped {$result->dropped}");
+    }
+
+    /**
      * Clears the in-flight run state back to idle (the lock is released).
      */
     private function resetRun(): void
@@ -1378,6 +1439,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreDecision = null;
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
+        $this->pendingCarryover = null;
     }
 
     /**

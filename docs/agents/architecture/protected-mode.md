@@ -104,6 +104,36 @@ mistaken for an oversight and "fixed" at the cost of the e2e.
 The snapshot never carries `initiatorAcceptKey`. It is the pass through the
 lockdown, and the port that would publish it authenticates nobody.
 
+## The Freeze Is Also The Window For Repairing What The Operation Broke
+
+Leaving the mode is not a formality: `enterInactive()` sends every client a
+`reload` frame, and the browser that reloads asks its questions against the new
+world immediately. Anything that has to be true for those questions must be true
+*before* the disable request, not after it.
+
+The worked example is the session carry-over (HIL-479). A restore replaces the
+database, so every session created after the archive was taken is gone from it —
+including the one belonging to the operator watching the restore. `BackupAgent`
+therefore photographs the live authenticated sessions in
+`onProtectedModeReady()`, while the node is frozen and the old database is still
+mounted, and re-creates them in `finishRestore()` in a fixed order: re-hydrate
+the database-backed collections, carry the sessions over, and only then
+`requestProtectedModeDisable()`. `SessionCarrier` owns both halves; sessions are
+matched by `hilos_identity` pairs rather than by user id, because the same id in
+another installation's archive is another person.
+
+Two properties generalize to whatever destructive operation comes next:
+
+- **Read nothing from the new database before announcing the swap.**
+  `AbstractAgent::requestDbReHydrate()` re-hydrates the calling process on the
+  spot and tells the daemon and the other workers to do the same. Without it a
+  reader is answered from collections loaded out of a database that no longer
+  exists.
+- **Repair work never holds the freeze.** A snapshot that could not be taken or a
+  session that could not be written is logged and the thaw proceeds. The people
+  affected see a login screen; the alternative is a node left frozen over a
+  detail of the recovery.
+
 ## Entry Is Fail-Closed In Both Branches
 
 A node that cannot freeze refuses loudly; it never stands inert while reporting
@@ -199,6 +229,8 @@ Refuse loudly and before any trace of entry, as above.
   mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
   (`ProtectedModeSnapshotTest`) and the agent driver
   (`ProtectedModeTestDriverTest`).
+- `composer run test:framework:integration` — covers the carry-over across a real
+  database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`).
 - `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:
   enter, the live window showing the stub with the operation the caller named,
   leave, the window working again. It freezes the whole node, so its teardown

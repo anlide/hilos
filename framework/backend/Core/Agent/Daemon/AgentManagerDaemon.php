@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
@@ -362,6 +363,24 @@ abstract class AgentManagerDaemon
             signalType: new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
             signalName: new SignalName(SignalConstants::DB_SYNC_CLEARED),
             signalData: $dto->signalData,
+        );
+    }
+
+    /**
+     * Handle the whole-database re-hydrate announcement from a worker (HIL-479).
+     *
+     * Queues the fact into the daemon's own router, from where the ordinary sync dispatch
+     * applies it to the daemon and sends it on to every worker. The signal is sourced from the
+     * database rather than from the announcing agent: by the time it is re-queued here, the
+     * event belongs to the node, not to whoever noticed the swap first.
+     */
+    public function handleWorkerDbReHydrate(): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
+            signalName: new SignalName(SignalConstants::DB_REHYDRATE),
+            signalData: new DbReHydrateSignalData(),
         );
     }
 

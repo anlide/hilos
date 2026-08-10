@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -16,6 +17,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -24,6 +26,9 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -362,6 +367,36 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
             ),
+        );
+    }
+
+    /**
+     * Announce that the database under this node was replaced (HIL-479).
+     *
+     * The counterpart of the protected-mode pair for the swap itself: an agent that has just
+     * put a different database under the running node tells every process holding DB-backed
+     * collections to drop what it cached and re-read. This process re-hydrates on the spot,
+     * because the caller is normally about to read the new database in the same method, and
+     * the queued {@see SignalTypeConstants::DB_REHYDRATE} signal reaches the daemon and the
+     * other workers over the worker link ({@see WorkerManager}), where each applies it through
+     * {@see DbSyncApplicator::applyReHydrate()}.
+     *
+     * Without it the node still recovers, but only lazily: {@see DbContext::reHydrateIfDbChanged()}
+     * notices the swap at the first id collision, which is one collision too late for a reader
+     * that trusts what it reads in between.
+     *
+     * @throws LogicException When a represented collection entity class is not configured (eager reload)
+     * @throws DatabaseException If reloading an eager collection from the fresh database fails
+     */
+    protected function requestDbReHydrate(): void
+    {
+        DbSyncApplicator::applyReHydrate();
+
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
+            signalName: new SignalName(SignalTypeConstants::DB_REHYDRATE),
+            signalData: new DbReHydrateSignalData(),
         );
     }
 

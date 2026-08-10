@@ -29,6 +29,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -50,6 +51,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -81,6 +83,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -1114,6 +1117,9 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             SignalConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
+            // The one sync-family frame built from nothing: the database was replaced, which
+            // names no collection to unwrap from the signal (HIL-479).
+            SignalConstants::DB_REHYDRATE => new WorkerDbReHydrateMessageDTO(),
             SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),
@@ -1160,7 +1166,7 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
-            SignalTypeConstants::DB_REHYDRATE => DbSyncApplicator::applyReHydrate(),
+            SignalTypeConstants::DB_REHYDRATE => self::applyReHydrateContained(),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),
@@ -1172,6 +1178,26 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
             ),
             default => null,
         };
+    }
+
+    /**
+     * Re-reads every DB-backed collection of the daemon after the database was replaced (HIL-479).
+     *
+     * The failure is contained here and nowhere else. {@see DbSyncApplicator::applyReHydrate()}
+     * stays throwing because the agent that announced the swap is about to read the new database
+     * and has to learn that it could not; the daemon has nothing to do with that answer and no
+     * error path to put it in - an exception raised here would leave {@see dispatchSignals()} and
+     * end the run loop, killing the master in the minute after a restore. That is also why the
+     * sibling arms of the same match look safe: {@see DbSyncApplicator::applyCleared()} already
+     * contains its own re-read.
+     */
+    private static function applyReHydrateContained(): void
+    {
+        try {
+            DbSyncApplicator::applyReHydrate();
+        } catch (DatabaseException | LogicException $e) {
+            Logger::error('DB re-hydrate apply could not re-read the database', ['error' => $e->getMessage()]);
+        }
     }
 
     /**
