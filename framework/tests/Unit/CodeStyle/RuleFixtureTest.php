@@ -11,6 +11,7 @@ use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
+use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -142,6 +143,18 @@ final class RuleFixtureTest extends TestCase
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:30 — @throws references \OutOfBoundsException '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'RANDOM-SOURCE Bad/RandomSourceSamples.php:23 — RandomHelper::bytes() falls back to '
+                    . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
+                    . 'be unique takes this file into the rule\'s list '
+                    . '(see docs/agents/code-style/random-source.md)',
+                'RANDOM-SOURCE Bad/RandomSourceSamples.php:24 — RandomHelper::hex() falls back to '
+                    . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
+                    . 'be unique takes this file into the rule\'s list '
+                    . '(see docs/agents/code-style/random-source.md)',
+                'RANDOM-SOURCE Bad/RandomSourceSamples.php:25 — RandomHelper::integer() falls back to '
+                    . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
+                    . 'be unique takes this file into the rule\'s list '
+                    . '(see docs/agents/code-style/random-source.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:20 — getStateCollection() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:21 — getStateItem() reaches backing RT state '
@@ -245,6 +258,7 @@ final class RuleFixtureTest extends TestCase
             new PhpDocFqnRule(),
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
+            new RandomSourceRule(),
             new MagicRepeatRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
             new PayloadSentinelRule(),

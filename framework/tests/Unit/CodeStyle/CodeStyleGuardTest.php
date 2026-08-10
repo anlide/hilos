@@ -12,6 +12,7 @@ use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
+use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -39,13 +40,14 @@ final class CodeStyleGuardTest extends TestCase
      * is known here and nowhere else: a rule receives the path relative to its
      * root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and reads
      * exactly like a backend file. A suite is allowed what production is not —
-     * suppressing a warning while it arranges a failure, or repeating the same
+     * suppressing a warning while it arranges a failure, repeating the same
      * number in a dozen assertions, where a constant would hide from the reader
-     * the very value under test.
+     * the very value under test, or drawing throwaway tokens and names from the
+     * tolerant random helper, which it also has to call to check.
      *
      * @var array<int, string>
      */
-    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID, MagicRepeatRule::ID];
+    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID, RandomSourceRule::ID, MagicRepeatRule::ID];
 
     /**
      * The root the empty-string rule judges by a list of segments rather than whole.
@@ -172,6 +174,7 @@ final class CodeStyleGuardTest extends TestCase
             new PhpDocFqnRule(),
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
+            new RandomSourceRule(),
             new MagicRepeatRule(),
             $root === self::PHASED_EMPTY_STRING_ROOT
                 ? EmptyStringSentinelRule::forZone(self::PHASED_EMPTY_STRING_ZONE)

@@ -92,6 +92,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * Abstract base for daemon processes. run() owns the main loop: it drains ready
@@ -379,9 +380,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->processEventLoop();
 
             // Tick all servers (process clients)
-            foreach ($this->servers as $server) {
-                $server->onTick();
-            }
+            $this->tickServers();
 
             // Dispatch the per-iteration hook for the current node lifecycle phase
             $this->dispatchRoleTick();
@@ -417,6 +416,48 @@ abstract class DaemonManager extends BaseManager implements
         $this->eventLoop->cleanup();
         Hilos::$ac?->shutdown();
         Logger::info("Daemon stopped");
+    }
+
+    /**
+     * Tick every registered server, and stop the node when one of them reports that
+     * the platform's secure random source refused (HIL-568).
+     *
+     * This is one of the manager's two ways into client code, and the rarer one: a
+     * client is normally read from the epoll callback ({@see onClientRead()}), and
+     * reaches a server tick only with bytes that arrived between the two. Both catch
+     * the refusal, because a node that cannot mint secrets must not be left serving
+     * by whichever path happened to read the handshake.
+     */
+    private function tickServers(): void
+    {
+        try {
+            foreach ($this->servers as $server) {
+                $server->onTick();
+            }
+        } catch (RandomException $exception) {
+            $this->requestEntropyStop($exception);
+        }
+    }
+
+    /**
+     * Asks the node to stop because the platform's secure random source refused.
+     *
+     * A node without entropy cannot mint the secrets a handshake hands out, and from
+     * the outside it is indistinguishable from a healthy one - so it leaves instead
+     * of staying to serve. The stop is requested, not executed: shouldExit takes the
+     * path SIGTERM already takes, so the next iteration announces the departure to the
+     * cluster and lets every server close its clients ({@see initiateShutdown()}). An
+     * exit() from under the exception would skip both.
+     *
+     * One line is logged per refusal, and no storm can follow it: the node is on its
+     * way out by the time the next connection would ask.
+     *
+     * @param RandomException $exception Refusal to name in the log line
+     */
+    private function requestEntropyStop(RandomException $exception): void
+    {
+        Logger::error('Secure random source refused; stopping this node: ' . $exception->getMessage());
+        $this->shouldExit = true;
     }
 
     /**
@@ -856,6 +897,14 @@ abstract class DaemonManager extends BaseManager implements
                 $client->close();
                 $server->removeClient($client);
             }
+        } catch (RandomException $exception) {
+            // The connection asked for a secret and the secure source refused, so this
+            // is the node's business and not the connection's: the client is discarded
+            // like any other failed read, and the node stops (see requestEntropyStop()).
+            // Caught ahead of the catch-all below, which would log the refusal and leave
+            // the node serving handshakes it cannot mint secrets for.
+            $this->requestEntropyStop($exception);
+            $this->discardClient($server, $client);
         } catch (\Throwable $e) {
             // Log exception and close client connection on error
             $this->logException(
@@ -868,18 +917,30 @@ abstract class DaemonManager extends BaseManager implements
                 )
             );
 
-            // Close and cleanup client on error
-            // CRITICAL: Unregister from event loop BEFORE closing socket
-            try {
-                $socket = $client->getSocket();
-                if ($socket !== null) {
-                    $this->eventLoop->unregister($socket);
-                }
-                $client->close();
-                $server->removeClient($client);
-            } catch (\Throwable $cleanupError) {
-                // Ignore errors during cleanup - socket may be already closed
+            $this->discardClient($server, $client);
+        }
+    }
+
+    /**
+     * Drops a client the manager is done with: out of the event loop first, because
+     * it must not reference the socket after the close, then closed and forgotten by
+     * its server. Errors on the way out are ignored - the socket may be gone already,
+     * and this runs on a path that is already handling a failure.
+     *
+     * @param ServerInterface $server Server the client belongs to
+     * @param ClientInterface $client Client to discard
+     */
+    private function discardClient(ServerInterface $server, ClientInterface $client): void
+    {
+        try {
+            $socket = $client->getSocket();
+            if ($socket !== null) {
+                $this->eventLoop->unregister($socket);
             }
+            $client->close();
+            $server->removeClient($client);
+        } catch (\Throwable $cleanupError) {
+            // Ignore errors during cleanup - socket may be already closed
         }
     }
 

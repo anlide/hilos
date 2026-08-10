@@ -47,6 +47,7 @@ use Hilos\Utils\Logger;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Environment\Exception\EnvException;
+use Random\RandomException;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection.
@@ -128,6 +129,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
      * @throws EnvException When the build timestamp env value cannot be read
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     protected function processReadBuffer(): void
     {
@@ -266,6 +268,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws SocketException When socket error occurs
      * @throws UnsupportedProtocolVersionException When protocol version is not 13
      * @throws EnvException When the build timestamp env value cannot be read
+     * @throws RandomException When the secure random source refuses this connection's secrets
      */
     private function handleHandshake(): void
     {
@@ -315,16 +318,24 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // Concatenate key + magic string, compute SHA1 (binary output), encode as base64
         $secWebSocketAccept = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
 
-        // Mint the connection identifier: random and server-owned, so no client can
-        // choose or predict another connection's identity.
-        $acceptKey = self::mintAcceptKey();
-
-        // Resolve the session token: reuse the client's cookie when it has the
-        // minted form, mint one otherwise. Minting is in-memory (no I/O), so the
-        // master stays light; the worker handshake reads the token from the DTO.
         $cookies = $this->parseCookies($headers);
         $sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
-        $sessionToken = self::resolveSessionToken($cookies, $sessionCookieName);
+
+        // Mint this connection's two secrets: the identifier, random and server-owned
+        // so no client can choose or predict another connection's identity, and the
+        // session token - reused from the client's cookie when it has the minted form,
+        // minted otherwise. Both are in-memory (no I/O), so the master stays light; the
+        // worker handshake reads them from the DTO.
+        // A secure source that refuses cannot be answered with a guessable secret, so
+        // this connection is doomed and the refusal travels on: the manager stops the
+        // node over it, and neither the 101 nor the welcome frame is assembled below.
+        try {
+            $acceptKey = self::mintAcceptKey();
+            $sessionToken = self::resolveSessionToken($cookies, $sessionCookieName);
+        } catch (RandomException $exception) {
+            $this->shouldClose = true;
+            throw $exception;
+        }
 
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
@@ -358,11 +369,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * The RFC 6455 Sec-WebSocket-Accept value is derivable by the client from
      * its own Sec-WebSocket-Key, so it cannot serve as a trusted identity.
      *
+     * The key addresses this connection everywhere it is spoken about - the pending
+     * OAuth login, the protected-mode initiator, the connection-drop command - so it
+     * is a secret and is drawn from the secure axis of RandomHelper (HIL-568).
+     *
      * @return string Minted accept key (22 base64url characters)
+     * @throws RandomException When the platform's secure random source refuses
      */
     private static function mintAcceptKey(): string
     {
-        $random = RandomHelper::bytes(self::ACCEPT_KEY_RANDOM_BYTES);
+        $random = RandomHelper::secureBytes(self::ACCEPT_KEY_RANDOM_BYTES);
 
         return rtrim(strtr(base64_encode($random), '+/', '-_'), '=');
     }
@@ -379,6 +395,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param array<string, string> $cookies Parsed request cookies
      * @param string $name Session cookie name
      * @return string Session token (the client's cookie value, or freshly minted)
+     * @throws RandomException When the platform's secure random source refuses a mint
      */
     private static function resolveSessionToken(array $cookies, string $name): string
     {

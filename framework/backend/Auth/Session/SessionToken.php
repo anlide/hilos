@@ -6,6 +6,7 @@ namespace Hilos\Auth\Session;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Random\RandomException;
 
 /**
  * SessionToken - the single owner of the session token's form (HIL-556).
@@ -16,6 +17,10 @@ use Hilos\Utils\Helpers\RandomHelper;
  * from here, so it cannot drift apart again: a token is exactly what mint()
  * emits, 32 lowercase hex characters. Uppercase hex is refused because no
  * issued token can look like that.
+ *
+ * The token is a secret, so it is drawn from the secure axis of RandomHelper
+ * (HIL-568): a refusal of the platform's random source leaves as an exception
+ * rather than as a guessable token nobody can tell from an issued one.
  */
 final class SessionToken
 {
@@ -30,10 +35,11 @@ final class SessionToken
 
     /**
      * @return string Freshly minted session token
+     * @throws RandomException When the platform's secure random source refuses
      */
     public static function mint(): string
     {
-        return RandomHelper::hex(self::RANDOM_BYTES);
+        return RandomHelper::secureHex(self::RANDOM_BYTES);
     }
 
     /**
