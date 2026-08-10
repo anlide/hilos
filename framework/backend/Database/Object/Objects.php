@@ -709,7 +709,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
                     }
                 }
             } else {
-                throw new LogicException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
+                throw new LogicException('Filtering for lazy-loaded collections not yet implemented.'
+                    . ' Use LAZY_STRATEGY_NONE or ensure all objects are loaded.');
             }
         }
 

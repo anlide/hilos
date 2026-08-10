@@ -155,7 +155,8 @@ final class TopologyValidator
             }
 
             if (array_key_exists(BrowserConfigKey::TABLES, $pageClass::BROWSER)) {
-                $errors[] = "PAGES[{$page}] class {$pageClass} must declare page-table bindings in PAGE_TABLES, not BROWSER['" . BrowserConfigKey::TABLES . "']";
+                $errors[] = "PAGES[{$page}] class {$pageClass} must declare page-table bindings in PAGE_TABLES,"
+                    . " not BROWSER['" . BrowserConfigKey::TABLES . "']";
             }
         }
     }
@@ -301,7 +302,8 @@ final class TopologyValidator
             /** @var class-string<AbstractAgentDaemon> $daemonClass */
             $daemonAgentType = $daemonClass::AGENT_TYPE;
             if ($daemonAgentType !== '' && $daemonAgentType !== $agentType) {
-                $errors[] = "AGENTS[{$agentType}][" . AgentRegistryKey::DAEMON . "] class {$daemonClass} AGENT_TYPE must match registry key ({$daemonAgentType})";
+                $errors[] = "AGENTS[{$agentType}][" . AgentRegistryKey::DAEMON
+                    . "] class {$daemonClass} AGENT_TYPE must match registry key ({$daemonAgentType})";
             }
 
             $indexed = $registryEntry[AgentRegistryKey::INDEXED] ?? false;
@@ -669,7 +671,8 @@ final class TopologyValidator
                 foreach ($signalNames as $key => $entry) {
                     $signalName = PageSignalRouteRegistry::resolveRouteName($key, $entry);
                     if ($signalName === null) {
-                        $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain only non-empty signal names or valid signal DTO map entries";
+                        $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain"
+                            . ' only non-empty signal names or valid signal DTO map entries';
                         continue;
                     }
 
@@ -689,7 +692,8 @@ final class TopologyValidator
                     }
 
                     if (isset($namedRoutes[$signalType][$signalName]) && $namedRoutes[$signalType][$signalName] !== $page) {
-                        $errors[] = "Page signal {$signalType}/{$signalName} is declared by multiple pages: {$namedRoutes[$signalType][$signalName]} and {$page}";
+                        $errors[] = "Page signal {$signalType}/{$signalName} is declared by multiple pages:"
+                            . " {$namedRoutes[$signalType][$signalName]} and {$page}";
                         continue;
                     }
 
@@ -812,7 +816,8 @@ final class TopologyValidator
                 // Singleton: list entry — int key + non-empty string signal name.
                 if (is_int($key)) {
                     if (!is_string($value) || $value === '') {
-                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names or valid indexed config arrays";
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain"
+                            . ' only non-empty signal names or valid indexed config arrays';
                         continue;
                     }
 
@@ -827,7 +832,8 @@ final class TopologyValidator
                 }
 
                 if (!is_string($key) || $key === '') {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names, valid signal DTO map entries, or valid indexed config arrays";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only"
+                        . ' non-empty signal names, valid signal DTO map entries, or valid indexed config arrays';
                     continue;
                 }
 
@@ -858,18 +864,21 @@ final class TopologyValidator
 
                 // Indexed: map entry — non-empty string key + array config.
                 if (!is_array($value)) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must be a non-empty signal name, a SignalDataInterface class, or a valid indexed config array";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must be a"
+                        . ' non-empty signal name, a SignalDataInterface class, or a valid indexed config array';
                     continue;
                 }
 
                 $unknownKeys = array_diff(array_keys($value), [AgentSignalConfigKey::INDEX_FIELD, AgentSignalConfigKey::DTO]);
                 if ($unknownKeys !== []) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] contains unknown config keys: " . implode(', ', $unknownKeys);
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] contains"
+                        . ' unknown config keys: ' . implode(', ', $unknownKeys);
                 }
 
                 $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
                 if (!is_string($indexField) || $indexField === '') {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must declare a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must declare"
+                        . " a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'";
                 }
 
                 $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
@@ -881,7 +890,8 @@ final class TopologyValidator
                     )) {
                         // Continue validating route ownership even when DTO class is invalid.
                     } elseif (!is_subclass_of($dtoClass, SignalDataInterface::class)) {
-                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}][" . AgentSignalConfigKey::DTO . "] class {$dtoClass} must implement "
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}]["
+                            . AgentSignalConfigKey::DTO . "] class {$dtoClass} must implement "
                             . SignalDataInterface::class;
                     }
                 }
@@ -984,7 +994,8 @@ final class TopologyValidator
                 // List entry — int key + non-empty string command name.
                 if (is_int($key)) {
                     if (!is_string($value) || $value === '') {
-                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain only non-empty command names or valid command config entries";
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain"
+                            . ' only non-empty command names or valid command config entries';
                         continue;
                     }
 
@@ -993,7 +1004,8 @@ final class TopologyValidator
                 }
 
                 if (!is_string($key) || $key === '') {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain only non-empty command names, command DTO map entries, or valid command config arrays";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS must contain only"
+                        . ' non-empty command names, command DTO map entries, or valid command config arrays';
                     continue;
                 }
 
@@ -1014,13 +1026,15 @@ final class TopologyValidator
 
                 // Map entry — command name key + config array value.
                 if (!is_array($value)) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] must be a non-empty command name, a SignalDataInterface class, or a valid command config array";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] must be a"
+                        . ' non-empty command name, a SignalDataInterface class, or a valid command config array';
                     continue;
                 }
 
                 $unknownKeys = array_diff(array_keys($value), [AgentCommandConfigKey::DTO]);
                 if ($unknownKeys !== []) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] contains unknown config keys: " . implode(', ', $unknownKeys);
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}] contains"
+                        . ' unknown config keys: ' . implode(', ', $unknownKeys);
                 }
 
                 $dtoClass = $value[AgentCommandConfigKey::DTO] ?? null;
@@ -1030,7 +1044,8 @@ final class TopologyValidator
                         "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}][" . AgentCommandConfigKey::DTO . ']',
                         $errors,
                     ) && !is_subclass_of($dtoClass, SignalDataInterface::class)) {
-                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}][" . AgentCommandConfigKey::DTO . "] class {$dtoClass} must implement "
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_COMMANDS[{$key}]["
+                            . AgentCommandConfigKey::DTO . "] class {$dtoClass} must implement "
                             . SignalDataInterface::class;
                     }
                 }
@@ -1105,7 +1120,8 @@ final class TopologyValidator
                 }
 
                 if (!array_key_exists($table, $tables) && !array_key_exists($table, $browserSources)) {
-                    $errors[] = "{$registry}[{$page}][{$table}] references a source missing from TABLES, BROWSER_LISTS, BROWSER_TABLES, and BROWSER_DATA";
+                    $errors[] = "{$registry}[{$page}][{$table}] references a source missing from TABLES,"
+                        . ' BROWSER_LISTS, BROWSER_TABLES, and BROWSER_DATA';
                 }
 
                 if (!is_array($config)) {

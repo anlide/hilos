@@ -1151,7 +1151,8 @@ abstract class WorkerManager extends BaseManager
                     try {
                         Hilos::$sr?->updateGroupSubscription($group, $signalData);
                     } catch (Throwable $e) {
-                        Logger::error("WorkerManager: cannot mirror group subscription update: acceptKey={$signalData->acceptKey} group={$group}, {$e->getMessage()}");
+                        Logger::error('WorkerManager: cannot mirror group subscription update:'
+                            . " acceptKey={$signalData->acceptKey} group={$group}, {$e->getMessage()}");
                     }
                 } else {
                     Logger::error("onSignalGroupUpdateSubscription - invalid signal data type: " . get_class($signalData));

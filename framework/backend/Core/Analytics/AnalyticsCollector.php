@@ -128,7 +128,8 @@ final class AnalyticsCollector
             if ($existing === null) {
                 Database::sql(
                     'INSERT INTO `hilos_analytics_browser_session`
-                        (`session_token`, `user_identity_type`, `user_identity_value`, `current_user_agent_id`, `current_accept_language_id`, `first_seen_ts`, `last_seen_ts`)
+                        (`session_token`, `user_identity_type`, `user_identity_value`,
+                         `current_user_agent_id`, `current_accept_language_id`, `first_seen_ts`, `last_seen_ts`)
                      VALUES (?, NULL, NULL, ?, ?, ?, ?)',
                     [$sessionToken, $userAgentId, $acceptLanguageId, $nowTs, $nowTs],
                 );
@@ -672,8 +673,14 @@ final class AnalyticsCollector
      * @param ?string $acceptLanguage Raw Accept-Language header, or null
      * @return ?int API request id, or null when collection is disabled
      */
-    public function startApiRequest(?string $sessionToken, string $method, string $path, ?array $params, ?string $userAgent, ?string $acceptLanguage): ?int
-    {
+    public function startApiRequest(
+        ?string $sessionToken,
+        string $method,
+        string $path,
+        ?array $params,
+        ?string $userAgent,
+        ?string $acceptLanguage,
+    ): ?int {
         return $this->runSafely(function () use ($sessionToken, $method, $path, $params, $userAgent, $acceptLanguage): ?int {
             $browserSessionId = $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
 

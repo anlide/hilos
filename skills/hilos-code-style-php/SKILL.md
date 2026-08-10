@@ -26,6 +26,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/page-action-handlers.md` | editing `Page::onAction()`, action DTO routing, or action acks/errors |
 | `docs/agents/code-style/signal-handlers.md` | editing a named signal handler such as `onSignalAgent()` or `onSignalCron()` |
 | `docs/agents/code-style/php-class-members.md` | adding or reordering class constants, properties, or methods |
+| `docs/agents/code-style/line-length.md` | a line runs long, or a class declaration or a call no longer fits on one |
 | `docs/agents/code-style/local-variables.md` | introducing a temporary or one-use local, or an item/state alias |
 | `docs/agents/code-style/import-aliases-and-helper-names.md` | adding or changing a PHP import alias or a helper method name |
 | `docs/agents/code-style/table-names.md` | naming a database table |
@@ -57,6 +58,9 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 - A surviving `@` carries `// warning-suppressed: <what is checked instead>` on
   the line directly above the call, and the `ERROR-SUPPRESSION` guard fails
   `test:framework:unit` without it (`error-suppression.md`).
+- A line is at most 150 characters wide, counted in characters and not in bytes;
+  the `LINE-LENGTH` guard fails `test:framework:unit` on a wider one, and only a
+  heredoc body is outside it (`line-length.md`).
 - Do not alias `$this->_state` in a concrete `Runtime/View/Item/*`, and do not
   add a pass-through local for a single immediate member call
   (`local-variables.md`).

@@ -376,7 +376,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
-        Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
+        Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}]"
+            . ' [agentIndex=' . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentStartDTO(
             agentId: $agentId,

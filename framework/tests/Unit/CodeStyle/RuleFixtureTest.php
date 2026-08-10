@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
@@ -77,6 +78,12 @@ final class RuleFixtureTest extends TestCase
                 'ERROR-SUPPRESSION Bad/ErrorSuppressionSamples.php:29 — @ silences a warning with no '
                     . '`// warning-suppressed:` marker on the line above '
                     . '(see docs/agents/code-style/error-suppression.md)',
+                'LINE-LENGTH Bad/LineLengthSamples.php:15 — line is 158 characters, limit 150 '
+                    . '(see docs/agents/code-style/line-length.md)',
+                'LINE-LENGTH Bad/LineLengthSamples.php:21 — line is 154 characters, limit 150 '
+                    . '(see docs/agents/code-style/line-length.md)',
+                'LINE-LENGTH Bad/LineLengthSamples.php:23 — line is 167 characters, limit 150 '
+                    . '(see docs/agents/code-style/line-length.md)',
                 'MAGIC-REPEAT Bad/MagicRepeatSamples.php:21 — 1000 occurs 2 times in this file; name it '
                     . 'with a constant that carries the unit (see docs/agents/code-style/magic-values.md)',
                 'MAGIC-REPEAT Bad/MagicRepeatSamples.php:21 — 1000 occurs 2 times in this file; name it '
@@ -222,6 +229,7 @@ final class RuleFixtureTest extends TestCase
             new MagicRepeatRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
             new WireKeyCaseRule(),
+            new LineLengthRule(),
         ];
     }
 }

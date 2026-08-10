@@ -55,8 +55,14 @@ final class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
 
         return new static(
             id: (int) ($inner[ObjectModeratorPromptPiece::id] ?? 0),
-            section: isset($inner[ObjectModeratorPromptPiece::section]) && is_string($inner[ObjectModeratorPromptPiece::section]) ? trim($inner[ObjectModeratorPromptPiece::section]) : null,
-            promptPiece: isset($inner[ObjectModeratorPromptPiece::promptPiece]) && is_string($inner[ObjectModeratorPromptPiece::promptPiece]) ? trim($inner[ObjectModeratorPromptPiece::promptPiece]) : null,
+            section: isset($inner[ObjectModeratorPromptPiece::section])
+                && is_string($inner[ObjectModeratorPromptPiece::section])
+                ? trim($inner[ObjectModeratorPromptPiece::section])
+                : null,
+            promptPiece: isset($inner[ObjectModeratorPromptPiece::promptPiece])
+                && is_string($inner[ObjectModeratorPromptPiece::promptPiece])
+                ? trim($inner[ObjectModeratorPromptPiece::promptPiece])
+                : null,
         );
     }
 

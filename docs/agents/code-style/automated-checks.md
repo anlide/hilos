@@ -14,6 +14,7 @@ rule.
 | `MAGIC-REPEAT` | The same number is written twice or more in one file. Numbers inside a `const` declaration, inside the value of a keyed array entry — which is what takes a data catalog out of the rule, entry by entry — and the structural `0`, `1`, `2` are not counted. Production roots only. | [magic-values.md](magic-values.md) |
 | `EMPTY-STRING-SENTINEL` | An empty string literal is minted where a value is absent: `??` falls back to it, a ternary branch hands it back, or a `match` `default` arm does. Inside the checked zone only, and unless a `// external-boundary: <reason>` marker on the line directly above names the outside source the value comes from. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
+| `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -78,6 +79,16 @@ exists in the scanned roots today, and the way out of a hit is to argue with the
 document, so the argument needs to know what the rule actually does. The rename
 that settles it is usually the honest one: a constant that names no wire key is
 `UPPER_SNAKE` by the same convention that makes the camelCase name meaningful.
+
+`LINE-LENGTH` reaches one step past what its exemption suggests, and the step is
+worth knowing before you argue with a hit. The exemption is syntactic — a heredoc
+or nowdoc body — because that syntax is what declares a long line to be content.
+An ordinary multi-line quoted string declares nothing of the kind, so a long line
+inside one is reported, and the only way out is to edit the string. Where the
+whitespace is insignificant that is harmless: the analytics INSERT wraps its
+column list and MySQL never notices. Where the newlines are data it is not, and
+the cure is to move that text into a heredoc rather than to break it where it
+stands.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

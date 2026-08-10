@@ -64,10 +64,14 @@ final class BotUpdateActionDTO extends ChatActionPayloadDTO
         return new static(
             id: (int) ($inner[ObjectBot::id] ?? 0),
             name: isset($inner[ObjectBot::name]) && is_string($inner[ObjectBot::name]) ? trim($inner[ObjectBot::name]) : null,
-            description: array_key_exists(ObjectBot::description, $inner) ? (is_string($inner[ObjectBot::description]) ? $inner[ObjectBot::description] : null) : null,
+            description: array_key_exists(ObjectBot::description, $inner)
+                ? (is_string($inner[ObjectBot::description]) ? $inner[ObjectBot::description] : null)
+                : null,
             style: array_key_exists(ObjectBot::style, $inner) ? (is_string($inner[ObjectBot::style]) ? $inner[ObjectBot::style] : null) : null,
             topics: array_key_exists(ObjectBot::topics, $inner) ? (is_string($inner[ObjectBot::topics]) ? $inner[ObjectBot::topics] : null) : null,
-            personality: array_key_exists(ObjectBot::personality, $inner) ? (is_string($inner[ObjectBot::personality]) ? $inner[ObjectBot::personality] : null) : null,
+            personality: array_key_exists(ObjectBot::personality, $inner)
+                ? (is_string($inner[ObjectBot::personality]) ? $inner[ObjectBot::personality] : null)
+                : null,
             active: isset($inner[ObjectBot::active]) ? (bool) $inner[ObjectBot::active] : null,
         );
     }

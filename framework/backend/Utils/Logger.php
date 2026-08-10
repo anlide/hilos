@@ -359,7 +359,8 @@ class Logger
     private static function logAgent(string $agentId, string $level, string $message, bool $useStderr = false): void
     {
         $timestamp = TimeHelper::getTimestampWithMs();
-        $logLine = self::AGENT_LOG_MARKER . "{$agentId}" . self::AGENT_LOG_FIELD_SEPARATOR . "{$level}" . self::AGENT_LOG_FIELD_SEPARATOR . "[{$timestamp}] {$message}";
+        $logLine = self::AGENT_LOG_MARKER . "{$agentId}" . self::AGENT_LOG_FIELD_SEPARATOR
+            . "{$level}" . self::AGENT_LOG_FIELD_SEPARATOR . "[{$timestamp}] {$message}";
 
         if ($useStderr) {
             self::errorLog($logLine);

@@ -8,6 +8,7 @@ use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
+use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
@@ -175,6 +176,7 @@ final class CodeStyleGuardTest extends TestCase
                 ? EmptyStringSentinelRule::forZone(self::PHASED_EMPTY_STRING_ZONE)
                 : EmptyStringSentinelRule::forWholeRoot(),
             new WireKeyCaseRule(),
+            new LineLengthRule(),
         ];
     }
 

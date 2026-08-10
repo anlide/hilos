@@ -187,15 +187,21 @@ class Database
      * @throws DatabaseConnectionException When connection index is not configured or charset setup fails
      * @throws CantConnectToMysqlServerException When retries are exhausted on temporary errors
      */
-    public static function connect(?int $index = null, bool $retryOnConnectionError = false, ?int $maxRetries = null, ?int $retryDelaySeconds = null): void
-    {
+    public static function connect(
+        ?int $index = null,
+        bool $retryOnConnectionError = false,
+        ?int $maxRetries = null,
+        ?int $retryDelaySeconds = null,
+    ): void {
         $index = $index ?? self::$currentIndex;
 
         $config = self::$configurations[$index]
             ?? throw new DatabaseConnectionException("Connection {$index} is not configured");
         
         // Determine retry parameters
-        $retries = $maxRetries ?? ($retryOnConnectionError ? DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT);
+        $retries = $maxRetries ?? ($retryOnConnectionError
+            ? DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS
+            : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT);
         $delaySeconds = $retryDelaySeconds ?? ($retryOnConnectionError ? DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS : 0);
         
         $lastException = null;
@@ -372,8 +378,9 @@ class Database
                         $parsedSql = self::parseSqlWithParams($sql, $params, $mysqli);
                     } catch (DatabaseConnectionException $e) {
                         throw new DatabaseConnectionException(
-                            "Database connection was closed. Attempted to reconnect (attempt {$attempts}/{$maxAttempts}) but failed: " . $e->getMessage() . 
-                            ". Original query: " . substr($sql, 0, DatabaseException::QUERY_PREVIEW_MAX_LENGTH)
+                            'Database connection was closed. Attempted to reconnect'
+                            . " (attempt {$attempts}/{$maxAttempts}) but failed: " . $e->getMessage()
+                            . '. Original query: ' . substr($sql, 0, DatabaseException::QUERY_PREVIEW_MAX_LENGTH)
                         );
                     }
                 } else {

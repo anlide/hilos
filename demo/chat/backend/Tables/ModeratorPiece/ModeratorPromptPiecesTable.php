@@ -118,7 +118,8 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
 
         return new TableSnapshotDTO(
             rows: array_map(
-                fn(DbModeratorPromptPiece $moderatorPromptPiece): ModeratorPromptPieceTableRow => $this->rowFromModeratorPromptPiece($moderatorPromptPiece),
+                fn(DbModeratorPromptPiece $moderatorPromptPiece): ModeratorPromptPieceTableRow
+                    => $this->rowFromModeratorPromptPiece($moderatorPromptPiece),
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],

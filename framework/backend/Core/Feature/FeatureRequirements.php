@@ -30,10 +30,13 @@ final readonly class FeatureRequirements
      * @param list<class-string<AbstractPage>> $requiredPages Framework page base classes a project page must extend
      * @param list<string> $requiredAgents Agent types that must carry both a worker and a daemon class
      * @param list<class-string<TableDefinition>> $requiredTables Framework table classes expected among TABLES
-     * @param array<class-string<AbstractPage>, ?class-string<TableDefinition>> $requiredPageTables Page base class to the table it must be bound to, or null when any binding satisfies it
+     * @param array<class-string<AbstractPage>, ?class-string<TableDefinition>> $requiredPageTables Page
+     *     base class to the table it must be bound to, or null when any binding satisfies it
      * @param ?string $requiredCatalogConstant Facade constant the project must point at its own catalog
      * @param list<HilosFeature> $requires Features this one is built on top of
-     * @param list<string> $requiredDbTables SQL tables the feature reads and writes, named by their entity `_table` constant so a rename cannot leave the requirement behind (checked by the demo test)
+     * @param list<string> $requiredDbTables SQL tables the feature reads and writes, named by their
+     *     entity `_table` constant so a rename cannot leave the requirement behind (checked by the
+     *     demo test)
      * @param list<string> $requiredCliCommands CLI command names the feature is driven by (checked by the demo test)
      * @param bool $requiresPresenceSource Whether a runtime collection must report user presence (checked by the demo test)
      */

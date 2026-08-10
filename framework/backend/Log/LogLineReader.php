@@ -84,7 +84,8 @@ final class LogLineReader
     /**
      * Read one page of lines from a log file under the log root.
      *
-     * @param string $relativePath Path of the target file relative to the log root (e.g. `worker-1.log` or `archive/2026-03-23-19-01-20/worker-1.log`)
+     * @param string $relativePath Path of the target file relative to the log root (e.g.
+     *     `worker-1.log` or `archive/2026-03-23-19-01-20/worker-1.log`)
      * @param LogReadQuery $query Anchor, cursor, limit and filters for this page
      *
      * @return LogLinePage Matched lines plus the adjacent-page cursor, or {@see LogLinePage::unavailable()}

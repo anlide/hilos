@@ -93,6 +93,11 @@ final class ChatDbContext extends HilosDbContext
         $this->setRepresent(self::eventUserRenames, EventUserRenames::class, EventUserRenamesActions::class);
         $this->setRepresent(self::eventAttachments, EventAttachments::class, EventAttachmentsActions::class);
         $this->setRepresent(self::bots, Bots::class, BotsActions::class, BotActions::class);
-        $this->setRepresent(self::moderatorPromptPieces, ModeratorPromptPieces::class, ModeratorPromptPiecesActions::class, ModeratorPromptPieceActions::class);
+        $this->setRepresent(
+            self::moderatorPromptPieces,
+            ModeratorPromptPieces::class,
+            ModeratorPromptPiecesActions::class,
+            ModeratorPromptPieceActions::class,
+        );
     }
 }

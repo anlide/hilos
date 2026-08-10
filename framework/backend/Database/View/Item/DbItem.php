@@ -220,8 +220,13 @@ abstract class DbItem
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken). ID is always included when true.
      * @return array<string, mixed> Item data as associative array
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
-    {
+    public function toArray(
+        bool $withId = true,
+        bool $idAsIndex = true,
+        bool $withBridges = false,
+        bool $withCalculation = false,
+        bool $toFrontend = false,
+    ): array {
         $result = $this->_object->toArray();
         $includeId = $withId || $toFrontend;
 

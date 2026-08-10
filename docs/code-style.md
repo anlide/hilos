@@ -33,9 +33,10 @@ catalog stays the single place a rule is routed from.
 The old content in this file was a draft plan, not active rules. Keep these
 areas as backlog for future small rule files:
 
-- PHP backend: namespaces, class/method/property naming, imports, line length,
-  PHPDoc details. Class member order is covered by
-  [php-class-members.md](agents/code-style/php-class-members.md).
+- PHP backend: namespaces, class/method/property naming, imports, PHPDoc
+  details. Class member order is covered by
+  [php-class-members.md](agents/code-style/php-class-members.md), and line width
+  by [line-length.md](agents/code-style/line-length.md).
 - TypeScript/Vue frontend: Composition API, strict typing, component structure,
   file naming, imports.
 - File and directory structure: backend layout, Entity/Object/Db placement,

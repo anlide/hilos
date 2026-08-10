@@ -31,6 +31,7 @@ layer's specifics on top.
 | [wire-key-ownership.md](wire-key-ownership.md) | frontend | naming a row-payload key in a frontend admin module — adding or renaming a table column, writing a row resolver, deciding what the core barrel exports |
 | [table-names.md](table-names.md) | PHP | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [php-class-members.md](php-class-members.md) | PHP | adding or reordering PHP class constants, properties, or methods |
+| [line-length.md](line-length.md) | PHP | a line runs long, a class declaration or a call no longer fits, or the width guard failed |
 | [reflection.md](reflection.md) | PHP | adding or changing a Reflection call, or wondering whether an existing one is justified |
 | [error-suppression.md](error-suppression.md) | PHP | writing `@` in front of a PHP call — how a failing builtin reports: exception, checked error code, or a marked degrade |
 | [php-language-level.md](php-language-level.md) | PHP | choosing between an old and a new PHP syntax form, or wondering whether an 8.4-only construct is allowed |

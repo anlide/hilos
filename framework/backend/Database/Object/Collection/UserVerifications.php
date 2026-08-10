@@ -161,7 +161,8 @@ final class UserVerifications extends Objects
         $params->add(SqlParam::string(password_hash($plainCode, PASSWORD_DEFAULT)));
         $params->add(SqlParam::int($id));
         Database::sql(
-            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::code_hash . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::code_hash
+                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
             $params,
         );
 

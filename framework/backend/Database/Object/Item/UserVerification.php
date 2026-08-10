@@ -136,7 +136,8 @@ final class UserVerification extends Object_
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));
         $resultSet = Database::sql(
-            'SELECT `' . EntityUserVerification::code_hash . '` FROM `' . EntityUserVerification::_table . '` WHERE `' . EntityUserVerification::id . '` = ?',
+            'SELECT `' . EntityUserVerification::code_hash . '` FROM `' . EntityUserVerification::_table
+                . '` WHERE `' . EntityUserVerification::id . '` = ?',
             $params,
         )->first();
         if ($resultSet === null) {
@@ -171,7 +172,9 @@ final class UserVerification extends Object_
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::attempts . '` = `' . EntityUserVerification::attempts . '` + 1 WHERE `' . EntityUserVerification::id . '` = ?',
+            'UPDATE `' . EntityUserVerification::_table
+                . '` SET `' . EntityUserVerification::attempts . '` = `' . EntityUserVerification::attempts
+                . '` + 1 WHERE `' . EntityUserVerification::id . '` = ?',
             $params,
         );
 
@@ -199,7 +202,8 @@ final class UserVerification extends Object_
         $params->add(SqlParam::string($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::consumed_at . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::consumed_at
+                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
             $params,
         );
 
@@ -230,7 +234,8 @@ final class UserVerification extends Object_
         $params->add(SqlParam::string($pastExpiry));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::expires_at . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::expires_at
+                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
             $params,
         );
 

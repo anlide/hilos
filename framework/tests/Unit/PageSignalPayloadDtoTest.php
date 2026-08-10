@@ -196,7 +196,8 @@ final class PageSignalPayloadTestHilos extends HilosFacade
     public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\PageSignalPayloadTestMissingData';
 
     /**
-     * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal type, then signal name, one deliberately unresolvable
+     * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal
+     *     type, then signal name, one deliberately unresolvable
      */
     public static function getPageSignalDtoRoutes(): array
     {

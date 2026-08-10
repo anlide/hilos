@@ -59,7 +59,9 @@ class ChatGenerateOptions extends BaseDTO
         return new static(
             model: isset($data[LLMApiConstants::KEY_MODEL]) ? (string) $data[LLMApiConstants::KEY_MODEL] : null,
             temperature: isset($data[LLMApiConstants::KEY_TEMPERATURE]) ? (float) $data[LLMApiConstants::KEY_TEMPERATURE] : 0.0,
-            timeoutSec: isset($data[LLMApiConstants::KEY_TIMEOUT_SEC]) ? (float) $data[LLMApiConstants::KEY_TIMEOUT_SEC] : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: isset($data[LLMApiConstants::KEY_TIMEOUT_SEC])
+                ? (float) $data[LLMApiConstants::KEY_TIMEOUT_SEC]
+                : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: isset($data[LLMApiConstants::KEY_MAX_TOKENS_CAMEL]) ? (int) $data[LLMApiConstants::KEY_MAX_TOKENS_CAMEL] : null,
             responseFormat: isset($data['responseFormat']) && is_array($data['responseFormat']) ? $data['responseFormat'] : null,
         );

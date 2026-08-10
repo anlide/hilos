@@ -138,7 +138,8 @@ final class PasskeyCredential extends Object_
         $params->add(SqlParam::int($newCount));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityPasskeyCredential::_table . '` SET `' . EntityPasskeyCredential::sign_count . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
+            'UPDATE `' . EntityPasskeyCredential::_table . '` SET `' . EntityPasskeyCredential::sign_count
+                . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
             $params,
         );
 
@@ -167,7 +168,9 @@ final class PasskeyCredential extends Object_
         $params->add(SqlParam::string($now));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
-            'UPDATE `' . EntityPasskeyCredential::_table . '` SET `' . EntityPasskeyCredential::last_used_at . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
+            'UPDATE `' . EntityPasskeyCredential::_table
+                . '` SET `' . EntityPasskeyCredential::last_used_at
+                . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
             $params,
         );
 

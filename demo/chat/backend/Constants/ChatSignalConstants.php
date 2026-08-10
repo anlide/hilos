@@ -80,13 +80,19 @@ final class ChatSignalConstants
     /** @var string Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284) */
     public const string PASSKEY_LOGIN_CONFIRM = 'passkey_login_confirm';
 
-    /** @var string Client → server: request WebAuthn discoverable (usernameless) login options — no email, empty allowCredentials (public, anonymous-reachable, HIL-400) */
+    /**
+     * @var string Client → server: request WebAuthn discoverable (usernameless) login options — no
+     *     email, empty allowCredentials (public, anonymous-reachable, HIL-400)
+     */
     public const string PASSKEY_DISCOVERABLE_LOGIN_OPTIONS = 'passkey_discoverable_login_options';
 
     /** @var string Client → agent: revert the authenticated session to anonymous (shell logout, page-independent) */
     public const string LOGOUT = 'logout';
 
-    /** @var string Client → agent (page-independent): impersonating session reverts to its admin (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP) */
+    /**
+     * @var string Client → agent (page-independent): impersonating session reverts to its admin
+     *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP)
+     */
     public const string IMPERSONATE_STOP = 'impersonate_stop';
 
     /** @var string Rename signal name */
@@ -176,7 +182,10 @@ final class ChatSignalConstants
     /** @var string ChatAgent → initiator: account merge failed (ack for ACCOUNT_MERGE) */
     public const string ACCOUNT_MERGE_FAIL = 'account_merge_fail';
 
-    /** @var string Client → server (admin users page-action): admin starts impersonating a target user (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_START) */
+    /**
+     * @var string Client → server (admin users page-action): admin starts impersonating a target user
+     *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_START)
+     */
     public const string IMPERSONATE_START = 'impersonate_start';
 
     /** @var string Bot create signal name */

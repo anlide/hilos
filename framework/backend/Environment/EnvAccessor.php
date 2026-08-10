@@ -137,7 +137,8 @@ class EnvAccessor implements ArrayAccess
 
         try {
             $this->string($offset);
-        } catch (EnvInvalidValueException|EnvKeyInvalidException|EnvNotInCatalogException|EnvTypeMismatchException|MissingEnvironmentVariableException) {
+        } catch (EnvInvalidValueException|EnvKeyInvalidException|EnvNotInCatalogException
+            |EnvTypeMismatchException|MissingEnvironmentVariableException) {
             return false;
         }
 

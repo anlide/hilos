@@ -80,7 +80,8 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
     /**
      * Convert to array for transport.
      *
-     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string, clientDataJson: string, signature: string, userHandle: ?string} Confirm payload
+     * @return array{signedChallenge: string, credentialId: string, authenticatorData: string,
+     *     clientDataJson: string, signature: string, userHandle: ?string} Confirm payload
      */
     public function toArray(): array
     {

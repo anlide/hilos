@@ -1279,7 +1279,8 @@ final class MainPage extends AbstractPage
      * defense-in-depth (the credential id stays authoritative). The username-first
      * path sends none, so the check is skipped when the handle is empty.
      *
-     * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id, authenticator data, client data, signature, optional user handle)
+     * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id,
+     *     authenticator data, client data, signature, optional user handle)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
      * @throws HilosException When WebAuthn env config, credential lookup, counter persistence, or session promotion fails

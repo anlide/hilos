@@ -141,7 +141,8 @@ final class LogStoreSnapshot
     /**
      * Aggregate the given index classes into per-key streams (live flag, batch timestamps, total bytes).
      *
-     * @param list<string> $classes {@see LogStoreReader} class keys to merge (worker + monopolistic share a key space only across classes, never within a basename)
+     * @param list<string> $classes {@see LogStoreReader} class keys to merge (worker + monopolistic
+     *     share a key space only across classes, never within a basename)
      *
      * @return array<string, LogStreamAggregate> Basename → aggregated stream, discovery order
      */

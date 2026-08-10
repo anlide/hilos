@@ -183,7 +183,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
             return;
         }
         if ($this->activeFreeze !== null) {
-            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — a '{$this->activeFreeze->operation}' freeze is already in flight");
+            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
+                . " — a '{$this->activeFreeze->operation}' freeze is already in flight");
             return;
         }
         // Last of the entry checks, and deliberately above every trace of entry: a leader that
@@ -235,7 +236,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
             return;
         }
         if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
-            Logger::warning("Protected mode: dropping disable from '{$fromNodeId}' — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+            Logger::warning("Protected mode: dropping disable from '{$fromNodeId}'"
+                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
             return;
         }
 
@@ -262,7 +264,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
         if ($this->freezingLeaderId !== null) {
-            Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}' — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
+            Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
+                . " — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
             return;
         }
         // The leader's guard, from the follower side, and the refusal stays off the wire: reporting

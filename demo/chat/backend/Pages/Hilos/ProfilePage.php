@@ -106,9 +106,17 @@ final class ProfilePage extends AbstractHilosProfilePage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak, wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is refused (invalid phone, invalid/expired code, or the phone already in use), an add-password-via-email is refused (invalid email, email already in use, weak password, or invalid/expired code), a notification channel toggle carries no channel name, or a push subscribe/unsubscribe carries no endpoint or key
+     * @throws ValidationException When an unlink is refused, a password change/add is refused (weak,
+     *     wrong current, or no verified email), an OAuth link provider is unknown, an SMS-add is
+     *     refused (invalid phone, invalid/expired code, or the phone already in use), an
+     *     add-password-via-email is refused (invalid email, email already in use, weak password, or
+     *     invalid/expired code), a notification channel toggle carries no channel name, or a push
+     *     subscribe/unsubscribe carries no endpoint or key
      * @throws RandomException When minting an OAuth link state, an SMS-add code, or an add-password email code cannot draw from the CSPRNG
-     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a password read/write query fails, an SMS-add or add-password verification/identity query fails, a notification-preference write or channel-map read query fails, or a push subscription write fails
+     * @throws HilosException When rename moderation setup fails, an identity delete query fails, a
+     *     password read/write query fails, an SMS-add or add-password verification/identity query
+     *     fails, a notification-preference write or channel-map read query fails, or a push
+     *     subscription write fails
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO

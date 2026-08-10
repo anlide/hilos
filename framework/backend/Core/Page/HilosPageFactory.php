@@ -118,7 +118,8 @@ class HilosPageFactory extends AbstractPageFactory
      *
      * @param string $pageName Page constant
      * @return AbstractPage Page instance
-     * @throws PageNotFoundException When the page is unregistered, maps to a non-AbstractPage class, or is a known Hilos id without a project implementation
+     * @throws PageNotFoundException When the page is unregistered, maps to a non-AbstractPage class,
+     *     or is a known Hilos id without a project implementation
      */
     protected function createPage(string $pageName): AbstractPage
     {

@@ -63,7 +63,10 @@ use Hilos\Utils\Logger;
  */
 abstract class WorkerServer extends AbstractServer implements PlacementExecutor, AgentSignalSink, ProtectedModeReadyRelay, ProtectedModeAgentFreezer
 {
-    /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
+    /**
+     * @var array<string, array<string, Process|string|int>> Workers indexed by key (format:
+     *     "type:index"), values: WorkerConstants::FIELD_WORKER_*
+     */
     private array $workers = [];
 
     /** @var array<int> Available worker indices (sorted, can be reused) */

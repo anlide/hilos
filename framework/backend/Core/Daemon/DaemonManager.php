@@ -113,7 +113,13 @@ use Hilos\Utils\Logger;
  * and {@see onPlacementDegraded()} when failover cannot re-place an orphaned agent. The
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
-abstract class DaemonManager extends BaseManager implements MembershipObserver, LeadershipObserver, PlacementObserver, ConnectionDropper, ProtectedModeSnapshotSource, ProtectedModeClientNotifier
+abstract class DaemonManager extends BaseManager implements
+    MembershipObserver,
+    LeadershipObserver,
+    PlacementObserver,
+    ConnectionDropper,
+    ProtectedModeSnapshotSource,
+    ProtectedModeClientNotifier
 {
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
@@ -1020,12 +1026,14 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                     } catch (NoSuitableWorkerException $e) {
                         // During shutdown, workers may be unavailable - ignore this error
                         if ($this->shouldExit) {
-                            Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                            Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"
+                                . " -> agent: {$agentType}{$indexInfo} - no suitable worker available");
                             $skipSignal = true;
                             continue;
                         }
                         // Re-throw if not shutting down
-                        Logger::error("Failed to send signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                        Logger::error("Failed to send signal: {$signalType}/{$signalName}"
+                            . " -> agent: {$agentType}{$indexInfo} - no suitable worker available");
                         throw $e;
                     }
                 } elseif ($destination instanceof RemoteAgentDestination) {
@@ -1034,7 +1042,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                     // matching the local path that skips when no worker hosts the agent. Durable
                     // delivery to an offline node is out of scope.
                     if ($peerServer === null) {
-                        Logger::error("Peer signal dropped: {$signalType}/{$signalName} -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
+                        Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
                         continue;
                     }
 
@@ -1045,7 +1054,8 @@ abstract class DaemonManager extends BaseManager implements MembershipObserver, 
                         $signal,
                     );
                     if (!$delivered) {
-                        Logger::warning("Peer signal dropped: {$signalType}/{$signalName} -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
+                        Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
+                            . " -> node {$destination->nodeId} agent {$destination->agentType} - no live link");
                     }
                 } elseif ($destination instanceof WebSocketDestination) {
                     // Send signal to WebSocket client

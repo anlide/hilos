@@ -21,7 +21,8 @@ class WorkerClientNotFoundException extends AgentException
      */
     public function __construct(string $agentId, int $workerIndex, bool $isMonopolistic, ?Throwable $previous = null)
     {
-        $message = "Worker client not found for agent '{$agentId}' (workerIndex={$workerIndex}, isMonopolistic=" . ($isMonopolistic ? 'true' : 'false') . ")";
+        $message = "Worker client not found for agent '{$agentId}' (workerIndex={$workerIndex},"
+            . ' isMonopolistic=' . ($isMonopolistic ? 'true' : 'false') . ')';
         parent::__construct($message, 0, $previous);
     }
 }

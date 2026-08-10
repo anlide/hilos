@@ -91,7 +91,8 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new CommandException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new CommandException("Database connection {$dbIndex} is not established."
+                . ' Please ensure database connection is initialized before running this command.');
         }
 
         // Initialize schema if not already initialized

@@ -36,7 +36,8 @@ final class ChannelConfigField
      * @param bool $secret Whether the field is an env-only secret (never editable, value never exposed)
      * @param EnvConstants|string|null $envKey Env variable backing the field's env-source value, or null for none
      * @param bool|float|int|string $default Descriptor default used when neither a settings override nor env apply
-     * @param ?Closure(bool|float|int|string): ?string $validator Value validator returning a domain error phrase, or null when valid; null for no validation
+     * @param ?Closure(bool|float|int|string): ?string $validator Value validator returning a domain
+     *     error phrase, or null when valid; null for no validation
      */
     public function __construct(
         public readonly string $key,

@@ -134,7 +134,8 @@ class DockerManager extends BaseManager
                 if (!$this->restartIntervalLogged) {
                     $remainingWaitTime = $minRestartInterval - $timeSinceLastRestart;
                     Logger::info(sprintf(
-                        "Skipping daemon restart: only %.2f seconds passed since last restart (minimum %d seconds required). Waiting %.2f more seconds.",
+                        'Skipping daemon restart: only %.2f seconds passed since last restart'
+                            . ' (minimum %d seconds required). Waiting %.2f more seconds.',
                         $timeSinceLastRestart,
                         $minRestartInterval,
                         $remainingWaitTime

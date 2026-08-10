@@ -44,11 +44,23 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::DB_ROOT_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::DB_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::USER, emptyIsMissing: true),
             EnvConstants::DB_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::DB_SECONDARY_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::HOST, emptyIsMissing: true),
-            EnvConstants::DB_SECONDARY_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::USER, emptyIsMissing: true),
+            EnvConstants::DB_SECONDARY_HOST->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                DatabaseConnectionDefaults::HOST,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::DB_SECONDARY_USERNAME->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                DatabaseConnectionDefaults::USER,
+                emptyIsMissing: true,
+            ),
             EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
             EnvConstants::DB_SECONDARY_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_secondary'),
-            EnvConstants::DB_SECONDARY_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, DatabaseConnectionDefaults::PORT, emptyIsMissing: true),
+            EnvConstants::DB_SECONDARY_PORT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                DatabaseConnectionDefaults::PORT,
+                emptyIsMissing: true,
+            ),
             EnvConstants::DAEMON_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::DAEMON_ERROR_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::DOCKER_NETWORK_SUBNET->name => self::entry(
@@ -270,7 +282,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
             EnvConstants::LOG_ROTATION_CRON->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', emptyIsMissing: true),
             EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 20, emptyIsMissing: true),
-            EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 2592000, emptyIsMissing: true),
+            EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                2592000,
+                emptyIsMissing: true,
+            ),
         ];
     }
 

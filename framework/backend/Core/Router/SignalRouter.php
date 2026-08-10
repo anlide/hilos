@@ -277,8 +277,12 @@ class SignalRouter
      * @param SignalDataInterface $signalData Signal data DTO
      * @throws InvalidArgumentException When the signal name is empty
      */
-    public function queueSignal(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalNameInterface $signalName, SignalDataInterface $signalData): void
-    {
+    public function queueSignal(
+        SignalSourceInterface $signalSource,
+        SignalTypeInterface $signalType,
+        SignalNameInterface $signalName,
+        SignalDataInterface $signalData,
+    ): void {
         // Create SignalDTO and queue it
         $signal = new SignalDTO(
             $signalSource,

@@ -149,7 +149,8 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     /**
      * Builds a table subclass that exposes the protected SQL builders for testing.
      *
-     * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy: callable, exposedRowFromSql: callable} Table with exposed builders
+     * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy:
+     *     callable, exposedRowFromSql: callable} Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
     {

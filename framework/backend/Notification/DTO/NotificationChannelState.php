@@ -37,7 +37,8 @@ final class NotificationChannelState
      * @param string $label Channel's human label
      * @param bool $allowed Whether the recipient currently allows the channel
      * @param bool $hasAddress Whether the recipient has a resolvable address for the channel
-     * @param array<string, string> $config Public per-channel config for the browser opt-in (e.g. push VAPID public key); empty for channels with no browser opt-in
+     * @param array<string, string> $config Public per-channel config for the browser opt-in (e.g. push
+     *     VAPID public key); empty for channels with no browser opt-in
      */
     public function __construct(
         public readonly string $channel,

@@ -137,7 +137,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param DbItem $item Single item to wrap
      * @return static New manual collection with one item
-     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (thrown by add() while keying the item by ID)
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement
+     *     getIdString() (thrown by add() while keying the item by ID)
      * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
     public static function fromSingleItem(DbItem $item): static
@@ -277,7 +278,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param DbItem $item DbItem instance to add
      * @throws CollectionNotManualException If collection is not manual, or item has no ID
-     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement
+     *     getIdString() (required for manual collections to use ID as key)
      */
     public function add(DbItem $item): void
     {
@@ -293,7 +295,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param DbCollection $other Collection whose items to merge in (only those not already in $this)
      * @return static New manual collection
-     * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString() (thrown by add() while keying items by ID)
+     * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement
+     *     getIdString() (thrown by add() while keying items by ID)
      * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
      */
     public function mergeWith(DbCollection $other): static
@@ -381,8 +384,13 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
-    {
+    public function toArray(
+        bool $withId = true,
+        bool $idAsIndex = true,
+        bool $withBridges = false,
+        bool $withCalculation = false,
+        bool $toFrontend = false,
+    ): array {
         $result = [];
         if ($this->isManual) {
             foreach ($this->items as $key => $item) {
@@ -420,7 +428,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When object type does not match the collection
      * @throws DatabaseException When lazy-loading objects from the database fails
-     * @throws ObjectGetIdStringNotImplementedException If a filtered item's Object does not implement getIdString() (thrown by add() while keying items by ID)
+     * @throws ObjectGetIdStringNotImplementedException If a filtered item's Object does not implement
+     *     getIdString() (thrown by add() while keying items by ID)
      * @throws CollectionNotManualException When add() rejects an item on a non-manual collection
      */
     public function filter(callable $callback): static

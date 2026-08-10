@@ -123,7 +123,8 @@ abstract class DbActions
     protected function createDbItemFromObject(Object_ &$object): DbItem
     {
         if ($this->createDbItemCallback === null) {
-            throw new CallbackNotSetException("createDbItemCallback is not set. DbCollection must call setCreateDbItemCallback() when creating Actions.");
+            throw new CallbackNotSetException('createDbItemCallback is not set.'
+                . ' DbCollection must call setCreateDbItemCallback() when creating Actions.');
         }
         return ($this->createDbItemCallback)($object);
     }
@@ -168,7 +169,12 @@ abstract class DbActions
         try {
             return $this->objectCollection->getTableName();
         } catch (\Exception $e) {
-            throw new TableNameUndeterminedException("Cannot determine table name: collection is empty. Override getTableName() in Actions class if needed.", 0, $e);
+            throw new TableNameUndeterminedException(
+                'Cannot determine table name: collection is empty.'
+                    . ' Override getTableName() in Actions class if needed.',
+                0,
+                $e,
+            );
         }
     }
 

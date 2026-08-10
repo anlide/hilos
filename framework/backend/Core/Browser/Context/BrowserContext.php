@@ -475,7 +475,8 @@ abstract class BrowserContext
      * to survive on its own, and a `try` wrapped around the whole flush would drop every
      * other subscriber's data along with the offender's.
      *
-     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Collected rows, keyed by accept key, page and browser key
+     * @param array<string, array<string, array<string, array<string, mixed>>>> $signalTables Collected
+     *     rows, keyed by accept key, page and browser key
      * @param array<string, bool> $guardAllows Memoized page-guard result per accept key
      * @param SourceChange $change Grouped DB/RT source change
      * @param string $page Page name from the subscription mirror

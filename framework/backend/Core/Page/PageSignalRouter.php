@@ -109,7 +109,14 @@ class PageSignalRouter
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
         } catch (Throwable $e) {
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
-            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, HttpConstants::HTTP_INTERNAL_ERROR, 'internal_error', 'Internal error during subscription');
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                HttpConstants::HTTP_INTERNAL_ERROR,
+                'internal_error',
+                'Internal error during subscription',
+            );
         }
     }
 
@@ -145,7 +152,14 @@ class PageSignalRouter
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
         } catch (Throwable $e) {
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
-            $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, HttpConstants::HTTP_INTERNAL_ERROR, 'internal_error', 'Internal error during subscription update');
+            $this->sendSubscriptionError(
+                $pageInstance,
+                $page,
+                $data->acceptKey,
+                HttpConstants::HTTP_INTERNAL_ERROR,
+                'internal_error',
+                'Internal error during subscription update',
+            );
         }
     }
 

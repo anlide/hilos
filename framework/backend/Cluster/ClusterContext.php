@@ -78,7 +78,10 @@ final class ClusterContext
     /** @var ?ProtectedModeAgentFreezer Local port that stops this node's agents during the freeze, registered by the daemon at start. */
     private ?ProtectedModeAgentFreezer $protectedModeAgentFreezer = null;
 
-    /** @var ?ProtectedModeClientNotifier Local port that tells this node's browser connections about the freeze, registered by the daemon at start. */
+    /**
+     * @var ?ProtectedModeClientNotifier Local port that tells this node's browser connections about
+     *     the freeze, registered by the daemon at start.
+     */
     private ?ProtectedModeClientNotifier $protectedModeClientNotifier = null;
 
     /** @var ?WorkerPlacement Read-only placement lookup the signal router consults, registered by the peer transport at start. */

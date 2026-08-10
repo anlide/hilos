@@ -133,8 +133,20 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
     public function configFields(): array
     {
         return [
-            new ChannelConfigField(self::FIELD_VAPID_PUBLIC, 'VAPID public key', SettingsCatalogConstants::TYPE_STRING, false, EnvConstants::VAPID_PUBLIC),
-            new ChannelConfigField(self::FIELD_VAPID_PRIVATE, 'VAPID private key', SettingsCatalogConstants::TYPE_STRING, true, EnvConstants::VAPID_PRIVATE),
+            new ChannelConfigField(
+                self::FIELD_VAPID_PUBLIC,
+                'VAPID public key',
+                SettingsCatalogConstants::TYPE_STRING,
+                false,
+                EnvConstants::VAPID_PUBLIC,
+            ),
+            new ChannelConfigField(
+                self::FIELD_VAPID_PRIVATE,
+                'VAPID private key',
+                SettingsCatalogConstants::TYPE_STRING,
+                true,
+                EnvConstants::VAPID_PRIVATE,
+            ),
         ];
     }
 
