@@ -94,9 +94,9 @@ wall-clock, so they are a **deliberate, infrequent** run — never an inner loop
 | Cross-connection behavior — subscription, viewport, pending/Apply, presence | the **two-window** e2e across the affected demos (and a full pass) | rarely — see below |
 | Accessibility — ARIA roles/names, keyboard, focus, screen-reader semantics | the **a11y** e2e (`a11y.spec.ts`) across the affected demos (and a full pass) | rarely — see below |
 
-**The rare, full run** is `composer run test:frontend:all` (FE install + build +
-check / vitest / lint, then every demo's `test:check` and `test:e2e-full`). Run it
-when:
+**The rare, full run** is `composer run test:frontend:all` — the `frontend` slice
+of the step graph below (FE install + build + check / vitest / lint, then every
+demo's `test:check` and `test:e2e-full`). Run it when:
 
 - a change touches the subscription / viewport / pending / cross-connection path,
   where a single tab cannot reveal the bug; or
@@ -128,6 +128,62 @@ require re-running them. The normative AA requirements those specs guard are in
 
 Always **reset before re-running a data-mutating e2e** (`test:e2e-up` does it); see
 the next section.
+
+---
+
+## The full run — one graph, a bounded number of lanes
+
+Everything the project can be tested with is one graph in
+[`scripts/test-suite.php`](../../scripts/test-suite.php), executed by
+[`scripts/run-test-suite.php`](../../scripts/run-test-suite.php):
+
+```
+composer run test:suite                       every step
+composer run test:frontend:all                the `frontend` tag, plus its dependencies
+php scripts/run-test-suite.php chat-e2e       one step, plus its dependencies
+php scripts/run-test-suite.php --list         the plan, without running it
+```
+
+A target is a step id or a tag, and whatever it selects pulls its dependencies in.
+Steps run **concurrently up to a global limit**, longest expected step first. The
+limit defaults to 2 on a machine with at least 8 cores and about 4 GB available and
+to **1 everywhere else**, so a small CI runner degrades to the old serial run
+instead of thrashing; `HILOS_TEST_LANES` or `--lanes=N` overrides it.
+
+The graph is where the safety lives, and two kinds of constraint carry it:
+
+- **an edge** — the frontend steps of a demo (`<demo>-check`, `<demo>-e2e`) depend
+  on `fe-build`, because all three demo frontends prebuild the **same**
+  `framework/frontend` workspace. Concurrency is safe only because a current SDK
+  makes those prebuilds skip. Do not delete that edge to free up a lane.
+  `<demo>-php` is backend-only and waits for nothing.
+- **a group** — the steps of one demo share one compose project, and
+  `test:e2e-full` starts by taking that project down. Group members never run at the
+  same time, but a red one does not skip the others: `<demo>-php` is backend-only
+  and keeps its own verdict when `<demo>-check` fails.
+
+There is **no fail-fast**. A red step skips what depends on it, unrelated branches
+finish, and the runner exits non-zero if anything was red. Each step writes its own
+log under `var/test-suite/`, its output is replayed to stdout between a `START` and
+an `END` line once it finishes, and `<log-dir>/rc` carries one `<id> rc=<n>` line
+per step — the run stays attributable line by line even though the steps overlap.
+
+### A red step under concurrency is not a verdict
+
+Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>
+--lanes=1` — before believing it:
+
+- **red again** — real. Treat it as any other failure.
+- **green alone** — the run is *inconclusive*, not green. Record which steps
+  collided and what the load was, then lower the lane count or fix the timeout that
+  lied.
+
+What must never happen is a red waved off as "probably the neighbour" without that
+re-run: it is exactly how a genuine regression reaches the base wearing the excuse
+of concurrency. The check is cheap — one demo block is 1–5 minutes, less than a
+single serial full run, and it only happens on red. The other half of the defense
+is that Playwright's caps stretch with host load rather than firing
+([frontend/testing-strategy.md](frontend/testing-strategy.md)).
 
 ---
 

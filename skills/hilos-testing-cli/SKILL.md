@@ -10,6 +10,9 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 ## Read First
 
 - Test commands and test-writing rules: `docs/agents/testing.md`
+- The full run — the step graph, lanes, and the re-run rule for red under
+  concurrency: `docs/agents/testing.md`, section "The full run — one graph, a
+  bounded number of lanes"
 - Migrations, schema checks, DB reset, monitoring: `docs/agents/cli/commands.md`
 - Legacy CLI reference only if needed: `docs/cli-commands.md`
 
@@ -30,9 +33,13 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Demo frontend loop from `demo/chat`: `composer run test:frontend`
 - Full framework pass: `composer run test:framework:all`
 - Full demo/chat pass from `demo/chat`: `composer run test:all`
+- Everything, as one graph: `composer run test:suite`
+- One step of that graph, alone: `php scripts/run-test-suite.php <id> --lanes=1`
 
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
 - Never run `phpunit` or `vendor/bin/phpunit` directly from the host.
 - Prefer composer scripts documented in `docs/agents/testing.md`.
+- A step of `test:suite` that goes red while another step was running is not a
+  verdict — re-run it with `--lanes=1` on the same HEAD before believing it.

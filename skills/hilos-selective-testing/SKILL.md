@@ -13,6 +13,8 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 
 - The change-type → test-set map and the rare-full-run rule:
   `docs/agents/testing.md`, section "Selective testing — what to run for which change".
+- The step graph, lanes, and what a red step under concurrency means:
+  `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
 - Command mechanics, DB reset, and the re-run contract: the rest of
   `docs/agents/testing.md`.
 
@@ -27,8 +29,12 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
    the a11y tests (`a11y.spec.ts`) — only for cross-connection behavior (subscription /
    viewport / pending / presence), accessibility changes (ARIA / keyboard / focus), or
    as the pre-merge gate; they are not an inner-loop step.
-4. The full cross-demo pass is `composer run test:frontend:all`; run it rarely.
+4. The full cross-demo pass is `composer run test:frontend:all`, and everything at
+   once is `composer run test:suite`; run either rarely.
 5. Reset before re-running a data-mutating e2e (`test:e2e-up`).
+6. A step that went red while another step was running is not a verdict: re-run it
+   alone (`php scripts/run-test-suite.php <id> --lanes=1`) on the same HEAD. Green
+   alone makes the run inconclusive, not green.
 
 ## Hard Rules
 

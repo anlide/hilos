@@ -44,3 +44,6 @@ Thumbs.db
 /.claude/skills
 # Git worktrees created by Claude Code sessions
 /.claude/worktrees
+
+# Test-suite runner output: per-step logs and the rc ledger of a full run
+/var/
