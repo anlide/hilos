@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -10,6 +11,7 @@ use Hilos\Database\Exception\DatabaseParamsException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Database\SqlSortDirection;
 
 /**
  * Base Entity class for representing a row in a database table.
@@ -313,8 +315,21 @@ abstract class Entity
     /**
      * Builds ORDER BY clause from orderBy specification.
      *
-     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * The array form quotes each column and doubles any backtick inside it, so a name that
+     * tries to close the quote and continue the statement stays one (nonexistent) column
+     * name. This is a backstop under the caller, not a substitute for one: a column name is
+     * whitelisted before it gets here, and the escaping is what makes a lapse in that
+     * whitelist a failed query instead of a foreign statement. The direction is one of two
+     * keywords by contract, so a third value is the caller's error rather than something to
+     * normalize into ascending.
+     *
+     * The string form stays as the deliberate escape hatch for a clause the ORM cannot
+     * express: there the caller builds the identifiers itself and answers for them, and no
+     * client input reaches it — no browser-driven path leads to this form.
+     *
+     * @param array<string, string>|string $orderBy Column => direction pairs, or a raw clause the caller built itself
      * @return string ORDER BY clause (with leading space) or empty string
+     * @throws InvalidArgumentException When a direction is neither SqlSortDirection::ASC nor ::DESC
      */
     private static function buildOrderBy(array|string $orderBy = []): string
     {
@@ -328,8 +343,14 @@ abstract class Entity
 
         $orderByParts = [];
         foreach ($orderBy as $column => $direction) {
-            $direction = strtoupper($direction);
-            $orderByParts[] = "`{$column}` {$direction}";
+            if ($direction !== SqlSortDirection::ASC && $direction !== SqlSortDirection::DESC) {
+                throw new InvalidArgumentException(
+                    "Order direction must be " . SqlSortDirection::ASC . " or " . SqlSortDirection::DESC
+                    . ", got '{$direction}' for column '{$column}'",
+                );
+            }
+            $escapedColumn = str_replace('`', '``', (string) $column);
+            $orderByParts[] = "`{$escapedColumn}` {$direction}";
         }
 
         // external-boundary: the neutral element of the SQL being built — no ordering adds no clause
@@ -341,12 +362,13 @@ abstract class Entity
      *
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
-     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @param array<string, string>|string $orderBy Column => SqlSortDirection pairs, or a raw clause the caller built
      * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
      * @param int $offset Zero-based offset
      *
      * @return EntityCollection Entity collection
      * @throws DatabaseException When SQL execution fails
+     * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      */
     private static function getEntities(
         array|string $filters = [],
@@ -386,12 +408,13 @@ abstract class Entity
      *
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
-     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @param array<string, string>|string $orderBy Column => SqlSortDirection pairs, or a raw clause the caller built
      * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
      * @param int $offset Zero-based offset
      *
      * @return EntityCollection Entity collection
      * @throws DatabaseException When SQL execution fails
+     * @throws InvalidArgumentException When an order direction is neither SqlSortDirection::ASC nor ::DESC
      */
     public static function get(
         array|string $filters = [],

@@ -6,6 +6,7 @@ namespace Demo\Chat\Tables\ModeratorPiece;
 
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
@@ -102,6 +103,22 @@ final class ModeratorPromptPiecesTable extends TableDefinition implements Viewpo
             BrowserPageSignalData::sources => [
                 ChatDbContext::moderatorPromptPieces => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares the one field the pieces admin sorts by, mapped to its entity column.
+     *
+     * The set mirrors what the frontend marks sortable (`AdminModerator` marks the section
+     * column and nothing else); the backend states it again rather than reading it from the
+     * window, because the window is the client.
+     *
+     * @return array<string, string> Wire row fields mapped to the columns they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            ModeratorPromptPieceTableRow::section => EntityModeratorPromptPiece::section,
         ];
     }
 

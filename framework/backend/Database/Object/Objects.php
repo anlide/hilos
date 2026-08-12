@@ -7,6 +7,7 @@ use Countable;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -18,6 +19,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
+use Hilos\Database\SqlSortDirection;
 use Iterator;
 
 /**
@@ -224,6 +226,11 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Query a page of objects from DB with search, sort and pagination.
      * Loaded objects are merged into $this->objects (common storage).
      *
+     * The sort field is held against the entity's own columns here as well as at the table
+     * boundary: this is where a name becomes an SQL identifier, so it answers for itself
+     * rather than trusting whoever built the query. A field that is no column of this entity
+     * leaves the page in the table's default order.
+     *
      * @param TableQueryDTO $query Query parameters
      * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int)
      * @throws DatabaseException If database query fails
@@ -250,8 +257,15 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         }
 
         $orderBy = [];
-        if ($query->sort !== null) {
-            $orderBy[$query->sort->field] = $query->sort->direction;
+        $sort = TableSortWhitelist::resolve(
+            $query->sort,
+            array_combine($entityClass::_columns, $entityClass::_columns),
+            $entityClass,
+        );
+        if ($sort !== null) {
+            $orderBy[$sort->column ?? $sort->field] = $sort->direction === TableConstants::ORDER_DESC
+                ? SqlSortDirection::DESC
+                : SqlSortDirection::ASC;
         }
 
         $entityCollection = $entityClass::get(

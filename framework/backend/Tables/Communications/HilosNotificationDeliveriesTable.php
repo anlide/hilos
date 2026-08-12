@@ -73,21 +73,6 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     private const int DEFAULT_LIMIT = 50;
 
     /**
-     * Sortable columns exposed to the viewport, mapped to their qualified SQL columns.
-     *
-     * Whitelisted so a client-supplied sort field can never reach the ORDER BY as raw SQL.
-     *
-     * @var array<string, string>
-     */
-    private const array SORTABLE = [
-        HilosNotificationDeliveryTableRow::createdAt => 'nd.' . EntityNotificationDelivery::created_at,
-        HilosNotificationDeliveryTableRow::channel => 'nd.' . EntityNotificationDelivery::channel,
-        HilosNotificationDeliveryTableRow::status => 'nd.' . EntityNotificationDelivery::status,
-        HilosNotificationDeliveryTableRow::attempts => 'nd.' . EntityNotificationDelivery::attempts,
-        HilosNotificationDeliveryTableRow::deliveredAt => 'nd.' . EntityNotificationDelivery::delivered_at,
-    ];
-
-    /**
      * The delivery journal has no live per-row source; a window refresh is a re-query.
      *
      * @param SourceChange $change Source change (ignored)
@@ -112,6 +97,22 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Declares the journal's sortable columns, qualified with the delivery alias of its own SQL.
+     *
+     * @return array<string, string> Wire row fields mapped to the columns they order by
+     */
+    protected function sortableFields(): array
+    {
+        return [
+            HilosNotificationDeliveryTableRow::createdAt => 'nd.' . EntityNotificationDelivery::created_at,
+            HilosNotificationDeliveryTableRow::channel => 'nd.' . EntityNotificationDelivery::channel,
+            HilosNotificationDeliveryTableRow::status => 'nd.' . EntityNotificationDelivery::status,
+            HilosNotificationDeliveryTableRow::attempts => 'nd.' . EntityNotificationDelivery::attempts,
+            HilosNotificationDeliveryTableRow::deliveredAt => 'nd.' . EntityNotificationDelivery::delivered_at,
         ];
     }
 
@@ -248,7 +249,11 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Builds the ORDER BY clause, whitelisting the sort field and defaulting to newest first.
+     * Builds the ORDER BY clause from the already-allowed column, defaulting to newest first.
+     *
+     * The sort arrives resolved: {@see TableDefinition::getPage()} has held it against
+     * {@see sortableFields()} and either attached the column it may order by or dropped it,
+     * so a sort with no column here is a window that asked for none.
      *
      * @param TableQueryDTO $query Window query
      * @return string The `ORDER BY ...` clause
@@ -256,7 +261,7 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
     protected function buildOrderBy(TableQueryDTO $query): string
     {
         $sort = $query->sort;
-        $column = $sort === null ? null : (self::SORTABLE[$sort->field] ?? null);
+        $column = $sort?->column;
         if ($column === null) {
             return ' ORDER BY nd.' . EntityNotificationDelivery::created_at . ' ' . SqlSortDirection::DESC
                 . ', nd.' . EntityNotificationDelivery::id . ' ' . SqlSortDirection::DESC;

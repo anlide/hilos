@@ -28,11 +28,29 @@ final readonly class TableSortDTO
     /**
      * @param string $field Field key the window is ordered by
      * @param string $direction TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
+     * @param ?string $column Column the field was allowed to sort by, or null while the field is still unresolved
      */
     public function __construct(
         public string $field,
         public string $direction = TableConstants::ORDER_ASC,
+        public ?string $column = null,
     ) {
+    }
+
+    /**
+     * Returns the same sort with the column a whitelist allowed the field to reach.
+     *
+     * The column is developer-owned SQL, never client input, so it stays off the wire:
+     * {@see fromWire()} does not read it and {@see toArray()} does not write it. It is the
+     * one thing a gate adds to a sort, which is why resolving one produces a new object
+     * rather than mutating the window's own.
+     *
+     * @param string $column Allowed column or SQL expression the field maps to
+     * @return self Same field and direction, now carrying the allowed column
+     */
+    public function withColumn(string $column): self
+    {
+        return new self($this->field, $this->direction, $column);
     }
 
     /**

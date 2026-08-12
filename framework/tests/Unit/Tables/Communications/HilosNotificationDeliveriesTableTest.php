@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Tables\Communications;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveryTableRow;
 use PHPUnit\Framework\TestCase;
@@ -17,7 +18,7 @@ use PHPUnit\Framework\TestCase;
  * Exercises the pure WHERE/ORDER BY builders (no database): the channel/status/period
  * filters and the type/recipient search each contribute a bound `?` placeholder, an
  * invalid status is ignored, a numeric search also matches the recipient id, and the
- * sort field is whitelisted with a newest-first default.
+ * ORDER BY follows the column the table's own map allowed, defaulting to newest first.
  */
 final class HilosNotificationDeliveriesTableTest extends TestCase
 {
@@ -108,21 +109,30 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         );
     }
 
-    public function testOrderByWhitelistsSortFieldAndDirection(): void
+    public function testOrderByUsesTheAllowedColumnAndTheRequestedDirection(): void
     {
+        $table = $this->table();
+
         self::assertSame(
             ' ORDER BY nd.attempts ASC, nd.id DESC',
-            $this->table()->exposedBuildOrderBy(new TableQueryDTO(
-                sort: new TableSortDTO('attempts', TableConstants::ORDER_ASC),
+            $table->exposedBuildOrderBy(new TableQueryDTO(
+                sort: $this->resolvedSort($table, new TableSortDTO('attempts', TableConstants::ORDER_ASC)),
             )),
         );
     }
 
     public function testOrderByRejectsUnknownSortField(): void
     {
+        $table = $this->table();
+
+        ob_start();
+        $sort = $this->resolvedSort($table, new TableSortDTO('note` DESC, (SELECT 1)'));
+        ob_end_clean();
+
+        self::assertNull($sort);
         self::assertSame(
             ' ORDER BY nd.created_at DESC, nd.id DESC',
-            $this->table()->exposedBuildOrderBy(new TableQueryDTO(sort: new TableSortDTO('note; DROP TABLE'))),
+            $table->exposedBuildOrderBy(new TableQueryDTO(sort: $sort)),
         );
     }
 
@@ -147,10 +157,22 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
     }
 
     /**
+     * Runs a requested sort through the table's own map, the way getPage() does before the query.
+     *
+     * @param HilosNotificationDeliveriesTable $table Table whose map decides
+     * @param TableSortDTO $sort Sort as the window requested it
+     * @return ?TableSortDTO Sort carrying its allowed column, or null when the table does not sort by it
+     */
+    private function resolvedSort(HilosNotificationDeliveriesTable $table, TableSortDTO $sort): ?TableSortDTO
+    {
+        return TableSortWhitelist::resolve($sort, $table->exposedSortableFields(), $table::class);
+    }
+
+    /**
      * Builds a table subclass that exposes the protected SQL builders for testing.
      *
      * @return HilosNotificationDeliveriesTable&object{exposedBuildWhere: callable, exposedBuildOrderBy:
-     *     callable, exposedRowFromSql: callable} Table with exposed builders
+     *     callable, exposedSortableFields: callable, exposedRowFromSql: callable} Table with exposed builders
      */
     private function table(): HilosNotificationDeliveriesTable
     {
@@ -171,6 +193,14 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
             public function exposedBuildOrderBy(TableQueryDTO $query): string
             {
                 return $this->buildOrderBy($query);
+            }
+
+            /**
+             * @return array<string, string> Sort fields the journal declares
+             */
+            public function exposedSortableFields(): array
+            {
+                return $this->sortableFields();
             }
 
             /**

@@ -23,6 +23,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
@@ -183,6 +184,27 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Declares which client-chosen sort fields this table serves, and what each one orders by.
+     *
+     * The map is `wire row-field name => column`; the keys are what the browser sends, the
+     * values are developer code. How far a value may go depends on who runs the query: a table
+     * assembling its own SQL may qualify it with its own alias (`nd.created_at`), while a table
+     * whose rows come from the ORM must name a bare column of its entity — the ORM checks the
+     * name against `Entity::_columns` again on its way to the query, and quotes it as one
+     * identifier, so a qualified name there loses the sort rather than ordering by it.
+     *
+     * A table that declares nothing sorts as it always has — its rows are then ordered in PHP,
+     * where a field name is an array key and nothing is built out of it — while a table that
+     * declares a map has every one of its query paths held to it.
+     *
+     * @return array<string, string> Allowed sort fields mapped to their columns; empty by default
+     */
+    protected function sortableFields(): array
+    {
+        return [];
+    }
+
+    /**
      * Loads table data for the given table query.
      *
      * Each concrete table owns its row source and may combine DB, runtime,
@@ -243,11 +265,26 @@ abstract class TableDefinition implements ArrayAccess
      * objects; getFullSnapshot() is the empty-query case. The window's search,
      * sort, offset, and limit are carried by the query.
      *
+     * The sort passes {@see sortableFields()} before the query sees it, because this is the
+     * one point every path to a row source runs through — the DB-collection helper, a
+     * project table's own windowed query, and a table's hand-written SQL alike.
+     *
      * @param TableQueryDTO $query Window query parameters
      * @return TableSnapshotDTO Window snapshot with typed rows and metadata
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO
     {
+        $sort = TableSortWhitelist::resolve($query->sort, $this->sortableFields(), static::class);
+        if ($sort !== $query->sort) {
+            $query = new TableQueryDTO(
+                search: $query->search,
+                sort: $sort,
+                offset: $query->offset,
+                limit: $query->limit,
+                filter: $query->filter,
+            );
+        }
+
         $result = $this->query($query);
 
         return new TableSnapshotDTO(
