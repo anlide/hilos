@@ -23,7 +23,14 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   // The tests share one database and daemon, so CI serializes them.
   workers: process.env.CI ? 1 : undefined,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // A third reporter turns a test that only passed on a retry into one
+  // machine-readable line, which scripts/run-test-suite.php carries into the
+  // run's summary and rc ledger (HIL-560). A clean run prints nothing.
+  reporter: [
+    ['list'],
+    ['html', { open: 'never' }],
+    ['../../../../framework/frontend/scripts/unstable-reporter.mjs'],
+  ],
   use: {
     baseURL: process.env.BASE_URL ?? 'https://localhost:8446',
     actionTimeout: timeouts.action,

@@ -13,6 +13,9 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - The full run — the step graph, lanes, and the re-run rule for red under
   concurrency: `docs/agents/testing.md`, section "The full run — one graph, a
   bounded number of lanes"
+- What a retried test reports, and whose debt it is:
+  `docs/agents/frontend/testing-strategy.md`, section "A retried test is reported,
+  and is not automatically your debt"
 - Migrations, schema checks, DB reset, monitoring: `docs/agents/cli/commands.md`
 - Legacy CLI reference only if needed: `docs/cli-commands.md`
 
@@ -43,3 +46,7 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 - Prefer composer scripts documented in `docs/agents/testing.md`.
 - A step of `test:suite` that goes red while another step was running is not a
   verdict — re-run it with `--lanes=1` on the same HEAD before believing it.
+- Read the run's `=== unstable: ... ===` section when there is one: those tests
+  only passed on a retry. The step's `ok` stands, but name the test and check how
+  long it has been flickering before treating it as yours — never bounce your own
+  work over a foreign flicker, and never repair a foreign spec inside your ticket.

@@ -168,6 +168,18 @@ log under `var/test-suite/`, its output is replayed to stdout between a `START` 
 an `END` line once it finishes, and `<log-dir>/rc` carries one `<id> rc=<n>` line
 per step — the run stays attributable line by line even though the steps overlap.
 
+### A step that only passed on a retry says so
+
+Playwright retries twice in CI, so a flickering test leaves its step `ok` and the
+run's exit code zero. That verdict stands, but it is no longer silent: the step's
+ledger entry grows a field (`chat-e2e rc=0 unstable=3`), keeping the `<id> rc=<n>`
+grammar every reader already parses, and the summary ends with an
+`=== unstable: <S> step(s), <T> retried test(s) ===` section naming the specs. A
+run with nothing to report prints neither, so a green log is byte for byte what it
+always was and the section appearing at all means there is something to look at.
+Who owns a named flicker — and why it is not automatically the ticket in hand — is
+in [frontend/testing-strategy.md](frontend/testing-strategy.md).
+
 ### A red step under concurrency is not a verdict
 
 Re-run it **alone on the same HEAD** — `php scripts/run-test-suite.php <id>

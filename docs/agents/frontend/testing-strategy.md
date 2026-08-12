@@ -71,6 +71,31 @@ refusal rather than as a missing element.
 The same applies to the second window of a two-window spec, and to any helper
 that navigates on a spec's behalf.
 
+## A retried test is reported, and is not automatically your debt
+
+`retries` is 2 in CI, so a test that fails and then passes leaves its step green
+and the run's exit code zero. That is the right verdict and an invisible one, so
+the run says it out loud in three places — each of them silent when there is
+nothing to say. The step's log carries one
+`hilos-unstable: <N> (<spec:line>, ...)` line from
+`framework/frontend/scripts/unstable-reporter.mjs`; the ledger entry for that step
+becomes `<id> rc=0 unstable=<N>`; and the run's summary ends with an
+`=== unstable: ... ===` section naming the steps and the tests behind them. A
+clean run prints none of it, so the section showing up is itself the news.
+
+**A named flicker is not automatically your change's fault.** Name the test, then
+find out how long it has been flickering: a spec that flickered before your branch
+existed is older debt, usually with a ticket of its own. Do not bounce your own
+work over one, and do not repair a foreign spec inside your ticket — report it.
+The rule is written down because the opposite happened: an untraced flake read as
+a fresh regression cost HIL-468 two review bounces, a `needs-human` label and a
+day of a healthy ticket standing still.
+
+What the report never does is move the verdict. A step that only passed on a retry
+stays `ok` and the run's exit code is unchanged: failing the run on a flicker would
+turn every crowded box red, which is the exact trade the timeout scaling below
+exists to avoid.
+
 ## Filling inputs — keyboard, not `fill`
 
 Enter values the way a user does. **Do not set a value with `fill(value)`** — a

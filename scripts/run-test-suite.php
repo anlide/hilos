@@ -66,6 +66,7 @@ enum StepOutcome: string
 }
 
 $root = dirname(__DIR__);
+require_once $root . '/scripts/unstable-line.php';
 $options = parseArguments(array_slice($argv, 1));
 $manifest = indexById(require $root . '/scripts/test-suite.php');
 $plan = planFor($manifest, $options['targets']);
@@ -346,7 +347,8 @@ function runPlan(string $root, array $manifest, array $plan, int $lanes, string 
     $pending = sortByDurationDescending($manifest, $plan);
     /** @var array<string, array{handle: resource, since: float, at: string}> $running */
     $running = [];
-    /** @var array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string}> $done */
+    /** @var array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
+     *     unstable: array{count: int, tests: array<int, string>}}> $done */
     $done = [];
 
     while ($pending !== [] || $running !== []) {
@@ -365,7 +367,7 @@ function runPlan(string $root, array $manifest, array $plan, int $lanes, string 
             break;
         }
         usleep(POLL_INTERVAL_MICROSECONDS);
-        foreach (reap($running) as $id => $finished) {
+        foreach (reap($running, $logs) as $id => $finished) {
             unset($running[$id]);
             $done[$id] = $finished;
             reportFinish($id, $finished, $logs[$id], $rc);
@@ -478,10 +480,16 @@ function launch(string $root, array $step, string $logPath): array
 /**
  * Whichever running steps have exited since the last look.
  *
+ * A step's flaky tests are read here, together with the rest of its result: the
+ * log is complete the moment the process is gone, and every consumer downstream —
+ * the ledger, the summary — then gets a record that is whole.
+ *
  * @param array<string, array{handle: resource, since: float, at: string}> $running Ids in flight.
- * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string}>
+ * @param array<string, string> $logs Log path by step id.
+ * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
+ *     unstable: array{count: int, tests: array<int, string>}}>
  */
-function reap(array $running): array
+function reap(array $running, array $logs): array
 {
     $finished = [];
     foreach ($running as $id => $step) {
@@ -496,10 +504,32 @@ function reap(array $running): array
             'at' => $step['at'],
             'seconds' => microtime(true) - $step['since'],
             'note' => '',
+            'unstable' => readUnstableTests(readStepLog($logs[$id])),
         ];
     }
 
     return $finished;
+}
+
+/**
+ * A finished step's captured output, or an empty string when there is none to
+ * read. Absence is the answer, not an error: a step that left no log reported no
+ * flaky tests either, which is what a missing file already means here.
+ *
+ * @param string $logPath The step's output file.
+ * @return string
+ */
+function readStepLog(string $logPath): string
+{
+    if (!is_readable($logPath)) {
+        return '';
+    }
+    $contents = file_get_contents($logPath);
+    if ($contents === false) {
+        return '';
+    }
+
+    return $contents;
 }
 
 /**
@@ -519,7 +549,14 @@ function skipped(array $step, array $done): array
         }
     }
 
-    return ['outcome' => StepOutcome::Skipped, 'rc' => 0, 'at' => now(), 'seconds' => 0.0, 'note' => $blocker];
+    return [
+        'outcome' => StepOutcome::Skipped,
+        'rc' => 0,
+        'at' => now(),
+        'seconds' => 0.0,
+        'note' => $blocker,
+        'unstable' => noUnstableTests(),
+    ];
 }
 
 /**
@@ -531,7 +568,8 @@ function skipped(array $step, array $done): array
  * line is how the playbook decides whose red it is.
  *
  * @param string $id The step that finished.
- * @param array{rc: int, at: string, seconds: float} $finished How it went.
+ * @param array{rc: int, at: string, seconds: float,
+ *     unstable: array{count: int, tests: array<int, string>}} $finished How it went.
  * @param string $logPath Its output file.
  * @param resource $rc The ledger.
  */
@@ -546,7 +584,7 @@ function reportFinish(string $id, array $finished, string $logPath, $rc): void
         now(),
         formatDuration($finished['seconds']),
     ));
-    fwrite($rc, sprintf("%s rc=%d\n", $id, $finished['rc']));
+    fwrite($rc, sprintf("%s rc=%d%s\n", $id, $finished['rc'], unstableLedgerField($finished['unstable'])));
 }
 
 /**
@@ -599,7 +637,8 @@ function reportSkip(string $id, array $skipped, $rc): void
  * Print the closing table and return the exit code for the whole run.
  *
  * @param array<int, string> $plan Step ids that were planned, in manifest order.
- * @param array<string, array{outcome: StepOutcome, seconds: float, note: string}> $done Results by id.
+ * @param array<string, array{outcome: StepOutcome, seconds: float, note: string,
+ *     unstable: array{count: int, tests: array<int, string>}}> $done Results by id.
  * @param int $lanes Steps at a time.
  * @param float $wall Seconds the whole run took.
  * @param string $logDir Where the per-step logs are.
@@ -610,6 +649,7 @@ function summarize(array $plan, array $done, int $lanes, float $wall, string $lo
     fwrite(STDOUT, sprintf("=== SUMMARY %s — %s at %d lane(s) ===\n", now(), formatDuration($wall), $lanes));
     $red = 0;
     $notRun = 0;
+    $unstable = [];
     foreach ($plan as $id) {
         $result = $done[$id];
         $isSkip = $result['outcome'] === StepOutcome::Skipped;
@@ -619,6 +659,7 @@ function summarize(array $plan, array $done, int $lanes, float $wall, string $lo
         if ($isSkip) {
             $notRun++;
         }
+        $unstable[$id] = $result['unstable'];
         fwrite(STDOUT, sprintf(
             "  %-8s %-20s %8s  %s\n",
             $result['outcome']->value,
@@ -634,6 +675,9 @@ function summarize(array $plan, array $done, int $lanes, float $wall, string $lo
         $notRun,
         $logDir,
     ));
+    // A run with nothing to report writes nothing here, so a green log is the same
+    // text it has always been and the section showing up is itself the news.
+    fwrite(STDOUT, unstableSummarySection($unstable));
 
     return $red + $notRun === 0 ? 0 : 1;
 }
