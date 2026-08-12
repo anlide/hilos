@@ -42,6 +42,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
@@ -1050,7 +1051,17 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             if (empty($destinations)) {
-                // No destinations found, skip
+                // A signal whose route is declared, not subscribed to, was supposed to reach
+                // somebody: an empty list means it is being dropped, and the only way anyone
+                // ever notices is this line. The router decides which types those are.
+                if (Hilos::$sr->expectsDestination($signal)) {
+                    $source = $this->describeSignalSource($signal->signalSource);
+                    Logger::error(
+                        "Signal {$signalName} (type {$signalType}) from {$source} has no destination"
+                        . " - no route is declared for this signal name",
+                    );
+                }
+
                 continue;
             }
 
@@ -1163,6 +1174,33 @@ abstract class DaemonManager extends BaseManager implements
                 }
             }
         }
+    }
+
+    /**
+     * Renders the sender of a lost signal for the log line.
+     *
+     * The source alone answers "which kind of process", which is rarely enough to find the
+     * sender again; the type and index the sender may have set are what name the instance.
+     * They are optional, so they are appended only when present.
+     *
+     * @param SignalSourceInterface $source Source the lost signal was queued from
+     * @return string Source, narrowed by its type and index when the sender set them
+     */
+    private function describeSignalSource(SignalSourceInterface $source): string
+    {
+        $description = $source->getSource();
+
+        $sourceType = $source->getType();
+        if ($sourceType !== null && $sourceType !== '') {
+            $description .= "/{$sourceType}";
+        }
+
+        $sourceIndex = $source->getIndex();
+        if ($sourceIndex !== null && $sourceIndex !== '') {
+            $description .= "#{$sourceIndex}";
+        }
+
+        return $description;
     }
 
     /**

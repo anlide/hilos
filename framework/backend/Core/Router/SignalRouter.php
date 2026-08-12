@@ -60,10 +60,30 @@ use SplQueue;
  */
 class SignalRouter
 {
-    private const array PAGE_SIGNAL_SOURCES = [
-        SignalTypeConstants::AGENT_SIGNAL => SignalSource::AGENT,
-        SignalTypeConstants::CRON => SignalSource::DAEMON,
-        SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
+    /**
+     * @var array<string, list<string>> Signal sources each source-constrained signal type is
+     *     accepted from. A type absent from this table is not source-constrained at all.
+     *
+     * An agent signal is the same signal whichever of our processes queued it: its route is
+     * picked by signal name from the declared registry, so the source only tells one of our
+     * own processes from another, and both the worker and an agent are ours. Cron and binary
+     * frames keep a single source each, because there the source really does pick the
+     * transport the signal may arrive over.
+     */
+    private const array ALLOWED_SIGNAL_SOURCES = [
+        SignalTypeConstants::AGENT_SIGNAL => [SignalSource::AGENT, SignalSource::WORKER],
+        SignalTypeConstants::CRON => [SignalSource::DAEMON],
+        SignalTypeConstants::FRAME_BINARY => [SignalSource::WEBSOCKET],
+    ];
+
+    /**
+     * @var list<string> Signal types whose route is taken from a declared registry, so that an
+     *     empty destination list means the route is missing rather than idle.
+     */
+    private const array DESTINATION_EXPECTED_SIGNAL_TYPES = [
+        SignalTypeConstants::AGENT_SIGNAL,
+        SignalTypeConstants::ACTION,
+        SignalTypeConstants::COMMAND_REQUEST,
     ];
 
     /** @var int Byte length of the random per-process emitter identity */
@@ -618,6 +638,27 @@ class SignalRouter
     }
 
     /**
+     * Tells whether this signal was supposed to reach somebody.
+     *
+     * True only for the types whose route comes from a declared registry — an agent signal,
+     * a page action, a command request. For those an empty destination list has a single
+     * meaning: no route was ever declared under that name, and the signal is being dropped.
+     * Every other type is routed by live state — who is subscribed, who is connected — where
+     * an empty list is the ordinary case and says nothing about the topology.
+     *
+     * Public because the daemon asks it at the one point where the empty list is known —
+     * after every contributor has had its say — and because that keeps the answer testable
+     * on its own, without driving a daemon to reach it.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return bool True when an empty destination list means a missing route
+     */
+    public function expectsDestination(SignalDTO $signal): bool
+    {
+        return in_array($signal->signalType->getType(), self::DESTINATION_EXPECTED_SIGNAL_TYPES, true);
+    }
+
+    /**
      * Rewrites agent destinations that resolve to another node into remote destinations.
      *
      * Cross-node routing preserves the declarative route-by-sender model: destinations are
@@ -936,12 +977,11 @@ class SignalRouter
      */
     private function getPageSignalAgentType(SignalDTO $signal): ?string
     {
-        $signalType = $signal->signalType->getType();
-        $expectedSource = self::PAGE_SIGNAL_SOURCES[$signalType] ?? null;
-        if ($expectedSource === null || $signal->signalSource->getSource() !== $expectedSource) {
+        if (!$this->acceptsSource($signal)) {
             return null;
         }
 
+        $signalType = $signal->signalType->getType();
         $hilosClass = $this->hilosClass();
         $route = $hilosClass::getPageSignalAgentRoutes()[$signalType] ?? null;
         if (is_string($route) && $route !== '') {
@@ -957,6 +997,25 @@ class SignalRouter
         return is_string($agentType) && $agentType !== ''
             ? $agentType
             : null;
+    }
+
+    /**
+     * Tells whether this signal type is routed from the source the signal carries.
+     *
+     * Both agent-signal branches ask this one table — the page-owned one
+     * ({@see getPageSignalAgentType()}) and the agent-owned one
+     * ({@see getAgentDestinations()}) — so the two cannot drift apart into a rule that
+     * accepts a signal down one path and silently drops it down the other.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return bool True when the type is source-constrained and this source is one of its own
+     */
+    private function acceptsSource(SignalDTO $signal): bool
+    {
+        $allowedSources = self::ALLOWED_SIGNAL_SOURCES[$signal->signalType->getType()] ?? null;
+
+        return $allowedSources !== null
+            && in_array($signal->signalSource->getSource(), $allowedSources, true);
     }
 
     /**
@@ -1054,7 +1113,7 @@ class SignalRouter
             return $pageSignalDestinations;
         }
 
-        if ($signal->signalSource->getSource() !== SignalSource::AGENT) {
+        if (!$this->acceptsSource($signal)) {
             return [];
         }
 

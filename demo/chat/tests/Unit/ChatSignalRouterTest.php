@@ -14,6 +14,7 @@ use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
@@ -22,6 +23,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
@@ -261,6 +263,34 @@ final class ChatSignalRouterTest extends TestCase
         $this->assertEquals([
             new AgentDestination(AgentType::BOT, '42'),
         ], $destinations);
+    }
+
+    /**
+     * The delivery seam on the real chat topology (HIL-567).
+     *
+     * The framework test for this runs on a fixture facade, which proves the rule but not
+     * that the rule survives contact with a project: chat is the demo that registers all
+     * three delivery channels, so it is the one place where the dispatcher's signal — queued
+     * from a worker, named by the channel descriptor — has to find a live agent.
+     */
+    public function testChannelDeliverSignalsFromAWorkerReachTheirChannelAgents(): void
+    {
+        $router = new ChatSignalRouter();
+
+        foreach (ChatDeliveryChannelRegistry::all() as $channel => $descriptor) {
+            $destinations = $router->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WORKER),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName($descriptor->deliverSignalName()),
+                new AgentSignalData(new NotificationDeliverSignalData(
+                    notificationId: 1,
+                    channel: $channel,
+                    shardKey: 4,
+                )),
+            ));
+
+            $this->assertNotSame([], $destinations, "Channel {$channel} lost its delivery route");
+        }
     }
 
     public function testBotAgentStartWithZeroBotIdProducesNoDestination(): void
