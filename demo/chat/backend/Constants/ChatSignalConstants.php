@@ -50,10 +50,10 @@ final class ChatSignalConstants
     /** @var string Client → server: submit an email magic-link sign-in token (public, anonymous-reachable) */
     public const string CONFIRM_MAGIC_LINK = 'confirm_magic_link';
 
-    /** @var string Client → server: request an email-confirmation code for the signed-in user */
+    /** @var string Client → server: resend the confirmation code of a pending registration (public, anonymous-reachable, HIL-415) */
     public const string REQUEST_REGISTER_CONFIRM = 'request_register_confirm';
 
-    /** @var string Client → server: submit the email-confirmation code for the signed-in user */
+    /** @var string Client → server: submit the confirmation code that creates the reserved account (public, anonymous-reachable, HIL-415) */
     public const string CONFIRM_REGISTER = 'confirm_register';
 
     /** @var string Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable) */
@@ -121,6 +121,9 @@ final class ChatSignalConstants
 
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
+
+    /** @var string Server → client: a parked sign-in surface moves because the identifier it waits on resolved (HIL-415) */
+    public const string AUTH_CONVERGE = 'auth_converge';
 
     /** @var string Server → client: WebAuthn publicKey options + signed challenge for a passkey ceremony (HIL-284) */
     public const string PASSKEY_OPTIONS = 'passkey_options';

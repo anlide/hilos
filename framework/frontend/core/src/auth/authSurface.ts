@@ -46,6 +46,9 @@ export type AuthEntry =
 
 /**
  * The surface's active mode. `login` / `register` are the two direct entries;
+ * register runs through a second step of its own (`register_confirm`, the emailed
+ * code that creates the account — HIL-415 reserves the address at submit and only
+ * the code registers anybody), which succeeds by upgrading the session like login;
  * the recovery entry runs through its three steps; the sms entry runs through its
  * two (`sms_request` then `sms_confirm`, which succeeds by upgrading the session
  * like login); the magic-link entry has a single `magic_link_request` mode (its
@@ -58,6 +61,7 @@ export type AuthEntry =
 export type AuthMode =
   | 'login'
   | 'register'
+  | 'register_confirm'
   | 'recovery_request'
   | 'recovery_confirm'
   | 'recovery_set'
@@ -94,7 +98,7 @@ export interface AuthFormState {
   readonly password: string
   /** Password confirmation — register. */
   readonly confirmPassword: string
-  /** Verification code — recovery_confirm, sms_confirm. */
+  /** Verification code — recovery_confirm, sms_confirm, register_confirm. */
   readonly code: string
   /** New password — recovery_set. */
   readonly newPassword: string
@@ -265,6 +269,9 @@ const PHONE_MAX_DIGITS = 15
 /** SMS one-time code length; the mirror of the backend code length. */
 const SMS_CODE_LENGTH = 6
 
+/** Registration confirmation code length; the mirror of the backend code length. */
+const REGISTER_CODE_LENGTH = 6
+
 /** An empty form — the starting and switch-reset value. */
 const EMPTY_FORM: AuthFormState = {
   email: '',
@@ -299,6 +306,8 @@ export function isAuthSubmittable(
         form.password.length >= PASSWORD_MIN_LENGTH &&
         form.confirmPassword === form.password
       )
+    case 'register_confirm':
+      return new RegExp(`^\\d{${REGISTER_CODE_LENGTH}}$`).test(form.code.trim())
     case 'recovery_request':
       return form.email.trim() !== ''
     case 'recovery_confirm':

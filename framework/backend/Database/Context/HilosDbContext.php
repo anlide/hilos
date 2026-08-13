@@ -12,6 +12,7 @@ use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificati
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
+use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -23,6 +24,7 @@ use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotifi
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
+use Hilos\Database\View\Collection\RegistrationReservations as DbCollectionRegistrationReservations;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
@@ -46,6 +48,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionSettings $settings
  * @property-read DbCollectionIdentities $identities
  * @property-read DbCollectionUserVerifications $verifications
+ * @property-read DbCollectionRegistrationReservations $registrationReservations
  * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  * @property-read DbCollectionSessions $sessions
  * @property-read DbCollectionNotifications $notifications
@@ -62,6 +65,8 @@ abstract class HilosDbContext extends DbContext
     public const string identity = 'identity';
     public const string verifications = 'verifications';
     public const string verification = 'verification';
+    public const string registrationReservations = 'registrationReservations';
+    public const string registrationReservation = 'registrationReservation';
     public const string passkeyCredentials = 'passkeyCredentials';
     public const string passkeyCredential = 'passkeyCredential';
     public const string sessions = 'sessions';
@@ -104,6 +109,9 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::verifications] = ObjectUserVerifications::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::verifications, DbCollectionUserVerifications::class);
+
+        $this->_objectCollections[self::registrationReservations] = ObjectRegistrationReservations::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::registrationReservations, DbCollectionRegistrationReservations::class);
 
         $this->_objectCollections[self::passkeyCredentials] = ObjectPasskeyCredentials::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::passkeyCredentials, DbCollectionPasskeyCredentials::class);

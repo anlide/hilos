@@ -73,6 +73,42 @@ class VerificationService
     }
 
     /**
+     * How long the active challenge for a (type, identifier) still blocks a re-send.
+     *
+     * The public read of the throttle {@see issue()} applies silently, opened by the
+     * reserve-on-submit surface (HIL-415): the code screen draws a countdown before
+     * it offers a resend button, and the only honest source for that number is the
+     * rule the resend itself obeys. Without it the frontend would guess a cooldown,
+     * and a guess that runs short turns a silently dropped issue into a button that
+     * appears to do nothing.
+     *
+     * Derived exactly as {@see ObjectUserVerifications::hasRecentActive()} derives
+     * "recent": the challenge's issue time is its expiry minus the TTL, and a
+     * re-send is allowed one cooldown after that. Answers 0 when nothing blocks a
+     * re-send - no active challenge, or its cooldown already elapsed.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @return int Seconds until a re-send is allowed, or 0 when it is allowed now
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     */
+    public function resendAllowedInSeconds(string $type, string $identifier): int
+    {
+        $challenge = $this->collection()->findActive($type, $identifier, $this->maxAttempts());
+        if ($challenge === null) {
+            return 0;
+        }
+
+        $expiresAt = strtotime($challenge->expiresAt);
+        if ($expiresAt === false) {
+            return 0;
+        }
+
+        return max(0, $expiresAt - $this->ttlSeconds() + $this->resendCooldownSeconds() - time());
+    }
+
+    /**
      * Verifies a submitted code and returns the resolved user id on success.
      *
      * Loads the single active challenge, records the attempt, and compares the

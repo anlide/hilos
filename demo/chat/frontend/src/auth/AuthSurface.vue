@@ -28,7 +28,7 @@ import {
 } from '@hilos/core'
 import { LoadingButton, useSignal } from '@hilos/vue'
 
-import { submitAuth } from './authActions'
+import { resendRegisterCode, submitAuth } from './authActions'
 import {
   describeOAuthError,
   peekOAuthLink,
@@ -71,6 +71,14 @@ const discoverablePasskeyMethod =
 const discoverablePending = ref(false)
 const discoverableError = ref<string | null>(null)
 
+// The registration code step's resend link (HIL-415): a dispatch of its own, not
+// the step's submit — the submit sends the code being typed, this asks for a new
+// letter. Inside the cooldown the backend answers ok and mails nothing; only a
+// refusal (the hold on the address ran out) has anything to say, and it says it
+// here rather than in the machine's error, which belongs to the submit.
+const resendPending = ref(false)
+const resendError = ref<string | null>(null)
+
 // Set on mount when an OAuth email collision armed a pending link (HIL-282): the
 // account already exists, so the surface pre-fills its email and shows a "finish
 // linking" prompt asking the user to sign in with an existing method. The token
@@ -104,12 +112,15 @@ watch(mode, () => {
   magicSent.value = false
   oauthError.value = null
   discoverableError.value = null
+  resendError.value = null
 })
 
 const heading = computed(() => {
   switch (mode.value) {
     case 'register':
       return 'Create your account'
+    case 'register_confirm':
+      return 'Confirm your email address'
     case 'recovery_request':
     case 'recovery_confirm':
     case 'recovery_set':
@@ -129,6 +140,8 @@ const submitLabel = computed(() => {
   switch (mode.value) {
     case 'register':
       return 'Create account'
+    case 'register_confirm':
+      return 'Confirm'
     case 'sms_request':
       return 'Send code'
     case 'magic_link_request':
@@ -167,6 +180,23 @@ async function submitMagicRequest(): Promise<void> {
   await surface.submit()
   if (!error.value) {
     magicSent.value = true
+  }
+}
+
+// Ask for another confirmation letter for the address being registered. The
+// cooldown lives on the backend (the address, not this session, owns it), so this
+// only dispatches and shows a refusal; the countdown before the link is offered
+// at all is HIL-423.
+async function resendCode(): Promise<void> {
+  if (resendPending.value) {
+    return
+  }
+  resendPending.value = true
+  resendError.value = null
+  const outcome = await resendRegisterCode(form.value.email)
+  resendPending.value = false
+  if (!outcome.ok) {
+    resendError.value = outcome.message ?? null
   }
 }
 
@@ -215,6 +245,8 @@ async function continueWithDiscoverablePasskey(): Promise<void> {
 // "finish linking" prompt so the user re-authenticates the existing account.
 onMounted(() => {
   surface.reset()
+  resendPending.value = false
+  resendError.value = null
   oauthPending.value = null
   oauthError.value = null
   discoverablePending.value = false
@@ -307,6 +339,71 @@ onMounted(() => {
       >
         {{ submitLabel }}
       </LoadingButton>
+    </form>
+
+    <!-- Registration confirmation code (HIL-415): the register submit only held
+    the address and mailed one code — this step is what creates the account, so a
+    valid code signs the session in exactly as login does. Modelled on the SMS
+    code step above it; the countdown, the done screen and the "wrong address?"
+    way out are HIL-423. -->
+    <form
+      v-else-if="mode === 'register_confirm'"
+      novalidate
+      @submit.prevent="submit"
+    >
+      <div class="mb-3">
+        <label class="form-label" for="auth-register-code">Code</label>
+        <input
+          id="auth-register-code"
+          type="text"
+          inputmode="numeric"
+          class="form-control"
+          autocomplete="one-time-code"
+          data-autofocus
+          data-id="auth-register-code"
+          :value="form.code"
+          @input="update('code', $event)"
+        />
+        <div class="form-text">Sent to {{ form.email }}.</div>
+      </div>
+
+      <div
+        v-if="error"
+        class="alert alert-danger py-2"
+        role="alert"
+        data-id="auth-error"
+      >
+        {{ error }}
+      </div>
+
+      <div
+        v-if="resendError"
+        class="alert alert-danger py-2"
+        role="alert"
+        data-id="auth-resend-error"
+      >
+        {{ resendError }}
+      </div>
+
+      <LoadingButton
+        type="submit"
+        class="btn-primary w-100"
+        :loading="pending"
+        :disabled="!submittable"
+        data-id="auth-submit"
+      >
+        {{ submitLabel }}
+      </LoadingButton>
+
+      <button
+        type="button"
+        class="btn btn-link w-100"
+        :disabled="resendPending"
+        data-id="auth-resend"
+        @click="resendCode()"
+      >
+        Send the code again
+      </button>
     </form>
 
     <!-- SMS one-time-code sign-in (HIL-280): request a code for a phone, then

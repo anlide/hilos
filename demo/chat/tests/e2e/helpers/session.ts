@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from '@playwright/test'
+import { readRegisterCode } from './mail'
 import { gotoPage } from './page'
 
 // Shared sign-in helpers for the session≠user model (HIL-360). Since auto-guest
@@ -8,6 +9,12 @@ import { gotoPage } from './page'
 // establishes one through these helpers rather than relying on a connect-time
 // auto-registration that no longer happens. The auth surface itself is exercised
 // end to end by auth.spec.ts; here it is only the means to a signed-in session.
+//
+// Registering takes two steps since HIL-415 — the submit only holds the address
+// and mails a code, and the account exists once that code comes back. register()
+// absorbs both, reading the code out of the delivered letter (helpers/mail.ts), so
+// a spec that just needs an account still asks for one in a single call. The steps
+// are also exported on their own, for the specs that are about the code step.
 
 /** A valid password (>= the 8-char minimum the surface and backend enforce). This same
  * value is the default password of the `test:user:seed` CLI (DEFAULT_PASSWORD in
@@ -78,15 +85,73 @@ async function waitAuthSettled(page: Page): Promise<void> {
   }).toPass()
 }
 
-/** Fill and submit the register form on the currently mounted auth surface. */
-export async function register(page: Page, email: string): Promise<void> {
+/**
+ * Wait for a register submit to SETTLE: the code step is up, or the submit was
+ * refused inline. Unlike a login, a successful register neither closes the surface
+ * nor upgrades anything — it hands the address a hold and moves one step on — so
+ * the arrival of the code field is what says the reply landed.
+ *
+ * @param page The page whose auth surface is submitting.
+ */
+async function waitRegisterSettled(page: Page): Promise<void> {
+  await expect(async () => {
+    const onCodeStep =
+      (await page.getByTestId('auth-register-code').count()) > 0
+    const failed = (await page.getByTestId('auth-error').count()) > 0
+    expect(onCodeStep || failed).toBeTruthy()
+  }).toPass()
+}
+
+/**
+ * Fill and submit the register form; the surface lands on its code step.
+ *
+ * The account does NOT exist afterwards: the submit reserves the address and has
+ * one code mailed to it (HIL-415).
+ *
+ * @param page The page with the auth surface mounted.
+ * @param email The address to register.
+ */
+export async function submitRegistration(
+  page: Page,
+  email: string,
+): Promise<void> {
   await page.getByTestId('auth-to-register').click()
   await expect(page.getByTestId('auth-heading')).toHaveText('Create your account')
   await typeInto(page.getByTestId('auth-email'), email)
   await typeInto(page.getByTestId('auth-password'), PASSWORD)
   await typeInto(page.getByTestId('auth-confirm'), PASSWORD)
   await clickSubmit(page.getByTestId('auth-submit'))
+  await waitRegisterSettled(page)
+}
+
+/**
+ * Submit a confirmation code on the register code step.
+ *
+ * A valid code is what creates the account and signs the session in, so this
+ * settles the same way a login does — the surface closes, or an inline error stays.
+ *
+ * @param page The page sitting on the code step.
+ * @param code The code to type.
+ */
+export async function submitRegistrationCode(
+  page: Page,
+  code: string,
+): Promise<void> {
+  await typeInto(page.getByTestId('auth-register-code'), code)
+  await clickSubmit(page.getByTestId('auth-submit'))
   await waitAuthSettled(page)
+}
+
+/**
+ * Register an account end to end on the currently mounted auth surface: submit the
+ * form, read the code out of the delivered letter, confirm it.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param email The address to register.
+ */
+export async function register(page: Page, email: string): Promise<void> {
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
 }
 
 /** Fill and submit the login form on the currently mounted surface (default mode). */
@@ -121,10 +186,10 @@ export interface SignedInUser {
  * Register a fresh account from the anonymous main page and return its identity.
  *
  * Opens the auth-gate modal through the composer's "Sign in to send" button and
- * registers; auto-login (autoLoginAfterRegister default) upgrades the live
- * session in place, so the page is left on '/' signed in with the self user
- * resolved. This is the standard way an authenticated spec obtains its user under
- * the session≠user model.
+ * registers, code step included; confirming the code creates the account and
+ * upgrades the live session in place, so the page is left on '/' signed in with
+ * the self user resolved. This is the standard way an authenticated spec obtains
+ * its user under the session≠user model.
  *
  * @param page Page starting from any location (it navigates to '/')
  * @returns The registered account's email, display name, and durable user id
@@ -138,8 +203,8 @@ export async function signUp(page: Page): Promise<SignedInUser> {
   await register(page, email)
 
   const name = nameFromEmail(email)
-  // Auto-login resolves the self user in place; assert the name to be sure the
-  // session upgrade landed before reading the id.
+  // The confirmed code resolves the self user in place; assert the name to be sure
+  // the session upgrade landed before reading the id.
   await expect(page.getByTestId('self-user')).toHaveText(name)
   const userId = Number(await page.getByTestId('self-user-id').textContent())
 

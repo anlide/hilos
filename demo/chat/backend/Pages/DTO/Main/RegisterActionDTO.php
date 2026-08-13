@@ -12,9 +12,14 @@ use Hilos\Core\Exception\InvalidFormatException;
  * RegisterActionDTO - DTO for the email+password registration action payload.
  *
  * Public (anonymous-reachable) register submit. The email is trimmed here and
- * lowercased by the handler before the identity write; the password and its
- * confirmation are passed through verbatim so leading/trailing characters stay
- * significant and the equality check compares exactly what the user typed.
+ * lowercased by the handler before the reservation write; the password is passed
+ * through verbatim so leading and trailing characters stay significant.
+ *
+ * There is no password confirmation field: the redesigned surface (HIL-412) has one
+ * password input, and a second one that has to match it is a check the frontend
+ * could never make meaningful on a field the person cannot see twice. The mistake
+ * it was meant to catch is answered by recovery, which the surface now offers on
+ * the same screen.
  */
 final class RegisterActionDTO extends ChatActionPayloadDTO
 {
@@ -23,12 +28,10 @@ final class RegisterActionDTO extends ChatActionPayloadDTO
      *
      * @param string $email Submitted account email (trimmed)
      * @param string $password Submitted plaintext password
-     * @param string $confirmPassword Submitted plaintext password confirmation
      */
     public function __construct(
         public readonly string $email,
         public readonly string $password,
-        public readonly string $confirmPassword,
     ) {
     }
 
@@ -54,21 +57,19 @@ final class RegisterActionDTO extends ChatActionPayloadDTO
         return new static(
             email: trim(self::requireString($data, 'email')),
             password: self::requireString($data, 'password'),
-            confirmPassword: self::requireString($data, 'confirmPassword'),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{email: string, password: string, confirmPassword: string} Register payload
+     * @return array{email: string, password: string} Register payload
      */
     public function toArray(): array
     {
         return [
             'email' => $this->email,
             'password' => $this->password,
-            'confirmPassword' => $this->confirmPassword,
         ];
     }
 }

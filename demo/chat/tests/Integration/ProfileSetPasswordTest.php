@@ -10,19 +10,24 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\PasswordUpdatedSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Profile\SetPasswordActionDTO;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -43,6 +48,12 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     private const string TEST_AGENT_ID = 'test-agent';
     private const string PASSWORD = 'correct horse battery';
     private const string NEW_PASSWORD = 'a-brand-new-secret';
+
+    /** Confirmation code this fixture seeds, since the mailed one is unknowable here. */
+    private const string CODE = '424242';
+
+    /** Lifetime of the seeded challenge; long enough that no case can outlive it. */
+    private const int CODE_TTL_SECONDS = 900;
 
     /**
      * A change re-hashes the secret and fans the password_updated success signal.
@@ -200,6 +211,9 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
+        // Registering parks the submitting connection as a waiter (HIL-415), so this
+        // fixture owns that collection too even though the suite is about passwords.
+        RtTruthSourceRegistry::register(ChatRtContext::registrationWaiters, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
@@ -239,19 +253,41 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
     }
 
     /**
-     * Dispatches a register action through the main page to seed a password identity.
+     * Registers an account through the main page to seed a password identity.
+     *
+     * Two actions, because a submit reserves and only the code registers (HIL-415).
+     * The mailed code is unknowable here, so the challenge is re-seeded with a known
+     * one — the same way MainPageRegisterTest does it — and confirmed.
      *
      * @param ChatAgent $agent Agent owning the page
      * @param string $acceptKey Acting connection accept key
      * @param string $email Submitted email (used verbatim as the confirmation matches)
-     * @throws HilosException When the register handler rejects the action
+     * @throws HilosException When the register or confirm handler rejects the action
      */
     private function register(ChatAgent $agent, string $acceptKey, string $email): void
     {
-        new MainPage($agent)->onAction(
+        $page = new MainPage($agent);
+        $page->onAction($acceptKey, ChatSignalConstants::REGISTER, new RegisterActionDTO($email, self::PASSWORD));
+
+        /** @var ObjectUserVerifications $verifications */
+        $verifications = Hilos::$db->getObjectCollection(HilosDbContext::verifications);
+        $verifications->voidActive(
+            VerificationType::REGISTER_CONFIRM,
+            $email,
+            max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS)),
+        );
+        $verifications->createChallenge(
+            VerificationType::REGISTER_CONFIRM,
+            $email,
+            null,
+            self::CODE,
+            self::CODE_TTL_SECONDS,
+        );
+
+        $page->onAction(
             $acceptKey,
-            ChatSignalConstants::REGISTER,
-            new RegisterActionDTO($email, self::PASSWORD, self::PASSWORD),
+            ChatSignalConstants::CONFIRM_REGISTER,
+            new ConfirmRegisterActionDTO($email, self::CODE),
         );
     }
 

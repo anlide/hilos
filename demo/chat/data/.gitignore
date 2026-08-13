@@ -1,6 +1,12 @@
 mysql/
 ollama/
 
+# Dev SMS transport: verification texts dumped as files instead of being sent
+sms/
+
+# File mail transport under the test stack: every message as a .eml artifact
+mail-test/
+
 # Chat file uploads (quarantine + published); keep .gitkeep so empty dirs stay tracked
 chat_attachments/quarantine/*
 chat_attachments/published/*

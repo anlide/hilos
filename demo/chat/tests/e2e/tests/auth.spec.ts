@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test'
 
-import { login, logout, PASSWORD, register, uniqueEmail } from '../helpers/session'
+import { mailsTo, readRegisterCode } from '../helpers/mail'
+import {
+  login,
+  logout,
+  nameFromEmail,
+  PASSWORD,
+  register,
+  submitRegistration,
+  submitRegistrationCode,
+  uniqueEmail,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
@@ -9,8 +19,9 @@ import { gotoPage } from '../helpers/page'
 //   - the AUTHENTICATED-guarded profile page 401s an anonymous subscribe and the
 //     auth gate mounts the project sign-in surface IN PLACE (no redirect), then
 //     resumes the preserved subscription off the session upgrade — no navigation;
-//   - register auto-logs-in (autoLoginAfterRegister default), and logout reverts
-//     the session to anonymous so the gated page re-gates;
+//   - registering takes two steps (HIL-415): the submit only holds the address and
+//     mails one code, the code creates the account and signs the session in, and
+//     logout reverts the session to anonymous so the gated page re-gates;
 //   - login rejects a wrong password and an unknown email with the SAME generic
 //     "Invalid email or password" (no user enumeration);
 //   - the anonymous visitor reads the chat but the composer gates sending behind
@@ -20,6 +31,11 @@ import { gotoPage } from '../helpers/page'
 // backend of each action is already covered by the Integration suite; this file
 // is the UI-driven, cross-surface flow. The register/login/logout helpers are
 // shared with the other specs that establish a session (helpers/session.ts).
+//
+// The code step is driven from the letter the daemon really delivered — read out
+// of the file transport's artifact (helpers/mail.ts), the same shape as the hleb
+// reference reading its catcher. Reservation expiry is not exercised here: the
+// hold lasts 15 minutes, so its rollback stays an integration test.
 
 test('registers through the gated profile surface, auto-logs-in, and resumes it in place', async ({
   page,
@@ -175,4 +191,107 @@ test('lets an anonymous visitor read the chat but gates sending behind the sign-
   await expect(modal).toBeHidden()
   await expect(page.getByTestId('message-input')).toBeEnabled()
   await expect(page.getByTestId('message-signin')).toHaveCount(0)
+})
+
+test('holds the address on submit and creates the account only on the mailed code', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  // The submit reserves the address and mails one code — it registers nobody, so
+  // the page stays gated and the surface steps to the code screen.
+  await submitRegistration(page, email)
+  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  const code = await readRegisterCode(email)
+  // Any code but the delivered one; picked off it so the run can never guess right.
+  const wrongCode = code === '000000' ? '111111' : '000000'
+
+  // A wrong code is an inline error on the step the person is already on: no
+  // account is left behind and nothing rolls back.
+  await submitRegistrationCode(page, wrongCode)
+  await expect(page.getByTestId('auth-error')).toBeVisible()
+  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+  // The delivered code creates the account and signs the session in, so the gate
+  // clears and the preserved profile subscription resumes in place.
+  await submitRegistrationCode(page, code)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+})
+
+test('converges a second waiting tab onto the registration the first one confirms', async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail()
+
+  // Tab A holds the address from the gated profile.
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+
+  // Tab B submits the SAME address from the composer's gate: the hold is already
+  // there, so it joins the code step instead of being refused, and no second
+  // letter goes out — both are waiting on the one code in the inbox.
+  const second = await context.newPage()
+  await gotoPage(second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await second.getByTestId('message-signin').click()
+  await submitRegistration(second, email)
+  await expect(second.getByTestId('auth-register-code')).toBeVisible()
+  expect(await mailsTo(email)).toHaveLength(1)
+
+  // Tab A confirms. Tab B is not merely moved along: it really enters, resolving
+  // the self user of the account tab A just created.
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await expect(second.getByTestId('modal')).toBeHidden()
+  await expect(second.getByTestId('message-input')).toBeEnabled()
+})
+
+test('answers a repeated submit of a held address with the code step and no second letter', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  await readRegisterCode(email)
+
+  // Back to the start and submit the same address again: the hold answers for it,
+  // so the person lands on the code step of the letter already sent.
+  await page.getByTestId('auth-to-login').click()
+  await submitRegistration(page, email)
+  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  expect(await mailsTo(email)).toHaveLength(1)
+})
+
+test('sends nothing for a resend pressed inside the cooldown', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(page, email)
+  const code = await readRegisterCode(email)
+
+  await page.getByTestId('auth-resend').click()
+
+  // The proof is the FIRST code still working: issuing a second one voids the one
+  // before it, so confirming with this one says no second code was minted — and
+  // since the confirm is answered after the resend on the same connection, the
+  // mailbox count is read once the resend has been decided.
+  await submitRegistrationCode(page, code)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  expect(await mailsTo(email)).toHaveLength(1)
 })

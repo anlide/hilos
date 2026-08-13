@@ -12,6 +12,14 @@
 // the session and the auth gate (HIL-165) closes the surface off the current-user
 // signal. Recovery is deferred to HIL-365 (no backend action yet), so its modes
 // report unavailable rather than dispatching a non-existent action.
+//
+// The registration actions are the exception, and the reason this file reads
+// replies at all (HIL-415): a register submit no longer creates anybody, so the
+// backend answers where the surface goes next as a domain reply on the success ack
+// (PHP `Hilos\Auth\Flow\AuthFlowOutcome`). A REJECTED registration rides that same
+// ack — a taken address is a move to sign-in, not a transport error — so a reply
+// saying `ok: false` has to be read off a resolved dispatch, or the surface would
+// step to the code screen for an address it never reserved.
 import { ActionError } from '@hilos/core'
 import type { AuthFormState, AuthMode, AuthSubmitOutcome } from '@hilos/core'
 
@@ -23,6 +31,12 @@ const LOGIN_ACTION = 'login'
 
 /** Backend action: email+password registration (PHP `ChatSignalConstants::REGISTER`). */
 const REGISTER_ACTION = 'register'
+
+/** Backend action: confirm a reserved registration (PHP `ChatSignalConstants::CONFIRM_REGISTER`). */
+const CONFIRM_REGISTER_ACTION = 'confirm_register'
+
+/** Backend action: re-send a pending registration's code (PHP `ChatSignalConstants::REQUEST_REGISTER_CONFIRM`). */
+const REQUEST_REGISTER_CONFIRM_ACTION = 'request_register_confirm'
 
 /** Backend action: request an SMS login code (PHP `ChatSignalConstants::REQUEST_SMS_CODE`). */
 const REQUEST_SMS_CODE_ACTION = 'request_sms_code'
@@ -56,10 +70,22 @@ export async function submitAuth(
         password: form.password,
       })
     case 'register':
-      return dispatch(REGISTER_ACTION, {
+      // Reserve-on-submit (HIL-415): this holds the address and mails one code,
+      // so success advances to the code step rather than upgrading the session.
+      // The password rides along and is kept with the hold until the code
+      // redeems it, which is why it is not asked for again on the next step.
+      return dispatch(
+        REGISTER_ACTION,
+        { email: form.email, password: form.password },
+        'register_confirm',
+      )
+    case 'register_confirm':
+      // The code is what creates the account: on success the session upgrades and
+      // the auth gate closes the surface, so no next mode. A wrong code is a plain
+      // action failure and leaves the person on this step to try again.
+      return dispatch(CONFIRM_REGISTER_ACTION, {
         email: form.email,
-        password: form.password,
-        confirmPassword: form.confirmPassword,
+        code: form.code,
       })
     case 'sms_request':
       // Success advances to the code step; the backend always answers generically
@@ -98,7 +124,27 @@ export async function submitAuth(
 }
 
 /**
+ * Re-send the confirmation code of a pending registration.
+ *
+ * The code step's resend link, dispatched outside the surface machine because it
+ * is not the step's submit — the form still holds the code being typed. The hold
+ * on the address decides whether anything is re-sent: inside the cooldown the
+ * backend answers ok and mails nothing, and a hold that ran out answers a failure
+ * whose message the caller shows inline. Drawing the countdown is HIL-423.
+ *
+ * @param email The address the pending registration holds.
+ */
+export function resendRegisterCode(email: string): Promise<AuthSubmitOutcome> {
+  return dispatch(REQUEST_REGISTER_CONFIRM_ACTION, { email })
+}
+
+/**
  * Dispatch one tracked action and reduce its reply to a surface outcome.
+ *
+ * A resolved dispatch is read before it is called a success: the registration
+ * actions answer a refusal ON the success ack, so a reply saying `ok: false` is a
+ * failure with a sentence and no advance. An action that answers with nothing —
+ * every other one here — has no reply to read and resolves as the success it is.
  *
  * @param action The backend action name.
  * @param payload The action payload.
@@ -110,12 +156,38 @@ async function dispatch(
   next?: AuthMode,
 ): Promise<AuthSubmitOutcome> {
   try {
-    await actions.dispatch(action, payload).done
+    const result = await actions.dispatch(action, payload).done
 
-    return { ok: true, next }
+    return readFlowRefusal(result.reply) ?? { ok: true, next }
   } catch (error) {
     return { ok: false, message: describeAuthError(error) }
   }
+}
+
+/**
+ * Read a refusal out of a flow reply, or null when the reply is not one.
+ *
+ * The reply is `unknown` (no schema is passed to the dispatch), so the two keys
+ * this surface acts on are read defensively: an absent or malformed reply means
+ * the action simply answered nothing and the dispatch stands as the success it
+ * already is. The step the backend names alongside it (`next`) is not applied
+ * here — rolling the surface back to the address field belongs to the redesigned
+ * screens (HIL-423); until then a refusal shows inline where it happened.
+ *
+ * @param reply The domain reply the action ack carried.
+ */
+function readFlowRefusal(reply: unknown): AuthSubmitOutcome | null {
+  if (typeof reply !== 'object' || reply === null || !('ok' in reply)) {
+    return null
+  }
+
+  const { ok, message } = reply as { ok: unknown; message?: unknown }
+  if (ok !== false) {
+    return null
+  }
+
+  // No message of its own falls through to the machine's generic phrasing.
+  return typeof message === 'string' ? { ok: false, message } : { ok: false }
 }
 
 /**

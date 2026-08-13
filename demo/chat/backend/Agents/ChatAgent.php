@@ -20,6 +20,11 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Agent\AbstractAgent;
@@ -43,6 +48,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Random\RandomException;
 
 /**
  * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
@@ -91,23 +97,28 @@ final class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(ChatRtContext::connections);
         $this->registerRtTruthSource(ChatRtContext::userStates);
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
+        $this->registerRtTruthSource(ChatRtContext::registrationWaiters);
         $this->startSessionRotations();
 
         Hilos::$db->events->actions->addChatStarted();
     }
 
     /**
-     * Drops login rotations whose ticket is past its moment (HIL-582).
+     * Drops login rotations whose ticket is past its moment (HIL-582) and registration
+     * waiters whose connection is gone (HIL-415).
      *
-     * The whole tick: a walk over an in-memory collection that holds one row per login
-     * in the last thirty seconds, so it is measured in microseconds and never touches
-     * the database or the network - which is what the tick rule requires of it.
+     * The whole tick: walks over in-memory collections that hold one row per login in the
+     * last thirty seconds and one per sign-in surface parked on a confirmation code, so it
+     * is measured in microseconds and never touches the database or the network - which is
+     * what the tick rule requires of it. The waiter walk is skipped outright while nobody
+     * is registering, which is almost always.
      *
      * @throws HilosException On runtime failure
      */
     public function onTick(): void
     {
         $this->sweepSessionRotations();
+        $this->sweepRegistrationWaiters();
     }
 
     /**
@@ -793,7 +804,12 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handles chat-owned cron cleanup for persisted history and transient attachment state.
+     * Handles chat-owned cron cleanup for persisted history, transient attachment state,
+     * and expired registration holds.
+     *
+     * The reservation sweep is the one that answers somebody: freeing a held address also
+     * means the sessions parked on its code step are waiting for a code that can no longer
+     * confirm anything, so each freed identifier is rolled back the moment its row goes.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
@@ -813,6 +829,13 @@ final class ChatAgent extends AbstractAgent
 
             case ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS:
                 Hilos::$rt->attachmentDrafts->actions->deleteExpired();
+
+                return;
+
+            case ChatCronConstants::SWEEP_REGISTRATION_RESERVATIONS:
+                foreach (new RegistrationReservationSweeper()->sweep() as $identifier) {
+                    $this->rollBackRegistrationWaiters($identifier);
+                }
 
                 return;
 
@@ -868,6 +891,128 @@ final class ChatAgent extends AbstractAgent
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Signs in every session parked on a confirmed identifier and moves it to done (HIL-415).
+     *
+     * The converge half of reserve-on-submit registration: one address holds one
+     * reservation and one code, so several sessions can legitimately be waiting on it -
+     * two tabs, two devices - and the first code to come back settles the address for all
+     * of them. Each waiter is signed into the account that was just created and told to
+     * move to the done step; then its row goes, because there is nothing left to wait for.
+     *
+     * A waiter whose connection is ALREADY signed in is moved but not re-bound: somebody
+     * else's registration must never swap the account a person is sitting in. The
+     * confirming connection is skipped entirely - its caller signed it in on the ordinary
+     * path and answered it with the action reply.
+     *
+     * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
+     * @param int $userId User the confirmation created
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
+     * @throws HilosException On runtime, database, or session failure
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     */
+    public function convergeRegistration(string $identifier, int $userId, string $initiatorAcceptKey): void
+    {
+        foreach ($this->parkedAcceptKeys($identifier) as $acceptKey => $sessionToken) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            if (Hilos::$rt->connections[$acceptKey]?->userId === null) {
+                $this->authenticateSession($sessionToken, $userId, $acceptKey);
+            }
+
+            $this->sendToUser(
+                ChatSignalConstants::AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData($acceptKey, $identifier, AuthFlowStep::DONE, AuthFlowIntent::REGISTER),
+            );
+        }
+    }
+
+    /**
+     * Rolls every session parked on an expired identifier back to the identifier step (HIL-415).
+     *
+     * What an expired hold owes the people waiting on it. The step goes BACK rather than
+     * the code being refused: they are about to type a code into a registration that no
+     * longer exists, and "invalid code" would read as their mistake. The reason travels
+     * with the step so the surface can say what actually happened.
+     *
+     * @param string $identifier Normalized identifier whose hold was just freed
+     * @throws HilosException On runtime failure
+     */
+    private function rollBackRegistrationWaiters(string $identifier): void
+    {
+        foreach ($this->parkedAcceptKeys($identifier) as $acceptKey => $sessionToken) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+
+            $this->sendToUser(
+                ChatSignalConstants::AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowIntent::REGISTER,
+                    AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Drops registration waiters whose connection is no longer live (HIL-415).
+     *
+     * A waiter is released when its identifier resolves, and a browser closed on the code
+     * screen never resolves anything - so without this the collection would only grow, and
+     * a converge would be broadcast to sockets that are gone. The walk is over the waiters
+     * and not over the connections, because there are at most a handful of the former and
+     * as many of the latter as the chat has readers; while nobody is registering it costs
+     * one count().
+     *
+     * @throws HilosException On runtime failure
+     */
+    private function sweepRegistrationWaiters(): void
+    {
+        if (count(Hilos::$rt->hilosRegistrationWaiters) === 0) {
+            return;
+        }
+
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
+            $parked[] = $waiter->acceptKey;
+        }
+
+        foreach ($parked as $acceptKey) {
+            if (!isset(Hilos::$rt->connections[$acceptKey])) {
+                Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            }
+        }
+    }
+
+    /**
+     * Reads the connections parked on one identifier before any of them is released.
+     *
+     * The list is materialized first on purpose: releasing a waiter mutates the collection
+     * a foreach over it would be walking, and the session token has to be read while the
+     * row is still there.
+     *
+     * @param string $identifier Normalized identifier being converged
+     * @return array<string, string> Session token by waiting connection accept key
+     * @throws HilosException On runtime failure
+     */
+    private function parkedAcceptKeys(string $identifier): array
+    {
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            $parked[$waiter->acceptKey] = $waiter->sessionToken;
+        }
+
+        return $parked;
     }
 
     /**

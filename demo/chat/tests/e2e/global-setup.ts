@@ -1,5 +1,7 @@
 import https from 'node:https'
 
+import { clearMail } from './helpers/mail'
+
 const READY_TIMEOUT_MS = 120_000
 const POLL_INTERVAL_MS = 2_000
 
@@ -86,6 +88,9 @@ async function waitUntilReady(
  * ago. Plain node https instead of a Playwright request fixture: the probes
  * must tolerate the self-signed certificate before any browser context
  * exists.
+ *
+ * Then empties the mail directory: it is a bind mount that outlives the stack, so
+ * the run starts against the letters it sends itself and nothing older.
  */
 async function globalSetup(): Promise<void> {
   const baseURL = process.env.BASE_URL ?? 'https://localhost:8446'
@@ -96,6 +101,7 @@ async function globalSetup(): Promise<void> {
   await waitUntilReady(`WebSocket at ${baseURL}/ws`, deadline, () =>
     probeWebSocketUpgrade(baseURL, agent),
   )
+  await clearMail()
 }
 
 // Playwright loads this module by the `globalSetup` string path in

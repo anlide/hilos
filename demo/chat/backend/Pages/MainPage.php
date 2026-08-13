@@ -38,12 +38,16 @@ use Demo\Chat\Core\Router\DTO\PasskeyOptionsSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\PhoneNumber;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
@@ -70,7 +74,6 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\PasskeyCredential;
-use Hilos\Database\View\Item\Identity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -121,15 +124,15 @@ final class MainPage extends AbstractPage
     // the chat but is denied MESSAGE with a typed 401 (the frontend pre-disables
     // the composer and opens sign-in). LOGIN/REGISTER and the password-recovery
     // pair stay open — a guest needs them to authenticate or recover. The
-    // register-confirm pair is authenticated: it verifies the signed-in user's
-    // own email, so it must never run for an anonymous session. The passkey
-    // register pair is authenticated too: a passkey is added to an already
-    // signed-in account (passkey login stays open — that is how a guest signs in).
+    // register-confirm pair is open too since HIL-415: the code it re-sends and
+    // verifies belongs to a registration that has no account yet, so the session
+    // asking is anonymous by definition — requiring a signed-in user there would
+    // close the only path that can create one. The passkey register pair stays
+    // authenticated: a passkey is added to an already signed-in account (passkey
+    // login stays open — that is how a guest signs in).
     // Uploads ride the message they draft, so the guard here is enough.
     public const array AUTH_ACTIONS = [
         ChatSignalConstants::MESSAGE,
-        ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
-        ChatSignalConstants::CONFIRM_REGISTER,
         ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH,
         ChatSignalConstants::PASSKEY_REGISTER_OPTIONS,
         ChatSignalConstants::PASSKEY_REGISTER_CONFIRM,
@@ -162,6 +165,22 @@ final class MainPage extends AbstractPage
      * wrong, exhausted) so a response never discloses which case occurred.
      */
     private const string INVALID_CODE_MESSAGE = 'Invalid or expired code';
+
+    /**
+     * Message for a registration submit on an address that already has an account.
+     * It rides an outcome that moves the surface to sign-in, so it reads as a
+     * redirection rather than a rejection; there is no anti-enumeration concern here
+     * (registration legitimately reveals a taken address - login is where it matters).
+     */
+    private const string IDENTIFIER_TAKEN_MESSAGE = 'This email already has an account';
+
+    /**
+     * Message for a code submitted against a registration hold that has run out.
+     * Deliberately distinct from {@see self::INVALID_CODE_MESSAGE}: the code may well
+     * have been right, and telling the person it was invalid would send them looking
+     * for a mistake they did not make.
+     */
+    private const string RESERVATION_EXPIRED_MESSAGE = 'That registration expired, please start again';
 
     /**
      * Generic failure message for a malformed phone number. A format error is not
@@ -234,9 +253,8 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof RegisterActionDTO) {
                     throw new InvalidActionPayloadException($action, RegisterActionDTO::class, $dto);
                 }
-                $this->handleRegister($dto);
 
-                break;
+                return $this->handleRegister($dto);
 
             case ChatSignalConstants::REQUEST_PASSWORD_RESET:
                 if (!$dto instanceof RequestPasswordResetActionDTO) {
@@ -290,17 +308,15 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof RequestRegisterConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestRegisterConfirmActionDTO::class, $dto);
                 }
-                $this->handleRequestRegisterConfirm($dto);
 
-                break;
+                return $this->handleRequestRegisterConfirm($dto);
 
             case ChatSignalConstants::CONFIRM_REGISTER:
                 if (!$dto instanceof ConfirmRegisterActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmRegisterActionDTO::class, $dto);
                 }
-                $this->handleConfirmRegister($dto);
 
-                break;
+                return $this->handleConfirmRegister($dto);
 
             case ChatSignalConstants::FILE_UPLOAD_INIT:
                 if (!$dto instanceof FileUploadInitActionDTO) {
@@ -524,35 +540,41 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Registers a new email+password account and, by default, logs it in.
+     * Reserves an email for a new account and sends the code that will create it.
      *
-     * Validates the submission (required fields, email format, password length,
-     * confirmation match), then creates a durable user whose display name defaults
-     * to the email local part and a `password` identity (identifier = lowercased
-     * email, secret = bcrypt hash, verified = false) through the identity layer.
-     * A taken email surfaces as {@see DuplicateValueException} ("email already
-     * used") on the existing single-message action-error channel — registration
-     * legitimately reveals a taken email, so there is no anti-enumeration concern
-     * here (that is a login concern). On success the live anonymous session is
-     * upgraded to the new user through {@see ChatAgent::authenticateSession()},
-     * unless {@see self::autoLoginAfterRegister()} is overridden to defer it.
+     * The submit no longer registers anybody (HIL-415). It validates, then holds the
+     * address for a TTL and mails one confirmation code; the account appears when that
+     * code comes back to {@see handleConfirmRegister()}. What the surface is told back is
+     * where to go next, not whether a row was written:
+     * - the address is free, or already held by an earlier submit of the same address:
+     *   the code step, with the seconds until a re-send is allowed. The second case sends
+     *   NO second letter - all the sessions registering that address converge on the one
+     *   code that is already in the inbox;
+     * - the address belongs to an account: not an error the person has to read and
+     *   retype, but a move to the identifier step under the sign-in intent. Registration
+     *   legitimately reveals a taken address (that is a login concern, not one here).
      *
-     * @param RegisterActionDTO $dto Parsed register payload (email, password, confirmPassword)
+     * The connection is parked as a waiter before returning, so it is reachable by the
+     * converge broadcast whoever confirms first ({@see ChatAgent::convergeRegistration()}).
+     *
+     * @param RegisterActionDTO $dto Parsed register payload (email, password)
+     * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws EmptyValueException When email or password fields are empty
+     * @throws EmptyValueException When email or password is empty
      * @throws InvalidFormatException When the email is not a valid address
-     * @throws ValidationException When the password is too short or the confirmation does not match
-     * @throws DuplicateValueException When the email already has a password identity
-     * @throws HilosException When user creation, identity creation, or session promotion fails
+     * @throws ValidationException When the password is too short
+     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When identity lookup, the reservation, or the runtime write fails
      */
-    private function handleRegister(RegisterActionDTO $dto): void
+    private function handleRegister(RegisterActionDTO $dto): AuthFlowOutcome
     {
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $connection = Hilos::$rt->selfConnection;
 
         $email = strtolower($dto->email);
-        if ($email === '' || $dto->password === '' || $dto->confirmPassword === '') {
+        if ($email === '' || $dto->password === '') {
             throw new EmptyValueException('Email and password are required');
         }
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
@@ -561,48 +583,47 @@ final class MainPage extends AbstractPage
         if (strlen($dto->password) < PasswordPolicy::MIN_LENGTH) {
             throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
         }
-        if ($dto->password !== $dto->confirmPassword) {
-            throw new ValidationException('Passwords do not match');
-        }
 
-        // Reject a taken email before creating the user so a duplicate does not
-        // leave an orphan user row; the identity write also guards it uniquely.
-        if (Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email) !== null) {
-            throw new DuplicateValueException('email already used');
-        }
-
-        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
-        $userId = (int)$user->id;
-
-        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->password);
-
-        // Announce the new member in the chat event stream. Under the old
-        // auto-guest model connecting emitted this notice; with explicit
-        // registration the form is the real trigger, so the "registered in chat"
-        // event fans out from here to every reader.
-        Hilos::$db->events->actions->addUserRegistered($userId);
-
-        if ($this->autoLoginAfterRegister()) {
-            $this->agent->authenticateSession(
-                Hilos::$rt->selfConnection->sessionToken,
-                $userId,
-                Hilos::$rt->selfConnection->acceptKey,
+        if ($this->emailBelongsToAccount($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                self::IDENTIFIER_TAKEN_MESSAGE,
             );
         }
+
+        new RegistrationReservationService()->reserve(IdentityType::PASSWORD, $email, $dto->password);
+
+        Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
+
+        return AuthFlowOutcome::moveTo(
+            AuthFlowStep::CODE,
+            AuthFlowIntent::REGISTER,
+            new VerificationService()->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email),
+        );
     }
 
     /**
-     * Whether a freshly registered user is logged in immediately.
+     * Whether an email already belongs to an account, by any method.
      *
-     * Default = auto-login: registration upgrades the current session to the new
-     * user right away. A concrete project overrides this to return false to hold
-     * for email verification (HIL-298) or route to an explicit login instead.
+     * The question the identifier-first surface asks before reserving: not "is there a
+     * password identity" but "is this address somebody's". An account created through
+     * OAuth carries the address as a verified identity of another type (HIL-405), and
+     * offering to register it would either fail at the identity write or quietly build a
+     * second account for the same person; the surface sends them to sign-in instead, and
+     * the profile owns adding a password to an account that has none (HIL-406). A
+     * password identity counts whether or not it is verified, since it is one somebody
+     * signs in with either way.
      *
-     * @return bool True to auto-login the new user (default)
+     * @param string $email Lowercased submitted email
+     * @return bool True when an account already holds the address
+     * @throws HilosException When the identity lookup fails
      */
-    protected function autoLoginAfterRegister(): bool
+    private function emailBelongsToAccount(string $email): bool
     {
-        return true;
+        return Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email) !== null
+            || Hilos::$db->identities->findUserIdByVerifiedEmail($email) !== null;
     }
 
     /**
@@ -823,81 +844,141 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Issues an email-confirmation code for the signed-in user's own email.
+     * Re-sends the confirmation code of a pending registration.
      *
-     * Authenticated (see AUTH_ACTIONS): the target email is the user's `password`
-     * identity identifier, resolved from the session — never from the client. A
-     * user with no email identity has nothing to confirm and the request is a
-     * silent no-op.
+     * The resend button on the code screen (HIL-415). It is not a second registration:
+     * the hold on the address is what decides whether there is anything to re-send, and
+     * when it is gone the surface is rolled back to the identifier step under a code of
+     * its own rather than told "no". A resend inside the cooldown sends nothing and
+     * answers with the seconds still to wait - the countdown the screen draws.
      *
-     * @param RequestRegisterConfirmActionDTO $dto Parsed request payload (no fields)
+     * The hold is pushed out only when a code actually went out, so a button mashed
+     * inside the cooldown moves nothing. It is NOT a cap: a caller patient enough to
+     * press once per cooldown keeps the address held and keeps mailing its owner, and
+     * what answers that is rate limiting (HIL-420/421), not this handler.
+     *
+     * Any waiting session may press it: the cooldown belongs to the address, not to the
+     * session, and pressing re-parks the presser so a converge reaches it either way.
+     *
+     * @param RequestRegisterConfirmActionDTO $dto Parsed resend payload (email)
+     * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws HilosException When identity lookup or code issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws HilosException When the reservation, verification, or runtime write fails
      */
-    private function handleRequestRegisterConfirm(RequestRegisterConfirmActionDTO $dto): void
+    private function handleRequestRegisterConfirm(RequestRegisterConfirmActionDTO $dto): AuthFlowOutcome
     {
-        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+        if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $connection = Hilos::$rt->selfConnection;
 
-        $userId = Hilos::$rt->selfConnection->userId;
-        $identity = $this->passwordIdentityForUser($userId);
-        if ($identity === null || $identity->identifier === '') {
-            return;
+        $email = strtolower($dto->email);
+        $reservations = new RegistrationReservationService();
+        if ($reservations->findActive($email) === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::REGISTER,
+                self::RESERVATION_EXPIRED_MESSAGE,
+            );
         }
 
-        new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $identity->identifier, $userId);
+        $verification = new VerificationService();
+        $resendInSeconds = $verification->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email);
+        if ($resendInSeconds === 0) {
+            $verification->issue(VerificationType::REGISTER_CONFIRM, $email, null);
+            $reservations->extendTo($email);
+            $resendInSeconds = $verification->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email);
+        }
+
+        Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::CODE, AuthFlowIntent::REGISTER, $resendInSeconds);
     }
 
     /**
-     * Verifies an email-confirmation code and flips the identity to verified.
+     * Confirms a reserved registration: creates the account and signs the session in.
      *
-     * Authenticated: the target email is resolved from the session user's
-     * `password` identity. A missing/expired/wrong code fails generically. On
-     * success the code is single-use consumed inside the service and the email
-     * identity's `verified` flag is set through the identity layer.
+     * The moment the account comes into being (HIL-415). The code is the proof of
+     * ownership, so what it produces is a user, a password identity already VERIFIED
+     * carrying the credential chosen at submit, the "registered in chat" event, and a
+     * signed-in session - all of it here, none of it at the submit that only reserved.
      *
-     * @param ConfirmRegisterActionDTO $dto Parsed confirm payload (code)
+     * Four answers, and the difference between the middle two is the whole point of the
+     * design: a wrong code is an inline error that leaves the person on the code screen
+     * to try again, while a hold that ran out is not their mistake at all and rolls the
+     * surface back to the address field with a reason of its own.
+     *
+     * The fourth is the address having become somebody's while it was held. The hold
+     * keeps a SECOND registration off it, not an account arriving by another road - an
+     * OAuth sign-in mints one from a verified email of its own type (HIL-405), and that
+     * identity does not collide with the password one written here. So the question the
+     * submit asked is asked again, and answered the same way: not an error to retype,
+     * but a move to sign-in. Without it the code would build a second account for the
+     * same person, or fail the identity write with a user already committed.
+     *
+     * The user is minted only after the code verified, so a wrong code can never leave an
+     * account behind; the credential moves from the reservation into the identity inside
+     * {@see RegistrationReservationService::confirmInto()} and never passes through here.
+     * Every other session parked on this address is then signed in and moved to done.
+     *
+     * @param ConfirmRegisterActionDTO $dto Parsed confirm payload (email, code)
+     * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws ValidationException When the code is invalid or there is no email to confirm
-     * @throws HilosException When verification or the identity verify-flip fails
+     * @throws ValidationException When the code is wrong, expired, or exhausted
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When the account, identity, event, or session write fails
      */
-    private function handleConfirmRegister(ConfirmRegisterActionDTO $dto): void
+    private function handleConfirmRegister(ConfirmRegisterActionDTO $dto): AuthFlowOutcome
     {
-        if (Hilos::$rt->selfConnection === null || Hilos::$rt->selfConnection->userId === null) {
+        if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $connection = Hilos::$rt->selfConnection;
 
-        $identity = $this->passwordIdentityForUser(Hilos::$rt->selfConnection->userId);
-        if ($identity === null || $identity->identifier === '') {
+        $email = strtolower($dto->email);
+        $reservations = new RegistrationReservationService();
+        $reservation = $reservations->findActive($email);
+        if ($reservation === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::REGISTER,
+                self::RESERVATION_EXPIRED_MESSAGE,
+            );
+        }
+
+        // Asked here too, not only at the submit: the hold blocks another registration
+        // on the address, not an account that arrived by another road while it stood.
+        if ($this->emailBelongsToAccount($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                self::IDENTIFIER_TAKEN_MESSAGE,
+            );
+        }
+
+        if (!$reservations->verifyCode($email, $dto->code)) {
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
-        $userId = new VerificationService()->verify(VerificationType::REGISTER_CONFIRM, $identity->identifier, $dto->code);
-        if ($userId === null) {
-            throw new ValidationException(self::INVALID_CODE_MESSAGE);
-        }
+        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
+        $userId = (int)$user->id;
 
-        $identity->markVerified();
-    }
+        $reservations->confirmInto($reservation, $userId);
 
-    /**
-     * Resolves a user's `password` identity (the one carrying their email).
-     *
-     * @param int $userId Owning user id
-     * @return ?Identity The user's password identity, or null when they have none
-     * @throws HilosException When the identity lookup fails
-     */
-    private function passwordIdentityForUser(int $userId): ?Identity
-    {
-        foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
-            if ($identity->type === IdentityType::PASSWORD) {
-                return $identity;
-            }
-        }
+        // Announce the new member in the chat event stream. The notice moved here with
+        // the account itself: at the submit there was nobody to announce yet.
+        Hilos::$db->events->actions->addUserRegistered($userId);
 
-        return null;
+        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
+
+        Hilos::$rt->hilosRegistrationWaiters->actions->release($connection->acceptKey);
+        $this->agent->convergeRegistration($email, $userId, $connection->acceptKey);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
     }
 
     /**
