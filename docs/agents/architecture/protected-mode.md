@@ -65,13 +65,14 @@ past the agent. The precedent is the backup test commands, which ride
 
 ### The Test Tool That Obligation Produced
 
-Three test-only commands, and the split between them is the whole design:
+Four test-only commands, and the split between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
 | `test:protected-mode:inspect` | the master, synchronously | during a freeze every agent but the initiator is stopped, so an agent-answered inspector would go silent in exactly the phase worth inspecting |
 | `test:protected-mode:enter <operation> [--accept-key=<k>]` | the initiator agent | it calls `requestProtectedModeEnable()` — the one entry, unchanged |
-| `test:protected-mode:leave` | the initiator agent | authorized by initiator identity, exactly as in production |
+| `test:protected-mode:leave` | the initiator agent | the driven operation is over: it calls `requestProtectedModeVerify()` and lands in the verification window, where a real one lands too |
+| `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
 
 `ProtectedModeTestDriverTrait` carries the agent half. A trait, because its two
 carriers share no ancestor but `AbstractAgent`, and putting the commands there
@@ -83,10 +84,10 @@ quiesce round and a follower's fail-closed refusal — has no live carrier).
 
 Two properties are worth keeping when this code is touched:
 
-- **Both drive commands answer on the move, not on acceptance.** Enter answers
-  from `onProtectedModeReady()`, leave when this node's row is back to inactive.
-  That is what makes the reply a verdict and lets a test act on the next line
-  instead of polling.
+- **Every drive command answers on the move, not on acceptance.** Enter answers
+  from `onProtectedModeReady()`, leave when this node's row reads verifying, open
+  when it is back to inactive. That is what makes the reply a verdict and lets a
+  test act on the next line instead of polling.
 - **The pre-checks exist because the core answers nobody.** A repeat enable, a
   disable with no freeze and a disable from the wrong agent are all
   log-and-return paths. Reading the row first turns each into a stated reason
@@ -101,8 +102,31 @@ PHP. That ungated socket path is an existing property of the command channel,
 shared with `setAdmin` and `connection:test:drop` — recorded here so it is not
 mistaken for an oversight and "fixed" at the cost of the e2e.
 
-The snapshot never carries `initiatorAcceptKey`. It is the pass through the
-lockdown, and the port that would publish it authenticates nobody.
+The snapshot never carries `initiatorAcceptKey`, and never a pass hash — only
+the count of outstanding passes. Both are the way through the lockdown, and the
+port that would publish them authenticates nobody.
+
+### The Operator Commands Are A Separate Family, On Purpose (HIL-481)
+
+`protected-mode:pass`, `protected-mode:open` and `protected-mode:close` are the
+production half: not test-only, because they are the only way back out of a
+freeze now that a finished restore no longer lifts one by itself. The agent half
+is `ProtectedModeOperatorTrait`, mixed into `BackupAgent` — a restore is the
+destructive operation this framework has, so that agent is the initiator the row
+records.
+
+They deliberately do **not** share names with the `test:` family. A command
+routes to exactly one agent type per project (`TopologyValidator` refuses a
+second owner), a project may hold two initiators — the real one and the test
+driver's carrier — and a freeze may only be driven by the agent the row names. A
+shared name would hand one initiator's freeze to the other, and the identity
+check would then refuse it. Hence the two ladders, same shape, different owners.
+
+The pass is minted from the secure half of `RandomHelper` and never falls back to
+the pseudorandom one: a guessable pass is indistinguishable from a real one to
+everything downstream. Only its SHA-256 travels to the daemon and only the hash
+is stored, so the clear value exists in the operator's terminal and nowhere else
+— it cannot be read back out of a log, a snapshot or a later reply.
 
 ## The Freeze Is Also The Window For Repairing What The Operation Broke
 
@@ -118,7 +142,8 @@ therefore photographs the live authenticated sessions in
 `onProtectedModeReady()`, while the node is frozen and the old database is still
 mounted, and re-creates them in `finishRestore()` in a fixed order: re-hydrate
 the database-backed collections, carry the sessions over, and only then
-`requestProtectedModeDisable()`. `SessionCarrier` owns both halves; sessions are
+`requestProtectedModeVerify()` — which since HIL-481 is where that path ends, the
+lift itself being an operator's decision. `SessionCarrier` owns both halves; sessions are
 matched by `hilos_identity` pairs rather than by user id, because the same id in
 another installation's archive is another person.
 

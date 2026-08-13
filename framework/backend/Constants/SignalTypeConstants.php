@@ -116,6 +116,15 @@ final class SignalTypeConstants
     /** @var string Protected-mode disable request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_DISABLE = 'protected_mode_disable';
 
+    /** @var string Protected-mode verify request signal type (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_VERIFY = 'protected_mode_verify';
+
+    /** @var string Protected-mode pass request signal type (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_PASS = 'protected_mode_pass';
+
+    /** @var string Protected-mode refreeze request signal type (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_REFREEZE = 'protected_mode_refreeze';
+
     /** @var string Protected-mode state frame type (daemon master -> every connected browser client) */
     public const string PROTECTED_MODE = 'protected_mode';
 }

@@ -61,6 +61,7 @@ use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
+use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -122,6 +123,7 @@ abstract class DaemonManager extends BaseManager implements
     PlacementObserver,
     ConnectionDropper,
     ProtectedModeSnapshotSource,
+    ProtectedModeAdmissionRecorder,
     ProtectedModeClientNotifier
 {
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
@@ -537,6 +539,9 @@ abstract class DaemonManager extends BaseManager implements
         // (HIL-582), and the client that serves that handshake reaches them through here.
         if ($server instanceof WebSocketServer) {
             $server->setConnectionDropper($this);
+            // And the seam that lets a verifier in: the pass is decided on the 101, but the
+            // freeze row it is decided against is the daemon's to write.
+            $server->setProtectedModeAdmissionRecorder($this);
         }
     }
 
@@ -613,6 +618,7 @@ abstract class DaemonManager extends BaseManager implements
                 ProtectedModeCommandConstants::FIELD_ACTIVATED_AT => null,
                 ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
                 ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED => false,
+                ProtectedModeCommandConstants::FIELD_PASS_COUNT => 0,
             ];
         }
 
@@ -628,10 +634,38 @@ abstract class DaemonManager extends BaseManager implements
             ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
             // The same verdict the agent-start gate reaches, and deliberately derived from the
             // phase the way the gate derives it: every non-inactive phase holds the gate shut,
-            // including deactivating.
+            // including deactivating - except the verification window, which exists to bring
+            // the agents back.
             ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED
-                => $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE,
+                => $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE
+                    && $freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING,
+            // The count, never a hash: a snapshot goes to CI output, and a hash in a log is a
+            // hash in a log forever. How many passes are outstanding is all an assertion needs.
+            ProtectedModeCommandConstants::FIELD_PASS_COUNT => count($freeze->passHashes),
         ];
+    }
+
+    /**
+     * Records the connection holding this accept key as admitted for the verification in flight.
+     *
+     * The master half of the admission: {@see WebSocketClient} has already matched the presented
+     * pass against the row, and this writes the verdict where the workers can read it. A process
+     * holding no runtime row records nothing - there is no freeze there to be let into.
+     *
+     * A refused write is logged and swallowed rather than raised, because the caller is the
+     * connection-accept path: an exception there tears down a handshake that was otherwise fine,
+     * and the failure it would report has a safe reading already - the verifier stays on the
+     * maintenance stub and can present the code again.
+     *
+     * @param string $acceptKey Daemon-minted identifier of the admitted connection
+     */
+    public function admitProtectedModeConnection(string $acceptKey): void
+    {
+        try {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitConnection($acceptKey);
+        } catch (RtBaseException $exception) {
+            Logger::error('Protected mode: failed to admit a verifier: ' . $exception->getMessage());
+        }
     }
 
     /**

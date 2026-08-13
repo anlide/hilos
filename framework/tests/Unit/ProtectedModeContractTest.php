@@ -30,6 +30,8 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertNull($runtime->initiatorAcceptKey);
         $this->assertNull($runtime->initiatorAgentIndex);
         $this->assertNull($runtime->startedAt);
+        $this->assertSame([], $runtime->passHashes);
+        $this->assertSame([], $runtime->admittedAcceptKeys);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -44,6 +46,8 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorNodeId => 'node-a',
             ProtectedModeRuntime::startedAt => 1_700_000_000,
             ProtectedModeRuntime::activatedAt => 1_700_000_005,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -51,6 +55,64 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame($row, $runtime->toArray());
         $this->assertSame(0, $runtime->initiatorAgentIndex);
         $this->assertSame(1_700_000_000, $runtime->startedAt);
+    }
+
+    public function testVerifyingRuntimeRoundTripsBothLists(): void
+    {
+        $row = [
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::operation => 'restore',
+            ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::initiatorAgentType => 'backup',
+            ProtectedModeRuntime::initiatorAgentIndex => null,
+            ProtectedModeRuntime::initiatorNodeId => 'node-a',
+            ProtectedModeRuntime::startedAt => 1_700_000_000,
+            ProtectedModeRuntime::activatedAt => 1_700_000_005,
+            ProtectedModeRuntime::passHashes => ['hash-a', 'hash-b'],
+            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+        ];
+
+        $runtime = ProtectedModeRuntime::fromRow($row);
+
+        $this->assertSame($row, $runtime->toArray());
+    }
+
+    public function testRuntimeReadsBothListsAsEmptyWhenTheRowPredatesThem(): void
+    {
+        // A row minted by a node still on the pre-verifying shape carries neither list, and the
+        // reader must land on empty rather than on null - the lists are consulted by value.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+        ]);
+
+        $this->assertSame([], $runtime->passHashes);
+        $this->assertSame([], $runtime->admittedAcceptKeys);
+    }
+
+    public function testRuntimeApplyDiffCarriesBothLists(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+        ]);
+
+        $runtime->applyDiff([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::passHashes => ['hash-a'],
+            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+        ]);
+
+        $this->assertSame(ProtectedModeRuntime::PHASE_VERIFYING, $runtime->phase);
+        $this->assertSame(['hash-a'], $runtime->passHashes);
+        $this->assertSame(['accept-verifier'], $runtime->admittedAcceptKeys);
+
+        $runtime->applyDiff([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedAcceptKeys => [],
+        ]);
+
+        $this->assertSame([], $runtime->passHashes);
+        $this->assertSame([], $runtime->admittedAcceptKeys);
     }
 
     public function testRuntimeApplyDiffOverwritesOnlyPresentFields(): void
@@ -132,6 +194,59 @@ final class ProtectedModeContractTest extends TestCase
 
         $this->assertFalse($runtime->locksOut('accept-initiator'));
         $this->assertTrue($runtime->locksOut('accept-other'));
+    }
+
+    public function testVerifyingRuntimeLetsTheInitiatorAndTheAdmittedThrough(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+        ]);
+
+        $this->assertFalse($runtime->locksOut('accept-initiator'));
+        $this->assertFalse($runtime->locksOut('accept-verifier'));
+        $this->assertTrue($runtime->locksOut('accept-stranger'));
+        $this->assertTrue($runtime->locksOut(null));
+    }
+
+    public function testAdmitsAnswersOnlyForTheVerifyingPhase(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+        ]);
+
+        $this->assertTrue($runtime->admits('accept-verifier'));
+        $this->assertFalse($runtime->admits('accept-stranger'));
+        $this->assertFalse($runtime->admits(null));
+
+        $runtime->applyDiff([ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_DEACTIVATING]);
+
+        $this->assertFalse($runtime->admits('accept-verifier'));
+    }
+
+    public function testFrozenPhasesIgnoreAnAdmittedKeyEvenWhenTheRowStillCarriesIt(): void
+    {
+        // The actions clear both lists on the way out of the verification, so a frozen phase
+        // holding an admitted key is a row that should not exist. It is asserted anyway: the
+        // lockdown must be safe against a stale list, not merely against a tidy one.
+        foreach (
+            [
+                ProtectedModeRuntime::PHASE_ACTIVATING,
+                ProtectedModeRuntime::PHASE_ACTIVE,
+                ProtectedModeRuntime::PHASE_DEACTIVATING,
+            ] as $phase
+        ) {
+            $runtime = ProtectedModeRuntime::fromRow([
+                ProtectedModeRuntime::phase => $phase,
+                ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
+                ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
+            ]);
+
+            $this->assertTrue($runtime->locksOut('accept-verifier'), $phase);
+            $this->assertFalse($runtime->admits('accept-verifier'), $phase);
+        }
     }
 
     public function testEnableSignalDataRoundTrips(): void

@@ -250,6 +250,7 @@ export {
   isSameProtectedModeStatus,
   PROTECTED_MODE_INACTIVE,
   PROTECTED_MODE_FALLBACK_COPY,
+  PROTECTED_MODE_PASS_COPY,
   type ProtectedModeBlock,
   type ProtectedModeStatus,
 } from './protocol/protectedMode.js'

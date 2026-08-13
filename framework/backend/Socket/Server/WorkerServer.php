@@ -936,8 +936,12 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * A pure read of the freeze row, with no state of its own: the gate opens again the
      * moment the phase returns to inactive, even if the resume that follows the lift fails.
-     * Every non-inactive phase holds - a follower stops at activating and never reaches
-     * active, and a window during deactivating would reopen the very defect the gate closes.
+     * Every non-inactive phase holds except the verification window - a follower stops at
+     * activating and never reaches active, and a window during deactivating would reopen the
+     * very defect the gate closes. {@see StateProtectedModeRuntime::PHASE_VERIFYING} is the
+     * exception because that phase exists to bring the agents back: a verifier has nothing to
+     * look at while the page agents are stopped, and a gate still closed there would refuse the
+     * very resume the phase orders, start by start, handing the verifier an empty system.
      * An active freeze with no initiator recorded refuses everyone: during a live freeze an
      * unknown initiator must read as "nobody may start", never as "everybody may". Fail-open
      * without a mounted row is safe by construction - the mode cannot be entered at all
@@ -951,7 +955,11 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     private function protectedModeRefusesStart(string $agentType, ?string $agentIndex): bool
     {
         $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
-        if ($freeze === null || $freeze->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+        if (
+            $freeze === null
+            || $freeze->phase === StateProtectedModeRuntime::PHASE_INACTIVE
+            || $freeze->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+        ) {
             return false;
         }
 
@@ -1282,9 +1290,10 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * placement use — so each agent comes back on this node as it was, and {@see startAgent()}'s own
      * leadership and worker gates silently drop any that no longer belong here (e.g. a
      * cluster-singleton whose node lost leadership during the freeze). Clears the remembered set up
-     * front so a second lift is a harmless no-op, and contains a per-agent start failure so one bad
-     * restart never strands the rest. Nothing has to be un-set first: the executor writes the
-     * inactive phase before it calls this, so each replayed start passes the freeze gate on its own.
+     * front so a second call is a harmless no-op, and contains a per-agent start failure so one bad
+     * restart never strands the rest. Nothing has to be un-set first: the executor writes the phase
+     * before it calls this, and the freeze gate lets starts through on both phases that resume -
+     * the verification window and inactive - so each replayed start passes it on its own.
      * Ends by firing {@see onProtectedModeLifted()} for whatever else the application wants back.
      */
     public function resumeAgentsForProtectedMode(): void
@@ -1305,8 +1314,16 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     }
 
     /**
-     * Called once on this node when the protected-mode freeze lifts, after the remembered
-     * roster has been replayed.
+     * Called on this node whenever the protected-mode freeze gives the system back, after the
+     * remembered roster has been replayed.
+     *
+     * That is twice per freeze that goes the whole way, not once: the verification window resumes
+     * the agents while the freeze still stands, and the final lift resumes them again. An override
+     * therefore has to be safe to run twice, and has to expect what it started to be stopped again -
+     * an operator closing the window back re-freezes the node through
+     * {@see stopAgentsForProtectedMode()}, which walks the whole roster, and there is no hook on
+     * that side. It is the same bargain {@see onInitialWorkersReady()} already makes with the
+     * freeze; what the window adds is that it now happens mid-operation rather than only at the end.
      *
      * The framework brings back only what it knows: the agents the freeze itself stopped, plus
      * the per-node registry list this default starts. Anything else this node was running is

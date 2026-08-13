@@ -1,8 +1,9 @@
 // Protected mode as the client sees it: the freeze the backend announces on the
 // welcome frame and on the pushed `protected_mode` frame, plus the words to show
-// while it holds. The copy is authored on the backend and travels the wire (the
-// Hilos i18n model); the constant below is the last resort for a frame that said
-// the mode is on but carried no sentence with it.
+// while it holds and whether a verifier may present a pass to be let through it.
+// The copy is authored on the backend and travels the wire (the Hilos i18n
+// model); the constant below is the last resort for a frame that said the mode is
+// on but carried no sentence with it.
 import { z } from 'zod'
 
 /**
@@ -17,6 +18,7 @@ export const protectedModeBlockSchema = z.looseObject({
   operation: z.string().nullish(),
   title: z.string().nullish(),
   message: z.string().nullish(),
+  acceptsPass: z.boolean().nullish(),
 })
 
 export type ProtectedModeBlock = z.infer<typeof protectedModeBlockSchema>
@@ -25,12 +27,28 @@ export type ProtectedModeBlock = z.infer<typeof protectedModeBlockSchema>
  * Protected-mode state held by the connection: whether the node is frozen and, if
  * it is, what to tell the visitor. The wire's nulls are normalized to `undefined`
  * so a consumer has one absent value to test rather than two.
+ *
+ * `active` describes THIS connection — whether the freeze locks it out — while
+ * `acceptsPass` describes the node: whether the verification window is open at all.
+ * They come apart for exactly one client, and that is what the pair is for. An
+ * admitted verifier is told `active: false`, in the same words a lifted mode is
+ * announced with, and only `acceptsPass` still standing says the freeze is on and
+ * this connection is simply inside it. A surface renders the code field on both
+ * together; the reload on the way out waits for both to fall.
+ *
+ * `passRejected` is the one field the wire does not carry: the backend answers a
+ * wrong pass by simply leaving the connection locked out, which is the only answer
+ * a frozen node can give without an agent to compose one. The connection turns
+ * that silence into a bit — it presented a key and came back still frozen — so the
+ * surface can say so instead of looking like it did nothing.
  */
 export interface ProtectedModeStatus {
   readonly active: boolean
   readonly operation: string | undefined
   readonly title: string | undefined
   readonly message: string | undefined
+  readonly acceptsPass: boolean
+  readonly passRejected: boolean
 }
 
 /** No freeze known: the state every connection starts in. */
@@ -39,6 +57,8 @@ export const PROTECTED_MODE_INACTIVE: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  acceptsPass: false,
+  passRejected: false,
 }
 
 /**
@@ -56,7 +76,25 @@ export const PROTECTED_MODE_FALLBACK_COPY = {
 } as const
 
 /**
+ * The words the surface puts around the code field.
+ *
+ * Authored on the frontend, unlike the copy above it, and that is a decision
+ * rather than an oversight: a second entry in the backend stub registry would make
+ * every project owe another mandatory string (startup already refuses when the
+ * default entry goes missing) in order to reword one screen. Kept in the core so
+ * the three view packages cannot drift into three different sentences.
+ */
+export const PROTECTED_MODE_PASS_COPY = {
+  prompt: 'Verifying this system? Enter the code you were given.',
+  submit: 'Continue',
+  rejected: 'That code was not accepted. Check it and try again.',
+} as const
+
+/**
  * Normalize a parsed wire block into the state the connection holds.
+ *
+ * `passRejected` starts false here and stays the connection's business: a frame
+ * describes the node, not this client's attempts at getting into it.
  *
  * @param block The parsed block, or undefined when the frame carried none.
  */
@@ -72,6 +110,8 @@ export function toProtectedModeStatus(
     operation: block.operation ?? undefined,
     title: block.title ?? undefined,
     message: block.message ?? undefined,
+    acceptsPass: block.acceptsPass ?? false,
+    passRejected: false,
   }
 }
 
@@ -91,6 +131,8 @@ export function isSameProtectedModeStatus(
     first.active === second.active &&
     first.operation === second.operation &&
     first.title === second.title &&
-    first.message === second.message
+    first.message === second.message &&
+    first.acceptsPass === second.acceptsPass &&
+    first.passRejected === second.passRejected
   )
 }

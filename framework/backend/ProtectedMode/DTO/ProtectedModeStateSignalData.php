@@ -31,18 +31,28 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
     /** Payload key: sentence shown under the heading. */
     public const string message = 'message';
 
+    /** Payload key: whether the surface may offer a code field right now. */
+    public const string acceptsPass = 'acceptsPass';
+
     /**
      * @param bool $active Whether protected mode holds this node right now
      * @param ?string $operation Operation the freeze protects; null on the lift frame
      * @param ?string $title Heading of the maintenance surface; null on the lift frame and when
      *                       the stub registry names none
      * @param ?string $message Sentence under the heading; null on the same two occasions
+     * @param bool $acceptsPass Whether the mode is in its verification window and takes a code;
+     *                          false on entry and on the lift, where the surface has nothing to
+     *                          offer. It rides beside `active` rather than replacing it because
+     *                          the verification window keeps the stub up for everyone without a
+     *                          pass - a frame saying "not active" would take the surface down
+     *                          for exactly the people it must stay up for.
      */
     public function __construct(
         public readonly bool $active,
         public readonly ?string $operation = null,
         public readonly ?string $title = null,
         public readonly ?string $message = null,
+        public readonly bool $acceptsPass = false,
     ) {
     }
 
@@ -56,6 +66,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             self::operation => $this->operation,
             self::title => $this->title,
             self::message => $this->message,
+            self::acceptsPass => $this->acceptsPass,
         ];
     }
 
@@ -74,6 +85,7 @@ final class ProtectedModeStateSignalData extends BaseDTO implements SignalDataIn
             operation: $operation === null ? null : (string)$operation,
             title: $title === null ? null : (string)$title,
             message: $message === null ? null : (string)$message,
+            acceptsPass: (bool)($data[self::acceptsPass] ?? false),
         );
     }
 }

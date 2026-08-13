@@ -16,6 +16,7 @@ const REPLY_TIMEOUT_MS = 10_000
 
 const ENTER_COMMAND = 'test:protected-mode:enter'
 const LEAVE_COMMAND = 'test:protected-mode:leave'
+const OPEN_COMMAND = 'test:protected-mode:open'
 const INSPECT_COMMAND = 'test:protected-mode:inspect'
 
 /** This node's protected-mode state, as the master reports it. */
@@ -26,6 +27,7 @@ export interface ProtectedModeSnapshot {
   initiatorAgentType: string | null
   stoppedAgents: string[]
   agentStartGateClosed: boolean
+  passCount: number
 }
 
 /**
@@ -50,10 +52,14 @@ export async function enterProtectedMode(
 }
 
 /**
- * Lifts the freeze through the agent that entered it.
+ * Ends the driven operation, landing the node in the verification window.
  *
- * Resolves once this node's runtime row is back to inactive, so a caller may
- * load a page on the next line without racing the agents coming back up.
+ * Deliberately not an unlock: a finished operation leaves the system closed to
+ * everyone, and opening it is the separate step below — the same two moves an
+ * operator makes in production, where nothing reopens a restored database
+ * without a human having looked at it.
+ *
+ * Resolves once this node's runtime row reads verifying.
  *
  * @returns The phase the agent observed.
  */
@@ -64,15 +70,31 @@ export async function leaveProtectedMode(): Promise<string> {
 }
 
 /**
- * Lifts the freeze, swallowing a refusal.
+ * Opens the system to everyone, through the agent that entered the freeze.
+ *
+ * Resolves once this node's runtime row is back to inactive, so a caller may
+ * load a page on the next line without racing the agents coming back up.
+ *
+ * @returns The phase the agent observed.
+ */
+export async function openProtectedMode(): Promise<string> {
+  const reply = await sendCommand(OPEN_COMMAND, {})
+
+  return String(reply.phase ?? '')
+}
+
+/**
+ * Opens the system, swallowing a refusal.
  *
  * For unconditional teardown: an enter may have been refused, or may have landed
  * after the test gave up on it, and either way the node must not be left frozen
- * for every spec that follows. A refusal here means there was nothing to lift.
+ * for every spec that follows. The open lifts from any frozen phase for exactly
+ * this reason — a teardown cannot know which one a failed assertion left behind.
+ * A refusal here means there was nothing to lift.
  */
-export async function leaveProtectedModeIfAny(): Promise<void> {
+export async function openProtectedModeIfAny(): Promise<void> {
   try {
-    await leaveProtectedMode()
+    await openProtectedMode()
   } catch {
     // Nothing to lift, which is the state the teardown wanted anyway.
   }

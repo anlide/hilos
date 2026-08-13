@@ -11,18 +11,22 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 
 /**
- * ProtectedModeTestLeaveCommand - lift the protected-mode freeze through its initiator (test-only).
+ * ProtectedModeTestLeaveCommand - end the driven operation into the verification window (test-only).
  *
  * The mirror of {@see ProtectedModeTestEnterCommand}, and authorized the same way production
  * authorizes a release: the agent answers only if the runtime row names it as the initiator, so
  * there is no forced lift here and none is wanted. A stand does not strand on that - the
- * initiator is a long-lived agent, so the leave that follows a failed test arrives from the same
+ * initiator is a long-lived agent, so the open that follows a failed test arrives from the same
  * agent and passes. A freeze whose initiator really is gone belongs to the watchdog (HIL-482),
  * not to a lever in a test command.
  *
- * Returns once the local runtime row is back to inactive, so a caller may load a page on the next
- * line without racing the agents coming back up. A refusal comes back as its reason, because the
- * core drops an unauthorized or redundant disable with a warning and replies to nobody.
+ * **It no longer opens the system**, because nothing does that by finishing its own operation
+ * any more: this lands in the verification window exactly where a finished restore lands, and
+ * {@see ProtectedModeTestOpenCommand} is the explicit open - the same two steps production takes.
+ *
+ * Returns once the local runtime row reads verifying. A refusal comes back as its reason,
+ * because the core drops an unauthorized request, or one made against the wrong phase, with a
+ * warning and replies to nobody.
  *
  * Test-only ({@see TestOnlyCommand} via {@see AbstractCommandChannelTestCommand}) and
  * database-free: this process only writes to a socket.
@@ -46,7 +50,7 @@ class ProtectedModeTestLeaveCommand extends AbstractCommandChannelTestCommand im
      */
     public function getDescription(): string
     {
-        return 'Leave protected mode through the initiator agent that entered it (test-only)';
+        return 'End the driven operation into the protected-mode verification window (test-only)';
     }
 
     /**
@@ -56,15 +60,19 @@ class ProtectedModeTestLeaveCommand extends AbstractCommandChannelTestCommand im
      */
     public function getHelp(): string
     {
+        $open = CliCommands::PROTECTED_MODE_TEST_OPEN;
+
         return <<<HELP
 Command: {$this->getName()}
 
 Description:
-  Ask the initiator agent to lift the protected-mode freeze, and wait until this node's
-  runtime row is back to inactive. Replies with the phase the agent observed, or with the
-  reason it refused - the mode being inactive already, or this agent not being the
-  initiator the freeze recorded. There is no forced lift: authorization is by initiator
-  identity, exactly as in production. Refuses on a production-like environment.
+  Tell the initiator agent that the driven operation is over, and wait until this node's
+  runtime row reads verifying. The system stays closed to everyone: opening it is
+  {$open}, exactly as it is a separate operator command in
+  production. Replies with the phase the agent observed, or with the reason it refused -
+  nothing frozen here, the mode not being active, or this agent not being the initiator the
+  freeze recorded. Authorization is by initiator identity, exactly as in production.
+  Refuses on a production-like environment.
 
 Usage:
   php cli.php {$this->getName()}
@@ -72,7 +80,7 @@ HELP;
     }
 
     /**
-     * Asks the agent to leave protected mode and prints the outcome.
+     * Asks the agent to end its operation into the verification window and prints the outcome.
      *
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
@@ -102,7 +110,7 @@ HELP;
         }
 
         $phase = (string)($reply->payload[ProtectedModeCommandConstants::FIELD_PHASE] ?? 'unknown');
-        echo "Protected mode left (phase: {$phase})\n";
+        echo "Operation ended, the verification window is open (phase: {$phase})\n";
 
         return ExitCode::SUCCESS;
     }

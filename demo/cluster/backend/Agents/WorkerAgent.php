@@ -34,7 +34,8 @@ final class WorkerAgent extends AbstractAgent
     public const string AGENT_TYPE = AgentType::WORKER;
 
     /**
-     * The protected-mode drive pair (HIL-344), carried here as well as on the Hilos index agent.
+     * The protected-mode drive trio (HIL-344, HIL-481), carried here as well as on the Hilos
+     * index agent.
      *
      * This demo is headless and has no Hilos index, so without a carrier of its own the
      * clustered entry path - the leader's quiesce/quiesced round and the fail-closed refusal a
@@ -46,6 +47,7 @@ final class WorkerAgent extends AbstractAgent
     public const array AGENT_COMMANDS = [
         CliCommands::PROTECTED_MODE_TEST_ENTER,
         CliCommands::PROTECTED_MODE_TEST_LEAVE,
+        CliCommands::PROTECTED_MODE_TEST_OPEN,
     ];
 
     /** @var int Shortest synthetic job, in microseconds */

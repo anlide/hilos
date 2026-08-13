@@ -31,6 +31,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
                     HandshakeWelcomeSignalData::PROTECTED_MODE_OPERATION => null,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => null,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_MESSAGE => null,
+                    HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
                 ],
             ],
             $welcome->toArray(),

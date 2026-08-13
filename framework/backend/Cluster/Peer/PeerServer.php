@@ -24,9 +24,12 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -961,6 +964,51 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
+     * Routes a received protected-mode verify frame to the local handler.
+     *
+     * The frame travels both ways, so the handler is the one that decides whether this node is
+     * the leader being asked or a follower being told.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModeVerifyDTO $frame Received protected-mode verify frame
+     */
+    public function onProtectedModeVerifyReceived(PeerLink $link, PeerProtectedModeVerifyDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onVerify($from);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode pass frame to the local handler.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModePassDTO $frame Received protected-mode pass frame
+     */
+    public function onProtectedModePassReceived(PeerLink $link, PeerProtectedModePassDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onPass($from, $frame->passHash);
+        }
+    }
+
+    /**
+     * Routes a received protected-mode refreeze frame to the local handler.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModeRefreezeDTO $frame Received protected-mode refreeze frame
+     */
+    public function onProtectedModeRefreezeReceived(PeerLink $link, PeerProtectedModeRefreezeDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onRefreeze($from);
+        }
+    }
+
+    /**
      * Returns the online master node ids other than self — the followers the leader freezes.
      *
      * Backs {@see ProtectedModeMesh}: the leader broadcasts quiesce to these and awaits a quiesced
@@ -1038,6 +1086,63 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     public function broadcastLift(): void
     {
         $this->broadcastToMasters(new PeerProtectedModeLiftDTO());
+    }
+
+    /**
+     * Forwards this initiator node's request to open the verification window to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendVerify(string $leaderNodeId): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeVerifyDTO());
+    }
+
+    /**
+     * Broadcasts the verification window to every follower master.
+     */
+    public function broadcastVerify(): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeVerifyDTO());
+    }
+
+    /**
+     * Forwards this initiator node's minted pass to the leader over the peer channel.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function sendPass(string $leaderNodeId, string $passHash): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModePassDTO($passHash));
+    }
+
+    /**
+     * Broadcasts one minted pass to every follower master.
+     *
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function broadcastPass(string $passHash): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModePassDTO($passHash));
+    }
+
+    /**
+     * Forwards this initiator node's request to close back out of the window to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendRefreeze(string $leaderNodeId): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeRefreezeDTO());
+    }
+
+    /**
+     * Broadcasts the close-back to every follower master.
+     */
+    public function broadcastRefreeze(): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeRefreezeDTO());
     }
 
     /**

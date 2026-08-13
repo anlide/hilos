@@ -127,11 +127,14 @@ export function createHilosConnection(
     })
   connection.on('sessionRotate', options.onSessionRotate ?? writeRotationCookie)
   connection.on('protectedMode', (status) => {
-    // An inactive state reaches this event only as a lift: a pushed frame saying so
-    // is the daemon leaving the mode, and a welcome saying so is emitted only when
-    // it changes what the connection held. Either way there is no catch-up snapshot,
-    // so the document has to come back from the server.
-    if (!status.active) {
+    // The mode is over when it locks nobody out AND has no window left open. Both
+    // halves are needed, because an admitted verifier is told "not locked out" in the
+    // same words a lift uses — `acceptsPass` is the row's own bit and is what keeps
+    // that verifier from being reloaded out of the window it was let into. Once the
+    // mode really is over there is no catch-up snapshot, so the document has to come
+    // back from the server; a pushed frame brings that news, and for a tab that was
+    // disconnected at the time, the welcome of the socket that comes back does.
+    if (!status.active && !status.acceptsPass) {
       onLift()
     }
   })

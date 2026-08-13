@@ -6,14 +6,23 @@
 // layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
 // known but no sentence arrived with it. It is a state, not a page: no links,
 // no retry button — the mode lifts on its own and the core reloads the document.
+// The one exception is the code field, shown only while the freeze says it
+// accepts a pass: that phase is the verification window, and a verifier admitted
+// by the code sees the whole product rather than this screen. Submitting
+// reconnects with the key on the socket url (the core does that), because a
+// client refused every outbound frame can only ask to be let in on the 101.
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   input,
+  signal,
 } from '@angular/core'
-import { PROTECTED_MODE_FALLBACK_COPY } from '@hilos/core'
-import type { ProtectedModeStatus } from '@hilos/core'
+import {
+  PROTECTED_MODE_FALLBACK_COPY,
+  PROTECTED_MODE_PASS_COPY,
+} from '@hilos/core'
+import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
 
 /** The full-screen maintenance state of the shell. */
 @Component({
@@ -35,6 +44,55 @@ import type { ProtectedModeStatus } from '@hilos/core'
       <p class="text-body-secondary mb-0" data-id="maintenance-message">
         {{ message() }}
       </p>
+      @if (status().acceptsPass) {
+        <form
+          class="row justify-content-center w-100 mt-4 px-3"
+          data-id="maintenance-pass-form"
+          (submit)="present($event)"
+        >
+          <div class="col-12 col-sm-8 col-md-5">
+            <label
+              class="form-label small text-body-secondary"
+              for="maintenance-pass"
+            >
+              {{ passCopy.prompt }}
+            </label>
+            <div class="input-group">
+              <input
+                id="maintenance-pass"
+                class="form-control"
+                [class.is-invalid]="status().passRejected"
+                data-id="maintenance-pass"
+                type="text"
+                autocomplete="off"
+                [value]="code()"
+                [attr.aria-invalid]="status().passRejected"
+                [attr.aria-describedby]="
+                  status().passRejected ? 'maintenance-pass-error' : null
+                "
+                (input)="onCodeInput($event)"
+              />
+              <button
+                class="btn btn-primary"
+                data-id="maintenance-pass-submit"
+                type="submit"
+                [disabled]="!submittable()"
+              >
+                {{ passCopy.submit }}
+              </button>
+            </div>
+            @if (status().passRejected) {
+              <p
+                id="maintenance-pass-error"
+                class="text-danger small mt-2 mb-0"
+                data-id="maintenance-pass-error"
+              >
+                {{ passCopy.rejected }}
+              </p>
+            }
+          </div>
+        </form>
+      }
     </div>
   `,
 })
@@ -42,10 +100,40 @@ export class HilosMaintenance {
   /** The freeze to render, as the connection reports it. */
   readonly status = input.required<ProtectedModeStatus>()
 
+  /** The connection a presented code is carried back in on. */
+  readonly connection = input.required<HilosConnection>()
+
+  protected readonly passCopy = PROTECTED_MODE_PASS_COPY
+
   protected readonly title = computed(
     () => this.status().title ?? PROTECTED_MODE_FALLBACK_COPY.title,
   )
   protected readonly message = computed(
     () => this.status().message ?? PROTECTED_MODE_FALLBACK_COPY.message,
   )
+
+  protected readonly code = signal('')
+  protected readonly submittable = computed(() => this.code().trim() !== '')
+
+  /**
+   * Mirrors the typed code into the signal the submit button reads.
+   *
+   * @param event The input event of the code field.
+   */
+  protected onCodeInput(event: Event): void {
+    this.code.set((event.target as HTMLInputElement).value)
+  }
+
+  /**
+   * Presents the typed code, keeping it in the field.
+   *
+   * A rejection is most often a typo, and clearing the field would make the
+   * visitor retype the whole key.
+   *
+   * @param event The form submit event, whose page load is not wanted.
+   */
+  protected present(event: Event): void {
+    event.preventDefault()
+    this.connection().presentProtectedModePass(this.code())
+  }
 }

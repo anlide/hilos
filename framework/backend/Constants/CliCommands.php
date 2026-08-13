@@ -122,6 +122,44 @@ final class CliCommands
      */
     public const string PROTECTED_MODE_TEST_ENTER = 'test:protected-mode:enter';
 
-    /** @var string Command: Leave protected mode through the initiator agent that entered it (test-only) */
+    /**
+     * End the operation and open the verification window, through the initiator agent (test-only).
+     *
+     * Named `leave` because it is what a test calls when the operation it froze the node for is
+     * over - the same moment production reaches. It no longer opens the system: that step is
+     * {@see self::PROTECTED_MODE_TEST_OPEN}, exactly as it is a separate operator command in
+     * production.
+     *
+     * @var string Command: End the operation and open the verification window (test-only)
+     */
     public const string PROTECTED_MODE_TEST_LEAVE = 'test:protected-mode:leave';
+
+    /**
+     * Open the system to everyone from the verification window, through the initiator (test-only).
+     *
+     * The test path's own explicit open. It cannot be {@see self::PROTECTED_MODE_OPEN}: a command
+     * routes to exactly one agent type per project, that one belongs to the agent that initiates
+     * a real operation, and the freeze may only be driven by the agent the row records as its
+     * initiator - which on the test path is this driver's carrier.
+     *
+     * @var string Command: Open the system to everyone from the verification window (test-only)
+     */
+    public const string PROTECTED_MODE_TEST_OPEN = 'test:protected-mode:open';
+
+    /**
+     * Mint one pass into the verification window and print it (operator).
+     *
+     * Not test-only: the three commands below are how a human ends a real destructive operation,
+     * and they run on production. Answered by the initiator agent, which is the only party the
+     * freeze row authorizes to drive it.
+     *
+     * @var string Command: Mint one pass into the verification window and print it
+     */
+    public const string PROTECTED_MODE_PASS = 'protected-mode:pass';
+
+    /** @var string Command: Open the system to everyone, ending the verification window */
+    public const string PROTECTED_MODE_OPEN = 'protected-mode:open';
+
+    /** @var string Command: Close the system again from the verification window, voiding every pass */
+    public const string PROTECTED_MODE_CLOSE = 'protected-mode:close';
 }

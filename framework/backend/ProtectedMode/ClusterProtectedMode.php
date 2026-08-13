@@ -8,7 +8,11 @@ use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
@@ -134,6 +138,11 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
             return;
         }
 
+        // This node's own initiator is asking, so the ready that comes back answers this request
+        // rather than repeating an old one. Re-arming matters when the freeze already stands: the
+        // leader sends no second quiesce then, and that is the other place the guard is cleared.
+        $this->readyRelayed = false;
+
         $this->mesh->sendEnable($leaderNodeId, $data);
     }
 
@@ -166,6 +175,75 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     }
 
     /**
+     * Entry point on the initiator's own node: routes the request for the verification window.
+     *
+     * Mirrors {@see requestDisable()} in routing and in authorization; the phase check that makes
+     * it fail-closed lives on the leader ({@see onVerify()}), where the freeze being driven is.
+     *
+     * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window,
+     *                                            unused here for the same reason the disable
+     *                                            payload is: a cluster authorizes by node id
+     */
+    public function requestVerify(ProtectedModeVerifySignalData $data): void
+    {
+        if ($this->isLeader) {
+            $this->onVerify($this->selfNodeId);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping verify request on '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendVerify($leaderNodeId);
+    }
+
+    /**
+     * Entry point on the initiator's own node: routes one minted pass to the leader.
+     *
+     * @param ProtectedModePassSignalData $data Minting agent identity and the hash of the pass
+     */
+    public function requestPass(ProtectedModePassSignalData $data): void
+    {
+        if ($this->isLeader) {
+            $this->onPass($this->selfNodeId, $data->passHash);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping pass request on '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendPass($leaderNodeId, $data->passHash);
+    }
+
+    /**
+     * Entry point on the initiator's own node: routes the request to close back out of the window.
+     *
+     * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back,
+     *                                              unused here: a cluster authorizes by node id
+     */
+    public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
+    {
+        if ($this->isLeader) {
+            $this->onRefreeze($this->selfNodeId);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: dropping refreeze request on '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendRefreeze($leaderNodeId);
+    }
+
+    /**
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      */
@@ -183,8 +261,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
             return;
         }
         if ($this->activeFreeze !== null) {
-            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
-                . " — a '{$this->activeFreeze->operation}' freeze is already in flight");
+            $this->answerFreezeAlreadyLed($fromNodeId, $this->activeFreeze, $data);
             return;
         }
         // Last of the entry checks, and deliberately above every trace of entry: a leader that
@@ -286,11 +363,13 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     }
 
     /**
-     * Relays the leader's ready to this node's initiator agent, exactly once per freeze.
+     * Relays the leader's ready to this node's initiator agent, exactly once per request.
      *
      * Only the leader that froze this node may confirm it, and only the first confirmation runs:
      * {@see ProtectedModeExecutor::notifyInitiatorReady} lets the initiator start its destructive
-     * operation, so a stray or duplicate ready must not re-fire it.
+     * operation, so a stray or duplicate ready must not re-fire it. What re-arms the guard is this
+     * node's own initiator asking again ({@see requestEnable()}) or a fresh freeze being ordered
+     * against this node ({@see onQuiesce()}) - the two moments a ready is owed.
      *
      * @param string $fromNodeId Node id of the leader that confirmed the freeze
      */
@@ -332,11 +411,188 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     }
 
     /**
-     * Marks the freeze active and signals the initiator once no follower is still pending.
+     * @param string $fromNodeId Node id the frame came from
+     */
+    public function onVerify(string $fromNodeId): void
+    {
+        if ($this->frozenByThisLeader($fromNodeId)) {
+            // Follower half: the leader has already decided, so what is left to refuse is a repeat
+            // - reapplying the window would re-roll the stopped-agent roster the lift resumes.
+            if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+                Logger::warning("Protected mode: dropping verify from '{$fromNodeId}' — node '{$this->selfNodeId}' is already verifying");
+                return;
+            }
+
+            $this->executor->enterVerifying();
+            return;
+        }
+
+        if (!$this->leadsFreezeFor($fromNodeId, 'verify')) {
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE)) {
+            Logger::warning("Protected mode: dropping verify from '{$fromNodeId}' — the freeze has not reached active");
+            return;
+        }
+
+        $this->executor->enterVerifying();
+        $this->mesh->broadcastVerify();
+    }
+
+    /**
+     * @param string $fromNodeId Node id the frame came from
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function onPass(string $fromNodeId, string $passHash): void
+    {
+        if ($this->frozenByThisLeader($fromNodeId)) {
+            if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+                Logger::warning("Protected mode: dropping pass from '{$fromNodeId}' — node '{$this->selfNodeId}' is not verifying");
+                return;
+            }
+
+            $this->runtimeView()?->actions->issuePass($passHash);
+            return;
+        }
+
+        if (!$this->leadsFreezeFor($fromNodeId, 'pass')) {
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+            Logger::warning("Protected mode: dropping pass from '{$fromNodeId}' — the mode is not verifying");
+            return;
+        }
+
+        $this->runtimeView()?->actions->issuePass($passHash);
+        $this->mesh->broadcastPass($passHash);
+    }
+
+    /**
+     * @param string $fromNodeId Node id the frame came from
+     */
+    public function onRefreeze(string $fromNodeId): void
+    {
+        if ($this->frozenByThisLeader($fromNodeId)) {
+            if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+                Logger::warning("Protected mode: dropping refreeze from '{$fromNodeId}' — node '{$this->selfNodeId}' is not verifying");
+                return;
+            }
+
+            $this->executor->reenterActive();
+            return;
+        }
+
+        if (!$this->leadsFreezeFor($fromNodeId, 'refreeze')) {
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+            Logger::warning("Protected mode: dropping refreeze from '{$fromNodeId}' — the mode is not verifying");
+            return;
+        }
+
+        $this->executor->reenterActive();
+        $this->mesh->broadcastRefreeze();
+    }
+
+    /**
+     * Answers an enable raised against the freeze this leader is already driving.
      *
-     * When the leader is itself the initiator the ready has no peer to travel over — a self send
-     * would go nowhere — so it is relayed to the local agent directly; otherwise it rides the peer
-     * channel to the initiator's node.
+     * The leader half of {@see StandaloneProtectedMode::answerFreezeAlreadyHeld()}, and it exists
+     * for the same operator: closing the verification window leaves the whole cluster frozen on
+     * active so another attempt can run, and that attempt's enable would otherwise be refused as a
+     * freeze in flight, leaving its initiator waiting for a ready nobody was going to send. The
+     * quiesce round is not replayed - the followers are still frozen, and re-ordering it would
+     * re-roll the stopped-agent roster each of them resumes against - so what the initiator gets
+     * is the ready the settled freeze already earns it.
+     *
+     * Authorized by initiator node id AND by the agent identity the freeze records, which is one
+     * check more than this class asks anywhere else. The node id keeps a second node from freezing
+     * a cluster already frozen for somebody else, the case the refusal was written for. The agent
+     * identity is what the node id cannot cover here: a project holds two initiators - the one that
+     * runs real operations and the test driver's carrier - and on a cluster they sit on the same
+     * node, so a node-id match alone would answer ready under a freeze the asking agent does not
+     * own. The ready would not even reach it: {@see ProtectedModeExecutor::notifyInitiatorReady()}
+     * delivers to the identity written on the row, so the agent that asked would wait out its
+     * timeout while the other one was told a second time that it may start destroying things.
+     *
+     * @param string $fromNodeId Node id of the initiator that sent the request
+     * @param ProtectedModeQuiesceData $freeze Freeze this leader is driving
+     * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the enable names
+     */
+    private function answerFreezeAlreadyLed(
+        string $fromNodeId,
+        ProtectedModeQuiesceData $freeze,
+        ProtectedModeEnableSignalData $data,
+    ): void {
+        if (
+            !$this->active
+            || $data->initiatorNodeId !== $freeze->initiatorNodeId
+            || $data->initiatorAgentType !== $freeze->initiatorAgentType
+            || $data->initiatorAgentIndex !== $freeze->initiatorAgentIndex
+            || !$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE)
+        ) {
+            Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
+                . " — a '{$freeze->operation}' freeze is already in flight");
+            return;
+        }
+
+        $this->signalInitiatorReady($freeze);
+    }
+
+    /**
+     * Whether this node is a follower frozen by the peer that sent the frame.
+     *
+     * The three verification frames travel in both directions under one name, so the receiving
+     * node decides which half it is playing from what it already knows about itself. Being frozen
+     * by the sender is checked first and settles it: a leader never records a freezing leader for
+     * itself, so the two halves cannot both match.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @return bool Whether this node should apply the frame as a follower
+     */
+    private function frozenByThisLeader(string $fromNodeId): bool
+    {
+        return $this->freezingLeaderId !== null && $fromNodeId === $this->freezingLeaderId;
+    }
+
+    /**
+     * Whether this node leads the freeze the sending node initiated.
+     *
+     * The authorization the leader half of every verification frame shares with
+     * {@see onDisable()}: only the node that asked for the freeze may drive what happens to it.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @param string $frame Frame name for the refusal log line
+     * @return bool Whether this node may drive the freeze on the sender's behalf
+     */
+    private function leadsFreezeFor(string $fromNodeId, string $frame): bool
+    {
+        if (!$this->isLeader || $this->activeFreeze === null) {
+            Logger::warning("Protected mode: dropping {$frame} from '{$fromNodeId}' — no freeze is being led here");
+            return false;
+        }
+        if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
+            Logger::warning("Protected mode: dropping {$frame} from '{$fromNodeId}'"
+                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether this node's freeze row stands on a given phase.
+     *
+     * @param string $expected Phase to test for
+     * @return bool Whether the row reads that phase right now
+     */
+    private function phaseIs(string $expected): bool
+    {
+        return $this->runtimeView()?->phase === $expected;
+    }
+
+    /**
+     * Marks the freeze active and signals the initiator once no follower is still pending.
      */
     private function activateWhenAllQuiesced(): void
     {
@@ -346,11 +602,24 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
 
         $this->active = true;
         $this->executor->enterActive();
+        $this->signalInitiatorReady($this->activeFreeze);
+    }
 
+    /**
+     * Tells the node that asked for the freeze that the cluster has quiesced and it may run.
+     *
+     * When the leader is itself the initiator the ready has no peer to travel over — a self send
+     * would go nowhere — so it is relayed to the local agent directly; otherwise it rides the peer
+     * channel to the initiator's node.
+     *
+     * @param ProtectedModeQuiesceData $freeze Freeze whose initiator is being signalled
+     */
+    private function signalInitiatorReady(ProtectedModeQuiesceData $freeze): void
+    {
         // A nameless initiator never gets past onEnable, so null cannot reach here; relaying
         // locally is nonetheless the safe reading of it, because a ready sent to no node would
         // leave the initiator waiting forever under a freeze nobody can lift.
-        $initiatorNodeId = $this->activeFreeze->initiatorNodeId;
+        $initiatorNodeId = $freeze->initiatorNodeId;
         if ($initiatorNodeId === null || $initiatorNodeId === $this->selfNodeId) {
             $this->executor->notifyInitiatorReady();
             return;

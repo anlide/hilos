@@ -197,7 +197,7 @@ export function HilosLayout({
         }`}
       >
         {underMaintenance ? (
-          <HilosMaintenance status={protectedMode} />
+          <HilosMaintenance status={protectedMode} connection={connection} />
         ) : (
           children
         )}

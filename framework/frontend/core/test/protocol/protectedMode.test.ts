@@ -35,6 +35,8 @@ describe('the protected-mode block on the welcome', () => {
       throw new Error('expected a handshake signal')
     }
     expect(result.signal.protectedMode).toEqual({
+      acceptsPass: false,
+      passRejected: false,
       active: true,
       operation: 'restore',
       title: 'Restoring a backup',
@@ -106,6 +108,8 @@ describe('the pushed protected_mode frame', () => {
       throw new Error('expected a protectedMode signal')
     }
     expect(result.signal.state).toEqual({
+      acceptsPass: false,
+      passRejected: false,
       active: false,
       operation: undefined,
       title: undefined,
@@ -134,5 +138,33 @@ describe('the client-side pieces', () => {
   it('keeps a last-resort sentence for a freeze that arrived wordless', () => {
     expect(PROTECTED_MODE_FALLBACK_COPY.title).not.toBe('')
     expect(PROTECTED_MODE_FALLBACK_COPY.message).not.toBe('')
+  })
+})
+
+describe('the window marker on the block', () => {
+  it('is read off the frame that carries it', () => {
+    const status = toProtectedModeStatus({ active: true, acceptsPass: true })
+
+    expect(status.acceptsPass).toBe(true)
+  })
+
+  it('is false on a block that does not mention it', () => {
+    // The frozen phases send no marker at all, and neither did the daemon before
+    // the verification window existed: absent must read as "no code will help".
+    const status = toProtectedModeStatus({ active: true })
+
+    expect(status.acceptsPass).toBe(false)
+  })
+
+  it('never arrives from the wire as a rejection', () => {
+    // A frame describes the node; whether THIS client's key was refused is the
+    // connection's own conclusion, and a block must not be able to assert it.
+    const status = toProtectedModeStatus({
+      active: true,
+      acceptsPass: true,
+      passRejected: true,
+    })
+
+    expect(status.passRejected).toBe(false)
   })
 })

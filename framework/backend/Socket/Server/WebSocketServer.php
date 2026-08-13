@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Core\Daemon\ConnectionDropper;
+use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
@@ -26,6 +27,9 @@ abstract class WebSocketServer extends AbstractServer
 {
     /** @var ?ConnectionDropper Master seam that force-closes a connection, wired at registration */
     private ?ConnectionDropper $connectionDropper = null;
+
+    /** @var ?ProtectedModeAdmissionRecorder Master seam that records an admitted verifier, wired at registration */
+    private ?ProtectedModeAdmissionRecorder $protectedModeAdmissionRecorder = null;
 
     /**
      * Called when a new WebSocket client connection is accepted.
@@ -52,6 +56,19 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
+     * Wires the seam that records an admitted verifier, for the clients this server accepts.
+     *
+     * Held here for the same reason as the dropper above: a project builds its own client
+     * subclass, and none of them should have to carry a daemon seam through their constructor.
+     *
+     * @param ProtectedModeAdmissionRecorder $recorder Master seam that records an admitted verifier
+     */
+    public function setProtectedModeAdmissionRecorder(ProtectedModeAdmissionRecorder $recorder): void
+    {
+        $this->protectedModeAdmissionRecorder = $recorder;
+    }
+
+    /**
      * Accepts a connection and hands the new client the connection-drop seam.
      *
      * A client needs it for exactly one thing: dropping the other connections of a session
@@ -66,6 +83,9 @@ abstract class WebSocketServer extends AbstractServer
         $client = parent::acceptConnection();
         if ($client instanceof WebSocketClient && $this->connectionDropper !== null) {
             $client->setConnectionDropper($this->connectionDropper);
+        }
+        if ($client instanceof WebSocketClient && $this->protectedModeAdmissionRecorder !== null) {
+            $client->setProtectedModeAdmissionRecorder($this->protectedModeAdmissionRecorder);
         }
 
         return $client;

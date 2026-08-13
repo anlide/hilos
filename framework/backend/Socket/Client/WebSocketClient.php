@@ -15,12 +15,15 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
+use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
@@ -118,6 +121,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * registered one, where a rotation simply drops nobody.
      */
     private ?ConnectionDropper $connectionDropper = null;
+
+    /**
+     * @var ?ProtectedModeAdmissionRecorder Master seam recording an admitted verifier, wired in by the server
+     *
+     * Null leaves the whole admission inert, exactly like the dropper above: no seam, no
+     * verifier let in, and the connection simply stays on the maintenance stub.
+     */
+    private ?ProtectedModeAdmissionRecorder $protectedModeAdmissionRecorder = null;
 
     /**
      * @var list<string> Accept keys a spent rotation left to drop, held until this
@@ -391,6 +402,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
+        // Before the welcome, never after: the welcome tells this connection whether the mode
+        // locks it out, and a verifier that presented a valid pass no longer is locked out.
+        $this->admitProtectedModePass($acceptKey, $queryParams);
         $this->sendHandshakeWelcome($acceptKey, $sessionCookieName);
 
         if ($rotation !== null) {
@@ -518,6 +532,19 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     public function setConnectionDropper(ConnectionDropper $connectionDropper): void
     {
         $this->connectionDropper = $connectionDropper;
+    }
+
+    /**
+     * Hands this connection the seam that records it as an admitted verifier.
+     *
+     * Given at accept for the same reason as the dropper above, so the connection code never
+     * reaches back into the daemon to find the runtime row it may not write itself.
+     *
+     * @param ProtectedModeAdmissionRecorder $recorder Master seam that records an admitted verifier
+     */
+    public function setProtectedModeAdmissionRecorder(ProtectedModeAdmissionRecorder $recorder): void
+    {
+        $this->protectedModeAdmissionRecorder = $recorder;
     }
 
     /**
@@ -661,6 +688,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             protectedModeOperation: $operation,
             protectedModeTitle: $copy?->title,
             protectedModeMessage: $copy?->message,
+            // The row's own bit, not this connection's - exactly what the pushed frame carries.
+            // A locked-out connection reads it as "the surface may offer a code field"; an
+            // admitted verifier reads it as "the window I am inside is still open", and needs
+            // to: its welcome says active:false in the very words a lift does, and without this
+            // bit the two are one frame. That client would then either reload itself out of the
+            // window or, taking the silence for admission, keep a dead key past the lift.
+            protectedModeAcceptsPass: $this->protectedModePhaseIsVerifying(),
         );
         $message = [
             SignalPayloadConstants::FIELD_TYPE => SignalTypeConstants::HANDSHAKE,
@@ -689,6 +723,53 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private function protectedModeLocksOut(string $acceptKey): bool
     {
         return Hilos::$rt?->hilosProtectedModeRuntime?->locksOut($acceptKey) ?? false;
+    }
+
+    /**
+     * Whether the freeze is in the one phase that takes a code from the maintenance surface.
+     *
+     * @return bool Whether the mode currently accepts a pass
+     */
+    private function protectedModePhaseIsVerifying(): bool
+    {
+        return Hilos::$rt?->hilosProtectedModeRuntime?->phase === ProtectedModeRuntime::PHASE_VERIFYING;
+    }
+
+    /**
+     * Lets this connection through the freeze when its upgrade request carried a valid pass.
+     *
+     * The whole weight of the admission, and it is deliberately small: one in-memory row read,
+     * one hash and one constant-time compare. Nothing is read from the database - a restore is
+     * rewriting exactly the tables a credential would come from, which is the reason the pass
+     * exists at all - and nothing blocks, because this runs on the master's accept path.
+     *
+     * A wrong key changes nothing: the connection stays on the stub and the field can be tried
+     * again. The comparison is {@see hash_equals()} rather than `===` because the two sides are
+     * a secret and an attacker-supplied value, which is the one place a timing difference is
+     * worth removing even though the search space is a 256-bit hash.
+     *
+     * @param string $acceptKey This connection's accept key, recorded when the pass matches
+     * @param RequestQueryParams $queryParams Query parameters of the upgrade request
+     */
+    private function admitProtectedModePass(string $acceptKey, RequestQueryParams $queryParams): void
+    {
+        $pass = $queryParams->getString(ProtectedModeAdmissionConstants::HILOS_PASS_QUERY_PARAM);
+        if ($pass === null || $pass === '') {
+            return;
+        }
+
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null || $freeze->phase !== ProtectedModeRuntime::PHASE_VERIFYING) {
+            return;
+        }
+
+        $presented = hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass);
+        foreach ($freeze->passHashes as $minted) {
+            if (hash_equals($minted, $presented)) {
+                $this->protectedModeAdmissionRecorder?->admitProtectedModeConnection($acceptKey);
+                return;
+            }
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\ProtectedMode;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -45,6 +46,18 @@ final class ProtectedModeCommandConstants
     /** @var string Reply key: phase the agent observed when it answered */
     public const string FIELD_PHASE = 'phase';
 
+    /**
+     * @var string Reply key: the clear pass minted for the verification window
+     *
+     * The only way that value ever leaves the process that minted it, which is why this reply
+     * travels no further than the command socket the operator opened: the row keeps only the hash
+     * ({@see ProtectedModeRuntime::$passHashes}), so nothing in the system can hand the pass back
+     * a second time. Where it does become observable is on its way in - a verifier presents it as
+     * a query parameter on the socket url, in front of whatever logs request lines
+     * ({@see ProtectedModeOperatorTrait}).
+     */
+    public const string FIELD_PASS = 'pass';
+
     /** @var string Snapshot key: whether this node has the protected-mode runtime row mounted */
     public const string FIELD_RT_MOUNTED = 'rtMounted';
 
@@ -76,4 +89,14 @@ final class ProtectedModeCommandConstants
      * reason.
      */
     public const string FIELD_AGENT_START_GATE_CLOSED = 'agentStartGateClosed';
+
+    /**
+     * @var string Snapshot key: how many passes the verification window has outstanding
+     *
+     * A count and never a hash, for the same reason {@see FIELD_INITIATOR_AGENT_TYPE}'s
+     * neighbour {@see ProtectedModeRuntime::$initiatorAcceptKey} is omitted entirely: this
+     * reply goes to an unauthenticated port and, in a test run, into CI output that keeps it
+     * forever. How many verifiers may come in is all an assertion ever needs to know.
+     */
+    public const string FIELD_PASS_COUNT = 'passCount';
 }

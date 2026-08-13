@@ -37,6 +37,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     public const string PROTECTED_MODE_OPERATION = 'operation';
     public const string PROTECTED_MODE_TITLE = 'title';
     public const string PROTECTED_MODE_MESSAGE = 'message';
+    public const string PROTECTED_MODE_ACCEPTS_PASS = 'acceptsPass';
 
     /**
      * @param string $build Daemon build timestamp ('dev' when not configured)
@@ -45,6 +46,12 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      * @param ?string $protectedModeOperation Operation the freeze protects; null when no freeze holds
      * @param ?string $protectedModeTitle Heading of the maintenance surface; null when no freeze holds
      * @param ?string $protectedModeMessage Sentence under the heading; null when no freeze holds
+     * @param bool $protectedModeAcceptsPass Whether the freeze is in its verification window; false
+     *                                       whenever no freeze holds and whenever one holds but takes
+     *                                       no code yet. A locked-out connection reads it as "the
+     *                                       surface may offer a code field", an admitted verifier -
+     *                                       whose $protectedModeActive is false, like everybody's
+     *                                       once the mode is over - as "the window is still open"
      */
     public function __construct(
         public readonly string $build,
@@ -53,6 +60,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $protectedModeOperation = null,
         public readonly ?string $protectedModeTitle = null,
         public readonly ?string $protectedModeMessage = null,
+        public readonly bool $protectedModeAcceptsPass = false,
     ) {
     }
 
@@ -69,6 +77,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
                 self::PROTECTED_MODE_OPERATION => $this->protectedModeOperation,
                 self::PROTECTED_MODE_TITLE => $this->protectedModeTitle,
                 self::PROTECTED_MODE_MESSAGE => $this->protectedModeMessage,
+                self::PROTECTED_MODE_ACCEPTS_PASS => $this->protectedModeAcceptsPass,
             ],
         ];
     }
@@ -93,6 +102,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
             protectedModeOperation: self::text($protectedMode, self::PROTECTED_MODE_OPERATION),
             protectedModeTitle: self::text($protectedMode, self::PROTECTED_MODE_TITLE),
             protectedModeMessage: self::text($protectedMode, self::PROTECTED_MODE_MESSAGE),
+            protectedModeAcceptsPass: (bool)($protectedMode[self::PROTECTED_MODE_ACCEPTS_PASS] ?? false),
         );
     }
 

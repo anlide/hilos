@@ -81,6 +81,37 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $server->startAgentPublic(self::INITIATOR_TYPE, '7');
     }
 
+    public function testEveryFrozenPhaseRefusesAStartFromAnyoneButTheInitiator(): void
+    {
+        foreach (
+            [
+                StateProtectedModeRuntime::PHASE_ACTIVATING,
+                StateProtectedModeRuntime::PHASE_ACTIVE,
+                StateProtectedModeRuntime::PHASE_DEACTIVATING,
+            ] as $phase
+        ) {
+            $manager = new FreezeGateTestAgentManagerDaemon();
+            $server = $this->buildServer(FreezeGateTestWorkerServer::class, $manager);
+            $this->freeze($phase, self::INITIATOR_TYPE, null);
+
+            $server->startAgentPublic(self::OTHER_TYPE);
+
+            $this->assertFalse($manager->hasAgent(self::OTHER_TYPE), $phase);
+        }
+    }
+
+    public function testTheVerificationWindowLetsEveryAgentStartAgain(): void
+    {
+        $server = $this->buildServer(FreezeGateTestWorkerServer::class, new FreezeGateTestAgentManagerDaemon());
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+
+        // The window exists to bring the agents back for the verifier to look at, so the gate
+        // that refuses every other non-inactive phase has to open here. Passing it reaches
+        // worker selection, which has no workers registered.
+        $this->expectException(NoSuitableWorkerException::class);
+        $server->startAgentPublic(self::OTHER_TYPE);
+    }
+
     public function testTheGateIsTransparentWhileTheModeIsInactive(): void
     {
         $server = $this->buildServer(FreezeGateTestWorkerServer::class, new FreezeGateTestAgentManagerDaemon());

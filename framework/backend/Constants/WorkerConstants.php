@@ -98,4 +98,13 @@ final class WorkerConstants
 
     /** @var string Protected-mode disable request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_DISABLE = 'worker_protected_mode_disable';
+
+    /** @var string Protected-mode verify request (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_VERIFY = 'worker_protected_mode_verify';
+
+    /** @var string Protected-mode pass request (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_PASS = 'worker_protected_mode_pass';
+
+    /** @var string Protected-mode refreeze request (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_REFREEZE = 'worker_protected_mode_refreeze';
 }

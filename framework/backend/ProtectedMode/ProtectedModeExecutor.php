@@ -46,6 +46,24 @@ interface ProtectedModeExecutor
     public function enterDeactivating(): void;
 
     /**
+     * Opens the verification window on this node: writes phase verifying and brings the agents back.
+     *
+     * The agents come back here rather than at the lift, because a verifier has nothing to look at
+     * while the page agents are stopped. The phase is written FIRST: the agent-start gate refuses
+     * every start while the phase is not inactive, so a resume ordered before the phase moved would
+     * hand the verifier an empty system.
+     */
+    public function enterVerifying(): void;
+
+    /**
+     * Closes this node back from the verification window: writes phase active and stops the agents again.
+     *
+     * The mirror of {@see enterVerifying()}, and not the same thing as {@see enterActive()}: that
+     * one only marks the freeze established, while this one has agents to stop and passes to void.
+     */
+    public function reenterActive(): void;
+
+    /**
      * Releases this node: writes phase inactive locally and resumes the agents that were stopped.
      */
     public function enterInactive(): void;

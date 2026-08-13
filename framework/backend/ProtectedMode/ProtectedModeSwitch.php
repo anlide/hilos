@@ -6,6 +6,10 @@ namespace Hilos\ProtectedMode;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
@@ -37,4 +41,38 @@ interface ProtectedModeSwitch
      * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void;
+
+    /**
+     * Asks to open the verification window once the destructive operation has finished.
+     *
+     * The step {@see requestDisable()} used to be reached in: the operation is over, the system
+     * stays closed to everyone, and a hand-picked circle is let in by pass to confirm it came
+     * back. Authorized exactly like the release, and fail-closed on the phase - only a freeze
+     * that reached {@see ProtectedModeRuntime::PHASE_ACTIVE} has an operation to verify.
+     *
+     * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window
+     */
+    public function requestVerify(ProtectedModeVerifySignalData $data): void;
+
+    /**
+     * Asks to record one more pass for the verification window in flight.
+     *
+     * Only the hash reaches this seam; the clear key stays in the operator's terminal. Refused
+     * unless the mode is on {@see ProtectedModeRuntime::PHASE_VERIFYING}: a pass minted for a
+     * window that is not open would sit on the row waiting for one.
+     *
+     * @param ProtectedModePassSignalData $data Minting agent identity and the hash of the pass
+     */
+    public function requestPass(ProtectedModePassSignalData $data): void;
+
+    /**
+     * Asks to close the system again from the verification window, voiding every pass.
+     *
+     * The other exit from the window, and the reason the operator can act on what the verifiers
+     * found without first opening the system to real users. Refused unless the mode is on
+     * {@see ProtectedModeRuntime::PHASE_VERIFYING}.
+     *
+     * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
+     */
+    public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
 }

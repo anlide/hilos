@@ -173,7 +173,11 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       class="container flex-grow-1 min-h-0 overflow-auto py-4"
       :class="{ 'd-flex flex-column': underMaintenance }"
     >
-      <HilosMaintenance v-if="underMaintenance" :status="protectedMode" />
+      <HilosMaintenance
+        v-if="underMaintenance"
+        :status="protectedMode"
+        :connection="props.connection"
+      />
       <slot v-else />
     </main>
     <footer

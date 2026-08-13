@@ -7,7 +7,10 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
@@ -22,8 +25,9 @@ use PHPUnit\Framework\TestCase;
  * The machine is driven through the request seam an initiator's daemon calls and observed through
  * a recording fake of the local-node port, so entry, refusal and release are pinned without a
  * daemon: entering runs the whole freeze in one tick and tells the initiator to go, a repeat
- * request is refused so the stopped-agent roster is not re-rolled, only the recorded initiator may
- * release, and a project that mounts no runtime row never gets a ready.
+ * request never re-enters so the stopped-agent roster is not re-rolled - though the initiator of a
+ * freeze that already stands is told ready again rather than refused - only the recorded initiator
+ * may release, and a project that mounts no runtime row never gets a ready.
  */
 final class StandaloneProtectedModeTest extends TestCase
 {
@@ -61,9 +65,51 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertNull($this->executor->freeze?->initiatorNodeId);
     }
 
-    public function testRepeatedEnableIsDropped(): void
+    public function testRepeatedEnableBeforeTheFreezeSettlesIsDropped(): void
+    {
+        // The fake executor writes no row, so the freeze is still on its way in - and an entry
+        // run twice re-rolls the stopped-agent roster the release resumes against.
+        $this->mode->requestEnable($this->enableData());
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable($this->enableData());
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testTheInitiatorOfASettledFreezeIsToldReadyAgainInsteadOfRefused(): void
+    {
+        // What an operator does after closing the verification window: the node stays frozen on
+        // active precisely so another restore can run, so the enable that restore raises has to be
+        // answered rather than dropped as a duplicate. Nothing is re-entered - the node is already
+        // quiesced, which is the whole of what a ready asserts.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable($this->enableData());
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testEnableFromAnotherAgentUnderASettledFreezeIsDropped(): void
     {
         $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable($this->enableData('chat', null));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testEnableInsideTheVerificationWindowIsDropped(): void
+    {
+        // Only a settled freeze answers ready: inside the window the agents are back up, so the
+        // node is not quiesced and an operation that believed a ready would run over live clients.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
         $this->executor->calls = [];
 
         $this->mode->requestEnable($this->enableData());
@@ -100,6 +146,80 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
     }
 
+    public function testTheInitiatorOpensTheVerificationWindow(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['enterVerifying'], $this->executor->calls);
+    }
+
+    public function testVerifyFromAnotherAgentIsDropped(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData('chat', null));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testVerifyFromTheWrongPhaseIsDropped(): void
+    {
+        // The row is left at activating, which is where a freeze sits before every node has
+        // quiesced: there is no finished operation to verify yet.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX, activate: false);
+        $this->executor->calls = [];
+
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testAPassIsRecordedOnlyInsideTheWindow(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $pass = new ProtectedModePassSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX, 'hash-a');
+
+        // Active, not verifying: nobody may be let in yet.
+        $this->mode->requestPass($pass);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->withDaemonTruthSource(fn() => $this->mode->requestPass($pass));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+    }
+
+    public function testTheInitiatorClosesTheWindowBackToAFullFreeze(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->mode->requestRefreeze(new ProtectedModeRefreezeSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['reenterActive'], $this->executor->calls);
+    }
+
+    public function testRefreezeOutsideTheWindowIsDropped(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+
+        $this->mode->requestRefreeze(new ProtectedModeRefreezeSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
     public function testWithoutAMountedRuntimeRowTheModeNeitherEntersNorReportsReady(): void
     {
         // Fail-closed: the initiator waits for ready before it destroys anything, so refusing to
@@ -132,36 +252,71 @@ final class StandaloneProtectedModeTest extends TestCase
      *
      * @param string $agentType Initiator agent type to record
      * @param ?int $agentIndex Initiator agent index to record
+     * @param bool $activate Whether to advance the row to active, as a completed entry does
      */
-    private function recordInitiatorOnTheRuntimeRow(string $agentType, ?int $agentIndex): void
+    private function recordInitiatorOnTheRuntimeRow(string $agentType, ?int $agentIndex, bool $activate = true): void
     {
         $view = Hilos::$rt?->hilosProtectedModeRuntime;
         if ($view === null) {
             $this->fail('The protected mode runtime row is not mounted.');
         }
 
-        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
-        try {
+        $this->withDaemonTruthSource(function () use ($view, $agentType, $agentIndex, $activate): void {
             $view->actions->enterActivating(
                 new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null),
                 null,
             );
-            $view->actions->enterActive();
+            if ($activate) {
+                $view->actions->enterActive();
+            }
+        });
+    }
+
+    /**
+     * Moves the row into the verification window, standing in for the real executor's write.
+     */
+    private function enterVerifyingOnTheRuntimeRow(): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        $this->withDaemonTruthSource(static fn() => $view->actions->enterVerifying());
+    }
+
+    /**
+     * Runs a write with the daemon registered as the runtime truth source, and drops it after.
+     *
+     * The row refuses a write from anyone else, and the registration is process-wide, so it is
+     * held for exactly the length of the write rather than for the length of the test.
+     *
+     * @param callable(): void $write Write to run as the truth source
+     */
+    private function withDaemonTruthSource(callable $write): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        try {
+            $write();
         } finally {
             RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         }
     }
 
     /**
+     * @param string $agentType Agent type asking to enter, the recorded initiator by default
+     * @param ?int $agentIndex Agent index asking to enter
      * @return ProtectedModeEnableSignalData Enable request of the single-node initiator
      */
-    private function enableData(): ProtectedModeEnableSignalData
-    {
+    private function enableData(
+        string $agentType = self::INITIATOR_TYPE,
+        ?int $agentIndex = self::INITIATOR_INDEX,
+    ): ProtectedModeEnableSignalData {
         return new ProtectedModeEnableSignalData(
             operation: 'restore',
             initiatorAcceptKey: 'accept-9',
-            initiatorAgentType: self::INITIATOR_TYPE,
-            initiatorAgentIndex: self::INITIATOR_INDEX,
+            initiatorAgentType: $agentType,
+            initiatorAgentIndex: $agentIndex,
             initiatorNodeId: null,
         );
     }
@@ -219,6 +374,16 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function enterDeactivating(): void
     {
         $this->calls[] = 'enterDeactivating';
+    }
+
+    public function enterVerifying(): void
+    {
+        $this->calls[] = 'enterVerifying';
+    }
+
+    public function reenterActive(): void
+    {
+        $this->calls[] = 'reenterActive';
     }
 
     public function enterInactive(): void

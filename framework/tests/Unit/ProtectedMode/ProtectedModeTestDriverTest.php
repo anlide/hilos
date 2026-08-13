@@ -68,7 +68,7 @@ final class ProtectedModeTestDriverTest extends TestCase
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
 
         $this->assertRefused($this->singleReply(), 'already active');
-        $this->assertNull($this->nextEnableOrDisable(), 'A refused enter must queue no enable at all.');
+        $this->assertNull($this->nextProtectedModeRequest(), 'A refused enter must queue no enable at all.');
     }
 
     public function testEnterAnswersOnlyOnceTheFreezeIsReady(): void
@@ -80,7 +80,7 @@ final class ProtectedModeTestDriverTest extends TestCase
 
         $this->assertSame(
             SignalTypeConstants::PROTECTED_MODE_ENABLE,
-            $this->nextEnableOrDisable(),
+            $this->nextProtectedModeRequest(),
             'Accepting the command asks the daemon for the freeze.',
         );
         $this->assertSame([], $this->replies(), 'Nothing is answered while the freeze is still taking hold.');
@@ -105,7 +105,7 @@ final class ProtectedModeTestDriverTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $agent = new DriverTestAgent(null);
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
-        $this->nextEnableOrDisable();
+        $this->nextProtectedModeRequest();
 
         $agent->onTick();
         $this->assertSame([], $this->replies(), 'The window has not run out yet.');
@@ -128,28 +128,81 @@ final class ProtectedModeTestDriverTest extends TestCase
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_LEAVE));
 
         $this->assertRefused($this->singleReply(), 'somebody-else');
-        $this->assertNull($this->nextEnableOrDisable(), 'A refused leave must queue no disable.');
+        $this->assertNull($this->nextProtectedModeRequest(), 'A refused leave must queue no request.');
     }
 
     public function testLeaveFromTheInitiatorWithAMatchingIndexIsAccepted(): void
     {
         // The row carries the index as an int and the agent as a string; a comparison that got
-        // this wrong would refuse the one agent actually entitled to lift.
+        // this wrong would refuse the one agent actually entitled to drive.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, 7);
         $agent = new DriverTestAgent('7');
 
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_LEAVE));
 
-        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextEnableOrDisable());
-        $this->assertSame([], $this->replies(), 'Leave answers on the lift, not on acceptance.');
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->nextProtectedModeRequest());
+        $this->assertSame([], $this->replies(), 'Leave answers on the move, not on acceptance.');
     }
 
-    public function testLeaveAnswersWhenTheRowIsBackToInactive(): void
+    public function testLeaveEndsTheOperationIntoTheVerificationWindowRatherThanOpeningTheSystem(): void
     {
+        // The whole point of HIL-481 on the test path: leave means "the driven operation is
+        // over", which is where a real restore now ends too. Opening the system is a second,
+        // explicit command - on both paths.
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
         $agent = new DriverTestAgent(null);
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_LEAVE));
-        $this->nextEnableOrDisable();
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->nextProtectedModeRequest());
+
+        $agent->onTick();
+        $this->assertSame([], $this->replies(), 'Still active, so there is nothing to report yet.');
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+        $agent->onTick();
+
+        $reply = $this->singleReply();
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
+        );
+    }
+
+    public function testLeaveIntoAWindowThatIsAlreadyOpenIsRefused(): void
+    {
+        // Fail-closed where this node can judge alone: the window is open, so there is no
+        // operation of its own left to end, and the core would drop this verify silently.
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_LEAVE));
+
+        $this->assertRefused($this->singleReply(), StateProtectedModeRuntime::PHASE_VERIFYING);
+        $this->assertNull($this->nextProtectedModeRequest(), 'A refused leave must queue no request.');
+    }
+
+    public function testLeaveIsSentFromTheActivatingPhaseAFollowerNeverLeaves(): void
+    {
+        // On a cluster only the leader writes active, so an initiator hosted on a follower reads
+        // activating for the whole freeze. Judging that locally would refuse every leave such a
+        // node ever sends; the request goes to the core, which decides by the leader's row.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVATING, self::INITIATOR_TYPE, null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_LEAVE));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_VERIFY, $this->nextProtectedModeRequest());
+        $this->assertSame([], $this->replies(), 'The answer waits for the row to reach the window.');
+    }
+
+    public function testOpenAnswersWhenTheRowIsBackToInactive(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);
+        $agent = new DriverTestAgent(null);
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_OPEN));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextProtectedModeRequest());
 
         $agent->onTick();
         $this->assertSame([], $this->replies(), 'Still frozen, so there is nothing to report yet.');
@@ -165,6 +218,31 @@ final class ProtectedModeTestDriverTest extends TestCase
             StateProtectedModeRuntime::PHASE_INACTIVE,
             $reply->payload[ProtectedModeCommandConstants::FIELD_PHASE],
         );
+    }
+
+    public function testOpenLiftsFromAnyFrozenPhase(): void
+    {
+        // Deliberately not gated on the window: a teardown lifting after a failed assertion
+        // cannot know which phase the run left behind, and a node left frozen breaks every
+        // spec that follows.
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_OPEN));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_DISABLE, $this->nextProtectedModeRequest());
+        $this->assertSame([], $this->replies());
+    }
+
+    public function testOpenFromAnAgentThatIsNotTheInitiatorIsRefused(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, 'somebody-else', null);
+        $agent = new DriverTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_OPEN));
+
+        $this->assertRefused($this->singleReply(), 'somebody-else');
+        $this->assertNull($this->nextProtectedModeRequest(), 'A refused open must queue no disable.');
     }
 
     public function testLeaveWithNoFreezeInFlightIsRefused(): void
@@ -185,7 +263,7 @@ final class ProtectedModeTestDriverTest extends TestCase
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => '']));
 
         $this->assertRefused($this->singleReply(), 'operation');
-        $this->assertNull($this->nextEnableOrDisable());
+        $this->assertNull($this->nextProtectedModeRequest());
     }
 
     public function testASecondDriveWhileOneIsInFlightIsRefused(): void
@@ -195,7 +273,7 @@ final class ProtectedModeTestDriverTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_INACTIVE, null, null);
         $agent = new DriverTestAgent(null);
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
-        $this->nextEnableOrDisable();
+        $this->nextProtectedModeRequest();
 
         $agent->handle($this->request(CliCommands::PROTECTED_MODE_TEST_ENTER, ['operation' => 'restore']));
 
@@ -271,14 +349,19 @@ final class ProtectedModeTestDriverTest extends TestCase
     /**
      * Consumes queued signals until a protected-mode request appears, and names its type.
      *
-     * @return ?string Signal type of the enable/disable request, or null when none was queued
+     * @return ?string Signal type of the request the agent queued, or null when it queued none
      */
-    private function nextEnableOrDisable(): ?string
+    private function nextProtectedModeRequest(): ?string
     {
+        $requests = [
+            SignalTypeConstants::PROTECTED_MODE_ENABLE,
+            SignalTypeConstants::PROTECTED_MODE_DISABLE,
+            SignalTypeConstants::PROTECTED_MODE_VERIFY,
+        ];
+
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $type = $signal->signalType->getType();
-            if ($type === SignalTypeConstants::PROTECTED_MODE_ENABLE
-                || $type === SignalTypeConstants::PROTECTED_MODE_DISABLE) {
+            if (in_array($type, $requests, true)) {
                 return $type;
             }
         }

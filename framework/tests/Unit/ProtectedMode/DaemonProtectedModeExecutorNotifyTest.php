@@ -103,6 +103,73 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertNull($excluded);
     }
 
+    public function testTheVerificationWindowKeepsTheStubUpAndOffersACodeField(): void
+    {
+        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActive();
+        $this->notifier->frames = [];
+
+        $this->executor->enterVerifying();
+
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
+        );
+        $this->assertCount(1, $this->notifier->frames);
+        [$state, $excluded] = $this->notifier->frames[0];
+        // Still active: everyone without a pass has to keep seeing the stub. What changed is
+        // only that the stub may now ask for a code.
+        $this->assertTrue($state->active);
+        $this->assertTrue($state->acceptsPass);
+        $this->assertSame('restore', $state->operation);
+        $this->assertNotNull($state->title);
+        $this->assertSame('accept-7', $excluded);
+    }
+
+    public function testClosingBackFromTheWindowTakesTheCodeFieldAway(): void
+    {
+        $this->executor->enterActivating($this->freeze(), 'accept-7');
+        $this->executor->enterActive();
+        $this->executor->enterVerifying();
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->issuePass('hash-a');
+        Hilos::$rt?->hilosProtectedModeRuntime?->actions->admitConnection('accept-1');
+        $this->notifier->frames = [];
+
+        $this->executor->reenterActive();
+
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
+        );
+        // Every pass is void, so the verifier that was inside is back on the stub with everyone.
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->admittedAcceptKeys);
+        $this->assertTrue(Hilos::$rt?->hilosProtectedModeRuntime?->locksOut('accept-1'));
+
+        $this->assertCount(1, $this->notifier->frames);
+        [$state, $excluded] = $this->notifier->frames[0];
+        $this->assertTrue($state->active);
+        $this->assertFalse($state->acceptsPass);
+        $this->assertSame('accept-7', $excluded);
+    }
+
+    public function testClosingBackIsRefusedWhenTheRowNamesNoInitiator(): void
+    {
+        // A row with no initiator would stop every agent including the one that could lift the
+        // mode again, so the node says so and stays where it is.
+        Hilos::$rt?->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+        ]));
+
+        $this->executor->reenterActive();
+
+        $this->assertSame(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            Hilos::$rt?->hilosProtectedModeRuntime?->phase,
+        );
+        $this->assertSame([], $this->notifier->frames);
+    }
+
     public function testWithoutARegisteredNotifierTheExecutorStillFreezes(): void
     {
         Hilos::$cluster = new ClusterContext();

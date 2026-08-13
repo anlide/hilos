@@ -85,4 +85,35 @@ interface ProtectedModeCoordinator
      * @param string $fromNodeId Node id of the leader that lifted the freeze
      */
     public function onLift(string $fromNodeId): void;
+
+    /**
+     * Handles the move into the verification window.
+     *
+     * The one frame of the set that travels in both directions, because the verification window
+     * is asked for and ordered by the same word: on the leader it arrives from the initiator's
+     * node and is fanned onward, on a follower it arrives from the leader and is applied. Which
+     * of the two a node is doing is not carried in the frame - it is what that node already knows
+     * about itself, exactly as the enable/quiesce pair splits the same knowledge across two names.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     */
+    public function onVerify(string $fromNodeId): void;
+
+    /**
+     * Handles one minted pass, either asked for by the initiator or fanned out by the leader.
+     *
+     * Carries the hash only, and the admission it later earns is deliberately not fanned: an
+     * accept key means something only on the node holding that connection.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function onPass(string $fromNodeId, string $passHash): void;
+
+    /**
+     * Handles the close-back out of the verification window, in either direction.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     */
+    public function onRefreeze(string $fromNodeId): void;
 }

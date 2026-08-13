@@ -12,6 +12,8 @@ const FROZEN: ProtectedModeStatus = {
   operation: 'restore',
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
+  acceptsPass: false,
+  passRejected: false,
 }
 
 const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
@@ -19,7 +21,15 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  acceptsPass: false,
+  passRejected: false,
 }
+
+/** The verification window: still locked out, but a code will open it. */
+const VERIFYING: ProtectedModeStatus = { ...FROZEN, acceptsPass: true }
+
+/** The window, after a code that opened nothing. */
+const REJECTED: ProtectedModeStatus = { ...VERIFYING, passRejected: true }
 
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
@@ -27,9 +37,11 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
 function fakeConnection(initial: ProtectedModeStatus): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  presented: string[]
 } {
   let current = initial
   const listeners: ((next: ProtectedModeStatus) => void)[] = []
+  const presented: string[] = []
   const connection = {
     state: 'connected',
     get protectedMode(): ProtectedModeStatus {
@@ -41,10 +53,14 @@ function fakeConnection(initial: ProtectedModeStatus): {
       }
       return () => {}
     },
+    presentProtectedModePass(pass: string): void {
+      presented.push(pass)
+    },
   } as unknown as HilosConnection
 
   return {
     connection,
+    presented,
     push(next: ProtectedModeStatus): void {
       current = next
       for (const listener of listeners) {
@@ -63,7 +79,9 @@ function mountShell(connection: HilosConnection) {
 
 describe('HilosMaintenance', () => {
   it('renders the copy the backend authored', () => {
-    const wrapper = mount(HilosMaintenance, { props: { status: FROZEN } })
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection: fakeConnection(FROZEN).connection },
+    })
 
     const surface = wrapper.find('[data-id="maintenance"]')
     expect(surface.attributes('data-operation')).toBe('restore')
@@ -77,7 +95,10 @@ describe('HilosMaintenance', () => {
 
   it('falls back to its own copy when the frame carried none', () => {
     const wrapper = mount(HilosMaintenance, {
-      props: { status: FROZEN_WITHOUT_COPY },
+      props: {
+        status: FROZEN_WITHOUT_COPY,
+        connection: fakeConnection(FROZEN_WITHOUT_COPY).connection,
+      },
     })
 
     expect(
@@ -87,6 +108,46 @@ describe('HilosMaintenance', () => {
       'Maintenance in progress',
     )
     expect(wrapper.find('[data-id="maintenance-message"]').text()).not.toBe('')
+  })
+
+  it('offers no code field on a freeze that admits nobody', () => {
+    // The frozen phases have no window to be let into, so a field there would
+    // promise a way in that does not exist.
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: FROZEN, connection: fakeConnection(FROZEN).connection },
+    })
+
+    expect(wrapper.find('[data-id="maintenance-pass-form"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('presents the typed code through the connection', async () => {
+    const { connection, presented } = fakeConnection(VERIFYING)
+    const wrapper = mount(HilosMaintenance, {
+      props: { status: VERIFYING, connection },
+    })
+
+    await wrapper.find('[data-id="maintenance-pass"]').setValue('the-key')
+    await wrapper.find('[data-id="maintenance-pass-form"]').trigger('submit')
+
+    expect(presented).toEqual(['the-key'])
+  })
+
+  it('says so when the code was not accepted', () => {
+    const wrapper = mount(HilosMaintenance, {
+      props: {
+        status: REJECTED,
+        connection: fakeConnection(REJECTED).connection,
+      },
+    })
+
+    expect(wrapper.find('[data-id="maintenance-pass-error"]').exists()).toBe(
+      true,
+    )
+    expect(
+      wrapper.find('[data-id="maintenance-pass"]').attributes('aria-invalid'),
+    ).toBe('true')
   })
 })
 

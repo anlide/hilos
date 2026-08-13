@@ -7,6 +7,16 @@ export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 /** Server frame `type` announcing the protected-mode state (PHP `SignalTypeConstants::PROTECTED_MODE`). */
 export const SIGNAL_TYPE_PROTECTED_MODE = 'protected_mode'
 
+/**
+ * Upgrade-request query parameter a verifier's protected-mode pass rides in (PHP
+ * `ProtectedModeAdmissionConstants::HILOS_PASS_QUERY_PARAM`).
+ *
+ * A query parameter and not a frame, because while the mode holds this client is
+ * refused every outbound frame — admission has to be decided on the 101, where the
+ * initiator's own exemption is decided.
+ */
+export const PROTECTED_MODE_PASS_PARAM = 'hilosPass'
+
 /** Server frame `type` handing one connection a session-rotation ticket (PHP `HilosSignalConstants::HILOS_SESSION_ROTATE`). */
 export const SIGNAL_TYPE_SESSION_ROTATE = 'hilos_session_rotate'
 

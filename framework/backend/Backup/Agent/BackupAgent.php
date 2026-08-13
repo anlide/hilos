@@ -26,12 +26,15 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\ProtectedModeOperatorTrait;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -86,6 +89,8 @@ use Throwable;
  */
 final class BackupAgent extends AbstractAgent
 {
+    use ProtectedModeOperatorTrait;
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
     /**
@@ -107,6 +112,11 @@ final class BackupAgent extends AbstractAgent
      * is operator-facing too: request admits a run under protected mode, status snapshots the
      * restore runtime row for the CLI monitor. All carry plain payloads, so none declares an
      * inner DTO.
+     *
+     * The protected-mode trio (HIL-481) is operator-facing as well, and lands here rather than
+     * anywhere else for one reason: a restore is the destructive operation this framework
+     * actually has, so this agent is the initiator the freeze row records - and only that agent
+     * may drive it ({@see ProtectedModeOperatorTrait}).
      */
     public const array AGENT_COMMANDS = [
         BackupConstants::PRUNE_COMMAND,
@@ -114,6 +124,9 @@ final class BackupAgent extends AbstractAgent
         BackupConstants::REFRESH_HISTORY_COMMAND,
         BackupConstants::RESTORE_REQUEST_COMMAND,
         BackupConstants::RESTORE_STATUS_COMMAND,
+        CliCommands::PROTECTED_MODE_PASS,
+        CliCommands::PROTECTED_MODE_OPEN,
+        CliCommands::PROTECTED_MODE_CLOSE,
     ];
 
     /** Child interpreter; matches the worker spine's binary ({@see WorkerServer}). */
@@ -236,24 +249,34 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Polls any in-flight backup child, then fires any due agent-mechanism schedule entry.
+     * Polls any in-flight backup child, answers any operator command in flight, then fires any
+     * due agent-mechanism schedule entry.
      *
      * Polling runs first so a run that finished this tick frees the lock before the schedule
      * is checked, letting a coincident scheduled fire start rather than be skipped as an overlap.
+     * The operator command follows it for the same reason: a restore that ends on this very tick
+     * asks for the verification window, and answering afterwards reports the row it produced.
      */
     public function onTick(): void
     {
         $this->pollRunningBackup();
+        $this->tickProtectedModeOperator();
         $this->checkSchedule();
     }
 
     /**
      * Kills any in-flight child and clears the runtime flag on shutdown.
      *
-     * A restore engaged at this moment additionally lifts protected mode: the freeze was
-     * requested for a run that is now dead, and an agent that stops without releasing it
-     * leaves the whole node frozen with nobody left to unfreeze it. The restore row is
-     * finished as failed first, so a monitor still polling learns how the run ended.
+     * A restore engaged at this moment is finished as failed, so a monitor still polling learns
+     * how the run ended, and its freeze is moved on through the one finalizer.
+     *
+     * **It is not lifted, and that is the point of HIL-481:** a restore that died halfway is the
+     * last thing allowed to reopen a half-written database by itself. The node is left closed
+     * for a human to look at, which also means a stop that lands before the freeze even
+     * completed leaves it frozen where it stood - the verify is fail-closed on the active phase.
+     * {@see CliCommands::PROTECTED_MODE_OPEN} is the way out of every such phase, and the same
+     * agent type answers it after a restart, because the row records an identity rather than an
+     * instance.
      */
     public function onStop(): void
     {
@@ -310,8 +333,9 @@ final class BackupAgent extends AbstractAgent
      * the clock: prune forces a retention rotation, run-schedule forces a scheduled backup
      * by name. Refresh re-mirrors the index for `backup:verify`. The restore pair (HIL-274)
      * admits a restore run and snapshots its progress. Driving the live agent (rather than
-     * mutating storage from the CLI) keeps the runtime index consistent with truth. Every
-     * branch answers exactly once via {@see replyToCommand()}.
+     * mutating storage from the CLI) keeps the runtime index consistent with truth. The
+     * protected-mode trio (HIL-481) is how an operator ends the window a finished restore left
+     * the system in. Every branch answers exactly once via {@see replyToCommand()}.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -319,6 +343,12 @@ final class BackupAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($this->isProtectedModeOperatorCommand($data->command)) {
+            $this->handleProtectedModeOperatorCommand($data);
+
+            return;
+        }
+
         switch ($data->command) {
             case BackupConstants::PRUNE_COMMAND:
                 $this->handlePruneCommand($data);
@@ -1143,9 +1173,17 @@ final class BackupAgent extends AbstractAgent
      * The restore row keeps its terminal snapshot (outcome, failure reason, finish time)
      * rather than being cleared: the CLI monitor learns how the run ended from exactly this
      * row, possibly polling seconds after the child died. The next accepted restore resets
-     * it through {@see RestoreRuntimeActions::markRunning()}. Lifting protected mode is
-     * unconditional - however the run ended, a node left frozen has nobody else to unfreeze
-     * it. No storage rescan: a restore changes databases, not the archive store.
+     * it through {@see RestoreRuntimeActions::markRunning()}. No storage rescan: a restore
+     * changes databases, not the archive store.
+     *
+     * **The freeze is moved on, not lifted** (HIL-481). This used to call
+     * {@see AbstractAgent::requestProtectedModeDisable()} outside the branch on success, so a
+     * restore that died mid-import opened a half-loaded database by itself. It now asks for the
+     * verification window on both branches: the system stays closed to everyone, a hand-picked
+     * circle is let in by pass to confirm it really came back, and only
+     * {@see CliCommands::PROTECTED_MODE_OPEN} - a human - opens it. Unconditional for the same
+     * reason the lift was: however the run ended, a node left in the full freeze has nobody else
+     * to move it on.
      *
      * @param bool $success Whether the child exited cleanly
      * @param ?string $failureReason Human-readable reason when the run failed
@@ -1175,7 +1213,16 @@ final class BackupAgent extends AbstractAgent
             $this->restoreView()?->actions->finish(BackupStatus::ERROR, $detail);
         }
 
-        $this->requestProtectedModeDisable();
+        try {
+            $this->requestProtectedModeVerify();
+        } catch (InvalidArgumentException $e) {
+            // Documented by the request and unreachable in practice - the signal name is a
+            // constant - but a throw escaping here would abandon the finalization halfway: the
+            // outcome is already recorded and the node would stay fully frozen with nothing
+            // left to move it on.
+            $this->logAgentError("Restore {$id} could not open the verification window: {$e->getMessage()}");
+        }
+
         $this->resetRun();
         // A manual create coalesced while the restore held the child slot must not rot in
         // its slot until some unrelated later run happens to drain it.

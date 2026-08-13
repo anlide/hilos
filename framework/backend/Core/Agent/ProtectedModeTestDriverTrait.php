@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\CLI\Commands\CommandChannelClientTrait;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -20,21 +21,31 @@ use Throwable;
 /**
  * Drives protected mode from a test, through the one entry the mode actually has.
  *
- * An agent that uses this answers `test:protected-mode:enter` and `test:protected-mode:leave`
- * by calling {@see AbstractAgent::requestProtectedModeEnable()} /
+ * An agent that uses this answers `test:protected-mode:enter`, `test:protected-mode:leave` and
+ * `test:protected-mode:open` by calling {@see AbstractAgent::requestProtectedModeEnable()} /
+ * {@see AbstractAgent::requestProtectedModeVerify()} /
  * {@see AbstractAgent::requestProtectedModeDisable()} - the same requests a restore makes. No
  * state is forced and no second entry is opened, which is the point: the initiator identity
  * those requests record is what authorizes the later release and what the agent-start gate
  * lets through, so a synthetic entry would exercise a path production does not have.
+ *
+ * **The drive is three steps because production is three steps.** Leave means "the driven
+ * operation is over" and lands in the verification window, exactly where a finished restore now
+ * lands; open is the separate, explicit lift. Nothing opens a system by finishing its own operation, on either path. The
+ * open is a `test:` command of its own rather than the operator's
+ * ({@see ProtectedModeOperatorTrait}) because a command routes to exactly one agent type per
+ * project and that one belongs to the agent running real operations - while a freeze may only
+ * be driven by the agent the row records as its initiator.
  *
  * A trait rather than a base class because the two carriers share no ancestor but
  * {@see AbstractAgent}, and putting the commands there would hand a test-drive of the freeze
  * to every agent of every project - the same reasoning that made
  * {@see CommandChannelClientTrait} a trait.
  *
- * **The reply is a verdict, not an acknowledgement.** Both commands answer once the mode has
- * really moved: enter from {@see onProtectedModeReady()}, leave when this node's row is back
- * to inactive. That is what lets a test act on the next line instead of polling.
+ * **The reply is a verdict, not an acknowledgement.** Every command answers once the mode has
+ * really moved: enter from {@see onProtectedModeReady()}, leave when this node's row reads
+ * verifying, open when it is back to inactive. That is what lets a test act on the next line
+ * instead of polling.
  *
  * **Why the pre-checks exist at all.** The core drops a repeat enable, an unauthorized disable
  * and a disable with no freeze by logging a warning and replying to nobody. Without checking
@@ -66,11 +77,11 @@ trait ProtectedModeTestDriverTrait
     /** @var float Microtime the awaited command was accepted at */
     private float $protectedModeTestSince = 0.0;
 
-    /** @var bool Whether the awaited command is a leave (else an enter) */
-    private bool $protectedModeTestLeaving = false;
+    /** @var string Phase whose arrival answers the awaited command; empty while an enter awaits its ready relay */
+    private string $protectedModeTestAwaitedPhase = '';
 
     /**
-     * Whether this command is one of the two this trait drives.
+     * Whether this command is one of the three this trait drives.
      *
      * @param string $command Command-channel wire name
      * @return bool True when {@see handleProtectedModeTestCommand()} owns it
@@ -78,7 +89,8 @@ trait ProtectedModeTestDriverTrait
     protected function isProtectedModeTestCommand(string $command): bool
     {
         return $command === CliCommands::PROTECTED_MODE_TEST_ENTER
-            || $command === CliCommands::PROTECTED_MODE_TEST_LEAVE;
+            || $command === CliCommands::PROTECTED_MODE_TEST_LEAVE
+            || $command === CliCommands::PROTECTED_MODE_TEST_OPEN;
     }
 
     /**
@@ -112,7 +124,13 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
-        $this->leaveProtectedModeForTest($data, $freeze);
+        if ($data->command === CliCommands::PROTECTED_MODE_TEST_LEAVE) {
+            $this->leaveProtectedModeForTest($data, $freeze);
+
+            return;
+        }
+
+        $this->openProtectedModeForTest($data, $freeze);
     }
 
     /**
@@ -131,7 +149,7 @@ trait ProtectedModeTestDriverTrait
      */
     public function onProtectedModeReady(): void
     {
-        if ($this->protectedModeTestCorrelationId === null || $this->protectedModeTestLeaving) {
+        if ($this->protectedModeTestCorrelationId === null || $this->protectedModeTestAwaitedPhase !== '') {
             return;
         }
 
@@ -139,11 +157,12 @@ trait ProtectedModeTestDriverTrait
     }
 
     /**
-     * Finishes a pending leave, and expires either command whose window ran out.
+     * Finishes a pending leave or open, and expires any command whose window ran out.
      *
-     * The carrier calls this from its own onTick. Leave has no ready relay to answer from -
-     * the lift is observed as this node's row returning to inactive, which is also exactly the
-     * moment a caller may load a page without racing the agents coming back up.
+     * The carrier calls this from its own onTick. Neither of those two has a ready relay to
+     * answer from - each is observed as this node's row reaching the phase it asked for, which
+     * for the open is also exactly the moment a caller may load a page without racing the agents
+     * coming back up.
      */
     protected function tickProtectedModeTestDriver(): void
     {
@@ -152,7 +171,7 @@ trait ProtectedModeTestDriverTrait
         }
 
         $phase = $this->protectedModeTestRow()?->phase ?? StateProtectedModeRuntime::PHASE_INACTIVE;
-        if ($this->protectedModeTestLeaving && $phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+        if ($this->protectedModeTestAwaitedPhase !== '' && $phase === $this->protectedModeTestAwaitedPhase) {
             $this->answerProtectedModeTest($phase);
 
             return;
@@ -163,7 +182,9 @@ trait ProtectedModeTestDriverTrait
         }
 
         $waited = self::PROTECTED_MODE_TEST_WAIT_SECONDS;
-        $target = $this->protectedModeTestLeaving ? 'return to inactive' : 'become ready';
+        $target = $this->protectedModeTestAwaitedPhase === ''
+            ? 'become ready'
+            : "reach '{$this->protectedModeTestAwaitedPhase}'";
         $this->refuseProtectedModeTest(
             $this->protectedModeTestCorrelationId,
             "protected mode did not {$target} within {$waited}s (phase: {$phase})",
@@ -197,9 +218,7 @@ trait ProtectedModeTestDriverTrait
 
         $acceptKey = $data->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
 
-        $this->protectedModeTestCorrelationId = $data->correlationId;
-        $this->protectedModeTestSince = microtime(true);
-        $this->protectedModeTestLeaving = false;
+        $this->armProtectedModeTest($data->correlationId, '');
 
         try {
             // external-boundary: no accept key is a CLI initiator, the identity BackupAgent restores with
@@ -214,21 +233,89 @@ trait ProtectedModeTestDriverTrait
     }
 
     /**
-     * Releases the freeze, unless this node's row says the core would drop the request.
+     * Ends the driven operation into the verification window, unless the core would drop the request.
      *
-     * Authorized by initiator identity exactly as production authorizes it - there is no forced
-     * lift here and none is wanted. A stand does not strand on that: the initiator is a
-     * long-lived agent, so the leave after a failed test arrives from the same agent and passes.
+     * Where a real operation ends, and for the same reason: nothing opens a system by finishing
+     * its own work.
+     *
+     * The phase check names the two rows that are wrong on ANY node rather than demanding the
+     * right one, because this row is not always the one the core judges by: on a cluster only the
+     * leader writes active, so an initiator hosted on a follower reads activating for the whole
+     * freeze and a check for active would refuse every leave it ever sent. Waiting for verifying
+     * still works there - the leader broadcasts the window to its followers - so what is left to
+     * catch locally is a leave with no freeze under it and a window already open, and the core's
+     * own fail-closed check stays behind both.
      *
      * @param CommandRequestDTO $data Leave request
      * @param ProtectedModeRuntime $freeze This node's freeze row
      */
     private function leaveProtectedModeForTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): void
     {
+        if (!$this->mayDriveProtectedModeTest($data, $freeze)) {
+            return;
+        }
+
+        if (
+            $freeze->phase === StateProtectedModeRuntime::PHASE_INACTIVE
+            || $freeze->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+        ) {
+            $this->refuseProtectedModeTest(
+                $data->correlationId,
+                "the mode is '{$freeze->phase}', so there is no operation of this node's to end",
+            );
+
+            return;
+        }
+
+        $this->armProtectedModeTest($data->correlationId, StateProtectedModeRuntime::PHASE_VERIFYING);
+
+        try {
+            $this->requestProtectedModeVerify();
+        } catch (InvalidArgumentException $e) {
+            $this->clearProtectedModeTest();
+            $this->refuseProtectedModeTest($data->correlationId, 'verify request failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Opens the system to everyone, unless this node's row says the core would drop the request.
+     *
+     * Deliberately not gated on the verification window, unlike the leave above: this is the one
+     * lever that gets a node out of a freeze, and a teardown lifting after a failed assertion
+     * cannot know which phase the run left behind.
+     *
+     * @param CommandRequestDTO $data Open request
+     * @param ProtectedModeRuntime $freeze This node's freeze row
+     */
+    private function openProtectedModeForTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): void
+    {
+        if (!$this->mayDriveProtectedModeTest($data, $freeze)) {
+            return;
+        }
+
+        $this->armProtectedModeTest($data->correlationId, StateProtectedModeRuntime::PHASE_INACTIVE);
+
+        $this->requestProtectedModeDisable();
+    }
+
+    /**
+     * Whether a freeze is here to drive and this agent is the one entitled to drive it.
+     *
+     * Authorized by initiator identity exactly as production authorizes it - there is no forced
+     * lift here and none is wanted. A stand does not strand on that: the initiator is a
+     * long-lived agent, so the open after a failed test arrives from the same agent and passes.
+     * Refuses on this agent's behalf, so a caller reads a reason rather than a mute timeout.
+     *
+     * @param CommandRequestDTO $data Request being authorized
+     * @param ProtectedModeRuntime $freeze This node's freeze row
+     * @return bool True when the request may proceed
+     */
+    private function mayDriveProtectedModeTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): bool
+    {
         if ($freeze->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
             $this->refuseProtectedModeTest($data->correlationId, 'no freeze is active here');
 
-            return;
+            return false;
         }
 
         if (!$this->isProtectedModeTestInitiator($freeze)) {
@@ -238,14 +325,23 @@ trait ProtectedModeTestDriverTrait
                 "the freeze was initiated by '{$initiator}', not by this agent",
             );
 
-            return;
+            return false;
         }
 
-        $this->protectedModeTestCorrelationId = $data->correlationId;
-        $this->protectedModeTestSince = microtime(true);
-        $this->protectedModeTestLeaving = true;
+        return true;
+    }
 
-        $this->requestProtectedModeDisable();
+    /**
+     * Arms the wait for one accepted command.
+     *
+     * @param string $correlationId Correlation id of the request being awaited
+     * @param string $awaitedPhase Phase whose arrival answers it; empty when the ready relay does
+     */
+    private function armProtectedModeTest(string $correlationId, string $awaitedPhase): void
+    {
+        $this->protectedModeTestCorrelationId = $correlationId;
+        $this->protectedModeTestSince = microtime(true);
+        $this->protectedModeTestAwaitedPhase = $awaitedPhase;
     }
 
     /**
@@ -307,7 +403,7 @@ trait ProtectedModeTestDriverTrait
     {
         $this->protectedModeTestCorrelationId = null;
         $this->protectedModeTestSince = 0.0;
-        $this->protectedModeTestLeaving = false;
+        $this->protectedModeTestAwaitedPhase = '';
     }
 
     /**

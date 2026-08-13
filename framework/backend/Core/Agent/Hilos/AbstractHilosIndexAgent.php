@@ -55,15 +55,17 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * authenticates nobody, so the CLI-side guard alone would leave the emit reachable on a
      * production node by anyone who can open the port.
      *
-     * The protected-mode pair (HIL-344) rides the same inheritance for the same reason - chat,
-     * simple-todo and simple-poll get a freeze they can drive by extending this class alone.
-     * The inspector is not among them: it is answered by the master, because a freeze stops
-     * every agent but the initiator.
+     * The protected-mode trio (HIL-344, HIL-481) rides the same inheritance for the same reason -
+     * chat, simple-todo and simple-poll get a freeze they can drive by extending this class
+     * alone. The inspector is not among them: it is answered by the master, because a freeze
+     * stops every agent but the initiator. The operator commands are not either: they belong to
+     * the agent that runs real operations, and a command routes to exactly one agent type.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::NOTIFICATION_TEST_EMIT,
         CliCommands::PROTECTED_MODE_TEST_ENTER,
         CliCommands::PROTECTED_MODE_TEST_LEAVE,
+        CliCommands::PROTECTED_MODE_TEST_OPEN,
     ];
 
     /** Cron expression for the daily delivery-log prune (03:20). */

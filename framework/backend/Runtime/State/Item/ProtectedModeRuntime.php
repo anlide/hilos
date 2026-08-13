@@ -38,6 +38,9 @@ final class ProtectedModeRuntime extends RtState
     /** Phase value: every node quiesced, the initiator may run its operation. */
     public const string PHASE_ACTIVE = 'active';
 
+    /** Phase value: the operation is over and a hand-picked circle verifies before the mode lifts for all. */
+    public const string PHASE_VERIFYING = 'verifying';
+
     /** Phase value: initiator finished, the leader is lifting the freeze. */
     public const string PHASE_DEACTIVATING = 'deactivating';
 
@@ -49,6 +52,8 @@ final class ProtectedModeRuntime extends RtState
     public const string initiatorNodeId = 'initiatorNodeId';
     public const string startedAt = 'startedAt';
     public const string activatedAt = 'activatedAt';
+    public const string passHashes = 'passHashes';
+    public const string admittedAcceptKeys = 'admittedAcceptKeys';
 
     /** Current lifecycle phase of the protected mode. */
     public string $phase = self::PHASE_INACTIVE;
@@ -73,6 +78,24 @@ final class ProtectedModeRuntime extends RtState
 
     /** Epoch seconds when the mode reached active, or null before it does. */
     public ?int $activatedAt = null;
+
+    /**
+     * SHA-256 of every pass minted for the verification in flight; empty on every other phase.
+     *
+     * The pass itself is never stored: the clear key exists only in the operator's terminal
+     * and in the verifier's browser, so a runtime snapshot that reaches a log leaks nothing
+     * that opens the system.
+     *
+     * @var list<string>
+     */
+    public array $passHashes = [];
+
+    /**
+     * Accept keys of the connections that presented a valid pass; empty on every other phase.
+     *
+     * @var list<string>
+     */
+    public array $admittedAcceptKeys = [];
 
     /**
      * Creates the inactive singleton runtime row.
@@ -101,6 +124,8 @@ final class ProtectedModeRuntime extends RtState
         $instance->initiatorNodeId = self::stringOrNull($row[self::initiatorNodeId] ?? null);
         $instance->startedAt = self::intOrNull($row[self::startedAt] ?? null);
         $instance->activatedAt = self::intOrNull($row[self::activatedAt] ?? null);
+        $instance->passHashes = self::stringList($row[self::passHashes] ?? null);
+        $instance->admittedAcceptKeys = self::stringList($row[self::admittedAcceptKeys] ?? null);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -140,6 +165,12 @@ final class ProtectedModeRuntime extends RtState
         if (array_key_exists(self::activatedAt, $diff)) {
             $this->activatedAt = self::intOrNull($diff[self::activatedAt]);
         }
+        if (array_key_exists(self::passHashes, $diff)) {
+            $this->passHashes = self::stringList($diff[self::passHashes]);
+        }
+        if (array_key_exists(self::admittedAcceptKeys, $diff)) {
+            $this->admittedAcceptKeys = self::stringList($diff[self::admittedAcceptKeys]);
+        }
     }
 
     /**
@@ -171,13 +202,35 @@ final class ProtectedModeRuntime extends RtState
      * open for the whole freeze. The initiator's accept key is recorded only on the node
      * that froze itself with it, so on every other node the null key locks out all.
      *
+     * {@see self::PHASE_VERIFYING} is the one phase that lets a second circle through, and it
+     * does so by pass ({@see admits()}) rather than by widening this rule: every other phase
+     * keeps the binary lockdown it had.
+     *
      * @param ?string $acceptKey Connection accept key to test, or null when none is known
      * @return bool Whether the connection is locked out right now
      */
     public function locksOut(?string $acceptKey): bool
     {
         return $this->phase !== self::PHASE_INACTIVE
-            && $acceptKey !== $this->initiatorAcceptKey;
+            && $acceptKey !== $this->initiatorAcceptKey
+            && !$this->admits($acceptKey);
+    }
+
+    /**
+     * Whether this connection presented a valid pass and was let in for the verification.
+     *
+     * Only {@see self::PHASE_VERIFYING} consults the admitted list at all. The frozen phases
+     * do carry an empty list — the actions clear it on the way in and on the way out — but an
+     * emptiness that is enforced by the phase beats one that is merely assumed of the row.
+     *
+     * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @return bool Whether the connection holds a pass admitted right now
+     */
+    public function admits(?string $acceptKey): bool
+    {
+        return $this->phase === self::PHASE_VERIFYING
+            && $acceptKey !== null
+            && in_array($acceptKey, $this->admittedAcceptKeys, true);
     }
 
     /**
@@ -194,6 +247,8 @@ final class ProtectedModeRuntime extends RtState
             self::initiatorNodeId => $this->initiatorNodeId,
             self::startedAt => $this->startedAt,
             self::activatedAt => $this->activatedAt,
+            self::passHashes => $this->passHashes,
+            self::admittedAcceptKeys => $this->admittedAcceptKeys,
         ];
     }
 
@@ -204,6 +259,19 @@ final class ProtectedModeRuntime extends RtState
     private static function stringOrNull(mixed $value): ?string
     {
         return $value === null ? null : (string)$value;
+    }
+
+    /**
+     * @param mixed $value Raw row value
+     * @return list<string> String list; empty when the row carries no list at all
+     */
+    private static function stringList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_map(static fn(mixed $item): string => (string)$item, $value));
     }
 
     /**

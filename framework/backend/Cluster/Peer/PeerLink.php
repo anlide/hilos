@@ -21,9 +21,12 @@ use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -266,6 +269,9 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
             $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
+            $frame instanceof PeerProtectedModeVerifyDTO => $this->onProtectedModeVerify($frame),
+            $frame instanceof PeerProtectedModePassDTO => $this->onProtectedModePass($frame),
+            $frame instanceof PeerProtectedModeRefreezeDTO => $this->onProtectedModeRefreeze($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
             $frame instanceof PeerPongDTO => $this->onPong(),
             default => throw new PeerTransportException('Unexpected peer frame type: ' . $frame->getType()),
@@ -534,6 +540,42 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode lift');
         $this->server->onProtectedModeLiftReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode verify frame to the server for this node to act on.
+     *
+     * @param PeerProtectedModeVerifyDTO $frame Incoming protected-mode verify frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeVerify(PeerProtectedModeVerifyDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode verify');
+        $this->server->onProtectedModeVerifyReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode pass frame to the server for this node to record.
+     *
+     * @param PeerProtectedModePassDTO $frame Incoming protected-mode pass frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModePass(PeerProtectedModePassDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode pass');
+        $this->server->onProtectedModePassReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode refreeze frame to the server for this node to act on.
+     *
+     * @param PeerProtectedModeRefreezeDTO $frame Incoming protected-mode refreeze frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeRefreeze(PeerProtectedModeRefreezeDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode refreeze');
+        $this->server->onProtectedModeRefreezeReceived($this, $frame);
     }
 
     /**

@@ -5,13 +5,24 @@ planned work rather than a generic outage. The words come from the backend
 registry and travel the wire (the Hilos i18n model); this component holds
 layout only and falls back to PROTECTED_MODE_FALLBACK_COPY when the state is
 known but no sentence arrived with it. It is a state, not a page: no links, no
-retry button — the mode lifts on its own and the core reloads the document. -->
+retry button — the mode lifts on its own and the core reloads the document. The
+one exception is the code field, shown only while the freeze says it accepts a
+pass: that phase is the verification window, and a verifier admitted by the code
+sees the whole product rather than this screen. Submitting reconnects with the
+key on the socket url (the core does that), because a client refused every
+outbound frame can only ask to be let in on the 101. -->
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ProtectedModeStatus } from '@hilos/core'
-import { PROTECTED_MODE_FALLBACK_COPY } from '@hilos/core'
+import { computed, ref } from 'vue'
+import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
+import {
+  PROTECTED_MODE_FALLBACK_COPY,
+  PROTECTED_MODE_PASS_COPY,
+} from '@hilos/core'
 
-const props = defineProps<{ status: ProtectedModeStatus }>()
+const props = defineProps<{
+  status: ProtectedModeStatus
+  connection: HilosConnection
+}>()
 
 const title = computed(
   () => props.status.title ?? PROTECTED_MODE_FALLBACK_COPY.title,
@@ -19,6 +30,15 @@ const title = computed(
 const message = computed(
   () => props.status.message ?? PROTECTED_MODE_FALLBACK_COPY.message,
 )
+
+const code = ref('')
+const submittable = computed(() => code.value.trim() !== '')
+
+// The typed code is deliberately kept after a submit: a rejection is most often a
+// typo, and clearing the field would make the visitor retype the whole key.
+function present(): void {
+  props.connection.presentProtectedModePass(code.value)
+}
 </script>
 
 <template>
@@ -37,5 +57,51 @@ const message = computed(
     <p class="text-body-secondary mb-0" data-id="maintenance-message">
       {{ message }}
     </p>
+    <form
+      v-if="status.acceptsPass"
+      class="row justify-content-center w-100 mt-4 px-3"
+      data-id="maintenance-pass-form"
+      @submit.prevent="present"
+    >
+      <div class="col-12 col-sm-8 col-md-5">
+        <label
+          class="form-label small text-body-secondary"
+          for="maintenance-pass"
+        >
+          {{ PROTECTED_MODE_PASS_COPY.prompt }}
+        </label>
+        <div class="input-group">
+          <input
+            id="maintenance-pass"
+            v-model="code"
+            class="form-control"
+            :class="{ 'is-invalid': status.passRejected }"
+            data-id="maintenance-pass"
+            type="text"
+            autocomplete="off"
+            :aria-invalid="status.passRejected"
+            :aria-describedby="
+              status.passRejected ? 'maintenance-pass-error' : undefined
+            "
+          />
+          <button
+            class="btn btn-primary"
+            data-id="maintenance-pass-submit"
+            type="submit"
+            :disabled="!submittable"
+          >
+            {{ PROTECTED_MODE_PASS_COPY.submit }}
+          </button>
+        </div>
+        <p
+          v-if="status.passRejected"
+          id="maintenance-pass-error"
+          class="text-danger small mt-2 mb-0"
+          data-id="maintenance-pass-error"
+        >
+          {{ PROTECTED_MODE_PASS_COPY.rejected }}
+        </p>
+      </div>
+    </form>
   </div>
 </template>

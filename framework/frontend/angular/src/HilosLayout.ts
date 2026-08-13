@@ -134,7 +134,10 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
         [class.flex-column]="underMaintenance()"
       >
         @if (underMaintenance()) {
-          <hilos-maintenance [status]="protectedMode()" />
+          <hilos-maintenance
+            [status]="protectedMode()"
+            [connection]="connection()"
+          />
         } @else {
           <ng-content />
         }

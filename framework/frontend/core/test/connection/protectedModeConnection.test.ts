@@ -67,6 +67,25 @@ const LIFT = JSON.stringify({
   data: { active: false, operation: null, title: null, message: null },
 })
 
+const VERIFYING = JSON.stringify({
+  type: 'protected_mode',
+  data: {
+    active: true,
+    operation: 'restore',
+    title: 'Restoring a backup',
+    message: 'Back shortly.',
+    acceptsPass: true,
+  },
+})
+
+/** A welcome frame carrying the freeze block a reconnect would come back to. */
+function welcome(protectedMode: Record<string, unknown>): string {
+  return JSON.stringify({
+    type: 'handshake',
+    data: { build: 'build-a', protectedMode },
+  })
+}
+
 function openConnection() {
   MockWebSocket.instances = []
   const connection = new HilosConnection({
@@ -84,10 +103,22 @@ function openConnection() {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  // The core runs where there is no browser at all, so the store is optional by
+  // design; the pass cases are about what happens when there IS one.
+  const entries = new Map<string, string>()
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, value),
+      removeItem: (key: string) => void entries.delete(key),
+    },
+  })
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  Reflect.deleteProperty(globalThis, 'sessionStorage')
 })
 
 describe('the connection holds the freeze', () => {
@@ -196,7 +227,7 @@ describe('lifting the mode reloads the document', () => {
     const socket = MockWebSocket.last
     socket.emit('open')
 
-    return { onProtectedModeLift, socket }
+    return { connection: bundle.connection, onProtectedModeLift, socket }
   }
 
   it('calls the lift handler on the transition', () => {
@@ -240,5 +271,185 @@ describe('lifting the mode reloads the document', () => {
     })
 
     expect(onProtectedModeLift).not.toHaveBeenCalled()
+  })
+
+  it('stays quiet on the welcome that admits a verifier into an open window', () => {
+    // Admission is decided on the 101 and reported by the welcome as "not locked
+    // out" — word for word what a lift says. The window bit is what tells the two
+    // apart: reloading here costs a round trip where sessionStorage works, and the
+    // only way back inside where it is refused.
+    const { connection, onProtectedModeLift, socket } = openBundle()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+
+    admitted.emit('message', {
+      data: welcome({ active: false, acceptsPass: true }),
+    })
+
+    expect(onProtectedModeLift).not.toHaveBeenCalled()
+  })
+
+  it('calls the lift handler when the window a verifier was admitted to ends', () => {
+    const { connection, onProtectedModeLift, socket } = openBundle()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+    admitted.emit('message', {
+      data: welcome({ active: false, acceptsPass: true }),
+    })
+
+    admitted.emit('message', { data: LIFT })
+
+    expect(onProtectedModeLift).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls the lift handler when a verifier learns of the lift from a welcome', () => {
+    // The socket was down when the mode lifted, so the only news of it is the
+    // welcome of the socket that came back: not locked out AND no window left.
+    const { connection, onProtectedModeLift, socket } = openBundle()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+    admitted.emit('message', {
+      data: welcome({ active: false, acceptsPass: true }),
+    })
+
+    admitted.emit('close')
+    vi.runOnlyPendingTimers()
+    MockWebSocket.last.emit('open')
+    MockWebSocket.last.emit('message', { data: welcome({ active: false }) })
+
+    expect(onProtectedModeLift).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a verifier presents a pass', () => {
+  it('reports whether the window accepts one at all', () => {
+    // The surface shows its code field off this bit and nothing else: the frozen
+    // phases carry no window to be let into.
+    const { connection, socket } = openConnection()
+
+    socket.emit('message', { data: FREEZE })
+    expect(connection.protectedMode.acceptsPass).toBe(false)
+
+    socket.emit('message', { data: VERIFYING })
+    expect(connection.protectedMode.acceptsPass).toBe(true)
+  })
+
+  it('goes back in with the key on the socket url', () => {
+    // Not a frame: while the mode holds every outbound frame is refused, so the
+    // only moment the question can be asked is the 101 of a fresh socket.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+
+    connection.presentProtectedModePass('the-key')
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws?hilosPass=the-key')
+  })
+
+  it('ignores a blank code instead of reconnecting for nothing', () => {
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    const before = MockWebSocket.instances.length
+
+    connection.presentProtectedModePass('   ')
+
+    expect(MockWebSocket.instances).toHaveLength(before)
+  })
+
+  it('re-presents the key on a reconnect, so a blip does not throw the verifier out', () => {
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+    admitted.emit('message', {
+      data: welcome({ active: false, acceptsPass: true }),
+    })
+
+    admitted.emit('close')
+    vi.runOnlyPendingTimers()
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws?hilosPass=the-key')
+  })
+
+  it('says the code was rejected when the reconnect comes back still locked out', () => {
+    // A frozen node has no agent left to compose a refusal, so a wrong key is
+    // answered by silence: the welcome simply locks this connection out again.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('wrong-key')
+    const retry = MockWebSocket.last
+    retry.emit('open')
+
+    retry.emit('message', {
+      data: welcome({ active: true, operation: 'restore', acceptsPass: true }),
+    })
+
+    expect(connection.protectedMode.passRejected).toBe(true)
+    expect(connection.protectedMode.acceptsPass).toBe(true)
+  })
+
+  it('says nothing of the sort when no code was presented', () => {
+    const { connection, socket } = openConnection()
+
+    socket.emit('message', {
+      data: welcome({ active: true, operation: 'restore', acceptsPass: true }),
+    })
+
+    expect(connection.protectedMode.passRejected).toBe(false)
+  })
+
+  it('drops the key when the operator closes the window back', () => {
+    // Closing back to a full freeze empties the pass list on the row, so the key
+    // this tab holds opens nothing any more: re-presenting it would answer a
+    // rejection to a verifier who typed nothing.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+
+    admitted.emit('message', { data: FREEZE })
+    admitted.emit('close')
+    vi.runOnlyPendingTimers()
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+  })
+
+  it('drops a key the welcome says opens nothing, whoever closed the window', () => {
+    // The tab was disconnected for the frame that ended the window, so the welcome
+    // of the socket that came back is the first thing to say so: no window, no key.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+
+    admitted.emit('message', { data: welcome({ active: false }) })
+    admitted.emit('close')
+    vi.runOnlyPendingTimers()
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws')
+  })
+
+  it('drops the key when the mode lifts', () => {
+    // The window is over and the key opens nothing; carrying it into the next
+    // freeze would present a void pass and land on a rejection nobody asked for.
+    const { connection, socket } = openConnection()
+    socket.emit('message', { data: VERIFYING })
+    connection.presentProtectedModePass('the-key')
+    const admitted = MockWebSocket.last
+    admitted.emit('open')
+
+    admitted.emit('message', { data: LIFT })
+    admitted.emit('close')
+    vi.runOnlyPendingTimers()
+
+    expect(MockWebSocket.last.url).toBe('ws://test/ws')
   })
 })

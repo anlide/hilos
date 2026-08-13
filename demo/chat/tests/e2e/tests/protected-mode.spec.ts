@@ -5,7 +5,8 @@ import {
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
-  leaveProtectedModeIfAny,
+  openProtectedMode,
+  openProtectedModeIfAny,
 } from '../helpers/protectedMode'
 
 // Protected-mode e2e (HIL-344): the debt HIL-268 and HIL-522 were closed with —
@@ -28,9 +29,10 @@ const STUB_MESSAGE =
 const OPERATION = 'e2e-freeze'
 
 test.afterEach(async () => {
-  // Unconditional: an enter can be refused and still land afterwards, and a
-  // failed assertion must not strand the node frozen for every spec that follows.
-  await leaveProtectedModeIfAny()
+  // Unconditional, and an open rather than a leave: an enter can be refused and
+  // still land afterwards, a failed assertion can strand the node in any phase,
+  // and only the open lifts from all of them.
+  await openProtectedModeIfAny()
 })
 
 test('a live window shows the maintenance stub while the mode is on', async ({
@@ -57,10 +59,34 @@ test('a live window shows the maintenance stub while the mode is on', async ({
   // at all, and this one was chosen by the caller a moment ago.
   await expect(maintenance).toHaveAttribute('data-operation', OPERATION)
 
-  expect(await leaveProtectedMode()).toBe('inactive')
+  // The operation ending does NOT let this window back in: it lands in the
+  // verification window, where only a presented pass is admitted, and this one
+  // has none. That is the whole leaf — nothing reopens by finishing its own work.
+  expect(await leaveProtectedMode()).toBe('verifying')
+  await expect(page.getByTestId('maintenance')).toBeVisible()
+
+  expect(await openProtectedMode()).toBe('inactive')
 
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
+})
+
+test('a finished operation lands in the verification window, and only the open ends it', async () => {
+  // The ladder as the master reports it: the window is a phase of the same freeze,
+  // so the start gate stays closed and no pass is outstanding until one is minted.
+  await enterProtectedMode(OPERATION)
+  expect(await leaveProtectedMode()).toBe('verifying')
+
+  const verifying = await inspectProtectedMode()
+  expect(verifying.phase).toBe('verifying')
+  expect(verifying.operation).toBe(OPERATION)
+  expect(verifying.passCount).toBe(0)
+
+  await openProtectedMode()
+
+  const lifted = await inspectProtectedMode()
+  expect(lifted.phase).toBe('inactive')
+  expect(lifted.passCount).toBe(0)
 })
 
 test('the inspector answers mid-freeze, when every other agent is stopped', async () => {
@@ -75,7 +101,7 @@ test('the inspector answers mid-freeze, when every other agent is stopped', asyn
   expect(frozen.agentStartGateClosed).toBe(true)
   expect(frozen.initiatorAgentType).not.toBeNull()
 
-  await leaveProtectedMode()
+  await openProtectedMode()
 
   const lifted = await inspectProtectedMode()
   expect(lifted.phase).toBe('inactive')

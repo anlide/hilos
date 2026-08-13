@@ -8,18 +8,25 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeCloseCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeOpenCommand;
+use Hilos\Core\CLI\Commands\ProtectedModePassCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
+use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
+use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the three protected-mode CLI commands (HIL-344): their names, the
- * argument-validation branches that return before the command channel is opened, and the
- * two contracts the whole family declares - test-only and database-free.
+ * Unit tests for the protected-mode CLI commands: their names, the argument-validation
+ * branches that return before the command channel is opened, and the contracts each family
+ * declares - database-free for all of them, test-only for the drive commands (HIL-344) and
+ * emphatically NOT test-only for the operator ones (HIL-481), which exist to be run on the
+ * production node a restore just froze.
  *
  * Driving the mode itself needs a running daemon and is exercised by the e2e spec; what is
  * checked here is everything that must hold without one. Runs under a non-production APP_ENV
@@ -49,6 +56,10 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_INSPECT, new ProtectedModeTestInspectCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_ENTER, new ProtectedModeTestEnterCommand()->getName());
         self::assertSame(CliCommands::PROTECTED_MODE_TEST_LEAVE, new ProtectedModeTestLeaveCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_TEST_OPEN, new ProtectedModeTestOpenCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_PASS, new ProtectedModePassCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_OPEN, new ProtectedModeOpenCommand()->getName());
+        self::assertSame(CliCommands::PROTECTED_MODE_CLOSE, new ProtectedModeCloseCommand()->getName());
     }
 
     public function testEveryCommandIsRegisteredAndNeedsNoDatabase(): void
@@ -61,6 +72,10 @@ final class ProtectedModeTestCommandsTest extends TestCase
             CliCommands::PROTECTED_MODE_TEST_INSPECT,
             CliCommands::PROTECTED_MODE_TEST_ENTER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE,
+            CliCommands::PROTECTED_MODE_TEST_OPEN,
+            CliCommands::PROTECTED_MODE_PASS,
+            CliCommands::PROTECTED_MODE_OPEN,
+            CliCommands::PROTECTED_MODE_CLOSE,
         ] as $name) {
             self::assertTrue($manager->hasCommand($name), "{$name} must be registered.");
             self::assertFalse($manager->requiresDatabase($name), "{$name} must not open a database.");
@@ -72,14 +87,32 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestInspectCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestEnterCommand());
         self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestLeaveCommand());
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeTestOpenCommand());
+        // The operator trio must be database-free for a harder reason than convenience: the
+        // database a bootstrap connect would open is the very one the restore just rewrote.
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModePassCommand());
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeOpenCommand());
+        self::assertInstanceOf(DatabaseFreeCommand::class, new ProtectedModeCloseCommand());
+    }
+
+    public function testTheOperatorTrioIsNotTestOnly(): void
+    {
+        // The point of the whole leaf: a restore no longer opens the system by itself, so these
+        // three are the only way back in - on production above all. Subclassing TestOnlyCommand
+        // would leave a frozen production node with no exit at all.
+        self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModePassCommand());
+        self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModeOpenCommand());
+        self::assertNotInstanceOf(TestOnlyCommand::class, new ProtectedModeCloseCommand());
     }
 
     public function testHelpNamesTheArgumentsEachCommandTakes(): void
     {
         self::assertStringContainsString('<operation>', new ProtectedModeTestEnterCommand()->getHelp());
         self::assertStringContainsString('--accept-key', new ProtectedModeTestEnterCommand()->getHelp());
-        // Leave takes nothing: it is authorized by initiator identity, not by an argument.
+        // Leave and open take nothing: they are authorized by initiator identity, not by an
+        // argument.
         self::assertStringNotContainsString('--', new ProtectedModeTestLeaveCommand()->getHelp());
+        self::assertStringNotContainsString('--', new ProtectedModeTestOpenCommand()->getHelp());
     }
 
     public function testEnterRejectsAMissingOperationName(): void
@@ -114,6 +147,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
             new ProtectedModeTestInspectCommand(),
             new ProtectedModeTestEnterCommand(),
             new ProtectedModeTestLeaveCommand(),
+            new ProtectedModeTestOpenCommand(),
         ] as $command) {
             try {
                 $command->execute([], ['restore']);

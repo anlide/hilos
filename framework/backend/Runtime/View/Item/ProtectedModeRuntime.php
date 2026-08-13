@@ -28,6 +28,8 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
  * @property-read ?string $initiatorNodeId Node hosting the initiator agent; null when inactive
  * @property-read ?int $startedAt Epoch seconds the freeze began; null when inactive
  * @property-read ?int $activatedAt Epoch seconds the freeze reached active; null before it does
+ * @property-read list<string> $passHashes Hashes of the passes minted for the verification; empty otherwise
+ * @property-read list<string> $admittedAcceptKeys Accept keys let in by a pass; empty otherwise
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -42,11 +44,11 @@ final class ProtectedModeRuntime extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|ProtectedModeRuntimeActions|null Property value
+     * @return string|int|array<int, string>|ProtectedModeRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|ProtectedModeRuntimeActions|null
+    public function __get(string $name): string|int|array|ProtectedModeRuntimeActions|null
     {
         return match ($name) {
             StateProtectedModeRuntime::phase => $this->_state->phase,
@@ -57,6 +59,8 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::initiatorNodeId => $this->_state->initiatorNodeId,
             StateProtectedModeRuntime::startedAt => $this->_state->startedAt,
             StateProtectedModeRuntime::activatedAt => $this->_state->activatedAt,
+            StateProtectedModeRuntime::passHashes => $this->_state->passHashes,
+            StateProtectedModeRuntime::admittedAcceptKeys => $this->_state->admittedAcceptKeys,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -75,6 +79,21 @@ final class ProtectedModeRuntime extends RtItem
     public function locksOut(?string $acceptKey): bool
     {
         return $this->_state->locksOut($acceptKey);
+    }
+
+    /**
+     * Whether this connection presented a valid pass and was let in for the verification.
+     *
+     * The rule lives on the state row ({@see StateProtectedModeRuntime::admits()}); this
+     * delegate is what lets the admission path ask whether a key is already recorded
+     * without holding the backing row.
+     *
+     * @param ?string $acceptKey Connection accept key to test, or null when none is known
+     * @return bool Whether the connection holds a pass admitted right now
+     */
+    public function admits(?string $acceptKey): bool
+    {
+        return $this->_state->admits($acceptKey);
     }
 
     /**

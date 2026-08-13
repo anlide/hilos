@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
@@ -33,6 +34,9 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -364,6 +368,80 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_DISABLE),
             signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_DISABLE),
             signalData: new ProtectedModeDisableSignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+            ),
+        );
+    }
+
+    /**
+     * Request the verification window once the destructive operation is done.
+     *
+     * What an initiator asks for instead of {@see requestProtectedModeDisable()} the moment its
+     * operation ends: the system stays closed to everyone and a hand-picked circle is let in by
+     * pass to confirm it really came back. Opening to all is a separate, explicit operator
+     * command, so nothing opens without a human.
+     *
+     * Same path and same authorization as the disable it replaces - queued as a worker-drained
+     * {@see SignalTypeConstants::PROTECTED_MODE_VERIFY} signal that reaches this node's daemon and
+     * {@see ProtectedModeSwitch::requestVerify()}.
+     *
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    protected function requestProtectedModeVerify(): void
+    {
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_VERIFY),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_VERIFY),
+            signalData: new ProtectedModeVerifySignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+            ),
+        );
+    }
+
+    /**
+     * Record one more pass for the verification window in flight.
+     *
+     * Only the hash of the minted key travels: the caller keeps the clear value and hands it to
+     * the operator, so nothing that opens the system is ever written to the row or to a log.
+     *
+     * @param string $passHash SHA-256 of the pass the caller minted
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    protected function requestProtectedModePass(string $passHash): void
+    {
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_PASS),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_PASS),
+            signalData: new ProtectedModePassSignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+                passHash: $passHash,
+            ),
+        );
+    }
+
+    /**
+     * Close the system again from the verification window, voiding every pass.
+     *
+     * The exit an operator takes when the verifiers found something wrong: the freeze returns to
+     * active, this node's agents are stopped once more, and another destructive operation may run.
+     *
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    protected function requestProtectedModeRefreeze(): void
+    {
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_REFREEZE),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_REFREEZE),
+            signalData: new ProtectedModeRefreezeSignalData(
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
             ),

@@ -17,7 +17,9 @@ use PHPUnit\Framework\TestCase;
  *
  * Both lockdown checks in the framework now ask this view whether a connection is frozen
  * out, and the freeze itself is written through its actions, so what is pinned here is the
- * delegate answering per phase and the four transitions leaving the row a reader can act on.
+ * delegate answering per phase and the five transitions leaving the row a reader can act on.
+ * The verification window adds two writers of its own - a minted pass and an admitted
+ * connection - and what is pinned about them is mostly where they stop being true.
  */
 final class ProtectedModeRuntimeViewTest extends TestCase
 {
@@ -112,6 +114,124 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertNull($view->activatedAt);
         // The accept key is gone with the freeze, so the ex-initiator holds no privilege.
         $this->assertFalse($view->locksOut('accept-1'));
+    }
+
+    public function testEnterVerifyingKeepsTheInitiatorDriving(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+
+        $view->actions->enterVerifying();
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view->phase);
+        // The operation is over, but the identity that ran it is what may end this phase.
+        $this->assertSame('restore', $view->operation);
+        $this->assertSame(self::INITIATOR_KEY, $view->initiatorAcceptKey);
+        $this->assertSame('backup', $view->initiatorAgentType);
+        $this->assertSame(2, $view->initiatorAgentIndex);
+        $this->assertSame('node-a', $view->initiatorNodeId);
+        // Nobody has a pass yet, so everyone else is still on the stub.
+        $this->assertTrue($view->locksOut('accept-1'));
+    }
+
+    public function testAPassAdmitsTheConnectionThatPresentedIt(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+
+        $view->actions->issuePass('hash-a');
+        $view->actions->issuePass('hash-b');
+        $view->actions->admitConnection('accept-1');
+
+        $this->assertSame(['hash-a', 'hash-b'], $view->passHashes);
+        $this->assertSame(['accept-1'], $view->admittedAcceptKeys);
+        $this->assertTrue($view->admits('accept-1'));
+        $this->assertFalse($view->locksOut('accept-1'));
+        $this->assertTrue($view->locksOut('accept-2'));
+    }
+
+    public function testAVerifierThatReconnectsIsAdmittedUnderItsNewAcceptKey(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+
+        // The same browser presenting the same pass again: a 101 mints a new accept key, so the
+        // row records a second admission and the first one keeps admitting nothing.
+        $view->actions->admitConnection('accept-1');
+        $view->actions->admitConnection('accept-2');
+
+        $this->assertSame(['accept-1', 'accept-2'], $view->admittedAcceptKeys);
+        $this->assertTrue($view->admits('accept-2'));
+    }
+
+    public function testClosingBackToActiveVoidsEveryPass(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+        $view->actions->issuePass('hash-a');
+        $view->actions->admitConnection('accept-1');
+
+        $view->actions->enterActive();
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVE, $view->phase);
+        $this->assertSame([], $view->passHashes);
+        $this->assertSame([], $view->admittedAcceptKeys);
+        // The verifier is back on the stub with everyone else, and its key buys nothing.
+        $this->assertTrue($view->locksOut('accept-1'));
+    }
+
+    public function testANewFreezeStartsWithNoPassesWhateverTheRowHeld(): void
+    {
+        // The row a node re-enters a freeze on is not always an empty one: a demoted leader still
+        // in the window is quiesced again by whoever took leadership, and its abandoned passes
+        // would otherwise ride into the next operation and admit their holders to it.
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+        $view->actions->issuePass('hash-a');
+        $view->actions->admitConnection('accept-1');
+
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
+        $this->assertSame([], $view->passHashes);
+        $this->assertSame([], $view->admittedAcceptKeys);
+    }
+
+    public function testLiftingTheModeVoidsEveryPass(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $state = StateProtectedModeRuntime::create();
+        $view = $this->viewWithActions($state);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
+        $view->actions->enterActive();
+        $view->actions->enterVerifying();
+        $view->actions->issuePass('hash-a');
+        $view->actions->admitConnection('accept-1');
+        $view->actions->enterDeactivating();
+
+        $view->actions->enterInactive();
+
+        $this->assertSame([], $view->passHashes);
+        $this->assertSame([], $view->admittedAcceptKeys);
     }
 
     public function testAWriterThatIsNotTheTruthSourceIsRefused(): void

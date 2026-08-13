@@ -75,12 +75,18 @@ use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -1677,6 +1683,30 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerProtectedModeDisableDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode disable carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_VERIFY) {
+                if ($signal->data instanceof ProtectedModeVerifySignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeVerifyDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode verify carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_PASS) {
+                if ($signal->data instanceof ProtectedModePassSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModePassDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode pass carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_REFREEZE) {
+                if ($signal->data instanceof ProtectedModeRefreezeSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeRefreezeDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode refreeze carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

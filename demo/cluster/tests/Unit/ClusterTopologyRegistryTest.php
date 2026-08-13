@@ -47,6 +47,7 @@ final class ClusterTopologyRegistryTest extends TestCase
         $this->assertSame([
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::WORKER,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::WORKER,
+            CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::WORKER,
         ], Hilos::getCommandAgentRoutes());
     }
 

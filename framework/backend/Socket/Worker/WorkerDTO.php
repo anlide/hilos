@@ -6,6 +6,7 @@ namespace Hilos\Socket\Worker;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -21,6 +22,9 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
@@ -53,6 +57,7 @@ abstract class WorkerDTO extends BaseDTO
      * @param string $json JSON string
      * @return WorkerDTO Worker DTO instance
      * @throws InvalidArgumentException If JSON is invalid or message type is unknown
+     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
      */
     public static function factoryWorkerDTO(string $json): WorkerDTO
     {
@@ -85,6 +90,9 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),
             WorkerProtectedModeEnableDTO::MESSAGE_TYPE => WorkerProtectedModeEnableDTO::fromArray($data),
             WorkerProtectedModeDisableDTO::MESSAGE_TYPE => WorkerProtectedModeDisableDTO::fromArray($data),
+            WorkerProtectedModeVerifyDTO::MESSAGE_TYPE => WorkerProtectedModeVerifyDTO::fromArray($data),
+            WorkerProtectedModePassDTO::MESSAGE_TYPE => WorkerProtectedModePassDTO::fromArray($data),
+            WorkerProtectedModeRefreezeDTO::MESSAGE_TYPE => WorkerProtectedModeRefreezeDTO::fromArray($data),
             default => throw new InvalidArgumentException("Unknown worker message type: {$type}"),
         };
     }

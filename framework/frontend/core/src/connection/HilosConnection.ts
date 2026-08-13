@@ -15,6 +15,7 @@ import {
   FIELD_TABLE_KEY,
   FIELD_TYPE,
   KEEPALIVE_TEXT_PING,
+  PROTECTED_MODE_PASS_PARAM,
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
@@ -49,6 +50,10 @@ import {
   DEFAULT_RECONNECT_OPTIONS,
   type ReconnectOptions,
 } from './backoff.js'
+import {
+  readStoredProtectedModePass,
+  writeStoredProtectedModePass,
+} from './protectedModePass.js'
 import { Emitter } from './events.js'
 
 export type ConnectionState =
@@ -217,6 +222,14 @@ export class HilosConnection {
   private heldRotation: SessionRotation | null = null
   private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
+  /**
+   * The verifier's pass presented on this browser tab, or undefined when none is.
+   *
+   * Mirrored in `sessionStorage` so a reload or a socket blip does not throw the
+   * verifier back out onto the maintenance screen — and only there: a cookie is
+   * domain-wide and would outlive the window this admission must die with.
+   */
+  private presentedPass: string | undefined
 
   constructor(options: HilosConnectionOptions) {
     this.url = options.url
@@ -231,6 +244,7 @@ export class HilosConnection {
     this.expectedBuild = options.expectedBuild
     this.projectSchemas = options.projectSchemas
     this.random = options.random ?? Math.random
+    this.presentedPass = readStoredProtectedModePass()
   }
 
   get state(): ConnectionState {
@@ -247,6 +261,35 @@ export class HilosConnection {
    */
   get protectedMode(): ProtectedModeStatus {
     return this.protectedModeStatus
+  }
+
+  /**
+   * Present a verifier's pass and go back in with it.
+   *
+   * Admission is decided on the 101, in the same place and by the same rule as the
+   * initiator's own exemption, so the key rides the socket url rather than a frame:
+   * while the mode holds this connection is refused every outbound frame, and a
+   * connection that cannot speak cannot ask to be let in. Hence the reconnect —
+   * there is no other moment at which the question can be asked.
+   *
+   * The key is kept for as long as the window it admits into and re-presented on
+   * every (re)connect, so the verifier is not thrown out by a blip; the first frame
+   * that reports the window closed drops it, whether the mode lifted or the operator
+   * closed back. A key that does not open anything simply leaves this connection on the
+   * maintenance screen, where {@link ProtectedModeStatus.passRejected} says so and
+   * the field can be tried again.
+   *
+   * @param pass The pass an operator minted and handed over. Blank is ignored.
+   */
+  presentProtectedModePass(pass: string): void {
+    const trimmed = pass.trim()
+    if (trimmed === '') {
+      return
+    }
+
+    this.presentedPass = trimmed
+    writeStoredProtectedModePass(trimmed)
+    this.reconnectNow()
   }
 
   on<K extends keyof HilosConnectionEventMap>(
@@ -432,7 +475,7 @@ export class HilosConnection {
 
   private openSocket(): void {
     const generation = ++this.generation
-    const socket = this.webSocketFactory(this.url)
+    const socket = this.webSocketFactory(this.socketUrl())
     this.socket = socket
     socket.addEventListener('open', () => {
       this.ifCurrent(generation, () => this.handleOpen())
@@ -643,17 +686,70 @@ export class HilosConnection {
    * the admin who ran the restore is the one client that never reloads.
    */
   private handleProtectedMode(signal: ProtectedModeSignal): void {
+    this.keepPassWhileTheWindowIsOpen(signal.state)
     this.protectedModeStatus = signal.state
     this.emitter.emit('protectedMode', signal.state)
   }
 
-  /** Stores the state a welcome re-announced, emitting only when it changed. */
+  /**
+   * Stores the state a welcome re-announced, emitting only when it changed.
+   *
+   * This is also where a presented pass gets its answer. A frozen node has no agent
+   * left to compose a refusal, so a wrong key is answered by the welcome that comes
+   * back still locking this connection out — and that silence is what becomes
+   * `passRejected`, rather than being left to look like nothing happened.
+   */
   private syncProtectedMode(status: ProtectedModeStatus): void {
-    if (isSameProtectedModeStatus(this.protectedModeStatus, status)) {
+    const answered: ProtectedModeStatus =
+      status.active && this.presentedPass !== undefined
+        ? { ...status, passRejected: true }
+        : status
+
+    // After the rejection is read off it, never before: a wrong key is answered by a
+    // welcome that still locks this connection out, and that welcome describes a
+    // window which is very much open.
+    this.keepPassWhileTheWindowIsOpen(answered)
+    if (isSameProtectedModeStatus(this.protectedModeStatus, answered)) {
       return
     }
-    this.protectedModeStatus = status
-    this.emitter.emit('protectedMode', status)
+    this.protectedModeStatus = answered
+    this.emitter.emit('protectedMode', answered)
+  }
+
+  /**
+   * Drops a presented pass as soon as a frame says the window that minted it is over.
+   *
+   * One rule for both frames, because both can be the one that brings the news: a tab
+   * that was disconnected when the mode lifted learns it from the welcome of the socket
+   * that comes back. `acceptsPass` is the row's own bit and says nothing about this
+   * connection, which is what makes it usable here — it stays true for the verifier
+   * already admitted, and goes false on the lift and on the operator closing back, the
+   * two moments the row voids every hash it holds. Dropped before the event, so a
+   * listener reading the connection sees a key that opens something or none at all.
+   *
+   * @param status The state the frame announced.
+   */
+  private keepPassWhileTheWindowIsOpen(status: ProtectedModeStatus): void {
+    if (!status.acceptsPass) {
+      this.forgetProtectedModePass()
+    }
+  }
+
+  /** The socket url, carrying a presented pass so admission is decided on the 101. */
+  private socketUrl(): string {
+    if (this.presentedPass === undefined) {
+      return this.url
+    }
+
+    const separator = this.url.includes('?') ? '&' : '?'
+
+    return `${this.url}${separator}${PROTECTED_MODE_PASS_PARAM}=${encodeURIComponent(this.presentedPass)}`
+  }
+
+  /** Drops the presented pass, here and in storage: it opens nothing any more. */
+  private forgetProtectedModePass(): void {
+    this.presentedPass = undefined
+    writeStoredProtectedModePass(undefined)
   }
 
   private scheduleReconnect(): void {

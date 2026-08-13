@@ -44,6 +44,7 @@ final class ProtectedModeStateSignalDataTest extends TestCase
                 ProtectedModeStateSignalData::operation => null,
                 ProtectedModeStateSignalData::title => null,
                 ProtectedModeStateSignalData::message => null,
+                ProtectedModeStateSignalData::acceptsPass => false,
             ],
             $state->toArray(),
         );

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { PROTECTED_MODE_INACTIVE } from '@hilos/core'
 import type { HilosConnection, ProtectedModeStatus } from '@hilos/core'
 
@@ -11,6 +11,8 @@ const FROZEN: ProtectedModeStatus = {
   operation: 'restore',
   title: 'Restoring a backup',
   message: 'The application will be back in a few minutes.',
+  acceptsPass: false,
+  passRejected: false,
 }
 
 const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
@@ -18,7 +20,15 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
   operation: undefined,
   title: undefined,
   message: undefined,
+  acceptsPass: false,
+  passRejected: false,
 }
+
+/** The verification window: still locked out, but a code will open it. */
+const VERIFYING: ProtectedModeStatus = { ...FROZEN, acceptsPass: true }
+
+/** The window, after a code that opened nothing. */
+const REJECTED: ProtectedModeStatus = { ...VERIFYING, passRejected: true }
 
 // A minimal connection stub: the shell only reads the transport state and the
 // protected-mode state off it, and subscribes to both. `push` drives the freeze
@@ -26,9 +36,11 @@ const FROZEN_WITHOUT_COPY: ProtectedModeStatus = {
 function fakeConnection(initial: ProtectedModeStatus): {
   connection: HilosConnection
   push: (next: ProtectedModeStatus) => void
+  presented: string[]
 } {
   let current = initial
   const listeners: (() => void)[] = []
+  const presented: string[] = []
   const connection = {
     state: 'connected',
     get protectedMode(): ProtectedModeStatus {
@@ -40,10 +52,14 @@ function fakeConnection(initial: ProtectedModeStatus): {
       }
       return () => {}
     },
+    presentProtectedModePass(pass: string): void {
+      presented.push(pass)
+    },
   } as unknown as HilosConnection
 
   return {
     connection,
+    presented,
     push(next: ProtectedModeStatus): void {
       current = next
       for (const listener of listeners) {
@@ -69,7 +85,12 @@ describe('HilosMaintenance', () => {
   afterEach(cleanup)
 
   it('renders the copy the backend authored', () => {
-    const { container } = render(<HilosMaintenance status={FROZEN} />)
+    const { container } = render(
+      <HilosMaintenance
+        status={FROZEN}
+        connection={fakeConnection(FROZEN).connection}
+      />,
+    )
 
     expect(
       surface(container, 'maintenance')?.getAttribute('data-operation'),
@@ -84,7 +105,10 @@ describe('HilosMaintenance', () => {
 
   it('falls back to its own copy when the frame carried none', () => {
     const { container } = render(
-      <HilosMaintenance status={FROZEN_WITHOUT_COPY} />,
+      <HilosMaintenance
+        status={FROZEN_WITHOUT_COPY}
+        connection={fakeConnection(FROZEN_WITHOUT_COPY).connection}
+      />,
     )
 
     expect(
@@ -94,6 +118,50 @@ describe('HilosMaintenance', () => {
       'Maintenance in progress',
     )
     expect(surface(container, 'maintenance-message')?.textContent).not.toBe('')
+  })
+
+  it('offers no code field on a freeze that admits nobody', () => {
+    // The frozen phases have no window to be let into, so a field there would
+    // promise a way in that does not exist.
+    const { container } = render(
+      <HilosMaintenance
+        status={FROZEN}
+        connection={fakeConnection(FROZEN).connection}
+      />,
+    )
+
+    expect(surface(container, 'maintenance-pass-form')).toBeNull()
+  })
+
+  it('presents the typed code through the connection', () => {
+    const { connection, presented } = fakeConnection(VERIFYING)
+    const { container } = render(
+      <HilosMaintenance status={VERIFYING} connection={connection} />,
+    )
+    const field = surface(container, 'maintenance-pass') as HTMLInputElement
+
+    act(() => {
+      fireEvent.change(field, { target: { value: 'the-key' } })
+    })
+    act(() => {
+      fireEvent.submit(surface(container, 'maintenance-pass-form') as Element)
+    })
+
+    expect(presented).toEqual(['the-key'])
+  })
+
+  it('says so when the code was not accepted', () => {
+    const { container } = render(
+      <HilosMaintenance
+        status={REJECTED}
+        connection={fakeConnection(REJECTED).connection}
+      />,
+    )
+
+    expect(surface(container, 'maintenance-pass-error')).not.toBeNull()
+    expect(
+      surface(container, 'maintenance-pass')?.getAttribute('aria-invalid'),
+    ).toBe('true')
   })
 })
 

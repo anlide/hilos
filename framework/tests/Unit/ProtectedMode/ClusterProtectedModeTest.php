@@ -9,10 +9,13 @@ use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -137,6 +140,86 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testLeaderTellsItsInitiatorReadyAgainWhenTheFreezeAlreadyStands(): void
+    {
+        // The cluster half of the operator closing the verification window: every node stays
+        // frozen so another restore can run, and that restore's enable must not be refused as a
+        // duplicate. The quiesce round is not replayed - the followers never thawed.
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', $this->enableData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendReady', 'node-b']], $this->mesh->calls);
+    }
+
+    public function testLeaderStillRefusesASecondNodeUnderAFreezeThatStands(): void
+    {
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testLeaderRefusesASecondAgentOnTheInitiatorNodeUnderAFreezeThatStands(): void
+    {
+        // The node id cannot tell apart the two initiators a project holds - the agent that runs
+        // real operations and the test driver's carrier share a node - so the identity the freeze
+        // records is what refuses this. Answering would send the ready to the recorded agent
+        // instead: the one that asked would wait out its timeout, and the other would be told a
+        // second time that it may start destroying things.
+        $this->mesh->followers = ['node-b'];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->coordinator->onQuiesced('node-b');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
+            operation: 'restore',
+            initiatorAcceptKey: 'accept-9',
+            initiatorAgentType: 'protected-mode-driver',
+            initiatorAgentIndex: 0,
+            initiatorNodeId: 'node-b',
+        ));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testInitiatorNodeRelaysReadyAgainWhenItsAgentAsksForAnotherFreeze(): void
+    {
+        // The once-per-freeze guard is re-armed by this node's own request, and it has to be:
+        // a freeze that already stands sends no second quiesce, which is the other place the
+        // guard is cleared, so the answer to the next operation would be swallowed.
+        $this->mesh->leader = 'node-x';
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onReady('node-x');
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
+        $this->coordinator->onReady('node-x');
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([['sendEnable', 'node-x']], $this->mesh->calls);
     }
 
     public function testLostLeadershipDropsInFlightOrchestration(): void
@@ -368,6 +451,31 @@ final class ClusterProtectedModeTest extends TestCase
     }
 
     /**
+     * Settles the freeze on the runtime row, standing in for the real executor's write.
+     *
+     * The fake port records transitions instead of writing any, so a case that turns on the phase
+     * the row actually reads has to put it there - through the same item actions
+     * {@see DaemonProtectedModeExecutor} uses, with the daemon registered as the runtime truth
+     * source for exactly the length of the write and dropped after, because the registration is
+     * process-wide.
+     */
+    private function settleTheFreezeOnTheRuntimeRow(): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        try {
+            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null);
+            $view->actions->enterActive();
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
+        }
+    }
+
+    /**
      * Mounts the framework-owned protected mode runtime row, as a real project boot does.
      *
      * @throws StateCollectionNotFoundException When a feature definition names a collection it did not mount
@@ -473,6 +581,36 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     {
         $this->calls[] = ['sendQuiesced', $leaderNodeId];
     }
+
+    public function sendVerify(string $leaderNodeId): void
+    {
+        $this->calls[] = ['sendVerify', $leaderNodeId];
+    }
+
+    public function broadcastVerify(): void
+    {
+        $this->calls[] = ['broadcastVerify', null];
+    }
+
+    public function sendPass(string $leaderNodeId, string $passHash): void
+    {
+        $this->calls[] = ['sendPass', $leaderNodeId];
+    }
+
+    public function broadcastPass(string $passHash): void
+    {
+        $this->calls[] = ['broadcastPass', $passHash];
+    }
+
+    public function sendRefreeze(string $leaderNodeId): void
+    {
+        $this->calls[] = ['sendRefreeze', $leaderNodeId];
+    }
+
+    public function broadcastRefreeze(): void
+    {
+        $this->calls[] = ['broadcastRefreeze', null];
+    }
 }
 
 /**
@@ -500,6 +638,16 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function enterDeactivating(): void
     {
         $this->calls[] = 'enterDeactivating';
+    }
+
+    public function enterVerifying(): void
+    {
+        $this->calls[] = 'enterVerifying';
+    }
+
+    public function reenterActive(): void
+    {
+        $this->calls[] = 'reenterActive';
     }
 
     public function enterInactive(): void

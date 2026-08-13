@@ -9,6 +9,7 @@ use Hilos\Hilos;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
@@ -25,6 +26,9 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
@@ -140,6 +144,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @throws SocketException When read buffer or JSON depth exceeds limits
      * @throws InvalidArgumentException When message JSON or worker message type is invalid
+     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     protected function processReadBuffer(): void
@@ -160,6 +165,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $message Complete JSON message payload
      * @throws InvalidArgumentException When message JSON or worker message type is invalid
+     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     private function processMessage(string $message): void
@@ -186,6 +192,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModePassDTO => $this->handleProtectedModePassMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeRefreezeDTO => $this->handleProtectedModeRefreezeMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
     }
@@ -354,6 +363,46 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleProtectedModeDisableMessage(WorkerProtectedModeDisableDTO $dto): void
     {
         Hilos::$cluster?->protectedMode()?->requestDisable($dto->data);
+    }
+
+    /**
+     * Handle protected-mode verify request from an initiator worker.
+     *
+     * The frame an initiator sends when its destructive operation ends: the freeze moves to its
+     * verification window rather than lifting, so the system opens to pass holders only. Routed
+     * and authorized exactly like the disable above.
+     *
+     * @param WorkerProtectedModeVerifyDTO $dto DTO with the identity of the agent asking for the window
+     */
+    private function handleProtectedModeVerifyMessage(WorkerProtectedModeVerifyDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestVerify($dto->data);
+    }
+
+    /**
+     * Handle protected-mode pass request from an initiator worker.
+     *
+     * Records one more minted pass on the freeze row. Only its hash travels here; the clear key
+     * never leaves the operator's terminal.
+     *
+     * @param WorkerProtectedModePassDTO $dto DTO with the minting agent identity and the pass hash
+     */
+    private function handleProtectedModePassMessage(WorkerProtectedModePassDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestPass($dto->data);
+    }
+
+    /**
+     * Handle protected-mode refreeze request from an initiator worker.
+     *
+     * The other exit from the verification window: the system closes back to a full freeze, every
+     * pass is void, and another destructive operation may run.
+     *
+     * @param WorkerProtectedModeRefreezeDTO $dto DTO with the identity of the agent asking to close back
+     */
+    private function handleProtectedModeRefreezeMessage(WorkerProtectedModeRefreezeDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestRefreeze($dto->data);
     }
 
     /**

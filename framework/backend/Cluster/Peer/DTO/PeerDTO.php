@@ -80,6 +80,9 @@ abstract class PeerDTO extends BaseDTO
             PeerProtectedModeQuiesceDTO::MESSAGE_TYPE => PeerProtectedModeQuiesceDTO::fromArray($data),
             PeerProtectedModeQuiescedDTO::MESSAGE_TYPE => PeerProtectedModeQuiescedDTO::fromArray($data),
             PeerProtectedModeLiftDTO::MESSAGE_TYPE => PeerProtectedModeLiftDTO::fromArray($data),
+            PeerProtectedModeVerifyDTO::MESSAGE_TYPE => PeerProtectedModeVerifyDTO::fromArray($data),
+            PeerProtectedModePassDTO::MESSAGE_TYPE => PeerProtectedModePassDTO::fromArray($data),
+            PeerProtectedModeRefreezeDTO::MESSAGE_TYPE => PeerProtectedModeRefreezeDTO::fromArray($data),
             PeerPingDTO::MESSAGE_TYPE => PeerPingDTO::fromArray($data),
             PeerPongDTO::MESSAGE_TYPE => PeerPongDTO::fromArray($data),
             default => throw new PeerTransportException(

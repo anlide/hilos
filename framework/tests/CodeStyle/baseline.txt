@@ -194,7 +194,7 @@ THROWS-PROPAGATION framework/backend/Core/CLI/Commands/VerificationTestExpireCom
 THROWS-PROPAGATION framework/backend/Core/Daemon/DaemonManager.php 10 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Daemon/DockerManager.php 1 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Daemon/Module/PeerModule.php 4 # HIL-449
-THROWS-PROPAGATION framework/backend/Core/Daemon/WorkerManager.php 3 # HIL-449
+THROWS-PROPAGATION framework/backend/Core/Daemon/WorkerManager.php 4 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Http/RequestQueryParams.php 3 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Page/AbstractPage.php 6 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Page/HilosPageFactory.php 2 # HIL-449
@@ -207,7 +207,7 @@ THROWS-PROPAGATION framework/backend/Core/Table/Item/TableItem.php 1 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Client/CommandClient.php 5 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Client/HttpClient.php 2 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Client/WebSocketClient.php 28 # HIL-449
-THROWS-PROPAGATION framework/backend/Socket/Client/WorkerClient.php 4 # HIL-449
+THROWS-PROPAGATION framework/backend/Socket/Client/WorkerClient.php 5 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Server/AbstractServer.php 2 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Server/CommandServer.php 1 # HIL-449
 THROWS-PROPAGATION framework/backend/Socket/Server/HttpServer.php 1 # HIL-449

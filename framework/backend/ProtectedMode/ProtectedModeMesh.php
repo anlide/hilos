@@ -72,4 +72,46 @@ interface ProtectedModeMesh
      * @param string $leaderNodeId Node id of the leader that ordered the freeze
      */
     public function sendQuiesced(string $leaderNodeId): void;
+
+    /**
+     * Forwards this initiator node's request to open the verification window to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendVerify(string $leaderNodeId): void;
+
+    /**
+     * Broadcasts the verification window to every follower master.
+     *
+     * The phase has to reach every node, because a verifier may land on any of them and each node
+     * decides admission against its own copy of the row.
+     */
+    public function broadcastVerify(): void;
+
+    /**
+     * Forwards this initiator node's minted pass to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function sendPass(string $leaderNodeId, string $passHash): void;
+
+    /**
+     * Broadcasts one minted pass to every follower master.
+     *
+     * @param string $passHash SHA-256 of the minted pass
+     */
+    public function broadcastPass(string $passHash): void;
+
+    /**
+     * Forwards this initiator node's request to close back out of the window to the leader.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendRefreeze(string $leaderNodeId): void;
+
+    /**
+     * Broadcasts the close-back to every follower master.
+     */
+    public function broadcastRefreeze(): void;
 }
