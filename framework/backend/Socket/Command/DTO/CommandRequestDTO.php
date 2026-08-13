@@ -6,6 +6,7 @@ namespace Hilos\Socket\Command\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -53,17 +54,23 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
     /**
      * Restores a request from its wire payload.
      *
+     * All three fields are required: every sender builds the line through this
+     * class's own toArray(), which always writes all three, and a command with
+     * no arguments writes an empty map rather than leaving the key out.
+     *
+     * The hydrated request is transient by design - parsedPayload is filled in
+     * later, in process, by SignalRouter::createCommandPayloadDTO().
+     *
      * @param array<string, mixed> $data Wire payload
      * @return static Restored request
+     * @throws InvalidFormatException When the payload carries no correlation id, command name or argument map
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            correlationId: (string) ($data[CommandConstants::FIELD_CORRELATION_ID] ?? ''),
-            command: (string) ($data[CommandConstants::FIELD_COMMAND] ?? ''),
-            payload: is_array($data[CommandConstants::FIELD_PAYLOAD] ?? null)
-                ? $data[CommandConstants::FIELD_PAYLOAD]
-                : [],
+            correlationId: self::requireString($data, CommandConstants::FIELD_CORRELATION_ID),
+            command: self::requireString($data, CommandConstants::FIELD_COMMAND),
+            payload: self::requireArray($data, CommandConstants::FIELD_PAYLOAD),
         );
     }
 }

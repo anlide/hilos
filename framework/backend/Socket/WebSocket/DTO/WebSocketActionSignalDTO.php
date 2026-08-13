@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -89,20 +90,22 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     /**
      * Creates DTO from array.
      *
+     * The action arguments stay optional: toArray() leaves the key out when the
+     * action takes none, so an absent section reads as the empty one it was.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key or no action name
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            action: $data[self::ACTION] ?? '',
-            data: $data[self::DATA] ?? [],
-            requestId: isset($data[self::REQUEST_ID]) && is_string($data[self::REQUEST_ID]) ? $data[self::REQUEST_ID] : null,
-            clientIp: isset($data[self::CLIENT_IP]) && is_string($data[self::CLIENT_IP]) ? $data[self::CLIENT_IP] : null,
-            sessionIdentity: isset($data[self::SESSION_IDENTITY]) && is_string($data[self::SESSION_IDENTITY])
-                ? $data[self::SESSION_IDENTITY]
-                : null,
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
+            action: self::requireString($data, self::ACTION),
+            data: self::optionalArray($data, self::DATA) ?? [],
+            requestId: self::optionalString($data, self::REQUEST_ID),
+            clientIp: self::optionalString($data, self::CLIENT_IP),
+            sessionIdentity: self::optionalString($data, self::SESSION_IDENTITY),
         );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -32,10 +33,26 @@ final class WebSocketHandshakeSignalDTOTest extends TestCase
     public function testPayloadWithoutClientIpReadsBackAsAbsent(): void
     {
         $restored = WebSocketHandshakeSignalDTO::fromArray([
+            WebSocketHandshakeSignalDTO::HEADERS => [],
             WebSocketHandshakeSignalDTO::ACCEPT_KEY => 'unit-ak',
+            WebSocketHandshakeSignalDTO::COOKIES => [],
+            WebSocketHandshakeSignalDTO::QUERY_PARAMS => [],
+            WebSocketHandshakeSignalDTO::SESSION_TOKEN => '',
         ]);
 
         $this->assertNull($restored->clientIp);
+    }
+
+    public function testPayloadWithoutItsHeadersIsRefused(): void
+    {
+        // A handshake carrying no headers is written as an empty map, so an absent
+        // key is a truncated payload rather than a request that sent none.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(WebSocketHandshakeSignalDTO::HEADERS);
+
+        WebSocketHandshakeSignalDTO::fromArray([
+            WebSocketHandshakeSignalDTO::ACCEPT_KEY => 'unit-ak',
+        ]);
     }
 
     public function testRoundtripPreservesAbsentClientIp(): void

@@ -6,6 +6,8 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -67,12 +69,14 @@ class WorkerAgentMessageDTO extends WorkerDTO
      *
      * @param array<string, mixed> $data Source data (agentId, signal)
      * @return static DTO instance
+     * @throws InvalidArgumentException When the signal names an empty signal
+     * @throws InvalidFormatException When the payload carries no agent id or no signal
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
-            signal: SignalDTO::fromArray($data[self::SIGNAL]),
+            agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
+            signal: SignalDTO::fromArray(self::requireArray($data, self::SIGNAL)),
         );
     }
 }

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket\Worker;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\Worker\DTO\AgentStartDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -55,5 +59,34 @@ final class WorkerFrameTypeTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         WorkerDTO::factoryWorkerDTO('{"type":"no_such_worker_frame"}');
+    }
+
+    public function testFrameOfAKnownTypeMissingItsFieldIsRefusedInsteadOfBuiltWithZeros(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(AgentConstants::FIELD_AGENT_ID);
+
+        WorkerDTO::factoryWorkerDTO('{"type":"' . AgentStartDTO::MESSAGE_TYPE . '"}');
+    }
+
+    public function testRegistrationWithALoweredFlagIsAcceptedAsTheAnswerItIs(): void
+    {
+        $frame = WorkerDTO::factoryWorkerDTO(
+            (new WorkerRegisterDTO(workerIndex: 0, monopolistic: false))->toJson(),
+        );
+
+        $this->assertInstanceOf(WorkerRegisterDTO::class, $frame);
+        $this->assertSame(0, $frame->workerIndex);
+        $this->assertFalse($frame->monopolistic);
+    }
+
+    public function testRegistrationWithoutItsMonopolisticFlagIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(WorkerRegisterDTO::MONOPOLISTIC);
+
+        WorkerDTO::factoryWorkerDTO(
+            '{"type":"' . WorkerRegisterDTO::MESSAGE_TYPE . '","' . WorkerRegisterDTO::WORKER_INDEX . '":1}',
+        );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
@@ -58,23 +59,59 @@ final class WebSocketTableViewportSignalDTOTest extends TestCase
         $this->assertArrayNotHasKey(WebSocketTableViewportSignalDTO::SORT, $array);
     }
 
-    public function testFromArrayDefaultsForMissingFields(): void
+    public function testFromArrayReadsAWindowWithoutAFilterOrASort(): void
     {
-        $dto = WebSocketTableViewportSignalDTO::fromArray(['acceptKey' => 'ak']);
+        // The SDK leaves an empty filter and an unset ordering out of the frame, so
+        // those two are the only parts of the window allowed to be missing.
+        $dto = WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::OFFSET => 0,
+            WebSocketTableViewportSignalDTO::LIMIT => TableConstants::NO_LIMIT,
+        ]);
 
         $this->assertSame('ak', $dto->acceptKey);
         $this->assertNull($dto->page);
-        $this->assertSame('', $dto->tableKey);
+        $this->assertSame('t', $dto->tableKey);
         $this->assertSame([], $dto->filter);
         $this->assertNull($dto->sort);
         $this->assertSame(0, $dto->offset);
         $this->assertSame(TableConstants::NO_LIMIT, $dto->limit);
     }
 
+    public function testFromArrayRefusesAFrameNamingNoTable(): void
+    {
+        // A viewport with no table key used to arrive as a window on the empty-string
+        // table, which no table answers and nothing reports.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(WebSocketTableViewportSignalDTO::TABLE_KEY);
+
+        WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::OFFSET => 0,
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+        ]);
+    }
+
+    public function testFromArrayRefusesAWindowWithoutItsBounds(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(WebSocketTableViewportSignalDTO::OFFSET);
+
+        WebSocketTableViewportSignalDTO::fromArray([
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
+        ]);
+    }
+
     public function testASortPayloadNamingNoFieldDecodesToNoSort(): void
     {
         $dto = WebSocketTableViewportSignalDTO::fromArray([
-            'acceptKey' => 'ak',
+            WebSocketTableViewportSignalDTO::ACCEPT_KEY => 'ak',
+            WebSocketTableViewportSignalDTO::TABLE_KEY => 't',
+            WebSocketTableViewportSignalDTO::OFFSET => 0,
+            WebSocketTableViewportSignalDTO::LIMIT => 10,
             WebSocketTableViewportSignalDTO::SORT => [TableSortDTO::DIRECTION => TableConstants::ORDER_DESC],
         ]);
 

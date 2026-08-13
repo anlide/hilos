@@ -6,6 +6,8 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -61,18 +63,27 @@ class DaemonAgentMessageDTO extends WorkerDTO
     /**
      * Creates DTO from array.
      *
+     * The signal is required and read as an array of its own, so a message that
+     * arrives without one is refused under that name instead of reaching
+     * {@see SignalDTO::fromArray()} as an empty payload and being refused there
+     * under the name of a field nested inside it. A signal handed over in
+     * process, without a serialization round trip, arrives as the object and is
+     * taken as it is.
+     *
      * @param array<string, mixed> $data Source data (agentId, signal)
      * @return static DTO instance
+     * @throws InvalidArgumentException When the signal names an empty signal
+     * @throws InvalidFormatException When the payload carries no agent id or no signal
      */
     public static function fromArray(array $data): static
     {
-        $signalData = $data[self::SIGNAL] ?? [];
+        $signalData = $data[self::SIGNAL] ?? null;
         $signal = $signalData instanceof SignalDTO
             ? $signalData
-            : SignalDTO::fromArray($signalData);
+            : SignalDTO::fromArray(self::requireArray($data, self::SIGNAL));
 
         return new static(
-            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
+            agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
             signal: $signal,
         );
     }

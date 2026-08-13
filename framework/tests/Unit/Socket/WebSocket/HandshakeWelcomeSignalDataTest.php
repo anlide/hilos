@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket\WebSocket;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -81,43 +82,63 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $this->assertSame('renamed_session', $restored->sessionCookieName);
     }
 
-    public function testWelcomeFromArrayIgnoresCopyThatIsNotText(): void
+    public function testWelcomeFromArrayReadsAbsentCopyOffAFreezeThatHoldsNone(): void
     {
-        // A block that arrived half-built must not put a number on the screen: an unusable field
-        // reads as absent, and the frontend falls back to its own last-resort sentence.
+        // No freeze holds, so the three copy fields are genuinely absent - that is the
+        // one shape in which they may be missing, and it arrives as null.
         $restored = HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
-                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
-                HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => 42,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
             ],
         ]);
 
-        $this->assertTrue($restored->protectedModeActive);
+        $this->assertFalse($restored->protectedModeActive);
         $this->assertNull($restored->protectedModeTitle);
         $this->assertNull($restored->protectedModeMessage);
     }
 
-    public function testWelcomeFromArrayTreatsAMissingProtectedModeAsInactive(): void
+    public function testWelcomeFromArrayRefusesCopyThatIsNotText(): void
     {
-        $restored = HandshakeWelcomeSignalData::fromArray([
+        // A block that arrived half-built used to put the unusable field down as absent,
+        // which handed the frontend a freeze with no words and no way to tell why.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE);
+
+        HandshakeWelcomeSignalData::fromArray([
+            HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
+            HandshakeWelcomeSignalData::PROTECTED_MODE => [
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_ACCEPTS_PASS => false,
+                HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => 42,
+            ],
+        ]);
+    }
+
+    public function testWelcomeFromArrayRefusesAFrameWithoutItsProtectedModeBlock(): void
+    {
+        // A welcome that does not say whether a freeze holds is not a welcome saying
+        // none does: read as inactive, it would paint the app over a locked-out node.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HandshakeWelcomeSignalData::PROTECTED_MODE);
+
+        HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
         ]);
-
-        $this->assertSame('dev', $restored->build);
-        $this->assertFalse($restored->protectedModeActive);
     }
 
-    public function testWelcomeFromArrayToleratesAMalformedProtectedMode(): void
+    public function testWelcomeFromArrayRefusesAMalformedProtectedMode(): void
     {
-        $restored = HandshakeWelcomeSignalData::fromArray([
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
             HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
             HandshakeWelcomeSignalData::PROTECTED_MODE => 'not-an-array',
         ]);
-
-        $this->assertFalse($restored->protectedModeActive);
     }
 }

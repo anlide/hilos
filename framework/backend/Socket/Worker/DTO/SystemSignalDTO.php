@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -45,11 +46,12 @@ class SystemSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterf
      *
      * @param array<string, mixed> $data Source data (systemName key)
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no system signal name
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            systemName: $data[self::SYSTEM_NAME] ?? '',
+            systemName: self::requireString($data, self::SYSTEM_NAME),
         );
     }
 }

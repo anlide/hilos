@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\PeerLink;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Consensus frame a leader broadcasts to the master set to assert its term.
@@ -62,20 +64,34 @@ final class PeerHeartbeatDTO extends PeerDTO
     /**
      * Restores a heartbeat frame from its wire array.
      *
+     * The term is required rather than defaulted: term 0 is the term before any
+     * election, so reading a missing one as 0 would assert a leader of a term no
+     * node is in. The refusal is re-thrown as the exception {@see PeerLink} drops
+     * the link on, and a blank id stays a check of its own.
+     *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the leader id is missing
+     * @throws PeerTransportException When the term or the leader id is missing
      */
     public static function fromArray(array $data): static
     {
-        $leaderIdValue = $data[self::FIELD_LEADER_ID] ?? null;
-        $leaderId = is_string($leaderIdValue) ? trim($leaderIdValue) : null;
-        if ($leaderId === null || $leaderId === '') {
+        try {
+            $term = self::requireInt($data, self::FIELD_TERM);
+            $leaderId = trim(self::requireString($data, self::FIELD_LEADER_ID));
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException(
+                'Peer heartbeat frame is malformed: ' . $exception->getMessage(),
+                0,
+                $exception,
+            );
+        }
+
+        if ($leaderId === '') {
             throw new PeerTransportException('Peer heartbeat frame is missing the leader id');
         }
 
         return new static(
-            term: (int)($data[self::FIELD_TERM] ?? 0),
+            term: $term,
             leaderId: $leaderId,
         );
     }

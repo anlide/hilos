@@ -16,11 +16,15 @@ use Socket;
 /**
  * Tests the command socket refusing a request that names nothing (HIL-547).
  *
- * CommandRequestDTO::fromArray() reads a missing correlation id or command as the
- * empty string, so this boundary is the one place that can turn a malformed line
- * into an answer. Left through, an empty command reaches new SignalName() and throws
- * where nothing on the read path catches it - AbstractServer::onTick() catches only
+ * This boundary is the one place that can turn a malformed line into an answer:
+ * left through, an empty command reaches new SignalName() and throws where nothing
+ * on the read path catches it - AbstractServer::onTick() catches only
  * SocketException, and the daemon main loop catches nothing.
+ *
+ * Since HIL-562 the refusal arrives in two shapes and the answer has to be the
+ * same for both: CommandRequestDTO::fromArray() refuses a line that omits a field,
+ * while a line carrying the field empty hydrates and is refused by the check that
+ * follows.
  */
 final class CommandClientMalformedRequestTest extends TestCase
 {
@@ -69,6 +73,33 @@ final class CommandClientMalformedRequestTest extends TestCase
         $this->assertSame(CommandConstants::STATUS_ERROR, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);
     }
 
+    public function testRequestNamingItsFieldsEmptyIsAnsweredWithAnError(): void
+    {
+        $client = $this->client();
+
+        $client->feed([
+            CommandConstants::FIELD_CORRELATION_ID => 'corr-3',
+            CommandConstants::FIELD_COMMAND => '',
+            CommandConstants::FIELD_PAYLOAD => [],
+        ]);
+
+        $this->assertSame(CommandConstants::STATUS_ERROR, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);
+        $this->assertSame('corr-3', $client->lastReply()[CommandConstants::FIELD_CORRELATION_ID] ?? null);
+    }
+
+    public function testRequestWithoutItsArgumentMapIsAnsweredRatherThanThrown(): void
+    {
+        $client = $this->client();
+
+        $client->feed([
+            CommandConstants::FIELD_CORRELATION_ID => 'corr-4',
+            CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_PING,
+        ]);
+
+        $this->assertSame(CommandConstants::STATUS_ERROR, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);
+        $this->assertSame('corr-4', $client->lastReply()[CommandConstants::FIELD_CORRELATION_ID] ?? null);
+    }
+
     public function testAWellFormedPingStillAnswersOk(): void
     {
         $client = $this->client();
@@ -76,6 +107,7 @@ final class CommandClientMalformedRequestTest extends TestCase
         $client->feed([
             CommandConstants::FIELD_CORRELATION_ID => 'corr-2',
             CommandConstants::FIELD_COMMAND => CommandConstants::COMMAND_PING,
+            CommandConstants::FIELD_PAYLOAD => [],
         ]);
 
         $this->assertSame(CommandConstants::STATUS_OK, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);

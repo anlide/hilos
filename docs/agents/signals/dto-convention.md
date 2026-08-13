@@ -98,8 +98,13 @@ a signal DTO needs from it is three sentences:
   type, and nothing else.
 
 `BaseDTO` carries the readers — `requireString()`, `requireInt()`,
-`requireArray()`, `optionalString()`, `optionalInt()`, `optionalArray()` — so a
-DTO neither writes the check nor picks the exception. The set grows on demand.
+`requireArray()`, `requireBool()`, `optionalString()`, `optionalInt()`,
+`optionalArray()`, `optionalBool()` — so a DTO neither writes the check nor picks
+the exception. The set grows on demand.
+
+A boolean field is the one that reads as harmless and is not: `?? false` answers
+an absent flag and a flag the sender lowered on purpose with the same value, so
+the receiver acts on a decision nobody made. `requireBool()` separates them.
 
 The refusal is invisible from outside the DTO, and deliberately so. On the
 hydrated paths `SignalPayloadHydrator` wraps it as

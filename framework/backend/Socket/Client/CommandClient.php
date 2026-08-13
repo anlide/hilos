@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -76,16 +77,25 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 break;
             }
 
-            $request = CommandRequestDTO::fromJson($message);
+            // A request that names nothing is refused here, the same way the WebSocket
+            // boundary refuses an empty action, page or group. Left through, an empty
+            // command reaches new SignalName() and throws where nothing on the read
+            // path catches it, and an empty correlation id parks a request no reply
+            // can be addressed to. The refusal arrives in two shapes and both are
+            // answered rather than rethrown: CommandRequestDTO::fromArray() refuses a
+            // line that omits a field, and the check below refuses one that carries
+            // the field empty. An undecodable line is a different failure and still
+            // throws out of fromJson(); that one is older than this guard (see P-039).
+            try {
+                $request = CommandRequestDTO::fromJson($message);
+            } catch (InvalidFormatException) {
+                $this->writeBuffer .= CommandReplyDTO::error(
+                    self::correlationIdOf($message),
+                    'Command request must carry a correlation id and a command name',
+                )->toJson() . "\n";
+                continue;
+            }
 
-            // Both fields are required, and CommandRequestDTO::fromArray() reads a
-            // missing one as the empty string - so a request that names nothing is
-            // refused here, the same way the WebSocket boundary refuses an empty
-            // action, page or group. Left through, an empty command reaches
-            // new SignalName() and throws where nothing on the read path catches it,
-            // and an empty correlation id parks a request no reply can be addressed
-            // to. An undecodable line is a different failure and still throws out of
-            // fromJson() above; that one is older than this guard (see P-039).
             if ($request->correlationId === '' || $request->command === '') {
                 $this->writeBuffer .= CommandReplyDTO::error(
                     $request->correlationId,
@@ -224,5 +234,24 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             $this->server->forget($this->heldCorrelationId);
             $this->heldCorrelationId = null;
         }
+    }
+
+    /**
+     * Reads the correlation id out of a line that could not be hydrated.
+     *
+     * The refusal still has to be answered, and the CLI on the other end is
+     * waiting on this connection: a request refused for a missing command may
+     * well carry the id its reply should be addressed to.
+     *
+     * @param string $message Raw request line
+     * @return string Correlation id the line carries, or the empty string when it carries none
+     */
+    private static function correlationIdOf(string $message): string
+    {
+        $fields = json_decode($message, true);
+        $correlationId = is_array($fields) ? ($fields[CommandConstants::FIELD_CORRELATION_ID] ?? null) : null;
+
+        // external-boundary: the CLI sent a line naming no correlation id, so the reply is unaddressed
+        return is_string($correlationId) ? $correlationId : '';
     }
 }

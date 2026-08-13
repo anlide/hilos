@@ -86,4 +86,37 @@ final class PeerConsensusDTOTest extends TestCase
 
         PeerDTO::fromWire('{"type":"peer_heartbeat","term":1}');
     }
+
+    public function testHeartbeatRejectsAFrameWithoutItsTerm(): void
+    {
+        // Term 0 is the term before any election: read into a missing field, it
+        // asserts a leader of a term no node in the set is in.
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire('{"type":"peer_heartbeat","leaderId":"node-a"}');
+    }
+
+    public function testRequestVoteRejectsAFrameWithoutItsTerm(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire('{"type":"peer_request_vote","candidateId":"node-a"}');
+    }
+
+    public function testVoteReplyRejectsAFrameWithoutItsGrant(): void
+    {
+        // The grant is what the frame is for, and a missing one used to arrive as a
+        // refusal: a vote that was given would be counted as one that was withheld.
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire('{"type":"peer_vote_reply","term":1,"voterId":"node-a"}');
+    }
+
+    public function testVoteReplyKeepsADeniedVoteApartFromAMissingOne(): void
+    {
+        $reply = PeerDTO::fromWire('{"type":"peer_vote_reply","term":1,"voteGranted":false,"voterId":"node-a"}');
+
+        $this->assertInstanceOf(PeerVoteReplyDTO::class, $reply);
+        $this->assertFalse($reply->voteGranted);
+    }
 }

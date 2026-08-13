@@ -6,6 +6,7 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -60,11 +61,12 @@ class ProtectedModeReadyDTO extends WorkerDTO
      *
      * @param array<string, mixed> $data Source data (agentId)
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no agent id
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
+            agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
         );
     }
 }

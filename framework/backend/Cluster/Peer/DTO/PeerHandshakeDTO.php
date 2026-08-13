@@ -7,6 +7,8 @@ namespace Hilos\Cluster\Peer\DTO;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerAddress;
+use Hilos\Cluster\Peer\PeerLink;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Base for the framed handshake messages (hello and welcome).
@@ -69,33 +71,44 @@ abstract class PeerHandshakeDTO extends PeerDTO
     /**
      * Restores a concrete handshake frame from its wire array.
      *
+     * Presence and type are answered by the payload helpers, and their refusal is
+     * re-thrown as the one exception this transport speaks - {@see PeerLink} drops
+     * the link on it and on nothing else. What stays a check of its own is what the
+     * helpers cannot answer: an id that arrived blank, and a role that arrived as a
+     * name no {@see NodeRole} carries. The advertised address is the one field a
+     * node may legitimately not have, and its own toArray() writes null for it.
+     *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored handshake frame
-     * @throws PeerTransportException When the node id is missing or the role is invalid
+     * @throws PeerTransportException When a field is missing, the node id is blank or the role is invalid
      */
     public static function fromArray(array $data): static
     {
-        $nodeIdValue = $data[self::FIELD_NODE_ID] ?? null;
-        $nodeId = is_string($nodeIdValue) ? trim($nodeIdValue) : null;
-        if ($nodeId === null || $nodeId === '') {
+        try {
+            $protocolVersion = self::requireInt($data, self::FIELD_PROTOCOL_VERSION);
+            $nodeId = trim(self::requireString($data, self::FIELD_NODE_ID));
+            $roleValue = self::requireString($data, self::FIELD_NODE_ROLE);
+            $capabilities = self::requireArray($data, self::FIELD_NODE_CAPABILITIES);
+            $address = self::optionalString($data, self::FIELD_ADDRESS);
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException('Peer handshake is malformed: ' . $exception->getMessage(), 0, $exception);
+        }
+
+        if ($nodeId === '') {
             throw new PeerTransportException('Peer handshake is missing the node id');
         }
 
-        $roleValue = $data[self::FIELD_NODE_ROLE] ?? null;
-        $role = is_string($roleValue) ? NodeRole::tryFrom($roleValue) : null;
+        $role = NodeRole::tryFrom($roleValue);
         if ($role === null) {
-            $shownRole = is_string($roleValue) ? $roleValue : get_debug_type($roleValue);
-            throw new PeerTransportException("Peer handshake has an invalid node role '{$shownRole}'");
+            throw new PeerTransportException("Peer handshake has an invalid node role '{$roleValue}'");
         }
 
-        $address = $data[self::FIELD_ADDRESS] ?? null;
-
         return new static(
-            protocolVersion: (int)($data[self::FIELD_PROTOCOL_VERSION] ?? 0),
+            protocolVersion: $protocolVersion,
             nodeId: $nodeId,
             role: $role,
-            capabilities: PeerDTO::normalizeCapabilities($data[self::FIELD_NODE_CAPABILITIES] ?? []),
-            address: is_string($address) ? PeerAddress::fromString($address) : null,
+            capabilities: PeerDTO::normalizeCapabilities($capabilities),
+            address: $address === null ? null : PeerAddress::fromString($address),
         );
     }
 }

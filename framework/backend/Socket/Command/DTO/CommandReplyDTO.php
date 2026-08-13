@@ -6,6 +6,7 @@ namespace Hilos\Socket\Command\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\CommandConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -86,17 +87,23 @@ class CommandReplyDTO extends BaseDTO implements SignalDataInterface
     /**
      * Restores a reply from its wire payload.
      *
+     * All three fields are required, the status most of all: read as
+     * {@see CommandConstants::STATUS_ERROR} when it is missing, it reports a
+     * failure the command never had, and {@see isOk()} answers for a run whose
+     * outcome never arrived. The payload is required for the same reason its
+     * own toArray() always writes it - an empty result is written as an empty
+     * map, so an absent key is a truncated reply and not an empty one.
+     *
      * @param array<string, mixed> $data Wire payload
      * @return static Restored reply
+     * @throws InvalidFormatException When the payload carries no correlation id, status or result map
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            correlationId: (string) ($data[CommandConstants::FIELD_CORRELATION_ID] ?? ''),
-            status: (string) ($data[CommandConstants::FIELD_STATUS] ?? CommandConstants::STATUS_ERROR),
-            payload: is_array($data[CommandConstants::FIELD_PAYLOAD] ?? null)
-                ? $data[CommandConstants::FIELD_PAYLOAD]
-                : [],
+            correlationId: self::requireString($data, CommandConstants::FIELD_CORRELATION_ID),
+            status: self::requireString($data, CommandConstants::FIELD_STATUS),
+            payload: self::requireArray($data, CommandConstants::FIELD_PAYLOAD),
         );
     }
 }

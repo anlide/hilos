@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\AgentConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -64,15 +65,19 @@ class WorkerAgentStartedDTO extends WorkerDTO
     /**
      * Creates DTO from array.
      *
+     * The index is the one field this notification is allowed to arrive without:
+     * an agent that carries no index leaves the key out of its own toArray().
+     *
      * @param array<string, mixed> $data Source data (agentId, agentType, agentIndex)
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no agent id or no agent type
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
-            agentType: $data[AgentConstants::FIELD_AGENT_TYPE] ?? '',
-            agentIndex: $data[AgentConstants::FIELD_AGENT_INDEX] ?? null,
+            agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
+            agentType: self::requireString($data, AgentConstants::FIELD_AGENT_TYPE),
+            agentIndex: self::optionalString($data, AgentConstants::FIELD_AGENT_INDEX),
         );
     }
 }

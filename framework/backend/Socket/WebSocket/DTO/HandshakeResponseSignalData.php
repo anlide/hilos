@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -90,25 +91,32 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * Create DTO from wire payload.
      *
+     * An anonymous session is written as a null current-user node, so a payload
+     * without one still builds the empty response a guest gets - that absence is
+     * the contract, not a gap. What a present node may not do is arrive without
+     * the fields that make it an identity: the id and the admin flag are required
+     * inside it, and the display name is the one field a project is allowed to
+     * answer as null. The impersonator node is read the same way when it is there.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When a present identity node carries no id or no admin flag
      */
     public static function fromArray(array $data): static
     {
-        $entities = $data[self::entities] ?? null;
-        $entities = is_array($entities) ? $entities : [];
-        $currentUser = $entities[self::currentUser] ?? null;
-        $impersonatedBy = $entities[self::impersonatedBy] ?? null;
-        if (!is_array($currentUser)) {
+        $entities = self::optionalArray($data, self::entities) ?? [];
+        $currentUser = self::optionalArray($entities, self::currentUser);
+        $impersonatedBy = self::optionalArray($entities, self::impersonatedBy);
+        if ($currentUser === null) {
             return new static();
         }
 
         return new static(
-            selfId: (int)($currentUser[self::id] ?? 0),
-            selfName: (string)($currentUser[self::name] ?? ''),
-            selfAdmin: (bool)($currentUser[self::admin] ?? false),
-            impersonatorId: is_array($impersonatedBy) ? (int)($impersonatedBy[self::id] ?? 0) : null,
-            impersonatorName: is_array($impersonatedBy) ? (string)($impersonatedBy[self::name] ?? '') : null,
+            selfId: self::requireInt($currentUser, self::id),
+            selfName: self::optionalString($currentUser, self::name),
+            selfAdmin: self::requireBool($currentUser, self::admin),
+            impersonatorId: $impersonatedBy === null ? null : self::requireInt($impersonatedBy, self::id),
+            impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
         );
     }
 }

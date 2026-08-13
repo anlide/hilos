@@ -100,6 +100,31 @@ final class BaseDtoPayloadFieldsTest extends TestCase
         PayloadFieldsProbeDTO::readRequiredArray(['payload' => 'hi'], 'payload');
     }
 
+    public function testRequiredBoolReadsATrueValue(): void
+    {
+        $this->assertTrue(PayloadFieldsProbeDTO::readRequiredBool(['admin' => true], 'admin'));
+    }
+
+    public function testRequiredBoolPassesALoweredFlagThrough(): void
+    {
+        $this->assertFalse(PayloadFieldsProbeDTO::readRequiredBool(['admin' => false], 'admin'));
+    }
+
+    public function testRequiredBoolRefusesAnAbsentKeyAndNamesIt(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('admin');
+
+        PayloadFieldsProbeDTO::readRequiredBool([], 'admin');
+    }
+
+    public function testRequiredBoolRefusesAValueOfAnotherTypeInsteadOfCastingIt(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PayloadFieldsProbeDTO::readRequiredBool(['admin' => 1], 'admin');
+    }
+
     public function testOptionalStringAnswersNullWhenTheKeyIsAbsent(): void
     {
         $this->assertNull(PayloadFieldsProbeDTO::readOptionalString([], 'message'));
@@ -157,6 +182,24 @@ final class BaseDtoPayloadFieldsTest extends TestCase
         $this->expectExceptionMessage('reply');
 
         PayloadFieldsProbeDTO::readOptionalArray(['reply' => 'hi'], 'reply');
+    }
+
+    public function testOptionalBoolAnswersNullWhenTheKeyIsAbsent(): void
+    {
+        $this->assertNull(PayloadFieldsProbeDTO::readOptionalBool([], 'monopolistic'));
+    }
+
+    public function testOptionalBoolTellsALoweredFlagFromAnAbsentOne(): void
+    {
+        $this->assertFalse(PayloadFieldsProbeDTO::readOptionalBool(['monopolistic' => false], 'monopolistic'));
+    }
+
+    public function testOptionalBoolRefusesAPresentValueOfAnotherType(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('monopolistic');
+
+        PayloadFieldsProbeDTO::readOptionalBool(['monopolistic' => 'yes'], 'monopolistic');
     }
 }
 
@@ -218,6 +261,17 @@ final class PayloadFieldsProbeDTO extends BaseDTO
     /**
      * @param array<string, mixed> $data Payload the DTO is being built from
      * @param string $key Payload key holding the field
+     * @return bool Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-boolean
+     */
+    public static function readRequiredBool(array $data, string $key): bool
+    {
+        return self::requireBool($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
      * @return ?string Value stored under the key, or null when the key is absent
      * @throws InvalidFormatException When the key is present and holds a non-string
      */
@@ -246,5 +300,16 @@ final class PayloadFieldsProbeDTO extends BaseDTO
     public static function readOptionalArray(array $data, string $key): ?array
     {
         return self::optionalArray($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?bool Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds a non-boolean
+     */
+    public static function readOptionalBool(array $data, string $key): ?bool
+    {
+        return self::optionalBool($data, $key);
     }
 }

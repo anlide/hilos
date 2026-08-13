@@ -70,21 +70,24 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     /**
      * Creates DTO from array.
      *
+     * Every field toArray() writes unconditionally is required here, headers and
+     * cookies included: a request carrying neither is written as two empty maps,
+     * so an absent key is a truncated payload rather than a bare request. The
+     * client IP is the one field the transport may genuinely not expose.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When query params are not a string map
+     * @throws InvalidFormatException When a required field is missing, or query params are not a string map
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            headers: $data[self::HEADERS] ?? [],
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            cookies: $data[self::COOKIES] ?? [],
-            clientIp: $data[self::CLIENT_IP] ?? null,
-            queryParams: RequestQueryParams::fromStringMap(
-                is_array($data[self::QUERY_PARAMS] ?? null) ? $data[self::QUERY_PARAMS] : [],
-            ),
-            sessionToken: (string)($data[self::SESSION_TOKEN] ?? ''),
+            headers: self::requireArray($data, self::HEADERS),
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
+            cookies: self::requireArray($data, self::COOKIES),
+            clientIp: self::optionalString($data, self::CLIENT_IP),
+            queryParams: RequestQueryParams::fromStringMap(self::requireArray($data, self::QUERY_PARAMS)),
+            sessionToken: self::requireString($data, self::SESSION_TOKEN),
         );
     }
 }

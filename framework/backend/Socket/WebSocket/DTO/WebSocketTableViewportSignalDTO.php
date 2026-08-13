@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\WebSocket\Exception\InvalidFrameException;
 
 /**
  * WebSocketTableViewportSignalDTO - DTO for a client's table viewport request.
@@ -91,22 +94,35 @@ class WebSocketTableViewportSignalDTO extends BaseDTO implements SignalDataDTO, 
     /**
      * Creates DTO from array.
      *
+     * The window is what the frame is for and every part of it is required; the
+     * filter and the sort are not, because the SDK leaves an empty filter and an
+     * unset ordering out of the frame entirely.
+     *
+     * This is the one DTO of its family built straight from a client frame, and
+     * that seam closes the connection on {@see InvalidFrameException} rather than
+     * on the refusal itself. The translation is written where the frame is read
+     * ({@see WebSocketClient::onFrame()}), beside every other check of the same
+     * frame's shape: an override may not widen the contract of
+     * {@see BaseDTO::fromArray()}, and it should not - the same class is also
+     * restored from its own toArray() on the master-worker hop, where the plain
+     * refusal is what the envelope expects.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the frame carries no accept key, table key, offset or limit
      */
     public static function fromArray(array $data): static
     {
-        $filter = $data[self::FILTER] ?? [];
-        $page = $data[self::PAGE] ?? null;
+        $page = self::optionalString($data, self::PAGE);
 
         return new static(
-            acceptKey: (string) ($data[self::ACCEPT_KEY] ?? ''),
-            page: $page === null || $page === '' ? null : (string) $page,
-            tableKey: (string) ($data[self::TABLE_KEY] ?? ''),
-            filter: is_array($filter) ? $filter : [],
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
+            page: $page === '' ? null : $page,
+            tableKey: self::requireString($data, self::TABLE_KEY),
+            filter: self::optionalArray($data, self::FILTER) ?? [],
             sort: TableSortDTO::fromWire($data[self::SORT] ?? null),
-            offset: (int) ($data[self::OFFSET] ?? 0),
-            limit: (int) ($data[self::LIMIT] ?? TableConstants::NO_LIMIT),
+            offset: self::requireInt($data, self::OFFSET),
+            limit: self::requireInt($data, self::LIMIT),
         );
     }
 }

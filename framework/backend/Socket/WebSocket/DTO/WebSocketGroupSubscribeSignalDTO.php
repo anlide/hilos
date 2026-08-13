@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -64,17 +65,21 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
     /**
      * Creates DTO from array.
      *
+     * The group and the params stay optional: toArray() leaves either key out
+     * when it has nothing to write, so an absent one reads as the absence it was.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key
      */
     public static function fromArray(array $data): static
     {
-        $group = $data[self::GROUP] ?? null;
+        $group = self::optionalString($data, self::GROUP);
 
         return new static(
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
             group: $group === '' ? null : $group,
-            params: $data[self::PARAMS] ?? [],
+            params: self::optionalArray($data, self::PARAMS) ?? [],
         );
     }
 }

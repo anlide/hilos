@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -52,11 +53,12 @@ class WebSocketPageUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
         );
     }
 }

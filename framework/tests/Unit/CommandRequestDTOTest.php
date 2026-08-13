@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -34,12 +35,37 @@ final class CommandRequestDTOTest extends TestCase
         $this->assertSame(['a' => 1, 'b' => ['c' => 2]], $restored->payload);
     }
 
-    public function testFromArrayDefaultsMissingFields(): void
+    public function testFromArrayRefusesAPayloadCarryingNoField(): void
     {
-        $restored = CommandRequestDTO::fromArray([]);
+        $this->expectException(InvalidFormatException::class);
 
-        $this->assertSame('', $restored->correlationId);
-        $this->assertSame('', $restored->command);
+        CommandRequestDTO::fromArray([]);
+    }
+
+    public function testFromArrayRefusesARequestNamingNoCommand(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('command');
+
+        CommandRequestDTO::fromArray(['correlationId' => 'corr-1', 'payload' => []]);
+    }
+
+    public function testFromArrayRefusesARequestWithoutItsArgumentMap(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('payload');
+
+        CommandRequestDTO::fromArray(['correlationId' => 'corr-1', 'command' => 'ping']);
+    }
+
+    public function testFromArrayKeepsAnEmptyArgumentMap(): void
+    {
+        $restored = CommandRequestDTO::fromArray([
+            'correlationId' => 'corr-1',
+            'command' => 'ping',
+            'payload' => [],
+        ]);
+
         $this->assertSame([], $restored->payload);
     }
 }

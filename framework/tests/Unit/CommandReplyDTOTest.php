@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -40,5 +41,21 @@ final class CommandReplyDTOTest extends TestCase
         $this->assertSame('ok', $restored->status);
         $this->assertSame(['n' => 7], $restored->payload);
         $this->assertTrue($restored->isOk());
+    }
+
+    public function testFromArrayRefusesAReplyNamingNoStatus(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('status');
+
+        CommandReplyDTO::fromArray(['correlationId' => 'corr-4', 'payload' => []]);
+    }
+
+    public function testFromArrayRefusesAReplyWithoutItsResultMap(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('payload');
+
+        CommandReplyDTO::fromArray(['correlationId' => 'corr-5', 'status' => 'ok']);
     }
 }

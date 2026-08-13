@@ -123,18 +123,48 @@ final class PeerHandshakeDTOTest extends TestCase
     }
 
     /**
-     * A non-string address is absent, not a host: it must not reach PeerAddress.
+     * An address a node does not advertise is written as null and reads back as
+     * absent; that is the only shape in which the field may be missing.
      */
-    public function testFromArrayReadsNonStringAddressAsAbsent(): void
+    public function testFromArrayReadsAnUnadvertisedAddressAsAbsent(): void
     {
         $hello = PeerHelloDTO::fromArray([
             PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
             PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
             PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
-            PeerHandshakeDTO::FIELD_ADDRESS => ['10.0.0.1', 8095],
+            PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
+            PeerHandshakeDTO::FIELD_ADDRESS => null,
         ]);
 
         $this->assertNull($hello->address);
+    }
+
+    /**
+     * A non-string address is not an absent one: read as absent, it left the link
+     * dialling a node whose address the frame did carry, in a shape nobody read.
+     */
+    public function testFromArrayRejectsNonStringAddress(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+            PeerHandshakeDTO::FIELD_NODE_CAPABILITIES => [],
+            PeerHandshakeDTO::FIELD_ADDRESS => ['10.0.0.1', 8095],
+        ]);
+    }
+
+    public function testFromArrayRejectsAHandshakeWithoutItsCapabilities(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerHelloDTO::fromArray([
+            PeerHandshakeDTO::FIELD_PROTOCOL_VERSION => 1,
+            PeerHandshakeDTO::FIELD_NODE_ID => 'node-a',
+            PeerHandshakeDTO::FIELD_NODE_ROLE => 'master',
+        ]);
     }
 
     public function testHandshakeCarriesTheAdvertisedAddress(): void

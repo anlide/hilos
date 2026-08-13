@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -52,14 +53,18 @@ class WebSocketFrameSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     /**
      * Creates DTO from array.
      *
+     * The payload is required and an empty one passes through: a frame carrying
+     * no bytes is a frame, while a frame carrying no payload key is truncated.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key or no frame payload
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            payload: $data[self::PAYLOAD] ?? '',
+            acceptKey: self::requireString($data, self::ACCEPT_KEY),
+            payload: self::requireString($data, self::PAYLOAD),
         );
     }
 }

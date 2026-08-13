@@ -6,6 +6,7 @@ namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 
@@ -84,40 +85,33 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
+     * Restores the welcome from its wire payload.
+     *
+     * The block and both of its flags are required, and a lowered flag is read as
+     * the answer it is: a welcome that does not say whether a freeze holds is not
+     * a welcome saying none does. The three copy fields are null whenever no
+     * freeze holds, so they are read as the optional text they are - and a value
+     * of another type is refused rather than quietly dropped, which is what the
+     * private reader this replaced used to do.
+     *
      * @param array<string, mixed> $data
+     * @throws InvalidFormatException When the welcome carries no build, session cookie name or protected-mode block
      */
     public static function fromArray(array $data): static
     {
-        $protectedMode = $data[self::PROTECTED_MODE] ?? [];
-        if (!is_array($protectedMode)) {
-            $protectedMode = [];
-        }
+        $protectedMode = self::requireArray($data, self::PROTECTED_MODE);
 
         return new static(
-            build: (string)($data[self::BUILD] ?? ''),
+            build: self::requireString($data, self::BUILD),
             // Read without a fallback: a frame that does not name the session cookie is a
             // frame the frontend could not rotate on, and an empty name would produce an
             // auxiliary cookie called `_rotate` on every deployment that ever saw one.
-            sessionCookieName: (string)$data[self::SESSION_COOKIE_NAME],
-            protectedModeActive: (bool)($protectedMode[self::PROTECTED_MODE_ACTIVE] ?? false),
-            protectedModeOperation: self::text($protectedMode, self::PROTECTED_MODE_OPERATION),
-            protectedModeTitle: self::text($protectedMode, self::PROTECTED_MODE_TITLE),
-            protectedModeMessage: self::text($protectedMode, self::PROTECTED_MODE_MESSAGE),
-            protectedModeAcceptsPass: (bool)($protectedMode[self::PROTECTED_MODE_ACCEPTS_PASS] ?? false),
+            sessionCookieName: self::requireString($data, self::SESSION_COOKIE_NAME),
+            protectedModeActive: self::requireBool($protectedMode, self::PROTECTED_MODE_ACTIVE),
+            protectedModeOperation: self::optionalString($protectedMode, self::PROTECTED_MODE_OPERATION),
+            protectedModeTitle: self::optionalString($protectedMode, self::PROTECTED_MODE_TITLE),
+            protectedModeMessage: self::optionalString($protectedMode, self::PROTECTED_MODE_MESSAGE),
+            protectedModeAcceptsPass: self::requireBool($protectedMode, self::PROTECTED_MODE_ACCEPTS_PASS),
         );
-    }
-
-    /**
-     * Reads one optional string off the protected-mode block.
-     *
-     * @param array<string, mixed> $protectedMode Protected-mode block of the frame
-     * @param string $field Field to read
-     * @return ?string Field value, or null when the block does not carry it as text
-     */
-    private static function text(array $protectedMode, string $field): ?string
-    {
-        $value = $protectedMode[$field] ?? null;
-
-        return is_string($value) ? $value : null;
     }
 }

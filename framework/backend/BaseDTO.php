@@ -144,6 +144,30 @@ abstract class BaseDTO
     }
 
     /**
+     * Reads a boolean payload field the DTO cannot be built without.
+     *
+     * `false` is a value the sender chose, not the absence of one, so it passes
+     * through untouched. That is the whole reason a boolean needs a reader of
+     * its own: `?? false` reads an absent flag and a flag deliberately lowered
+     * as the same thing, and every reader below then acts on a decision nobody
+     * made.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return bool Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-boolean
+     */
+    protected static function requireBool(array $data, string $key): bool
+    {
+        $value = $data[$key] ?? null;
+        if (!is_bool($value)) {
+            throw new InvalidFormatException('Payload carries no boolean under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
      * Reads a payload field that is allowed to be absent.
      *
      * Absence answers `null` — that is what the field being optional means. A
@@ -197,6 +221,27 @@ abstract class BaseDTO
         $value = $data[$key] ?? null;
         if ($value !== null && !is_array($value)) {
             throw new InvalidFormatException('Payload carries a non-array under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a boolean payload field that is allowed to be absent.
+     *
+     * Absence answers `null`, which is what distinguishes it from a flag the
+     * sender lowered on purpose; `false` arrives as `false`.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?bool Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds a non-boolean
+     */
+    protected static function optionalBool(array $data, string $key): ?bool
+    {
+        $value = $data[$key] ?? null;
+        if ($value !== null && !is_bool($value)) {
+            throw new InvalidFormatException('Payload carries a non-boolean under key ' . $key);
         }
 
         return $value;

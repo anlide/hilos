@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\PeerLink;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Consensus frame a candidate broadcasts to the master set to solicit votes.
@@ -62,20 +64,34 @@ final class PeerRequestVoteDTO extends PeerDTO
     /**
      * Restores a request-vote frame from its wire array.
      *
+     * The term is required rather than defaulted: it is what the vote is decided
+     * by, and a missing one read as 0 would solicit votes for an election nobody
+     * is holding. The refusal is re-thrown as the exception {@see PeerLink} drops
+     * the link on, and a blank id stays a check of its own.
+     *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the candidate id is missing
+     * @throws PeerTransportException When the term or the candidate id is missing
      */
     public static function fromArray(array $data): static
     {
-        $candidateIdValue = $data[self::FIELD_CANDIDATE_ID] ?? null;
-        $candidateId = is_string($candidateIdValue) ? trim($candidateIdValue) : null;
-        if ($candidateId === null || $candidateId === '') {
+        try {
+            $term = self::requireInt($data, self::FIELD_TERM);
+            $candidateId = trim(self::requireString($data, self::FIELD_CANDIDATE_ID));
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException(
+                'Peer request-vote frame is malformed: ' . $exception->getMessage(),
+                0,
+                $exception,
+            );
+        }
+
+        if ($candidateId === '') {
             throw new PeerTransportException('Peer request-vote frame is missing the candidate id');
         }
 
         return new static(
-            term: (int)($data[self::FIELD_TERM] ?? 0),
+            term: $term,
             candidateId: $candidateId,
         );
     }

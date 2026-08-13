@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataEnvelope;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -61,6 +62,23 @@ final class SignalDataEnvelopeTest extends TestCase
         $this->assertStringContainsString(EnvelopeTestRequiredFieldPayload::class, $logged);
         $this->assertStringContainsString(InvalidFormatException::class, $logged);
         $this->assertStringContainsString('value', $logged);
+    }
+
+    public function testIncompleteWebSocketPayloadDegradesToSignalDataInsteadOfADtoOfStubs(): void
+    {
+        // The master-worker hop of a real signal DTO: before HIL-562 an incomplete
+        // frame arrived as a WebSocketFrameSignalDTO addressed to the empty accept
+        // key, which routes to no connection and reports nothing.
+        ob_start();
+        $decoded = SignalDataEnvelope::decode(
+            [WebSocketFrameSignalDTO::ACCEPT_KEY => 'ak-1'],
+            WebSocketFrameSignalDTO::class,
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertInstanceOf(SignalData::class, $decoded);
+        $this->assertStringContainsString(WebSocketFrameSignalDTO::class, $logged);
+        $this->assertStringContainsString(WebSocketFrameSignalDTO::PAYLOAD, $logged);
     }
 }
 

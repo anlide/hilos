@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -1115,7 +1116,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 }
 
                 $decoded[SignalPayloadConstants::FIELD_ACCEPT_KEY] = $acceptKey;
-                $dto = WebSocketTableViewportSignalDTO::fromArray($decoded);
+
+                // The viewport is the one frame whose shape is read by its DTO rather
+                // than field by field here, so its refusal is translated into the type
+                // the checks above throw - the one processReadBuffer() closes the
+                // connection on. Left as it arrives, it would reach the catch-all of
+                // DaemonManager instead: the client would be dropped past the
+                // shouldClose flag and under a message about a read handler.
+                try {
+                    $dto = WebSocketTableViewportSignalDTO::fromArray($decoded);
+                } catch (InvalidFormatException $exception) {
+                    throw new InvalidFrameException($exception->getMessage(), $exception);
+                }
 
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),

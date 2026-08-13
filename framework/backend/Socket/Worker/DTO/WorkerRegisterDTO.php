@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -60,14 +61,19 @@ class WorkerRegisterDTO extends WorkerDTO
     /**
      * Creates DTO from array.
      *
+     * Both fields are required: worker 0 is a real worker and a lowered
+     * monopolistic flag is a real answer, so neither has a value left to stand
+     * for its own absence.
+     *
      * @param array<string, mixed> $data Source data (workerIndex, monopolistic)
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no worker index or no monopolistic flag
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            workerIndex: $data[self::WORKER_INDEX] ?? 0,
-            monopolistic: $data[self::MONOPOLISTIC] ?? false,
+            workerIndex: self::requireInt($data, self::WORKER_INDEX),
+            monopolistic: self::requireBool($data, self::MONOPOLISTIC),
         );
     }
 }
