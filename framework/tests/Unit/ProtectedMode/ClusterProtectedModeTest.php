@@ -17,6 +17,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
+use Hilos\ProtectedMode\ProtectedModeCoordinator;
 
 /**
  * Unit tests for the two-phase cluster freeze orchestration (HIL-267 slice 5).

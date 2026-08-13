@@ -42,6 +42,7 @@ use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
 use Hilos\Database\DatabaseException;
+use Throwable;
 
 /**
  * CliManager - Main CLI management class.
@@ -230,7 +231,7 @@ class CliManager
             
             echo "\n";
             return ExitCode::ERROR;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Handle unexpected errors
             echo "\n✗ Unexpected Error\n";
             echo "Error: {$e->getMessage()}\n";

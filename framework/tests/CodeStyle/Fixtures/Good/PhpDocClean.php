@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Violation;
 use OutOfBoundsException;
+use Socket;
 use SplFileInfo;
 
 /**
@@ -18,8 +19,12 @@ use SplFileInfo;
  */
 final class PhpDocClean
 {
+    /** Id the samples of this file belong to, pointed at by {@see OWNING_RULE} below. */
+    public const string OWNING_RULE = 'PHPDOC-FQN';
+
     /**
-     * Files collected so far, described by {@see SourceScanner::files}.
+     * Files collected so far, described by {@see SourceScanner::files}. A neighbour of
+     * this namespace, {@see PhpDocCleanKind}, needs no import for the same reason.
      *
      * @var SplFileInfo[] Scanned files
      */
@@ -33,5 +38,16 @@ final class PhpDocClean
     public function produce(DateTimeImmutable $moment): mixed
     {
         return $moment;
+    }
+
+    /**
+     * The legal counterpart of the compound type: read whole, it holds two short
+     * names and both of them are imported.
+     *
+     * @return array{0: Socket, 1: Socket} Socket pair
+     */
+    public function pair(): array
+    {
+        return [];
     }
 }

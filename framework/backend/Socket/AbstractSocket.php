@@ -39,6 +39,7 @@ use Hilos\Socket\Exception\SocketSelectException;
 use Hilos\Socket\Exception\SocketSetNonBlockException;
 use Hilos\Socket\Exception\SocketSetOptionException;
 use Hilos\Socket\Exception\SocketWriteException;
+use Throwable;
 
 /**
  * AbstractSocket - Abstract base class for socket operations.
@@ -122,7 +123,7 @@ abstract class AbstractSocket
         if ($this->socket !== null && (is_resource($this->socket) || is_object($this->socket))) {
             try {
                 $errorCode = socket_last_error($this->socket);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 // Socket may be already closed, use global error
                 $errorCode = socket_last_error();
             }
@@ -135,7 +136,7 @@ abstract class AbstractSocket
         if ($this->socket !== null && (is_resource($this->socket) || is_object($this->socket))) {
             try {
                 socket_clear_error($this->socket);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 // Socket may be already closed, use global clear
                 socket_clear_error();
             }

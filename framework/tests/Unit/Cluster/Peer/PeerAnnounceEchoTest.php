@@ -18,6 +18,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Socket;
 
 /**
@@ -167,7 +168,7 @@ final class PeerAnnounceEchoTest extends TestCase
         [$near, $far] = $this->makeSocketPair();
         $link = new PeerLink($near, $server, $this->localIdentity(), dialer: true);
 
-        $clients = new \ReflectionProperty($server, 'clients');
+        $clients = new ReflectionProperty($server, 'clients');
         $clients->setValue($server, [...$clients->getValue($server), $link]);
 
         socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [])->toJson() . "\n");
@@ -185,7 +186,7 @@ final class PeerAnnounceEchoTest extends TestCase
      * @param Socket $far Far end of the link's socket pair
      * @return string Bytes the far end received
      */
-    private function flushAndRead(PeerLink $link, \Socket $far): string
+    private function flushAndRead(PeerLink $link, Socket $far): string
     {
         $link->write();
 

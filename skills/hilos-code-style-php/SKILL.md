@@ -17,6 +17,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 |---|---|
 | `docs/agents/code-style/README.md` | choosing which small rule applies, or the change is not covered below |
 | `docs/agents/framework-development.md` | changing framework-level APIs, facade globals, extension points, or framework subsystem exceptions — via `$hilos-framework-development` |
+| `docs/agents/code-style/qualified-names.md` | writing a class name in code — a `catch`, a `new`, a base class, a static access, or a type in a signature — or removing a leading backslash from one |
 | `docs/agents/code-style/phpdoc.md` | creating a method, changing a signature, visibility, parameters, return type, or thrown exceptions, overriding a method, or adding `@see` links |
 | `docs/agents/code-style/exceptions.md` | choosing an exception class, documenting `@throws`, handling validation or business errors |
 | `docs/agents/code-style/method-contracts.md` | changing a return type, a success/failure contract, a command method, a predicate, or a result-consumption API — also owns the empty string minted as a "no value" marker, and reading a field inside `fromArray()` / `fromJson()` |

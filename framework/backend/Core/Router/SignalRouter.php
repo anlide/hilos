@@ -36,6 +36,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use SplQueue;
+use Throwable;
 
 /**
  * SignalRouter - Base class for routing signals from sources to agents.
@@ -1169,7 +1170,7 @@ class SignalRouter
         } catch (BrokenSignalPayloadDtoException $e) {
             // A broken registry entry is not a payload problem; it must not be reported as one.
             throw $e;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
 
@@ -1203,7 +1204,7 @@ class SignalRouter
         } catch (BrokenSignalPayloadDtoException $e) {
             // A broken registry entry is not a payload problem; it must not be reported as one.
             throw $e;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             throw new InvalidCommandPayloadException($command, $dtoClass, $data->payload, $e);
         }
 

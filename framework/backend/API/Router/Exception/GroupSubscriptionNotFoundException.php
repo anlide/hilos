@@ -19,7 +19,7 @@ class GroupSubscriptionNotFoundException extends RouteException
      * @param int $code Exception code
      * @param ?Throwable $previous Previous exception for chaining
      */
-    public function __construct(string $acceptKey, string $group, int $code = 0, ?\Throwable $previous = null)
+    public function __construct(string $acceptKey, string $group, int $code = 0, ?Throwable $previous = null)
     {
         $message = "Cannot update group subscription: group '{$group}' is not subscribed for acceptKey {$acceptKey}";
         parent::__construct($message, $code, $previous);

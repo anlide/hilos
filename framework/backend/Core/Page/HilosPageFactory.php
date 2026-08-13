@@ -14,6 +14,7 @@ use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalPayloadHydrator;
 use Hilos\Hilos;
+use Throwable;
 
 /**
  * HilosPageFactory - Factory for creating page instances from project topology.
@@ -204,7 +205,7 @@ class HilosPageFactory extends AbstractPageFactory
         } catch (BrokenSignalPayloadDtoException $e) {
             // A broken registry entry is not a payload problem; it must not be reported as one.
             throw $e;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
     }

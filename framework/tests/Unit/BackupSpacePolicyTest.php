@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Tests\Unit\EnvAccessorTestCatalog;
 use PHPUnit\Framework\TestCase;
 
 /**

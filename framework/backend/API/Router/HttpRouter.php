@@ -10,6 +10,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
+use Throwable;
 
 /**
  * HttpRouter - Routes HTTP requests to handlers.
@@ -97,7 +98,7 @@ class HttpRouter
                 : HttpConstants::HTTP_OK;
             Hilos::$ac?->finishApiRequest($apiRequestId, $statusCode, $durationMs);
             return $response;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
             Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
             return [

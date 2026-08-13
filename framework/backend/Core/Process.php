@@ -12,6 +12,7 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
+use Throwable;
 
 /**
  * Wrapper for proc_open to run child processes with non-blocking I/O.
@@ -372,7 +373,7 @@ class Process
     {
         try {
             $this->halt();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Best-effort cleanup; nothing useful can be done if teardown fails here.
         }
     }

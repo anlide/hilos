@@ -8,6 +8,7 @@ use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Database\Database;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * Collects raw analytics data into normalized SQL tables.
@@ -1360,7 +1361,7 @@ final class AnalyticsCollector
 
         try {
             return $callback();
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             $this->enabled = false;
             Logger::error('Analytics collector disabled: ' . $throwable->getMessage());
             return $default;

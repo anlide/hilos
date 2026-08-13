@@ -34,7 +34,7 @@ final class PeerServerMembershipTest extends TestCase
     private ?ClusterContext $previousCluster = null;
 
     /** @var ?Socket Dummy socket kept alive for the link under test */
-    private ?\Socket $socket = null;
+    private ?Socket $socket = null;
 
     protected function setUp(): void
     {
@@ -106,7 +106,7 @@ final class PeerServerMembershipTest extends TestCase
      *
      * @return Socket Unconnected socket kept alive for the test's lifetime
      */
-    private function makeSocket(): \Socket
+    private function makeSocket(): Socket
     {
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         $this->assertNotFalse($socket);

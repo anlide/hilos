@@ -7,6 +7,7 @@ namespace Hilos\Sms\Delivery;
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\API\Exception\AsyncHttpStatusException;
+use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Sms\Exception\SmsConfigException;
 use Hilos\Sms\HttpSmsProvider;
 use Hilos\Sms\SmsHttpRequest;

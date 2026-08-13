@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Smtp;
 
+use Hilos\Mail\SmtpMailTransport;
+
 /**
  * SmtpActionKind - what {@see SmtpMailTransport} must do after an {@see SmtpDialog} step (HIL-197).
  *

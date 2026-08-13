@@ -8,6 +8,7 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;

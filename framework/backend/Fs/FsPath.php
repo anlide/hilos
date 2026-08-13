@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Fs;
 
+use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
@@ -23,7 +24,7 @@ use Hilos\Fs\Exception\FileWriteException;
  * is not covered by this layer and stays marked at its own call site.
  *
  * Static because a path primitive has no state, and the named-directory registry
- * behind {@see Context\FsContext} cannot address paths that are not registered in
+ * behind {@see FsContext} cannot address paths that are not registered in
  * it (backup scopes, per-pid work directories).
  */
 final class FsPath

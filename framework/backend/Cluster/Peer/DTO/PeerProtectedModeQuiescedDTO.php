@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer\DTO;
 
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**

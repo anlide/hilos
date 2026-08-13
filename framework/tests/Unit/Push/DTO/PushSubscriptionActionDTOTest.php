@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Push\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;

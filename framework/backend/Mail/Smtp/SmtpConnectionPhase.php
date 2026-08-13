@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Smtp;
 
+use Hilos\Mail\SmtpMailTransport;
+
 /**
  * SmtpConnectionPhase - the non-blocking I/O phase of {@see SmtpMailTransport} (HIL-197).
  *

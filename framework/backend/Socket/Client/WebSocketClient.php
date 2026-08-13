@@ -57,6 +57,8 @@ use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 use Hilos\Environment\Exception\EnvException;
 use Random\RandomException;
+use Throwable;
+use Hilos\Runtime\View\Collection\HilosSessionRotations;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection.
@@ -1457,7 +1459,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         try {
             Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->resolveClientIp());
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Ignore peer-name lookup errors during analytics tracking.
         }
     }

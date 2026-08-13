@@ -33,4 +33,27 @@ final class PhpDocFqnSamples
     {
         return $moment;
     }
+
+    /**
+     * A compound type is one expression: a rule that cut the type at the first space
+     * would read `array{0:` and never reach the second entry.
+     *
+     * @return array{0: \Socket, 1: \Socket} Socket pair
+     */
+    public function pair(): array
+    {
+        return [];
+    }
+
+    /**
+     * The other two ways a cross-reference goes wrong once the backslash is gone:
+     * {@see Rule\PhpDocFqnRule} reads against whatever namespace this file declares,
+     * and {@see Baseline} points at nothing this file can reach.
+     *
+     * @return string Rule id the samples above belong to
+     */
+    public function owner(): string
+    {
+        return 'PHPDOC-FQN';
+    }
 }

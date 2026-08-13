@@ -14,6 +14,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Tests\Unit\WebSocketClientTestProbe;
 use PHPUnit\Framework\TestCase;
+use Hilos\Core\Daemon\DaemonManager;
 
 /**
  * Unit tests for letting a verifier through the freeze on its upgrade request.

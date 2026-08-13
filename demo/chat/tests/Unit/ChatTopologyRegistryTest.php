@@ -55,6 +55,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Closure;
 
 /**
  * Guards the project-level chat topology registry.
@@ -560,7 +561,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
-        $resolvePageConfig = \Closure::bind(
+        $resolvePageConfig = Closure::bind(
             static fn(ChatBrowserContext $context, string $page): ?BrowserPageConfig => $context->resolveBrowserPageConfig($page),
             null,
             ChatBrowserContext::class,
@@ -583,7 +584,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
-        $resolvePageTables = \Closure::bind(
+        $resolvePageTables = Closure::bind(
             static fn(ChatBrowserContext $context, string $page): BrowserPageBindings => $context->resolveBrowserPageBindings($page),
             null,
             ChatBrowserContext::class,
@@ -606,7 +607,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $context = new ChatBrowserContext();
         Hilos::initBrowser($context);
-        $resolveTableConfig = \Closure::bind(
+        $resolveTableConfig = Closure::bind(
             static fn(ChatBrowserContext $context, string $tableKey): ?BrowserSourceConfig => $context->resolveBrowserOnlyConfig($tableKey),
             null,
             ChatBrowserContext::class,

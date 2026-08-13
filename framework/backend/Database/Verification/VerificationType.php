@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Verification;
 
+use Hilos\Auth\Verification\VerificationService;
+
 /**
  * VerificationType - fixed value set for the hilos_user_verification `type` column.
  *

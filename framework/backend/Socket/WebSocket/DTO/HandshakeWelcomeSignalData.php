@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\DTO;
 
+use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;

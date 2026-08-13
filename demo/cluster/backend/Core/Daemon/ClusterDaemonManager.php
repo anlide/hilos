@@ -25,6 +25,7 @@ use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * ClusterDaemonManager - Main daemon manager for the cluster demo.
@@ -229,7 +230,7 @@ final class ClusterDaemonManager extends DaemonManager
 
                 $placement->placeAgentOnBestNode(AgentType::WORKER, $agentIndex);
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::warning("Cluster demo could not place the WORKER fleet: {$e->getMessage()}");
         }
     }

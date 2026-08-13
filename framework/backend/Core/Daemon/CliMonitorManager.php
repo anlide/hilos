@@ -19,6 +19,7 @@ use Hilos\HilosException;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * Interactive CLI monitor for a running daemon. Polls the daemon status
@@ -201,7 +202,7 @@ class CliMonitorManager extends BaseManager
         try {
             $dto = DaemonStatusDTO::fromJson($response->body);
             $this->daemonStatus = DaemonStatus::fromDTO($dto);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $this->daemonStatus = null;
         }
     }

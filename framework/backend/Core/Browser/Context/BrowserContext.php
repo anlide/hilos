@@ -58,6 +58,8 @@ use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
 use Throwable;
+use ArrayAccess;
+use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
  * Base browser-facing context.
@@ -1723,7 +1725,7 @@ abstract class BrowserContext
     private function sourceItemById(array $source, string $sourceId): mixed
     {
         $collection = $this->sourceCollection($source);
-        if (!$collection instanceof \ArrayAccess) {
+        if (!$collection instanceof ArrayAccess) {
             return null;
         }
 

@@ -17,6 +17,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * Merges one populated account into another through the daemon command channel (HIL-378).
@@ -147,7 +148,7 @@ HELP;
             }
 
             return $client->consumeResult();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

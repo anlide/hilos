@@ -317,7 +317,7 @@ final class FakeConsensusMesh implements ConsensusMesh
     public function lastVoteReply(): PeerVoteReplyDTO
     {
         $frame = $this->unicasts[array_key_last($this->unicasts)]['frame'];
-        \assert($frame instanceof PeerVoteReplyDTO);
+        assert($frame instanceof PeerVoteReplyDTO);
 
         return $frame;
     }

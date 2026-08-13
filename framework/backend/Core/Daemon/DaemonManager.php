@@ -99,6 +99,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 use Random\RandomException;
+use Throwable;
 
 /**
  * Abstract base for daemon processes. run() owns the main loop: it drains ready
@@ -897,7 +898,7 @@ abstract class DaemonManager extends BaseManager implements
 
             // Register client socket in event loop
             $this->registerClientSocket($server, $client);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Log exception in server accept handler
             $this->logException(
                 sprintf("Error in server accept handler for %s: %s in %s:%d - %s",
@@ -967,7 +968,7 @@ abstract class DaemonManager extends BaseManager implements
             // the node serving handshakes it cannot mint secrets for.
             $this->requestEntropyStop($exception);
             $this->discardClient($server, $client);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Log exception and close client connection on error
             $this->logException(
                 sprintf("Error in client read handler for %s: %s in %s:%d - %s",
@@ -1001,7 +1002,7 @@ abstract class DaemonManager extends BaseManager implements
             }
             $client->close();
             $server->removeClient($client);
-        } catch (\Throwable $cleanupError) {
+        } catch (Throwable $cleanupError) {
             // Ignore errors during cleanup - socket may be already closed
         }
     }
@@ -1613,7 +1614,7 @@ abstract class DaemonManager extends BaseManager implements
                 try {
                     $client->sendFrame($message);
                     return;
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$acceptKey}: " . $e->getMessage());
                 }
             }
@@ -1639,7 +1640,7 @@ abstract class DaemonManager extends BaseManager implements
 
                 try {
                     $client->sendFrame($message);
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
             }
@@ -1668,7 +1669,7 @@ abstract class DaemonManager extends BaseManager implements
                 // In future, check if client is subscribed to group
                 try {
                     $client->sendFrame($message);
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
             }
@@ -1782,7 +1783,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         try {
             return Hilos::$cluster?->lifecycleState() ?? NodeLifecycleState::Standalone;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error("Cluster lifecycle state unavailable, falling back to standalone: {$e->getMessage()}");
             return NodeLifecycleState::Standalone;
         }
@@ -1803,7 +1804,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         try {
             return Hilos::$cluster?->amLeader() ?? true;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error("Cluster leadership unavailable, assuming standalone leader: {$e->getMessage()}");
             return true;
         }
@@ -1862,7 +1863,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         try {
             return Hilos::$cluster?->isEnabled() ?? false;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return false;
         }
     }

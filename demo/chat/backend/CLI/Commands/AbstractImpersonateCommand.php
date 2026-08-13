@@ -15,6 +15,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * Shared base for the impersonation start/stop CLI commands.
@@ -127,7 +128,7 @@ abstract class AbstractImpersonateCommand implements CommandInterface
             }
 
             return $client->consumeResult();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

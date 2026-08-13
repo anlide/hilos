@@ -26,7 +26,7 @@ use Hilos\Hilos;
  * which only a project that owns a users table implements; a project without it gets a
  * clear message and {@see ExitCode::CONFIG_ERROR}, not a fatal. Runs only on the stand
  * bring-up (no daemon), so it registers itself as the identities truth source (the CLI
- * has no agent), mirroring {@see CreateOrphanCommand}. Strictly not idempotent: a
+ * has no agent), mirroring the chat demo's `CreateOrphanCommand`. Strictly not idempotent: a
  * pre-existing identity for a generated email surfaces as a non-zero exit rather than a
  * silent skip, so a stale database (db:test:reset did not run) is caught, not masked.
  */

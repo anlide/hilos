@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Anonymization\ArchiveTableSchema;
+use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreFailedException;
 
@@ -14,7 +15,7 @@ use Hilos\Backup\Exception\RestoreFailedException;
  * HIL-274 defined the port and its call point in {@see BackupRestorer}: after every
  * connection is imported and before the restore reports success, the pass runs once per
  * imported connection over the freshly restored data. HIL-275 added the second method and
- * the implementation behind both ({@see Anonymization\CatalogRestoreAnonymizer}).
+ * the implementation behind both ({@see CatalogRestoreAnonymizer}).
  *
  * The two methods are the contract's two halves, and the order between them is the point:
  * an anonymizer must be able to REFUSE an archive before a byte of it is imported, so

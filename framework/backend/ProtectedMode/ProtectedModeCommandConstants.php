@@ -9,6 +9,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
+use Hilos\Notification\NotificationCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**

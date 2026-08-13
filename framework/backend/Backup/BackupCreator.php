@@ -25,7 +25,7 @@ use Throwable;
 /**
  * BackupCreator - the backup create engine that runs inside the short-lived child.
  *
- * The monopoly {@see Agent\BackupAgent} supervisor spawns a `backup:run` CLI child
+ * The monopoly {@see BackupAgent} supervisor spawns a `backup:run` CLI child
  * (HIL-270 supervisor step) that delegates here. All blocking work — one mysqldump
  * per configured connection, then the archive and sidecar write — happens here, off
  * the daemon event loop. The run is all-or-nothing: any failing step aborts the whole

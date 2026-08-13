@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Cluster\NodeIdentity;
+
 /**
  * Structured reading of a node's advertised capability tags for resource-aware placement
  * (HIL-182).

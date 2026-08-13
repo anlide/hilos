@@ -9,6 +9,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalPayloadHydrator;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Tests the single hydration point shared by the agent, page signal, and command parsers.
@@ -50,7 +51,7 @@ final class SignalPayloadHydratorTest extends TestCase
         try {
             SignalPayloadHydrator::hydrate([], HydratorTestPayload::class, 'typed_test_signal');
             $this->fail('Expected the fromArray failure to reach the caller');
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $this->assertNotInstanceOf(BrokenSignalPayloadDtoException::class, $e);
             $this->assertInstanceOf(InvalidArgumentException::class, $e);
             $this->assertSame('value is required', $e->getMessage());

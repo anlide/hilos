@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotFoundException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
@@ -19,7 +20,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
  * {@see PeerSignalDTO}, the transport delivers the already-resolved
  * target straight through this seam — no re-routing — so the signal reaches the placed agent
  * exactly as a locally-dispatched one would. The worker server implements it by reusing its
- * existing send-to-agent path, mirroring how {@see Placement\PlacementExecutor} reuses the
+ * existing send-to-agent path, mirroring how {@see PlacementExecutor} reuses the
  * start path. A test supplies a fake so the transport runs without a worker pool.
  */
 interface AgentSignalSink

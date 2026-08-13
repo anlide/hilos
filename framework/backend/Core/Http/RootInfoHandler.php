@@ -6,6 +6,7 @@ namespace Hilos\Core\Http;
 
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Daemon\DaemonManager;
 
 /**
  * Invokable handler for the daemon HTTP status server root (GET /).

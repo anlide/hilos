@@ -49,6 +49,7 @@ use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * WorkerServer - Worker communication server implementation.
@@ -251,7 +252,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
 
             try {
                 $this->startAgent($agentType, null);
-            } catch (\Throwable $throwable) {
+            } catch (Throwable $throwable) {
                 // Contain a per-node start failure so the remaining per-node agents still start.
                 Logger::error("Failed to start per-node agent {$agentType}: " . $throwable->getMessage());
             }
@@ -823,7 +824,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
                 Logger::debug("Sent stop signal to {$type} worker #{$index}");
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Logger::error("Failed to stop {$type} worker #{$index}: " . $e->getMessage());
                 // Force remove if stop failed
                 unset($this->workers[$key]);
@@ -926,7 +927,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
     {
         try {
             return Hilos::$cluster?->amLeader() ?? true;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error("Cluster leadership unavailable, assuming standalone leader: {$e->getMessage()}");
             return true;
         }
@@ -1338,7 +1339,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         foreach ($stopped as $agent) {
             try {
                 $this->startAgent($agent->type, $agent->index);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 $agentId = $this->buildAgentId($agent->type, $agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
             }

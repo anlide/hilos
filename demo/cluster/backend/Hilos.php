@@ -12,6 +12,7 @@ use Demo\Cluster\Runtime\View\Context\ClusterRtContext;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -29,7 +30,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
  * @property-read ClusterRtContext $rt Runtime context (narrows parent's RtContext for IDE)
  */
-final class Hilos extends \Hilos\Hilos
+final class Hilos extends HilosFacade
 {
     protected const string ENV_CATALOG = ClusterEnvCatalog::class;
 

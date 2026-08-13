@@ -14,6 +14,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\WorkerServer;
 use JsonException;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -213,12 +214,12 @@ final class SnapshotTestDaemonManager extends DaemonManager
 {
     protected function createSignalRouter(): SignalRouter
     {
-        throw new \LogicException('The snapshot never builds a signal router.');
+        throw new LogicException('The snapshot never builds a signal router.');
     }
 
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
-        throw new \LogicException('The snapshot never builds an agent manager.');
+        throw new LogicException('The snapshot never builds an agent manager.');
     }
 }
 

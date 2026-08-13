@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The mechanism to launch and track an agent-of-type-X on a named node over the peer
@@ -273,7 +274,7 @@ final class ClusterPlacement implements WorkerPlacement
 
         try {
             $workerId = $this->executor->executePlacement($agentType, $agentIndex);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::warning("Placement of '{$this->agentId($agentType, $agentIndex)}' failed: {$e->getMessage()}");
             $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::failed($agentType, $agentIndex, $e->getMessage()));
             return;
@@ -525,7 +526,7 @@ final class ClusterPlacement implements WorkerPlacement
                 $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
                 return;
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::warning("Failover of '{$agentId}' could not re-place: {$e->getMessage()}");
         }
 
@@ -554,7 +555,7 @@ final class ClusterPlacement implements WorkerPlacement
                     Logger::info("Failover retry: placing unplaced '{$record->agentId()}' onto '{$target}'");
                     $this->placeAgentOnNode($record->agentType, $record->agentIndex, $target);
                 }
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 Logger::warning("Failover retry of '{$record->agentId()}' failed: {$e->getMessage()}");
             }
         }

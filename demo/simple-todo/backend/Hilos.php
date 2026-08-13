@@ -36,6 +36,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Settings\HilosSettingsTable;
 
@@ -56,7 +57,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read TodoTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read TodoBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  */
-final class Hilos extends \Hilos\Hilos
+final class Hilos extends HilosFacade
 {
     protected const string ENV_CATALOG = TodoEnvCatalog::class;
 

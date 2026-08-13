@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Backup\Agent\BackupAgent;
+
 /**
  * BackupScheduleMechanism - which evaluator owns a backup schedule entry.
  *
@@ -11,7 +13,7 @@ namespace Hilos\Backup;
  * fire once (the runtime concurrency lock is a backstop, not the primary guard). The
  * default is {@see AGENT}: it needs no project wiring, matching the framework-owned backup
  * activation. Both mechanisms converge on the same guarded create path on the monopoly
- * {@see Agent\BackupAgent}.
+ * {@see BackupAgent}.
  */
 enum BackupScheduleMechanism: string
 {

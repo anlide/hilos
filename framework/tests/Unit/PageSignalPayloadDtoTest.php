@@ -17,6 +17,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
+use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -73,7 +75,7 @@ final class PageSignalPayloadDtoTest extends TestCase
             );
             $this->fail('Expected InvalidAgentSignalPayloadException');
         } catch (InvalidAgentSignalPayloadException $e) {
-            $this->assertInstanceOf(\InvalidArgumentException::class, $e->getPrevious());
+            $this->assertInstanceOf(InvalidArgumentException::class, $e->getPrevious());
             $this->assertStringContainsString('message is required', $e->getMessage());
         }
     }
@@ -163,7 +165,7 @@ final class PageSignalPayloadTestData extends BaseDTO implements SignalDataInter
     {
         $message = $data['message'] ?? null;
         if (!is_string($message) || $message === '') {
-            throw new \InvalidArgumentException('message is required');
+            throw new InvalidArgumentException('message is required');
         }
 
         return new static($message);
@@ -261,7 +263,7 @@ final class PageSignalPayloadTestHilos extends HilosFacade
 
     protected static function createDb(): DbContext
     {
-        throw new \LogicException('createDb is not used in the page signal payload test');
+        throw new LogicException('createDb is not used in the page signal payload test');
     }
 }
 

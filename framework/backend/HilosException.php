@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos;
 
+use Exception;
 use Throwable;
 
 /**
@@ -12,7 +13,7 @@ use Throwable;
  * All Hilos-specific exceptions (Database, Idea, Runtime, Page, Router, Socket, etc.)
  * extend this class so that callers can document a single throws for the public API.
  */
-class HilosException extends \Exception
+class HilosException extends Exception
 {
     /**
      * Creates exception instance.

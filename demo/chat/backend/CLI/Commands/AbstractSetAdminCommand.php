@@ -16,6 +16,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * Shared base for the admin grant/revoke CLI commands.
@@ -119,7 +120,7 @@ abstract class AbstractSetAdminCommand implements CommandInterface
             }
 
             return $client->consumeResult();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

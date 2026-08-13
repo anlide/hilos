@@ -184,7 +184,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read ChatBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  * @property-read ChatFsContext $fs Filesystem context (narrows parent's FsContext for IDE)
  */
-final class Hilos extends \Hilos\Hilos
+final class Hilos extends HilosFacade
 {
     protected const string ENV_CATALOG = ChatEnvCatalog::class;
 

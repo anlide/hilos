@@ -46,6 +46,14 @@ Read this when writing or changing PHPDoc in project PHP code.
    `{@see \Demo\Chat\Database\Actions\Item\UserActions::rename}`. This holds even
    when the class is referenced only in the docblock and nowhere in code — add
    the `use` anyway rather than writing a leading-backslash fully qualified name.
+   A name partially qualified against the current namespace is the same mistake
+   wearing less punctuation: write `use Hilos\Backup\Agent\BackupAgent;` plus
+   `{@see BackupAgent}`, not `{@see Agent\BackupAgent}`, which stops pointing at
+   anything the day either class moves. And a bare short name with no import
+   behind it points nowhere at all — an IDE cannot follow it, a reader cannot
+   tell which of two same-named classes is meant, and nothing fails to say so.
+   A constant, an enum case of this file, or a class of this very namespace
+   needs no import: those the reader already has in front of them.
    Checked automatically: `PHPDOC-FQN`, see [automated-checks.md](automated-checks.md).
 10. If two imported names conflict, alias the import and use the alias in
     PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
@@ -61,6 +69,10 @@ Read this when writing or changing PHPDoc in project PHP code.
     not the same line with a fully qualified third argument. `@extends` sits next
     to the `@property-read` that repeats its state type, and the two spelling the
     same class two different ways is exactly what this rule exists to prevent.
+    A type is spelled the way rule 9 spells a `{@see}`: neither a leading
+    backslash nor a namespace fragment, and the short name has an import behind
+    it. For a class named in executable code the same canon lives in
+    [qualified-names.md](qualified-names.md).
     Checked automatically: `PHPDOC-FQN`, see [automated-checks.md](automated-checks.md).
 13. On a View item the class-level `@method __construct(...)` documents an
     *inherited* constructor. Keep it on a DB View item, which inherits the base

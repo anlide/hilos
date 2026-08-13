@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle\Fixtures\Bad;
 
+use Hilos\Runtime\View\Context\RtContext;
+
 /**
  * Deliberately broken sample: this file sits outside Database/ and Runtime/, so
  * every backing-state reach below must be reported by RT-STATE-REACH.

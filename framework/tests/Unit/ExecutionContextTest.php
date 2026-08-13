@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Unit tests for worker execution metadata scoping.
@@ -48,10 +49,10 @@ final class ExecutionContextTest extends TestCase
             ExecutionContext::run(
                 new ExecutionFrame('inner-agent', 'inner-ak'),
                 static function (): void {
-                    throw new \RuntimeException('context failure');
+                    throw new RuntimeException('context failure');
                 },
             );
-        } catch (\RuntimeException) {
+        } catch (RuntimeException) {
         }
 
         $this->assertSame('outer-agent', ExecutionContext::currentAgentId());

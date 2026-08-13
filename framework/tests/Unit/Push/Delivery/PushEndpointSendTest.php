@@ -155,7 +155,7 @@ final class PushEndpointSendTest extends TestCase
      * @param Throwable $thrown Exception the client raises from tick
      * @return PushEndpointSend The settled send
      */
-    private function settledFrom(\Throwable $thrown): PushEndpointSend
+    private function settledFrom(Throwable $thrown): PushEndpointSend
     {
         $client = $this->createMock(AsyncHttpClient::class);
         $client->method('tick')->willThrowException($thrown);

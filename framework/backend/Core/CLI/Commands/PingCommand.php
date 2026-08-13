@@ -14,6 +14,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * PingCommand - probe the daemon command channel.
@@ -152,7 +153,7 @@ HELP;
             }
 
             return $client->consumeResult();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

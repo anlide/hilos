@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
+use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Utils\Logger;
 
@@ -22,7 +23,7 @@ use Hilos\Utils\Logger;
  * gets nothing more from.
  *
  * The same gate runs on two boundaries with two different maps — the table's declared
- * fields in {@see Definition\TableDefinition::getPage()} and the entity's real columns in
+ * fields in {@see TableDefinition::getPage()} and the entity's real columns in
  * the ORM's page query — so a table that declares nothing is still not a way through to
  * a raw identifier.
  */

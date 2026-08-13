@@ -15,6 +15,7 @@ use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\StringHelper;
+use Throwable;
 
 /**
  * StatusCommand - Display daemon status.
@@ -135,7 +136,7 @@ HELP;
 
             $dto = DaemonStatusDTO::fromJson($client->consumeResult()->body);
             $this->daemonStatus = DaemonStatus::fromDTO($dto);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             $this->daemonStatus = null;
         }
     }

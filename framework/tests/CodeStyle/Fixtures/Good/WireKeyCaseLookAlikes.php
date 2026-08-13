@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle\Fixtures\Good;
 
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
+
 /**
  * Negative sample: nothing here is a field key spelled in the wrong case. An
  * UPPER_SNAKE name belongs to a message name or a catalog key, whose snake value is

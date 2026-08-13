@@ -6,6 +6,7 @@ namespace Hilos\Core\EventLoop;
 
 use EventBase;
 use Event;
+use Throwable;
 
 /**
  * Thin wrapper around the ext-event (libevent) EventBase owned by the daemon's
@@ -54,7 +55,7 @@ final class EventLoop
             function ($socket, $flags) use ($callback) {
                 try {
                     return $callback($socket, $flags);
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     return false;
                 }
             },

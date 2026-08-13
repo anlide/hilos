@@ -11,6 +11,7 @@ use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The worker process spine: the invariant startup sequence every worker.php shares,
@@ -57,7 +58,7 @@ final class WorkerApplication
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
             ]);
             exit(ExitCode::INVALID_ARGUMENT);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $prefix = $workerIndex !== null ? "Worker #{$workerIndex} failed: " : 'Worker bootstrap failed: ';
             Logger::error($prefix . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),

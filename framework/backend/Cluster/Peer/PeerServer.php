@@ -62,6 +62,7 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * Inter-daemon peer transport: accepts peer links and dials out to form the mesh.
@@ -1535,7 +1536,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
 
         try {
             $sink->deliverSignalToAgent($frame->agentType, $frame->agentIndex, $frame->signal);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer signal to agent '{$frame->agentType}': {$e->getMessage()}");
         }
     }
@@ -1705,7 +1706,7 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     {
         try {
             return Hilos::$cluster?->registry();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::warning("Cluster registry unavailable: {$e->getMessage()}");
             return null;
         }

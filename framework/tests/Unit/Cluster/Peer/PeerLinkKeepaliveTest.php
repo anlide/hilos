@@ -38,7 +38,7 @@ final class PeerLinkKeepaliveTest extends TestCase
     private array $sockets = [];
 
     /** @var ?Socket Far end of the current link's socket pair, where the test reads flushed output */
-    private ?\Socket $far = null;
+    private ?Socket $far = null;
 
     protected function setUp(): void
     {
@@ -166,7 +166,7 @@ final class PeerLinkKeepaliveTest extends TestCase
      *
      * @return Socket Unconnected socket kept alive for the test's lifetime
      */
-    private function makeSocket(): \Socket
+    private function makeSocket(): Socket
     {
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         $this->assertNotFalse($socket);

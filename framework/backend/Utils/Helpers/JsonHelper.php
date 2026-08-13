@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use JsonException;
+
 /**
  * JsonHelper - JSON parsing utilities.
  *
@@ -51,7 +53,7 @@ class JsonHelper
 
         try {
             $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (JsonException) {
             return null;
         }
 

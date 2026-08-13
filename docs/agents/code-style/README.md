@@ -17,6 +17,7 @@ layer's specifics on top.
 | File | Applies to | Read when... |
 |---|---|---|
 | [automated-checks.md](automated-checks.md) | PHP | a guard test failed on a style rule, a rule should stop depending on memory, or the known-debt baseline needs a record |
+| [qualified-names.md](qualified-names.md) | PHP | writing a class name in executable code — a `catch`, a `new`, a base class, a static access, or a type in a signature |
 | [phpdoc.md](phpdoc.md) | PHP | writing or changing PHPDoc, overriding inherited methods, adding `@see` links |
 | [exceptions.md](exceptions.md) | PHP | choosing exception classes, documenting `@throws`, handling validation/business errors |
 | [page-action-handlers.md](page-action-handlers.md) | PHP | editing `Page::onAction()`, action DTO routing, action acks/errors |

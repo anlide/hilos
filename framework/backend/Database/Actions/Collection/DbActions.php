@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Exception;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
@@ -168,7 +169,7 @@ abstract class DbActions
     {
         try {
             return $this->objectCollection->getTableName();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             throw new TableNameUndeterminedException(
                 'Cannot determine table name: collection is empty.'
                     . ' Override getTableName() in Actions class if needed.',

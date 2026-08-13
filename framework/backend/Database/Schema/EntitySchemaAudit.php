@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Schema;
 
+use FilesystemIterator;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParamCollection;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionClass;
 
 /**
@@ -65,8 +68,8 @@ final class EntitySchemaAudit
         $prefix = rtrim($namespacePrefix, '\\') . '\\';
         $baseDir = rtrim($dir, DIRECTORY_SEPARATOR);
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($baseDir, \FilesystemIterator::SKIP_DOTS),
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($baseDir, FilesystemIterator::SKIP_DOTS),
         );
 
         $classes = [];

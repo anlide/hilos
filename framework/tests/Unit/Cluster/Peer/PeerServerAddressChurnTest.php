@@ -14,6 +14,8 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
+use ReflectionProperty;
 use Socket;
 
 /**
@@ -115,7 +117,7 @@ final class PeerServerAddressChurnTest extends TestCase
      */
     private function reconcile(PeerServer $server): void
     {
-        new \ReflectionMethod($server, 'reconcilePeerDials')->invoke($server);
+        new ReflectionMethod($server, 'reconcilePeerDials')->invoke($server);
     }
 
     /**
@@ -126,7 +128,7 @@ final class PeerServerAddressChurnTest extends TestCase
      */
     private function peerDials(PeerServer $server): array
     {
-        return new \ReflectionProperty($server, 'peerDials')->getValue($server);
+        return new ReflectionProperty($server, 'peerDials')->getValue($server);
     }
 
     /**
@@ -134,7 +136,7 @@ final class PeerServerAddressChurnTest extends TestCase
      *
      * @return Socket Unconnected socket closed on teardown
      */
-    private function newSocket(): \Socket
+    private function newSocket(): Socket
     {
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
         $this->assertNotFalse($socket);

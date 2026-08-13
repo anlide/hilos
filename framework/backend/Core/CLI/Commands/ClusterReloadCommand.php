@@ -15,6 +15,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * ClusterReloadCommand - reload cluster config and re-announce the local node.
@@ -173,7 +174,7 @@ HELP;
             }
 
             return $client->consumeResult();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

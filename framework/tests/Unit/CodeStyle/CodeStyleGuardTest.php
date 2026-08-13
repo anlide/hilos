@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
@@ -233,7 +234,8 @@ final class CodeStyleGuardTest extends TestCase
     private function rules(string $root): array
     {
         return [
-            new PhpDocFqnRule(),
+            new CodeFqnRule($this->repositoryRoot() . '/' . $root),
+            new PhpDocFqnRule($this->repositoryRoot() . '/' . $root),
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),

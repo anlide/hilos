@@ -15,6 +15,7 @@ use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
+use Throwable;
 
 /**
  * SCAFFOLD/EXAMPLE: exercises the async command round-trip end to end.
@@ -91,7 +92,7 @@ HELP;
             }
 
             $reply = $client->consumeResult();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             echo "Error: {$e->getMessage()}\n";
             return ExitCode::ERROR;
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail;
 
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 

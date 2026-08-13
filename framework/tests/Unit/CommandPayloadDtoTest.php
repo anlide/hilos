@@ -11,7 +11,10 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
+use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -57,7 +60,7 @@ final class CommandPayloadDtoTest extends TestCase
             new CommandPayloadTestRouter()->createCommandPayloadDTO('typed', $request);
             $this->fail('Expected InvalidCommandPayloadException');
         } catch (InvalidCommandPayloadException $e) {
-            $this->assertInstanceOf(\InvalidArgumentException::class, $e->getPrevious());
+            $this->assertInstanceOf(InvalidArgumentException::class, $e->getPrevious());
             $this->assertStringContainsString('value is required', $e->getMessage());
         }
     }
@@ -114,7 +117,7 @@ final class RequireFieldCommandData implements SignalDataInterface
     {
         $value = $data['value'] ?? null;
         if (!is_string($value) || $value === '') {
-            throw new \InvalidArgumentException('value is required');
+            throw new InvalidArgumentException('value is required');
         }
 
         return new static($value);
@@ -155,7 +158,7 @@ final class HelperFieldCommandData extends BaseDTO implements SignalDataInterfac
 /**
  * Test facade declaring a DTO route for the 'typed' command and a broken one for 'broken'.
  */
-final class CommandPayloadTestHilos extends \Hilos\Hilos
+final class CommandPayloadTestHilos extends Hilos
 {
     public const string MISSING_DTO_CLASS = 'Hilos\Tests\Unit\CommandPayloadTestMissingData';
 
@@ -173,7 +176,7 @@ final class CommandPayloadTestHilos extends \Hilos\Hilos
 
     protected static function createDb(): DbContext
     {
-        throw new \LogicException('createDb is not used in the payload test');
+        throw new LogicException('createDb is not used in the payload test');
     }
 }
 

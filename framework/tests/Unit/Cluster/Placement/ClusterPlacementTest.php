@@ -559,7 +559,7 @@ final class FakePlacementExecutor implements PlacementExecutor
     public array $revoked = [];
 
     /** @var ?Throwable Exception the next executePlacement() should throw, or null to succeed */
-    public ?\Throwable $failWith = null;
+    public ?Throwable $failWith = null;
 
     /** @var ResourceProfile Resource profile every agent type reports */
     private readonly ResourceProfile $profile;

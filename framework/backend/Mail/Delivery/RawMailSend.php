@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Mail\Delivery;
 
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Mail\EmailMessage;
 
 /**

@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Item;
 
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 
 /**
  * Read-only wrapper over one pending token rotation (HIL-582).

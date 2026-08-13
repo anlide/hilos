@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Runtime\State\Item\RestoreRuntime;
 
 /**
@@ -23,19 +26,19 @@ final class BackupConstants
     public const string SCOPE_OPTION = 'scope';
 
     /**
-     * Command-channel wire name routing a forced retention prune to {@see Agent\BackupAgent}
+     * Command-channel wire name routing a forced retention prune to {@see BackupAgent}
      * (test-only `test:backup:prune`, HIL-320). Declared on the agent's AGENT_COMMANDS.
      */
     public const string PRUNE_COMMAND = 'backup:prune';
 
     /**
-     * Command-channel wire name routing a forced scheduled backup to {@see Agent\BackupAgent}
+     * Command-channel wire name routing a forced scheduled backup to {@see BackupAgent}
      * (test-only `test:backup:run-schedule`, HIL-320). Declared on the agent's AGENT_COMMANDS.
      */
     public const string RUN_SCHEDULE_COMMAND = 'backup:run-schedule';
 
     /**
-     * Command-channel wire name asking {@see Agent\BackupAgent} to re-mirror its runtime index
+     * Command-channel wire name asking {@see BackupAgent} to re-mirror its runtime index
      * from storage. Declared on the agent's AGENT_COMMANDS.
      *
      * Not test-only: the operator command `backup:verify` rewrites sidecars on disk (files=truth)
@@ -94,18 +97,18 @@ final class BackupConstants
      * `array<int, array<class-string|string, array<string, AnonymizationStrategy>|AnonymizationStrategy>>`:
      * per connection index, one row per table. The row key is the table's Entity or Object
      * collection class wherever one exists (a raw table name only where none does), and the
-     * row is either a map of column name to {@see Anonymization\AnonymizationStrategy}, or
-     * {@see Anonymization\AnonymizationStrategy::PURGE} for a table emptied whole.
+     * row is either a map of column name to {@see AnonymizationStrategy}, or
+     * {@see AnonymizationStrategy::PURGE} for a table emptied whole.
      *
      * An empty map is the row that says "this table holds no personal data" - the registry
      * has no second key listing clean tables, because a table nobody wrote a row for must
-     * stay indistinguishable from a table nobody thought about. {@see Anonymization\PiiRegistry}
+     * stay indistinguishable from a table nobody thought about. {@see PiiRegistry}
      * reads the key, and every table of a restored archive has to appear in it.
      */
     public const string CATALOG_PII = 'pii';
 
     /**
-     * Replacement written by {@see Anonymization\AnonymizationStrategy::MASK}.
+     * Replacement written by {@see AnonymizationStrategy::MASK}.
      *
      * Deliberately legible rather than random: a developer reading a restored staging row
      * has to see that the value was removed, not wonder what it used to say.
@@ -131,14 +134,14 @@ final class BackupConstants
     public const string DEFAULT_SCHEDULE_CRON = '0 3 * * *';
 
     /**
-     * Command-channel wire name asking {@see Agent\BackupAgent} to run a restore (HIL-274).
+     * Command-channel wire name asking {@see BackupAgent} to run a restore (HIL-274).
      * Declared on the agent's AGENT_COMMANDS; the reply is accepted/refused, the restore
      * itself runs asynchronously under protected mode.
      */
     public const string RESTORE_REQUEST_COMMAND = 'backup:restore-request';
 
     /**
-     * Command-channel wire name asking {@see Agent\BackupAgent} for a snapshot of the
+     * Command-channel wire name asking {@see BackupAgent} for a snapshot of the
      * restore runtime row; the CLI monitor polls it until the run reaches a terminal
      * outcome. Declared on the agent's AGENT_COMMANDS.
      */

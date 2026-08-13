@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Delivery;
 
+use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Sms\DirectSmsProvider;
 use Hilos\Sms\SmsMessage;
 use Hilos\Sms\SmsSendResult;

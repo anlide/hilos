@@ -12,6 +12,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
+use TypeError;
 
 /**
  * AbstractClient - Abstract base class for client implementations.
@@ -202,7 +203,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         try {
             // socket_close returns void
             socket_close($this->socket);
-        } catch (\TypeError $e) {
+        } catch (TypeError $e) {
             // Socket already closed or invalid - ignore
             $this->socket = null;
             return;

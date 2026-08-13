@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Log;
 
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Log\LogRotationTriggerPolicy;
+use Hilos\Log\LogRotator;
 use PHPUnit\Framework\TestCase;
 
 /**

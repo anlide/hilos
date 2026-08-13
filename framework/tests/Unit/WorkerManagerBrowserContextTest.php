@@ -22,6 +22,7 @@ use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Closure;
 
 /**
  * Unit tests for WorkerManager browser context hooks.
@@ -43,7 +44,7 @@ final class WorkerManagerBrowserContextTest extends TestCase
 
         $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
 
-        $recordSourceChange = \Closure::bind(
+        $recordSourceChange = Closure::bind(
             static function (WorkerManager $manager, SyncSignalDataInterface $signalData): void {
                 $manager->recordBrowserSourceChange($signalData);
             },

@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * SignalDTO - DTO for queued signal.
@@ -194,7 +195,7 @@ class SignalDTO extends BaseDTO
                         $result = $dataType::fromArray($dataArray);
                         Logger::debug("Deserialized signal data as {$dataType}");
                         return $result;
-                    } catch (\Throwable $e) {
+                    } catch (Throwable $e) {
                         // If deserialization fails, try framework fallback
                         Logger::error("Failed to deserialize signal data as {$dataType}: {$e->getMessage()}");
 
@@ -260,13 +261,13 @@ class SignalDTO extends BaseDTO
                     $normalizedResult = $originalClass::fromArray($dataArray);
                     Logger::debug("Normalized to original class: {$originalClass}");
                     return $normalizedResult;
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     Logger::debug("Normalization failed, using framework class: {$e->getMessage()}");
                 }
             }
 
             return $result;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error("Framework class fallback failed for {$frameworkClass}: {$e->getMessage()}");
             return null;
         }

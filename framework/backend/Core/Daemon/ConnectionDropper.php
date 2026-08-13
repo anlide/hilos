@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\SocketException;
 

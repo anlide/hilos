@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Database\Context\HilosDbContext;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
@@ -45,6 +46,22 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'CODE-FQN Bad/CodeFqnSamples.php:12 — \RuntimeException is written out in code; import it '
+                    . 'and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnSamples.php:20 — \Hilos\Tests\CodeStyle\SourceScanner is written out in '
+                    . 'code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnSamples.php:21 — \Throwable is written out in code; import it '
+                    . 'and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnSamples.php:25 — \Hilos\Tests\CodeStyle\Baseline is written out in '
+                    . 'code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnSamples.php:37 — Rule\CodeFqnSample is written against the current '
+                    . 'namespace; import it and use the short name '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnSamples.php:39 — \strlen is written out in code; a global function or '
+                    . 'constant takes the short name and no import '
+                    . '(see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN Bad/CodeFqnUnresolved.php:21 — JsonException resolves to no class; '
+                    . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
                 'EMPTY-STRING-SENTINEL Bad/Core/CLI/EmptySentinel.php:19 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -143,6 +160,16 @@ final class RuleFixtureTest extends TestCase
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
                 'PHPDOC-FQN Bad/PhpDocFqnSamples.php:30 — @throws references \OutOfBoundsException '
                     . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:41 — @return references \Socket '
+                    . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:41 — @return references \Socket '
+                    . 'instead of an imported short name (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:50 — {@see} references Rule\PhpDocFqnRule '
+                    . 'relative to the current namespace (see docs/agents/code-style/phpdoc.md)',
+                'PHPDOC-FQN Bad/PhpDocFqnSamples.php:51 — {@see} references Baseline, which is neither '
+                    . 'imported nor declared in this namespace (see docs/agents/code-style/phpdoc.md)',
+                'CODE-FQN Bad/RandomSourceSamples.php:25 — \Hilos\Utils\Helpers\RandomHelper is written out '
+                    . 'in code; import it and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'RANDOM-SOURCE Bad/RandomSourceSamples.php:23 — RandomHelper::bytes() falls back to '
                     . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
                     . 'be unique takes this file into the rule\'s list '
@@ -155,13 +182,13 @@ final class RuleFixtureTest extends TestCase
                     . 'pseudorandom; a secret takes secureBytes()/secureHex(), and a value that only has to '
                     . 'be unique takes this file into the rule\'s list '
                     . '(see docs/agents/code-style/random-source.md)',
-                'RT-STATE-REACH Bad/RtStateReach.php:20 — getStateCollection() reaches backing RT state '
+                'RT-STATE-REACH Bad/RtStateReach.php:22 — getStateCollection() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
-                'RT-STATE-REACH Bad/RtStateReach.php:21 — getStateItem() reaches backing RT state '
+                'RT-STATE-REACH Bad/RtStateReach.php:23 — getStateItem() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
-                'RT-STATE-REACH Bad/RtStateReach.php:22 — getStateItem() reaches backing RT state '
+                'RT-STATE-REACH Bad/RtStateReach.php:24 — getStateItem() reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
-                'RT-STATE-REACH Bad/RtStateReach.php:23 — $this->stateCollection reaches backing RT state '
+                'RT-STATE-REACH Bad/RtStateReach.php:25 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'EMPTY-STRING-SENTINEL Bad/Socket/EmptySentinel.php:25 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
@@ -210,7 +237,7 @@ final class RuleFixtureTest extends TestCase
      */
     private function reportFixtureViolations(): array
     {
-        $fixtures = dirname(__DIR__, 2) . '/CodeStyle/Fixtures';
+        $fixtures = $this->fixtureRoot();
         $lines = $this->reportRoot(new SourceScanner($fixtures, [self::WHOLE_ROOT_FIXTURES]), $this->rules());
         $wholeRoot = $this->reportRoot(
             new SourceScanner($fixtures . '/' . self::WHOLE_ROOT_FIXTURES),
@@ -250,12 +277,21 @@ final class RuleFixtureTest extends TestCase
     }
 
     /**
+     * @return string Absolute path of the fixture root, which the rules that read neighbours are handed
+     */
+    private function fixtureRoot(): string
+    {
+        return dirname(__DIR__, 2) . '/CodeStyle/Fixtures';
+    }
+
+    /**
      * @return array<int, CodeStyleRule> Rules under test, in report order
      */
     private function rules(): array
     {
         return [
-            new PhpDocFqnRule(),
+            new CodeFqnRule($this->fixtureRoot()),
+            new PhpDocFqnRule($this->fixtureRoot()),
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),

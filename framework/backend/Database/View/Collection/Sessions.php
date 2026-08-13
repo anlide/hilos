@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\SessionsActions;
+use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\View\Item\Session;

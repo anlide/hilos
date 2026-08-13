@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\DTO;
 
+use Hilos\Runtime\View\Collection\HilosPresenceSource;
+
 /**
  * Runtime presence summary for one user.
  *

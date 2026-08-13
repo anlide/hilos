@@ -7,6 +7,7 @@ namespace Hilos\Runtime\View\Collection;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Runtime\View\Item\HilosConnection;
 

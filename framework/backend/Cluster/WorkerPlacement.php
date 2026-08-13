@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 
@@ -16,7 +17,7 @@ use Hilos\Core\Router\Destination\RemoteAgentDestination;
  * turns the local {@see AgentDestination} into a
  * {@see RemoteAgentDestination} the daemon forwards over
  * the peer channel. The router never owns or mutates placement; the truth of where each
- * agent runs is owned by the placement coordinator ({@see Placement\ClusterPlacement},
+ * agent runs is owned by the placement coordinator ({@see ClusterPlacement},
  * HIL-179), which implements this seam over its placement view. A test supplies a fake so
  * the routing post-pass can be exercised without a live cluster.
  *

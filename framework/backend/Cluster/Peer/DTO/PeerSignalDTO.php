@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Throwable;
 
 /**
  * Forward frame carrying one signal to an agent hosted on another node.
@@ -115,7 +116,7 @@ final class PeerSignalDTO extends PeerDTO
 
         try {
             $signal = SignalDTO::fromArray($signalRaw);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             throw new PeerTransportException('Peer signal carries a malformed inner signal: ' . $e->getMessage());
         }
 

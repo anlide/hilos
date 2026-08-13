@@ -13,8 +13,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\DbContext;
+use Hilos\Hilos;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -74,7 +76,7 @@ final class CommandSignalRoutingTest extends TestCase
 /**
  * Test facade declaring an echo command owner, for COMMAND_REQUEST routing.
  */
-final class CommandRoutingTestHilos extends \Hilos\Hilos
+final class CommandRoutingTestHilos extends Hilos
 {
     /**
      * @return array<string, string> Agent type keyed by command name
@@ -86,7 +88,7 @@ final class CommandRoutingTestHilos extends \Hilos\Hilos
 
     protected static function createDb(): DbContext
     {
-        throw new \LogicException('createDb is not used in the routing test');
+        throw new LogicException('createDb is not used in the routing test');
     }
 }
 

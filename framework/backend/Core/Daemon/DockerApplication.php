@@ -15,6 +15,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The docker watchdog spine: the invariant startup sequence every docker.php shares,
@@ -96,7 +97,7 @@ final class DockerApplication
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
             ]);
             exit(ExitCode::PERMISSION_DENIED);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error('Docker Watchdog failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Socket\Worker;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Pins how the worker channel refuses a frame that names no type (HIL-549).
@@ -36,7 +37,7 @@ final class WorkerFrameTypeTest extends TestCase
     public function testFrameWithANonStringTypeIsRefusedWithoutAConversionWarning(): void
     {
         set_error_handler(static function (int $severity, string $message): bool {
-            throw new \RuntimeException("PHP raised: {$message}");
+            throw new RuntimeException("PHP raised: {$message}");
         });
 
         try {

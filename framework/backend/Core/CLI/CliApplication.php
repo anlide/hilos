@@ -12,6 +12,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The CLI process spine: the invariant startup sequence every cli.php shares, lifted out
@@ -70,7 +71,7 @@ final class CliApplication
             }
 
             exit($cliManager->run());
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error('CLI failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),

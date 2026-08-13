@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
+
 /**
  * The numeric resource demand an agent brings to placement (HIL-182): its hard minimums and
  * soft preferences over a node's declared {@see NodeCapacities}.

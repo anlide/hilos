@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 

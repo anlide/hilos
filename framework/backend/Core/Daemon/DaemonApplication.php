@@ -10,6 +10,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * The daemon process spine: the invariant startup sequence every daemon.php shares,
@@ -50,7 +51,7 @@ final class DaemonApplication
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));
             $manager->run();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Logger::error('Daemon failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),

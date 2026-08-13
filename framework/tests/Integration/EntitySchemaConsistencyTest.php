@@ -16,6 +16,7 @@ use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Throwable;
 
 /**
  * Integration test: framework Entity metadata against the live database schema.
@@ -69,7 +70,7 @@ final class EntitySchemaConsistencyTest extends FrameworkIntegrationTestCase
         try {
             self::openConnection();
             self::runStubDirection(down: true);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Best-effort cleanup; a failure here must not mask test results.
         } finally {
             if (Database::isConnected()) {
