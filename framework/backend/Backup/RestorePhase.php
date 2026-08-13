@@ -32,6 +32,15 @@ enum RestorePhase: string
     /** Running the anonymization pass over the imported data. */
     case ANONYMIZING = 'anonymizing';
 
+    /**
+     * Re-reading the replaced database everywhere before anything is let back in (HIL-436).
+     *
+     * Set by the supervising agent rather than by the engine: the child process is already dead by
+     * the time this begins, and what happens here is the node putting itself back together - every
+     * worker, and in a cluster every node, dropping caches of a database that no longer exists.
+     */
+    case REHYDRATING = 'rehydrating';
+
     /** Terminal: the restore completed. */
     case SUCCEEDED = 'succeeded';
 

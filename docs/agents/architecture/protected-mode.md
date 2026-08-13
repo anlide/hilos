@@ -140,22 +140,40 @@ database, so every session created after the archive was taken is gone from it �
 including the one belonging to the operator watching the restore. `BackupAgent`
 therefore photographs the live authenticated sessions in
 `onProtectedModeReady()`, while the node is frozen and the old database is still
-mounted, and re-creates them in `finishRestore()` in a fixed order: re-hydrate
-the database-backed collections, carry the sessions over, and only then
-`requestProtectedModeVerify()` — which since HIL-481 is where that path ends, the
-lift itself being an operator's decision. `SessionCarrier` owns both halves; sessions are
-matched by `hilos_identity` pairs rather than by user id, because the same id in
-another installation's archive is another person.
+mounted, and re-creates them once the restore is over. `SessionCarrier` owns both
+halves; sessions are matched by `hilos_identity` pairs rather than by user id,
+because the same id in another installation's archive is another person.
 
-Two properties generalize to whatever destructive operation comes next:
+**The order is a contract, and since HIL-436 it is enforced by a barrier.** The
+run does not end where its SQL ends: `finishRestore()` announces the swap, enters
+`RestorePhase::REHYDRATING`, and stops. Every process told to re-read answers —
+the daemon and each worker over the worker link, and in a cluster each node over
+the mesh, aggregating its own processes into one answer — and only when the whole
+barrier closes does `completeRestore()` carry the sessions over and ask for
+`requestProtectedModeVerify()`. The reason is the verification window itself: a
+verifier let in to read caches of a database that no longer exists would confirm a
+fiction, so an unclosed barrier keeps the node in the full freeze, names the
+processes that did not come back on the restore runtime row, and leaves the
+decision to a human with `protected-mode:open`.
+
+Four properties generalize to whatever destructive operation comes next:
 
 - **Read nothing from the new database before announcing the swap.**
   `AbstractAgent::requestDbReHydrate()` re-hydrates the calling process on the
   spot and tells the daemon and the other workers to do the same. Without it a
   reader is answered from collections loaded out of a database that no longer
   exists.
+- **Announce the swap on the failure branch too.** A failed import may have left
+  the database half-rewritten, and re-reading one that was never touched is
+  harmless — so re-hydration is unconditional, while work that *writes* (the
+  session carry-over) stays on the success branch.
+- **Wait for the announcement, do not shout it.** `ReHydrateRound` is the barrier:
+  it closes when every participant confirms, writes off whoever is silent at its
+  deadline (`HILOS_DB_REHYDRATE_TIMEOUT`), and takes a participant that
+  disappeared off the count rather than waiting for it. A negative answer settles
+  the round without completing it — fail-closed, like entry.
 - **Repair work never holds the freeze.** A snapshot that could not be taken or a
-  session that could not be written is logged and the thaw proceeds. The people
+  session that could not be written is logged and the run proceeds. The people
   affected see a login screen; the alternative is a node left frozen over a
   detail of the recovery.
 

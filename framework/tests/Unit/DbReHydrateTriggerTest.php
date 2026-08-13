@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
@@ -18,7 +19,10 @@ use PHPUnit\Framework\TestCase;
  * An agent that has just replaced the database under the node cannot reach the other processes
  * itself; it queues a worker-drained signal its own daemon turns into a frame. These cases pin
  * what it queues - the signal type the daemon and the workers already dispatch on, and a payload
- * that is empty because the event names no collection and no row.
+ * that names nothing but the announcer, because the event names no collection and no row.
+ *
+ * The announcer is not decoration (HIL-436): the daemon opens a barrier over the swap and has to
+ * send its verdict back to exactly the agent that is waiting for it.
  */
 final class DbReHydrateTriggerTest extends TestCase
 {
@@ -36,7 +40,7 @@ final class DbReHydrateTriggerTest extends TestCase
         parent::tearDown();
     }
 
-    public function testTheAnnouncementIsQueuedAsAnEmptyDbReHydrateSignal(): void
+    public function testTheAnnouncementIsQueuedAsADbReHydrateSignalNamingItsAnnouncer(): void
     {
         new DbReHydrateTriggerTestAgent()->announce();
 
@@ -45,7 +49,15 @@ final class DbReHydrateTriggerTest extends TestCase
         $this->assertSame(SignalTypeConstants::DB_REHYDRATE, $signal->signalType->getType());
         $this->assertSame(SignalTypeConstants::DB_REHYDRATE, $signal->signalName->getName());
         $this->assertInstanceOf(DbReHydrateSignalData::class, $signal->data);
-        $this->assertSame([], $signal->data->toArray(), 'The swap names no collection and no row');
+        $this->assertSame(
+            [
+                AgentConstants::FIELD_AGENT_ID => 'db-swapper',
+                DbReHydrateSignalData::FIELD_REPLY_TO_NODE_ID => null,
+            ],
+            $signal->data->toArray(),
+            'The swap names its announcer and nothing else - no collection and no row; an agent'
+            . ' announcing here answers to nobody else, so there is no node to reply to',
+        );
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Exactly one signal is queued');
     }
 

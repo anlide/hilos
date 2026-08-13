@@ -70,8 +70,8 @@ final class BackupRestorer
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict this run acts on
      * @param ?Closure(RestorePhase): void $onPhase Observer told as each phase begins; the cold
      *     CLI prints them inline, the hot child runs unobserved (its supervisor reports coarsely)
-     * @throws RestoreFailedException When any step refuses or fails; failures past the first
-     *     import leave the database partially restored (HIL-436)
+     * @throws RestoreFailedException When any step refuses or fails; the raised failure says
+     *     whether the database was already being replaced ({@see RestoreFailedException::databaseTouched()})
      * @throws EnvException When the backup storage env value cannot be read
      */
     public function restore(
@@ -131,15 +131,23 @@ final class BackupRestorer
         if ($onPhase !== null) {
             $onPhase(RestorePhase::VERIFYING);
         }
-        $this->verifyArchive($archivePath, $metadata);
+        try {
+            $this->verifyArchive($archivePath, $metadata);
+        } catch (RestoreFailedException $e) {
+            throw RestoreFailedException::beforeDestructive($e->getMessage(), $e);
+        }
 
         $workDir = sys_get_temp_dir() . '/' . self::WORKDIR_PREFIX . getmypid() . '-' . $id;
         try {
             if ($onPhase !== null) {
                 $onPhase(RestorePhase::EXTRACTING);
             }
-            $this->ensureWorkDir($workDir);
-            $this->extract($archivePath, $workDir);
+            try {
+                $this->ensureWorkDir($workDir);
+                $this->extract($archivePath, $workDir);
+            } catch (RestoreFailedException $e) {
+                throw RestoreFailedException::beforeDestructive($e->getMessage(), $e);
+            }
 
             $connections = $metadata->connections;
             usort($connections, static fn (BackupConnectionMeta $a, BackupConnectionMeta $b): int
@@ -152,32 +160,40 @@ final class BackupRestorer
                 $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
             }
 
-            if ($onPhase !== null) {
-                $onPhase(RestorePhase::IMPORTING);
-            }
-            foreach ($connections as $connection) {
-                $this->importConnection($connection, $workDir);
-            }
-
-            // Before anonymization, not after: the anonymizer (HIL-275) works against the
-            // schema the CODE knows, which is the schema these migrations produce.
-            if ($onPhase !== null) {
-                $onPhase(RestorePhase::MIGRATING);
-            }
-            foreach ($connections as $connection) {
-                $this->migrateConnection($connection);
-            }
-
-            if ($anonymizer !== null) {
+            // The destructive window opens here and does not close: from the first import on, a
+            // failure leaves the database partially replaced, and everything raised inside says so
+            // (HIL-436). Wrapped as a region rather than tagged step by step, because the boundary
+            // is a property of where the run got to, not of which helper happened to throw.
+            try {
                 if ($onPhase !== null) {
-                    $onPhase(RestorePhase::ANONYMIZING);
+                    $onPhase(RestorePhase::IMPORTING);
                 }
                 foreach ($connections as $connection) {
-                    $anonymizer->anonymizeConnection(
-                        $connection->index,
-                        $this->targetDatabaseOf($connection->index),
-                    );
+                    $this->importConnection($connection, $workDir);
                 }
+
+                // Before anonymization, not after: the anonymizer (HIL-275) works against the
+                // schema the CODE knows, which is the schema these migrations produce.
+                if ($onPhase !== null) {
+                    $onPhase(RestorePhase::MIGRATING);
+                }
+                foreach ($connections as $connection) {
+                    $this->migrateConnection($connection);
+                }
+
+                if ($anonymizer !== null) {
+                    if ($onPhase !== null) {
+                        $onPhase(RestorePhase::ANONYMIZING);
+                    }
+                    foreach ($connections as $connection) {
+                        $anonymizer->anonymizeConnection(
+                            $connection->index,
+                            $this->targetDatabaseOf($connection->index),
+                        );
+                    }
+                }
+            } catch (RestoreFailedException $e) {
+                throw RestoreFailedException::afterDestructive($e->getMessage(), $e);
             }
         } finally {
             $this->removeDirectory($workDir);

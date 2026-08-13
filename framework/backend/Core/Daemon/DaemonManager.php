@@ -45,6 +45,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -54,6 +55,7 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\ReHydrateRound;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
@@ -86,6 +88,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -128,6 +131,15 @@ abstract class DaemonManager extends BaseManager implements
 {
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
+
+    /**
+     * @var float Seconds the re-hydrate barrier waits when its configured timeout cannot be read
+     *
+     * Not the catalog default under another name: that one is the value an operator may tune, this
+     * one is what a node falls back on when the tuning itself is unreadable, and the two would move
+     * for different reasons.
+     */
+    private const float DB_REHYDRATE_TIMEOUT_FALLBACK_SECONDS = 30.0;
 
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
@@ -358,6 +370,9 @@ abstract class DaemonManager extends BaseManager implements
         if ($workerServer instanceof ProtectedModeAgentFreezer) {
             Hilos::$cluster?->registerProtectedModeAgentFreezer($workerServer);
         }
+        // Expose the agent manager as the place a node's answer to a re-hydrate announcement is
+        // credited: the barrier is one, but its answers arrive on two transports (HIL-436).
+        $this->findPeerServer()?->registerReHydrateBarrier($this->agentManagerDaemon);
         // Expose this daemon as the port the protected-mode executor tells the browser
         // connections through: the WebSocket server it broadcasts over is ours, not the
         // worker server's.
@@ -406,6 +421,9 @@ abstract class DaemonManager extends BaseManager implements
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
+
+            // Report the re-hydrate barrier once everyone has answered, or the deadline passed
+            $this->tickReHydrateRound();
 
             // Flush buffered analytics rows on schedule
             Hilos::$ac?->tick();
@@ -1074,6 +1092,13 @@ abstract class DaemonManager extends BaseManager implements
             $this->updateSubscriptions($signal);
 
             if (in_array($signal->signalType->getType(), $syncTypes, true)) {
+                // The barrier opens BEFORE the announcement goes out, so that the roster is the
+                // set of processes actually told to re-read and no early answer arrives at a
+                // round that does not exist yet (HIL-436). Answers are read from sockets in a
+                // later phase of the loop, so nothing can slip in between the two calls below.
+                if ($signal->signalType->getType() === SignalTypeConstants::DB_REHYDRATE) {
+                    $this->openReHydrateRound($workerServer, $peerServer, $signal);
+                }
                 $this->sendSyncToWorkers($workerServer, $signal);
                 $this->handleDaemonSignal($signal);
             }
@@ -1269,9 +1294,12 @@ abstract class DaemonManager extends BaseManager implements
             SignalConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
-            // The one sync-family frame built from nothing: the database was replaced, which
-            // names no collection to unwrap from the signal (HIL-479).
-            SignalConstants::DB_REHYDRATE => new WorkerDbReHydrateMessageDTO(),
+            // The one sync-family frame with no collection to unwrap: the database was replaced
+            // (HIL-479), and all the signal names is the agent waiting to hear that everybody
+            // re-read it (HIL-436).
+            SignalConstants::DB_REHYDRATE => new WorkerDbReHydrateMessageDTO(
+                self::syncSignalData($signal->data, DbReHydrateSignalData::class)->agentId,
+            ),
             SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),
@@ -1318,7 +1346,7 @@ abstract class DaemonManager extends BaseManager implements
             SignalTypeConstants::DB_SYNC_CLEARED => DbSyncApplicator::applyCleared(
                 self::syncSignalData($signal->data, DbSyncClearedSignalData::class),
             ),
-            SignalTypeConstants::DB_REHYDRATE => self::applyReHydrateContained(),
+            SignalTypeConstants::DB_REHYDRATE => $this->applyReHydrateContained(),
             SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
             ),
@@ -1342,13 +1370,135 @@ abstract class DaemonManager extends BaseManager implements
      * end the run loop, killing the master in the minute after a restore. That is also why the
      * sibling arms of the same match look safe: {@see DbSyncApplicator::applyCleared()} already
      * contains its own re-read.
+     *
+     * Contained is not the same as unreported (HIL-436): the outcome is the daemon's own answer to
+     * the barrier it just opened, so a master that could not re-read keeps the node closed instead
+     * of quietly counting itself as ready.
      */
-    private static function applyReHydrateContained(): void
+    private function applyReHydrateContained(): void
     {
         try {
             DbSyncApplicator::applyReHydrate();
+            $this->agentManagerDaemon->ackReHydrateParticipant(ReHydrateRound::daemonParticipant(), true, null);
         } catch (DatabaseException | LogicException $e) {
             Logger::error('DB re-hydrate apply could not re-read the database', ['error' => $e->getMessage()]);
+            $this->agentManagerDaemon->ackReHydrateParticipant(
+                ReHydrateRound::daemonParticipant(),
+                false,
+                $e->getMessage(),
+            );
+        }
+    }
+
+    /**
+     * Opens the re-hydrate barrier over every process about to be told the database was replaced.
+     *
+     * The roster is this master plus its registered workers - exactly the set
+     * {@see sendSyncToWorkers()} is about to reach. A worker that has connected but not registered
+     * yet is left out on purpose: it has no index to answer under, and by the time it finishes
+     * registering it is opening the database that is already in place.
+     *
+     * In a cluster the roster also carries the other masters, and the announcement is passed on to
+     * them: the nodes share one database, so a restore run here leaves them answering out of caches
+     * of a database that no longer exists. Only the node where the swap was announced passes it on -
+     * an announcement that arrived over the mesh is answered, never re-broadcast, or the mesh would
+     * echo it back and forth forever.
+     *
+     * @param WorkerServer $workerServer Worker server holding this node's worker links
+     * @param ?PeerServer $peerServer Peer server holding this node's mesh links, or null outside a cluster
+     * @param SignalDTO $signal Re-hydrate announcement naming whoever awaits the verdict
+     */
+    private function openReHydrateRound(WorkerServer $workerServer, ?PeerServer $peerServer, SignalDTO $signal): void
+    {
+        $announcement = self::syncSignalData($signal->data, DbReHydrateSignalData::class);
+
+        $participants = [ReHydrateRound::daemonParticipant()];
+        foreach ($workerServer->getClients() as $client) {
+            if ($client instanceof WorkerClient && $client->isRegistered()) {
+                $participants[] = ReHydrateRound::workerParticipant($client->getWorkerIndex());
+            }
+        }
+
+        $announcedHere = $announcement->replyToNodeId === null;
+        if ($announcedHere && $peerServer !== null) {
+            foreach ($peerServer->followerMasterNodeIds() as $nodeId) {
+                $participants[] = ReHydrateRound::nodeParticipant($nodeId);
+            }
+        }
+
+        $this->agentManagerDaemon->openReHydrateRound(
+            $announcement->agentId,
+            $announcement->replyToNodeId,
+            $participants,
+            microtime(true) + $this->reHydrateTimeoutSeconds(),
+        );
+
+        if ($announcedHere) {
+            $peerServer?->broadcastDbReHydrate();
+        }
+    }
+
+    /**
+     * Sends the re-hydrate verdict to the announcing agent once the barrier ends.
+     *
+     * Driven from the main loop rather than from a timer of its own: the deadline only has to be
+     * noticed within one iteration, and a barrier that outlives the daemon has nobody to report to.
+     */
+    private function tickReHydrateRound(): void
+    {
+        $verdict = $this->agentManagerDaemon->pollReHydrateVerdict(microtime(true));
+        if ($verdict === null) {
+            return;
+        }
+
+        if (!$verdict->complete) {
+            Logger::error(
+                'DB re-hydrate barrier did not close',
+                ['problems' => implode('; ', $verdict->problems)],
+            );
+        }
+
+        if ($verdict->replyToNodeId !== null) {
+            $this->findPeerServer()?->sendDbReHydrated(
+                $verdict->replyToNodeId,
+                $verdict->complete,
+                $verdict->problems,
+            );
+
+            return;
+        }
+
+        $this->findWorkerServer()?->deliverDbReHydrateComplete(
+            new DbReHydrateCompleteDTO($verdict->agentId, $verdict->complete, $verdict->problems),
+        );
+    }
+
+    /**
+     * @return ?PeerServer Registered peer server, or null when cluster mode is off
+     */
+    private function findPeerServer(): ?PeerServer
+    {
+        return array_find($this->servers, fn($server) => $server instanceof PeerServer);
+    }
+
+    /**
+     * How long the barrier waits before writing off whoever is still silent.
+     *
+     * The env read is contained here for the same reason the re-read above is: this runs inside
+     * the daemon loop, and an exception escaping it would end the run loop - killing the master in
+     * the minute after a restore, which is the worst possible moment. A misconfigured timeout
+     * degrades to the catalog's own default instead.
+     *
+     * @return float Seconds to wait for the barrier
+     */
+    private function reHydrateTimeoutSeconds(): float
+    {
+        try {
+            return (float)Hilos::$env->int(EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT);
+        } catch (EnvException $e) {
+            Logger::error('DB re-hydrate timeout is unreadable', ['error' => $e->getMessage()]);
+
+            return self::DB_REHYDRATE_TIMEOUT_FALLBACK_SECONDS;
         }
     }
 
@@ -1822,6 +1972,10 @@ abstract class DaemonManager extends BaseManager implements
     public function onNodeLeft(ClusterNode $node): void
     {
         Hilos::$cluster?->placement()?->noteNodeOffline($node->nodeId, microtime(true));
+        // A node that left mid-round is taken off the re-hydrate barrier for the same reason a
+        // dead worker is: it cannot answer, and whatever rejoins reads the database already in
+        // place. Waiting would spend the whole deadline on a node that is gone (HIL-436).
+        $this->agentManagerDaemon->dropReHydrateParticipant(ReHydrateRound::nodeParticipant($node->nodeId));
     }
 
     /**

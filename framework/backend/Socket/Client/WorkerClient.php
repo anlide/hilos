@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
@@ -19,6 +20,8 @@ use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -186,7 +189,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerDbSyncUpdatedMessageDTO => $this->handleWorkerDbSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncDeletedMessageDTO => $this->handleWorkerDbSyncDeletedMessage($workerDTO),
             $workerDTO instanceof WorkerDbSyncClearedMessageDTO => $this->handleWorkerDbSyncClearedMessage($workerDTO),
-            $workerDTO instanceof WorkerDbReHydrateMessageDTO => $this->handleWorkerDbReHydrateMessage(),
+            $workerDTO instanceof WorkerDbReHydrateMessageDTO => $this->handleWorkerDbReHydrateMessage($workerDTO),
+            $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
@@ -298,13 +302,43 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Handle the whole-database re-hydrate announcement from a worker (HIL-479).
      *
-     * The frame carries no payload, so nothing is unwrapped here: the daemon only has to learn
-     * that the database was replaced and pass the fact on, which is why the DTO is not even
-     * taken as a parameter.
+     * The frame carries nothing but its announcer, so nothing is unwrapped here beyond that: the
+     * daemon has to learn that the database was replaced, pass the fact on, and remember who to
+     * report back to once every process has re-read (HIL-436).
+     *
+     * @param WorkerDbReHydrateMessageDTO $dto Announcement naming the agent that replaced the database, if any
      */
-    private function handleWorkerDbReHydrateMessage(): void
+    private function handleWorkerDbReHydrateMessage(WorkerDbReHydrateMessageDTO $dto): void
     {
-        $this->agentManager->handleWorkerDbReHydrate();
+        $this->agentManager->handleWorkerDbReHydrate($dto->agentId);
+    }
+
+    /**
+     * Handle one worker's answer to the re-hydrate announcement (HIL-436).
+     *
+     * The answering worker is identified by the link the frame arrived on, not by the frame, so
+     * a worker cannot answer on somebody else's behalf.
+     *
+     * @param WorkerDbReHydratedDTO $dto That worker's verdict on re-reading its collections
+     */
+    private function handleWorkerDbReHydratedMessage(WorkerDbReHydratedDTO $dto): void
+    {
+        $this->agentManager->handleWorkerDbReHydrated($this->workerIndex, $dto);
+    }
+
+    /**
+     * Send the aggregated re-hydrate verdict to the worker hosting the announcing agent (HIL-436).
+     *
+     * @param DbReHydrateCompleteDTO $dto Verdict addressed to the agent that announced the swap
+     */
+    public function sendDbReHydrateComplete(DbReHydrateCompleteDTO $dto): void
+    {
+        Logger::debug(
+            "Sending db_rehydrate_complete signal to worker [agentId={$dto->agentId}]"
+            . " [complete=" . ($dto->complete ? 'true' : 'false') . "] [workerIndex={$this->workerIndex}]",
+        );
+
+        $this->send($dto->toJson());
     }
 
     /**
@@ -495,6 +529,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /**
      * Called when socket connection is successfully closed.
+     *
+     * A worker that leaves mid-round is taken off the re-hydrate barrier rather than waited for
+     * (HIL-436): it cannot answer with a fiction, and whatever starts in its place opens the
+     * database that is already in place. Waiting would cost the initiator the full deadline and
+     * then close the node over a process that no longer exists.
      */
     protected function onClose(): void
     {
@@ -503,5 +542,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerType = $this->isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
             Logger::debug("Worker #{$this->workerIndex} disconnected [type={$workerType}]");
         }
+
+        $this->agentManager->dropReHydrateParticipant(ReHydrateRound::workerParticipant($this->workerIndex));
     }
 }

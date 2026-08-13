@@ -159,7 +159,11 @@ also registers those. Generate, in any order:
 3. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
    `BACKUP_DIR`, `BACKUP_CLI_ENTRY`, `BACKUP_RESTORE_TIMEOUT` (seconds the
    supervisor gives a hot restore child before killing it, default 3600;
-   `BACKUP_TIMEOUT` is the create child's own budget), the retention ladder
+   `BACKUP_TIMEOUT` is the create child's own budget;
+   `HILOS_DB_REHYDRATE_TIMEOUT` is a third and much smaller one, default 30 —
+   how long the daemon waits for every process to confirm it re-read the
+   replaced database, which happens over connections they already hold, so
+   minutes there would mean a dead process rather than slow work), the retention ladder
    (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
    in its own unit, at which that granularity starts applying, so a backup younger
    than `BACKUP_RETENTION_DAILY` days is never thinned), and
@@ -268,13 +272,29 @@ the CLI process for a daemon that is down; a daemon that does not answer is an
 error, never a silent fallback to cold. The engine replays each `db-<index>.sql`
 into the connection of the same index — into that connection's *currently
 configured* database name — and re-verifies the digest immediately before its
-destructive steps. Tables absent from the dump are left in place (reconciliation is
-HIL-436); the migration-index gate is HIL-430. A hot restore also carries the live
+destructive steps. Tables absent from the dump are left in place; the
+migration-index gate is HIL-430. A hot restore also carries the live
 authenticated sessions across the swap before it thaws the node (HIL-479), so the
 operator watching the restore is not logged out by it; a project whose runtime
 connections do not reach the session stage of the connection base
 (`HilosSessionConnections`) has no session tokens to photograph and simply
 nothing to carry.
+
+A hot restore does not end where its SQL ends (HIL-436). Between the child's exit
+and the terminal outcome the run passes through `RestorePhase::REHYDRATING`: every
+process holding database-backed collections — the daemon, each worker, and in a
+cluster each node — re-reads them and confirms, under
+`HILOS_DB_REHYDRATE_TIMEOUT`. Only a barrier that closes moves the node on to the
+verification window (HIL-481); otherwise it stays shut to everyone, the processes
+that did not answer are named on the restore runtime row
+(`rehydrateComplete` / `rehydrateProblems`), and a human decides with
+`protected-mode:open`. The child says whether it got as far as writing by
+returning `BackupConstants::RESTORE_EXIT_DATABASE_INTACT` instead of a plain
+error, which the supervisor records as `databaseTouched` and the monitor prints as
+the difference between "the database was not touched" and "it may be left
+partially replaced" — so a project's own `backup:restore-run` command must map its
+failures through `RestoreFailedException::databaseTouched()` rather than
+returning one error code for everything.
 
 ### a future framework feature (roles, …)
 

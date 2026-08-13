@@ -29,6 +29,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -463,6 +464,12 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * notices the swap at the first id collision, which is one collision too late for a reader
      * that trusts what it reads in between.
      *
+     * The announcement names this agent, because it is also a question (HIL-436): the daemon
+     * collects one answer per process it fanned the frame out to and reports back through
+     * {@see onDbReHydrateComplete()}. This process re-hydrates synchronously all the same - the
+     * caller is normally about to read the new database in the same method - so the wait is only
+     * ever about the *others*.
+     *
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh database fails
      */
@@ -474,7 +481,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
             signalName: new SignalName(SignalTypeConstants::DB_REHYDRATE),
-            signalData: new DbReHydrateSignalData(),
+            signalData: new DbReHydrateSignalData($this->getId()),
         );
     }
 
@@ -534,6 +541,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * {@see requestProtectedModeEnable()}; a no-op for agents that never request protected mode.
      */
     public function onProtectedModeReady(): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no action when the node has finished re-reading a replaced database.
+     *
+     * The announcing agent overrides this to finish whatever it was doing around the swap: the
+     * outcome says whether every other process confirmed, and names those that did not. Reaches
+     * this node over the daemon->worker verdict relay driven by {@see requestDbReHydrate()}; a
+     * no-op for agents that never replace a database.
+     *
+     * @param DbReHydrateOutcome $outcome Whether the barrier closed, and who is missing from it
+     */
+    public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
     {
         // Default: do nothing
     }

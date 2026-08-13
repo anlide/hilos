@@ -17,6 +17,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
@@ -52,6 +53,7 @@ use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -64,7 +66,9 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
@@ -465,6 +469,14 @@ abstract class WorkerManager extends BaseManager
                 $this->handleDbReHydrateMessage();
                 break;
 
+            case WorkerConstants::MESSAGE_DB_REHYDRATE_COMPLETE:
+                if (!$data instanceof DbReHydrateCompleteDTO) {
+                    Logger::error("handleDbReHydrateComplete - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->handleDbReHydrateComplete($data);
+                break;
+
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
                 if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
                     Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
@@ -666,20 +678,49 @@ abstract class WorkerManager extends BaseManager
     /**
      * Re-reads every DB-backed collection after the database was replaced under the node (HIL-479).
      *
-     * The whole-context sibling of {@see handleDbSyncClearedMessage()}: no payload, no browser
-     * source change and no agent fan-out, because the event names no collection and no row - the
-     * worker simply stops trusting everything it cached. A failed re-read is logged rather than
-     * thrown: the alternative is a worker that dies while the node is still finishing a restore,
-     * and the generation fallback in {@see DbContext::reHydrateIfDbChanged()} still catches the
-     * stale rows at their first collision.
+     * The whole-context sibling of {@see handleDbSyncClearedMessage()}: no browser source change
+     * and no agent fan-out, because the event names no collection and no row - the worker simply
+     * stops trusting everything it cached. A failed re-read is logged rather than thrown: the
+     * alternative is a worker that dies while the node is still finishing a restore, and the
+     * generation fallback in {@see DbContext::reHydrateIfDbChanged()} still catches the stale
+     * rows at their first collision.
+     *
+     * Either way the worker answers (HIL-436). The failure used to end at the log line above,
+     * where nobody restoring a database would ever see it; now it also travels back as a negative
+     * answer, and it is what keeps the node closed to the verifiers who would otherwise read this
+     * worker's stale caches.
      */
     private function handleDbReHydrateMessage(): void
     {
         try {
             DbSyncApplicator::applyReHydrate();
+            $this->daemonClient->send(new WorkerDbReHydratedDTO(ok: true));
         } catch (DatabaseException | LogicException $e) {
             Logger::error('handleDbReHydrateMessage - could not re-read the database: ' . $e->getMessage());
+            $this->daemonClient->send(new WorkerDbReHydratedDTO(ok: false, error: $e->getMessage()));
         }
+    }
+
+    /**
+     * Relays the aggregated re-hydrate verdict to the agent that announced the swap (HIL-436).
+     *
+     * A no-op when the agent is not (or no longer) hosted here, mirroring
+     * {@see handleProtectedModeReady()}.
+     *
+     * @param DbReHydrateCompleteDTO $data Verdict naming the announcing agent
+     */
+    private function handleDbReHydrateComplete(DbReHydrateCompleteDTO $data): void
+    {
+        if ($data->agentId === null) {
+            return;
+        }
+
+        $agent = $this->agentManager->getAgent($data->agentId);
+        if ($agent === null) {
+            return;
+        }
+
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome($data->complete, $data->problems));
     }
 
     /**
@@ -1675,12 +1716,17 @@ abstract class WorkerManager extends BaseManager
                 continue;
             }
 
-            // The re-hydrate announcement is the one sync-family event with no payload, so it
-            // takes its own branch rather than a null-carrying entry in the map above. The
-            // emitting worker has already re-read its own collections (HIL-479), so nothing is
-            // applied or fanned out locally here - the frame is purely for the other processes.
+            // The re-hydrate announcement carries no collection to unwrap, so it takes its own
+            // branch rather than a null-carrying entry in the map above. The emitting worker has
+            // already re-read its own collections (HIL-479), so nothing is applied or fanned out
+            // locally here - the frame is purely for the other processes, and its one field says
+            // which agent is waiting to hear back from them (HIL-436).
             if ($signalType === SignalTypeConstants::DB_REHYDRATE) {
-                $this->daemonClient->send(new WorkerDbReHydrateMessageDTO());
+                if ($signal->data instanceof DbReHydrateSignalData) {
+                    $this->daemonClient->send(new WorkerDbReHydrateMessageDTO($signal->data->agentId));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - re-hydrate carries invalid data: ' . get_class($signal->data));
+                }
                 continue;
             }
 

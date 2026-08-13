@@ -74,6 +74,9 @@ final class WorkerConstants
     /** @var string Whole-database re-hydration (worker -> daemon -> workers); canonical value in SignalTypeConstants */
     public const string MESSAGE_DB_REHYDRATE = SignalTypeConstants::DB_REHYDRATE;
 
+    /** @var string Aggregated re-hydrate verdict, addressed to the agent that announced the swap */
+    public const string MESSAGE_DB_REHYDRATE_COMPLETE = 'db_rehydrate_complete';
+
     /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
 
@@ -107,4 +110,7 @@ final class WorkerConstants
 
     /** @var string Protected-mode refreeze request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_REFREEZE = 'worker_protected_mode_refreeze';
+
+    /** @var string One worker's answer to the re-hydrate announcement (worker -> its master daemon) */
+    public const string MESSAGE_DB_REHYDRATED = 'db_rehydrated';
 }

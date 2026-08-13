@@ -363,10 +363,17 @@ HELP;
 
         try {
             $this->createRestorer()->restore($id, $scope, $decision, static function (RestorePhase $phase): void {
-                echo "  {$phase->value}...\n";
+                echo '  ' . self::phaseLabel($phase->value) . "...\n";
             });
         } catch (RestoreFailedException $failure) {
             echo "Error: {$failure->getMessage()}\n";
+            // The same sentence the hot path prints, from the exception rather than from a runtime
+            // row - and it is the only half of the report the cold path can make. There is no
+            // barrier here and nothing to open: a cold restore runs against a dead system, so no
+            // process is holding caches of the replaced database and nobody was ever shut out.
+            echo $failure->databaseTouched()
+                ? "The database may be left partially replaced - check it before starting the system\n"
+                : "The database was not touched\n";
 
             return ExitCode::ERROR;
         }
@@ -452,7 +459,7 @@ HELP;
             // is a legitimate answer during the poll — hence the null, not an empty string.
             $phase = $reply->payload[BackupConstants::FIELD_RESTORE_PHASE] ?? null;
             if (is_string($phase) && $phase !== '' && $phase !== $lastPhase) {
-                echo "  {$phase}...\n";
+                echo '  ' . self::phaseLabel($phase) . "...\n";
                 $lastPhase = $phase;
             }
 
@@ -460,8 +467,11 @@ HELP;
             $outcomeName = $reply->payload[BackupConstants::FIELD_RESTORE_OUTCOME] ?? null;
             $outcome = is_string($outcomeName) ? BackupStatus::fromString($outcomeName) : null;
             if (!$running && $outcome !== null) {
+                $rehydrated = (bool)($reply->payload[BackupConstants::FIELD_REHYDRATE_COMPLETE] ?? false);
+
                 if ($outcome === BackupStatus::SUCCESS) {
                     echo "Restore completed\n";
+                    echo self::closedSystemLine($rehydrated);
 
                     return ExitCode::SUCCESS;
                 }
@@ -470,12 +480,53 @@ HELP;
                 // external-boundary: the neutral element of the message — an unnamed failure adds nothing
                 $detail = is_string($failure) && $failure !== '' ? ": {$failure}" : '';
                 echo "Error: restore failed{$detail}\n";
+                echo (bool)($reply->payload[BackupConstants::FIELD_DATABASE_TOUCHED] ?? false)
+                    ? "The database may be left partially replaced - check it before opening the system\n"
+                    : "The database was not touched\n";
+                echo self::closedSystemLine($rehydrated);
 
                 return ExitCode::ERROR;
             }
 
             sleep(self::MONITOR_POLL_SECONDS);
         }
+    }
+
+    /**
+     * Names a phase the way the operator needs to read it rather than the way the row stores it.
+     *
+     * Only the phase that is not a step of the engine needs translating: a restore does not end
+     * where its SQL ends, and "rehydrating" on its own reads like a stall rather than like the node
+     * putting itself back together (HIL-436). The rest are printed as they are - they are already
+     * the names of what is happening.
+     *
+     * @param string $phase Phase value from the restore runtime row
+     * @return string Line the monitor prints for it
+     */
+    private static function phaseLabel(string $phase): string
+    {
+        return $phase === RestorePhase::REHYDRATING->value ? 'reading the restored state back' : $phase;
+    }
+
+    /**
+     * Says what the system is still closed to, and which command opens it.
+     *
+     * A restore never opens anything by itself (HIL-481), so every terminal line has to end by
+     * telling the operator what is waiting for them. Which of the two it is depends on the barrier:
+     * a node whose processes all re-read moved on to the verification window and lets pass holders
+     * in, while one that did not stays shut to everybody - deliberately, because a verifier reading
+     * caches of a database that no longer exists would confirm a fiction.
+     *
+     * @param bool $rehydrated Whether every process confirmed re-reading the replaced database
+     * @return string Line to print after the outcome
+     */
+    private static function closedSystemLine(bool $rehydrated): string
+    {
+        $open = 'php cli.php ' . CliCommands::PROTECTED_MODE_OPEN;
+
+        return $rehydrated
+            ? "The system is open to pass holders only; let everyone back in with `{$open}`\n"
+            : "The system stays closed to everyone, including pass holders; `{$open}` opens it anyway\n";
     }
 
     /**

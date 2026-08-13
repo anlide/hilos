@@ -45,6 +45,7 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
@@ -1221,6 +1222,39 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
         }
 
         $workerClient->sendProtectedModeReady($agentType, $agentIndex);
+    }
+
+    /**
+     * Relays the aggregated re-hydrate verdict to the worker hosting the announcing agent (HIL-436).
+     *
+     * Resolves that agent's worker exactly like {@see deliverProtectedModeReady()}, from an id
+     * that is already composed - it travelled on the announcement - so nothing is rebuilt here.
+     * A no-op when the agent is not (or no longer) hosted on this node: an agent that died with
+     * its restore unfinished has no verdict to receive, and the run it left behind is the
+     * supervisor's problem, not this relay's.
+     *
+     * @param DbReHydrateCompleteDTO $dto Verdict addressed to the agent that announced the swap
+     */
+    public function deliverDbReHydrateComplete(DbReHydrateCompleteDTO $dto): void
+    {
+        if ($dto->agentId === null) {
+            return;
+        }
+
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($dto->agentId);
+        if ($workerInfo === null) {
+            return;
+        }
+
+        $workerClient = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
+            $workerInfo->workerIndex,
+            $workerInfo->isMonopolistic,
+        ));
+        if ($workerClient === null) {
+            return;
+        }
+
+        $workerClient->sendDbReHydrateComplete($dto);
     }
 
     /**

@@ -160,6 +160,19 @@ final class BackupConstants
     public const string FIELD_RESTORE_OUTCOME = RestoreRuntime::outcome;
     public const string FIELD_RESTORE_FAILURE = RestoreRuntime::failureReason;
     public const string FIELD_RESTORE_RUNNING = RestoreRuntime::running;
+    public const string FIELD_REHYDRATE_COMPLETE = RestoreRuntime::rehydrateComplete;
+    public const string FIELD_REHYDRATE_PROBLEMS = RestoreRuntime::rehydrateProblems;
+    public const string FIELD_DATABASE_TOUCHED = RestoreRuntime::databaseTouched;
+
+    /**
+     * Exit code of the restore child when it failed without touching the database (HIL-436).
+     *
+     * A code of its own, because the two failures ask different things of the operator: a run that
+     * refused or died over the archive left the system exactly as it was, while any other failure
+     * may have left it half-overwritten. The supervisor cannot tell them apart from a generic
+     * error, and the difference is the first thing the person who has to act on it needs.
+     */
+    public const int RESTORE_EXIT_DATABASE_INTACT = 7;
 
     /**
      * Request payload / child argv option carrying the {@see RestoreEnvDecision} value the

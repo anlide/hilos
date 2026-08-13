@@ -26,6 +26,9 @@ final class RestoreRuntimeStateTest extends TestCase
         $this->assertNull($runtime->finishedAt);
         $this->assertNull($runtime->outcome);
         $this->assertNull($runtime->failureReason);
+        $this->assertFalse($runtime->rehydrateComplete);
+        $this->assertSame([], $runtime->rehydrateProblems);
+        $this->assertFalse($runtime->databaseTouched);
         $this->assertSame(RestoreRuntime::ID, $runtime->getId());
         $this->assertSame(RestoreRuntime::RT_ITEM, RestoreRuntime::getRtCollectionKey());
     }
@@ -97,5 +100,55 @@ final class RestoreRuntimeStateTest extends TestCase
 
         $this->assertNull($runtime->backupId);
         $this->assertNull($runtime->outcome);
+    }
+
+    public function testTheRehydrationFieldsSurviveTheRowRoundTrip(): void
+    {
+        $runtime = RestoreRuntime::create();
+        $runtime->phase = RestorePhase::REHYDRATING->value;
+        $runtime->rehydrateComplete = false;
+        $runtime->rehydrateProblems = ['worker #2: read failed: connection gone', 'node-b: timeout'];
+        $runtime->databaseTouched = true;
+
+        $restored = RestoreRuntime::fromRow($runtime->toArray());
+
+        $this->assertSame(RestorePhase::REHYDRATING->value, $restored->phase);
+        $this->assertFalse($restored->rehydrateComplete);
+        $this->assertSame(
+            ['worker #2: read failed: connection gone', 'node-b: timeout'],
+            $restored->rehydrateProblems,
+        );
+        $this->assertTrue($restored->databaseTouched);
+    }
+
+    public function testTheRehydrationFieldsArriveAsDiffsOnEveryOtherWorker(): void
+    {
+        $runtime = RestoreRuntime::create();
+
+        $runtime->applyDiff([
+            RestoreRuntime::phase => RestorePhase::REHYDRATING->value,
+            RestoreRuntime::rehydrateComplete => true,
+            RestoreRuntime::rehydrateProblems => ['worker #1: timeout'],
+            RestoreRuntime::databaseTouched => true,
+        ]);
+
+        $this->assertSame(RestorePhase::REHYDRATING->value, $runtime->phase);
+        $this->assertTrue($runtime->rehydrateComplete);
+        $this->assertSame(['worker #1: timeout'], $runtime->rehydrateProblems);
+        $this->assertTrue($runtime->databaseTouched);
+    }
+
+    public function testADiffThatMentionsNoRehydrationLeavesItAlone(): void
+    {
+        $runtime = RestoreRuntime::create();
+        $runtime->rehydrateComplete = true;
+        $runtime->rehydrateProblems = ['worker #1: timeout'];
+        $runtime->databaseTouched = true;
+
+        $runtime->applyDiff([RestoreRuntime::phase => RestorePhase::IMPORTING->value]);
+
+        $this->assertTrue($runtime->rehydrateComplete, 'A diff says what changed, not what is true');
+        $this->assertSame(['worker #1: timeout'], $runtime->rehydrateProblems);
+        $this->assertTrue($runtime->databaseTouched);
     }
 }

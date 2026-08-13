@@ -32,6 +32,9 @@ final class RestoreRuntime extends RtState
     public const string finishedAt = 'finishedAt';
     public const string outcome = 'outcome';
     public const string failureReason = 'failureReason';
+    public const string rehydrateComplete = 'rehydrateComplete';
+    public const string rehydrateProblems = 'rehydrateProblems';
+    public const string databaseTouched = 'databaseTouched';
 
     /** Whether a restore is currently running. */
     public bool $running = false;
@@ -56,6 +59,26 @@ final class RestoreRuntime extends RtState
 
     /** Why the last restore failed, or null when it succeeded or never ran. */
     public ?string $failureReason = null;
+
+    /** Whether every process confirmed re-reading the replaced database (HIL-436). */
+    public bool $rehydrateComplete = false;
+
+    /**
+     * @var list<string> Processes that failed to re-read or never answered, one line each
+     *
+     * Empty is not the same as good: it is also what an idle row says. The barrier's verdict is
+     * {@see self::$rehydrateComplete}; this names who is behind a negative one, so the operator
+     * knows which process to look at instead of being told only that the node stayed closed.
+     */
+    public array $rehydrateProblems = [];
+
+    /**
+     * @var bool Whether the run reached its first destructive step
+     *
+     * The difference between "the database is untouched, nothing was lost" and "the database may be
+     * half-overwritten", which is the first thing an operator needs to know from a failed restore.
+     */
+    public bool $databaseTouched = false;
 
     /**
      * Creates the idle singleton runtime row.
@@ -84,6 +107,9 @@ final class RestoreRuntime extends RtState
         $instance->finishedAt = self::nullableString($row[self::finishedAt] ?? null);
         $instance->outcome = self::nullableString($row[self::outcome] ?? null);
         $instance->failureReason = self::nullableString($row[self::failureReason] ?? null);
+        $instance->rehydrateComplete = (bool)($row[self::rehydrateComplete] ?? false);
+        $instance->rehydrateProblems = self::stringList($row[self::rehydrateProblems] ?? []);
+        $instance->databaseTouched = (bool)($row[self::databaseTouched] ?? false);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -99,8 +125,13 @@ final class RestoreRuntime extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (array_key_exists(self::running, $diff)) {
-            $this->running = (bool)$diff[self::running];
+        foreach ([self::running, self::rehydrateComplete, self::databaseTouched] as $flag) {
+            if (array_key_exists($flag, $diff)) {
+                $this->{$flag} = (bool)$diff[$flag];
+            }
+        }
+        if (array_key_exists(self::rehydrateProblems, $diff)) {
+            $this->rehydrateProblems = self::stringList($diff[self::rehydrateProblems]);
         }
         foreach (
             [
@@ -149,7 +180,23 @@ final class RestoreRuntime extends RtState
             self::finishedAt => $this->finishedAt,
             self::outcome => $this->outcome,
             self::failureReason => $this->failureReason,
+            self::rehydrateComplete => $this->rehydrateComplete,
+            self::rehydrateProblems => $this->rehydrateProblems,
+            self::databaseTouched => $this->databaseTouched,
         ];
+    }
+
+    /**
+     * @param mixed $value Raw row value
+     * @return list<string> Value as a list of strings, empty when the row carried no list
+     */
+    private static function stringList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_map(strval(...), $value));
     }
 
     /**

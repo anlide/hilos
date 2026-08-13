@@ -15,6 +15,8 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
@@ -38,8 +40,16 @@ use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
+use Hilos\Database\ReHydrateBarrierSink;
+use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
@@ -108,6 +118,9 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
 
     /** @var ?ProtectedModeCoordinator Protected-mode freeze handler, registered by the leader-orchestration slice; null until then */
     private ?ProtectedModeCoordinator $protectedMode = null;
+
+    /** @var ?ReHydrateBarrierSink Where node answers to a database re-hydrate announcement are credited */
+    private ?ReHydrateBarrierSink $reHydrateBarrier = null;
 
     /**
      * @param string $host Host to bind the peer listener
@@ -950,6 +963,73 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     }
 
     /**
+     * Registers where node answers to a database re-hydrate announcement are credited.
+     *
+     * @param ReHydrateBarrierSink $sink Daemon-side owner of the open barrier
+     */
+    public function registerReHydrateBarrier(ReHydrateBarrierSink $sink): void
+    {
+        $this->reHydrateBarrier = $sink;
+    }
+
+    /**
+     * Routes a received database re-hydrate announcement into this node's own re-read.
+     *
+     * Queues the fact onto the local router, exactly as an announcement from one of this node's
+     * own workers would arrive: the daemon then fans it out to its workers, re-reads its own
+     * collections and opens a local barrier over the two. What is different is the address - the
+     * verdict of that barrier goes back to the node that announced the swap, as one answer for
+     * this whole node.
+     *
+     * @param PeerLink $link Link the announcement arrived on
+     * @param PeerDbReHydrateDTO $frame Received database re-hydrate frame
+     */
+    public function onDbReHydrateReceived(PeerLink $link, PeerDbReHydrateDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from === null) {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
+            signalName: new SignalName(SignalConstants::DB_REHYDRATE),
+            signalData: new DbReHydrateSignalData(agentId: null, replyToNodeId: $from),
+        );
+    }
+
+    /**
+     * Credits one node's answer to the barrier this node is holding open.
+     *
+     * The node answers for itself and its workers at once, so its own problem lines travel with a
+     * negative answer and are quoted whole: the operator has to learn which process on which node
+     * did not come back, and only that node knows its own roster.
+     *
+     * Who answered is decided by the link, not by the payload, like every other frame here: a
+     * name a node writes about itself is a claim, and crediting it would let one node close
+     * another's slot - after which the barrier reports complete for a node that never re-read.
+     * The payload still names its sender, so a frame that disagrees with its own link is refused
+     * rather than quietly re-addressed.
+     *
+     * @param PeerLink $link Link the report arrived on
+     * @param PeerDbReHydratedDTO $frame Received database re-hydrated frame
+     */
+    public function onDbReHydratedReceived(PeerLink $link, PeerDbReHydratedDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from === null || $from !== $frame->nodeId) {
+            return;
+        }
+
+        $this->reHydrateBarrier?->ackReHydrateParticipant(
+            ReHydrateRound::nodeParticipant($from),
+            $frame->ok,
+            $frame->problems === [] ? null : implode('; ', $frame->problems),
+        );
+    }
+
+    /**
      * Routes a received protected-mode lift order to the local handler for this follower to release.
      *
      * @param PeerLink $link Link the order arrived on
@@ -1078,6 +1158,30 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
     public function sendReady(string $initiatorNodeId): void
     {
         $this->sendToMaster($initiatorNodeId, new PeerProtectedModeReadyDTO());
+    }
+
+    /**
+     * Broadcasts the database re-hydrate announcement to every other master.
+     *
+     * Sent by the node whose agent replaced the database, which for the monopolistic agent that
+     * runs restores is the leader. Nothing addresses a leader here on purpose: every master holds
+     * the same database and each answers for itself, so the announcement needs no relay.
+     */
+    public function broadcastDbReHydrate(): void
+    {
+        $this->broadcastToMasters(new PeerDbReHydrateDTO());
+    }
+
+    /**
+     * Reports this node's whole re-hydrate verdict back to the node that announced the swap.
+     *
+     * @param string $announcerNodeId Node that sent the announcement
+     * @param bool $ok Whether every process on this node re-read successfully
+     * @param list<string> $problems This node's own problem lines, empty when it came back whole
+     */
+    public function sendDbReHydrated(string $announcerNodeId, bool $ok, array $problems): void
+    {
+        $this->sendToMaster($announcerNodeId, new PeerDbReHydratedDTO($this->localIdentity->nodeId, $ok, $problems));
     }
 
     /**

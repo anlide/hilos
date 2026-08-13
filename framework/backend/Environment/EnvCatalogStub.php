@@ -56,6 +56,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
             ),
             EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
             EnvConstants::DB_SECONDARY_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_secondary'),
+            EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                30,
+                emptyIsMissing: true,
+            ),
             EnvConstants::DB_SECONDARY_PORT->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 DatabaseConnectionDefaults::PORT,

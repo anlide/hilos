@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -77,6 +78,17 @@ interface AgentInterface
      * non-initiator agent.
      */
     public function onProtectedModeReady(): void;
+
+    /**
+     * Called on the announcing agent once the node has finished re-reading a replaced database.
+     *
+     * Delivered on the announcing node after {@see AbstractAgent::requestDbReHydrate()} and every
+     * process it reached has answered - or stopped answering. Never called on an agent that did
+     * not announce a swap.
+     *
+     * @param DbReHydrateOutcome $outcome Whether the barrier closed, and who is missing from it
+     */
+    public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void;
 
     /**
      * Handle system signal.

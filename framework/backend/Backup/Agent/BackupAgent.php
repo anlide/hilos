@@ -35,6 +35,9 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -145,6 +148,16 @@ final class BackupAgent extends AbstractAgent
      */
     private const int RESTORE_FREEZE_WAIT_SECONDS = 60;
 
+    /**
+     * Seconds this agent waits for the re-hydrate barrier before finishing the run without it.
+     *
+     * Not the daemon's timeout under another name: the daemon bounds how long it waits for the
+     * processes, this bounds how long the agent waits for the daemon, and it is deliberately the
+     * looser of the two so the daemon's own verdict - which names who is missing - normally
+     * arrives first. Reaching this one means no answer came at all.
+     */
+    private const int REHYDRATE_WAIT_SECONDS = 120;
+
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
 
@@ -172,6 +185,23 @@ final class BackupAgent extends AbstractAgent
      *     pre-restore world that must outlive the database it was read from.
      */
     private ?array $pendingCarryover = null;
+
+    /**
+     * Deadline (microtime) by which the re-hydrate barrier must answer; 0.0 when none is open.
+     *
+     * The wait outlives a tick, so the run's finalization is split around it: the child is over,
+     * but the restore is not, and nothing may be let back in until every process has re-read the
+     * database that was just put underneath them (HIL-436). The deadline is this agent's own
+     * insurance - the daemon has one too, and this one covers the case where the daemon does not
+     * answer at all.
+     */
+    private float $rehydrateDeadline = 0.0;
+
+    /** Whether the restore child of the pending barrier exited cleanly; meaningless when none is open. */
+    private bool $rehydrateChildSucceeded = false;
+
+    /** Why that child failed, or null when it did not; meaningless when no barrier is open. */
+    private ?string $rehydrateFailureDetail = null;
 
     /** Id of the in-flight backup, or null when idle. */
     private ?string $currentBackupId = null;
@@ -260,6 +290,7 @@ final class BackupAgent extends AbstractAgent
     public function onTick(): void
     {
         $this->pollRunningBackup();
+        $this->expireStaleRehydrate();
         $this->tickProtectedModeOperator();
         $this->checkSchedule();
     }
@@ -288,14 +319,32 @@ final class BackupAgent extends AbstractAgent
             // startBackup, and a stopping agent must not spawn a child nobody will poll.
             $this->pendingScope = null;
             $this->pendingInitiator = null;
-            // A restore admitted but not yet spawned holds the freeze under its pending id
-            // alone, so the finalizer is given that id the same way expireStalePendingRestore()
-            // gives it: without one it refuses to run, and the node stays frozen with nobody
-            // left to lift it.
-            $this->currentBackupId ??= $this->pendingRestoreId;
-            // Through the one finalizer, so a stopping agent records the outcome and lifts
-            // the freeze exactly like any other failed run.
-            $this->finishRestore(false, 'backup agent stopped during restore');
+            // Only when the child half has not run yet. Past it the outcome is already recorded
+            // and only the barrier is outstanding, and putting the run through the finalizer a
+            // second time would re-announce the swap and overwrite what the child actually did
+            // with "stopped during restore".
+            if (!$this->awaitingRehydrate()) {
+                // A restore admitted but not yet spawned holds the freeze under its pending id
+                // alone, so the finalizer is given that id the same way expireStalePendingRestore()
+                // gives it: without one it refuses to run, and the node stays frozen with nobody
+                // left to lift it.
+                $this->currentBackupId ??= $this->pendingRestoreId;
+                // Through the one finalizer, so a stopping agent records the outcome and lifts
+                // the freeze exactly like any other failed run. Only a child that actually ran
+                // can have been writing: a restore still waiting for its freeze touched nothing,
+                // which is the same answer expireStalePendingRestore() gives in that state.
+                $this->finishRestore(
+                    false,
+                    'backup agent stopped during restore',
+                    databaseTouched: $this->childProcess !== null,
+                );
+            }
+            // Whether the barrier was already open or the finalizer just opened it, an agent that
+            // is going away cannot wait for it: settled here as unclosed, so the node stays shut -
+            // the same fail-closed answer a timeout would have given.
+            if ($this->awaitingRehydrate()) {
+                $this->completeRestore(false, ['backup agent stopped before every process re-read']);
+            }
         }
         $this->resetRun();
         $this->clearRuntime();
@@ -635,9 +684,14 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        if ($this->childProcess !== null) {
+        if ($this->childProcess !== null || $this->restoreEngaged()) {
             // Coalesce: the newest manual request wins the single pending slot. The current
             // run drains it in finishRun(); an intervening cron overlap still just skips.
+            // A restore counts as busy for its whole length, not just while its child is alive:
+            // it is engaged before the freeze and still engaged after the child exits, waiting
+            // out the re-hydrate barrier (HIL-436). Without that half a request landing in those
+            // windows would fall through to startBackup, be turned away by its restore guard and
+            // be lost, instead of running the moment the restore lets go.
             $this->pendingScope = $scope;
             $this->pendingInitiator = $data->initiatorAcceptKey;
             $this->logAgentInfo("Backup busy; queued pending create (scope={$scope->value})");
@@ -767,8 +821,12 @@ final class BackupAgent extends AbstractAgent
         if ($id === null || $scope === null || $decision === null) {
             return;
         }
-        if ($this->childProcess !== null) {
-            // A duplicate ready relay must not spawn a second child over the running one.
+        if ($this->childProcess !== null || $this->awaitingRehydrate()) {
+            // A duplicate ready relay must not spawn a second child over the running one - nor
+            // over one that is already done. The run outlives its child now (HIL-436): between
+            // that child's exit and the barrier's verdict the slot stands free while the restore
+            // is not over, and a child spawned there would replay the archive over the database
+            // the first one just wrote.
             $this->logAgentWarning("Ignoring duplicate protected-mode ready for restore {$id}");
 
             return;
@@ -795,7 +853,8 @@ final class BackupAgent extends AbstractAgent
                 ),
             );
         } catch (Throwable $e) {
-            $this->finishRestore(false, 'failed to spawn child: ' . $e->getMessage());
+            // A child that never started wrote nothing.
+            $this->finishRestore(false, 'failed to spawn child: ' . $e->getMessage(), databaseTouched: false);
 
             return;
         }
@@ -1075,7 +1134,10 @@ final class BackupAgent extends AbstractAgent
             if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
                 $this->childProcess->stop();
                 $this->childProcess->halt();
-                $this->finishChild(false, "timed out after {$this->timeoutSeconds}s");
+                // No exit code to read from a child we killed, and a killed restore is assumed to
+                // have been writing: the pessimistic half of that guess costs a look, the
+                // optimistic half costs a database nobody checked.
+                $this->finishChild(false, "timed out after {$this->timeoutSeconds}s", null);
             }
 
             return;
@@ -1083,9 +1145,9 @@ final class BackupAgent extends AbstractAgent
 
         $exitCode = $this->childProcess->getExitCode();
         if ($exitCode === 0) {
-            $this->finishChild(true, null);
+            $this->finishChild(true, null, $exitCode);
         } else {
-            $this->finishChild(false, 'child exited with code ' . ($exitCode ?? 'unknown'));
+            $this->finishChild(false, 'child exited with code ' . ($exitCode ?? 'unknown'), $exitCode);
         }
     }
 
@@ -1116,6 +1178,8 @@ final class BackupAgent extends AbstractAgent
         $this->finishRestore(
             false,
             'protected mode never became ready within ' . self::RESTORE_FREEZE_WAIT_SECONDS . 's',
+            // Nothing was ever spawned, so nothing can have been written.
+            databaseTouched: false,
         );
     }
 
@@ -1124,14 +1188,35 @@ final class BackupAgent extends AbstractAgent
      *
      * @param bool $success Whether the child exited cleanly
      * @param ?string $failureReason Human-readable reason when the run failed
+     * @param ?int $exitCode Exit code the child reported, or null when it was killed or never read
      */
-    private function finishChild(bool $success, ?string $failureReason): void
+    private function finishChild(bool $success, ?string $failureReason, ?int $exitCode): void
     {
         if ($this->runKind === BackupRunKind::RESTORE) {
-            $this->finishRestore($success, $failureReason);
+            $this->finishRestore($success, $failureReason, self::restoreTouchedDatabase($exitCode));
         } else {
             $this->finishRun($success, $failureReason);
         }
+    }
+
+    /**
+     * Whether a finished restore child had begun replacing the database.
+     *
+     * One exit code means "it did not" and everything else means "assume it did", including a
+     * child that was killed and left no code at all (HIL-436). The asymmetry is deliberate: being
+     * told a database may be half-overwritten when it is not costs a look at it, while the reverse
+     * costs a production database nobody checked.
+     *
+     * Public because it is one half of a contract with the project's restore child: that command
+     * chooses the exit code, this reads it, and a test that pins them apart would pass while they
+     * drifted (the sibling contract {@see buildRestoreChildArgs()} is public for the same reason).
+     *
+     * @param ?int $exitCode Exit code the child reported, or null when it was killed
+     * @return bool True unless the child reported that it stopped before the first destructive step
+     */
+    public static function restoreTouchedDatabase(?int $exitCode): bool
+    {
+        return $exitCode !== BackupConstants::RESTORE_EXIT_DATABASE_INTACT;
     }
 
     /**
@@ -1168,6 +1253,16 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Whether a restore is waiting for its re-hydrate barrier to answer.
+     *
+     * @return bool True between the child's exit and the barrier's verdict
+     */
+    private function awaitingRehydrate(): bool
+    {
+        return $this->rehydrateDeadline > 0.0;
+    }
+
+    /**
      * Finalizes a restore run: records its outcome, lifts the freeze, and unlocks.
      *
      * The restore row keeps its terminal snapshot (outcome, failure reason, finish time)
@@ -1179,16 +1274,23 @@ final class BackupAgent extends AbstractAgent
      * **The freeze is moved on, not lifted** (HIL-481). This used to call
      * {@see AbstractAgent::requestProtectedModeDisable()} outside the branch on success, so a
      * restore that died mid-import opened a half-loaded database by itself. It now asks for the
-     * verification window on both branches: the system stays closed to everyone, a hand-picked
-     * circle is let in by pass to confirm it really came back, and only
-     * {@see CliCommands::PROTECTED_MODE_OPEN} - a human - opens it. Unconditional for the same
-     * reason the lift was: however the run ended, a node left in the full freeze has nobody else
-     * to move it on.
+     * verification window: the system stays closed to everyone, a hand-picked circle is let in by
+     * pass to confirm it really came back, and only {@see CliCommands::PROTECTED_MODE_OPEN} - a
+     * human - opens it.
+     *
+     * **The restore does not end where the SQL ends** (HIL-436), which is why this half stops at
+     * the announcement. Every process on this node - and, in a cluster, every node - still holds
+     * caches of the database that was just replaced, and a verifier let in to read those would be
+     * confirming a fiction. So the run enters {@see RestorePhase::REHYDRATING}, asks everyone to
+     * re-read, and {@see completeRestore()} finishes it when they have answered. Re-reading is
+     * asked for on both branches, not only on success: a failed import may have left the database
+     * half-rewritten, and re-reading one that was never touched is harmless.
      *
      * @param bool $success Whether the child exited cleanly
      * @param ?string $failureReason Human-readable reason when the run failed
+     * @param bool $databaseTouched Whether the run got as far as writing to the database
      */
-    private function finishRestore(bool $success, ?string $failureReason): void
+    private function finishRestore(bool $success, ?string $failureReason, bool $databaseTouched): void
     {
         $id = $this->currentBackupId;
         if ($id === null) {
@@ -1204,29 +1306,160 @@ final class BackupAgent extends AbstractAgent
         $stderr = $this->childStdErr();
 
         if ($success) {
-            $this->logAgentInfo("Restore {$id} completed in {$durationSeconds}s");
-            $this->restoreView()?->actions->finish(BackupStatus::SUCCESS);
-            $this->carryOverSessions();
+            $this->logAgentInfo("Restore {$id} replayed in {$durationSeconds}s; re-reading state");
+            $this->rehydrateFailureDetail = null;
         } else {
             $detail = $stderr !== null ? "{$failureReason}: {$stderr}" : (string)$failureReason;
             $this->logAgentError("Restore {$id} failed: {$detail}");
-            $this->restoreView()?->actions->finish(BackupStatus::ERROR, $detail);
+            $this->rehydrateFailureDetail = $detail;
         }
+
+        $this->rehydrateChildSucceeded = $success;
+        $this->rehydrateDeadline = microtime(true) + self::REHYDRATE_WAIT_SECONDS;
+
+        $view = $this->restoreView();
+        $view?->actions->markDatabaseTouched($databaseTouched);
+        $view?->actions->markRehydrating();
+
+        // The child slot is released here rather than in completeRestore(): its process is over,
+        // and a poller that found it again would finalize the same run twice. Everything else the
+        // second half needs - the id, the photographed sessions, the run kind that keeps a
+        // scheduled create out of this window - stays until the barrier answers.
+        $this->childProcess = null;
 
         try {
-            $this->requestProtectedModeVerify();
-        } catch (InvalidArgumentException $e) {
-            // Documented by the request and unreachable in practice - the signal name is a
-            // constant - but a throw escaping here would abandon the finalization halfway: the
-            // outcome is already recorded and the node would stay fully frozen with nothing
-            // left to move it on.
-            $this->logAgentError("Restore {$id} could not open the verification window: {$e->getMessage()}");
+            $this->requestDbReHydrate();
+        } catch (DatabaseException | LogicException $e) {
+            // This process could not re-read the database it just replaced, so there is nobody to
+            // wait for and nothing to open: settled here as unclosed, on the spot.
+            $this->logAgentError("Restore {$id} could not re-read the database: {$e->getMessage()}");
+            $this->completeRestore(false, ['backup agent: read failed: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Finishes a restore once every process has answered the re-hydrate announcement, or stopped.
+     *
+     * The half of {@see finishRestore()} that runs after the barrier, and the terminal outcome is
+     * decided here rather than by the child's exit code: a restore whose SQL succeeded but whose
+     * node did not finish re-reading has not come back, whatever the child said.
+     *
+     * **Fail-closed on an unclosed barrier.** The verification window is asked for only when every
+     * process confirmed. Otherwise the node stays in the full freeze - closed even to verifiers -
+     * with the offending processes named on the runtime row, and a human decides with the
+     * protected-mode commands whether to open it anyway or to close it back and restore again.
+     * When the barrier did close, the window is asked for however the run itself ended, for the
+     * reason HIL-481 gave: a node left fully frozen has nobody else to move it on.
+     *
+     * @param bool $complete Whether every process confirmed re-reading the replaced database
+     * @param list<string> $problems Processes that failed to re-read or never answered
+     */
+    private function completeRestore(bool $complete, array $problems): void
+    {
+        $this->rehydrateDeadline = 0.0;
+
+        $id = $this->currentBackupId;
+        if ($id === null) {
+            $this->logAgentError('Restore re-hydration finished with no backup in progress');
+
+            return;
         }
 
+        $view = $this->restoreView();
+        $view?->actions->markRehydrateOutcome($complete, $problems);
+
+        if ($complete) {
+            if ($this->rehydrateChildSucceeded) {
+                // Only on success: carrying sessions over WRITES rows, and writing into a database
+                // whose import was cut short would be building on top of the damage.
+                $this->carryOverSessions();
+            }
+
+            try {
+                $this->requestProtectedModeVerify();
+            } catch (InvalidArgumentException $e) {
+                // Documented by the request and unreachable in practice - the signal name is a
+                // constant - but a throw escaping here would abandon the finalization halfway: the
+                // outcome is already recorded and the node would stay fully frozen with nothing
+                // left to move it on.
+                $this->logAgentError("Restore {$id} could not open the verification window: {$e->getMessage()}");
+            }
+        } else {
+            $this->logAgentError(
+                "Restore {$id} left the node closed - not every process re-read the database: "
+                . implode('; ', $problems),
+            );
+        }
+
+        if ($this->rehydrateChildSucceeded && $complete) {
+            $this->logAgentInfo("Restore {$id} completed");
+            $view?->actions->finish(BackupStatus::SUCCESS);
+        } else {
+            $view?->actions->finish(BackupStatus::ERROR, $this->restoreFailureDetail($complete, $problems));
+        }
+
+        $this->rehydrateFailureDetail = null;
         $this->resetRun();
         // A manual create coalesced while the restore held the child slot must not rot in
         // its slot until some unrelated later run happens to drain it.
         $this->drainPendingCreate();
+    }
+
+    /**
+     * Composes what the monitor shows for a restore that did not come back whole.
+     *
+     * A run can fail on either side of the barrier, and the two failures read differently: the
+     * child's own reason is the story when it failed, and an unclosed barrier is the story when it
+     * did not. Both can be true at once, and then both are said - a half-imported database whose
+     * workers also never re-read is two problems, not one.
+     *
+     * @param bool $complete Whether every process confirmed re-reading the replaced database
+     * @param list<string> $problems Processes that failed to re-read or never answered
+     * @return string Operator-facing failure detail
+     */
+    private function restoreFailureDetail(bool $complete, array $problems): string
+    {
+        $barrier = $complete
+            ? null
+            : 'the database was replaced, but these did not re-read it: ' . implode('; ', $problems);
+
+        return implode('; ', array_filter([$this->rehydrateFailureDetail, $barrier]));
+    }
+
+    /**
+     * Settles a re-hydrate barrier the daemon never answered.
+     *
+     * The daemon bounds the wait itself and answers on its own deadline, so reaching this one means
+     * the answer never arrived at all - a lost frame, or a daemon that stopped ticking. Waiting
+     * forever is the one outcome that must not happen: the run would stay unfinished, the monitor
+     * would poll a re-hydrating row that never moves, and the subsystem would refuse every later
+     * backup and restore until the agent was restarted.
+     */
+    private function expireStaleRehydrate(): void
+    {
+        if (!$this->awaitingRehydrate() || microtime(true) < $this->rehydrateDeadline) {
+            return;
+        }
+
+        $this->completeRestore(false, ['daemon: timeout']);
+    }
+
+    /**
+     * Receives the aggregated verdict of the re-hydrate barrier this agent opened (HIL-436).
+     *
+     * A verdict arriving with no barrier open is dropped: the wait has already been settled by
+     * {@see expireStaleRehydrate()}, and re-finishing a run that is over would report an outcome
+     * twice and drain the pending create slot into a second child.
+     *
+     * @param DbReHydrateOutcome $outcome Whether every process re-read, and who did not
+     */
+    public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
+    {
+        if (!$this->awaitingRehydrate()) {
+            return;
+        }
+
+        $this->completeRestore($outcome->complete, $outcome->problems);
     }
 
     /**
@@ -1444,13 +1677,17 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Re-reads the restored database and re-creates the sessions photographed before it (HIL-479).
+     * Re-creates the sessions photographed before the database was replaced (HIL-479).
      *
-     * The whole step lives in the window between a successful child and the thaw, and its order
-     * is the point: nothing may read the new database before this process has re-hydrated, and
-     * nothing may be written after the clients are told to reload, because the reloaded browser
-     * looks its session up immediately. The re-hydrate announcement goes out even when there is
-     * no session to carry - it is about the swap, not about the sessions.
+     * The step lives in the window between a successful restore and the thaw, and its order is the
+     * point: nothing may be written after the clients are told to reload, because the reloaded
+     * browser looks its session up immediately.
+     *
+     * The re-hydrate announcement used to live here and has moved up to the finalizer (HIL-436):
+     * it belongs to the swap, not to the sessions, so it has to happen on the failed branch too -
+     * and it has to be waited for, which this step cannot do. By the time this runs, every process
+     * has already confirmed re-reading, so the rows written here land on top of a database
+     * everybody agrees about.
      *
      * Contained like the snapshot: a restore that has already succeeded is not undone, and the
      * freeze is not held, because sessions could not be written back.
@@ -1458,7 +1695,6 @@ final class BackupAgent extends AbstractAgent
     private function carryOverSessions(): void
     {
         try {
-            $this->requestDbReHydrate();
             $result = SessionCarrier::carryOver($this->pendingCarryover ?? []);
         } catch (Throwable $e) {
             $this->logAgentError('Restore could not carry sessions over: ' . $e->getMessage());
@@ -1487,6 +1723,9 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
         $this->pendingCarryover = null;
+        $this->rehydrateDeadline = 0.0;
+        $this->rehydrateChildSucceeded = false;
+        $this->rehydrateFailureDetail = null;
     }
 
     /**

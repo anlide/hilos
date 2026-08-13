@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\CLI\Commands\BackupRestoreRunCommand;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\ExitCode;
@@ -64,5 +66,38 @@ final class BackupRestoreRunCommandTest extends TestCase
         );
 
         $this->assertSame(ExitCode::ERROR, $code);
+    }
+
+    public function testAFailureThatNeverTouchedTheDatabaseGetsItsOwnExitCode(): void
+    {
+        $code = BackupRestoreRunCommand::exitCodeFor(
+            RestoreFailedException::beforeDestructive('Archive digest does not match'),
+        );
+
+        $this->assertSame(BackupConstants::RESTORE_EXIT_DATABASE_INTACT, $code);
+    }
+
+    public function testAFailureInsideTheDestructiveWindowIsAPlainError(): void
+    {
+        $code = BackupRestoreRunCommand::exitCodeFor(
+            RestoreFailedException::afterDestructive('Import failed for connection 1'),
+        );
+
+        $this->assertSame(ExitCode::ERROR, $code);
+    }
+
+    public function testTheSupervisorReadsBackExactlyWhatTheChildMeant(): void
+    {
+        foreach ([false, true] as $touched) {
+            $failure = $touched
+                ? RestoreFailedException::afterDestructive('Import failed')
+                : RestoreFailedException::beforeDestructive('Digest mismatch');
+
+            $this->assertSame(
+                $touched,
+                BackupAgent::restoreTouchedDatabase(BackupRestoreRunCommand::exitCodeFor($failure)),
+                'The child chooses the code and the supervisor reads it; the two must not drift',
+            );
+        }
     }
 }

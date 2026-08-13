@@ -28,6 +28,9 @@ use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
  * @property-read ?string $finishedAt ISO-8601 finish time of the last restore; null while running or idle
  * @property-read ?string $outcome Terminal outcome value of the last restore; null until one finishes
  * @property-read ?string $failureReason Why the last restore failed; null when it succeeded or never ran
+ * @property-read bool $rehydrateComplete Whether every process confirmed re-reading the replaced database
+ * @property-read list<string> $rehydrateProblems Processes that failed to re-read or never answered
+ * @property-read bool $databaseTouched Whether the run reached its first destructive step
  * @property-read RestoreRuntimeActions $actions Write operations for the runtime singleton
  */
 final class RestoreRuntime extends RtItem
@@ -42,11 +45,11 @@ final class RestoreRuntime extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|bool|RestoreRuntimeActions|null Property value
+     * @return string|bool|array<int, string>|RestoreRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|bool|RestoreRuntimeActions|null
+    public function __get(string $name): string|bool|array|RestoreRuntimeActions|null
     {
         return match ($name) {
             StateRestoreRuntime::running => $this->_state->running,
@@ -57,6 +60,9 @@ final class RestoreRuntime extends RtItem
             StateRestoreRuntime::finishedAt => $this->_state->finishedAt,
             StateRestoreRuntime::outcome => $this->_state->outcome,
             StateRestoreRuntime::failureReason => $this->_state->failureReason,
+            StateRestoreRuntime::rehydrateComplete => $this->_state->rehydrateComplete,
+            StateRestoreRuntime::rehydrateProblems => $this->_state->rehydrateProblems,
+            StateRestoreRuntime::databaseTouched => $this->_state->databaseTouched,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

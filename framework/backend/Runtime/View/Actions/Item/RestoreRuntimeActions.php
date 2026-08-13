@@ -54,6 +54,9 @@ final class RestoreRuntimeActions extends RtActions
         $this->state->finishedAt = null;
         $this->state->outcome = null;
         $this->state->failureReason = null;
+        $this->state->rehydrateComplete = false;
+        $this->state->rehydrateProblems = [];
+        $this->state->databaseTouched = false;
         $this->sync();
     }
 
@@ -72,6 +75,66 @@ final class RestoreRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = $phase->value;
+        $this->sync();
+    }
+
+    /**
+     * Enters the post-import re-hydration and syncs the change to readers.
+     *
+     * A phase of its own rather than a flag on the run: between the child's exit and the terminal
+     * outcome the node is putting itself back together, and an operator watching a monitor that
+     * jumped straight from "importing" to "succeeded" would be told the restore was over while the
+     * system was still closed. Set by the agent, because the engine is already gone (HIL-436).
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markRehydrating(): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->phase = RestorePhase::REHYDRATING->value;
+        $this->state->rehydrateComplete = false;
+        $this->state->rehydrateProblems = [];
+        $this->sync();
+    }
+
+    /**
+     * Records how the re-hydration barrier ended and syncs the change to readers.
+     *
+     * The two travel together on purpose: a verdict with no names is an operator staring at a node
+     * that stayed closed with nothing to look at, and names with no verdict are a list nobody knows
+     * how to read.
+     *
+     * @param bool $complete Whether every process confirmed re-reading the replaced database
+     * @param list<string> $problems Processes that failed to re-read or never answered, one line each
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markRehydrateOutcome(bool $complete, array $problems): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->rehydrateComplete = $complete;
+        $this->state->rehydrateProblems = $problems;
+        $this->sync();
+    }
+
+    /**
+     * Records whether the run reached its first destructive step and syncs the change to readers.
+     *
+     * Written before the outcome, from the child's exit code: it decides which of two very
+     * different sentences the monitor prints to whoever has to act on a failed restore.
+     *
+     * @param bool $touched Whether the run got as far as writing to the database
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markDatabaseTouched(bool $touched): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->databaseTouched = $touched;
         $this->sync();
     }
 
@@ -122,6 +185,9 @@ final class RestoreRuntimeActions extends RtActions
         $this->state->finishedAt = null;
         $this->state->outcome = null;
         $this->state->failureReason = null;
+        $this->state->rehydrateComplete = false;
+        $this->state->rehydrateProblems = [];
+        $this->state->databaseTouched = false;
         $this->sync();
     }
 }

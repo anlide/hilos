@@ -79,6 +79,15 @@ enum EnvConstants
     /** @var string Secondary database port */
     case DB_SECONDARY_PORT;
 
+    /**
+     * Seconds the daemon waits for every process it told to re-read a replaced database before
+     * it gives up and reports the barrier as unclosed (HIL-436). Re-reading runs over the
+     * connection each process already holds, so minutes here would not mean slow work - they
+     * would mean a dead process, and the wait stands between the operator and the answer of
+     * whether the restore actually came back. Default 30.
+     */
+    case HILOS_DB_REHYDRATE_TIMEOUT;
+
     /** @var string Daemon log file path */
     case DAEMON_LOG_FILE;
 

@@ -12,14 +12,20 @@ use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
+use Hilos\Database\DTO\ReHydrateVerdict;
+use Hilos\Database\ReHydrateBarrierSink;
+use Hilos\Database\ReHydrateRound;
 use Hilos\Hilos;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
@@ -34,7 +40,7 @@ use Hilos\Utils\Logger;
  * Uses workerId mapping instead of WorkerClient objects (workerId: negative = monopolistic, positive = regular).
  * Child classes must implement createAgentDaemon() factory method.
  */
-abstract class AgentManagerDaemon
+abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 {
     /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
     protected array $agentDaemons = [];
@@ -44,6 +50,22 @@ abstract class AgentManagerDaemon
 
     /** @var array<string, true> Ids of agents that reported agent_started, so their onStart has completed */
     private array $startedAgentIds = [];
+
+    /**
+     * @var ?ReHydrateRound Barrier of the re-hydrate announcement in flight, null when none is.
+     *
+     * It lives here rather than in {@see DaemonManager} because this object is the one the
+     * daemon loop and every inbound {@see WorkerClient} already share: the announcement arrives
+     * on one worker's link, the answers arrive on all of them, and the verdict is addressed to
+     * an agent - which is this class's subject.
+     */
+    private ?ReHydrateRound $reHydrateRound = null;
+
+    /** @var ?string Agent that announced the swap on this node; null when another node announced it */
+    private ?string $reHydrateInitiator = null;
+
+    /** @var ?string Node that announced the swap to this one; null when this node announced it itself */
+    private ?string $reHydrateReplyToNodeId = null;
 
     /**
      * Create agent daemon instance (factory method)
@@ -372,16 +394,115 @@ abstract class AgentManagerDaemon
      * Queues the fact into the daemon's own router, from where the ordinary sync dispatch
      * applies it to the daemon and sends it on to every worker. The signal is sourced from the
      * database rather than from the announcing agent: by the time it is re-queued here, the
-     * event belongs to the node, not to whoever noticed the swap first.
+     * event belongs to the node, not to whoever noticed the swap first. The announcing agent is
+     * still named in the payload, because it is the one waiting for the verdict (HIL-436).
+     *
+     * @param ?string $agentId Agent that awaits the barrier's verdict, null when nobody does
      */
-    public function handleWorkerDbReHydrate(): void
+    public function handleWorkerDbReHydrate(?string $agentId): void
     {
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DB),
             signalType: new SignalType(SignalTypeConstants::DB_REHYDRATE),
             signalName: new SignalName(SignalConstants::DB_REHYDRATE),
-            signalData: new DbReHydrateSignalData(),
+            signalData: new DbReHydrateSignalData($agentId),
         );
+    }
+
+    /**
+     * Opens the re-hydrate barrier over the roster the daemon fanned the announcement out to.
+     *
+     * An announcement arriving while a round is still open replaces it: the older round is about
+     * a database that has since been replaced again, so its answers no longer say anything about
+     * what is on disk now. The initiator of the abandoned round stops hearing back and falls
+     * through to its own deadline, which is the same fail-closed path a lost verdict already takes.
+     *
+     * @param ?string $agentId Agent that announced the swap here, null when another node announced it
+     * @param ?string $replyToNodeId Node that announced the swap to this one, null when this node did
+     * @param list<string> $participants Participant labels, from {@see ReHydrateRound}'s factories
+     * @param float $deadline Wall-clock deadline on the {@see microtime()} scale
+     */
+    public function openReHydrateRound(
+        ?string $agentId,
+        ?string $replyToNodeId,
+        array $participants,
+        float $deadline,
+    ): void {
+        $round = new ReHydrateRound();
+        $round->start($participants, $deadline);
+
+        $this->reHydrateRound = $round;
+        $this->reHydrateInitiator = $agentId;
+        $this->reHydrateReplyToNodeId = $replyToNodeId;
+    }
+
+    /**
+     * Records one participant's answer to the open re-hydrate barrier.
+     *
+     * A no-op when no round is open: an answer with no question is a late duplicate, and the
+     * round itself drops those too.
+     *
+     * @param string $participant Participant label, from {@see ReHydrateRound}'s factories
+     * @param bool $ok Whether that participant re-read its collections successfully
+     * @param ?string $error Failure text when it did not
+     */
+    public function ackReHydrateParticipant(string $participant, bool $ok, ?string $error): void
+    {
+        $this->reHydrateRound?->ack($participant, $ok, $error);
+    }
+
+    /**
+     * Takes a participant that disappeared off the open re-hydrate barrier.
+     *
+     * @param string $participant Participant label, from {@see ReHydrateRound}'s factories
+     */
+    public function dropReHydrateParticipant(string $participant): void
+    {
+        $this->reHydrateRound?->drop($participant);
+    }
+
+    /**
+     * Handles one worker's answer to the re-hydrate announcement (HIL-436).
+     *
+     * The frame does not name its sender - it arrived on that worker's own link - so the index
+     * comes from the {@see WorkerClient} that read it.
+     *
+     * @param int $workerIndex Index of the worker that answered
+     * @param WorkerDbReHydratedDTO $dto That worker's verdict on re-reading its collections
+     */
+    public function handleWorkerDbReHydrated(int $workerIndex, WorkerDbReHydratedDTO $dto): void
+    {
+        $this->ackReHydrateParticipant(ReHydrateRound::workerParticipant($workerIndex), $dto->ok, $dto->error);
+    }
+
+    /**
+     * Ends the open re-hydrate barrier once nobody is left to wait for, and reports its verdict.
+     *
+     * Consuming rather than peeking: the round exists to be answered exactly once, and leaving a
+     * settled one in place would send the same verdict again on every following tick.
+     *
+     * @param float $now Current time on the {@see microtime()} scale
+     * @return ?ReHydrateVerdict Verdict and who is waiting for it, or null while the barrier still waits
+     */
+    public function pollReHydrateVerdict(float $now): ?ReHydrateVerdict
+    {
+        $round = $this->reHydrateRound;
+        if ($round === null) {
+            return null;
+        }
+
+        $round->expire($now);
+        if (!$round->isSettled()) {
+            return null;
+        }
+
+        $agentId = $this->reHydrateInitiator;
+        $replyToNodeId = $this->reHydrateReplyToNodeId;
+        $this->reHydrateRound = null;
+        $this->reHydrateInitiator = null;
+        $this->reHydrateReplyToNodeId = null;
+
+        return new ReHydrateVerdict($agentId, $replyToNodeId, $round->isComplete(), $round->problems());
     }
 
     /**

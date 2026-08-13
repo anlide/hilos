@@ -23,6 +23,8 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
+use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
@@ -268,6 +270,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
             $frame instanceof PeerProtectedModeQuiesceDTO => $this->onProtectedModeQuiesce($frame),
             $frame instanceof PeerProtectedModeQuiescedDTO => $this->onProtectedModeQuiesced($frame),
+            $frame instanceof PeerDbReHydrateDTO => $this->onDbReHydrate($frame),
+            $frame instanceof PeerDbReHydratedDTO => $this->onDbReHydrated($frame),
             $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
             $frame instanceof PeerProtectedModeVerifyDTO => $this->onProtectedModeVerify($frame),
             $frame instanceof PeerProtectedModePassDTO => $this->onProtectedModePass($frame),
@@ -528,6 +532,30 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode quiesced');
         $this->server->onProtectedModeQuiescedReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received database re-hydrate announcement to the server for this node to re-read.
+     *
+     * @param PeerDbReHydrateDTO $frame Incoming database re-hydrate frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onDbReHydrate(PeerDbReHydrateDTO $frame): void
+    {
+        $this->requireHandshaked('db re-hydrate');
+        $this->server->onDbReHydrateReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received database re-hydrated report to the server for the initiator to track.
+     *
+     * @param PeerDbReHydratedDTO $frame Incoming database re-hydrated frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onDbReHydrated(PeerDbReHydratedDTO $frame): void
+    {
+        $this->requireHandshaked('db re-hydrated');
+        $this->server->onDbReHydratedReceived($this, $frame);
     }
 
     /**

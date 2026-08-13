@@ -9,6 +9,7 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupScope;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\ExitCode;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -110,5 +111,21 @@ final class BackupAgentTest extends TestCase
         $notice = BackupAgent::failureNotice('id', '');
 
         $this->assertSame('Backup id failed', $notice);
+    }
+
+    public function testTheIntactExitCodeIsTheOnlyOneThatMeansTheDatabaseWasNotTouched(): void
+    {
+        $this->assertFalse(BackupAgent::restoreTouchedDatabase(BackupConstants::RESTORE_EXIT_DATABASE_INTACT));
+        $this->assertTrue(BackupAgent::restoreTouchedDatabase(ExitCode::SUCCESS));
+        $this->assertTrue(BackupAgent::restoreTouchedDatabase(ExitCode::ERROR));
+    }
+
+    public function testAChildThatLeftNoExitCodeIsAssumedToHaveBeenWriting(): void
+    {
+        $this->assertTrue(
+            BackupAgent::restoreTouchedDatabase(null),
+            'A killed restore is assumed to have touched the database: the optimistic guess costs'
+            . ' a production database nobody checked',
+        );
     }
 }

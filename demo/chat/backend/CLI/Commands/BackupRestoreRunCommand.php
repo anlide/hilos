@@ -9,6 +9,8 @@ use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
+use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandInterface;
@@ -21,7 +23,9 @@ use Hilos\Core\Process;
  * mode is up; it delegates to the framework {@see BackupRestorer} engine. It needs a
  * full Hilos init (it imports into the configured database connections), so it is not
  * among the init-skipping commands. It returns 0 on success and a non-zero exit code
- * on any failure, which the supervisor reads to record the run's outcome.
+ * on any failure, which the supervisor reads to record the run's outcome - and which of
+ * the two failure codes it returns tells the supervisor whether the database was left
+ * untouched ({@see BackupConstants::RESTORE_EXIT_DATABASE_INTACT}).
  *
  * The `--decision` value arrives from the CLI preflight through the supervisor's argv
  * ({@see BackupConstants::FIELD_DECISION}); the engine acts on it without re-deriving
@@ -119,6 +123,10 @@ HELP;
 
         try {
             new BackupRestorer()->restore($id, $scope, $decision);
+        } catch (RestoreFailedException $e) {
+            fwrite(STDERR, 'Restore failed: ' . $e->getMessage() . "\n");
+
+            return self::exitCodeFor($e);
         } catch (BackupException $e) {
             fwrite(STDERR, 'Restore failed: ' . $e->getMessage() . "\n");
 
@@ -128,5 +136,25 @@ HELP;
         echo "Restore completed: {$id}\n";
 
         return ExitCode::SUCCESS;
+    }
+
+    /**
+     * Maps a restore failure to the exit code the supervisor reads it by (HIL-436).
+     *
+     * Two codes rather than one, because they ask different things of whoever holds the failure: an
+     * untouched database can be fixed and retried, a half-replaced one cannot be left alone. Public
+     * and separate from {@see execute()} because it is one half of a contract - the other half is
+     * {@see BackupAgent::restoreTouchedDatabase()}, which reads exactly this code back - and a
+     * contract only spelled inside a method that needs a database to reach is a contract nothing
+     * checks.
+     *
+     * @param RestoreFailedException $failure Failure the engine raised
+     * @return int Exit code for the supervisor
+     */
+    public static function exitCodeFor(RestoreFailedException $failure): int
+    {
+        return $failure->databaseTouched()
+            ? ExitCode::ERROR
+            : BackupConstants::RESTORE_EXIT_DATABASE_INTACT;
     }
 }
