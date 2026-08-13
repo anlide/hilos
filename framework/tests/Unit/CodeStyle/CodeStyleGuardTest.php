@@ -16,6 +16,9 @@ use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
+use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
+use Hilos\Tests\CodeStyle\Throws\SourceIndex;
+use Hilos\Tests\CodeStyle\Throws\ThrowsPropagationRule;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -97,6 +100,20 @@ final class CodeStyleGuardTest extends TestCase
         'Hilos.php',
     ];
 
+    /**
+     * Paths the throws rule judges, addressed from the repository root. It carries a
+     * zone for the reason the empty-string rule does and phases the same way, but its
+     * zone is written out whole: a cross-file rule reads paths from the repository
+     * root, so it has no scanned root to read a bare segment against.
+     *
+     * The daemon spine goes first — it is where the defect that opened the rule was
+     * found, and `Core` and `Socket` are the two roots every other subsystem calls
+     * through, so their contracts are the ones a later phase will lean on.
+     *
+     * @var array<int, string>
+     */
+    private const array THROWS_ZONE = ['framework/backend/Core', 'framework/backend/Socket'];
+
 
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
     {
@@ -113,7 +130,7 @@ final class CodeStyleGuardTest extends TestCase
             $baseline->reconcile($reported),
             'Code-style rules are checked by machine. Fix the lines below, or — if the debt is old and'
                 . ' owned by a leaf — record it in ' . Baseline::PATH . ' (regenerate with'
-                . ' CODESTYLE_BASELINE_UPDATE=1):',
+                . ' CODESTYLE_BASELINE_UPDATE=1). ' . ThrowsPropagationRule::SCOPE,
         );
     }
 
@@ -139,7 +156,52 @@ final class CodeStyleGuardTest extends TestCase
             }
         }
 
+        return [...$reported, ...$this->reportedCrossFileViolations()];
+    }
+
+    /**
+     * The second source of violations, feeding the same report and therefore the same
+     * baseline file. It gets no guard test of its own on purpose: the baseline is one
+     * file, and `CODESTYLE_BASELINE_UPDATE=1` rewrites it whole from the violations of
+     * the test that regenerates it, so a second test would erase the other's records
+     * every time either one was run.
+     *
+     * @return array<string, array<int, string>> Violation lines keyed by "<rule id> <path from repository root>"
+     */
+    private function reportedCrossFileViolations(): array
+    {
+        $index = SourceIndex::forRoots($this->repositoryRoot(), $this->indexedRoots());
+        $reported = [];
+        foreach ($this->crossFileRules() as $rule) {
+            foreach ($rule->check($index) as $violation) {
+                $reported[$rule->id() . ' ' . $violation->relativePath][] = $violation->describe($rule->doc());
+            }
+        }
+
         return $reported;
+    }
+
+    /**
+     * The index spans every backend root whatever zone is judged: a demo calls the
+     * framework, so an index cut down to the judged zone would answer "no contract"
+     * for half the calls inside it and pass them in silence.
+     *
+     * @return array<int, string> Roots the cross-file index is built over, relative to the repository root
+     */
+    private function indexedRoots(): array
+    {
+        return array_values(array_filter(
+            $this->scannedRoots(),
+            static fn(string $root): bool => str_ends_with($root, '/backend'),
+        ));
+    }
+
+    /**
+     * @return array<int, CrossFileRule> Cross-file rules under the guard, in report order
+     */
+    private function crossFileRules(): array
+    {
+        return [ThrowsPropagationRule::forZone(self::THROWS_ZONE)];
     }
 
     /**

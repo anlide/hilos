@@ -17,6 +17,7 @@ rule.
 | `PAYLOAD-SENTINEL` | A payload reader mints a stub for a field that did not arrive: inside the body of `fromArray()` or `fromJson()`, `''`, `0` or `0.0` is fallen back to with `??`, handed back by a ternary branch, or returned by a `match` `default` arm. `?? null` and `?? []` are legal there, and a `// external-boundary: <reason>` marker on the line directly above legalizes one occurrence. Every root. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
+| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type, and only inside the judged zone; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -112,6 +113,75 @@ whitespace is insignificant that is harmless: the analytics INSERT wraps its
 column list and MySQL never notices. Where the newlines are data it is not, and
 the cure is to move that text into a heredoc rather than to break it where it
 stands.
+
+`THROWS-PROPAGATION` is the first rule that reads the tree instead of a file, and
+its narrowness is declared rather than discovered. It judges a call only when the
+target is known without inferring a single type: `$this->m()`, `self::m()`,
+`static::m()`, `parent::m()`, `new Bar()` (the contract is the constructor), a
+call by class name, and a call through a parameter, a property, a static property
+or a `foreach` variable whose type is declared — in the signature, or in a `@var`
+when the signature can only say `array`. A chain resolves while every link is
+declared and stops at the first one that is not. The declaration is repeated in
+the guard's failure message, because a reader of a green run has to know why it
+is empty.
+
+Six things are outside it on purpose:
+
+1. **The Hilos magic.** `Hilos::$db->users` travels through `__get`,
+   `@property-read` bridges and a collection's `offsetGet`, and no text resolves
+   the target of a call made on the result. This is the uncomfortable one —
+   `DbContext::__get` is exactly what throws `CollectionNotFoundException`, so
+   the most interesting path is the one behind the magic — but nothing checks
+   those paths today, so the rule does not make the coverage worse; it moves the
+   question out of the dark.
+2. **Vendor and built-in classes.** They are not indexed, so a call into one
+   requires nothing. The roots of the PHP exception hierarchy are written into
+   the rule as a table instead, which is what lets `@throws Throwable` cover a
+   `JsonException` and `@throws RuntimeException` cover a `PDOException`.
+3. **A surplus tag.** The rule judges what is missing and never what is extra. A
+   `@throws` whose source it cannot see is not a hit, because that source is
+   usually the magic above, and reporting it would make the rule wider than its
+   document.
+4. **Every `throw` but `throw new X`.** A rethrown `throw $e` carries the type of
+   whatever was caught, and a `throw SomeException::forErrors(...)` carries the
+   type that factory decided to return — following either is type inference under
+   another name, and assuming the factory returns its own class would let the rule
+   demand a base where the code throws a subclass. Two sites of the factory form
+   sit inside the judged zone today, in `TopologyValidator` and
+   `FeatureActivationValidator`, and go unreported.
+5. **The body of a property hook.** A `get`/`set` block is a second shape of
+   method body, and the walk does not enter it, so a call made there is checked by
+   nobody. The property it belongs to is indexed normally; only the hook's own
+   body is dark.
+
+A private helper is walked through rather than asked for a tag, and that is not a
+narrowing but the only reading under which this file and
+[phpdoc.md](phpdoc.md) agree: that document asks for *no* `@throws` on a private
+helper unless it carries a local contract, so a tag there cannot be the answer
+and its absence cannot be permission. The exceptions are taken out of the
+helper's body and demanded of the public caller, and the report names the whole
+chain — `Foo::bar() -> private Foo::helper() -> SocketException` — so the fix is
+findable from the line the hit sits on. The walk is memoized and guards against
+a cycle.
+
+Coverage by a base class is legal in one direction only, which is the same
+asymmetry [phpdoc.md](phpdoc.md) states: `@throws HilosException` answers for a
+callee's `ValidationException`, and a narrow tag over a wider thrown type is a
+hit, because it says something untrue. A `catch` absorbs on the same terms, and
+`catch (Throwable)` absorbs everything; a `catch` body sits outside the `try`
+block, so an exception converted and rethrown there is judged as a fresh
+`throw new`.
+
+The zone works exactly like the empty-string rule's below and for the same
+reason, with one mechanical difference: a cross-file rule is handed paths from
+the repository root and not from a scanned root, so its zone lists whole prefixes
+rather than path segments — a bare `Socket` would otherwise turn on the framework
+subsystem and the demos' directories of that name in one move. Judged across
+every root at once the rule reports 779 lines in 234 files, which is a mute list
+and not a list of owed work. The daemon spine — `framework/backend/Core` and
+`framework/backend/Socket`, 43 files — is the first phase: it is where the defect
+that opened the rule was found, and every other subsystem calls through it, so
+its contracts are what the later phases will lean on.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.
@@ -210,9 +280,14 @@ suites produced it.
   coding loop and by the full run; a separate tool would need a new composer
   target and a place in every pipeline.
 
-A rule that needs type resolution rather than tokens — propagating documented
-`@throws` through call chains, for example — does not belong here. That one is
-PHPStan's `missingCheckedExceptionInThrows`, and it is a leaf of its own.
+The one check this section used to send away — propagating documented `@throws`
+through call chains, PHPStan's `missingCheckedExceptionInThrows` — is
+`THROWS-PROPAGATION` above. The premise for sending it away was that it needs
+type resolution; what it actually needs is an index of the tree, which the same
+`token_get_all()` builds, and the receiver forms an index cannot resolve it
+declines out loud instead of inferring. The dependency would have bought less
+than it looked: the Hilos magic is where the interesting contracts live, and no
+off-the-shelf analyzer reads it without an extension of our own.
 
 ## The baseline
 
@@ -290,6 +365,38 @@ in a comment is not a declaration.
 
 The one entry in the table above stays one entry. Two rows would let the halves
 drift apart in the register that exists to show they have not.
+
+### A rule that reads the whole tree
+
+A rule whose subject is a contract *between* two files has a third home. The
+steps above cannot reach it: the contract a call has to honour is written in the
+callee, and the callee almost never sits in the file being read.
+
+1. Put it in `framework/tests/CodeStyle/Throws/`, next to `SourceIndex`, which
+   tokenizes the backend roots once and answers what a class extends, uses and
+   implements, what each of its methods declares and with what visibility, and
+   where inside a body a call or a `throw` sits.
+2. Implement `Hilos\Tests\CodeStyle\Throws\CrossFileRule`, not `CodeStyleRule`.
+   That interface carries the tokens of one file by construction, and widening it
+   would hand eight existing rules an index none of them reads. Do keep yielding
+   `Violation` objects, unlike the markdown rules: a cross-file hit is baselined
+   like any other, and the failure line has to read the same whichever kind
+   produced it.
+3. Build the index over **every** backend root, whatever zone is judged. A demo
+   calls the framework, and an index cut down to the judged zone answers "no
+   contract" for half the calls inside it — a silent pass instead of a hit.
+4. Seed `framework/tests/CodeStyle/Fixtures/ThrowsTree/` with a toy tree that
+   carries its own exception hierarchy, so a fixture question is never answered
+   with a production contract, and pin the exact report in
+   `ThrowsPropagationFixtureTest`. Seed the look-alikes that must stay silent as
+   carefully as the hits. These fixtures need no path exclusion: the index reads
+   the backend roots, and `framework/tests` is not one of them.
+5. Register it in `CodeStyleGuardTest` as a second source feeding the same
+   report — **not** in a guard test of its own. The baseline is one file, and
+   `CODESTYLE_BASELINE_UPDATE=1` rewrites it whole from the violations of the
+   test that regenerates it, so a second test would erase the other's records
+   every time either one was run. This is the one point where this kind differs
+   from the markdown one, whose rules have no baseline to share.
 
 ### A rule that reads markdown
 

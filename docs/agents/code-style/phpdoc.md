@@ -133,6 +133,12 @@ documenting non-obvious error contracts.
 - Keep `@throws` and `{@see ...}` imports consistent: import the class with
   `use` and reference the short class name in the docblock.
 
+Checked automatically: `THROWS-PROPAGATION`, see
+[automated-checks.md](automated-checks.md). The check is narrower than this
+section by declaration — it judges the call forms whose target is written down,
+inside the zone it has reached so far — so a green run answers for that zone and
+those forms, and the audit above answers for everything else.
+
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee
 documents it, whether the caller can act on it, and whether any kept summary
@@ -159,11 +165,16 @@ the four reasons are worth knowing, because they say where to spend the effort:
    `SocketException` was exactly this, and everyone reading through the
    interface was sure the call was safe.
 
-Consequence: **until there is a machine check, the callee audit on every edit is
-the only defense** — which is why it is written above as a step, not as advice.
-The machine check itself is a leaf of its own: propagating documented `@throws`
-through call chains needs type resolution, not tokens, so it cannot join the
-token guards in [automated-checks.md](automated-checks.md).
+Consequence: the callee audit on every edit is written above as a step and not as
+advice, because for the whole life of this guide it was **the only defense**. It
+is no longer alone — `THROWS-PROPAGATION` now checks the propagation by machine —
+but it is still the defense everywhere the check does not reach, and the check
+says out loud where that is. The reason it was expected to be impossible turned
+out to be wrong in an instructive way: the job needs an index of the tree, not
+type inference, and the receiver forms an index cannot resolve are declined by
+declaration rather than guessed at. See
+[automated-checks.md](automated-checks.md) for what it judges and what it leaves
+to the audit.
 
 ## Example
 
