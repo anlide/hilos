@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
@@ -19,12 +20,7 @@ async function openUsers(page: Page): Promise<void> {
 test('the viewport table has an accessible name and a labelled search', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await openUsers(page)
 
@@ -40,12 +36,7 @@ test('the viewport table has an accessible name and a labelled search', async ({
 test('a sortable header reports aria-sort and sorts from the keyboard', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await openUsers(page)
 
@@ -83,22 +74,26 @@ test('the shell exposes a skip link and marks the active nav item', async ({
   )
   await expect(page.locator('main#hilos-main-content')).toBeVisible()
 
-  // No admin entry: this demo answers no admin identity (its browser context
-  // keeps the framework's deny-default), so the shell draws no way into a
-  // surface the page access gate would refuse. The demo wires that identity
-  // under HIL-553, and the aria-current assertion belongs with it.
+  // No admin entry for a plain visitor: the demo answers an admin identity now,
+  // and this visitor holds no grant, so the shell draws no way into a surface
+  // the page access gate would refuse anyway.
   await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+
+  // Granted, the same shell grows the entry — and marks it as the active nav
+  // item, which is the half of this test's subject the gear had to arrive for:
+  // aria-current is how assistive tech reads "you are here" off a nav.
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos')
+  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
 })
 
 test('each page titles the tab and announces the page on navigation', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await openUsers(page)
 

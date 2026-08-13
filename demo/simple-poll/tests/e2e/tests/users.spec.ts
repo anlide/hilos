@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoPage } from '../helpers/page'
+import { grantAdminToSelf } from '../helpers/adminGrant'
+import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own self-registered row is present, search filters
@@ -16,15 +17,23 @@ async function openUsers(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
+test('refuses the users admin to a visitor without the grant', async ({
+  page,
+}) => {
+  // The visitor here is not anonymous — the handshake maps the session cookie to
+  // a durable user row — it is a known user holding no grant. The access gate
+  // refuses the subscription outright rather than rendering an empty table, and
+  // the shell offers no way in: no gear to click.
+  await gotoPage(page, '/hilos/users', PAGE_REFUSED)
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+})
+
 test('lists users in the framework table and opens a detail page', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   let fullLoads = 0
   page.on('load', () => {
@@ -50,12 +59,7 @@ test('lists users in the framework table and opens a detail page', async ({
 })
 
 test('filters the users table from the search box', async ({ page }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -76,12 +80,7 @@ test('filters the users table from the search box', async ({ page }) => {
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -130,12 +129,7 @@ test.fixme('shows the connected user as online with a live session', async ({
 test('a rename in one tab hangs as pending in another until applied', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   const newName = `E2E Pending Rename ${Date.now()}`
 

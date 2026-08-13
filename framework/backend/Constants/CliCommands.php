@@ -6,6 +6,8 @@ namespace Hilos\Constants;
 
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\PageAccessGate;
 
 /**
  * CliCommands - CLI command name constants.
@@ -175,4 +177,23 @@ final class CliCommands
 
     /** @var string Command: Close the system again from the verification window, voiding every pass */
     public const string PROTECTED_MODE_CLOSE = 'protected-mode:close';
+
+    /**
+     * Grant a user the admin flag that opens the Hilos admin pages (operator).
+     *
+     * Not test-only: an installation with no admin has no way into `/hilos/*` at all
+     * ({@see PageAccessGate} closes those pages until a project answers
+     * {@see BrowserContext::isAdmin}), so this is how the first one is made. Doubles as
+     * the command-channel wire name routed to {@see AbstractHilosIndexAgent}, the same
+     * one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses: there is exactly
+     * one route for it. It reaches an agent rather than writing the row from the CLI
+     * because the grant also has to tell the user's live connections, and only a worker
+     * holds them.
+     *
+     * @var string Command: Grant a user the Hilos admin flag
+     */
+    public const string ADMIN_GRANT = 'admin:grant';
+
+    /** @var string Command: Take the Hilos admin flag away from a user */
+    public const string ADMIN_REVOKE = 'admin:revoke';
 }

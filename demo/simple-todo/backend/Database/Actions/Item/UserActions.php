@@ -62,4 +62,27 @@ final class UserActions extends DbActions
         $this->object->lastActivity = TimeHelper::getSqlDateTime();
         $this->object->sync();
     }
+
+    /**
+     * Sets the panel-admin flag on the current user item. Persists only on change.
+     *
+     * @param bool $admin New admin flag
+     * @throws ItemNotFoundForUpdateException When the user is not found (id is null)
+     * @throws HilosException On database error or other failure
+     */
+    public function setAdmin(bool $admin): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setAdmin (id is null)');
+        }
+
+        if ($this->object->admin === $admin) {
+            return;
+        }
+
+        $this->object->admin = $admin;
+        $this->object->sync();
+    }
 }

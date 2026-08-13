@@ -73,6 +73,7 @@ final class TodoAgent extends AbstractAgent
             new HandshakeResponseSignalData(
                 selfId: $userId,
                 selfName: $user->name,
+                selfAdmin: $user->admin,
             ),
         );
     }

@@ -73,6 +73,7 @@ final class PollAgent extends AbstractAgent
             new HandshakeResponseSignalData(
                 selfId: $userId,
                 selfName: $user->name,
+                selfAdmin: $user->admin,
             ),
         );
     }

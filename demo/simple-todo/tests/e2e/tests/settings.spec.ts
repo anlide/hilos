@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage } from '../helpers/page'
 
 // Hilos settings admin e2e for the todo demo: activating the framework settings
@@ -15,12 +16,7 @@ import { gotoPage } from '../helpers/page'
 test('lists settings in the framework table and filters from the search box', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   await gotoPage(page, '/hilos/settings')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -49,12 +45,7 @@ test('lists settings in the framework table and filters from the search box', as
 test('sets a custom value on a catalog key from its row and resets it, live', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  await grantAdminToSelf(page)
 
   let fullLoads = 0
   page.on('load', () => {

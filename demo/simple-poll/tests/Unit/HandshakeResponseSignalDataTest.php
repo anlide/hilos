@@ -15,14 +15,14 @@ final class HandshakeResponseSignalDataTest extends TestCase
 {
     public function testImplementsSignalDataInterface(): void
     {
-        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfAdmin: false);
 
         $this->assertInstanceOf(SignalDataInterface::class, $data);
     }
 
     public function testPayloadCarriesCurrentUserEntityFragment(): void
     {
-        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfAdmin: false);
 
         $this->assertSame(
             [
@@ -30,6 +30,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'currentUser' => [
                         'id' => 7,
                         'name' => 'User 7',
+                        'admin' => false,
                     ],
                 ],
             ],
@@ -39,12 +40,25 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testRoundtripPreservesPayload(): void
     {
-        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7');
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfAdmin: false);
 
         $restored = HandshakeResponseSignalData::fromArray($data->toArray());
 
         $this->assertSame(7, $restored->selfId);
         $this->assertSame('User 7', $restored->selfName);
+        $this->assertFalse($restored->selfAdmin);
+        $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    public function testPayloadCarriesTheAdminFlagOfAnAdmin(): void
+    {
+        // Asserted on a granted user as well as on the default: a flag that is written
+        // but never read back true would still pass every assertion above it.
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfAdmin: true);
+
+        $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+        $this->assertTrue($restored->selfAdmin);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 }

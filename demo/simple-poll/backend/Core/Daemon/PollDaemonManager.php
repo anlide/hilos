@@ -18,6 +18,7 @@ use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\ServerInterface;
 
@@ -78,6 +79,13 @@ final class PollDaemonManager extends DaemonManager
             new PollWebSocketServer(
                 Hilos::$env[EnvConstants::WEBSOCKET_HOST],
                 Hilos::$env->int(EnvConstants::WEBSOCKET_PORT),
+            ),
+            // Unconditional, like every other server here: without it not one framework CLI
+            // command reaches this daemon - not the admin grant, not ping, not the test
+            // levers - because the command channel is the only way in for all of them.
+            new CommandServer(
+                Hilos::$env[EnvConstants::COMMAND_HOST],
+                Hilos::$env->int(EnvConstants::COMMAND_PORT),
             ),
         ];
     }

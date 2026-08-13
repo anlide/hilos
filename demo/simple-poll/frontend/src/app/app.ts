@@ -10,10 +10,12 @@ import {
   HilosNotificationBell,
   HilosView,
   hilosAdminViews,
+  hilosSignal,
 } from '@hilos/angular'
 import { HilosPages } from '@hilos/core'
 
 import { connection } from './bootstrap/connection'
+import { currentUserIsAdmin } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import { About } from './views/about/about'
 import { License } from './views/license/license'
@@ -28,7 +30,7 @@ import { Users } from './views/hilos/users/users'
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosLayout, HilosNotificationBell, HilosView],
-  template: `<hilos-layout [connection]="connection">
+  template: `<hilos-layout [connection]="connection" [isAdmin]="isAdmin()">
     <span brand>Hilos Poll</span>
     <hilos-notification-bell user [connection]="connection" />
     <hilos-view [pages]="pages" />
@@ -36,6 +38,8 @@ import { Users } from './views/hilos/users/users'
 })
 export class App {
   protected readonly connection = connection
+
+  protected readonly isAdmin = hilosSignal(currentUserIsAdmin)
 
   // The page-key → view map HilosView renders from. Pages without a mapped view
   // (other routes land later) render nothing.

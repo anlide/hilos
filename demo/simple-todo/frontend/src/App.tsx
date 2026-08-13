@@ -9,11 +9,13 @@ import {
   HilosNotificationBell,
   HilosView,
   hilosAdminViews,
+  useSignal,
 } from '@hilos/react'
 import { HilosPages } from '@hilos/core'
 import type { ComponentType } from 'react'
 
 import { connection } from './bootstrap/connection'
+import { currentUserIsAdmin } from './bootstrap/session'
 import { PAGE_MAIN } from './pages/keys'
 import About from './views/About/About'
 import HilosUser from './views/Hilos/Users/User'
@@ -50,10 +52,12 @@ const pages: Record<string, ComponentType> = {
 }
 
 export default function App() {
+  const isAdmin = useSignal(currentUserIsAdmin)
   return (
     <HilosLayout
       connection={connection}
       brand="Hilos Todo"
+      isAdmin={isAdmin}
       user={<HilosNotificationBell connection={connection} />}
     >
       <HilosView pages={pages} />

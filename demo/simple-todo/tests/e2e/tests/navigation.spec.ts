@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoPage } from '../helpers/page'
+import { grantAdminToSelf } from '../helpers/adminGrant'
 
 // No-refresh navigation e2e: the shell's gear moves to the framework dashboard
 // and the brand moves back home through the core navigator (HilosRouter),
@@ -10,22 +10,16 @@ import { gotoPage } from '../helpers/page'
 test('navigates main <-> dashboard with no reload or reconnect', async ({
   page,
 }) => {
-  // TODO(HIL-553): parked 2026-08-08 — HIL-441 closed the framework admin
-  // surface by default, and this demo has no identity seam or admin grant yet,
-  // so this anonymous /hilos spec is denied a 401. Pre-existing test broken by
-  // the access inversion, not by its own subject; attempt 1. Un-parking is
-  // deleting these lines once HIL-553 lands the demo identity + grant.
-  test.fixme()
+  // The gear exists only for an admin, so the walk starts from the grant. It
+  // leaves the browser on the main page with the socket up — where this walk
+  // begins — so the load counter starts right after it and every later
+  // transition has to stay inside that same document.
+  await grantAdminToSelf(page)
 
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
   })
-
-  await gotoPage(page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('self-user')).toBeVisible()
-  const loadsAfterColdLoad = fullLoads
 
   // Gear -> dashboard.
   await page.getByTestId('nav-admin').click()
@@ -37,12 +31,12 @@ test('navigates main <-> dashboard with no reload or reconnect', async ({
   ).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/hilos')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  expect(fullLoads).toBe(loadsAfterColdLoad)
+  expect(fullLoads).toBe(0)
 
   // Brand -> home.
   await page.getByTestId('nav-brand').click()
   await expect(page.getByTestId('self-user')).toBeVisible()
   expect(new URL(page.url()).pathname).toBe('/')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  expect(fullLoads).toBe(loadsAfterColdLoad)
+  expect(fullLoads).toBe(0)
 })

@@ -10,7 +10,9 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\TableNotActivatedException;
@@ -23,6 +25,7 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Users\AdminCommandConstants;
 use Throwable;
 
 /**
@@ -60,12 +63,21 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * alone. The inspector is not among them: it is answered by the master, because a freeze
      * stops every agent but the initiator. The operator commands are not either: they belong to
      * the agent that runs real operations, and a command routes to exactly one agent type.
+     *
+     * The admin grant pair (HIL-553) rides it for a third reason on top of those: the flag it
+     * writes is a framework contract - the Hilos pages ask for it through
+     * {@see BrowserContext::isAdmin} - so every project that mounts those pages needs the same
+     * lever, and the only project-specific part is the row it writes, which
+     * {@see self::applyAdminGrant()} leaves to the project. Unlike its neighbours it is an
+     * operator command, so no test-only refusal guards it.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::NOTIFICATION_TEST_EMIT,
         CliCommands::PROTECTED_MODE_TEST_ENTER,
         CliCommands::PROTECTED_MODE_TEST_LEAVE,
         CliCommands::PROTECTED_MODE_TEST_OPEN,
+        CliCommands::ADMIN_GRANT,
+        CliCommands::ADMIN_REVOKE,
     ];
 
     /** Cron expression for the daily delivery-log prune (03:20). */
@@ -115,6 +127,12 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
             return;
         }
 
+        if ($data->command === CliCommands::ADMIN_GRANT || $data->command === CliCommands::ADMIN_REVOKE) {
+            $this->handleAdminGrant($data);
+
+            return;
+        }
+
         if ($data->command !== CliCommands::NOTIFICATION_TEST_EMIT) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
 
@@ -122,6 +140,73 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         }
 
         $this->handleNotificationEmit($data);
+    }
+
+    /**
+     * Writes one user's admin flag and reports the flag the row now carries (HIL-553).
+     *
+     * Both wire names land here and the flag comes from the payload rather than from the
+     * command name, so the two commands are one handler: grant and revoke differ in nothing
+     * but the boolean, and a second copy of the lookup would be a second place to get it
+     * wrong.
+     *
+     * The write itself belongs to the project ({@see self::applyAdminGrant()}), which is
+     * also where an unknown user is refused: the framework does not know the collection the
+     * project keeps its users in. Any failure from there - an unwired project, an unknown
+     * user, a database error - becomes one error reply, because a CLI parked on the command
+     * socket must learn the outcome rather than time out.
+     *
+     * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
+     */
+    private function handleAdminGrant(CommandRequestDTO $data): void
+    {
+        $userId = $data->payload[AdminCommandConstants::FIELD_USER_ID] ?? null;
+        if (!is_int($userId) || $userId <= 0) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Admin grant needs a positive userId',
+            ));
+
+            return;
+        }
+
+        $admin = (bool)($data->payload[AdminCommandConstants::FIELD_ADMIN] ?? false);
+
+        try {
+            $this->applyAdminGrant($userId, $admin);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            AdminCommandConstants::FIELD_USER_ID => $userId,
+            AdminCommandConstants::FIELD_ADMIN => $admin,
+        ]));
+    }
+
+    /**
+     * Writes the admin flag of one user - the project's half of the admin grant.
+     *
+     * A seam with a safe default rather than an abstract method: this class is the Hilos
+     * index agent of every project, and an abstract method would break the ones that mount
+     * the admin pages without granting from here. The default refuses, and the refusal
+     * reaches the operator as the command's error reply.
+     *
+     * An implementation owns both steps of the operation: it writes the flag through its own
+     * user actions, and it tells that user's live connections, because the shell learns what
+     * it may show from the session payload alone - and the format of that payload is the
+     * project's. Without the second step a fresh admin is shown no way in until they reload.
+     * An unknown user is the implementation's to refuse, by throwing.
+     *
+     * @param int $userId Target user id, already validated as positive
+     * @param bool $admin New admin flag
+     * @throws NotImplementedException When the project has not wired the grant
+     */
+    protected function applyAdminGrant(int $userId, bool $admin): void
+    {
+        throw new NotImplementedException('Admin grant is not wired in this project');
     }
 
     /**

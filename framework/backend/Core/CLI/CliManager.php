@@ -6,6 +6,8 @@ namespace Hilos\Core\CLI;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\AdminGrantCommand;
+use Hilos\Core\CLI\Commands\AdminRevokeCommand;
 use Hilos\Core\CLI\Commands\BackupTestAgeCommand;
 use Hilos\Core\CLI\Commands\BackupTestPruneCommand;
 use Hilos\Core\CLI\Commands\BackupTestRunScheduleCommand;
@@ -107,6 +109,8 @@ class CliManager
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
+        $this->commands[CliCommands::ADMIN_GRANT] = new AdminGrantCommand();
+        $this->commands[CliCommands::ADMIN_REVOKE] = new AdminRevokeCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();

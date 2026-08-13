@@ -23,6 +23,26 @@ use Throwable;
 final class TodoBrowserContext extends BrowserContext
 {
     /**
+     * Answers the ADMIN page-level gate from the demo's user storage: the durable
+     * user row's admin flag, the same flag the admin:grant command writes. Runs in
+     * whatever worker serves the gated page (the framework admin surface is served
+     * by the hilos index agent), so the read stays as defensive as
+     * {@see self::resolveCurrentUserId()} below: a missing row or any storage
+     * failure denies rather than opening the admin surface.
+     *
+     * @param int $userId Authenticated durable user id
+     * @return bool Whether this user may access ADMIN-level pages and actions
+     */
+    public function isAdmin(int $userId): bool
+    {
+        try {
+            return (Hilos::$db->users[$userId] ?? null)?->admin === true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Computes the demo's browser fields named by page/table configs.
      *
      * @param string $browserKey Browser table key
@@ -59,6 +79,24 @@ final class TodoBrowserContext extends BrowserContext
             $browserParams,
             $sources,
         );
+    }
+
+    /**
+     * Resolves the durable user id behind an accept key from the demo's runtime
+     * connection registry, where the handshake records the acceptKey -> user
+     * mapping. Lets the page access gate identify the subscriber; an unregistered
+     * accept key (a browser before any handshake) resolves to null and is denied.
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @return ?int Durable user id, or null when no connection is registered
+     */
+    protected function resolveCurrentUserId(string $acceptKey): ?int
+    {
+        try {
+            return Hilos::$rt?->connections[$acceptKey]?->userId;
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**

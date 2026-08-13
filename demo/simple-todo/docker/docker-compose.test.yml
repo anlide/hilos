@@ -63,6 +63,11 @@ services:
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:grant / admin:revoke speak.
+      # In-network only: the e2e runner shares the compose network, so no host
+      # port is published.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
       # Two monopolistic workers: one for the todo agent, one for the Hilos
       # dashboard's hilos_index agent the shell gear subscribes. The framework
       # default already gives two, but the demos prescribe it here (like chat)
@@ -161,6 +166,9 @@ services:
     working_dir: /hilos/demo/simple-todo/tests/e2e
     environment:
       BASE_URL: https://todo-nginx-test
+      # The admin-gated /hilos specs take the grant over the daemon command
+      # channel before they navigate (helpers/adminGrant.ts).
+      COMMAND_HOST: todo-daemon-test
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles:
