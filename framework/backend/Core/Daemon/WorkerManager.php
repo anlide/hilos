@@ -260,6 +260,7 @@ abstract class WorkerManager extends BaseManager
                 foreach ($this->agentManager->getAgents() as $agentId => $agent) {
                     $this->setCurrentAgentId($agent->getId());
                     $agent->onTick();
+                    $this->releaseExpiredDeferredActions($agentId);
 
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
@@ -1471,6 +1472,21 @@ abstract class WorkerManager extends BaseManager
 
         $this->pageSignalRouters[$agentId] = $this->createPageSignalRouter($agent);
         return $this->pageSignalRouters[$agentId];
+    }
+
+    /**
+     * Runs the actions one agent's page router parked and never got a throttle verdict for.
+     *
+     * Only a router that already exists is asked. A router is built the first time its agent
+     * routes something, so building one here - on every tick, for every agent - would stand
+     * up a page factory for agents that route nothing at all, to sweep a pool that cannot
+     * have anything in it.
+     *
+     * @param string $agentId Agent whose page router to sweep
+     */
+    private function releaseExpiredDeferredActions(string $agentId): void
+    {
+        ($this->pageSignalRouters[$agentId] ?? null)?->releaseExpiredDeferredActions();
     }
 
     /**

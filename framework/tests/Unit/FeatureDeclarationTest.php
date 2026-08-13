@@ -13,7 +13,7 @@ use ReflectionProperty;
 /**
  * Unit tests for the feature declaration predicate and the readers that serve a named facade.
  *
- * What is pinned here is the resolution rule, not the six real features: {@see
+ * What is pinned here is the resolution rule, not the real feature set: {@see
  * HilosFacade::hasFeature()} answers for the project facade that init() bound, not for the class
  * the call was written on. Framework gates call it bare - `Hilos::hasFeature(...)` - which loses
  * late static binding and would read the base declaration, an empty list, so a regression here

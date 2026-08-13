@@ -6,6 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
@@ -136,6 +137,25 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * other moment of a connection's life.
      */
     private array $pendingRotationDrops = [];
+
+    /**
+     * @var ?string Peer address this connection was accepted from, read once on the 101
+     *
+     * Held rather than asked for per frame: the peer of an established connection cannot
+     * change, and `socket_getpeername()` is a syscall the master would otherwise pay on
+     * every action frame it forwards.
+     */
+    private ?string $handshakeClientIp = null;
+
+    /**
+     * @var ?string Digest of this connection's session token, computed once on the 101
+     *
+     * The token itself deliberately never leaves the master: an action payload is written
+     * to the analytics store verbatim, and a session token recorded there would be a
+     * credential anyone reading analytics could replay. The digest identifies the browser
+     * for throttling exactly as well and cannot be presented as a session (HIL-420).
+     */
+    private ?string $sessionIdentity = null;
 
     /** @var bool Whether we are currently receiving a fragmented message */
     private bool $isReceivingFragmented = false;
@@ -990,11 +1010,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     ? $decoded[SignalPayloadConstants::FIELD_REQUEST_ID]
                     : null;
 
+                // Who is asking rides with the action itself. There is no accept-key→IP map
+                // anywhere to consult instead: the handshake is routed to the WebSocket
+                // lifecycle agent and the action to the page agent, so nothing the worker can
+                // reach knows both (HIL-420).
                 $dto = new WebSocketActionSignalDTO(
                     acceptKey: $acceptKey,
                     action: $actionName,
                     data: $actionData,
                     requestId: $requestId,
+                    clientIp: $this->handshakeClientIp,
+                    sessionIdentity: $this->sessionIdentity,
                 );
 
                 $userActionId = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
@@ -1316,6 +1342,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         string $sessionToken = '',
     ): void {
         $this->acceptKey = $acceptKey;
+        $this->handshakeClientIp = $clientIp;
+        $this->sessionIdentity = ThrottleIdentity::forSession($sessionToken);
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
         $analyticsToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)

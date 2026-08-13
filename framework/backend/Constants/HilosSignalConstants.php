@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
@@ -299,6 +300,40 @@ final class HilosSignalConstants
      * runtime collection. The single agent owns the in-flight-login pool it drains.
      */
     public const string HILOS_OAUTH_PENDING = 'hilos_oauth_pending';
+
+    // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
+    /**
+     * Worker dispatching a throttled action → the throttle agent: judge this attempt.
+     *
+     * The slow half of the two-step guard. The fast half needs nobody: a block already
+     * consummated is visible in the worker's own replica of the attempt counters, and the
+     * action is refused there. Everything else has to be counted, and only one process may
+     * count - the agent that owns the collection - so the worker parks the action and asks.
+     * Sent with {@see SignalSource::WORKER}, which an agent signal has accepted since
+     * HIL-567.
+     */
+    public const string HILOS_AUTH_THROTTLE_CHECK = 'hilos_auth_throttle_check';
+
+    /**
+     * Throttle agent → the page agent holding the deferred action: it may run, or it may not.
+     *
+     * Addressed by the request key the check carried, because that is what the waiting pool
+     * is keyed by. A verdict that never arrives is not an answer of "deny": the pool's own
+     * deadline runs the action, since a lost signal is this server's fault rather than
+     * evidence against the client.
+     */
+    public const string HILOS_AUTH_THROTTLE_VERDICT = 'hilos_auth_throttle_verdict';
+
+    /**
+     * Worker → throttle agent: this session authenticated, so stop holding its attempts
+     * against it.
+     *
+     * Sent where a session is promoted to a user, which is the one moment the framework can
+     * tell a suspicious sequence of attempts from a person who simply mistyped a password.
+     * Only the session scope is forgiven; the address the attempts came from keeps its count,
+     * because one sign-in behind a NAT says nothing about the rest of the crowd on it.
+     */
+    public const string HILOS_AUTH_THROTTLE_SUCCEEDED = 'hilos_auth_throttle_succeeded';
 
     // ── Hilos session rotation: session seam → initiating browser (WS_USER) ──
     /**

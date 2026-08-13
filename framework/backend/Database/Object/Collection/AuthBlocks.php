@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Constants\CliCommands;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -69,6 +70,37 @@ final class AuthBlocks extends Objects
     }
 
     /**
+     * Finds every block that has not yet lifted.
+     *
+     * The throttle agent's start reads this once and replays it into the runtime counters:
+     * the counters are transient and a restart empties them, so without this replay a
+     * process restart would be a way to have a block forgotten - the whole reason the block
+     * is durable while the counter is not.
+     *
+     * @param string $now Datetime a block must outlast to still be in force
+     * @return list<ObjectAuthBlock> Blocks still in force, in no particular order
+     * @throws DatabaseException If the database query fails
+     */
+    public function findActive(string $now): array
+    {
+        $blocks = [];
+        $rawWhere = '`' . EntityAuthBlock::blocked_until . '` > ?';
+        foreach (EntityAuthBlock::get($rawWhere, [$now]) as $entityAuthBlock) {
+            if ($entityAuthBlock->id === null) {
+                continue;
+            }
+
+            if (!isset($this->objects[$entityAuthBlock->id])) {
+                $this->objects[$entityAuthBlock->id] = ObjectAuthBlock::fromEntity($entityAuthBlock);
+            }
+
+            $blocks[] = $this->objects[$entityAuthBlock->id];
+        }
+
+        return $blocks;
+    }
+
+    /**
      * Records (upserts) the durable block for a (scope, identity, action) triple.
      *
      * Escalation write path: the throttle service computes the ladder `level`
@@ -112,6 +144,104 @@ final class AuthBlocks extends Objects
         $this->objects[$id] = $block;
 
         return $block;
+    }
+
+    /**
+     * Deletes the blocks that lifted before a given moment, reporting how many rows went.
+     *
+     * A served block is read by nothing: {@see findActive()} passes over it, and the counter
+     * it belonged to has long been swept. Keeping it would mean a table that only ever grows,
+     * one row per key ever blocked.
+     *
+     * @param string $before Datetime a block must have lifted before to be deleted
+     * @return int Number of blocks deleted
+     * @throws DatabaseException If the lookup or delete query fails
+     */
+    public function clearServed(string $before): int
+    {
+        $deleted = 0;
+        $column = '`' . EntityAuthBlock::blocked_until . '`';
+        // The null half is garbage by the same rule: a row that names no moment is never replayed either.
+        $rawWhere = "({$column} IS NULL OR {$column} < ?)";
+        foreach (EntityAuthBlock::get($rawWhere, [$before]) as $entityAuthBlock) {
+            $this->forget($entityAuthBlock);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Deletes every stored block of one key, on every action, reporting how many rows went.
+     *
+     * The durable half of what a successful authentication forgives a session. Without it a
+     * block the session collected on some other action would sit in the table unmatched by
+     * any counter, and the next agent start would replay it back into a session that has
+     * since proved itself.
+     *
+     * @param string $scope Throttle scope (see ThrottleScope)
+     * @param string $identity Throttle identity (IP or session-token hash)
+     * @return int Number of blocks deleted
+     * @throws DatabaseException If the lookup or delete query fails
+     */
+    public function clearIdentity(string $scope, string $identity): int
+    {
+        if ($scope === '' || $identity === '') {
+            return 0;
+        }
+
+        $deleted = 0;
+        $blocks = EntityAuthBlock::get([
+            EntityAuthBlock::scope => $scope,
+            EntityAuthBlock::identity => $identity,
+        ]);
+        foreach ($blocks as $entityAuthBlock) {
+            $this->forget($entityAuthBlock);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Deletes every stored block, reporting how many rows went.
+     *
+     * The durable half of the test-only reset ({@see CliCommands::THROTTLE_TEST_RESET}),
+     * driven through the throttle agent like every other write here. A block outliving the
+     * test that provoked it would refuse whatever runs next from the same address, which is
+     * a failure the next test cannot explain from anything it did itself.
+     *
+     * @return int Number of blocks deleted
+     * @throws DatabaseException If the lookup or delete query fails
+     */
+    public function clearAll(): int
+    {
+        $deleted = 0;
+        foreach (EntityAuthBlock::getAll() as $entityAuthBlock) {
+            $this->forget($entityAuthBlock);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Deletes one stored row and drops whatever this collection held for it.
+     *
+     * @param EntityAuthBlock $entityAuthBlock Row to delete
+     * @throws DatabaseException If the delete query fails
+     */
+    private function forget(EntityAuthBlock $entityAuthBlock): void
+    {
+        $id = $entityAuthBlock->id;
+        $block = $id !== null && isset($this->objects[$id])
+            ? $this->objects[$id]
+            : ObjectAuthBlock::fromEntity($entityAuthBlock);
+
+        $block->delete();
+        if ($id !== null) {
+            unset($this->objects[$id]);
+        }
     }
 
     /**

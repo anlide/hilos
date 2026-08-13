@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Hilos;
 
 /**
@@ -19,6 +20,10 @@ use Hilos\Hilos;
  * The line between one case and two is drawn where the real projects diverge: the chat demo
  * delivers notifications over channels while the poll and todo demos only store them, so
  * delivery is its own case. Everything else is taken whole or not at all.
+ *
+ * A case is a unit of activation, not a switch for turning behavior off at a running
+ * installation: whether the throttle layer actually refuses anything is an env value, the
+ * same division {@see LogsFeature} draws between carrying log rotation and running it.
  *
  * Node freeze is deliberately absent and must not be added here: it is not optional surface but
  * the safeguard that has to exist wherever a destructive operation can be started, which is why
@@ -44,4 +49,7 @@ enum HilosFeature: string
 
     /** Delivery of notifications over channels (mail, SMS, push) on top of NOTIFICATIONS. */
     case NOTIFICATION_DELIVERY = 'notification_delivery';
+
+    /** Anti-abuse throttling of expensive auth actions: window counters, durable blocks and their agent. */
+    case AUTH_THROTTLE = 'auth_throttle';
 }

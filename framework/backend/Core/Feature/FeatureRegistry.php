@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature;
 
+use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
 use Hilos\Core\Feature\Definition\HilosUsersFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
@@ -88,6 +89,7 @@ class FeatureRegistry
             new LogsFeature(),
             new NotificationsFeature(),
             new NotificationDeliveryFeature(),
+            new AuthThrottleFeature(),
         ];
     }
 }

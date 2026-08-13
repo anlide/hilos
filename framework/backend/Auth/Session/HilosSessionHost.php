@@ -6,6 +6,7 @@ namespace Hilos\Auth\Session;
 
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
+use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -245,6 +246,11 @@ trait HilosSessionHost
         if ($session === null) {
             return;
         }
+
+        // Told before the rotation, and with the token the attempts were counted under: the
+        // throttle knows this session by what the browser presented, not by what it is about
+        // to be handed (HIL-420).
+        (new ThrottleGate())->reportAuthenticated($sessionToken);
 
         $rotated = $initiatorAcceptKey === null ? null : $this->rotateSessionToken($session, $userId);
         if ($rotated === null) {

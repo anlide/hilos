@@ -22,6 +22,9 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
+use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
+use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
@@ -305,6 +308,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             ChatSignalConstants::OAUTH_BIND_SESSION => AgentType::CHAT,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AgentType::CHAT,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => AgentType::CHAT,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -315,6 +319,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SMS_DELIVER => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_SMS_SEND => AgentType::HILOS_SMS,
             HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -338,6 +344,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::PROTECTED_MODE_PASS => AgentType::HILOS_BACKUP,
             CliCommands::PROTECTED_MODE_OPEN => AgentType::HILOS_BACKUP,
             CliCommands::PROTECTED_MODE_CLOSE => AgentType::HILOS_BACKUP,
+            CliCommands::THROTTLE_TEST_RESET => AgentType::HILOS_AUTH_THROTTLE,
         ], Hilos::getCommandAgentRoutes());
         $this->assertSame([], Hilos::getCommandDtoRoutes());
     }
@@ -381,6 +388,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
             ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -391,6 +399,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SMS_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_SMS_SEND => SmsSendSignalData::class,
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }

@@ -33,7 +33,7 @@ use PHPUnit\Framework\TestCase;
  * The features are synthetic, as in {@see FeatureActivationValidatorTest}: the registry seam
  * hands the validator two definitions of its own, so what is under test is how a requirement is
  * answered - a migration, a registered command, a mounted presence source - rather than what the
- * six real features ask for, which each demo's own topology test asserts against its own layout.
+ * the real features ask for, which each demo's own topology test asserts against its own layout.
  *
  * The migrations are real files in a temporary directory, because the thing being verified is
  * exactly that a directory of SQL is read correctly.

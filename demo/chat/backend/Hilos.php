@@ -130,6 +130,8 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosPageRouteParams;
@@ -203,6 +205,7 @@ final class Hilos extends \Hilos\Hilos
         HilosFeature::LOGS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
+        HilosFeature::AUTH_THROTTLE,
     ];
 
     public const array PAGES = [
@@ -352,6 +355,11 @@ final class Hilos extends \Hilos\Hilos
         LogRotationAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogRotationAgent::class,
             AgentRegistryKey::DAEMON => LogRotationAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => true,
+        ],
+        AuthThrottleAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AuthThrottleAgent::class,
+            AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
             AgentRegistryKey::PER_NODE => true,
         ],
     ];

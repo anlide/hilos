@@ -88,6 +88,66 @@ final class AuthBlocks extends DbCollection
     }
 
     /**
+     * Finds every block that has not yet lifted.
+     *
+     * @param string $now Datetime a block must outlast to still be in force
+     * @return list<AuthBlock> Blocks still in force, in no particular order
+     * @throws DatabaseException On database error while reading the blocks
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     */
+    public function findActive(string $now): array
+    {
+        $blocks = [];
+        foreach ($this->objectCollection->findActive($now) as $objectAuthBlock) {
+            $id = $objectAuthBlock->id;
+            /** @var ?AuthBlock $block */
+            $block = $id === null ? null : $this->getItemForKey($id);
+            if ($block !== null) {
+                $blocks[] = $block;
+            }
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * Deletes every stored block, reporting how many rows went.
+     *
+     * @return int Number of blocks deleted
+     * @throws DatabaseException On database error while deleting the blocks
+     */
+    public function clearAll(): int
+    {
+        return $this->objectCollection->clearAll();
+    }
+
+    /**
+     * Deletes the blocks that lifted before a given moment, reporting how many rows went.
+     *
+     * @param string $before Datetime a block must have lifted before to be deleted
+     * @return int Number of blocks deleted
+     * @throws DatabaseException On database error while deleting the blocks
+     */
+    public function clearServed(string $before): int
+    {
+        return $this->objectCollection->clearServed($before);
+    }
+
+    /**
+     * Deletes every stored block of one key, on every action, reporting how many rows went.
+     *
+     * @param string $scope Throttle scope (see ThrottleScope)
+     * @param string $identity Throttle identity (IP or session-token hash)
+     * @return int Number of blocks deleted
+     * @throws DatabaseException On database error while deleting the blocks
+     */
+    public function clearIdentity(string $scope, string $identity): int
+    {
+        return $this->objectCollection->clearIdentity($scope, $identity);
+    }
+
+    /**
      * Clears the durable block for a (scope, identity, action) triple.
      *
      * Reset write path: delegates to the object collection's

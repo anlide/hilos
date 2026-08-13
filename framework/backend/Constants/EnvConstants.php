@@ -246,6 +246,44 @@ enum EnvConstants
     /** @var string Minimum seconds between two issued codes for one (type, identifier). Default 60. */
     case HILOS_VERIFICATION_RESEND_COOLDOWN_SEC;
 
+    // ── Auth throttle (anti-abuse on expensive auth actions) ─────────────────
+
+    /**
+     * Whether the throttle layer refuses anything (HIL-420). Default true. Set
+     * false to let every guarded action through - which is what the test
+     * environment does, since counting attempts across a suite makes each test
+     * depend on the ones that ran before it.
+     */
+    case HILOS_AUTH_THROTTLE_ENABLED;
+
+    /** @var string Length in seconds of the fixed window attempts are counted in. Default 60. */
+    case HILOS_AUTH_THROTTLE_WINDOW;
+
+    /** @var string Attempts one session may make on one action per window. Default 10. */
+    case HILOS_AUTH_THROTTLE_MAX_SESSION;
+
+    /**
+     * Attempts one IP may make on one action per window. Default 30: higher than
+     * the session limit because an IP is shared by everyone behind a NAT.
+     */
+    case HILOS_AUTH_THROTTLE_MAX_IP;
+
+    /**
+     * Block durations in seconds, comma-separated, one per escalation step
+     * (HIL-420). Default `30,120,600,3600`. A key that breaches again while it
+     * is already at the last step stays there - the ladder does not run off its
+     * own end.
+     */
+    case HILOS_AUTH_THROTTLE_STEPS;
+
+    /**
+     * Milliseconds a deferred action waits for the agent's verdict before it is
+     * executed anyway. Default 1000. A verdict that never arrives is a fault of
+     * this server, not evidence against the client; blocks already consummated
+     * do not leak through it, since those are refused by the fast path.
+     */
+    case HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS;
+
     // ── Backup ───────────────────────────────────────────────────────────────
 
     /**

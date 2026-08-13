@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The features under test are synthetic: the registry seam hands the validator two definitions
  * of its own, so the tests state what the validator does with a requirement rather than what the
- * six real features happen to require today - the real requirements are asserted per project, by
+ * the real features happen to require today - the real requirements are asserted per project, by
  * each demo's own topology test.
  */
 final class FeatureActivationValidatorTest extends TestCase

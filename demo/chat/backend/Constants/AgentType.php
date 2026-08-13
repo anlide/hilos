@@ -58,4 +58,7 @@ final class AgentType
 
     /** @var string Hilos web-push delivery agent type (indexed pool, cluster-global) */
     public const string HILOS_PUSH = HilosAgentType::HILOS_PUSH;
+
+    /** @var string Hilos anti-abuse throttle agent type (per node: the counters are node-local) */
+    public const string HILOS_AUTH_THROTTLE = HilosAgentType::HILOS_AUTH_THROTTLE;
 }

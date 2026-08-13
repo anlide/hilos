@@ -57,7 +57,7 @@ final class BackupFeature extends FeatureDefinition
     }
 
     /**
-     * The one of the six features that carries runtime state, declared beside the mount it describes.
+     * Carries runtime state, declared beside the mount it describes.
      *
      * @return bool Always true
      */

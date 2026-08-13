@@ -38,6 +38,7 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestInspectCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
 use Hilos\Database\DatabaseException;
@@ -105,6 +106,7 @@ class CliManager
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
         $this->commands[CliCommands::USER_TEST_SEED] = new UserTestSeedCommand();
         $this->commands[CliCommands::NOTIFICATION_TEST_EMIT] = new NotificationTestEmitCommand();
+        $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();

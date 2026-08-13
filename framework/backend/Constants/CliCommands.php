@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 
 /**
@@ -96,6 +97,18 @@ final class CliCommands
      * @var string Command: Emit one notification to a user through the live daemon (test-only)
      */
     public const string NOTIFICATION_TEST_EMIT = 'test:notification:emit';
+
+    /**
+     * Forget every anti-abuse counter and stored block (test-only).
+     *
+     * Doubles as the command-channel wire name routed to {@see AuthThrottleAgent}, the same
+     * one-string arrangement {@see self::NOTIFICATION_TEST_EMIT} uses: there is exactly one
+     * route for it. It has to reach the agent rather than clear the table from the CLI
+     * because the counters are the agent's runtime state, which no other process holds.
+     *
+     * @var string Command: Forget every anti-abuse counter and stored block (test-only)
+     */
+    public const string THROTTLE_TEST_RESET = 'test:throttle:reset';
 
     /**
      * Print this node's protected-mode snapshot as JSON (test-only).

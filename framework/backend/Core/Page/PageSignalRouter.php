@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
@@ -20,6 +25,7 @@ use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
@@ -48,6 +54,20 @@ class PageSignalRouter
     /** Signal-to-page route config for non-action routed signals. */
     private SignalRouteConfig $signalRoutes;
 
+    /** The anti-abuse guard's worker half, asked before a throttled action runs. */
+    private ThrottleGate $throttleGate;
+
+    /**
+     * @var array<string, DeferredAction> Actions waiting on a throttle verdict, by request key
+     *
+     * Lives on the router of one page agent, which is where both ends of the wait meet: the
+     * action was dispatched here, and the verdict is addressed back to this same agent.
+     */
+    private array $deferredActions = [];
+
+    /** @var int Serial that makes each parked action's request key unique in this router */
+    private int $deferredSequence = 0;
+
     /**
      * Creates page signal router with factory and action routes.
      *
@@ -61,6 +81,7 @@ class PageSignalRouter
         ?SignalRouteConfig $signalRoutes = null,
     ) {
         $this->signalRoutes = $signalRoutes ?? new SignalRouteConfig();
+        $this->throttleGate = new ThrottleGate();
     }
 
     /**
@@ -234,6 +255,11 @@ class PageSignalRouter
      * onActionException(), since the DTO that hook is handed is the very thing
      * that could not be built; an untracked action then leaves only the log line.
      *
+     * An action a page declared throttled is judged before any of that: refused here
+     * when this worker's replica already shows a block, otherwise parked until the
+     * throttle agent answers ({@see self::deferForThrottleVerdict()}). A parked action
+     * resumes into the identical steps, so nothing below distinguishes it.
+     *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      */
@@ -256,56 +282,254 @@ class PageSignalRouter
         try {
             // Create typed DTO via PageFactory
             $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
-            $this->assertPageAccessLevel($pageInstance, $data->acceptKey);
-            $this->assertActionAuthorized($pageInstance, $data->action, $data->acceptKey);
-            $pageInstance->beginActionDispatch();
-            $reply = $pageInstance->onAction($data->acceptKey, $data->action, $dto);
-            if ($data->requestId !== null) {
-                $pageInstance->sendActionSuccess($data->acceptKey, $data->action, $data->requestId, $reply);
-            } elseif ($reply !== null) {
-                // An untracked action has no requestId to correlate a reply to, so a
-                // returned reply cannot be delivered. Almost always an integration
-                // mistake on an answering action; drop it and log rather than fail.
-                Logger::warning(
-                    "Action reply dropped: untracked action returned a reply, "
-                        . "page={$page}, action={$data->action}",
-                );
+            if ($this->deferForThrottleVerdict($pageInstance, $data, $dto)) {
+                return;
             }
+            $this->runAction($pageInstance, $data->acceptKey, $data->action, $dto, $data->requestId);
         } catch (Throwable $e) {
-            // The client is told an action failed, never why: the frontend shows a
-            // generic message and deliberately does not surface the backend reason.
-            // Without this log the failure exists nowhere on the server either, so
-            // a broken action is undiagnosable from the outside.
-            Logger::error(
-                "Page action failed: page={$page}, action={$data->action}, "
-                    . 'exception=' . $e::class . ', message=' . $e->getMessage(),
-                [
-                    ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
-                    ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
-                    ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
-                ],
-            );
+            $this->failAction($pageInstance, $data->acceptKey, $data->action, $dto, $data->requestId, $e);
+        }
+    }
 
-            $errorCode = match (true) {
-                $e instanceof ActionRateLimitedException => $e->errorCode,
-                $e instanceof ActionUnauthorizedException => $e->errorCode,
-                $e instanceof ActionForbiddenException => $e->errorCode,
-                default => null,
-            };
-            $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
-            if ($data->requestId !== null) {
-                $pageInstance->sendActionFail(
-                    $data->acceptKey,
-                    $data->action,
-                    $data->requestId,
-                    self::clientReason($e),
-                    $errorCode,
-                    $retryAfter,
-                );
-            } elseif ($dto !== null) {
-                $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+    /**
+     * Runs one action's guards and handler, and answers a tracked caller.
+     *
+     * Shared by the straight-through dispatch and the resumed one, so a throttled action
+     * meets the same guards in the same order as any other.
+     *
+     * @param AbstractPage $page Resolved page handler
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Action name
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @param ?string $requestId Client-minted request id, or null for an untracked action
+     * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
+     * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
+     * @throws Throwable Whatever the action handler raises
+     */
+    private function runAction(
+        AbstractPage $page,
+        string $acceptKey,
+        string $action,
+        ActionPayloadDTO $dto,
+        ?string $requestId,
+    ): void {
+        $this->assertPageAccessLevel($page, $acceptKey);
+        $this->assertActionAuthorized($page, $action, $acceptKey);
+        $page->beginActionDispatch();
+        $reply = $page->onAction($acceptKey, $action, $dto);
+        if ($requestId !== null) {
+            $page->sendActionSuccess($acceptKey, $action, $requestId, $reply);
+            return;
+        }
+
+        if ($reply !== null) {
+            // An untracked action has no requestId to correlate a reply to, so a
+            // returned reply cannot be delivered. Almost always an integration
+            // mistake on an answering action; drop it and log rather than fail.
+            Logger::warning(
+                "Action reply dropped: untracked action returned a reply, "
+                    . "page={$page->getPageName()}, action={$action}",
+            );
+        }
+    }
+
+    /**
+     * Reports one action's failure to its caller and to the log.
+     *
+     * @param AbstractPage $page Resolved page handler
+     * @param string $acceptKey Acting connection accept key
+     * @param string $action Action name
+     * @param ?ActionPayloadDTO $dto Parsed action payload, or null when the payload is what failed
+     * @param ?string $requestId Client-minted request id, or null for an untracked action
+     * @param Throwable $e Failure to report
+     */
+    private function failAction(
+        AbstractPage $page,
+        string $acceptKey,
+        string $action,
+        ?ActionPayloadDTO $dto,
+        ?string $requestId,
+        Throwable $e,
+    ): void {
+        // The client is told an action failed, never why: the frontend shows a
+        // generic message and deliberately does not surface the backend reason.
+        // Without this log the failure exists nowhere on the server either, so
+        // a broken action is undiagnosable from the outside.
+        Logger::error(
+            "Page action failed: page={$page->getPageName()}, action={$action}, "
+                . 'exception=' . $e::class . ', message=' . $e->getMessage(),
+            [
+                ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+                ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+                ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+            ],
+        );
+
+        $errorCode = match (true) {
+            $e instanceof ActionRateLimitedException => $e->errorCode,
+            $e instanceof ActionUnauthorizedException => $e->errorCode,
+            $e instanceof ActionForbiddenException => $e->errorCode,
+            default => null,
+        };
+        $retryAfter = $e instanceof ActionRateLimitedException ? $e->retryAfter : null;
+        if ($requestId !== null) {
+            $page->sendActionFail(
+                $acceptKey,
+                $action,
+                $requestId,
+                self::clientReason($e),
+                $errorCode,
+                $retryAfter,
+            );
+            return;
+        }
+
+        if ($dto !== null) {
+            $page->onActionException($acceptKey, $action, $dto, $e);
+        }
+    }
+
+    /**
+     * Decides whether a throttled action may go straight through, and parks it when it may not.
+     *
+     * Three answers, in the order the plan fixes them: a key this worker already sees
+     * blocked refuses at once and never reaches the agent; a keyed action that is not
+     * blocked is parked and asked about; anything the layer does not cover - the feature
+     * off, the action unlisted, no key to count against - passes untouched. Parking happens
+     * before the access-level and action-auth guards on purpose: brute force must not be
+     * able to learn from the guards which accounts exist, and a refusal it never waits for
+     * is a refusal it can repeat.
+     *
+     * @param AbstractPage $page Resolved page handler
+     * @param WebSocketActionSignalDTO $data Action being dispatched
+     * @param ActionPayloadDTO $dto Parsed action payload, held for the resumed dispatch
+     * @return bool True when the action has been parked and must not run now
+     * @throws ActionRateLimitedException When a block on one of this action's keys is already in force
+     */
+    private function deferForThrottleVerdict(
+        AbstractPage $page,
+        WebSocketActionSignalDTO $data,
+        ActionPayloadDTO $dto,
+    ): bool {
+        if (!in_array($data->action, $page::THROTTLED_ACTIONS, true) || !$this->throttleGate->enabled()) {
+            return false;
+        }
+
+        $requestKey = $data->acceptKey . '#' . ++$this->deferredSequence;
+        $checks = $this->throttleGate->checksFor($data, $requestKey, $page->getAgent()->getAgentSignalSource());
+        if ($checks === []) {
+            return false;
+        }
+
+        $now = microtime(true);
+        foreach ($checks as $check) {
+            $blockedSeconds = $this->throttleGate->blockedSeconds($check, $now);
+            if ($blockedSeconds !== null) {
+                throw new ActionRateLimitedException($blockedSeconds);
             }
         }
+
+        $this->deferredActions[$requestKey] = new DeferredAction(
+            page: $page,
+            acceptKey: $data->acceptKey,
+            action: $data->action,
+            dto: $dto,
+            requestId: $data->requestId,
+            deadline: $now + $this->throttleGate->verdictTimeoutSeconds(),
+            awaitingVerdicts: count($checks),
+        );
+
+        foreach ($checks as $check) {
+            $this->throttleGate->requestVerdict($check);
+        }
+
+        return true;
+    }
+
+    /**
+     * Applies one throttle verdict to the action waiting on it.
+     *
+     * An action is keyed per scope and so waits on one verdict per key: the first refusal
+     * settles it, and it runs only once every key has allowed it. A verdict for a key this
+     * router no longer holds is not an error - its action was already refused by a sibling
+     * verdict or released by the deadline - so it is dropped in silence.
+     *
+     * @param ThrottleVerdictSignalData $verdict Verdict from the throttle agent
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     */
+    private function applyThrottleVerdict(ThrottleVerdictSignalData $verdict): void
+    {
+        $entry = $this->deferredActions[$verdict->requestKey] ?? null;
+        if ($entry === null) {
+            return;
+        }
+
+        $refusalSeconds = $this->throttleGate->refusalSeconds($verdict);
+        if ($refusalSeconds === null && --$entry->awaitingVerdicts > 0) {
+            return;
+        }
+
+        unset($this->deferredActions[$verdict->requestKey]);
+        $this->resumeDeferredAction($entry, $refusalSeconds);
+    }
+
+    /**
+     * Runs every parked action whose verdict did not arrive in time.
+     *
+     * Called once per worker tick. A missing verdict is this server's failure - a dropped
+     * signal, a stopped agent - and not evidence against the client, so the action runs.
+     * Blocks already in force do not leak out through this door: the fast path refuses
+     * those without ever parking anything.
+     *
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     */
+    public function releaseExpiredDeferredActions(): void
+    {
+        if ($this->deferredActions === []) {
+            return;
+        }
+
+        $now = microtime(true);
+        foreach ($this->deferredActions as $requestKey => $entry) {
+            if ($entry->deadline > $now) {
+                continue;
+            }
+
+            unset($this->deferredActions[$requestKey]);
+            Logger::error(
+                "Throttle verdict timed out, running the action anyway: "
+                    . "page={$entry->page->getPageName()}, action={$entry->action}, acceptKey={$entry->acceptKey}",
+            );
+            $this->resumeDeferredAction($entry, null);
+        }
+    }
+
+    /**
+     * Finishes a parked action's dispatch, either into the handler or into a refusal.
+     *
+     * The connection is stamped back onto the execution frame first: the verdict arrived on
+     * a signal of its own, so without this the resumed handler's writes would belong to
+     * nobody and the client's own table deltas would not apply at once. The refusal is
+     * raised inside that frame too, so a parked action reports its failure with the same
+     * connection behind it as one that was never parked.
+     *
+     * @param DeferredAction $entry Action that was waiting
+     * @param ?int $refusalSeconds Seconds the caller must wait, or null when the action may run
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     */
+    private function resumeDeferredAction(DeferredAction $entry, ?int $refusalSeconds): void
+    {
+        ExecutionContext::withAcceptKey($entry->acceptKey, function () use ($entry, $refusalSeconds): void {
+            try {
+                if ($refusalSeconds !== null) {
+                    throw new ActionRateLimitedException($refusalSeconds);
+                }
+
+                $this->runAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId);
+            } catch (Throwable $e) {
+                $this->failAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $e);
+            }
+        });
     }
 
     /**
@@ -399,14 +623,36 @@ class PageSignalRouter
     /**
      * Dispatch agent-to-agent signal to its configured page handler.
      *
+     * The throttle verdict is answered here rather than by a page: it belongs to an action
+     * this router parked, and no page ever sees that the action waited at all.
+     *
      * @param AgentSignalData $data Wrapped agent signal payload
      * @param string $source Signal source
      * @param string $name Signal name
      * @throws AgentException
+     * @throws FramePopOrderException When the execution frame is unwound out of order
      * @throws ValidationException When a validation failure cannot be mapped to an action error
      */
     public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
     {
+        if ($name === HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT) {
+            if ($data->data instanceof ThrottleVerdictSignalData) {
+                $this->applyThrottleVerdict($data->data);
+                return;
+            }
+
+            // The payload arrives typed only when the receiving agent declares the verdict
+            // route with its DTO in AGENT_SIGNALS. Without that declaration every throttled
+            // action on this agent's pages waits out its deadline and then runs, which is a
+            // guard that quietly does nothing - so the omission is named.
+            Logger::error(
+                HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT
+                    . ' arrived as ' . $data->data::class . '; the page agent must declare it in AGENT_SIGNALS'
+                    . ' with ' . ThrottleVerdictSignalData::class,
+            );
+            return;
+        }
+
         $pageInstance = $this->resolveSignalPage(SignalTypeConstants::AGENT_SIGNAL, $name);
         if ($pageInstance === null) {
             return;

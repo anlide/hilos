@@ -27,6 +27,8 @@ use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -61,10 +63,16 @@ final class ChatAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
+    // The throttle verdict is declared here because routing picks its destination from
+    // whoever declared it, and this is the agent whose page dispatches the throttled
+    // actions - it is the router beneath this agent that holds the parked action and
+    // resumes it. Declaring it in a second agent of this project would take the verdict
+    // away from the pool waiting for it (HIL-420).
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
         ChatSignalConstants::OAUTH_BIND_SESSION => OAuthBindSessionSignalData::class,
         ChatSignalConstants::ACCOUNT_MERGE_REQUEST => AccountMergeSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
     ];
 
     public const array AGENT_COMMANDS = [
@@ -859,6 +867,10 @@ final class ChatAgent extends AbstractAgent
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
+            // The throttle verdict is addressed to this agent only to reach the page router
+            // underneath it, which is what holds the action waiting on it; the agent itself
+            // has nothing to do with it.
+            case HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT:
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
                 if (!$data->data instanceof BotMessageSignalData) {

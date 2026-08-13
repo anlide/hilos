@@ -138,6 +138,27 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::PASSKEY_REGISTER_CONFIRM,
     ];
 
+    // Every anonymous-reachable door into an account is throttled (HIL-420), and the list
+    // is exactly that: the ones that guess a secret (LOGIN, the two code confirmations,
+    // the passkey login confirmation) and the ones that make the server spend something on
+    // a stranger's say-so - an email, an SMS, a password hash, a registration reservation.
+    // The authenticated actions above are deliberately absent: reaching them already costs
+    // an account, so the session, not the window, is what limits them. Reads are absent for
+    // the same reason in reverse - nothing behind them is worth guessing at.
+    public const array THROTTLED_ACTIONS = [
+        ChatSignalConstants::LOGIN,
+        ChatSignalConstants::REGISTER,
+        ChatSignalConstants::REQUEST_PASSWORD_RESET,
+        ChatSignalConstants::CONFIRM_PASSWORD_RESET,
+        ChatSignalConstants::REQUEST_SMS_CODE,
+        ChatSignalConstants::CONFIRM_SMS_CODE,
+        ChatSignalConstants::REQUEST_MAGIC_LINK,
+        ChatSignalConstants::CONFIRM_MAGIC_LINK,
+        ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
+        ChatSignalConstants::CONFIRM_REGISTER,
+        ChatSignalConstants::PASSKEY_LOGIN_CONFIRM,
+    ];
+
     public const array SIGNALS = [
         SignalTypeConstants::FRAME_BINARY => [],
         SignalTypeConstants::AGENT_SIGNAL => [

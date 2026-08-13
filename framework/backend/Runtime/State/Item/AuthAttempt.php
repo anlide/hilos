@@ -18,8 +18,10 @@ use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
  * client IP or the sha256 of the session token.
  *
  * A row tracks how many attempts landed inside the current fixed window
- * ({@see count} since {@see windowStartedAt}) and the escalation {@see level}
- * reached so far. The throttle service owns the window/ladder arithmetic; this
+ * ({@see count} since {@see windowStartedAt}), the escalation {@see level}
+ * reached so far, and {@see blockedUntil} - the replica of the durable block's
+ * moment, so a worker can refuse a blocked key without reading the database or
+ * waiting on a verdict. The throttle agent owns the window/ladder arithmetic; this
  * row is a plain typed carrier that syncs across workers so counters seen by a
  * connection on one worker are visible to the same key's connections on another
  * (connections of one IP fan out to different workers). It never touches the DB.
@@ -38,6 +40,7 @@ final class AuthAttempt extends RtState
     public const string count = 'count';
     public const string windowStartedAt = 'windowStartedAt';
     public const string level = 'level';
+    public const string blockedUntil = 'blockedUntil';
 
     /** Throttle scope, one of {@see ThrottleScope} (id part). */
     private(set) string $scope = ThrottleScope::IP;
@@ -56,6 +59,16 @@ final class AuthAttempt extends RtState
 
     /** Escalation level reached so far; drives the block-duration ladder. */
     public int $level = 0;
+
+    /**
+     * Unix seconds the consummated block lifts, or null when this key is not blocked.
+     *
+     * The replica of `hilos_auth_block`.`blocked_until` that makes the guard's fast
+     * path possible: a worker refuses a blocked key off its own RT replica, without a
+     * database read and without asking the agent at all. The durable row stays the
+     * truth - this field is loaded from it when the agent starts.
+     */
+    public ?float $blockedUntil = null;
 
     /**
      * Composes the runtime row id from a throttle key triple.
@@ -101,6 +114,8 @@ final class AuthAttempt extends RtState
         $instance->count = (int)($row[self::count] ?? 0);
         $instance->windowStartedAt = (float)($row[self::windowStartedAt] ?? 0.0);
         $instance->level = (int)($row[self::level] ?? 0);
+        $blockedUntil = $row[self::blockedUntil] ?? null;
+        $instance->blockedUntil = $blockedUntil === null ? null : (float)$blockedUntil;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -128,6 +143,12 @@ final class AuthAttempt extends RtState
         if (isset($diff[self::level])) {
             $this->level = (int)$diff[self::level];
         }
+        // array_key_exists rather than isset: lifting a block sends blockedUntil as
+        // null, and isset() would read that as "field absent" and keep the old moment.
+        if (array_key_exists(self::blockedUntil, $diff)) {
+            $blockedUntil = $diff[self::blockedUntil];
+            $this->blockedUntil = $blockedUntil === null ? null : (float)$blockedUntil;
+        }
     }
 
     /**
@@ -150,6 +171,7 @@ final class AuthAttempt extends RtState
             self::count => $this->count,
             self::windowStartedAt => $this->windowStartedAt,
             self::level => $this->level,
+            self::blockedUntil => $this->blockedUntil,
         ];
     }
 }

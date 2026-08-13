@@ -16,9 +16,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * and what runtime state it brings with it ({@see self::mount()}) - so switching a feature on
  * stays one line in {@see Hilos::FEATURES} instead of a checklist spread over registries.
  *
- * An abstract class rather than an interface because mounting is the exception: five of the six
- * features carry no runtime state at all, and inheriting the no-op is honest about that, where
- * an interface would demand five empty bodies that say nothing.
+ * An abstract class rather than an interface because mounting is the exception: most features
+ * carry no runtime state at all, and inheriting the no-op is honest about that, where an
+ * interface would demand a row of empty bodies that say nothing.
  */
 abstract class FeatureDefinition
 {
