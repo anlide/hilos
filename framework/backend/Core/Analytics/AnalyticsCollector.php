@@ -207,6 +207,46 @@ final class AnalyticsCollector
     }
 
     /**
+     * Moves a browser session onto the token a login rotated it to (HIL-582).
+     *
+     * The analytics session is named by the secret rather than by the application
+     * session's id, so a rotation that changes only the secret would strand everything
+     * collected before the login - page views, WebSocket connections, the user-agent
+     * history - under a token nobody presents again, and the identify that follows would
+     * open a second session for the same person. The rename keeps one visit whole across
+     * the moment it is most worth being whole across.
+     *
+     * A token whose session was never opened is nothing to rename: the row is created
+     * lazily on first use, so a login without prior collection stays a no-op.
+     *
+     * @param string $oldToken Token the session answered to before the rotation
+     * @param string $newToken Token the session answers to now
+     */
+    public function renameBrowserSession(string $oldToken, string $newToken): void
+    {
+        if ($oldToken === '' || $newToken === '' || $oldToken === $newToken) {
+            return;
+        }
+
+        $this->runSafely(function () use ($oldToken, $newToken): void {
+            $session = $this->browserSessions[$oldToken] ?? $this->loadBrowserSession($oldToken);
+            if ($session === null) {
+                return;
+            }
+
+            Database::sql(
+                'UPDATE `hilos_analytics_browser_session`
+                 SET `session_token` = ?, `last_seen_ts` = ?
+                 WHERE `id` = ?',
+                [$newToken, $this->nowTs(), $session->id],
+            );
+
+            unset($this->browserSessions[$oldToken]);
+            $this->browserSessions[$newToken] = $session;
+        });
+    }
+
+    /**
      * Associates a browser session with an authenticated application user.
      *
      * @param string $sessionToken Browser session token

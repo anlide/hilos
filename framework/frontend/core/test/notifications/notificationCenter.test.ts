@@ -11,6 +11,7 @@ import {
   NOTIFICATION_SIGNAL_SCHEMAS,
   type HilosNotification,
 } from '../../src/notifications/notificationCenter.js'
+import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
 import { createSignal } from '../../src/state/signal.js'
 
 /** Scripted stand-in for the browser WebSocket; tests drive callbacks explicitly. */
@@ -164,13 +165,24 @@ describe('notification binder', () => {
       url: 'ws://test/ws',
       webSocketFactory: (url) => new MockWebSocket(url),
       random: () => 1,
-      projectSchemas: NOTIFICATION_SIGNAL_SCHEMAS,
+      projectSchemas: {
+        ...NOTIFICATION_SIGNAL_SCHEMAS,
+        ...SESSION_SIGNAL_SCHEMAS,
+      },
     })
     const store = createHilosNotificationStore()
     const userId = createSignal<number | null>(null)
     bindNotificationsScope(connection, store, userId)
 
     return { connection, store, userId }
+  }
+
+  /**
+   * Deliver the socket's handshake response — the backend saying it knows this
+   * connection, which is what the join waits for.
+   */
+  function answerSession(): void {
+    MockWebSocket.last.message(frame('handshake_response', { entities: {} }))
   }
 
   function sentFrames(): { type: string; group?: string; action?: string }[] {
@@ -186,6 +198,7 @@ describe('notification binder', () => {
     const { connection, userId } = boot()
     connection.connect()
     MockWebSocket.last.open()
+    answerSession()
 
     // Connected but no user yet: nothing sent.
     expect(sentFrames()).toEqual([])
@@ -208,6 +221,7 @@ describe('notification binder', () => {
     const { connection, store, userId } = boot()
     connection.connect()
     MockWebSocket.last.open()
+    answerSession()
     userId.set(42)
 
     MockWebSocket.last.message(
@@ -226,15 +240,22 @@ describe('notification binder', () => {
     expect(store.unreadCount.get()).toBe(1)
   })
 
-  it('re-joins the group after a reconnect', () => {
+  it('re-joins the group once the reconnected socket answers', () => {
     const { connection, userId } = boot()
     connection.connect()
     MockWebSocket.last.open()
+    answerSession()
     userId.set(42)
     MockWebSocket.last.drop()
 
     vi.advanceTimersByTime(1000)
     MockWebSocket.last.open()
+
+    // The user id never changed, so only the new socket's own answer can say the
+    // backend knows this connection; joining before it is refused as anonymous.
+    expect(sentFrames()).toEqual([])
+
+    answerSession()
 
     expect(sentFrames()).toContainEqual({
       type: 'group_subscribe',

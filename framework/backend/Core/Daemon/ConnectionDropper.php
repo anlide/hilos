@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\SocketException;
 
 /**
  * ConnectionDropper - master-side seam that force-closes a live WebSocket connection.
  *
- * The sockets live in the master process, so a CLI request to simulate a dropped
- * connection cannot close one itself: it reaches the master over the command channel,
- * and the master hands the request to the daemon that owns the WebSocket clients. The
- * {@see DaemonManager} implements this and is wired into the {@see CommandServer} when the
- * server is registered, so a command handler can drop a connection without depending on
- * the concrete manager.
+ * The sockets live in the master process and no one holds them but the daemon, so anything
+ * that has to close a connection it is not itself serving asks through here. The
+ * {@see DaemonManager} implements this and is wired into both the {@see CommandServer} and
+ * the {@see WebSocketServer} when the server is registered, so neither a command handler nor
+ * an accepted client depends on the concrete manager.
  *
- * Test-only: the sole caller is the `connection:test:drop` command, used by e2e to exercise
- * the reconnect indicator and the orphan-reconcile that a real socket death triggers.
+ * Two callers today, one of them production. A handshake that trades a session-rotation
+ * ticket (HIL-582) drops the other connections of the session it just moved, after the new
+ * cookie is on the wire: they reconnect carrying it and land back in their own session,
+ * where dropping them any earlier would have sent them into a fresh anonymous one. The
+ * other is the `connection:test:drop` command, used by e2e to exercise the reconnect
+ * indicator and the orphan-reconcile that a real socket death triggers.
  */
 interface ConnectionDropper
 {

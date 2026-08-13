@@ -102,7 +102,7 @@ final class ImpersonationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $userId = $this->registerUser();
         $agent->onSignalHandshake($this->handshake('nonadmin-ak', $token), '', '');
-        $agent->authenticateSession($token, $userId);
+        $agent->authenticateSession($token, $userId, null);
         $targetId = $this->registerUser();
 
         try {
@@ -215,7 +215,7 @@ final class ImpersonationTest extends IntegrationTestCase
                 new ImpersonateStartActionDTO($targetId),
             );
 
-            $session = Hilos::$db->sessions->findByToken($token);
+            $session = $this->sessionOf('page-ak');
             $this->assertSame($targetId, $session?->userId);
             $this->assertSame($adminId, $session?->impersonatorUserId);
             $this->assertSame($targetId, Hilos::$rt->connections['page-ak']->userId);
@@ -244,13 +244,13 @@ final class ImpersonationTest extends IntegrationTestCase
         $token = RandomHelper::hex(16);
         $adminId = $this->authenticatedAdminSession($agent, 'agent-ak', $token);
         $targetId = $this->registerUser();
-        $agent->startImpersonation($token, $targetId);
+        $agent->startImpersonation($token, $targetId, null);
         $this->drainSignals();
 
         try {
             $agent->onAgentAction('agent-ak', ChatSignalConstants::IMPERSONATE_STOP, new ImpersonateStopActionDTO());
 
-            $session = Hilos::$db->sessions->findByToken($token);
+            $session = $this->sessionOf('agent-ak');
             $this->assertSame($adminId, $session?->userId);
             $this->assertNull($session?->impersonatorUserId);
             $this->assertSame($adminId, Hilos::$rt->connections['agent-ak']->userId);
@@ -337,7 +337,7 @@ final class ImpersonationTest extends IntegrationTestCase
     {
         $adminId = $this->registerAdmin();
         $agent->onSignalHandshake($this->handshake($acceptKey, $token), '', '');
-        $agent->authenticateSession($token, $adminId);
+        $agent->authenticateSession($token, $adminId, null);
 
         return $adminId;
     }

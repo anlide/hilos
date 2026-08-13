@@ -90,6 +90,25 @@ final class WebSocketClientTestProbe extends WebSocketClient
     }
 
     /**
+     * Stand in for the read loop's write: pretend the queued bytes reached the kernel.
+     *
+     * A socketless probe cannot write, but everything that waits for the buffer to empty
+     * (the drops a spent rotation holds) hangs off {@see WebSocketClient::write()} and not
+     * off the socket, so emptying the buffer and calling it reproduces the real drain.
+     *
+     * @return string Bytes the flush carried away
+     * @throws SocketException If socket write fails
+     */
+    public function flushOutbound(): string
+    {
+        $flushed = $this->writeBuffer;
+        $this->writeBuffer = '';
+        $this->write();
+
+        return $flushed;
+    }
+
+    /**
      * @return bool True when the WebSocket handshake completed
      */
     public function handshakeDone(): bool

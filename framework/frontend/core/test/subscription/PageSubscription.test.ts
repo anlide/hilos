@@ -50,22 +50,24 @@ describe('PageSubscription', () => {
     expect(scopes.page()?.key).toBe('main')
   })
 
-  it('subscribing while disconnected sends on the next connected transition', () => {
+  it('subscribing while disconnected sends when the new socket answers', () => {
     const connection = fakeConnection('disconnected')
     const pages = new PageSubscription(connection, new ScopeManager())
-    pages.releaseOnSession()
 
     pages.subscribe('main', { tab: 'open' })
     expect(connection.sent).toEqual([])
 
     connection.setState('connecting')
     connection.setState('connected')
+    expect(connection.sent).toEqual([])
+
+    pages.releaseOnSession()
     expect(connection.sent).toEqual([
       { type: 'page_subscribe', page: 'main', params: { tab: 'open' } },
     ])
   })
 
-  it('re-sends the current subscription after a reconnect', () => {
+  it('re-sends the current subscription when the reconnected socket answers', () => {
     const connection = fakeConnection()
     const pages = new PageSubscription(connection, new ScopeManager())
     pages.releaseOnSession()
@@ -73,6 +75,12 @@ describe('PageSubscription', () => {
 
     connection.setState('reconnecting')
     connection.setState('connected')
+
+    // The socket is back, but the backend does not know it yet: a subscribe sent
+    // here would be judged against a connection nobody has heard of.
+    expect(connection.sent).toHaveLength(1)
+
+    pages.releaseOnSession()
 
     expect(connection.sent).toHaveLength(2)
     expect(connection.sent[1]).toEqual({

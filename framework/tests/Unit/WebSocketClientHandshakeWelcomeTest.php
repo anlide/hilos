@@ -51,6 +51,7 @@ final class WebSocketClientHandshakeWelcomeTest extends TestCase
                 'type' => 'handshake',
                 'data' => [
                     'build' => 'dev',
+                    'sessionCookieName' => 'hilos_session_token',
                     'protectedMode' => [
                         'active' => false,
                         'operation' => null,

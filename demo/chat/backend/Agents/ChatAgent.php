@@ -91,8 +91,23 @@ final class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(ChatRtContext::connections);
         $this->registerRtTruthSource(ChatRtContext::userStates);
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
+        $this->startSessionRotations();
 
         Hilos::$db->events->actions->addChatStarted();
+    }
+
+    /**
+     * Drops login rotations whose ticket is past its moment (HIL-582).
+     *
+     * The whole tick: a walk over an in-memory collection that holds one row per login
+     * in the last thirty seconds, so it is measured in microseconds and never touches
+     * the database or the network - which is what the tick rule requires of it.
+     *
+     * @throws HilosException On runtime failure
+     */
+    public function onTick(): void
+    {
+        $this->sweepSessionRotations();
     }
 
     /**
@@ -195,7 +210,7 @@ final class ChatAgent extends AbstractAgent
         $targetUserId = (int)($data->payload[ChatCommandConstants::FIELD_TARGET_USER_ID] ?? 0);
 
         try {
-            $this->startImpersonation($sessionToken, $targetUserId);
+            $this->startImpersonation($sessionToken, $targetUserId, null);
             $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
         } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
@@ -228,7 +243,7 @@ final class ChatAgent extends AbstractAgent
         try {
             // Captured before the core clears the marker; the restored effective user.
             $impersonatorId = Hilos::$db->sessions->findByToken($sessionToken)?->impersonatorUserId;
-            $this->stopImpersonation($sessionToken);
+            $this->stopImpersonation($sessionToken, null);
         } catch (HilosException $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
@@ -258,10 +273,11 @@ final class ChatAgent extends AbstractAgent
      *
      * @param string $sessionToken Session cookie token of the acting admin session
      * @param int $targetUserId User id to impersonate
+     * @param ?string $initiatorAcceptKey Accept key of the admin's connection, or null for the CLI path
      * @throws ValidationException When a guard rejects the request
      * @throws HilosException On database or runtime failure
      */
-    public function startImpersonation(string $sessionToken, int $targetUserId): void
+    public function startImpersonation(string $sessionToken, int $targetUserId, ?string $initiatorAcceptKey): void
     {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
@@ -289,7 +305,7 @@ final class ChatAgent extends AbstractAgent
         // Marker BEFORE rebind: authenticateSession re-emits the handshake response,
         // which reads the marker to fill impersonatedBy — so it must already be set.
         $session->actions->setImpersonator($adminId);
-        $this->authenticateSession($sessionToken, $targetUserId);
+        $this->authenticateSession($sessionToken, $targetUserId, $initiatorAcceptKey);
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
             'event' => 'impersonate_start',
@@ -311,10 +327,11 @@ final class ChatAgent extends AbstractAgent
      * target before the rebind restores the admin.
      *
      * @param string $sessionToken Session cookie token of the impersonating session
+     * @param ?string $initiatorAcceptKey Accept key of the requesting connection, or null for the CLI path
      * @throws ValidationException When the session is missing or not impersonating
      * @throws HilosException On database or runtime failure
      */
-    public function stopImpersonation(string $sessionToken): void
+    public function stopImpersonation(string $sessionToken, ?string $initiatorAcceptKey): void
     {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
@@ -333,7 +350,7 @@ final class ChatAgent extends AbstractAgent
         // Marker cleared BEFORE rebind: the re-emitted handshake response then reads
         // no marker and clears impersonatedBy — the inverse of startImpersonation.
         $session->actions->setImpersonator(null);
-        $this->authenticateSession($sessionToken, $impersonatorId);
+        $this->authenticateSession($sessionToken, $impersonatorId, $initiatorAcceptKey);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',
@@ -742,7 +759,7 @@ final class ChatAgent extends AbstractAgent
             return;
         }
 
-        $this->stopImpersonation($sessionToken);
+        $this->stopImpersonation($sessionToken, $acceptKey);
     }
 
     /**
@@ -834,7 +851,11 @@ final class ChatAgent extends AbstractAgent
                         ChatSignalConstants::OAUTH_BIND_SESSION . ' payload must be ' . OAuthBindSessionSignalData::class,
                     );
                 }
-                $this->authenticateSession($data->data->sessionToken, $data->data->userId);
+                $this->authenticateSession(
+                    $data->data->sessionToken,
+                    $data->data->userId,
+                    $data->data->initiatorAcceptKey,
+                );
                 return;
             case ChatSignalConstants::ACCOUNT_MERGE_REQUEST:
                 if (!$data->data instanceof AccountMergeSignalData) {

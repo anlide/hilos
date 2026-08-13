@@ -7,6 +7,17 @@ export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 /** Server frame `type` announcing the protected-mode state (PHP `SignalTypeConstants::PROTECTED_MODE`). */
 export const SIGNAL_TYPE_PROTECTED_MODE = 'protected_mode'
 
+/** Server frame `type` handing one connection a session-rotation ticket (PHP `HilosSignalConstants::HILOS_SESSION_ROTATE`). */
+export const SIGNAL_TYPE_SESSION_ROTATE = 'hilos_session_rotate'
+
+/**
+ * Appended to the session cookie name to name the cookie a rotation ticket travels
+ * back in (PHP `SessionRotationTicket::COOKIE_NAME_SUFFIX`). The session cookie name
+ * itself is not a constant on either side — it is deployment configuration, and the
+ * welcome frame tells the client which one this deployment uses.
+ */
+export const SESSION_ROTATE_COOKIE_SUFFIX = '_rotate'
+
 /** Client frame `type` subscribing the page (PHP `SignalTypeConstants::PAGE_SUBSCRIBE`). */
 export const SIGNAL_TYPE_PAGE_SUBSCRIBE = 'page_subscribe'
 

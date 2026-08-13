@@ -16,11 +16,14 @@ use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
@@ -28,6 +31,8 @@ use Hilos\Runtime\View\Actions\Item\RestoreRuntimeActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
+use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
+use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\BackupRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
@@ -41,6 +46,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * Runtime data is transient - it lives only in memory for the process lifetime.
  *
  * @property-read BackupHistories $hilosBackupHistories Stored-backup index, mounted for a project that declares HilosFeature::BACKUP
+ * @property-read HilosSessionRotations $hilosSessionRotations Pending login token rotations, mounted for every project
  * @property-read ?BackupRuntime $hilosBackupRuntime Backup subsystem runtime singleton, or null when unmounted
  * @property-read ?RestoreRuntime $hilosRestoreRuntime Restore run runtime singleton, or null when unmounted
  * @property-read ?ProtectedModeRuntime $hilosProtectedModeRuntime Protected mode runtime singleton, or null when unmounted
@@ -159,9 +165,16 @@ abstract class RtContext
      * declaration the only switch: a project cannot forget a row of a feature it declared, and
      * cannot quietly replace one either - the check names the key and the line to delete.
      *
-     * The protected mode singleton is mounted unconditionally and before any feature, because a
-     * node freezing itself for a destructive operation is a data-integrity guarantee rather than
-     * an opt-in surface: every project that can run such an operation must be able to freeze.
+     * Two of these are mounted unconditionally and before any feature, because neither is an
+     * opt-in surface. The protected mode singleton is there because a node freezing itself for
+     * a destructive operation is a data-integrity guarantee: every project that can run such an
+     * operation must be able to freeze. The session rotations are there because the login token
+     * rotation (HIL-582) is a security guarantee of the session seam, and sessions are not a
+     * declared feature at all - a project carries them by standing its connections on the
+     * session stage, which is only known after {@see self::configure()} has run, too late to
+     * mount from. In a project without sessions the collection is inert: nothing registers a
+     * truth source for it, so nothing can write it, and the handshake finds no row and serves
+     * the ordinary cookie rule.
      *
      * A project whose createRuntime() returns null has no context to mount into; declaring a
      * feature that brings runtime state there is refused by the facade instead, since there is
@@ -173,6 +186,12 @@ abstract class RtContext
     final public function mountFeatureRuntime(array $definitions): void
     {
         $this->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::create());
+        $this->mountFeatureCollection(StateHilosSessionRotation::RT_COLLECTION, StateHilosSessionRotations::init());
+        $this->setRepresent(
+            StateHilosSessionRotation::RT_COLLECTION,
+            HilosSessionRotations::class,
+            HilosSessionRotationsActions::class,
+        );
 
         foreach ($definitions as $definition) {
             $this->_mountingFeature = $definition->feature();
@@ -319,6 +338,32 @@ abstract class RtContext
     {
         foreach ($this->_stateCollections as $collection) {
             if ($collection instanceof HilosSessionConnections) {
+                return $collection;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the represented collection of session-carrying connections, when there is one.
+     *
+     * The write-side twin of {@see sessionConnectionsSource()} (HIL-582). A framework seam
+     * that only reads the rows takes the state collection; one that has to CHANGE a row takes
+     * this, because a write outside the represented collection's actions lands in a single
+     * worker and is never synced. The login rotation is such a seam: it re-points the
+     * initiating connection onto the token its session was renamed to.
+     *
+     * A project standing on the presence stage, or one that mounted its connections without
+     * representing them, answers null - and the seam then has no row to move, which is the
+     * same nothing-to-do a project without sessions has.
+     *
+     * @return ?ViewHilosSessionConnections First represented collection of session-stage connections, or null
+     */
+    final public function sessionConnectionsRegistry(): ?ViewHilosSessionConnections
+    {
+        foreach ($this->_rtCollections as $collection) {
+            if ($collection instanceof ViewHilosSessionConnections) {
                 return $collection;
             }
         }

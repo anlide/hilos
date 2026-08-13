@@ -113,7 +113,7 @@ final class OAuthAgent extends AbstractOAuthAgent
     {
         $this->sendToAgent(
             ChatSignalConstants::OAUTH_BIND_SESSION,
-            new OAuthBindSessionSignalData($op->sessionToken, $userId),
+            new OAuthBindSessionSignalData($op->sessionToken, $userId, $op->acceptKey),
         );
     }
 

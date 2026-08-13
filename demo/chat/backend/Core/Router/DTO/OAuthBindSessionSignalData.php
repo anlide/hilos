@@ -28,23 +28,26 @@ final class OAuthBindSessionSignalData extends BaseDTO implements SignalDataInte
      *
      * @param string $sessionToken Session token to authenticate to the resolved user
      * @param int $userId Resolved durable user id to bind the session to
+     * @param ?string $initiatorAcceptKey Accept key of the connection that started the login, or null when it is gone
      */
     public function __construct(
         public readonly string $sessionToken,
         public readonly int $userId,
+        public readonly ?string $initiatorAcceptKey = null,
     ) {
     }
 
     /**
      * Convert DTO to array for transport.
      *
-     * @return array<string, int|string> DTO data as array
+     * @return array<string, int|string|null> DTO data as array
      */
     public function toArray(): array
     {
         return [
             'sessionToken' => $this->sessionToken,
             'userId' => $this->userId,
+            'initiatorAcceptKey' => $this->initiatorAcceptKey,
         ];
     }
 
@@ -59,6 +62,7 @@ final class OAuthBindSessionSignalData extends BaseDTO implements SignalDataInte
         return new static(
             sessionToken: (string)($data['sessionToken'] ?? ''),
             userId: (int)($data['userId'] ?? 0),
+            initiatorAcceptKey: isset($data['initiatorAcceptKey']) ? (string)$data['initiatorAcceptKey'] : null,
         );
     }
 }

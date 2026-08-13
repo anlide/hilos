@@ -165,6 +165,6 @@ final class AdminUsersPage extends AbstractPage
             throw new TableActionException('Impersonation requires the chat agent');
         }
 
-        $agent->startImpersonation($sessionToken, $dto->targetUserId);
+        $agent->startImpersonation($sessionToken, $dto->targetUserId, $acceptKey);
     }
 }

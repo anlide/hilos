@@ -4,15 +4,24 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
+
 /**
  * Inheritable runtime row for one WebSocket connection — the session stage (HIL-509).
  *
  * The stage above {@see HilosConnection}: it adds the `sessionToken` the socket
- * belongs to (immutable for the life of the row, re-pointed only by creating a
- * new one), which is what turns a set of live sockets into the live sockets of a
+ * belongs to, which is what turns a set of live sockets into the live sockets of a
  * browser session. A project stands here once it carries sessions at all; a
  * project that does not stays on the presence stage, and the session seams are
  * then missing from its type rather than answering empty.
+ *
+ * The token moves in exactly one case, and the distinction is the whole of the rule
+ * (HIL-582). A socket that changes SESSION is still a new row, as it always was —
+ * nothing re-points a connection from one browser session to another. But a session
+ * that is RENAMED keeps its sockets: the login rotation mints a new token for the
+ * same session, and the initiating connection follows it through
+ * {@see HilosSessionConnectionsActions::repointSessionToken()}. The row's identity is
+ * the accept key, and that is what stays immutable.
  *
  * The base half of the row is composed by chaining {@see initBase()} /
  * {@see hydrateBase()} / {@see baseToArray()} / {@see applyBaseDiff()} through

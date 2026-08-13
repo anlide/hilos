@@ -36,10 +36,26 @@ export type SignalEnvelope = z.infer<typeof signalEnvelopeSchema>
  */
 export const handshakeSignalDataSchema = z.looseObject({
   build: z.string().min(1),
+  sessionCookieName: z.string().min(1).optional().catch(undefined),
   protectedMode: protectedModeBlockSchema.optional().catch(undefined),
 })
 
 export type HandshakeSignalData = z.infer<typeof handshakeSignalDataSchema>
+
+/**
+ * Payload of the framework session-rotation signal (`type: 'hilos_session_rotate'`,
+ * PHP `SessionRotateSignalData`): the one-time ticket the connection that just logged
+ * in trades for its rotated session cookie on the next handshake. Required and
+ * non-empty — a rotation frame that names no ticket is nothing the client can act on,
+ * and the reconnect it would trigger would drop the session it was meant to save.
+ */
+export const sessionRotateSignalDataSchema = z.looseObject({
+  ticket: z.string().min(1),
+})
+
+export type SessionRotateSignalData = z.infer<
+  typeof sessionRotateSignalDataSchema
+>
 
 /**
  * Payload of the framework action-failure signal (`type: 'action_error'`, PHP

@@ -8,18 +8,22 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the session cookie the master puts on the 101 (HIL-556).
+ * Unit tests for the session cookie the master puts on the 101 (HIL-556, HIL-582).
  *
- * Three things are pinned here. The cookie is issued on EVERY handshake, not
+ * Four things are pinned here. The cookie is issued on EVERY handshake, not
  * only when the token is minted, because the session row's expiry slides on
  * each one and the two have to slide together. A cookie that does not carry the
  * minted form is replaced instead of passed through, which is what ends the
- * client that used to stick forever on a token the worker refused. And Max-Age
+ * client that used to stick forever on a token the worker refused. Max-Age
  * comes from HILOS_SESSION_COOKIE_MAX_AGE, the one number behind both halves of
- * a session's lifetime.
+ * a session's lifetime. And Secure is read off APP_ENV rather than a switch of
+ * its own (HIL-582), so the whole truth table is held here: a production-like
+ * environment secures the cookie, everything else - including a value the enum
+ * does not recognise - leaves it plain.
  */
 final class WebSocketClientHandshakeSessionCookieTest extends TestCase
 {
@@ -29,12 +33,15 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
 
     private ?EnvAccessor $previousEnv = null;
 
+    private string|false $previousAppEnv = false;
+
     protected function setUp(): void
     {
         $this->previousSignalRouter = Hilos::$sr;
         Hilos::$sr = new SignalRouter();
         $this->previousEnv = Hilos::$env;
         Hilos::$env = new EnvAccessor();
+        $this->previousAppEnv = getenv('APP_ENV');
     }
 
     protected function tearDown(): void
@@ -42,7 +49,11 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
         putenv('HILOS_SESSION_COOKIE_MAX_AGE');
-        putenv('HILOS_SESSION_COOKIE_SECURE');
+        // The suite itself runs under an APP_ENV; putting the captured value back rather
+        // than unsetting it keeps a case in this file from deciding what the next file reads.
+        $this->previousAppEnv === false
+            ? putenv('APP_ENV')
+            : putenv('APP_ENV=' . $this->previousAppEnv);
     }
 
     public function testHandshakeWithoutACookieIssuesAMintedToken(): void
@@ -109,22 +120,45 @@ final class WebSocketClientHandshakeSessionCookieTest extends TestCase
         $this->assertStringContainsString('; SameSite=Strict', $line);
     }
 
-    public function testCookieIsPlainWhenTheStackIsNotSecured(): void
+    /**
+     * Secure follows APP_ENV and nothing else (HIL-582).
+     *
+     * @param string $appEnv Value of APP_ENV the master runs under
+     * @param bool $secured Whether the issued cookie is expected to carry Secure
+     */
+    #[DataProvider('appEnvSecureCases')]
+    public function testCookieSecureFollowsTheEnvironment(string $appEnv, bool $secured): void
     {
-        putenv('HILOS_SESSION_COOKIE_SECURE=false');
+        putenv('APP_ENV=' . $appEnv);
 
         $line = $this->setCookieLine($this->handshakenProbe()->outboundBytes());
 
-        $this->assertStringNotContainsString('; Secure', $line);
+        $secured
+            ? $this->assertStringContainsString('; Secure', $line)
+            : $this->assertStringNotContainsString('; Secure', $line);
     }
 
-    public function testCookieIsSecuredWhenConfigured(): void
+    /**
+     * Every environment the enum names, plus the two values it does not.
+     *
+     * An unrecognised name and an empty one are the cases the switch used to cover with
+     * its `false` default; they stay plain, because a deployment that cannot say what it
+     * is must not have its cookie dropped by a browser on plain http.
+     *
+     * @return array<string, array{string, bool}> Case name to APP_ENV value and expected Secure
+     */
+    public static function appEnvSecureCases(): array
     {
-        putenv('HILOS_SESSION_COOKIE_SECURE=true');
-
-        $line = $this->setCookieLine($this->handshakenProbe()->outboundBytes());
-
-        $this->assertStringContainsString('; Secure', $line);
+        return [
+            'prod is secured' => ['prod', true],
+            'staging is secured' => ['staging', true],
+            'dev is plain' => ['dev', false],
+            'local is plain' => ['local', false],
+            'test is plain' => ['test', false],
+            'an alias resolves like its canonical value' => ['production', true],
+            'an unrecognised environment is plain' => ['nonsense', false],
+            'an empty environment is plain' => ['', false],
+        ];
     }
 
     /**

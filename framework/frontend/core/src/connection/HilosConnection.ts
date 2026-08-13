@@ -19,6 +19,7 @@ import {
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
   SIGNAL_TYPE_TABLE_VIEWPORT,
+  SESSION_ROTATE_COOKIE_SUFFIX,
 } from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
 import {
@@ -31,6 +32,7 @@ import {
   type ProjectSignal,
   type ProjectSignalSchemas,
   type ProtectedModeSignal,
+  type SessionRotateSignal,
   type TableViewportAppendSignal,
   type TableViewportCountSignal,
   type TableViewportDeltaSignal,
@@ -85,6 +87,16 @@ export interface WebSocketLike {
   ): void
 }
 
+/**
+ * A session-token rotation waiting for its cookie: the one-time ticket, and the name of
+ * the cookie to put it in. The name is derived from the session cookie name the welcome
+ * frame announced, because that is deployment configuration rather than a constant.
+ */
+export interface SessionRotation {
+  ticket: string
+  cookieName: string
+}
+
 /** Build-version mismatch detected on a welcome frame (wire-protocol.md forced-refresh check). */
 export interface BuildMismatch {
   expected: string
@@ -112,6 +124,14 @@ export interface HilosConnectionEventMap extends Record<string, unknown> {
    * consumer reloads on (there is no catch-up snapshot; see createHilosConnection).
    */
   protectedMode: ProtectedModeStatus
+  /**
+   * The session token was rotated by a login on THIS connection, and the browser
+   * has to trade the carried ticket for its new cookie (HIL-582). The consumer
+   * writes the auxiliary cookie named here; the connection then reconnects by
+   * itself — that reconnect is what spends the ticket — once the replies it still
+   * owes have arrived, so the login's own answer is not dropped with the socket.
+   */
+  sessionRotate: SessionRotation
   /** A signal validated against a project-declared schema. */
   projectSignal: ProjectSignal
   /** A table window snapshot reply (`table_window`): the rows in the requested window. */
@@ -150,6 +170,13 @@ export interface HilosConnectionOptions {
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 40000
 
 /**
+ * How long a rotation waits for the replies the socket is still owed before it
+ * reconnects anyway. Comfortably inside the ticket's own thirty seconds, and past any
+ * reply the backend is going to send: the action lifecycle gives up on one long before.
+ */
+const ROTATION_REPLY_GRACE_MS = 10000
+
+/**
  * One Hilos WebSocket connection.
  *
  * Owns the socket lifecycle: an explicit `connect()`, automatic reconnect with
@@ -177,6 +204,18 @@ export class HilosConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null
   private latchedBuild: string | undefined
+  /** Session cookie name from the last welcome; the auxiliary cookie's name derives from it. */
+  private sessionCookieName: string | undefined
+  /**
+   * Correlation ids of the tracked actions this socket has sent and not seen answered.
+   * The transport's own count of what is still on the wire — the reply lifecycle keeps
+   * its own richer record, but a rotation has to know whether the socket may be dropped
+   * yet, and only the socket knows that.
+   */
+  private readonly awaitedReplies = new Set<string>()
+  /** A rotation held back until the wire is quiet, and the timer that stops holding it. */
+  private heldRotation: SessionRotation | null = null
+  private heldRotationTimer: ReturnType<typeof setTimeout> | null = null
   private protectedModeStatus: ProtectedModeStatus = PROTECTED_MODE_INACTIVE
 
   constructor(options: HilosConnectionOptions) {
@@ -230,6 +269,7 @@ export class HilosConnection {
   /** Close for good: cancels reconnect, stops keepalive, `disconnected`. */
   close(): void {
     this.generation += 1
+    this.clearHeldRotation()
     this.clearReconnectTimer()
     this.stopKeepalive()
     this.closeSocket()
@@ -309,7 +349,12 @@ export class HilosConnection {
       frame[FIELD_REQUEST_ID] = requestId
     }
 
-    return this.send(JSON.stringify(frame))
+    const sent = this.send(JSON.stringify(frame))
+    if (sent && requestId !== undefined) {
+      this.awaitedReplies.add(requestId)
+    }
+
+    return sent
   }
 
   /**
@@ -420,6 +465,7 @@ export class HilosConnection {
     // Bump the generation so the sibling close/error event of the same dead
     // socket cannot double-schedule a reconnect.
     this.generation += 1
+    this.clearHeldRotation()
     this.stopKeepalive()
     this.closeSocket()
     this.setState('reconnecting')
@@ -441,11 +487,19 @@ export class HilosConnection {
       case 'protectedMode':
         this.handleProtectedMode(signal)
         break
+      case 'sessionRotate':
+        this.handleSessionRotate(signal)
+        break
       case 'actionSuccess':
+        // Delivered first, noted second: noting it can be the arrival a held
+        // rotation was waiting for, and that reconnect fails every action still
+        // in flight — including this one, whose answer is right here.
         this.emitter.emit('actionSuccess', signal)
+        this.replyArrived(signal.requestId)
         break
       case 'actionError':
         this.emitter.emit('actionError', signal)
+        this.replyArrived(signal.requestId)
         break
       case 'project':
         this.emitter.emit('projectSignal', signal)
@@ -478,10 +532,106 @@ export class HilosConnection {
     } else if (signal.build !== expected) {
       this.emitter.emit('buildMismatch', { expected, received: signal.build })
     }
+    if (signal.sessionCookieName !== undefined) {
+      this.sessionCookieName = signal.sessionCookieName
+    }
     // A reconnect lands here: the welcome is how a connection that came back
     // learns the freeze it slept through, or that it is over.
     this.syncProtectedMode(signal.protectedMode)
     this.emitter.emit('handshake', signal)
+  }
+
+  /**
+   * A login on this connection rotated the session token: hand the ticket over and go
+   * get the new cookie.
+   *
+   * The reconnect is the point of the whole exchange — the cookie can only be set on a
+   * 101 — so it happens here rather than being left to the consumer, and it happens
+   * straight after the listeners run: they write the cookie synchronously, and the
+   * socket that opens next carries it. It also skips the backoff delay, which exists to
+   * spread a fleet reconnecting after a restart and would only be a pause the visitor
+   * spends logged in on a token the server no longer answers to.
+   *
+   * A welcome that never named the session cookie leaves nothing to write, so nothing
+   * is done at all: reconnecting without the ticket would trade a live session for an
+   * anonymous one, and staying put costs only the rotation.
+   */
+  private handleSessionRotate(signal: SessionRotateSignal): void {
+    const cookieName = this.sessionCookieName
+    if (cookieName === undefined) {
+      return
+    }
+    const rotation = {
+      ticket: signal.ticket,
+      cookieName: `${cookieName}${SESSION_ROTATE_COOKIE_SUFFIX}`,
+    }
+    this.emitter.emit('sessionRotate', rotation)
+    this.holdRotationUntilQuiet(rotation)
+  }
+
+  /**
+   * Reconnect for the rotation, but not while a tracked action is still unanswered.
+   *
+   * The login that caused the rotation IS such an action, and its reply is behind this
+   * signal on the same wire: the seam announces the rotation from inside the handler,
+   * the framework sends the reply once the handler returns. Dropping the socket the
+   * moment the signal lands therefore throws away the answer to the very click that
+   * started it, and the surface that dispatched it waits forever. Ordering this by
+   * hoping the reply arrives in the same batch of frames would be a race decided by
+   * TCP; waiting for the ids the socket is actually owed is not.
+   *
+   * The grace timer is the other half: a reply that never comes must not strand the
+   * ticket until it expires, after which the browser would hold a cookie naming a
+   * session that has moved. When it fires the reconnect happens regardless, and the
+   * unanswered action fails the way any dropped action does.
+   */
+  private holdRotationUntilQuiet(rotation: SessionRotation): void {
+    if (this.awaitedReplies.size === 0) {
+      this.reconnectNow()
+
+      return
+    }
+    this.heldRotation = rotation
+    const generation = this.generation
+    this.heldRotationTimer = setTimeout(() => {
+      this.heldRotationTimer = null
+      this.ifCurrent(generation, () => this.releaseRotation())
+    }, ROTATION_REPLY_GRACE_MS)
+  }
+
+  /** Notes a reply the socket was owed, and releases a rotation the last one was holding. */
+  private replyArrived(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return
+    }
+    this.awaitedReplies.delete(requestId)
+    if (this.awaitedReplies.size === 0 && this.heldRotation !== null) {
+      this.releaseRotation()
+    }
+  }
+
+  /** Performs the reconnect a rotation was waiting to make. */
+  private releaseRotation(): void {
+    if (this.heldRotation === null) {
+      return
+    }
+    this.heldRotation = null
+    this.reconnectNow()
+  }
+
+  /** Drops the current socket and opens the next one without waiting out a backoff delay. */
+  private reconnectNow(): void {
+    this.clearHeldRotation()
+    // Bumped before the close, not only by openSocket() after it: a socket that reports
+    // its close synchronously would otherwise still be current, and its handler would
+    // schedule a second, delayed reconnect on top of the one opening here.
+    this.generation += 1
+    this.clearReconnectTimer()
+    this.stopKeepalive()
+    this.closeSocket()
+    this.reconnectAttempt = 0
+    this.setState('reconnecting')
+    this.openSocket()
   }
 
   /**
@@ -537,6 +687,16 @@ export class HilosConnection {
     if (this.keepaliveTimer !== null) {
       clearInterval(this.keepaliveTimer)
       this.keepaliveTimer = null
+    }
+  }
+
+  /** Forgets what the socket was owed, and any rotation waiting on it. */
+  private clearHeldRotation(): void {
+    this.awaitedReplies.clear()
+    this.heldRotation = null
+    if (this.heldRotationTimer !== null) {
+      clearTimeout(this.heldRotationTimer)
+      this.heldRotationTimer = null
     }
   }
 

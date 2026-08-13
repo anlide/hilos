@@ -72,10 +72,11 @@ not necessarily match production, and vice versa.
   mount `../data/chat_attachments/published:/published:ro` into nginx for the
   daemon's `X-Accel-Redirect`; the local `full` profile does not, so attachment
   downloads 404 in this stack even though upload and moderation work.
-- **The session cookie has no `Secure` flag by default.**
-  `HILOS_SESSION_COOKIE_SECURE` defaults to false so the plain-http dev stack
-  works. Under TLS, set it to `true` in `demo/chat/.env` and restart if the run
-  is meant to mirror production cookie behaviour.
+- **The session cookie carries no `Secure` flag in this stack.** It follows
+  `APP_ENV` and nothing else (HIL-582): `prod` and `staging` are secured, `dev`,
+  `local` and `test` are not, so the plain-http dev stack works as it stands. To
+  mirror production cookie behaviour, name the environment `staging` in
+  `demo/chat/.env` and restart — there is no cookie switch of its own to flip.
 
 ### Reaching Ollama from the daemon container
 

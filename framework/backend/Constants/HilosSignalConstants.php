@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
@@ -298,6 +299,22 @@ final class HilosSignalConstants
      * runtime collection. The single agent owns the in-flight-login pool it drains.
      */
     public const string HILOS_OAUTH_PENDING = 'hilos_oauth_pending';
+
+    // ── Hilos session rotation: session seam → initiating browser (WS_USER) ──
+    /**
+     * Session seam → the connection that logged in: trade this ticket for the new session cookie.
+     *
+     * The login rotated the session onto a token the browser has not been told about, and
+     * cannot be told about directly: the session cookie is HttpOnly, so only a Set-Cookie
+     * can write it, and the master emits one only on the 101. This signal carries the
+     * one-time ticket ({@see SessionRotateSignalData}) that the frontend parks in a
+     * short-lived helper cookie before reconnecting at once; the master trades it for the
+     * rotated token on the handshake that follows and burns it.
+     *
+     * Delivered to the initiating connection alone. It is the rotation's only channel, and
+     * a second recipient would be a second holder of a single-use secret.
+     */
+    public const string HILOS_SESSION_ROTATE = 'hilos_session_rotate';
 
     // ── Hilos backup admin: page → monopoly BackupAgent routes (agent signals) ──
     /** Page → BackupAgent: run a backup in the carried scope (guarded create path). */

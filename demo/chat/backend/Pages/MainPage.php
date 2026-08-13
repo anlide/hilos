@@ -516,7 +516,11 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
         }
 
-        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+        $this->agent->authenticateSession(
+            Hilos::$rt->selfConnection->sessionToken,
+            $userId,
+            Hilos::$rt->selfConnection->acceptKey,
+        );
     }
 
     /**
@@ -579,7 +583,11 @@ final class MainPage extends AbstractPage
         Hilos::$db->events->actions->addUserRegistered($userId);
 
         if ($this->autoLoginAfterRegister()) {
-            $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+            $this->agent->authenticateSession(
+                Hilos::$rt->selfConnection->sessionToken,
+                $userId,
+                Hilos::$rt->selfConnection->acceptKey,
+            );
         }
     }
 
@@ -741,7 +749,11 @@ final class MainPage extends AbstractPage
             Hilos::$db->events->actions->addUserRegistered($userId);
         }
 
-        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+        $this->agent->authenticateSession(
+            Hilos::$rt->selfConnection->sessionToken,
+            $userId,
+            Hilos::$rt->selfConnection->acceptKey,
+        );
     }
 
     /**
@@ -803,7 +815,11 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
-        $this->agent->authenticateSession(Hilos::$rt->selfConnection->sessionToken, $userId);
+        $this->agent->authenticateSession(
+            Hilos::$rt->selfConnection->sessionToken,
+            $userId,
+            Hilos::$rt->selfConnection->acceptKey,
+        );
     }
 
     /**
@@ -1342,7 +1358,11 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_PASSKEY_MESSAGE);
         }
 
-        $this->agent->authenticateSession($connection->sessionToken, $credential->userId);
+        $this->agent->authenticateSession(
+            $connection->sessionToken,
+            $credential->userId,
+            $connection->acceptKey,
+        );
     }
 
     /**

@@ -205,11 +205,6 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 'hilos_session_token',
                 emptyIsMissing: true,
             ),
-            EnvConstants::HILOS_SESSION_COOKIE_SECURE->name => self::entry(
-                EnvCatalogConstants::TYPE_BOOLEAN,
-                false,
-                emptyIsMissing: true,
-            ),
             EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 730 * 24 * 60 * 60,

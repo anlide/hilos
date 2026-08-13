@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\Session\SessionToken;
+use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Database\Actions\Collection\SessionsActions;
+use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
@@ -34,6 +38,52 @@ final class SessionActions extends DbActions
             throw new ItemNotFoundForUpdateException('Session not found for bindUser (id is null)');
         }
 
+        $this->object->userId = $userId;
+        $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
+        $this->object->expiresAt = SessionsActions::expiryFromNow();
+        $this->object->sync();
+    }
+
+    /**
+     * Moves this session onto a freshly minted token and binds it to a user in one write (HIL-582).
+     *
+     * The login half of the session-fixation cure: the row keeps its identity - id,
+     * creation time, impersonator marker, and everything the analytics link to - and only
+     * its secret name changes, so a token someone knew before the login no longer names
+     * this session afterwards. One write rather than a rename beside {@see bindUser()},
+     * because a session that is momentarily bound under its old token is the very window
+     * being closed.
+     *
+     * The new token is refused when another session already holds it. The caller mints
+     * again rather than proceeding: letting the login continue on the old token would
+     * restore the vulnerability in the one place it matters most.
+     *
+     * @param string $newToken Freshly minted session token to move the row onto
+     * @param int $userId User id to bind the session to
+     * @throws InvalidFormatException When the new token is not a 32-character lowercase hex string
+     * @throws DuplicateValueException When another session already holds the new token
+     * @throws ItemNotFoundForUpdateException When the session is not persisted (id is null)
+     * @throws HilosException On database error
+     */
+    public function rotateTokenAndBindUser(string $newToken, int $userId): void
+    {
+        $this->ensureCanWrite();
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Session not found for rotateTokenAndBindUser (id is null)');
+        }
+
+        SessionToken::ensureValid($newToken);
+
+        // The unique key on the column is the real guard; asking the collection first turns
+        // a collision into the answer the caller can act on - mint again - instead of a
+        // database error indistinguishable from every other write failure.
+        $sessions = $this->getObjectCollection();
+        if ($sessions instanceof ObjectSessions && $sessions->findByToken($newToken) !== null) {
+            throw new DuplicateValueException('Session with this token already exists');
+        }
+
+        $this->object->token = $newToken;
         $this->object->userId = $userId;
         $this->object->lastSeenAt = TimeHelper::getSqlDateTime();
         $this->object->expiresAt = SessionsActions::expiryFromNow();

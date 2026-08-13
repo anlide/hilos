@@ -62,6 +62,7 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -252,6 +253,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $this->registerBackupCronRules();
         $this->registerProtectedModeTruthSource();
+        $this->registerSessionRotationTruthSource();
     }
 
     /**
@@ -528,6 +530,13 @@ abstract class DaemonManager extends BaseManager implements
         if ($server instanceof CommandServer) {
             $server->setConnectionDropper($this);
             $server->setProtectedModeSnapshotSource($this);
+        }
+
+        // The same seam, for the same reason, one layer down: a handshake that trades a
+        // rotation ticket has to drop the other connections of the session it just moved
+        // (HIL-582), and the client that serves that handshake reaches them through here.
+        if ($server instanceof WebSocketServer) {
+            $server->setConnectionDropper($this);
         }
     }
 
@@ -2007,6 +2016,31 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+    }
+
+    /**
+     * Registers the daemon master as a truth source for the pending token rotations, so it
+     * may burn the row whose ticket a handshake just traded (HIL-582).
+     *
+     * The one runtime collection with two writers, and the split is by act rather than by
+     * row: the agent owning the session seam announces a rotation from a worker, and the
+     * master ends it on the 101 that spends its ticket. Neither can do the other's half -
+     * the announcement needs the session ORM the master must not touch, and the burn has to
+     * happen in the same breath as the Set-Cookie, or a ticket would buy a second handshake.
+     * Both registrations are process-local, so this one covers the master alone and does not
+     * hand any worker a licence to write.
+     *
+     * The early return means this process carries no runtime state at all - the framework
+     * mounts the collection for every project that has an RT context - and a project whose
+     * agent never claims the store simply never has a row here to burn.
+     */
+    private function registerSessionRotationTruthSource(): void
+    {
+        if (Hilos::$rt === null) {
+            return;
+        }
+
+        RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
     }
 
     /**

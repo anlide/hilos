@@ -10,6 +10,7 @@
 // connection and keeps the group joined across reconnects.
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 import {
   createSignal,
   subscribeSignal,
@@ -218,6 +219,15 @@ export const hilosNotifications: HilosNotificationStore =
  * (anonymous, or a demo without auth) never joins and never asks for a snapshot,
  * so activating this on such a demo is a no-op rather than an error.
  *
+ * That wait is per SOCKET, not per app, for the same reason the page subscribe
+ * holds one (PageSubscription.sessionAnswered): the connection's identity is
+ * established by its own handshake and reaches the other workers on its own, so a
+ * `notification_sync` that overtook it is judged against a connection nobody has
+ * heard of and refused as anonymous — losing the snapshot, and opening the
+ * sign-in modal over a session that is signed in (the auth gate's 401 safety
+ * net). A reconnect while signed in is exactly that case, since the id it would
+ * join for is still the one from before the drop.
+ *
  * @param connection The application's Hilos connection.
  * @param store The notification store to feed (usually {@link hilosNotifications}).
  * @param userId The session's current user id signal (null until the handshake lands).
@@ -229,6 +239,12 @@ export function bindNotificationsScope(
 ): void {
   connection.on('projectSignal', (signal) => {
     switch (signal.type) {
+      case SIGNAL_HANDSHAKE_RESPONSE:
+        // This socket's identity has landed. The session scope is bound first
+        // (bootHilos), so its own listener has already written the id this reads.
+        sessionAnswered = true
+        maybeJoin()
+        break
       case NOTIFICATION_SIGNAL_SNAPSHOT:
         // Validated against notificationSnapshotSchema at the parse boundary; this
         // cast is the declared typed selector for that schema's output.
@@ -251,9 +267,11 @@ export function bindNotificationsScope(
   // non-connected transition so a reconnect re-joins (a fresh socket loses every
   // server-side membership).
   let joinedFor: number | null = null
+  // Whether the current socket's handshake has answered — see the note above.
+  let sessionAnswered = false
 
   function maybeJoin(): void {
-    if (connection.state !== 'connected') {
+    if (connection.state !== 'connected' || !sessionAnswered) {
       return
     }
     const uid = userId.get()
@@ -268,13 +286,11 @@ export function bindNotificationsScope(
   connection.on('state', (state) => {
     if (state !== 'connected') {
       joinedFor = null
-
-      return
+      sessionAnswered = false
     }
-    maybeJoin()
   })
-  // The handshake response lands after `connected`, so the id often arrives once
-  // already connected; re-check the join whenever it changes.
+  // A login upgrades the session on a socket that already answered, so the id
+  // arrives without a handshake behind it; re-check the join whenever it changes.
   subscribeSignal(userId, () => {
     maybeJoin()
   })

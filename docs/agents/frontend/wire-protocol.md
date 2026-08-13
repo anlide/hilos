@@ -344,6 +344,39 @@ successful save or closing the modal triggers the refresh. A restored draft is
 re-judged by the backend under backend-only validation; credential-like fields
 are never persisted (see [conflict-resolution.md](conflict-resolution.md)).
 
+## Session-token rotation (HIL-582)
+
+A login rotates the session token, so a value planted in the browser beforehand
+stops naming the session the moment the login succeeds. The new token can only
+reach the browser through `Set-Cookie`, and the only frame that carries one is
+the 101 — so it is traded for, not pushed:
+
+1. the seam sends the initiating connection alone a framework
+   `hilos_session_rotate` signal carrying a one-time `ticket`;
+2. the client writes the ticket into an auxiliary cookie — the session cookie's
+   name plus `_rotate`, `Path=/`, `SameSite=Strict`, 30 s, no `HttpOnly` (the
+   session cookie itself is `HttpOnly`, which is why JS cannot write it) — and
+   reconnects without the backoff pause;
+3. the master reads that cookie on the next handshake, answers with the rotated
+   token in the session `Set-Cookie`, erases the auxiliary cookie with a second
+   one, burns the ticket, and drops the other connections of the old session,
+   which come back into it carrying the new cookie.
+
+**The reconnect waits for the replies the socket is still owed.** The rotation
+signal is emitted from inside the action handler that logged in, so the action's
+own `::success` is behind it on the wire; reconnecting on arrival would throw
+away the answer to the click that caused the rotation. The client holds the
+rotation until every outstanding `requestId` has been answered (or a 10 s grace
+elapses), which is a guarantee rather than the hope that both frames land in one
+batch.
+
+A ticket that is unknown, expired, malformed or already spent is not an error:
+the handshake is served by the ordinary cookie rule, and the auxiliary cookie is
+erased all the same, so it is never presented twice. The session cookie name
+rides the `handshake` welcome frame (`sessionCookieName`) because it is
+deployment configuration, and without it the client cannot name the cookie it
+has to write.
+
 ## Backend contract surface (the gate)
 
 This protocol implies backend changes to the FE↔BE contract. Each passes the

@@ -131,7 +131,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
         try {
             $userId = Hilos::$db->users->actions->createWithName('Magic User')->id;
             $this->insertVerifiedMagicLink($userId, $email);
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
 
             new ProfilePage($agent)->onAction(
                 'set-add-ak',
@@ -168,7 +168,7 @@ final class ProfileSetPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
 
             $rejected = false;
             try {

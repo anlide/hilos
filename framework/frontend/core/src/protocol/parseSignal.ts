@@ -9,6 +9,7 @@ import {
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PROTECTED_MODE,
+  SIGNAL_TYPE_SESSION_ROTATE,
   SIGNAL_TYPE_TABLE_VIEWPORT_APPEND,
   SIGNAL_TYPE_TABLE_VIEWPORT_COUNT,
   SIGNAL_TYPE_TABLE_VIEWPORT_DELTA,
@@ -23,6 +24,7 @@ import {
   tableViewportDeltaSignalDataSchema,
   tableViewportCountSignalDataSchema,
   tableViewportAppendSignalDataSchema,
+  sessionRotateSignalDataSchema,
   type SignalEnvelope,
   type TableWindowSignalData,
   type TableViewportDeltaSignalData,
@@ -48,7 +50,14 @@ export type ParsedSignal =
   | {
       kind: 'handshake'
       build: string
+      /** Session cookie name of this deployment; absent from an older daemon's welcome. */
+      sessionCookieName: string | undefined
       protectedMode: ProtectedModeStatus
+      envelope: SignalEnvelope
+    }
+  | {
+      kind: 'sessionRotate'
+      ticket: string
       envelope: SignalEnvelope
     }
   | {
@@ -96,6 +105,10 @@ export type ParsedSignal =
   | { kind: 'unknown'; type: string; envelope: SignalEnvelope }
 
 export type HandshakeSignal = Extract<ParsedSignal, { kind: 'handshake' }>
+export type SessionRotateSignal = Extract<
+  ParsedSignal,
+  { kind: 'sessionRotate' }
+>
 export type ProtectedModeSignal = Extract<
   ParsedSignal,
   { kind: 'protectedMode' }
@@ -139,8 +152,8 @@ export type ParseResult =
 /**
  * Parse one raw WebSocket frame into a typed signal.
  *
- * Framework signal types (`handshake`, `protected_mode`, `action_success`,
- * `action_error`) are
+ * Framework signal types (`handshake`, `protected_mode`, `hilos_session_rotate`,
+ * `action_success`, `action_error`) are
  * owned by the core and parse to their own kind ahead of any project schema —
  * the two action replies surfacing the envelope's `requestId` for correlation.
  * A `type` with a
@@ -194,7 +207,35 @@ export function parseSignal(
         signal: {
           kind: 'handshake',
           build: data.data.build,
+          sessionCookieName: data.data.sessionCookieName,
           protectedMode: toProtectedModeStatus(data.data.protectedMode),
+          envelope: envelope.data,
+        },
+      }
+    }
+
+    case SIGNAL_TYPE_SESSION_ROTATE: {
+      // Rejected rather than tolerated, for the same reason as the protected-mode push:
+      // this frame IS the message. A rotation nobody can read is a session about to be
+      // lost, and saying so as a parse failure is how that becomes visible instead of
+      // silent.
+      const data = sessionRotateSignalDataSchema.safeParse(envelope.data.data)
+      if (!data.success) {
+        return {
+          ok: false,
+          failure: {
+            kind: 'invalid-signal-data',
+            type: SIGNAL_TYPE_SESSION_ROTATE,
+            message: data.error.message,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        signal: {
+          kind: 'sessionRotate',
+          ticket: data.data.ticket,
           envelope: envelope.data,
         },
       }

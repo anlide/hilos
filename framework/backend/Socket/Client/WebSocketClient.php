@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Auth\Session\SessionRotationTicket;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
@@ -12,12 +14,15 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WebSocketConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\Exception\RtBaseException;
+use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
@@ -106,6 +111,20 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
+
+    /**
+     * @var ?ConnectionDropper Master seam closing OTHER connections, wired in by the server
+     * when this client is accepted; null in a socketless probe and in any host that never
+     * registered one, where a rotation simply drops nobody.
+     */
+    private ?ConnectionDropper $connectionDropper = null;
+
+    /**
+     * @var list<string> Accept keys a spent rotation left to drop, held until this
+     * connection's own outbound buffer empties ({@see spendRotation()}); empty at every
+     * other moment of a connection's life.
+     */
+    private array $pendingRotationDrops = [];
 
     /** @var bool Whether we are currently receiving a fragmented message */
     private bool $isReceivingFragmented = false;
@@ -321,17 +340,24 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $cookies = $this->parseCookies($headers);
         $sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
 
+        // A browser that just logged in comes back carrying the ticket its rotation was
+        // announced with; anyone else carries nothing here and is served exactly as before.
+        $rotateCookieName = SessionRotationTicket::cookieName($sessionCookieName);
+        $presentedTicket = $cookies[$rotateCookieName] ?? null;
+        $rotation = $presentedTicket === null ? null : self::claimRotation($presentedTicket);
+
         // Mint this connection's two secrets: the identifier, random and server-owned
         // so no client can choose or predict another connection's identity, and the
-        // session token - reused from the client's cookie when it has the minted form,
-        // minted otherwise. Both are in-memory (no I/O), so the master stays light; the
-        // worker handshake reads them from the DTO.
+        // session token - the one the claimed rotation names, else the client's cookie
+        // when it has the minted form, else a fresh mint. Both are in-memory (no I/O), so
+        // the master stays light; the worker handshake reads them from the DTO, which is
+        // why the rotated token has to be settled here and not after the response.
         // A secure source that refuses cannot be answered with a guessable secret, so
         // this connection is doomed and the refusal travels on: the manager stops the
         // node over it, and neither the 101 nor the welcome frame is assembled below.
         try {
             $acceptKey = self::mintAcceptKey();
-            $sessionToken = self::resolveSessionToken($cookies, $sessionCookieName);
+            $sessionToken = $rotation?->sessionToken ?? self::resolveSessionToken($cookies, $sessionCookieName);
         } catch (RandomException $exception) {
             $this->shouldClose = true;
             throw $exception;
@@ -356,11 +382,142 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $secWebSocketAccept . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= $this->buildSessionCookieHeader($sessionCookieName, $sessionToken);
+        if ($presentedTicket !== null) {
+            // Presented, therefore spent: whether it bought a rotation or was stale, garbage
+            // or already burned, the browser must not carry it into the next handshake.
+            $response .= $this->buildRotationCookieClearedHeader($rotateCookieName);
+        }
         $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
-        $this->sendHandshakeWelcome($acceptKey);
+        $this->sendHandshakeWelcome($acceptKey, $sessionCookieName);
+
+        if ($rotation !== null) {
+            $this->spendRotation($rotation);
+        }
+    }
+
+    /**
+     * Returns the rotation a presented ticket may still be traded for, or null.
+     *
+     * The one read the master makes on behalf of a login: a light in-memory lookup of the
+     * framework collection an inbound RT sync filled ({@see HilosSessionRotations}), on the
+     * same terms as the protected-mode row beside it. Null is the ordinary answer and means
+     * "serve this handshake by the cookie rule" - the ticket is malformed, was never minted,
+     * has already been spent, or its moment passed.
+     *
+     * A runtime failure is contained rather than propagated. This runs on the connection
+     * accept path, where an exception would cost the visitor the handshake itself over
+     * bookkeeping that only ever decides whether one login is completed early; the browser
+     * that loses its rotation here comes back anonymous and logs in again, which is the same
+     * safe failure a lost ticket already has.
+     *
+     * @param string $ticket Ticket value presented in the auxiliary cookie
+     * @return ?HilosSessionRotation Live rotation, or null when the ticket buys nothing
+     */
+    private static function claimRotation(string $ticket): ?HilosSessionRotation
+    {
+        if (!SessionRotationTicket::isValid($ticket)) {
+            return null;
+        }
+
+        try {
+            return Hilos::$rt?->hilosSessionRotations->claimable($ticket);
+        } catch (RtBaseException $exception) {
+            Logger::error('Session rotation lookup failed', ['error' => $exception->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Burns a traded rotation now and holds its drops until the 101 has left.
+     *
+     * The two halves are deliberately not in the same moment. Burning is immediate, because
+     * the ticket must buy a single handshake even inside its lifetime, and it is this read
+     * that spent it. Dropping the session's other tabs waits for {@see onOutboundDrained()}:
+     * queueing the 101 is not the same as sending it, and a tab dropped while the rotated
+     * Set-Cookie still sits in this buffer could come back on the pre-rotation token, be
+     * served a fresh anonymous session under it, and write that back over the jar - logging
+     * the person out of the session they just signed into. The order the leaf rests on is
+     * therefore program order here, not the few microseconds the read loop takes to reach
+     * its write.
+     *
+     * Contained for the same reason as the lookup, and the failure is benign: the row that
+     * was not burned is swept by the owning agent when its moment passes.
+     *
+     * @param HilosSessionRotation $rotation Rotation this handshake traded its ticket for
+     */
+    private function spendRotation(HilosSessionRotation $rotation): void
+    {
+        /** @var list<string> $keysToDrop */
+        $keysToDrop = $rotation->acceptKeysToDrop;
+        $this->pendingRotationDrops = $keysToDrop;
+
+        try {
+            Hilos::$rt?->hilosSessionRotations->actions->forget($rotation->ticket);
+        } catch (RtBaseException $exception) {
+            Logger::error('Session rotation could not be burned', ['error' => $exception->getMessage()]);
+        }
+    }
+
+    /**
+     * Drops the connections a spent rotation left behind, now that its 101 is on the wire.
+     *
+     * Called from {@see write()} the moment this connection's buffer empties, which for the
+     * rotated handshake is the moment its Set-Cookie has been handed to the kernel — see
+     * {@see spendRotation()} for why the two are ordered rather than done together. A socket
+     * that dies before it drains simply never drops them, and that is the right end: its
+     * browser never received the new cookie either, so the tabs are no worse off than the
+     * initiator, and they are anonymous until their own socket dies.
+     *
+     * The failure is benign for the same reason: a connection that could not be closed shows
+     * a stale identity until it goes on its own.
+     */
+    private function onOutboundDrained(): void
+    {
+        $keysToDrop = $this->pendingRotationDrops;
+        $this->pendingRotationDrops = [];
+
+        try {
+            foreach ($keysToDrop as $acceptKey) {
+                $this->connectionDropper?->dropWebSocketConnection($acceptKey);
+            }
+        } catch (SocketException $exception) {
+            Logger::error('Session rotation could not drop a connection', ['error' => $exception->getMessage()]);
+        }
+    }
+
+    /**
+     * Writes the outbound buffer and releases anything that was waiting for it to empty.
+     *
+     * The only thing waiting today is a spent rotation's drops ({@see onOutboundDrained()}).
+     * A partial write leaves them held for the next call, which is exactly the point.
+     *
+     * @throws SocketException If socket write fails
+     */
+    public function write(): void
+    {
+        parent::write();
+
+        if ($this->pendingRotationDrops !== [] && $this->writeBuffer === '') {
+            $this->onOutboundDrained();
+        }
+    }
+
+    /**
+     * Hands this connection the seam that force-closes another one.
+     *
+     * Called by the server that accepted it, so the client can drop the connections a
+     * rotation left behind without knowing the daemon that owns the socket table - the
+     * mirror of how the command channel is handed the same seam for its drop command.
+     *
+     * @param ConnectionDropper $connectionDropper Master seam that force-closes a connection
+     */
+    public function setConnectionDropper(ConnectionDropper $connectionDropper): void
+    {
+        $this->connectionDropper = $connectionDropper;
     }
 
     /**
@@ -409,7 +566,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Issued on every handshake, not only when the token is minted: the session
      * row's expiry slides on each handshake, so the cookie has to slide with it
      * or an active visitor loses the session the row still considers alive.
-     * HttpOnly and SameSite=Strict always; Secure only when configured (TLS).
+     * HttpOnly and SameSite=Strict always; Secure wherever the deployment is
+     * production-like (HIL-582).
      *
      * @param string $name Cookie name
      * @param string $token Session token value
@@ -420,7 +578,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $cookie = $name . '=' . $token
             . '; Path=/; HttpOnly; SameSite=Strict'
             . '; Max-Age=' . Hilos::$env->int(EnvConstants::HILOS_SESSION_COOKIE_MAX_AGE);
-        if (Hilos::$env->bool(EnvConstants::HILOS_SESSION_COOKIE_SECURE)) {
+        if (self::cookiesAreSecured()) {
             $cookie .= '; Secure';
         }
 
@@ -428,9 +586,52 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
+     * Build the Set-Cookie header line that clears the auxiliary rotation cookie.
+     *
+     * The cookie the frontend wrote for one reconnect, expired on that reconnect. Its
+     * attributes mirror the ones the frontend wrote it with, minus Secure: a cookie is
+     * identified by name, domain and path, so the erasure lands whether or not the original
+     * carried the flag - while sending Secure over plain http would have the browser drop the
+     * erasure and leave the spent ticket in place.
+     *
+     * @param string $name Auxiliary cookie name
+     * @return string Set-Cookie header line including the trailing separator
+     */
+    private function buildRotationCookieClearedHeader(string $name): string
+    {
+        return HttpConstants::HEADER_SET_COOKIE . ': ' . $name . '=; Path=/; SameSite=Strict; Max-Age=0'
+            . HttpConstants::HTTP_LINE_SEPARATOR;
+    }
+
+    /**
+     * Whether cookies this master sets carry the Secure attribute, read from APP_ENV.
+     *
+     * One behaviour instead of a switch (HIL-582). It used to be its own env key
+     * defaulting to false, which meant every installation that never heard of the key
+     * shipped its session cookie over plain http - including production ones. The
+     * environment already says whether the deployment is production-like, and the
+     * framework judges database seeds and test-only CLI commands by exactly that, so the
+     * flag is derived rather than configured: prod and staging are secured, dev, local
+     * and test are not.
+     *
+     * An APP_ENV nobody recognises is treated as not production-like, matching how the
+     * enum answers everywhere else. The cost is named: an installation running prod
+     * behind a non-TLS frontend loses the cookie and is cured by naming its environment
+     * honestly. What is gained is that Secure can no longer be off in production without
+     * anyone saying so.
+     *
+     * @return bool True when the deployment is production-like (prod or staging)
+     */
+    private static function cookiesAreSecured(): bool
+    {
+        return AppEnv::fromString(Hilos::$env->string(EnvConstants::APP_ENV))?->isProductionLike() === true;
+    }
+
+    /**
      * Append the framework welcome frame right behind the 101 response bytes.
      *
-     * First frame of every connection: {type: 'handshake', data: {build, protectedMode}}.
+     * First frame of every connection:
+     * {type: 'handshake', data: {build, sessionCookieName, protectedMode}}.
      * `build` carries the HILOS_BUILD_TIMESTAMP env value the frontend compares on every
      * (re)connect to force a page refresh on mismatch; `protectedMode.active` tells a
      * connection caught by a cluster freeze that it is locked out, and the copy beside it
@@ -438,20 +639,24 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * flag is a light in-memory read of the daemon-owned runtime row on this same master
      * process — inert (false) when no project mounted the item — so the light master stays
      * light; the copy comes from a facade constant, not the database, which a restore is
-     * rewriting underneath us.
+     * rewriting underneath us. `sessionCookieName` is the name of the cookie this same 101
+     * just set, told to the frontend so a token rotation can write the auxiliary cookie
+     * beside it (HIL-582).
      * Written directly to the write buffer so the 101 response and the welcome leave in
      * one flush.
      *
      * @param string $acceptKey This connection's accept key, compared against the initiator's
+     * @param string $sessionCookieName Name of this deployment's session cookie
      * @throws EnvException When the build timestamp env value cannot be read
      */
-    private function sendHandshakeWelcome(string $acceptKey): void
+    private function sendHandshakeWelcome(string $acceptKey, string $sessionCookieName): void
     {
         $locksOut = $this->protectedModeLocksOut($acceptKey);
         $operation = $locksOut ? Hilos::$rt?->hilosProtectedModeRuntime?->operation : null;
         $copy = $locksOut ? ProtectedModeStubCopy::forOperation($operation) : null;
         $welcome = new HandshakeWelcomeSignalData(
             build: Hilos::$env->string(EnvConstants::HILOS_BUILD_TIMESTAMP),
+            sessionCookieName: $sessionCookieName,
             protectedModeActive: $locksOut,
             protectedModeOperation: $operation,
             protectedModeTitle: $copy?->title,

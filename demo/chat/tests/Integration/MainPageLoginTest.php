@@ -52,7 +52,7 @@ final class MainPageLoginTest extends IntegrationTestCase
         try {
             $this->login($agent, 'login-ak', $email, self::PASSWORD);
 
-            $this->assertSame($userId, Hilos::$db->sessions->findByToken($token)?->userId);
+            $this->assertSame($userId, $this->sessionOf('login-ak')?->userId);
             $this->assertSame($userId, Hilos::$rt->connections['login-ak']->userId);
         } finally {
             Hilos::$rt->connections->actions->clear();

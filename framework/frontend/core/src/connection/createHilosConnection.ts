@@ -9,7 +9,11 @@ import { SESSION_SIGNAL_SCHEMAS } from '../session/sessionScope.js'
 import { PAGE_SIGNAL_SCHEMAS } from '../subscription/bindPageScope.js'
 import { ActionErrorStore } from './ActionErrorStore.js'
 import { ActionLifecycle } from './actionLifecycle.js'
-import { HilosConnection, type WebSocketLike } from './HilosConnection.js'
+import {
+  HilosConnection,
+  type SessionRotation,
+  type WebSocketLike,
+} from './HilosConnection.js'
 
 /** Options for {@link createHilosConnection}. */
 export interface CreateHilosConnectionOptions {
@@ -39,6 +43,13 @@ export interface CreateHilosConnectionOptions {
    * is the only outcome that is honest about all of them at once.
    */
   onProtectedModeLift?: () => void
+  /**
+   * Handler for a session-token rotation (HIL-582). Defaults to writing the ticket into
+   * the auxiliary cookie the master trades it back for on the reconnect that follows —
+   * the connection starts that reconnect itself, so a handler that does not write the
+   * cookie costs the session. Overridden only by tests, which have no document.
+   */
+  onSessionRotate?: (rotation: SessionRotation) => void
   /** Socket constructor seam; tests inject a mock. Default `new WebSocket(url)`. */
   webSocketFactory?: (url: string) => WebSocketLike
 }
@@ -49,6 +60,26 @@ export interface HilosConnectionBundle {
   actionErrors: ActionErrorStore
   /** The requestId-correlated reply lifecycle: `actions.dispatch(...)` for tracked actions. */
   actions: ActionLifecycle
+}
+
+/** Seconds the auxiliary cookie lives: the ticket's own lifetime (PHP `SessionRotationTicket`). */
+const ROTATE_COOKIE_MAX_AGE_SECONDS = 30
+
+/**
+ * Write the rotation ticket where the master reads it on the next handshake.
+ *
+ * Plain (not HttpOnly) because this is the one cookie the client itself has to write, and
+ * short-lived because a ticket outliving the reconnect it was minted for protects nothing.
+ * `SameSite=Strict` costs nothing here — the socket is same-origin — and `Secure` follows
+ * the page, so an https document never hands the ticket to a plain-http request.
+ *
+ * @param rotation Ticket to hand back and the cookie name to hand it back in.
+ */
+function writeRotationCookie(rotation: SessionRotation): void {
+  const secure = location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie =
+    `${rotation.cookieName}=${rotation.ticket}` +
+    `; Path=/; SameSite=Strict; Max-Age=${ROTATE_COOKIE_MAX_AGE_SECONDS}${secure}`
 }
 
 /** The same-origin `/ws` endpoint: `wss` under https, `ws` otherwise. */
@@ -94,6 +125,7 @@ export function createHilosConnection(
     (() => {
       location.reload()
     })
+  connection.on('sessionRotate', options.onSessionRotate ?? writeRotationCookie)
   connection.on('protectedMode', (status) => {
     // An inactive state reaches this event only as a lift: a pushed frame saying so
     // is the daemon leaving the mode, and a welcome saying so is emitted only when

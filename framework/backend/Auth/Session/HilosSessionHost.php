@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Session;
 
+use Hilos\Auth\Session\DTO\SessionRotateSignalData;
+use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
+use Random\RandomException;
 
 /**
  * Session-host seam graduated from the chat reference (HIL-361).
@@ -37,6 +42,37 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 trait HilosSessionHost
 {
+    /** @var int Times a rotation re-mints a token another session already holds before giving up */
+    private const int TOKEN_MINT_ATTEMPTS = 3;
+
+    /**
+     * Claims the rotation store for this agent and clears anything the last process left.
+     *
+     * Called from the owning agent's `onStart()`. The store is a framework-owned collection
+     * mounted for every project, but nothing may write it until somebody says who owns it -
+     * so a project whose agent never calls this simply cannot rotate, rather than rotating
+     * into state no other worker sees.
+     */
+    final protected function startSessionRotations(): void
+    {
+        $this->registerRtTruthSource(StateHilosSessionRotation::RT_COLLECTION);
+    }
+
+    /**
+     * Drops rotations whose ticket is past its moment.
+     *
+     * Called from the owning agent's `onTick()`. Expired rows are already refused on the
+     * handshake, so this reclaims memory rather than closing a hole: without it, every
+     * login whose browser never came back to trade its ticket - a tab closed in between -
+     * would stay in the collection for the life of the process.
+     *
+     * @throws HilosException On runtime failure
+     */
+    final protected function sweepSessionRotations(): void
+    {
+        Hilos::$rt?->hilosSessionRotations->actions->forgetExpired();
+    }
+
     /**
      * Builds the identity handshake response describing a session's current user.
      *
@@ -165,35 +201,175 @@ trait HilosSessionHost
     }
 
     /**
-     * Authenticates a live session: binds it to a user, re-points the session's
-     * active connections to that user, and re-emits the handshake response so their
-     * frontends populate the current user.
+     * Authenticates a live session: rotates it onto a fresh token, binds it to a user,
+     * authenticates the connection that initiated the login, and hands that connection
+     * the ticket its browser trades for the new cookie.
      *
      * The upgrade seam login and register call to promote a session; the symmetric
      * downgrade is {@see deauthenticateSession()}. A no-op when the token has no
      * session row.
      *
+     * Two things changed here in HIL-582, and both close the same session-fixation
+     * attack. The token is ROTATED rather than kept, so a value someone planted in the
+     * browser before the login stops naming this session the moment it succeeds; the
+     * row itself is untouched, so its id, creation time, impersonator marker and
+     * everything the analytics link to survive. And only the INITIATING connection is
+     * authenticated, where every live connection of the session used to be: without
+     * that, an attacker who had planted the cookie did not even need the cookie back -
+     * opening a socket with the planted token beforehand and waiting was enough, since
+     * the victim's login would have promoted his socket too.
+     *
+     * The rotation is announced but not delivered here. The new token reaches the
+     * browser through the master's Set-Cookie on the next handshake, traded for the
+     * one-time ticket this method sends; see {@see SessionRotationTicket}.
+     *
+     * A caller with no initiating connection passes null and gets no rotation - there is
+     * no channel to deliver the ticket on, and nothing to rotate away from, since a token
+     * nobody was handed was never planted. That path keeps the old behaviour whole: it
+     * authenticates EVERY live connection of the session, because without a rotation they
+     * all still belong to it, and the impersonation CLI acting on somebody else's session
+     * must reach the tabs that session actually has. The parameter is required so that
+     * saying "no initiator" is deliberate: a silent default would put the hole back for
+     * every future caller that forgot.
+     *
      * @param string $sessionToken Session cookie token to authenticate
      * @param int $userId Durable user id to bind the session to
+     * @param ?string $initiatorAcceptKey Accept key of the connection that logged in, or null when there is none
      * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform's secure random source refuses a mint
+     * @throws SessionTokenExhaustedException When three minted tokens in a row were already taken
      */
-    public function authenticateSession(string $sessionToken, int $userId): void
+    public function authenticateSession(string $sessionToken, int $userId, ?string $initiatorAcceptKey): void
     {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
             return;
         }
 
-        $session->actions->bindUser($userId);
+        $rotated = $initiatorAcceptKey === null ? null : $this->rotateSessionToken($session, $userId);
+        if ($rotated === null) {
+            $session->actions->bindUser($userId);
+        }
+        $liveToken = $rotated ?? $sessionToken;
+
         $this->afterAuthenticate($userId);
-        Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
+        if ($rotated !== null) {
+            // Analytics names a browser session by the token, not by the session row, so
+            // the rotation has to be told - exactly as the runtime connection rows are.
+            // Without it the visit before the login stays under a token nobody presents
+            // again, and the identify below opens a second session for the same person.
+            Hilos::$ac?->renameBrowserSession($sessionToken, $rotated);
+        }
+        Hilos::$ac?->identifyBrowserSessionUser($liveToken, $userId);
 
         $response = $this->handshakeResponseFor($session);
         $signalName = $this->handshakeResponseSignalName();
-        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
-            $this->bindConnectionUser($acceptKey, $userId);
-            $this->sendToUser($signalName, $acceptKey, $response);
+
+        if ($rotated === null) {
+            // Nothing was rotated, so the session still answers to the token every one of
+            // its connections named, and every one of them still belongs to it. Re-point
+            // them all, exactly as this seam always did: the caller with no initiator is
+            // acting on somebody else's session (the impersonation CLI), and the tabs of
+            // that session have to learn who they are now.
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $this->bindConnectionUser($acceptKey, $userId);
+                $this->sendToUser($signalName, $acceptKey, $response);
+            }
+
+            return;
         }
+
+        // The session's other connections are left anonymous on purpose: they are dropped
+        // once the browser holds the new cookie, and they come back into the rotated
+        // session by themselves. Authenticating them here is the second half of the attack
+        // this leaf closes - a socket opened with a planted token would ride the victim's
+        // login into her account.
+        $keysToDrop = array_values(array_filter(
+            $this->sessionConnectionKeys($sessionToken),
+            static fn(string $acceptKey): bool => $acceptKey !== $initiatorAcceptKey,
+        ));
+
+        $this->repointInitiatorSessionToken($initiatorAcceptKey, $rotated);
+        $this->bindConnectionUser($initiatorAcceptKey, $userId);
+        $this->sendToUser($signalName, $initiatorAcceptKey, $response);
+
+        $this->announceRotation($rotated, $keysToDrop, $initiatorAcceptKey);
+    }
+
+    /**
+     * Moves a session onto a freshly minted token and binds it to the user in one write.
+     *
+     * Retries on a token another session already holds, which a 128-bit value makes a
+     * theoretical event rather than an expected one - and that is exactly why the retry
+     * is bounded and its exhaustion is an exception. Letting the login proceed on the old
+     * token "so the user gets in" would restore the vulnerability in the one place where
+     * it matters, so the login fails instead.
+     *
+     * @param Session $session Live session to rotate
+     * @param int $userId Durable user id to bind the session to
+     * @return string The token the session now answers to
+     * @throws HilosException On database or runtime failure
+     * @throws RandomException When the platform's secure random source refuses a mint
+     * @throws SessionTokenExhaustedException When every attempt hit a token already in use
+     */
+    private function rotateSessionToken(Session $session, int $userId): string
+    {
+        for ($attempt = 0; $attempt < self::TOKEN_MINT_ATTEMPTS; $attempt++) {
+            $candidate = SessionToken::mint();
+            try {
+                $session->actions->rotateTokenAndBindUser($candidate, $userId);
+
+                return $candidate;
+            } catch (DuplicateValueException) {
+                // Another session holds the minted value; mint again.
+            }
+        }
+
+        throw new SessionTokenExhaustedException(
+            'Session token rotation failed: ' . self::TOKEN_MINT_ATTEMPTS . ' minted tokens were already in use'
+        );
+    }
+
+    /**
+     * Re-points the initiating connection's runtime row onto the rotated token.
+     *
+     * @param string $acceptKey Accept key of the connection that logged in
+     * @param string $newToken Token the session was rotated onto
+     * @throws HilosException On runtime failure
+     */
+    private function repointInitiatorSessionToken(string $acceptKey, string $newToken): void
+    {
+        Hilos::$rt?->sessionConnectionsRegistry()?->actions->repointSessionToken($acceptKey, $newToken);
+    }
+
+    /**
+     * Announces the pending rotation and hands its ticket to the initiating connection.
+     *
+     * Order matters and is the mechanism, not a detail: the row has to exist before the
+     * ticket is on the wire, or a browser fast enough to reconnect first would present a
+     * ticket the master cannot find and lose the session.
+     *
+     * @param string $newToken Token the session was rotated onto
+     * @param list<string> $keysToDrop Accept keys of the session's other connections
+     * @param string $initiatorAcceptKey Accept key of the connection that logged in
+     * @throws HilosException On runtime failure
+     * @throws RandomException When the platform's secure random source refuses a mint
+     */
+    private function announceRotation(string $newToken, array $keysToDrop, string $initiatorAcceptKey): void
+    {
+        $ticket = SessionRotationTicket::mint();
+        Hilos::$rt?->hilosSessionRotations->actions->register(
+            $ticket,
+            $newToken,
+            $keysToDrop,
+            SessionRotationTicket::expiryFromNow(),
+        );
+
+        $this->sendToUser(
+            HilosSignalConstants::HILOS_SESSION_ROTATE,
+            $initiatorAcceptKey,
+            new SessionRotateSignalData($ticket),
+        );
     }
 
     /**

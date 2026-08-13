@@ -68,7 +68,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
 
             new ProfilePage($agent)->onAction(
                 'add-pw-req-ak',
@@ -101,7 +101,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
 
             $otherId = Hilos::$db->users->actions->createWithName('Email Owner')->id;
             $this->insertVerifiedIdentity($otherId, $email, IdentityType::MAGIC_LINK);
@@ -141,7 +141,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
             $this->issueChallenge($email, $userId);
 
             new ProfilePage($agent)->onAction(
@@ -179,7 +179,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
             $this->issueChallenge($email, $userId);
 
             $rejected = false;
@@ -219,7 +219,7 @@ final class ProfileAddPasswordTest extends IntegrationTestCase
 
         try {
             $userId = Hilos::$db->users->actions->createWithName('Phone User')->id;
-            $agent->authenticateSession($token, $userId);
+            $agent->authenticateSession($token, $userId, null);
             $this->issueChallenge($email, $userId);
 
             $rejected = false;

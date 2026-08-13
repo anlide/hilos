@@ -48,13 +48,19 @@ export class PageSubscription {
   private readonly pageLoadingSignal = createSignal(false)
 
   /**
-   * Whether the session has answered. A page_subscribe sent before it says who
-   * this connection is asks a question the backend cannot answer yet: the
-   * connection's identity is established by the handshake and reaches the other
-   * workers on its own, so a subscribe that overtakes it is read as anonymous
-   * and refused — a false 401 the client then has to live with. Holding the
-   * frame until the answer lands costs one round trip the page is waiting on
-   * anyway, and removes the question rather than racing it.
+   * Whether the session has answered ON THE CURRENT SOCKET. A page_subscribe
+   * sent before it says who this connection is asks a question the backend
+   * cannot answer yet: the connection's identity is established by the handshake
+   * and reaches the other workers on its own, so a subscribe that overtakes it is
+   * read as anonymous and refused — a false 401 the client then has to live with.
+   * Holding the frame until the answer lands costs one round trip the page is
+   * waiting on anyway, and removes the question rather than racing it.
+   *
+   * A dropped socket takes its identity with it, so the hold goes back up on any
+   * non-connected transition: the next socket is a stranger to the backend until
+   * its own handshake answers, however long the visitor has been signed in. Since
+   * HIL-582 that case is routine rather than exotic — every login reconnects to
+   * trade its rotation ticket for the new cookie.
    */
   private sessionAnswered = false
 
@@ -63,8 +69,8 @@ export class PageSubscription {
     private readonly scopes: ScopeManager,
   ) {
     connection.on('state', (state) => {
-      if (state === 'connected') {
-        this.sendSubscribe()
+      if (state !== 'connected') {
+        this.sessionAnswered = false
       }
     })
   }
@@ -196,9 +202,10 @@ export class PageSubscription {
 
   /**
    * Release the held subscription: the session has answered, so the backend
-   * knows who this connection is and a page subscribe can be judged. Called
-   * once, by the boot sequence, on the first handshake response; a no-op after
-   * that.
+   * knows who this connection is and a page subscribe can be judged. Called by
+   * the boot sequence on every handshake response, which is once per socket —
+   * the second call for the same socket is a no-op, and the first after a
+   * reconnect is what sends the page's re-subscribe.
    */
   releaseOnSession(): void {
     if (this.sessionAnswered) {

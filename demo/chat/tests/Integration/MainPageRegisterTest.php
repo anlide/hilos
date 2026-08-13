@@ -62,7 +62,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertArrayNotHasKey('secret', $identity->toArray());
 
             $this->assertSame($this->localPart($email), Hilos::$db->users[$userId]?->name);
-            $this->assertSame($userId, Hilos::$db->sessions->findByToken($token)?->userId);
+            $this->assertSame($userId, $this->sessionOf('reg-ak')?->userId);
             $this->assertSame($userId, Hilos::$rt->connections['reg-ak']->userId);
         } finally {
             Hilos::$rt->connections->actions->clear();

@@ -20,11 +20,12 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
 {
     public function testWelcomeDefaultsToProtectedModeInactive(): void
     {
-        $welcome = new HandshakeWelcomeSignalData(build: 'dev');
+        $welcome = new HandshakeWelcomeSignalData(build: 'dev', sessionCookieName: 'hilos_session_token');
 
         $this->assertSame(
             [
                 HandshakeWelcomeSignalData::BUILD => 'dev',
+                HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
                 HandshakeWelcomeSignalData::PROTECTED_MODE => [
                     HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => false,
                     HandshakeWelcomeSignalData::PROTECTED_MODE_OPERATION => null,
@@ -38,7 +39,11 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
 
     public function testWelcomeCarriesTheActiveFreezeFlag(): void
     {
-        $welcome = new HandshakeWelcomeSignalData(build: '20260101', protectedModeActive: true);
+        $welcome = new HandshakeWelcomeSignalData(
+            build: '20260101',
+            sessionCookieName: 'hilos_session_token',
+            protectedModeActive: true,
+        );
 
         $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
 
@@ -50,6 +55,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
     {
         $welcome = new HandshakeWelcomeSignalData(
             build: '20260101',
+            sessionCookieName: 'hilos_session_token',
             protectedModeActive: true,
             protectedModeOperation: 'restore',
             protectedModeTitle: 'Maintenance in progress',
@@ -63,12 +69,24 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
         $this->assertSame('The application is briefly unavailable.', $restored->protectedModeMessage);
     }
 
+    public function testWelcomeNamesTheSessionCookieOfTheDeployment(): void
+    {
+        // The one thing on the frame the frontend needs in order to WRITE a cookie rather
+        // than read one: without the name, a rotation ticket has nowhere to go (HIL-582).
+        $welcome = new HandshakeWelcomeSignalData(build: 'dev', sessionCookieName: 'renamed_session');
+
+        $restored = HandshakeWelcomeSignalData::fromArray($welcome->toArray());
+
+        $this->assertSame('renamed_session', $restored->sessionCookieName);
+    }
+
     public function testWelcomeFromArrayIgnoresCopyThatIsNotText(): void
     {
         // A block that arrived half-built must not put a number on the screen: an unusable field
         // reads as absent, and the frontend falls back to its own last-resort sentence.
         $restored = HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
             HandshakeWelcomeSignalData::PROTECTED_MODE => [
                 HandshakeWelcomeSignalData::PROTECTED_MODE_ACTIVE => true,
                 HandshakeWelcomeSignalData::PROTECTED_MODE_TITLE => 42,
@@ -84,6 +102,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
     {
         $restored = HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
         ]);
 
         $this->assertSame('dev', $restored->build);
@@ -94,6 +113,7 @@ final class HandshakeWelcomeSignalDataTest extends TestCase
     {
         $restored = HandshakeWelcomeSignalData::fromArray([
             HandshakeWelcomeSignalData::BUILD => 'dev',
+            HandshakeWelcomeSignalData::SESSION_COOKIE_NAME => 'hilos_session_token',
             HandshakeWelcomeSignalData::PROTECTED_MODE => 'not-an-array',
         ]);
 

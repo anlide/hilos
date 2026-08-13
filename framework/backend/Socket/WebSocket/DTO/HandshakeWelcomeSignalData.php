@@ -20,11 +20,18 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
  * with the copy resolved through {@see ProtectedModeStubCopy}, learns it in
  * words, so the maintenance surface is painted before any subscription is
  * attempted and no empty shell flashes.
+ *
+ * It also names the session cookie (HIL-582). The frontend never reads that cookie —
+ * it is HttpOnly — but on a token rotation it has to WRITE the auxiliary one beside it,
+ * whose name is derived from it ({@see SessionRotationTicket::cookieName()}). The name is
+ * a property of the deployment rather than of the rotation, so it rides the welcome every
+ * connection already gets instead of the rotation signal almost none of them ever see.
  */
 class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
 {
     // Field name constants
     public const string BUILD = 'build';
+    public const string SESSION_COOKIE_NAME = 'sessionCookieName';
     public const string PROTECTED_MODE = 'protectedMode';
     public const string PROTECTED_MODE_ACTIVE = 'active';
     public const string PROTECTED_MODE_OPERATION = 'operation';
@@ -33,6 +40,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
 
     /**
      * @param string $build Daemon build timestamp ('dev' when not configured)
+     * @param string $sessionCookieName Name of this deployment's session cookie
      * @param bool $protectedModeActive Whether this connection is locked out by an active protected-mode freeze
      * @param ?string $protectedModeOperation Operation the freeze protects; null when no freeze holds
      * @param ?string $protectedModeTitle Heading of the maintenance surface; null when no freeze holds
@@ -40,6 +48,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
      */
     public function __construct(
         public readonly string $build,
+        public readonly string $sessionCookieName,
         public readonly bool $protectedModeActive = false,
         public readonly ?string $protectedModeOperation = null,
         public readonly ?string $protectedModeTitle = null,
@@ -54,6 +63,7 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
     {
         return [
             self::BUILD => $this->build,
+            self::SESSION_COOKIE_NAME => $this->sessionCookieName,
             self::PROTECTED_MODE => [
                 self::PROTECTED_MODE_ACTIVE => $this->protectedModeActive,
                 self::PROTECTED_MODE_OPERATION => $this->protectedModeOperation,
@@ -75,6 +85,10 @@ class HandshakeWelcomeSignalData extends BaseDTO implements SignalDataInterface
 
         return new static(
             build: (string)($data[self::BUILD] ?? ''),
+            // Read without a fallback: a frame that does not name the session cookie is a
+            // frame the frontend could not rotate on, and an empty name would produce an
+            // auxiliary cookie called `_rotate` on every deployment that ever saw one.
+            sessionCookieName: (string)$data[self::SESSION_COOKIE_NAME],
             protectedModeActive: (bool)($protectedMode[self::PROTECTED_MODE_ACTIVE] ?? false),
             protectedModeOperation: self::text($protectedMode, self::PROTECTED_MODE_OPERATION),
             protectedModeTitle: self::text($protectedMode, self::PROTECTED_MODE_TITLE),
