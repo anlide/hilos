@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
-import { readRegisterCode } from './mail'
+import { readRegisterCode, waitForMailCode } from './mail'
 import { gotoPage } from './page'
+import { uniquePhone, waitForSmsCode } from './sms'
 
 // Shared sign-in helpers for the session≠user model (HIL-360). Since auto-guest
 // was dropped, a fresh browser context is anonymous: it reads the chat but has
@@ -209,4 +210,77 @@ export async function signUp(page: Page): Promise<SignedInUser> {
   const userId = Number(await page.getByTestId('self-user-id').textContent())
 
   return { email, name, userId }
+}
+
+/** The subject EmailAddMailTemplate sends the add-password code under. */
+const EMAIL_ADD_SUBJECT = 'Confirm your email address'
+
+/**
+ * Establish an account whose email address the server itself has verified.
+ *
+ * A verified email is what an email delivery channel resolves an address from
+ * (MailDeliveryChannel::resolveAddress → findVerifiedEmailByUser), so any spec
+ * about mail delivery starts here. Registration leaves the address UNVERIFIED and
+ * no browser surface confirms it afterwards, so the account is built the long way
+ * — the way the product actually offers:
+ *
+ *   1. sign in by SMS with a fresh number, which mints a user with no password and
+ *      no email at all (MainPage::handleConfirmSmsCode creates the user if new);
+ *   2. walk that user through the profile's add-password wizard, which mails a
+ *      code to a chosen address and, on the confirm, writes a password identity
+ *      on it and marks it verified (ProfilePage::handleConfirmAddPassword).
+ *
+ * Both codes are read from the stand's interceptors (helpers/sms.ts,
+ * helpers/mail.ts), never from a test-only backdoor: the flow under the account
+ * is the product's own, so a change that breaks it for a user breaks it here too.
+ *
+ * @param page Page starting from any location (it navigates to '/' and '/profile').
+ * @returns The account's proven email, its display name (the phone the user was
+ *          minted from), and its durable user id.
+ */
+export async function signUpWithVerifiedEmail(
+  page: Page,
+): Promise<SignedInUser> {
+  const phone = uniquePhone()
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('message-signin').click()
+  await page.getByTestId('auth-to-sms').click()
+  await typeInto(page.getByTestId('auth-phone'), phone)
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  // The surface advances to the code step on the request's own reply, so the code
+  // field appearing is what says the code has been issued — and only then is
+  // there an artifact to read.
+  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  await typeInto(page.getByTestId('auth-sms-code'), await waitForSmsCode(phone))
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitAuthSettled(page)
+
+  await expect(page.getByTestId('self-user')).toHaveText(phone)
+  const userId = Number(await page.getByTestId('self-user-id').textContent())
+
+  // Step 1 of the wizard: name the address. It is only offered to a user with
+  // neither a password nor a verified email — which is exactly what an SMS-minted
+  // account is.
+  const email = uniqueEmail()
+  await gotoPage(page, '/profile')
+  await typeInto(page.getByTestId('profile-add-password-email'), email)
+  await clickSubmit(page.getByTestId('profile-add-password-request'))
+
+  // Step 2: prove it with the mailed code and set a password on it. The section
+  // flips to change-mode when the server fans password_updated back, so the
+  // current-password field appearing is proof the identity was written verified.
+  await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-add-password-code'),
+    await waitForMailCode(email, EMAIL_ADD_SUBJECT),
+  )
+  await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
+  await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-add-password-save'))
+  await expect(page.getByTestId('profile-password-current')).toBeVisible()
+
+  return { email, name: phone, userId }
 }

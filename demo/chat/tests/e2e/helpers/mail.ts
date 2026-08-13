@@ -1,159 +1,222 @@
 import { expect } from '@playwright/test'
-import { readdir, readFile, unlink } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 
-// Reads the mail the daemon actually delivered. The test stack configures no SMTP
-// relay, so the framework file transport is auto-selected and every message lands
-// as an .eml artifact under MAIL_FILE_DIR (demo/chat/tests/.env); the daemon writes
-// them at /app/data/mail-test and the runner reads them at
-// /hilos/demo/chat/data/mail-test — the same host directory through two bind mounts.
+// The stand's mail interceptor (mailpit-test in docker-compose.test.yml). The
+// daemon sends over SMTP to it, so anything the product mails — a verification
+// code, a notification delivery — lands in a mailbox the runner can read over
+// HTTP. This is the only place a spec can prove a message actually left the node:
+// the delivery journal saying `sent` is the daemon's own word for it.
 //
-// This is what makes a code-gated flow drivable from the browser: registration
-// (HIL-415) only creates an account once the emailed code comes back, and the code
-// exists nowhere the page can see it. The reference this mirrors is hleb's
-// email.helper.ts, which reads the same thing out of a MailHog HTTP API; we read the
-// artifact instead because the stack has no mail catcher (moving to one is P-062).
+// The interceptor replaced the file transport this helper first read (P-062).
+// Reading .eml artifacts proved only that the framework had written a file: the
+// SMTP path — the one a real deployment runs on — was executed by no browser test
+// at all, and the artifacts landed in the work tree owned by the container's user.
+const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://mailpit-test:8025'
+
+// The mailbox is shared by every spec on the stand, so a message is never
+// identified by "the newest one": a read names the recipient, and every spec
+// coins an address no other one uses. Clearing is a run-start act only
+// (clearMail, from the global setup) — mid-run it would take the letter a
+// parallel worker is still waiting for.
 //
-// Mail is never awaited with a fixed pause: a send travels as a signal to a sharded
-// mail agent and settles on its own tick, so every read polls until the letter is
-// there (expect.toPass) and the count helpers answer whatever has arrived so far.
+// Mail is never awaited with a fixed pause: a send travels as a signal to a
+// sharded mail agent and settles on its own tick, so every wait polls until the
+// letter is there and the count helpers answer whatever has arrived so far.
 
-/**
- * The artifact directory as the runner sees it — MAIL_FILE_DIR resolved through the
- * runner's own mount (its compose service mounts the repo root at /hilos).
- */
-const MAIL_DIR = fileURLToPath(new URL('../../../data/mail-test', import.meta.url))
+/** The subject RegisterConfirmMailTemplate sends the registration code under. */
+const REGISTER_SUBJECT = 'Confirm your email address'
 
-/** Header/body separator of an RFC 5322 message (MailMessageEncoder emits CRLF). */
-const HEADER_SEPARATOR = '\r\n\r\n'
+/** One intercepted message, as a spec reads it back. */
+export interface InterceptedMail {
+  /** Subject line, which is how a wait picked this message out. */
+  subject: string
+  /** Plain-text body — where a verification code or a notification body sits. */
+  text: string
+}
 
-/** The registration letter's code line, as RegisterConfirmMailTemplate words it. */
-const REGISTER_CODE_PATTERN =
-  /Use this code to confirm your email address:\s*(\d{6})/
-
-/** One delivered message, decoded. */
-interface MailArtifact {
-  /** Send time in epoch milliseconds, taken from the artifact's file name. */
-  readonly sentAtMs: number
-  /** Bare recipient address of the `To:` header. */
-  readonly to: string
-  /** Decoded plain-text body. */
-  readonly text: string
+/** The message-list fields this helper reads (Mailpit returns many more). */
+interface MailboxEntry {
+  ID: string
+  Subject: string
+  To: { Address: string }[]
 }
 
 /**
- * Every letter delivered to one address, newest first.
+ * Wait until the interceptor holds a message with this recipient and subject,
+ * and return it.
  *
- * @param email The recipient address.
+ * @param address Recipient address, as the product addressed it.
+ * @param subject Exact subject line the awaited message carries.
+ * @returns The matched message's subject and plain-text body.
+ * @throws Error When the message vanishes between the poll and the read.
  */
-export async function mailsTo(email: string): Promise<MailArtifact[]> {
-  const delivered = await readMailbox()
+export async function waitForMailTo(
+  address: string,
+  subject: string,
+): Promise<InterceptedMail> {
+  await expect
+    .poll(async () => (await matchingIds(address, subject)).length, {
+      message: `no mail to ${address} subject "${subject}" reached the interceptor`,
+    })
+    .toBeGreaterThan(0)
 
-  return delivered
-    .filter((message) => message.to === email.toLowerCase())
-    .sort((first, second) => second.sentAtMs - first.sentAtMs)
+  const [id] = await matchingIds(address, subject)
+  if (id === undefined) {
+    throw new Error(`mail to ${address} subject "${subject}" disappeared`)
+  }
+
+  return readMessage(id)
 }
 
 /**
- * Wait for the registration letter and return the code it carries.
+ * Wait for a verification code the product mailed, and return it.
  *
- * Polls the mailbox until a letter for the address is there and its body carries
- * the code line, so a spec can type the code the way a person reads it out of
- * their inbox. The newest letter wins — a resend supersedes the code before it.
+ * The `auth.*` templates all frame one numeric code in prose
+ * (AbstractVerificationCodeMailTemplate), so the code is the run of digits the
+ * body ends its instruction with.
  *
- * @param email The address the registration was submitted for.
+ * @param address Recipient address the code was issued for.
+ * @param subject Exact subject line of the mail carrying it.
+ * @returns The plaintext verification code.
+ * @throws Error When the awaited mail carries no code.
  */
-export async function readRegisterCode(email: string): Promise<string> {
-  let code = ''
-  await expect(async () => {
-    const [newest] = await mailsTo(email)
-    expect(newest, `no mail delivered to ${email}`).toBeDefined()
-    const match = newest.text.match(REGISTER_CODE_PATTERN)
-    expect(match, `no confirmation code in the mail to ${email}`).not.toBeNull()
-    code = match?.[1] ?? ''
-  }).toPass()
+export async function waitForMailCode(
+  address: string,
+  subject: string,
+): Promise<string> {
+  const mail = await waitForMailTo(address, subject)
+  const code = /(\d{4,})/.exec(mail.text)?.[1]
+  if (code === undefined) {
+    throw new Error(`mail "${subject}" to ${address} carried no code`)
+  }
 
   return code
 }
 
 /**
- * Drop every delivered artifact.
+ * Wait for the registration letter and return the code it carries.
  *
- * Called once from the global setup: the directory is a bind mount that outlives
- * the run, so without this a run reads a mailbox that still holds the previous
- * one's letters. Between tests nothing is cleared — every spec registers a unique
- * address, so a per-address read is already isolated from its neighbours.
+ * Registration is code-gated since HIL-415 — the submit only holds the address,
+ * and the account exists once the mailed code comes back — so a spec reads the
+ * code the way a person reads it out of their inbox, from a place the page
+ * cannot see.
+ *
+ * @param email The address the registration was submitted for.
+ * @returns The plaintext confirmation code.
+ * @throws Error When the delivered letter carries no code.
+ */
+export async function readRegisterCode(email: string): Promise<string> {
+  return waitForMailCode(email, REGISTER_SUBJECT)
+}
+
+/**
+ * Every letter the interceptor holds for one address, newest first.
+ *
+ * Counting is what proves a *second* letter was never sent — an assertion about
+ * the whole mailbox of an address rather than about one subject — so this read
+ * is deliberately not narrowed by subject, and deliberately does not wait: the
+ * caller has already awaited the letter whose absence of a sibling it asserts.
+ *
+ * @param email The recipient address.
+ * @returns The delivered messages, newest first (the order Mailpit lists in).
+ */
+export async function mailsTo(email: string): Promise<InterceptedMail[]> {
+  const entries = await entriesTo(email)
+
+  return Promise.all(entries.map((entry) => readMessage(entry.ID)))
+}
+
+/**
+ * Drop every message the interceptor holds.
+ *
+ * Called once from the global setup: the interceptor outlives a single run, so
+ * without this a run counts letters the previous one sent. Between tests nothing
+ * is cleared — every spec uses a unique address, so a per-address read is
+ * already isolated from its neighbours.
  */
 export async function clearMail(): Promise<void> {
-  for (const name of await listArtifacts()) {
-    await unlink(`${MAIL_DIR}/${name}`)
-  }
+  await call('/api/v1/messages', { method: 'DELETE' })
 }
 
 /**
- * The artifact file names currently in the mail directory.
+ * The messages currently held for one recipient, whatever their subject.
  *
- * An absent directory is an empty mailbox, not an error: nothing has been sent yet
- * (the daemon creates it on its first delivery).
+ * The whole mailbox is listed and filtered here rather than handed to Mailpit's
+ * search: the search grammar tokenizes its terms, and an address is exactly the
+ * kind of value that does not survive tokenizing intact. Recipients are matched
+ * case-insensitively — an address is stored as the sender wrote it, and the
+ * product lowercases nothing on its way out.
+ *
+ * @param address Recipient address to match.
+ * @returns Matching mailbox entries, newest first (the order Mailpit lists in).
  */
-async function listArtifacts(): Promise<string[]> {
-  try {
-    const names = await readdir(MAIL_DIR)
+async function entriesTo(address: string): Promise<MailboxEntry[]> {
+  const mailbox = await request<{ messages: MailboxEntry[] }>(
+    '/api/v1/messages?limit=200',
+  )
+  const wanted = address.toLowerCase()
 
-    return names.filter((name) => name.endsWith('.eml'))
-  } catch {
-    return []
-  }
-}
-
-/** Every delivered message, decoded, in no particular order. */
-async function readMailbox(): Promise<MailArtifact[]> {
-  const messages: MailArtifact[] = []
-  for (const name of await listArtifacts()) {
-    const encoded = await readFile(`${MAIL_DIR}/${name}`, 'utf8')
-    messages.push({
-      sentAtMs: Number.parseInt(name, 10),
-      to: recipientOf(encoded),
-      text: decodeBody(encoded),
-    })
-  }
-
-  return messages
+  return mailbox.messages.filter((entry) =>
+    entry.To.some((recipient) => recipient.Address.toLowerCase() === wanted),
+  )
 }
 
 /**
- * The bare recipient address of an encoded message.
+ * Ids of the messages currently held for one recipient and subject.
  *
- * A raw send carries no display name, but a `Name <address>` header is unwrapped
- * anyway so the read does not depend on which sender built the message.
- *
- * @param encoded The encoded wire message.
+ * @param address Recipient address to match.
+ * @param subject Exact subject line to match.
+ * @returns Matching message ids, newest first (the order Mailpit lists in).
  */
-function recipientOf(encoded: string): string {
-  const header = encoded.match(/^To:\s*(.+)$/m)
-  if (header === null) {
-    return ''
-  }
-  const value = header[1].trim()
-  const angled = value.match(/<([^>]+)>/)
+async function matchingIds(
+  address: string,
+  subject: string,
+): Promise<string[]> {
+  const entries = await entriesTo(address)
 
-  return (angled === null ? value : angled[1]).toLowerCase()
+  return entries
+    .filter((entry) => entry.Subject === subject)
+    .map((entry) => entry.ID)
 }
 
 /**
- * The decoded plain-text body of an encoded message.
+ * Read one held message in full.
  *
- * The encoder emits a single text/plain part for these letters, base64 with CRLF
- * folding, after the blank line that ends the headers.
- *
- * @param encoded The encoded wire message.
+ * @param id Message id from the mailbox listing.
+ * @returns The message's subject and plain-text body.
  */
-function decodeBody(encoded: string): string {
-  const separator = encoded.indexOf(HEADER_SEPARATOR)
-  if (separator === -1) {
-    return ''
-  }
-  const body = encoded.slice(separator + HEADER_SEPARATOR.length)
+async function readMessage(id: string): Promise<InterceptedMail> {
+  const message = await request<{ Subject: string; Text: string }>(
+    `/api/v1/message/${id}`,
+  )
 
-  return Buffer.from(body.replace(/\r?\n/g, ''), 'base64').toString('utf8')
+  return { subject: message.Subject, text: message.Text }
+}
+
+/**
+ * Call one Mailpit endpoint and decode its JSON.
+ *
+ * @param path API path including its query.
+ * @returns The decoded body.
+ */
+async function request<T>(path: string): Promise<T> {
+  const response = await call(path)
+
+  return (await response.json()) as T
+}
+
+/**
+ * Call one Mailpit endpoint, refusing anything but a 2xx.
+ *
+ * @param path API path including its query.
+ * @param init Request options, for the calls that are not a plain GET.
+ * @returns The raw response.
+ * @throws Error When the interceptor answers anything but 2xx.
+ */
+async function call(path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(`${MAILPIT_URL}${path}`, init)
+  if (!response.ok) {
+    throw new Error(`mail interceptor answered ${response.status} for ${path}`)
+  }
+
+  return response
 }

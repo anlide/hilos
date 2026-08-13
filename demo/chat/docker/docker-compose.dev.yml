@@ -24,6 +24,16 @@ services:
       - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
+      # Mail goes to the stand's own interceptor, whose UI is published below, so
+      # a message can be read with the eyes instead of dug out of a .eml file. The
+      # transport is pinned rather than auto-selected: a stand that loses the
+      # catcher should fail loudly, not fall back to writing files nobody opens.
+      # The sender identity is NOT restated here — ../.env already carries it, and
+      # a value written here would shadow that one without saying so.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailpit-dev}
+      - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
+      - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
       # WebSocket ports (when implemented)
       # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
@@ -36,6 +46,27 @@ services:
     networks:
       hilos-demo-chat-dev-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+
+  # Mail interceptor for the dev stand: the daemon sends over SMTP to it and its
+  # web UI is published on the host, so a verification code or a notification is
+  # read where a person can see it (P-062). Development mail never leaves the box
+  # — the catcher accepts everything and forwards nothing.
+  mailpit-dev:
+    image: axllent/mailpit:v1.21
+    container_name: chat-mailpit-dev
+    environment:
+      # A development relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8028}:8025"
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-dev-network
 
   chat-cli-dev:
     build: .

@@ -38,6 +38,30 @@ services:
     networks:
       - hilos-chat-test-network
 
+  # Mail interceptor for the e2e stand: the daemon points its SMTP transport here,
+  # so a notification's email is a real SMTP send whose result the Playwright
+  # runner reads back over Mailpit's HTTP API — the only thing standing between
+  # the delivery journal saying `sent` and a message actually leaving the node.
+  # No host ports: nothing outside the stack talks to it, and the stand keeps its
+  # promise of not reaching the network.
+  mailpit-test:
+    image: axllent/mailpit:v1.21
+    container_name: chat-mailpit-test
+    environment:
+      # A test relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - hilos-chat-test-network
+
   chat-test:
     build: .
     env_file:
@@ -76,9 +100,28 @@ services:
       - HILOS_WEBAUTHN_RP_ID=chat-nginx-test
       - HILOS_WEBAUTHN_ORIGIN=https://chat-nginx-test
       - HILOS_WEBAUTHN_CHALLENGE_SECRET=e2e-webauthn-challenge-secret
+      # Mail (HIL-558): the email delivery channel sends over SMTP to the stand's
+      # own interceptor. The transport is pinned rather than auto-selected, so a
+      # stand that loses the relay fails loudly instead of quietly writing .eml
+      # files nobody reads. A sender identity is mandatory — without it the
+      # message cannot be encoded at all.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=mailpit-test
+      - MAIL_SMTP_PORT=1025
+      - MAIL_SMTP_SECURITY=none
+      - MAIL_FROM_ADDRESS=notifications@chat.test
+      - MAIL_FROM_NAME=Hilos Chat
+      # SMS (HIL-558): the stub provider writes each message as a .txt artifact,
+      # which is how a spec reads a login code back — the SMS analogue of the mail
+      # interceptor above, and the only readable side of a channel that has no API.
+      # The directory sits under the repo bind mount (..:/app), so the Playwright
+      # runner sees the same files at /hilos/demo/chat/data/sms.
+      - SMS_FILE_DIR=/app/data/sms
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       mysql-test:
+        condition: service_healthy
+      mailpit-test:
         condition: service_healthy
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8095}:8090"
@@ -176,6 +219,12 @@ services:
       # (the CLI admin:grant wire) in-network, since the runner has no PHP.
       COMMAND_HOST: chat-test
       COMMAND_PORT: "8094"
+      # The mail interceptor's HTTP API, which the notification-delivery spec
+      # reads to prove a message left the node (HIL-558).
+      MAILPIT_URL: http://mailpit-test:8025
+      # The daemon's SMS_FILE_DIR as the runner sees it through the repo mount:
+      # the stub provider's .txt artifacts are how a spec reads a login code back.
+      SMS_ARTIFACT_DIR: /hilos/demo/chat/data/sms
     profiles:
       - e2e
     networks:

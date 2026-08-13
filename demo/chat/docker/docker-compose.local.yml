@@ -59,6 +59,25 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  # Mail interceptor for the local stack: the daemon sends over SMTP to it and its
+  # web UI is published on the host, so a verification code or a notification is
+  # read where a person can see it (P-062). Local mail never leaves the box — the
+  # catcher accepts everything and forwards nothing.
+  mailpit-local:
+    image: axllent/mailpit:v1.21
+    container_name: chat-mailpit-local
+    environment:
+      # A local relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8025}:8025"
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-local-network
+
   chat-local:
     build: .
     env_file:
@@ -88,6 +107,15 @@ services:
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      # Mail goes to the stack's own interceptor, whose UI is published above. The
+      # transport is pinned rather than auto-selected: a stack that loses the
+      # catcher should fail loudly, not fall back to writing .eml files nobody opens.
+      # The sender identity is NOT restated here — ../.env already carries it, and
+      # a value written here would shadow that one without saying so.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-mailpit-local}
+      - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
+      - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
       - LLM_LOCAL_URL=${LLM_LOCAL_URL:-http://host.docker.internal:11434}
       - CHAT_CONTEXT_ANALYZER_URL=${CHAT_CONTEXT_ANALYZER_URL:-}
       - CHAT_CONTEXT_ANALYZER_MODEL=${CHAT_CONTEXT_ANALYZER_MODEL:-qwen2.5:7b}
@@ -100,6 +128,7 @@ services:
     stop_grace_period: 25s
     depends_on:
       - mysql-local
+      - mailpit-local
     ports:
       # Expose ports to host for local frontend access
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"

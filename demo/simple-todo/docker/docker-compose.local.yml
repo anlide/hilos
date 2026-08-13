@@ -65,6 +65,27 @@ services:
     networks:
       - hilos-simple-todo-local-network
 
+  # Mail interceptor for the local stack, kept identical across the three demos so
+  # a stack is never a special case (P-062). Its web UI is published on the host,
+  # so a message is read where a person can see it. This demo mails nothing today
+  # — it activates NOTIFICATIONS without NOTIFICATION_DELIVERY — so the catcher is
+  # here for the day it does, and meanwhile it gives a stray message somewhere to
+  # land other than the work tree.
+  todo-mailpit-local:
+    image: axllent/mailpit:v1.21
+    container_name: todo-mailpit-local
+    environment:
+      # A local relay authenticates nobody and encrypts nothing; the daemon
+      # connects with MAIL_SMTP_SECURITY=none and no credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MAILPIT_HTTP_PORT:-8026}:8025"
+    restart: unless-stopped
+    networks:
+      - hilos-simple-todo-local-network
+
   # The Hilos daemon. The .env file is optional at the compose level: when it
   # is missing, the in-container bootstrap copies .env.example to .env itself
   # (Hilos::initEnv), so a fresh checkout starts without a setup step.
@@ -100,10 +121,20 @@ services:
       # default already gives two, but the demos prescribe it here (like chat)
       # so the worker pool is explicit and not at the mercy of env drift.
       - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-2}
+      # Mail goes to the stack's own interceptor, whose UI is published above. The
+      # transport is pinned rather than auto-selected: a stack that loses the
+      # catcher should fail loudly, not fall back to writing .eml files nobody opens.
+      - MAIL_TRANSPORT=smtp
+      - MAIL_SMTP_HOST=${MAIL_SMTP_HOST:-todo-mailpit-local}
+      - MAIL_SMTP_PORT=${MAIL_SMTP_PORT:-1025}
+      - MAIL_SMTP_SECURITY=${MAIL_SMTP_SECURITY:-none}
+      - MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-notifications@todo.local}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME:-Hilos Todo}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:
       - todo-mysql-local
+      - todo-mailpit-local
     ports:
       # Host-side publishes: container ports stay fixed, the host side shifts
       # per the demo port plan so several stacks run side by side.
