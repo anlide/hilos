@@ -141,14 +141,36 @@ final class BackupRestoreCommandTest extends TestCase
         $this->assertSame([], $probe->sent, 'A failed digest check must never reach the daemon');
     }
 
-    public function testProdArchiveIntoTestEnvironmentIsRefusedForAnonymization(): void
+    public function testProdArchiveIntoTestEnvironmentNeedsADeclaredPiiRegistry(): void
     {
         $this->storeBackup('b1', 'archive payload', archiveEnv: 'prod');
 
-        $output = $this->runCommand(args: ['b1'], options: [BackupConstants::YES_OPTION => true]);
+        $probe = new BackupRestoreCommandProbe();
+        $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
-        $this->assertSame(ExitCode::ERROR, $output['code']);
-        $this->assertStringContainsString('HIL-275', $output['text']);
+        // The ENV guard demands anonymization and this installation declares no catalog, so
+        // the run is a configuration error rather than a general failure: the operator has
+        // one thing to fix, and it is not the archive.
+        $this->assertSame(ExitCode::CONFIG_ERROR, $output['code']);
+        $this->assertStringContainsString(BackupConstants::CATALOG_PII, $output['text']);
+        $this->assertSame([], $probe->sent, 'An unconfigured registry must never reach the daemon');
+    }
+
+    public function testASchemaOnlyArchiveNeedsNoPiiRegistry(): void
+    {
+        $this->storeBackup('b1', 'archive payload', archiveEnv: 'prod', scope: BackupScope::SCHEMA_ONLY);
+
+        $probe = new BackupRestoreCommandProbe();
+        $output = $this->runCommand($probe, ['b1'], [
+            BackupConstants::YES_OPTION => true,
+            BackupConstants::SCOPE_OPTION => BackupScope::SCHEMA_ONLY->value,
+        ]);
+
+        // Same ENV verdict as the case above, and the same missing registry - but this archive
+        // carries no rows, so the engine skips the pass and the preflight has nothing to demand.
+        $this->assertNotSame(ExitCode::CONFIG_ERROR, $output['code']);
+        $this->assertStringNotContainsString(BackupConstants::CATALOG_PII, $output['text']);
+        $this->assertNotSame([], $probe->sent, 'A schema-only restore must reach the daemon');
     }
 
     public function testNonProdArchiveIntoProdIsRefused(): void
@@ -381,26 +403,28 @@ final class BackupRestoreCommandTest extends TestCase
      * @param string $content Archive bytes
      * @param string $archiveEnv Environment recorded in the sidecar
      * @param list<BackupConnectionMeta> $connections Connections recorded in the sidecar
+     * @param BackupScope $scope Scope the fixture is stored and recorded under
      */
     private function storeBackup(
         string $id,
         string $content,
         string $archiveEnv = 'test',
         array $connections = [],
+        BackupScope $scope = BackupScope::FULL,
     ): void {
-        $scopeDir = $this->root . '/' . BackupScope::FULL->value;
+        $scopeDir = $this->root . '/' . $scope->value;
         if (!is_dir($scopeDir)) {
             mkdir($scopeDir, 0700, true);
         }
 
-        $archivePath = $this->archivePath($id, $archiveEnv);
+        $archivePath = $this->archivePath($id, $archiveEnv, $scope);
         file_put_contents($archivePath, $content);
 
         $metadata = new BackupMetadata(
             id: $id,
             createdAt: '2026-08-08T03:00:00+00:00',
             env: $archiveEnv,
-            scope: BackupScope::FULL,
+            scope: $scope,
             connections: $connections,
             sizeBytes: strlen($content),
             durationSeconds: 4,
@@ -409,7 +433,7 @@ final class BackupRestoreCommandTest extends TestCase
             sha256: (string)hash_file(BackupVerifier::DIGEST_ALGO, $archivePath),
         );
         file_put_contents(
-            $scopeDir . '/' . BackupCreator::archiveBaseName($id, $archiveEnv, BackupScope::FULL)
+            $scopeDir . '/' . BackupCreator::archiveBaseName($id, $archiveEnv, $scope)
             . BackupCreator::SIDECAR_EXTENSION,
             json_encode($metadata->toArray()),
         );
@@ -418,12 +442,16 @@ final class BackupRestoreCommandTest extends TestCase
     /**
      * @param string $id Backup id
      * @param string $archiveEnv Environment in the stored base name
+     * @param BackupScope $scope Scope subdirectory the fixture lives under
      * @return string Archive path inside the temp backup root
      */
-    private function archivePath(string $id, string $archiveEnv = 'test'): string
-    {
-        return $this->root . '/' . BackupScope::FULL->value . '/'
-            . BackupCreator::archiveBaseName($id, $archiveEnv, BackupScope::FULL)
+    private function archivePath(
+        string $id,
+        string $archiveEnv = 'test',
+        BackupScope $scope = BackupScope::FULL,
+    ): string {
+        return $this->root . '/' . $scope->value . '/'
+            . BackupCreator::archiveBaseName($id, $archiveEnv, $scope)
             . BackupCreator::ARCHIVE_EXTENSION;
     }
 

@@ -253,15 +253,20 @@ abstract class Hilos
     /**
      * Returns the project's backup catalog provider class, or null when backup is unconfigured.
      *
-     * The backup subsystem reads the reference-object registry through this class; the
-     * facade only exposes which catalog to read, leaving catalog interpretation to the
-     * backup layer's reference registry.
+     * The backup subsystem reads the reference-object registry, the schedule and the PII
+     * registry through this class; the facade only exposes which catalog to read, leaving
+     * catalog interpretation to the backup layer's own registries.
+     *
+     * Resolved through {@see appClass()}, not `static::`: every caller is framework code
+     * writing a bare `Hilos::getBackupCatalogClass()`, which binds `static` to this base
+     * class and reads its own null - so the answer was null however a project declared
+     * itself (HIL-275).
      *
      * @return ?class-string<CatalogProviderInterface> Backup catalog provider class
      */
     public static function getBackupCatalogClass(): ?string
     {
-        return static::BACKUP_CATALOG;
+        return static::appClass()::BACKUP_CATALOG;
     }
 
     /**

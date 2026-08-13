@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupRestorer;
@@ -11,6 +12,7 @@ use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
 use Hilos\Backup\BackupVerifyOutcome;
+use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
@@ -30,7 +32,7 @@ use Hilos\Hilos;
 /**
  * BackupRestoreCommand - restore a stored backup into this installation's databases.
  *
- * The preflight (resolve, ENV guard, migration gate, explicit --yes, digest check) runs here
+ * The preflight (resolve, ENV guard, PII registry, migration gate, explicit --yes, digest check) runs here
  * in full on both paths, so a doomed request is refused before anything is asked to freeze. Then the
  * paths split. The default HOT path assumes a live daemon: the request goes over the
  * command channel to the monopoly backup agent, which freezes the node through protected
@@ -195,6 +197,16 @@ HELP;
             return ExitCode::ERROR;
         }
 
+        // A schema-only archive is exempt: it carries no rows, so the engine skips the pass
+        // whatever the catalog says, and demanding a registry here would refuse a restore that
+        // has nothing to anonymize.
+        if ($decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION
+            && $scope !== BackupScope::SCHEMA_ONLY
+            && !$this->reportPiiRegistry()
+        ) {
+            return ExitCode::CONFIG_ERROR;
+        }
+
         if (!$this->reportMigrationGate($metadata)) {
             return ExitCode::ERROR;
         }
@@ -221,9 +233,9 @@ HELP;
     /**
      * Applies the ENV guard matrix and reports a refusal to the operator.
      *
-     * A restore that requires anonymization is refused here while HIL-275 has not landed:
-     * there is no anonymizer to resolve, and accepting the run would only move the same
-     * refusal into the engine's backstop.
+     * A verdict of {@see RestoreEnvDecision::REQUIRE_ANONYMIZATION} is actionable now that
+     * the toolkit exists (HIL-275); whether this installation configured it is a separate
+     * question, asked by {@see reportPiiRegistry()} right after.
      *
      * @param BackupMetadata $metadata Sidecar metadata carrying the archive environment
      * @param bool $force Operator's `--force`
@@ -244,13 +256,35 @@ HELP;
 
             return null;
         }
-        if ($result->decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION) {
-            echo "Error: {$result->reason}; the anonymization toolkit (HIL-275) is not available yet\n";
+        return $result->decision;
+    }
 
-            return null;
+    /**
+     * Tells the operator whether this installation declared what its personal data is.
+     *
+     * Asked only when the ENV guard demands anonymization, and asked in the preflight
+     * rather than left to the engine, because the answer is a configuration fact the
+     * operator can act on immediately: nothing about the archive, the daemon or the target
+     * will change it. An empty registry is not "no personal data" - it is a project that
+     * has not classified its tables, and running the pass over it would rewrite nothing
+     * while reporting success.
+     *
+     * @return bool Whether a PII registry is declared
+     */
+    private function reportPiiRegistry(): bool
+    {
+        try {
+            if (!PiiRegistry::fromCatalog()->isEmpty()) {
+                return true;
+            }
+            echo 'Error: this restore requires anonymization, but the backup catalog declares no ['
+                . BackupConstants::CATALOG_PII . "] registry\n";
+        } catch (AnonymizationConfigException $refusal) {
+            echo "Error: the declared [" . BackupConstants::CATALOG_PII . "] registry is not usable: "
+                . "{$refusal->getMessage()}\n";
         }
 
-        return $result->decision;
+        return false;
     }
 
     /**

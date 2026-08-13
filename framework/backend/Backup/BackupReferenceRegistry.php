@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\BackupException;
-use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
 
 /**
@@ -16,8 +14,8 @@ use Hilos\Hilos;
  * keeps) as a per-connection list of Entity or Object collection classes under the
  * {@see BackupConstants::CATALOG_REFERENCES} key of its backup catalog. Declaring classes
  * rather than raw table names keeps the registry stable across table renames: the table
- * name is derived from the class ({@see tableNameOf()}), and the connection index is the
- * catalog key the class is listed under.
+ * name is derived from the class ({@see BackupTableResolver::tableNameOf()}), and the
+ * connection index is the catalog key the class is listed under.
  *
  * The registry is read by {@see BackupCreator} to append the reference-table data pass for
  * schema-seed dumps. An empty or unconfigured registry is valid — schema-seed then captures
@@ -64,38 +62,9 @@ final class BackupReferenceRegistry
     {
         $tables = [];
         foreach ($this->classesByConnection[$connectionIndex] ?? [] as $class) {
-            $tables[] = self::tableNameOf($class);
+            $tables[] = BackupTableResolver::tableNameOf($class);
         }
 
         return $tables;
-    }
-
-    /**
-     * Derives the table name of a reference class.
-     *
-     * Accepts an Entity subclass (reads its `_table`) or an Object collection subclass
-     * (reads the table off its object's entity class), so a project can list whichever
-     * of the two it registers.
-     *
-     * @param class-string $class Reference Entity or Object collection class
-     * @return string Table name
-     * @throws BackupException When the class is neither an Entity nor an Object collection
-     */
-    private static function tableNameOf(string $class): string
-    {
-        if (is_subclass_of($class, Entity::class)) {
-            return $class::_table;
-        }
-
-        if (is_subclass_of($class, Objects::class)) {
-            $objectClass = $class::OBJECT_CLASS;
-            $entityClass = $objectClass::ENTITY_CLASS;
-
-            return $entityClass::_table;
-        }
-
-        throw new BackupException(
-            "Backup reference class {$class} is neither an Entity nor an Object collection",
-        );
     }
 }

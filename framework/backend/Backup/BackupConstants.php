@@ -87,6 +87,31 @@ final class BackupConstants
      */
     public const string CATALOG_SCHEDULE = 'schedule';
 
+    /**
+     * Backup catalog key under which a project declares which of its data is personal.
+     *
+     * The value at this key is
+     * `array<int, array<class-string|string, array<string, AnonymizationStrategy>|AnonymizationStrategy>>`:
+     * per connection index, one row per table. The row key is the table's Entity or Object
+     * collection class wherever one exists (a raw table name only where none does), and the
+     * row is either a map of column name to {@see Anonymization\AnonymizationStrategy}, or
+     * {@see Anonymization\AnonymizationStrategy::PURGE} for a table emptied whole.
+     *
+     * An empty map is the row that says "this table holds no personal data" - the registry
+     * has no second key listing clean tables, because a table nobody wrote a row for must
+     * stay indistinguishable from a table nobody thought about. {@see Anonymization\PiiRegistry}
+     * reads the key, and every table of a restored archive has to appear in it.
+     */
+    public const string CATALOG_PII = 'pii';
+
+    /**
+     * Replacement written by {@see Anonymization\AnonymizationStrategy::MASK}.
+     *
+     * Deliberately legible rather than random: a developer reading a restored staging row
+     * has to see that the value was removed, not wonder what it used to say.
+     */
+    public const string ANONYMIZATION_MASK = '[redacted]';
+
     /** Schedule entry key: the unique job name (also the daemon-mechanism cron signal name). */
     public const string SCHEDULE_NAME = 'name';
 

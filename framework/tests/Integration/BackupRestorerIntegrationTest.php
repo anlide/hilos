@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Backup\BackupConnectionMeta;
+use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
+use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Database\Context\DbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
@@ -35,8 +40,11 @@ use Hilos\Hilos;
  */
 final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
 {
-    /** Probe table the fixtures restore; dropped on teardown. */
-    private const string PROBE_TABLE = 'hilos_fw_restore_probe';
+    /** Probe table the fixtures restore; dropped on teardown. Read by the catalog fixtures below. */
+    public const string PROBE_TABLE = 'hilos_fw_restore_probe';
+
+    /** Token-shaped table the anonymization fixtures purge; dropped on teardown. */
+    public const string TOKEN_TABLE = 'hilos_fw_restore_token';
 
     /** Fixture backup id; also the stem of the stored archive/sidecar names. */
     private const string BACKUP_ID = '2026-08-08_12-00-00';
@@ -94,6 +102,10 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         putenv('BACKUP_DIR');
         $this->removeTree($this->storeRoot);
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        Database::sql('DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . '`');
+        // The anonymization cases capture a project facade; later cases must find the base.
+        Hilos::initBrowser();
+        Hilos::resetBrowser();
         if ($this->fixtureMigrationListed) {
             // The migration table is shared with every other suite against this database, so
             // the fixture's row leaves with the fixture.
@@ -203,6 +215,76 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::REFUSE);
     }
 
+    public function testAnonymizationRewritesTheRestoredRowsAndEmptiesPurgedTables(): void
+    {
+        // The archive's own environment does not reach the engine; the ENV guard's verdict
+        // does, and REQUIRE_ANONYMIZATION is what a production archive into a development
+        // target produces.
+        $this->publishFixtureBackup($this->piiDumpSql());
+        PiiRestoreTestHilos::initBrowser();
+
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+        );
+
+        $this->assertSame(
+            [
+                ['1', '[redacted]', 'user1@example.invalid'],
+                ['2', '[redacted]', 'user2@example.invalid'],
+            ],
+            $this->piiRows(),
+            'Every declared column must carry its replacement, derived from the primary key',
+        );
+        $this->assertSame([], $this->tokenRows(), 'A purged table must arrive empty');
+    }
+
+    public function testAnUnclassifiedTableRefusesTheRestoreBeforeTheFirstImport(): void
+    {
+        $this->publishFixtureBackup($this->piiDumpSql());
+        // Pre-state the archive would replace: it must still be here when the gate refuses.
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        Database::sql(
+            'CREATE TABLE `' . self::PROBE_TABLE . '` (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL)',
+        );
+        Database::sql("INSERT INTO `" . self::PROBE_TABLE . "` VALUES (9, 'untouched')");
+        PartialPiiRestoreTestHilos::initBrowser();
+
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+            );
+            $this->fail('A table no registry classifies must refuse the restore');
+        } catch (AnonymizationConfigException $refusal) {
+            $this->assertStringContainsString(self::TOKEN_TABLE, $refusal->getMessage());
+        }
+
+        $this->assertSame(
+            [['9', 'untouched']],
+            $this->probeRows(),
+            'The coverage gate must fire before the first import',
+        );
+    }
+
+    public function testARestoreRequiringAnonymizationIsRefusedWithoutARegistry(): void
+    {
+        $this->publishFixtureBackup($this->piiDumpSql());
+
+        $this->expectException(RestoreFailedException::class);
+        $this->expectExceptionMessage(BackupConstants::CATALOG_PII);
+
+        // No project facade is captured, so the catalog declares nothing: an installation
+        // that classified no data must not be told its restore was anonymized.
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+        );
+    }
+
     /**
      * Builds and publishes one fixture backup exactly as the create path lays it out.
      *
@@ -266,6 +348,63 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         return 'DROP TABLE IF EXISTS `' . self::PROBE_TABLE . "`;\n"
             . 'CREATE TABLE `' . self::PROBE_TABLE . "` (id INT PRIMARY KEY, label VARCHAR(32) NOT NULL);\n"
             . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES {$inserts};\n";
+    }
+
+    /**
+     * A dump carrying personal data, laid out the way mysqldump writes a schema pass.
+     *
+     * The multi-line `CREATE TABLE` shape is load-bearing here and not decoration: the
+     * coverage gate reads the archive text, so a fixture written on one line would declare
+     * no tables and the gate would pass by finding nothing.
+     *
+     * @return string Dump SQL for the probe and token tables
+     */
+    private function piiDumpSql(): string
+    {
+        return 'DROP TABLE IF EXISTS `' . self::PROBE_TABLE . "`;\n"
+            . 'CREATE TABLE `' . self::PROBE_TABLE . "` (\n"
+            . "  `id` int NOT NULL,\n"
+            . "  `label` varchar(32) NOT NULL,\n"
+            . "  `email` varchar(255) NOT NULL,\n"
+            . "  PRIMARY KEY (`id`)\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
+            . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES "
+            . "(1, 'Alice', 'alice@real.example'), (2, 'Bob', 'bob@real.example');\n"
+            . 'DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . "`;\n"
+            . 'CREATE TABLE `' . self::TOKEN_TABLE . "` (\n"
+            . "  `id` int NOT NULL,\n"
+            . "  `token` varchar(64) NOT NULL,\n"
+            . "  PRIMARY KEY (`id`)\n"
+            . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
+            . 'INSERT INTO `' . self::TOKEN_TABLE . "` VALUES (1, 'secret-one'), (2, 'secret-two');\n";
+    }
+
+    /**
+     * @return list<array{0: string, 1: string, 2: string}> Probe rows with their PII columns
+     */
+    private function piiRows(): array
+    {
+        Database::sql('SELECT id, label, email FROM `' . self::PROBE_TABLE . '` ORDER BY id');
+        $rows = [];
+        while (($row = Database::row()) !== null) {
+            $rows[] = [(string)$row['id'], (string)$row['label'], (string)$row['email']];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<array{0: string}> Token table rows
+     */
+    private function tokenRows(): array
+    {
+        Database::sql('SELECT id FROM `' . self::TOKEN_TABLE . '` ORDER BY id');
+        $rows = [];
+        while (($row = Database::row()) !== null) {
+            $rows[] = [(string)$row['id']];
+        }
+
+        return $rows;
     }
 
     /**
@@ -353,5 +492,102 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             is_dir($child) ? $this->removeTree($child) : unlink($child);
         }
         rmdir($path);
+    }
+}
+
+/**
+ * Project facade fixture whose catalog classifies every table of the PII archive.
+ */
+final class PiiRestoreTestHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = FullPiiRestoreTestCatalog::class;
+
+    /**
+     * Creates a no-op DB context for the abstract facade contract; the restore engine
+     * talks to the live connection the integration base already opened.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PiiRestoreTestDbContext();
+    }
+}
+
+/**
+ * Project facade fixture whose catalog leaves the token table unclassified.
+ */
+final class PartialPiiRestoreTestHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = PartialPiiRestoreTestCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PiiRestoreTestDbContext();
+    }
+}
+
+/**
+ * No-op DB context so the facade fixtures are instantiable.
+ */
+final class PiiRestoreTestDbContext extends DbContext
+{
+    /**
+     * No-op DB configuration for the restore fixtures.
+     */
+    public function configure(): void
+    {
+    }
+}
+
+/**
+ * Catalog covering both fixture tables: the probe rewritten column by column, the
+ * token-shaped table emptied whole. Both are declared by raw table name - they have no
+ * Entity class, which is the case the raw-name key exists for.
+ */
+final class FullPiiRestoreTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<int, mixed>> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_PII => [
+                0 => [
+                    BackupRestorerIntegrationTest::PROBE_TABLE => [
+                        'label' => AnonymizationStrategy::MASK,
+                        'email' => AnonymizationStrategy::FAKE_EMAIL,
+                    ],
+                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+                ],
+            ],
+        ];
+    }
+}
+
+/**
+ * Catalog that forgot a table, the way a project does when a migration adds one.
+ */
+final class PartialPiiRestoreTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<int, mixed>> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_PII => [
+                0 => [
+                    BackupRestorerIntegrationTest::PROBE_TABLE => [
+                        'label' => AnonymizationStrategy::MASK,
+                        'email' => AnonymizationStrategy::FAKE_EMAIL,
+                    ],
+                ],
+            ],
+        ];
     }
 }

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Backup;
 
 use Closure;
+use Hilos\Backup\Anonymization\ArchiveSchemaReader;
+use Hilos\Backup\Anonymization\ArchiveTableSchema;
+use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
@@ -19,6 +22,8 @@ use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Utils\Logger;
+use Random\RandomException;
 use Throwable;
 
 /**
@@ -32,8 +37,9 @@ use Throwable;
  * monopoly backup agent spawns under protected mode.
  *
  * The order of steps is the safety argument: everything that can refuse (locate,
- * sidecar read, digest check, migration gate, anonymizer availability via the decision)
- * runs before the first import touches a database. Import replaces tables as the dump
+ * sidecar read, digest check, migration gate, anonymizer availability via the decision,
+ * and the anonymizer's own verdict on the archive's schema) runs before the first import
+ * touches a database. Import replaces tables as the dump
  * directs (mysqldump's default DROP TABLE IF EXISTS + CREATE); tables present in the
  * target but absent from the dump are left alone - reconciling those is HIL-436.
  *
@@ -102,11 +108,23 @@ final class BackupRestorer
         // REQUIRE_ANONYMIZATION run would commit raw production data before failing.
         $anonymizer = null;
         if ($decision === RestoreEnvDecision::REQUIRE_ANONYMIZATION) {
-            $anonymizer = $this->resolveAnonymizer();
-            if ($anonymizer === null) {
-                throw new RestoreFailedException(
-                    'Restore requires anonymization, but no anonymizer is available (HIL-275)',
-                );
+            if ($scope === BackupScope::SCHEMA_ONLY) {
+                // Asked before the registry is: a schema-only archive carries no rows, so there
+                // is nothing to anonymize and nothing an undeclared registry could fail to
+                // anonymize. Refusing here would block a restore over a configuration gap that
+                // this run cannot be harmed by.
+                Logger::info('Restore: anonymization skipped, this archive carries schema only', [
+                    'id' => $id,
+                    'scope' => $scope->value,
+                ]);
+            } else {
+                $anonymizer = $this->resolveAnonymizer();
+                if ($anonymizer === null) {
+                    throw new RestoreFailedException(
+                        'Restore requires anonymization, but the project declares no PII registry '
+                        . '(backup catalog key: ' . BackupConstants::CATALOG_PII . ')',
+                    );
+                }
             }
         }
 
@@ -123,12 +141,20 @@ final class BackupRestorer
             $this->ensureWorkDir($workDir);
             $this->extract($archivePath, $workDir);
 
-            if ($onPhase !== null) {
-                $onPhase(RestorePhase::IMPORTING);
-            }
             $connections = $metadata->connections;
             usort($connections, static fn (BackupConnectionMeta $a, BackupConnectionMeta $b): int
                 => $a->index <=> $b->index);
+
+            // The last refusal, and the only one that needs the archive open: the registry is
+            // judged against the schema the dump declares, while the target database still
+            // holds whatever it held. Every failure past this line leaves data behind.
+            if ($anonymizer !== null) {
+                $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
+            }
+
+            if ($onPhase !== null) {
+                $onPhase(RestorePhase::IMPORTING);
+            }
             foreach ($connections as $connection) {
                 $this->importConnection($connection, $workDir);
             }
@@ -147,7 +173,10 @@ final class BackupRestorer
                     $onPhase(RestorePhase::ANONYMIZING);
                 }
                 foreach ($connections as $connection) {
-                    $anonymizer->anonymizeConnection($connection->index, $connection->database);
+                    $anonymizer->anonymizeConnection(
+                        $connection->index,
+                        $this->targetDatabaseOf($connection->index),
+                    );
                 }
             }
         } finally {
@@ -382,18 +411,71 @@ final class BackupRestorer
     }
 
     /**
+     * Names the database a connection index actually imported into.
+     *
+     * The archive records the database it was captured FROM, and the two names differ in
+     * exactly the case anonymization exists for - a production dump restored into staging.
+     * The seam is documented as taking the database the connection imported into, so it is
+     * told the target's name rather than the archive's.
+     *
+     * @param int $index Connection index
+     * @return string Configured database name
+     * @throws RestoreFailedException When the connection index is not configured
+     */
+    private function targetDatabaseOf(int $index): string
+    {
+        try {
+            return Database::getConnectionConfig($index)->database;
+        } catch (DatabaseException $failure) {
+            throw new RestoreFailedException("Connection {$index} is not configured", 0, $failure);
+        }
+    }
+
+    /**
+     * Reads the table schemas every connection's dump file declares.
+     *
+     * @param list<BackupConnectionMeta> $connections Connections the archive carries
+     * @param string $workDir Temp workdir holding the extracted dump files
+     * @return array<int, list<ArchiveTableSchema>> Declared tables per connection index
+     * @throws RestoreFailedException When a connection's dump file is missing or unreadable
+     */
+    private function readArchiveSchemas(array $connections, string $workDir): array
+    {
+        $schemas = [];
+        foreach ($connections as $connection) {
+            $schemas[$connection->index] = ArchiveSchemaReader::read(
+                $workDir . '/'
+                . BackupCreator::SQL_FILE_PREFIX . $connection->index . BackupCreator::SQL_FILE_SUFFIX,
+            );
+        }
+
+        return $schemas;
+    }
+
+    /**
      * Resolves the anonymizer implementation for this installation.
      *
-     * The resolution mechanism (catalog vs facade hook) is owned by HIL-275 together with
-     * the implementation itself; until it lands there is nothing to resolve, so every
-     * restore that requires anonymization is refused by the preflight in {@see restore()}
-     * before anything destructive runs.
+     * The catalog is the resolution mechanism, the way it already is for the reference
+     * registry and the schedule: the backup feature is activated by naming a catalog, and
+     * a second, facade-level hook would be a second place to look for the same answer. An
+     * installation whose catalog declares no PII registry resolves to none, and the
+     * preflight in {@see restore()} refuses the run before anything destructive happens.
      *
-     * @return ?RestoreAnonymizer Available anonymizer, or null when none exists
+     * @return ?RestoreAnonymizer Available anonymizer, or null when the catalog declares none
+     * @throws RestoreFailedException When the declared registry is not a registry, or the
+     *     platform's secure random source refuses to mint this run's salt
      */
     private function resolveAnonymizer(): ?RestoreAnonymizer
     {
-        return null;
+        try {
+            return CatalogRestoreAnonymizer::fromCatalog();
+        } catch (RandomException $failure) {
+            throw new RestoreFailedException(
+                'Cannot mint the anonymization salt for this restore: ' . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        }
     }
 
     /**
