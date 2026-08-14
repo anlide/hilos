@@ -7,6 +7,7 @@ namespace Demo\SimpleTodo\Pages\Hilos\Users;
 use Demo\SimpleTodo\Browser\TodoBrowserRef;
 use Demo\SimpleTodo\Browser\TodoBrowserSource;
 use Demo\SimpleTodo\Constants\AgentType;
+use Demo\SimpleTodo\Constants\TodoNotificationType;
 use Demo\SimpleTodo\Core\Router\DTO\ActionFailSignalData;
 use Demo\SimpleTodo\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\SimpleTodo\Hilos;
@@ -25,6 +26,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
+use Hilos\Notification\NotificationDraft;
+use Hilos\Notification\NotificationSeverity;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Throwable;
 
@@ -133,11 +136,50 @@ final class UserPage extends AbstractHilosUserPage
         $newName = $dbUser->name;
 
         Hilos::$db->userRenames->actions->add($dto->id, $oldName, $newName);
+        $this->notifyRenamedUser($acceptKey, $dto->id, $oldName, $newName);
 
         $this->sendToUser(
             HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS,
             $acceptKey,
             new ActionSuccessSignalData(),
         );
+    }
+
+    /**
+     * Tells the renamed user that an administrator changed their account name.
+     *
+     * The administrator sees the result in the table, so only the person whose
+     * account was touched is notified - and only when the name really changed, or
+     * when an administrator renamed somebody other than themselves. The emit is
+     * best-effort: the rename and its audit row stand whatever happens to it.
+     *
+     * @param string $acceptKey Accept key of the administrator who acted
+     * @param int $userId Renamed user id
+     * @param string $oldName Name the account carried before
+     * @param string $newName Name the account carries now
+     */
+    private function notifyRenamedUser(string $acceptKey, int $userId, string $oldName, string $newName): void
+    {
+        $actorUserId = Hilos::$browser?->resolveActionUserId($acceptKey);
+        if ($oldName === $newName || $actorUserId === $userId) {
+            return;
+        }
+
+        try {
+            Hilos::$notify?->emit(new NotificationDraft(
+                userId: $userId,
+                type: TodoNotificationType::USER_RENAMED,
+                title: 'An administrator renamed your account',
+                severity: NotificationSeverity::INFO,
+                body: 'Your name is now ' . $newName,
+                data: [
+                    'oldName' => $oldName,
+                    'newName' => $newName,
+                    'actorUserId' => $actorUserId,
+                ],
+            ));
+        } catch (HilosException $e) {
+            $this->logAgentError("Rename notification failed for userId={$userId}: {$e->getMessage()}");
+        }
     }
 }

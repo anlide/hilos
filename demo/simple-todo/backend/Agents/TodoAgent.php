@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Agents;
 
 use Demo\SimpleTodo\Constants\AgentType;
+use Demo\SimpleTodo\Constants\TodoNotificationType;
 use Demo\SimpleTodo\Constants\TodoSignalConstants;
 use Demo\SimpleTodo\Database\TodoDbContext;
 use Demo\SimpleTodo\Hilos;
@@ -14,6 +15,8 @@ use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
+use Hilos\Notification\NotificationDraft;
+use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
@@ -62,6 +65,7 @@ final class TodoAgent extends AbstractAgent
         $user = Hilos::$db->users->findBySession($sessionToken);
         if ($user === null) {
             $user = Hilos::$db->users->actions->register($sessionToken);
+            $this->notifyAdminsOfNewUser((int)$user->id, $user->name);
         }
         $userId = (int)$user->id;
 
@@ -99,5 +103,40 @@ final class TodoAgent extends AbstractAgent
     public function onStop(): void
     {
         Hilos::$rt->connections->actions->clear();
+    }
+
+    /**
+     * Tells every administrator that a new account appeared.
+     *
+     * This demo registers a user per new guest session, so the visitor stream is the
+     * notification stream - accepted as the price of showing the line alive. Nobody
+     * holds the admin flag: nothing is sent, and that is not an error. The emit is
+     * best-effort - the visitor is registered and served whatever happens to it.
+     *
+     * @param int $userId Newly registered user id
+     * @param string $userName Display name the registration assigned
+     */
+    private function notifyAdminsOfNewUser(int $userId, string $userName): void
+    {
+        try {
+            foreach (Hilos::$db->users->listAll() as $admin) {
+                if ($admin->id === null || $admin->id === $userId || !$admin->admin || $admin->block) {
+                    continue;
+                }
+
+                Hilos::$notify?->emit(new NotificationDraft(
+                    userId: $admin->id,
+                    type: TodoNotificationType::USER_REGISTERED,
+                    title: 'New user joined: ' . $userName,
+                    severity: NotificationSeverity::INFO,
+                    data: [
+                        'userId' => $userId,
+                        'userName' => $userName,
+                    ],
+                ));
+            }
+        } catch (HilosException $e) {
+            $this->logAgentError("New-user notification failed for userId={$userId}: {$e->getMessage()}");
+        }
     }
 }

@@ -1,4 +1,10 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  type Browser,
+  type Locator,
+  type Page,
+} from '@playwright/test'
 
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { emitNotification } from '../helpers/notifications'
@@ -210,4 +216,75 @@ test('saving a setting raises a toast the close button dismisses', async ({
   await page.getByTestId('hilos-settings-edit-custom').uncheck()
   await save.click()
   await expect(save).toHaveCount(0)
+})
+
+// The product half of the line (HIL-557): every row above was planted by the
+// command channel, which proves the center but not that anything in this demo
+// ever raises a notification. There is no domain content here yet, so the first
+// event that does is an account-level one - an administrator renaming somebody -
+// and it needs two visitors, which in this demo means two browser contexts.
+
+/**
+ * Open a second visitor in a context of its own.
+ *
+ * Identity here is the session cookie the handshake maps to a user row, so two
+ * pages of one context are one person. A context made off the browser fixture
+ * inherits none of the project's `use` options - including the tolerance for the
+ * self-signed certificate the test nginx serves - so they are passed on by hand.
+ *
+ * @param browser The browser the test runs in.
+ * @returns A page belonging to a fresh visitor.
+ */
+async function openSecondVisitor(browser: Browser): Promise<Page> {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const context = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+
+  return context.newPage()
+}
+
+/**
+ * Type a value the way a user does: clear, then key by key. A bare `fill(value)`
+ * dispatches one synthetic `input`, which can slip past the view's reactivity and
+ * leave the surface holding a stale value.
+ *
+ * @param field The input locator.
+ * @param value The value to type.
+ */
+async function typeInto(field: Locator, value: string): Promise<void> {
+  await field.fill('')
+  await field.pressSequentially(value, { delay: 10 })
+}
+
+test('an administrator renaming somebody reaches the renamed visitor', async ({
+  page,
+  browser,
+}) => {
+  // This browser is the visitor about to be renamed; its socket joins the
+  // notification group first, so the row arrives over the live signal.
+  const userId = await openJoined(page)
+
+  const adminPage = await openSecondVisitor(browser)
+  await grantAdminToSelf(adminPage)
+  // Straight to the detail page: the users list pages, and this account is not
+  // guaranteed to be on the first page of a database every test writes to.
+  await gotoPage(adminPage, `/hilos/user/${userId}`)
+  await expect(adminPage.getByTestId('hilos-user-detail')).toBeVisible()
+
+  const newName = `Renamed visitor ${userId}`
+  await adminPage.getByTestId('hilos-user-edit').click()
+  await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
+  await adminPage.getByTestId('hilos-user-save').click()
+  // The rename settles when the committed name returns over the live table.
+  await expect(adminPage.getByTestId('hilos-user-name')).toHaveText(newName)
+
+  await expect(badge(page)).toHaveText(/^1\b/)
+
+  // The product emit never hands the id out, so the row is found by its own
+  // title rather than by hilos-notification-item-<id>.
+  await openBell(page)
+  const menu = page.getByTestId('hilos-notification-menu')
+  await expect(menu).toContainText('An administrator renamed your account')
+  await expect(menu).toContainText(`Your name is now ${newName}`)
+
+  await adminPage.context().close()
 })

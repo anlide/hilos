@@ -1,4 +1,10 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  type Browser,
+  type Locator,
+  type Page,
+} from '@playwright/test'
 
 import { setAdmin, signUpAdmin } from '../helpers/adminGrant'
 import { waitForMailTo } from '../helpers/mail'
@@ -384,4 +390,67 @@ test('an emitted notification is mailed out and journaled as sent', async ({
   // subject and the body the text).
   const mail = await waitForMailTo(email, title)
   expect(mail.text).toContain(body)
+})
+
+// The product half of the line (HIL-557): until now every row in this suite was
+// planted by the command channel, which proves the center but not that anything
+// in the demo ever raises a notification. A mention is the first domain event
+// that does - and it is raised where the message is written, not where the
+// socket is.
+
+/**
+ * Open a second person in a browser context of its own.
+ *
+ * Identity rides the session cookie, so a second tab of one context is the same
+ * account - which is what the cross-tab test above deliberately uses. Two
+ * different people therefore need two contexts. A context made off the browser
+ * fixture inherits none of the project's `use` options, including the tolerance
+ * for the self-signed certificate the test nginx serves, so they are passed by
+ * hand.
+ *
+ * @param browser The browser the test runs in.
+ * @returns A page belonging to a fresh, anonymous visitor.
+ */
+async function openSecondPerson(browser: Browser): Promise<Page> {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const context = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+
+  return context.newPage()
+}
+
+test('a mention reaches the named user in another window', async ({
+  page,
+  browser,
+}) => {
+  const author = await signUp(page)
+
+  // The recipient signs in and joins its notification group BEFORE the message is
+  // published, so the mention arrives over the live signal (see signUpJoined for
+  // why a cold load is what makes the join waitable).
+  const recipient = await openSecondPerson(browser)
+  const { name: recipientName } = await signUp(recipient)
+  await gotoPage(recipient, '/')
+
+  await typeInto(
+    page.getByTestId('message-input'),
+    `@${recipientName} could you look at this?`,
+  )
+  await clickSubmit(page.getByTestId('message-send'))
+
+  // The message is published only once moderation allows it, and the mention is
+  // raised inside that same write - so the author's own feed row and the
+  // recipient's badge are the two ends of one round trip.
+  await expect(
+    page.getByTestId('event-text').filter({ hasText: recipientName }),
+  ).toBeVisible()
+  await expect(badge(recipient)).toHaveText(/^1\b/)
+
+  // The product emit never hands the id out, so the row is found by its own
+  // title rather than by hilos-notification-item-<id>.
+  await openBell(recipient)
+  const menu = recipient.getByTestId('hilos-notification-menu')
+  await expect(menu).toContainText(`${author.name} mentioned you`)
+  await expect(menu).toContainText(`@${recipientName} could you look at this?`)
+
+  await recipient.context().close()
 })

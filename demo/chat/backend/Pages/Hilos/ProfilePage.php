@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages\Hilos;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PasswordPolicy;
@@ -51,7 +52,9 @@ use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationChannelPreferenceActionDTO;
 use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
+use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationPreferenceAction;
+use Hilos\Notification\NotificationSeverity;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
@@ -798,6 +801,9 @@ final class ProfilePage extends AbstractHilosProfilePage
                 $phase,
                 $reason,
             );
+            if ($phase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED) {
+                $this->notifyRenameRejected($result->userId, $result->newName, $reason);
+            }
 
             throw new ValidationException($reason);
         }
@@ -820,5 +826,38 @@ final class ProfilePage extends AbstractHilosProfilePage
             oldName: $oldName,
             newName: $result->newName,
         );
+    }
+
+    /**
+     * Notifies the user that moderation refused the display name they asked for.
+     *
+     * Only a verdict about the name notifies: an unavailable moderator is an
+     * infrastructure failure, and there is nothing to tell the user about it. The
+     * emit is best-effort with respect to the rejection - the action error raised
+     * next reaches the user whatever happens to the notification.
+     *
+     * @param int $userId User who asked to be renamed
+     * @param string $newName Rejected display name
+     * @param string $reason Moderation reason
+     */
+    private function notifyRenameRejected(int $userId, string $newName, string $reason): void
+    {
+        try {
+            Hilos::$notify?->emit(new NotificationDraft(
+                userId: $userId,
+                type: ChatNotificationType::RENAME_REJECTED,
+                title: 'Your new name was not accepted',
+                severity: NotificationSeverity::WARNING,
+                body: 'Moderation rejected it: ' . $reason,
+                data: [
+                    'reason' => $reason,
+                    'newName' => $newName,
+                ],
+            ));
+        } catch (HilosException $e) {
+            $this->logAgentError(
+                "Rename rejection notification failed for userId={$userId}: {$e->getMessage()}",
+            );
+        }
     }
 }

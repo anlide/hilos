@@ -12,6 +12,7 @@ use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Hilos;
+use Demo\Chat\Notification\ChatMentionNotifier;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -169,6 +170,9 @@ final class EventsActions extends DbActions
             authorBotId: $botId,
             message: $message,
         );
+
+        // Every feed message is born here, so both authors reach mention detection once.
+        ChatMentionNotifier::notifyMentions((int)$event->id, $message, $userId, $botId);
 
         if ($attachments !== null) {
             foreach ($attachments as $attachment) {

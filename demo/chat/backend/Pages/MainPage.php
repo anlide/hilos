@@ -9,6 +9,7 @@ use Demo\Chat\Auth\ChatAuthMethods;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatFileUploadConstants;
+use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
@@ -85,6 +86,8 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
+use Hilos\Notification\NotificationDraft;
+use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\FileSystemHelper;
 use Random\RandomException;
@@ -1943,6 +1946,13 @@ final class MainPage extends AbstractPage
                 $phase,
                 $reason,
             );
+            if ($phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED) {
+                $this->notifyMessageRejected(
+                    Hilos::$rt->selfConnection->userId,
+                    $result->message,
+                    $reason,
+                );
+            }
 
             throw new ValidationException($reason);
         }
@@ -1973,5 +1983,42 @@ final class MainPage extends AbstractPage
             userId: Hilos::$rt->selfConnection->userId,
             attachments: $attachments,
         );
+    }
+
+    /**
+     * Notifies the author that moderation refused to publish their message.
+     *
+     * Only a verdict about the text notifies: an unavailable moderator is an
+     * infrastructure failure, and there is nothing to tell the author about it. The
+     * emit is best-effort with respect to the rejection - the action error raised
+     * next reaches the author whatever happens to the notification.
+     *
+     * @param ?int $userId Author user id, or null when the connection carries none
+     * @param string $message Rejected message text, kept so the author knows which one
+     * @param string $reason Moderation reason
+     */
+    private function notifyMessageRejected(?int $userId, string $message, string $reason): void
+    {
+        if ($userId === null) {
+            return;
+        }
+
+        try {
+            Hilos::$notify?->emit(new NotificationDraft(
+                userId: $userId,
+                type: ChatNotificationType::MESSAGE_REJECTED,
+                title: 'Your message was not published',
+                severity: NotificationSeverity::WARNING,
+                body: 'Moderation rejected it: ' . $reason,
+                data: [
+                    'reason' => $reason,
+                    'message' => $message,
+                ],
+            ));
+        } catch (HilosException $e) {
+            $this->logAgentError(
+                "Message rejection notification failed for userId={$userId}: {$e->getMessage()}",
+            );
+        }
     }
 }
