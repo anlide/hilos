@@ -2,8 +2,6 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-EMPTY-STRING-SENTINEL scripts/install-ai-tooling.php 1 # HIL-584
-MAGIC-REPEAT scripts/run-test-suite.php 5 # HIL-584
 THROWS-PROPAGATION framework/backend/Core/Agent/AbstractAgent.php 18 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Agent/Daemon/AgentManagerDaemon.php 17 # HIL-449
 THROWS-PROPAGATION framework/backend/Core/Browser/Context/BrowserContext.php 7 # HIL-449

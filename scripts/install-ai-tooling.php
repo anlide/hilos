@@ -183,7 +183,7 @@ final class AiToolingInstaller
     /** Copy or per-child symlink every `skills/hilos-*` directory into the target root. */
     private function installSkillTrees(ArtifactSpec $spec, bool $linkChildren): void
     {
-        $sources = $this->globSkillDirectories($spec->sourceGlob ?? '');
+        $sources = $this->globSkillDirectories($spec->sourceGlob);
         if ($sources === []) {
             $this->report(ArtifactStatus::Skipped, $spec->target, 'no source skill directories found');
             return;
@@ -386,8 +386,11 @@ final class AiToolingInstaller
     }
 
     /** @return list<string> absolute paths of `skills/hilos-*` directories, sorted */
-    private function globSkillDirectories(string $relativeGlob): array
+    private function globSkillDirectories(?string $relativeGlob): array
     {
+        if ($relativeGlob === null) {
+            return [];
+        }
         $matches = glob($this->absolute($relativeGlob), GLOB_ONLYDIR);
         if ($matches === false) {
             return [];

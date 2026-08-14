@@ -57,6 +57,12 @@ const LOG_DIR_MODE = 0o755;
 /** Bytes read at a time when a finished step's log is replayed to stdout. */
 const LOG_REPLAY_CHUNK_BYTES = 65_536;
 
+/** /proc/meminfo reports memory in kB; this converts that to GiB. */
+const KIB_PER_GIB = 1024 * 1024;
+
+/** Seconds in a minute. */
+const SECONDS_PER_MINUTE = 60;
+
 /** How a step ended. A step that never started is `Skipped`. */
 enum StepOutcome: string
 {
@@ -296,7 +302,7 @@ function readAvailableGib(): ?float
     }
 
     return preg_match('/^MemAvailable:\s+(\d+) kB$/m', $meminfo, $matched) === 1
-        ? (int)$matched[1] / (1024 * 1024)
+        ? (int)$matched[1] / KIB_PER_GIB
         : null;
 }
 
@@ -744,11 +750,11 @@ function now(): string
 function formatDuration(float $seconds): string
 {
     $whole = (int)round($seconds);
-    if ($whole < 60) {
+    if ($whole < SECONDS_PER_MINUTE) {
         return $whole . 's';
     }
 
-    return intdiv($whole, 60) . 'm' . str_pad((string)($whole % 60), 2, '0', STR_PAD_LEFT) . 's';
+    return intdiv($whole, SECONDS_PER_MINUTE) . 'm' . str_pad((string)($whole % SECONDS_PER_MINUTE), 2, '0', STR_PAD_LEFT) . 's';
 }
 
 /**
