@@ -16,15 +16,17 @@ use Socket;
 /**
  * Tests the command socket refusing a request that names nothing (HIL-547).
  *
- * This boundary is the one place that can turn a malformed line into an answer:
- * left through, an empty command reaches new SignalName() and throws where nothing
- * on the read path catches it - AbstractServer::onTick() catches only
- * SocketException, and the daemon main loop catches nothing.
+ * This boundary is the one place that can turn a malformed line into an ANSWER: the
+ * tick guard behind it (HIL-569) keeps a broken line from taking the master down,
+ * but all it can do for the sender is close the connection, and a CLI that gets a
+ * closed socket learns nothing about what it sent.
  *
- * Since HIL-562 the refusal arrives in two shapes and the answer has to be the
- * same for both: CommandRequestDTO::fromArray() refuses a line that omits a field,
- * while a line carrying the field empty hydrates and is refused by the check that
- * follows.
+ * Since HIL-562 the refusal arrives in two shapes and the answer has to be the same
+ * for both: CommandRequestDTO::fromArray() refuses a line that omits a field, while
+ * a line carrying the field empty hydrates and is refused by the check that follows.
+ * Since HIL-569 there is a third: a line that does not decode at all, which the
+ * reader now refuses as a format failure and which therefore reaches the same answer
+ * instead of leaving the read path.
  */
 final class CommandClientMalformedRequestTest extends TestCase
 {
@@ -100,6 +102,29 @@ final class CommandClientMalformedRequestTest extends TestCase
         $this->assertSame('corr-4', $client->lastReply()[CommandConstants::FIELD_CORRELATION_ID] ?? null);
     }
 
+    public function testALineThatDoesNotDecodeIsAnsweredRatherThanThrown(): void
+    {
+        $client = $this->client();
+
+        $client->feedRaw('{"a":}');
+
+        $this->assertSame(CommandConstants::STATUS_ERROR, $client->lastReply()[CommandConstants::FIELD_STATUS] ?? null);
+    }
+
+    /**
+     * The minus of answering a line too broken to say who sent it: the reply carries
+     * no correlation id, and the CLI matches it to its request only because
+     * AsyncCommandClient reads the first line that arrives.
+     */
+    public function testTheAnswerToAnUndecodableLineCarriesNoCorrelationId(): void
+    {
+        $client = $this->client();
+
+        $client->feedRaw('{"a":}');
+
+        $this->assertSame('', $client->lastReply()[CommandConstants::FIELD_CORRELATION_ID] ?? null);
+    }
+
     public function testAWellFormedPingStillAnswersOk(): void
     {
         $client = $this->client();
@@ -143,6 +168,20 @@ final class CommandClientMalformedRequestTestClient extends CommandClient
     public function feed(array $request): void
     {
         $this->readBuffer .= json_encode($request) . "\n";
+        $this->processReadBuffer();
+    }
+
+    /**
+     * Hands one line to the read-buffer parser exactly as it arrived on the wire.
+     *
+     * The extractor takes a message by its brackets, so a line only reaches the
+     * reader when its braces balance - `{"a":}` does, and does not decode.
+     *
+     * @param string $line Line the CLI sent, without its terminator
+     */
+    public function feedRaw(string $line): void
+    {
+        $this->readBuffer .= $line . "\n";
         $this->processReadBuffer();
     }
 

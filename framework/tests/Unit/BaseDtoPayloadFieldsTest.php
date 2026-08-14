@@ -6,10 +6,13 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Core\Exception\MalformedInput;
+use Hilos\Core\Exception\NonArrayPayloadException;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests the payload-field helpers every DTO inherits from BaseDTO.
+ * Tests the JSON reader and the payload-field helpers every DTO inherits from BaseDTO.
  *
  * A field has two roles and no third one, so the suite pins both ends of each
  * pair: a required field refuses an absent key and a key of the wrong type,
@@ -17,6 +20,10 @@ use PHPUnit\Framework\TestCase;
  * the same. The empty string is pinned separately — it is a value the sender
  * filled in, not a missing field, and a helper that rejected it would push
  * validation of blank input out of the handler that owns it.
+ *
+ * The reader in front of them is pinned by the same logic one step earlier: a
+ * string that does not decode and a string that decodes into the wrong shape are
+ * two different failures, and the literal `null` belongs to the second one.
  */
 final class BaseDtoPayloadFieldsTest extends TestCase
 {
@@ -295,6 +302,53 @@ final class BaseDtoPayloadFieldsTest extends TestCase
 
         PayloadFieldsProbeDTO::readOptionalIntOrString(['rowKey' => 1.5], 'rowKey');
     }
+
+    public function testFromJsonRestoresTheDtoFromAValidObject(): void
+    {
+        $probe = PayloadFieldsProbeDTO::fromJson('{"page":"chat","httpCode":404}');
+
+        $this->assertSame(['page' => 'chat', 'httpCode' => 404], $probe->restoredFrom);
+    }
+
+    public function testFromJsonRefusesAStringThatDoesNotDecode(): void
+    {
+        $this->expectException(InvalidJsonException::class);
+
+        PayloadFieldsProbeDTO::fromJson('{"a":}');
+    }
+
+    public function testFromJsonRefusesANumberThatDecodesIntoNoArray(): void
+    {
+        $this->expectException(NonArrayPayloadException::class);
+
+        PayloadFieldsProbeDTO::fromJson('123');
+    }
+
+    public function testFromJsonRefusesAQuotedStringThatDecodesIntoNoArray(): void
+    {
+        $this->expectException(NonArrayPayloadException::class);
+
+        PayloadFieldsProbeDTO::fromJson('"text"');
+    }
+
+    public function testFromJsonReadsTheLiteralNullAsAPayloadOfTheWrongShapeAndNotAsAFailureToDecode(): void
+    {
+        $this->expectException(NonArrayPayloadException::class);
+
+        PayloadFieldsProbeDTO::fromJson('null');
+    }
+
+    public function testBothReaderRefusalsCarryTheMarkerAGuardReadsTheLogLevelBy(): void
+    {
+        $this->assertInstanceOf(MalformedInput::class, new InvalidJsonException('undecodable'));
+        $this->assertInstanceOf(MalformedInput::class, new NonArrayPayloadException('not an array'));
+    }
+
+    public function testBothReaderRefusalsReachTheCatchThatAlreadyAnswersABrokenPayload(): void
+    {
+        $this->assertInstanceOf(InvalidFormatException::class, new InvalidJsonException('undecodable'));
+        $this->assertInstanceOf(InvalidFormatException::class, new NonArrayPayloadException('not an array'));
+    }
 }
 
 /**
@@ -302,6 +356,9 @@ final class BaseDtoPayloadFieldsTest extends TestCase
  */
 final class PayloadFieldsProbeDTO extends BaseDTO
 {
+    /** @var array<string, mixed> Payload the probe was restored from, so a reader test can see what arrived */
+    public array $restoredFrom = [];
+
     /**
      * @return array<string, mixed> Empty payload; the probe carries no fields of its own
      */
@@ -312,11 +369,14 @@ final class PayloadFieldsProbeDTO extends BaseDTO
 
     /**
      * @param array<string, mixed> $data DTO payload
-     * @return static Restored probe instance
+     * @return static Restored probe instance holding the payload it was built from
      */
     public static function fromArray(array $data): static
     {
-        return new static();
+        $probe = new static();
+        $probe->restoredFrom = $data;
+
+        return $probe;
     }
 
     /**

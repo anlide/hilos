@@ -52,6 +52,12 @@ final class DaemonApplication
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));
             $manager->run();
         } catch (Throwable $e) {
+            // What reaches this catch is a failure of the startup, and the hard exit is the
+            // right answer to it: there is no node yet to announce a departure for, no
+            // server to close its clients, no deadline to hold the exit to - and the manager
+            // that would do all three may be the very thing that failed to be built. Once
+            // the loop is running, a failure no longer comes here: DaemonManager::run()
+            // turns it into a requested stop and leaves by the path SIGTERM takes.
             Logger::error('Daemon failed: ' . $e->getMessage(), [
                 ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
                 ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),

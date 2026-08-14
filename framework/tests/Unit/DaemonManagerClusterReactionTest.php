@@ -12,9 +12,13 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\Server\ServerInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
+use RuntimeException;
+use Throwable;
 
 /**
  * Unit tests for the daemon's quorum-loss and graceful-leave reactions (HIL-341).
@@ -89,12 +93,60 @@ final class DaemonManagerClusterReactionTest extends TestCase
 
         $this->assertSame(0, $manager->workStopCount, 'A standalone daemon shutdown is not a cluster graceful-leave');
     }
+
+    /**
+     * The point of the step is that every server gets to close its clients (HIL-569),
+     * so a server refusing on its way out must not take that chance from the ones
+     * standing behind it in the list.
+     */
+    public function testAServerRefusingToPrepareLeavesTheOthersTheirShutdown(): void
+    {
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+
+        $manager = new DaemonManagerClusterReactionTestManager();
+        $refusing = new DaemonManagerClusterReactionTestServer('refusing', new RuntimeException('port already gone'));
+        $following = new DaemonManagerClusterReactionTestServer('following', null);
+        $manager->registerServer($refusing);
+        $manager->registerServer($following);
+
+        $initiateShutdown = new ReflectionMethod(DaemonManager::class, 'initiateShutdown');
+        $initiateShutdown->invoke($manager);
+
+        $this->assertTrue($following->prepared, 'The server behind the refusing one is still told to prepare');
+    }
+
+    /**
+     * The work-stop hook is a project's own code and is invited to persist, so its
+     * refusal must not cost the node its departure: without the servers' prepare step
+     * there is no NodeLeaving frame and no closed client, only the shutdown timeout.
+     */
+    public function testARefusingWorkStopStillLeavesTheServersTheirShutdown(): void
+    {
+        Hilos::$env = new EnvAccessor();
+        putenv('CLUSTER_ENABLED=true');
+        Hilos::$cluster = new ClusterContext();
+
+        $manager = new DaemonManagerClusterReactionTestManager();
+        $manager->workStopRefuses = true;
+        $server = new DaemonManagerClusterReactionTestServer('following', null);
+        $manager->registerServer($server);
+
+        $initiateShutdown = new ReflectionMethod(DaemonManager::class, 'initiateShutdown');
+        $initiateShutdown->invoke($manager);
+
+        $this->assertSame(1, $manager->workStopCount, 'The hook was reached');
+        $this->assertTrue($server->prepared, 'A refusing hook does not skip the servers behind it');
+    }
 }
 
 final class DaemonManagerClusterReactionTestManager extends DaemonManager
 {
     /** @var int Number of times onClusterWorkStop() fired */
     public int $workStopCount = 0;
+
+    /** @var bool Whether the work-stop hook refuses, the way a project's persistence can */
+    public bool $workStopRefuses = false;
 
     protected function createSignalRouter(): SignalRouter
     {
@@ -106,9 +158,109 @@ final class DaemonManagerClusterReactionTestManager extends DaemonManager
         return new DaemonManagerClusterReactionTestAgentManagerDaemon();
     }
 
+    /**
+     * @throws RuntimeException When the test asked the hook to refuse
+     */
     public function onClusterWorkStop(): void
     {
         $this->workStopCount++;
+
+        if ($this->workStopRefuses) {
+            throw new RuntimeException('the project could not persist its work');
+        }
+    }
+}
+
+/**
+ * A server that answers the shutdown step the way the test asked it to and remembers
+ * being asked; nothing else about it is exercised.
+ */
+final class DaemonManagerClusterReactionTestServer implements ServerInterface
+{
+    /** @var bool True once the manager told this server to prepare for shutdown */
+    public bool $prepared = false;
+
+    /**
+     * @param string $name Server name the failure line names
+     * @param ?Throwable $refusal Failure prepareShutdown() hands back, or null to prepare quietly
+     */
+    public function __construct(private readonly string $name, private readonly ?Throwable $refusal)
+    {
+    }
+
+    /**
+     * @throws Throwable The refusal this server was built with, when it was built with one
+     */
+    public function prepareShutdown(): void
+    {
+        if ($this->refusal !== null) {
+            throw $this->refusal;
+        }
+
+        $this->prepared = true;
+    }
+
+    /**
+     * @return string Server name for logging
+     */
+    public function getServerName(): string
+    {
+        return $this->name;
+    }
+
+    /**
+     * @return bool Always true; the test never starts a socket
+     */
+    public function start(): bool
+    {
+        return true;
+    }
+
+    public function stop(): void
+    {
+    }
+
+    /**
+     * @return bool Always false; the test never starts a socket
+     */
+    public function isRunning(): bool
+    {
+        return false;
+    }
+
+    /**
+     * @return null No socket behind this server
+     */
+    public function getSocket()
+    {
+        return null;
+    }
+
+    /**
+     * @param ClientInterface $client Client to remove
+     */
+    public function removeClient(ClientInterface $client): void
+    {
+    }
+
+    /**
+     * @return ?ClientInterface Always null; the test never accepts a connection
+     */
+    public function acceptConnection(): ?ClientInterface
+    {
+        return null;
+    }
+
+    public function onTick(): void
+    {
+    }
+
+    /**
+     * @return bool Always true; the test never waits for a shutdown
+     */
+    public function isReadyToShutdown(): bool
+    {
+        return true;
     }
 }
 

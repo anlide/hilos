@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Core\Exception\NonArrayPayloadException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataEnvelope;
 
@@ -59,15 +61,29 @@ abstract class BaseDTO
     /**
      * Restores a DTO instance from a JSON payload.
      *
+     * The two ways a string can fail to become a payload are refused apart, and the
+     * decoder's own error tells them from each other: `null` is a value JSON can
+     * carry, so reading it as "did not decode" would answer a valid literal with the
+     * wrong refusal and leave a body of the wrong type to fail at the parameter of
+     * {@see self::fromArray()} as a TypeError instead.
+     *
      * @param string $json JSON-encoded DTO payload
      * @return static Restored DTO instance
-     * @throws HilosException When JSON cannot be decoded into DTO data
+     * @throws InvalidJsonException When the string does not decode as JSON
+     * @throws NonArrayPayloadException When the string decodes into something other than an array
      * @throws InvalidFormatException When the decoded payload is missing a field the DTO cannot be built without
+     * @throws HilosException When the DTO refuses to be restored from this payload at all
      */
     public static function fromJson(string $json): static
     {
-        $data = json_decode($json, true)
-            ?? throw new HilosException('Invalid JSON provided');
+        $data = json_decode($json, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new InvalidJsonException('Payload does not decode as JSON: ' . json_last_error_msg());
+        }
+        if (!is_array($data)) {
+            throw new NonArrayPayloadException('Payload decodes into ' . get_debug_type($data) . ', not an array');
+        }
+
         return static::fromArray($data);
     }
 

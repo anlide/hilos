@@ -11,6 +11,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
@@ -114,6 +115,24 @@ final class DaemonManagerEntropyFailureTest extends TestCase
         $logged = (string)file_get_contents($this->logFile);
         $this->assertStringContainsString('ERROR:', $logged);
         $this->assertStringContainsString(self::REFUSAL_MESSAGE, $logged);
+    }
+
+    /**
+     * Since HIL-569 a real server contains what its clients throw, so the refusal now
+     * travels a catch-all on its way here. It must pass through it: the tick guard
+     * answers for a connection, and this stop is the manager's to decide.
+     */
+    public function testTheRefusalFromUnderTheTickGuardStillStopsTheNode(): void
+    {
+        $manager = new DaemonManagerEntropyFailureTestManager();
+        $client = new DaemonManagerEntropyFailureTestClient(new RandomException(self::REFUSAL_MESSAGE));
+        $manager->registerServer(new DaemonManagerEntropyFailureTestTickingServer($client));
+
+        $this->tickServers($manager);
+
+        $this->assertTrue($manager->exitRequested());
+        $this->assertFalse($client->closed);
+        $this->assertStringContainsString(self::REFUSAL_MESSAGE, (string)file_get_contents($this->logFile));
     }
 
     public function testAServerThatTicksWithoutRefusalLeavesTheNodeRunning(): void
@@ -268,6 +287,46 @@ final class DaemonManagerEntropyFailureTestServer implements ServerInterface
     public function isReadyToShutdown(): bool
     {
         return true;
+    }
+}
+
+/**
+ * A real server, so the refusal leaves a client through the tick guard the framework
+ * puts there rather than through a stub that has none. It opens no socket: the test
+ * hands it the one client it ticks.
+ */
+final class DaemonManagerEntropyFailureTestTickingServer extends AbstractServer
+{
+    /**
+     * @param ClientInterface $client Client the tick reads
+     */
+    public function __construct(ClientInterface $client)
+    {
+        parent::__construct('127.0.0.1', 0);
+
+        $this->clients[] = $client;
+    }
+
+    /**
+     * @return string Server name for logging
+     */
+    public function getServerName(): string
+    {
+        return 'entropy-failure-tick-test';
+    }
+
+    protected function onStart(): void
+    {
+    }
+
+    /**
+     * @param resource $socket Client socket
+     * @return ClientInterface Never returned; the test accepts no connection
+     * @throws SocketException Always
+     */
+    protected function onCreateClient($socket): ClientInterface
+    {
+        throw new SocketException('the entropy failure test accepts no connection');
     }
 }
 

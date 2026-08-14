@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Constants\SocketConstants;
+use Hilos\Core\Exception\MalformedInput;
 use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
@@ -12,6 +13,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Logger;
 use Random\RandomException;
+use Throwable;
 
 /**
  * AbstractServer - Abstract base class for server implementations.
@@ -273,19 +275,47 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                     $client->close();
                     $clientsToRemove[] = $client;
                 }
-            } catch (HilosException $exception) {
-                // Contain a per-client failure so the remaining clients still tick.
-                Logger::error(sprintf(
-                    'Error in client tick for %s: %s - %s',
+            } catch (RandomException $refusal) {
+                // The connection asked for a secret and the secure source refused. The
+                // node cannot mint one for the next connection either, so this is its
+                // business and not the connection's, and the decision to stop belongs to
+                // the manager, which a server knows nothing about: rethrown past the
+                // guard below, which would otherwise contain it and leave the node
+                // serving handshakes whose secrets are guessable.
+                throw $refusal;
+            } catch (Throwable $exception) {
+                // Everything else belongs to one client and ends here - logged, closed
+                // and dropped - so the remaining connections keep ticking and a line
+                // that does not parse cannot take the master process with it.
+                //
+                // The level tells the routine from the alarming. A transport that broke
+                // and input that could not be read are the daily work of an open port:
+                // the peer mesh drops links as a matter of course, and a port scanner
+                // speaks HTTP at a WebSocket. An error line for each of those would
+                // spend the level that is supposed to stand out when the node itself is
+                // broken. The fields are the ones DaemonManager::onClientRead() writes,
+                // in its order - the two readers of one client must be read as one thing
+                // in the journal - while the wording names which of them wrote the line,
+                // and the level split is this path's own: the epoll path still writes
+                // every failure as an error.
+                $entry = sprintf(
+                    'Error in client tick for %s: %s in %s:%d - %s',
                     $this->getServerName(),
                     get_class($exception),
+                    basename($exception->getFile()),
+                    $exception->getLine(),
                     $exception->getMessage()
-                ));
+                );
+                if ($exception instanceof SocketException || $exception instanceof MalformedInput) {
+                    Logger::warning($entry);
+                } else {
+                    Logger::error($entry);
+                }
 
                 // If client has error, close it
                 try {
                     $client->close();
-                } catch (HilosException) {
+                } catch (Throwable) {
                     // Ignore errors during close
                 }
                 $clientsToRemove[] = $client;

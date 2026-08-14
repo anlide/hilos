@@ -79,11 +79,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
         // Suppress the PHP warning a reset/broken peer raises (ECONNRESET, EPIPE,
         // EAGAIN, ...): otherwise the global errorHandler converts it to a generic
-        // ErrorException that escapes AbstractServer::onTick()'s HilosException
-        // guard and tears the whole daemon down. Suppressed, socket_read returns
-        // false and handleSocketError() raises the proper SocketException the loop
-        // already closes the client on. Surfaced live by the peer mesh (HIL-185),
-        // whose duplicate-link collapse and node kills reset peer links routinely.
+        // ErrorException, which names no socket error and reaches AbstractServer's
+        // tick guard as a node failure rather than the routine drop it is.
+        // Suppressed, socket_read returns false and handleSocketError() raises the
+        // proper SocketException the loop already closes the client on. Surfaced
+        // live by the peer mesh (HIL-185), whose duplicate-link collapse and node
+        // kills reset peer links routinely.
         // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
         $data = @socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
 

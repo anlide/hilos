@@ -63,7 +63,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      * Parse command requests and either answer `ping` synchronously or park and route.
      *
      * @throws SocketException When the read buffer or JSON depth exceeds limits
-     * @throws HilosException When an undecodable command line refuses to become a DTO
+     * @throws HilosException When a decoded command line refuses to become a DTO at all
      * @throws InvalidArgumentException When the parked request carries a command that cannot be named
      */
     protected function processReadBuffer(): void
@@ -84,11 +84,14 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             // boundary refuses an empty action, page or group. Left through, an empty
             // command reaches new SignalName() and throws where nothing on the read
             // path catches it, and an empty correlation id parks a request no reply
-            // can be addressed to. The refusal arrives in two shapes and both are
-            // answered rather than rethrown: CommandRequestDTO::fromArray() refuses a
-            // line that omits a field, and the check below refuses one that carries
-            // the field empty. An undecodable line is a different failure and still
-            // throws out of fromJson(); that one is older than this guard (see P-039).
+            // can be addressed to. The refusal arrives in three shapes and all are
+            // answered rather than rethrown: the reader refuses a line that does not
+            // decode or decodes into something other than an object, fromArray()
+            // refuses one that omits a field, and the check below refuses one that
+            // carries the field empty. What the answer cannot do is address itself:
+            // a line too broken to carry a correlation id is replied to with an empty
+            // one, and the sender matches it to its request only because
+            // AsyncCommandClient reads the first line that arrives.
             try {
                 $request = CommandRequestDTO::fromJson($message);
             } catch (InvalidFormatException) {

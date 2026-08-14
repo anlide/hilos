@@ -190,23 +190,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function processReadBuffer(): void
     {
-        try {
-            if (!$this->handshakeCompleted) {
-                $this->handleHandshake();
-                return;
+        if (!$this->handshakeCompleted) {
+            $this->handleHandshake();
+            return;
+        }
+
+        while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
+            $frame = $this->parseFrame();
+            if ($frame === null) {
+                break;
             }
 
-            while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
-                $frame = $this->parseFrame();
-                if ($frame === null) {
-                    break;
-                }
-
-                $this->handleFrame($frame);
-            }
-        } catch (UnknownOpcodeException|ReservedOpcodeException|InvalidFrameException $exception) {
-            $this->shouldClose = true;
-            throw $exception;
+            $this->handleFrame($frame);
         }
     }
 
@@ -1125,10 +1120,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
                 // The viewport is the one frame whose shape is read by its DTO rather
                 // than field by field here, so its refusal is translated into the type
-                // the checks above throw - the one processReadBuffer() closes the
-                // connection on. Left as it arrives, it would reach the catch-all of
-                // DaemonManager instead: the client would be dropped past the
-                // shouldClose flag and under a message about a read handler.
+                // the checks above throw. Either reader of the client closes the
+                // connection on both classes now, so what the translation buys is one
+                // vocabulary on this path: a frame that could not be read says so as a
+                // frame error, and not as a payload refusal from somewhere below.
                 try {
                     $dto = WebSocketTableViewportSignalDTO::fromArray($decoded);
                 } catch (InvalidFormatException $exception) {

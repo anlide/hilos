@@ -326,12 +326,13 @@ abstract class DaemonManager extends BaseManager implements
      * and precise timing control. Runs until shutdown signal is received
      * and all servers are ready to shutdown (or timeout expires).
      *
+     * What an iteration of the loop throws does not leave here: it is logged and turned
+     * into a requested stop, so the node departs by the SIGTERM path rather than by an
+     * uncaught throw. Only the startup above the loop still refuses outright - there is
+     * no node yet to announce a departure for.
+     *
      * @throws MissingRequiredParameterException When required process functions are unavailable
-     * @throws AgentException When routing a signal to its agent fails (no suitable
-     *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws EnvException When the cluster-enabled flag value is invalid
-     * @throws SocketException When the WebSocket server cannot be opened for the ready workers
-     * @throws InvalidArgumentException When a due cron rule carries an empty name
      */
     public function run(): void
     {
@@ -396,48 +397,70 @@ abstract class DaemonManager extends BaseManager implements
         while ($this->shouldContinueRunning()) {
             $loopStartTime = microtime(true);
 
-            // If shutdown requested but not started yet, initiate shutdown
-            if ($this->shouldExit && $this->shutdownStartTime === null) {
-                $this->shutdownStartTime = microtime(true);
-                $this->initiateShutdown();
+            try {
+                // If shutdown requested but not started yet, initiate shutdown
+                if ($this->shouldExit && $this->shutdownStartTime === null) {
+                    $this->shutdownStartTime = microtime(true);
+                    $this->initiateShutdown();
+                }
+
+                // Process epoll events for all servers
+                $this->processEventLoop();
+
+                // Tick all servers (process clients)
+                $this->tickServers();
+
+                // Dispatch the per-iteration hook for the current node lifecycle phase
+                $this->dispatchRoleTick();
+
+                // Singleton duties run on exactly one node cluster-wide: the leader, or the
+                // sole node when cluster mode is off. A follower starts no cluster-singleton
+                // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
+                if ($this->amLeader()) {
+                    // Start this node's cluster-singleton agents once per leadership term
+                    $this->ensureSingletonsStarted();
+
+                    // Open the WebSocket server once the required startup agents are ready
+                    $this->tickReadiness();
+
+                    // Check cron jobs (not more than once per minute)
+                    $this->checkCronJobs();
+                }
+
+                // Dispatch accumulated signals
+                $this->dispatchSignals();
+
+                // Report the re-hydrate barrier once everyone has answered, or the deadline passed
+                $this->tickReHydrateRound();
+
+                // Flush buffered analytics rows on schedule
+                Hilos::$ac?->tick();
+
+                // Process signals
+                pcntl_signal_dispatch();
+            } catch (Throwable $failure) {
+                // A failure that got this far is the node's own: one iteration of the loop
+                // did not finish, and nothing below this frame is left to make sense of it.
+                // The node leaves the way SIGTERM makes it leave - the departure announced
+                // to the cluster, every server given its prepareShutdown(), the exit held to
+                // shutdownTimeout by shouldContinueRunning() - instead of exiting from under
+                // the exception with the workers unaware and the mesh still counting this
+                // node in. A node that fell is a failover the cluster has to notice by
+                // timeout; a node that left is one it is told about.
+                $this->logException(sprintf(
+                    'Failure in the daemon loop: %s in %s:%d - %s',
+                    get_class($failure),
+                    basename($failure->getFile()),
+                    $failure->getLine(),
+                    $failure->getMessage()
+                ));
+
+                $this->shouldExit = true;
             }
 
-            // Process epoll events for all servers
-            $this->processEventLoop();
-
-            // Tick all servers (process clients)
-            $this->tickServers();
-
-            // Dispatch the per-iteration hook for the current node lifecycle phase
-            $this->dispatchRoleTick();
-
-            // Singleton duties run on exactly one node cluster-wide: the leader, or the
-            // sole node when cluster mode is off. A follower starts no cluster-singleton
-            // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
-            if ($this->amLeader()) {
-                // Start this node's cluster-singleton agents once per leadership term
-                $this->ensureSingletonsStarted();
-
-                // Open the WebSocket server once the required startup agents are ready
-                $this->tickReadiness();
-
-                // Check cron jobs (not more than once per minute)
-                $this->checkCronJobs();
-            }
-
-            // Dispatch accumulated signals
-            $this->dispatchSignals();
-
-            // Report the re-hydrate barrier once everyone has answered, or the deadline passed
-            $this->tickReHydrateRound();
-
-            // Flush buffered analytics rows on schedule
-            Hilos::$ac?->tick();
-
-            // Process signals
-            pcntl_signal_dispatch();
-
-            // Sleep for precise timing
+            // Sleep for precise timing. Outside the guard on purpose: the iterations that
+            // follow a failure are the shutdown ones, and a loop spinning without its pause
+            // would burn the deadline it is being given to leave cleanly.
             $this->sleepWithPreciseTiming($loopStartTime);
         }
 
@@ -522,6 +545,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Called when shouldExit becomes true.
      * Prepares all servers for shutdown.
+     *
+     * Every step of the departure stands on its own: it runs once, nothing re-enters this
+     * method afterwards, and a step that refuses must not take the remaining ones with it.
      */
     private function initiateShutdown(): void
     {
@@ -530,14 +556,37 @@ abstract class DaemonManager extends BaseManager implements
         // cluster. The peer transport announces the departure with a NodeLeaving frame
         // in its own prepareShutdown(). Gated on cluster mode so a standalone daemon is
         // unchanged. Distinct from onLostLeadership: a leaving follower loses no
-        // leadership yet must still halt business work.
+        // leadership yet must still halt business work. The hook is a project's own code
+        // and it is invited to persist, so it is contained: a throw from it would leave
+        // every server below without its prepareShutdown, and the cluster without the
+        // announcement that PeerServer sends from there.
         if ($this->clusterEnabled()) {
-            $this->onClusterWorkStop();
+            try {
+                $this->onClusterWorkStop();
+            } catch (Throwable $failure) {
+                $this->logException(sprintf(
+                    'Work-stop directive failed on the way out: %s - %s',
+                    get_class($failure),
+                    $failure->getMessage()
+                ));
+            }
         }
 
-        // Tell all servers to prepare for shutdown
+        // Tell all servers to prepare for shutdown. Each on its own, because the point of
+        // the step is that every server gets to close its clients: letting the first one
+        // that refuses end the loop would take that chance from the ones behind it, and
+        // the failure of a server on its way out changes nothing about the departure.
         foreach ($this->servers as $server) {
-            $server->prepareShutdown();
+            try {
+                $server->prepareShutdown();
+            } catch (Throwable $failure) {
+                $this->logException(sprintf(
+                    'Server %s failed to prepare for shutdown: %s - %s',
+                    $server->getServerName(),
+                    get_class($failure),
+                    $failure->getMessage()
+                ));
+            }
         }
     }
 
