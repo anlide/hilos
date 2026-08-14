@@ -171,8 +171,9 @@ function submit(): void {
 }
 
 // Magic-link request: submit, then on a clean (ok, no error) outcome show the
-// generic sent acknowledgement — the backend always answers generically
-// (login-only, anti-enumeration), so this reveals nothing about the address.
+// same sent acknowledgement either way — the request is login-only today and
+// answers an address it cannot mail with the same silent success (HIL-417 is what
+// makes a link register too), so there is no second answer to render.
 async function submitMagicRequest(): Promise<void> {
   if (!submittable.value || pending.value) {
     return

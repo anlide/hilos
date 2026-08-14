@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Auth\ChatAuthMethods;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatFileUploadConstants;
@@ -17,6 +18,7 @@ use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
+use Demo\Chat\Pages\DTO\Main\DetectIdentifierActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LinkOAuthAfterReauthActionDTO;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
@@ -38,6 +40,7 @@ use Demo\Chat\Core\Router\DTO\PasskeyOptionsSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -98,6 +101,7 @@ final class MainPage extends AbstractPage
 
     public const array ACTIONS = [
         ChatSignalConstants::MESSAGE => MessageActionDTO::class,
+        ChatSignalConstants::DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
         ChatSignalConstants::LOGIN => LoginActionDTO::class,
         ChatSignalConstants::REGISTER => RegisterActionDTO::class,
         ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
@@ -144,8 +148,12 @@ final class MainPage extends AbstractPage
     // a stranger's say-so - an email, an SMS, a password hash, a registration reservation.
     // The authenticated actions above are deliberately absent: reaching them already costs
     // an account, so the session, not the window, is what limits them. Reads are absent for
-    // the same reason in reverse - nothing behind them is worth guessing at.
+    // the same reason in reverse - nothing behind them is worth guessing at, with the one
+    // exception that proves it: DETECT_IDENTIFIER answers whether an account exists, which
+    // is precisely what an enumerator wants, and this list is the whole of what keeps that
+    // answer expensive (HIL-414).
     public const array THROTTLED_ACTIONS = [
+        ChatSignalConstants::DETECT_IDENTIFIER,
         ChatSignalConstants::LOGIN,
         ChatSignalConstants::REGISTER,
         ChatSignalConstants::REQUEST_PASSWORD_RESET,
@@ -176,10 +184,38 @@ final class MainPage extends AbstractPage
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
     /**
-     * Generic login failure message shared by the unknown-email and wrong-password
-     * paths so the response never discloses which account exists.
+     * Login failure for an address nobody has an account at.
+     *
+     * One of the three sentences that replaced the single generic "invalid email or
+     * password" (HIL-414). The generic one was there to hide which addresses have
+     * accounts; the live lookup in front of this form answers exactly that question
+     * now, so keeping the login vague no longer withheld anything - it only left
+     * the person guessing which half of what they typed was wrong.
      */
-    private const string INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
+    private const string UNKNOWN_EMAIL_MESSAGE = 'No account found for this email';
+
+    /**
+     * Login failure for an address whose account was never given a password.
+     *
+     * An account built by a sign-in link, a provider or a phone has none, and
+     * telling somebody their password is wrong when there is no password to be
+     * wrong sends them to a recovery flow that cannot help them either.
+     */
+    private const string NO_PASSWORD_MESSAGE = 'This account has no password';
+
+    /**
+     * Login failure for a password that did not match the account's.
+     */
+    private const string WRONG_PASSWORD_MESSAGE = 'Incorrect password';
+
+    /**
+     * Password-reset refusal for an address with no password to reset.
+     *
+     * Covers both an unknown address and an account that has no password: the
+     * distinction changes nothing the person can act on here, and what they can act
+     * on - that this form is not their way in - is the same sentence either way.
+     */
+    private const string NO_PASSWORD_TO_RESET_MESSAGE = 'No password to reset for this email';
 
     /**
      * Generic failure message for every verification-code path (unknown, expired,
@@ -261,6 +297,13 @@ final class MainPage extends AbstractPage
                 $this->handleMessage($dto);
 
                 break;
+
+            case ChatSignalConstants::DETECT_IDENTIFIER:
+                if (!$dto instanceof DetectIdentifierActionDTO) {
+                    throw new InvalidActionPayloadException($action, DetectIdentifierActionDTO::class, $dto);
+                }
+
+                return $this->handleDetectIdentifier($dto);
 
             case ChatSignalConstants::LOGIN:
                 if (!$dto instanceof LoginActionDTO) {
@@ -511,16 +554,22 @@ final class MainPage extends AbstractPage
     /**
      * Verifies email+password against a `password` identity and promotes the session.
      *
-     * A missing identity and a wrong password both fail with the same generic
-     * message (no user enumeration); the unknown-email path still spends the
-     * hash-verify cost so response time stays constant. A verified login rehashes
-     * the stored hash when its parameters are outdated, then upgrades the live
-     * anonymous session to the matched user through
+     * Each of the three ways this fails says which one it was (HIL-414): the address
+     * has no account, the account has no password, or the password is wrong. That is
+     * the "all-in" trade of the identifier-first epic - the lookup in front of the
+     * form already answers whether an address has an account, so a generic sentence
+     * here withheld nothing from anybody probing and only confused the person
+     * typing. The constant-time dummy hash that guarded the unknown-address path
+     * went with it: it bought indistinguishable response times for an answer that is
+     * now given outright.
+     *
+     * A verified login rehashes the stored hash when its parameters are outdated,
+     * then upgrades the live anonymous session to the matched user through
      * {@see ChatAgent::authenticateSession()}.
      *
      * @param LoginActionDTO $dto Parsed login payload (email, password)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws ValidationException When the credentials are invalid
+     * @throws ValidationException When the address, the account, or the password cannot sign in
      * @throws HilosException When identity lookup, rehash, or session promotion fails
      */
     private function handleLogin(LoginActionDTO $dto): void
@@ -535,22 +584,20 @@ final class MainPage extends AbstractPage
             : null;
 
         if ($identity === null) {
-            // No account for this email: still spend the verify cost so the
-            // response time does not disclose that the identifier is unknown.
-            Hilos::$db->identities->verifyDummyPassword($dto->password);
-
-            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+            throw new ValidationException($this->emailBelongsToAccount($email)
+                ? self::NO_PASSWORD_MESSAGE
+                : self::UNKNOWN_EMAIL_MESSAGE);
         }
 
         if (!$identity->verifyPassword($dto->password)) {
-            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+            throw new ValidationException(self::WRONG_PASSWORD_MESSAGE);
         }
 
         $identity->rehashPasswordIfNeeded($dto->password);
 
         $userId = $identity->userId;
         if ($userId === null) {
-            throw new ValidationException(self::INVALID_CREDENTIALS_MESSAGE);
+            throw new ValidationException(self::WRONG_PASSWORD_MESSAGE);
         }
 
         $this->agent->authenticateSession(
@@ -626,6 +673,31 @@ final class MainPage extends AbstractPage
     }
 
     /**
+     * Looks a typed identifier up and answers what the surface should offer for it.
+     *
+     * The read behind the single identifier field: the person types, and this says
+     * whether that address or number signs in, registers, or is already waiting on a
+     * code somebody asked for earlier. Nothing is written and nothing is sent, so it
+     * is safe to ask on every keystroke the debounce lets through - what makes asking
+     * expensive is the throttle window this action is listed in
+     * ({@see self::THROTTLED_ACTIONS}), which is what stands in for the generic
+     * answers this epic gave up.
+     *
+     * The methods it may name are this project's ({@see ChatAuthMethods}), not every
+     * method the framework knows: naming one the demo has no handler for would put a
+     * button on the surface whose submit is refused.
+     *
+     * @param DetectIdentifierActionDTO $dto Parsed lookup payload (identifier)
+     * @return IdentifierDetection What is behind the identifier and what can be done with it
+     * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
+     * @throws HilosException When the identity or reservation lookup fails
+     */
+    private function handleDetectIdentifier(DetectIdentifierActionDTO $dto): IdentifierDetection
+    {
+        return ChatAuthMethods::detector()->detect($dto->identifier);
+    }
+
+    /**
      * Whether an email already belongs to an account, by any method.
      *
      * The question the identifier-first surface asks before reserving: not "is there a
@@ -664,15 +736,18 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Issues a password-reset code for an email, always answering generically.
+     * Issues a password-reset code, or says there is no password to reset.
      *
-     * Anti-enumeration: whether or not a `password` identity exists for the
-     * email, the action returns the same generic success. A real account issues
-     * (throttled) a code through the verification service; an unknown one still
-     * spends a dummy hash cost so the response time does not disclose which
-     * emails have accounts.
+     * The second anti-enumeration stub the identifier-first epic removed
+     * (HIL-414): an address with no password used to be answered with the same
+     * silent success as a real one, so somebody whose account was built by a link,
+     * a provider or a phone waited for a letter that was never sent. It refuses out
+     * loud now, and the constant-time dummy hash that hid the difference went with
+     * it. Nothing is disclosed by that which the lookup in front of the form does
+     * not already answer.
      *
      * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
+     * @throws ValidationException When no account at the address has a password
      * @throws HilosException When identity lookup or code issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a code
      */
@@ -684,11 +759,7 @@ final class MainPage extends AbstractPage
             : null;
 
         if ($identity === null || $identity->userId === null) {
-            // No account for this email: still spend a hash cost so the response
-            // time does not disclose that the identifier is unknown.
-            Hilos::$db->identities->verifyDummyPassword($dto->email);
-
-            return;
+            throw new ValidationException(self::NO_PASSWORD_TO_RESET_MESSAGE);
         }
 
         new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);

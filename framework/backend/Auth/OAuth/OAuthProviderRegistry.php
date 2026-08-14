@@ -49,4 +49,19 @@ final class OAuthProviderRegistry
     {
         return isset($this->providers[$key]);
     }
+
+    /**
+     * Lists the keys of every configured provider, in configuration order.
+     *
+     * A provider key doubles as an auth method key (HIL-414): the identifier-first
+     * surface names an account's providers one by one, and a project builds the set
+     * of methods it enables from this list. Without it that set would be a second
+     * hand-kept list of providers next to this one, and the two would drift.
+     *
+     * @return list<string> Provider keys, e.g. 'oauth:github'
+     */
+    public function keys(): array
+    {
+        return array_keys($this->providers);
+    }
 }

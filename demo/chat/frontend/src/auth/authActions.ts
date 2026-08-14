@@ -1,8 +1,8 @@
 // The auth surface's client-to-server submits: map the active mode to its backend
 // action and dispatch it over the request-correlated action lifecycle (core
 // ActionLifecycle), returning the outcome the surface state machine (HIL-364)
-// renders. Unlike a generic tracked action, auth surfaces the backend reason: the
-// login "Invalid email or password" IS the intended generic message, and register
+// renders. Unlike a generic tracked action, auth surfaces the backend reason: a
+// sign-in names which of the three ways it failed (HIL-414), and register
 // legitimately reveals a taken email — so a failure maps the ActionError reason to
 // the inline message, except for a timeout/disconnect where the reason is a
 // framework string and a generic phrasing is shown instead.
@@ -104,9 +104,10 @@ export async function submitAuth(
       })
     case 'magic_link_request':
       // Success does not advance a mode: the confirm is a clicked email link
-      // handled on the /auth/magic route, not a form step. The backend always
-      // answers generically (login-only, anti-enumeration), so the view shows a
-      // "check your email" acknowledgement on the ok outcome.
+      // handled on the /auth/magic route, not a form step. The backend answers the
+      // same either way: the request is login-only today (HIL-417 is what makes a
+      // link register too), and an address it cannot mail is a silent no-op rather
+      // than a "no" — so the view shows a "check your email" acknowledgement.
       return dispatch(REQUEST_MAGIC_LINK_ACTION, { email: form.email })
     case 'passkey':
       // Username-first passkey login: the whole options → assertion → confirm

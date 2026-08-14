@@ -10,14 +10,20 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\Main\LoginActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Database;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\HilosException;
@@ -28,8 +34,12 @@ use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for the email+password login handler (HIL-162): a valid
- * login promotes the anonymous session to its user, invalid credentials fail
- * with a single generic message, and an outdated hash is rehashed on success.
+ * login promotes the anonymous session to its user, an outdated hash is rehashed
+ * on success, and each of the three ways a sign-in fails says which one it was
+ * (HIL-414 - the epic traded the single generic sentence for the live lookup that
+ * answers the same question outright). The password-reset request is here for the
+ * same reason: it carried the second anti-enumeration stub, and its refusal is now
+ * part of the same story.
  * Requires test DB to be reset before run (composer run test:db-reset).
  */
 final class MainPageLoginTest extends IntegrationTestCase
@@ -60,7 +70,7 @@ final class MainPageLoginTest extends IntegrationTestCase
     }
 
     /**
-     * A wrong password fails generically and leaves the session anonymous.
+     * A wrong password says so and leaves the session anonymous.
      *
      * @throws HilosException When setup or login handling fails
      */
@@ -73,7 +83,7 @@ final class MainPageLoginTest extends IntegrationTestCase
 
         try {
             $this->expectException(ValidationException::class);
-            $this->expectExceptionMessage('Invalid email or password');
+            $this->expectExceptionMessage('Incorrect password');
 
             $this->login($agent, 'wrong-ak', $email, 'not the password');
         } finally {
@@ -83,18 +93,18 @@ final class MainPageLoginTest extends IntegrationTestCase
     }
 
     /**
-     * An unknown email fails with the same generic message (no enumeration).
+     * An unknown email says the address has no account (HIL-414, all-in messaging).
      *
      * @throws HilosException When setup or login handling fails
      */
-    public function testUnknownEmailIsRejectedGenerically(): void
+    public function testUnknownEmailIsRejectedAsUnknown(): void
     {
         $agent = $this->bootAgent();
         $token = $this->openSession($agent, 'unknown-ak');
 
         try {
             $this->expectException(ValidationException::class);
-            $this->expectExceptionMessage('Invalid email or password');
+            $this->expectExceptionMessage('No account found for this email');
 
             $this->login($agent, 'unknown-ak', $this->uniqueEmail(), self::PASSWORD);
         } finally {
@@ -124,6 +134,75 @@ final class MainPageLoginTest extends IntegrationTestCase
             $this->assertNotSame($outdatedHash, $storedHash);
             $this->assertFalse(password_needs_rehash((string)$storedHash, PASSWORD_DEFAULT));
             $this->assertTrue(password_verify(self::PASSWORD, (string)$storedHash));
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * An account that was never given a password is told so, not that its password is wrong.
+     *
+     * The third of the three sentences: an account built by a link, a provider or a
+     * phone has no password, and blaming the password sends somebody to a recovery
+     * flow that has nothing to recover.
+     *
+     * @throws HilosException When setup or login handling fails
+     */
+    public function testPasswordlessAccountIsToldItHasNoPassword(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithoutPassword($email);
+        $token = $this->openSession($agent, 'nopw-ak');
+
+        try {
+            $this->expectException(ValidationException::class);
+            $this->expectExceptionMessage('This account has no password');
+
+            $this->login($agent, 'nopw-ak', $email, self::PASSWORD);
+        } finally {
+            $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * A reset asked for an address with no password is refused out loud, not answered silently.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testResetIsRefusedForAnAddressWithNoPassword(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithoutPassword($email);
+
+        try {
+            $this->expectException(ValidationException::class);
+            $this->expectExceptionMessage('No password to reset for this email');
+
+            $this->requestPasswordReset($agent, 'reset-refused-ak', $email);
+        } finally {
+            $this->assertNull($this->activeResetChallenge($email), 'Nothing is issued for an address it refuses');
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * An account that does have a password still gets its reset code.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testResetIssuesACodeForAnAccountWithAPassword(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email, self::PASSWORD, password_hash(self::PASSWORD, PASSWORD_DEFAULT));
+
+        try {
+            $this->requestPasswordReset($agent, 'reset-ok-ak', $email);
+
+            $this->assertNotNull($this->activeResetChallenge($email));
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
@@ -250,6 +329,68 @@ final class MainPageLoginTest extends IntegrationTestCase
         $secret = is_array($row) ? ($row[EntityIdentity::secret] ?? null) : null;
 
         return is_string($secret) ? $secret : null;
+    }
+
+    /**
+     * Dispatches a password-reset request through the main page.
+     *
+     * @param ChatAgent $agent Agent owning the page
+     * @param string $acceptKey Acting connection accept key
+     * @param string $email Submitted email
+     * @throws HilosException When the reset handler rejects the action
+     */
+    private function requestPasswordReset(ChatAgent $agent, string $acceptKey, string $email): void
+    {
+        new MainPage($agent)->onAction(
+            $acceptKey,
+            ChatSignalConstants::REQUEST_PASSWORD_RESET,
+            new RequestPasswordResetActionDTO($email),
+        );
+    }
+
+    /**
+     * Creates a user whose only identity is a verified address - an account with no password.
+     *
+     * @param string $email Account email (also the identity identifier)
+     * @return int New user id
+     * @throws HilosException When user creation or the identity insert fails
+     */
+    private function seedUserWithoutPassword(string $email): int
+    {
+        $userId = (int)Hilos::$db->users->actions->createWithName('User')->id;
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($userId));
+        $params->add(SqlParam::string(IdentityType::MAGIC_LINK));
+        $params->add(SqlParam::string($email));
+        Database::sql(
+            'INSERT INTO `' . EntityIdentity::_table . '` '
+            . '(`' . EntityIdentity::user_id . '`, `' . EntityIdentity::type . '`, '
+            . '`' . EntityIdentity::identifier . '`, `' . EntityIdentity::verified . '`) '
+            . 'VALUES (?, ?, ?, 1)',
+            $params,
+        );
+
+        return $userId;
+    }
+
+    /**
+     * Reads the live password-reset challenge for an address, if one was issued.
+     *
+     * @param string $email Address a reset was asked for
+     * @return ?ObjectUserVerification Live challenge, or null when none was issued
+     * @throws HilosException When the lookup fails
+     */
+    private function activeResetChallenge(string $email): ?ObjectUserVerification
+    {
+        /** @var ObjectUserVerifications $verifications */
+        $verifications = Hilos::$db->getObjectCollection(HilosDbContext::verifications);
+
+        return $verifications->findActive(
+            VerificationType::PASSWORD_RESET,
+            $email,
+            max(1, Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_MAX_ATTEMPTS)),
+        );
     }
 
     /**

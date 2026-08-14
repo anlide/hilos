@@ -111,9 +111,9 @@ export type AuthField = keyof AuthFormState
 
 /**
  * The outcome the view's submit reports back. On failure, `message` is shown
- * inline in the active mode (auth deliberately surfaces the backend reason — the
- * generic "Invalid email or password" IS the intended message, and a taken email
- * is legitimately disclosed on register). On success, `next` optionally advances
+ * inline in the active mode (auth deliberately surfaces the backend reason — a
+ * sign-in says which of the three ways it failed, and a taken email is
+ * legitimately disclosed on register). On success, `next` optionally advances
  * the mode (the recovery steps); login/register omit it — the session upgrade
  * closes the surface through the gate.
  */

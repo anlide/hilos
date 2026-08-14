@@ -26,6 +26,9 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
+    /** @var string Client → server: look an identifier up while it is typed (public, anonymous-reachable) */
+    public const string DETECT_IDENTIFIER = 'detect_identifier';
+
     /** @var string Client → server: email+password login (public, anonymous-reachable) */
     public const string LOGIN = 'login';
 

@@ -22,8 +22,8 @@ import { gotoPage } from '../helpers/page'
 //   - registering takes two steps (HIL-415): the submit only holds the address and
 //     mails one code, the code creates the account and signs the session in, and
 //     logout reverts the session to anonymous so the gated page re-gates;
-//   - login rejects a wrong password and an unknown email with the SAME generic
-//     "Invalid email or password" (no user enumeration);
+//   - login names which of the three ways it failed (HIL-414): the address has no
+//     account, the account has no password, or the password is wrong;
 //   - the anonymous visitor reads the chat but the composer gates sending behind
 //     the same surface, opened as the auth-gate modal via the composer's Sign in button.
 // Recovery (HIL-365) has no reachable e2e leg yet — its surface entry renders a
@@ -133,9 +133,7 @@ test.fixme('signs in by OAuth provider redirect and callback (HIL-281)', async (
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
 })
 
-test('rejects a wrong password and an unknown email with the same generic message', async ({
-  page,
-}) => {
+test('names which of the three ways a sign-in failed', async ({ page }) => {
   const email = uniqueEmail()
 
   // Seed a known account, then log out so the login path is exercised.
@@ -148,18 +146,17 @@ test('rejects a wrong password and an unknown email with the same generic messag
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  // Wrong password for a real email → generic rejection, still gated.
+  // Wrong password for a real email → says so, still gated.
   await login(page, email, 'a different password')
-  await expect(page.getByTestId('auth-error')).toHaveText(
-    'Invalid email or password',
-  )
+  await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // Unknown email → the identical message, so a guessing attacker cannot tell a
-  // real account from a missing one.
+  // Unknown email → a different sentence. The live lookup in front of this form
+  // already answers which addresses have accounts, so the login says which half
+  // of what was typed is wrong instead of leaving it to be guessed (HIL-414).
   await login(page, uniqueEmail(), 'yet another password')
   await expect(page.getByTestId('auth-error')).toHaveText(
-    'Invalid email or password',
+    'No account found for this email',
   )
   await expect(page.getByTestId('profile-name')).toHaveCount(0)
 })
