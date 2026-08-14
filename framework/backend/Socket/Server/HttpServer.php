@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\HttpClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
@@ -24,6 +25,7 @@ class HttpServer extends AbstractServer
      *
      * @param resource $socket Client socket
      * @return HttpClientInterface Client instance
+     * @throws EnvException When socket buffer or keep-alive env values are missing or invalid
      */
     protected function onCreateClient($socket): HttpClientInterface
     {

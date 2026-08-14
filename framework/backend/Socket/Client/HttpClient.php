@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -64,6 +65,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      *
      * @throws SocketException When outbound write fails during request handling
      * @throws InvalidFormatException When the request query string carries a non-string value
+     * @throws HilosException When a pipelined follow-up request refuses to become a response
      */
     protected function processReadBuffer(): void
     {
@@ -91,6 +93,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      *
      * @param string $rawRequest Raw HTTP request including header/body delimiter
      * @throws SocketException When outbound write fails while sending the response
+     * @throws HilosException When a pipelined follow-up request refuses to become a response
      */
     private function processSingleHttpRequest(string $rawRequest): void
     {
@@ -227,6 +230,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      *
      * @throws SocketException When outbound write fails while handling a subsequent request
      * @throws InvalidFormatException When the request query string carries a non-string value
+     * @throws HilosException When a pipelined follow-up request refuses to become a response
      */
     protected function onAfterOutboundDrained(): void
     {

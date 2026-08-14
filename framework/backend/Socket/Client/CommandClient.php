@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -62,6 +63,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      * Parse command requests and either answer `ping` synchronously or park and route.
      *
      * @throws SocketException When the read buffer or JSON depth exceeds limits
+     * @throws HilosException When an undecodable command line refuses to become a DTO
+     * @throws InvalidArgumentException When the parked request carries a command that cannot be named
      */
     protected function processReadBuffer(): void
     {

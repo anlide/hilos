@@ -25,6 +25,7 @@ use Hilos\Core\Agent\Exception\AgentNotFoundException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -32,6 +33,7 @@ use Hilos\Core\Exception\Process\FailedToReadStdOutException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
+use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -49,6 +51,7 @@ use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 use Throwable;
 
 /**
@@ -178,6 +181,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * @param resource $socket Client socket
      * @return WorkerClientInterface Client instance
+     * @throws EnvException When socket read buffer env value is missing or invalid
      */
     protected function onCreateClient($socket): WorkerClientInterface
     {
@@ -273,6 +277,8 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * {@see startAgent()}, so a per-node agent that opts out with
      * {@see AgentDaemonInterface::requiresClusterLeadership()} is unaffected. Re-fires
      * when a follower is later promoted, so it must stay idempotent.
+     *
+     * @throws InvalidArgumentException When the initial-agents signal cannot be named
      */
     public function onBecameSingletonHost(): void
     {
@@ -409,7 +415,11 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * Tick method - process clients and manage worker processes
      *
      * Overrides parent tick() to also manage worker processes lifecycle.
-     * Checks running processes and starts missing ones.
+     * Checks running processes and starts missing ones. A failure that belongs to one
+     * worker is contained by the loops below, the same way the parent contains a
+     * failure that belongs to one client.
+     *
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function onTick(): void
     {
@@ -450,6 +460,15 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      *
      * Checks if initial workers are ready and calls onInitialWorkersReady() once.
      * Agent messages are now processed directly in WorkerClient.
+     *
+     * A readiness announcement that cannot be named is logged rather than thrown -
+     * leaving the tick loop would cost this node every connection it is serving. It is
+     * announced BEFORE the once-only latch and the hook, so a refusal leaves the node
+     * exactly as it was and the next tick tries the whole step again: workersReady gates
+     * the WebSocket open, the cluster singletons and cron, and a node that latched
+     * without announcing would sit half-started with nothing left to retry. Queueing
+     * ahead of the hook is not observable - the daemon dispatches the queue after the
+     * tick, not at the call.
      */
     private function checkWorkerRegistration(): void
     {
@@ -476,16 +495,24 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             $monopolisticReady = ($this->minMonopolistic === 0) || ($registeredMonopolistic >= $this->minMonopolistic);
 
             if ($regularReady && $monopolisticReady) {
+                // Send workers ready signal to daemon
+                try {
+                    Hilos::$sr->queueSignal(
+                        new SignalSource(SignalSource::DAEMON),
+                        new SignalType(SignalTypeConstants::SYSTEM),
+                        new SignalName(SignalConstants::WORKERS_READY),
+                        new SystemSignalDTO(systemName: SignalConstants::WORKERS_READY),
+                    );
+                } catch (InvalidArgumentException $exception) {
+                    Logger::error(
+                        'Workers ready signal could not be named, node stays unannounced until the next tick: '
+                        . $exception->getMessage()
+                    );
+                    return;
+                }
+
                 $this->initialWorkersReadyCalled = true;
                 $this->onInitialWorkersReady();
-
-                // Send workers ready signal to daemon
-                Hilos::$sr->queueSignal(
-                    new SignalSource(SignalSource::DAEMON),
-                    new SignalType(SignalTypeConstants::SYSTEM),
-                    new SignalName(SignalConstants::WORKERS_READY),
-                    new SystemSignalDTO(systemName: SignalConstants::WORKERS_READY),
-                );
             }
         }
     }
@@ -515,7 +542,12 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             } catch (FailedToClosePipeException | FailedToTerminateProcessException $e) {
                 // Worker error, remove from tracking
                 $this->removeWorker($key, $type, $index);
-            } catch (FailedToGetStatusException | FailedToReadStdOutException | FailedToSetStdErrException $e) {
+            } catch (
+                FailedToGetStatusException
+                | FailedToReadStdOutException
+                | FailedToSetStdErrException
+                | FailedToWriteStdInException $e
+            ) {
                 try {
                     $process->stop();
                 } catch (FailedToGetStatusException | FailedToTerminateProcessException $e) {

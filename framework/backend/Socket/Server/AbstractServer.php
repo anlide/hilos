@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Constants\SocketConstants;
+use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
+use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * AbstractServer - Abstract base class for server implementations.
@@ -115,6 +118,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Stop server and close all client connections.
      *
      * @throws SocketException When socket close fails
+     * @throws HilosException When a client fails to announce its close
      */
     public function stop(): void
     {
@@ -164,6 +168,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      *
      * @return ?TClient New client or null when no connection is pending (EWOULDBLOCK)
      * @throws SocketException When socket operations fail
+     * @throws HilosException When the concrete client refuses to be constructed
      */
     public function acceptConnection(): ?ClientInterface
     {
@@ -233,14 +238,20 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      *
      * @param resource $socket Client socket
      * @return TClient Client instance
+     * @throws HilosException When the concrete client refuses to be constructed
      */
     abstract protected function onCreateClient($socket): ClientInterface;
 
     /**
      * Tick method - process all clients
      *
-     * Reads from and writes to all connected clients.
+     * Reads from and writes to all connected clients. A failure that belongs to one
+     * client is contained here - logged, the client closed and dropped - so the rest
+     * of the connections keep ticking. Only a failure that means the node itself
+     * cannot continue leaves this loop.
      * Should be called regularly in main loop.
+     *
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function onTick(): void
     {
@@ -262,11 +273,19 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                     $client->close();
                     $clientsToRemove[] = $client;
                 }
-            } catch (SocketException $e) {
+            } catch (HilosException $exception) {
+                // Contain a per-client failure so the remaining clients still tick.
+                Logger::error(sprintf(
+                    'Error in client tick for %s: %s - %s',
+                    $this->getServerName(),
+                    get_class($exception),
+                    $exception->getMessage()
+                ));
+
                 // If client has error, close it
                 try {
                     $client->close();
-                } catch (SocketException) {
+                } catch (HilosException) {
                     // Ignore errors during close
                 }
                 $clientsToRemove[] = $client;

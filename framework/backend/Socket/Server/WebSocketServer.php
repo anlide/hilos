@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
+use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
@@ -77,6 +78,7 @@ abstract class WebSocketServer extends AbstractServer
      *
      * @return ?ClientInterface New client or null when no connection is pending
      * @throws SocketException When socket operations fail
+     * @throws HilosException When the concrete client refuses to be constructed
      */
     public function acceptConnection(): ?ClientInterface
     {

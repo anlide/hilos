@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
@@ -49,6 +50,7 @@ use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\JsonHelper;
@@ -184,6 +186,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws EnvException When the build timestamp env value cannot be read
      * @throws RandomException When the secure random source refuses a handshake secret
      * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
+     * @throws InvalidArgumentException When a signal the frame turns into cannot be named
      */
     protected function processReadBuffer(): void
     {
@@ -534,6 +537,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * A partial write leaves them held for the next call, which is exactly the point.
      *
      * @throws SocketException If socket write fails
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function write(): void
     {
@@ -977,6 +981,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidFrameException When JSON or signal fields are invalid
      * @throws AgentUnknownActionException When action name is not allowed
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
+     * @throws InvalidArgumentException When the signal the frame turns into cannot be named
      */
     protected function onFrame(string $payload): void
     {
@@ -1307,6 +1312,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Handle received WebSocket binary frame.
      *
      * @param string $payload Frame payload (binary data)
+     * @throws InvalidArgumentException When the signal the frame turns into cannot be named
      */
     protected function onFrameBinary(string $payload): void
     {
@@ -1347,6 +1353,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param ?string $clientIp Client IP (IPv4 or IPv6), or null when the peer name is unavailable
      * @param RequestQueryParams $queryParams Query parameters from request URL
      * @param string $sessionToken Session token resolved on the 101 (cookie value or freshly minted)
+     * @throws InvalidArgumentException When the handshake signal cannot be named
      */
     final protected function handleHandshakeInternal(
         array $headers,
@@ -1421,6 +1428,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * page the connection sat on is unsubscribed on the worker side by
      * {@see WorkerManager::dispatchPageUnsubscribeIfTrackedOnConnectionClose()},
      * which is the only side that knows which page that was.
+     *
+     * @throws InvalidArgumentException When the close signal cannot be named
      */
     protected function onClose(): void
     {

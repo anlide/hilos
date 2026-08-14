@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\SocketException;
+use Random\RandomException;
 
 /**
  * ServerInterface - Interface for all server implementations.
@@ -27,6 +29,9 @@ interface ServerInterface
 
     /**
      * Stop server and close all connections.
+     *
+     * @throws SocketException When socket close fails
+     * @throws HilosException When a client fails to announce its close
      */
     public function stop(): void;
 
@@ -55,6 +60,8 @@ interface ServerInterface
      * Accept new connection.
      *
      * @return ?ClientInterface New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
+     * @throws SocketException When socket operations fail
+     * @throws HilosException When the concrete client refuses to be constructed
      */
     public function acceptConnection(): ?ClientInterface;
 
@@ -68,7 +75,10 @@ interface ServerInterface
     /**
      * Tick method - called regularly to process clients.
      *
-     * Should process read/write operations for all connected clients.
+     * Should process read/write operations for all connected clients, containing a
+     * failure that belongs to a single client instead of leaving the loop with it.
+     *
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function onTick(): void;
 

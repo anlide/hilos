@@ -13,6 +13,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 use TypeError;
 
 /**
@@ -67,6 +68,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      *
      * @throws SocketException If socket read fails
      * @throws HilosException When buffered wire input refuses to become a DTO
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function read(): void
     {
@@ -77,7 +79,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
         // Suppress the PHP warning a reset/broken peer raises (ECONNRESET, EPIPE,
         // EAGAIN, ...): otherwise the global errorHandler converts it to a generic
-        // ErrorException that escapes AbstractServer::onTick()'s SocketException
+        // ErrorException that escapes AbstractServer::onTick()'s HilosException
         // guard and tears the whole daemon down. Suppressed, socket_read returns
         // false and handleSocketError() raises the proper SocketException the loop
         // already closes the client on. Surfaced live by the peer mesh (HIL-185),
@@ -193,6 +195,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Sets socket to null after successful close to prevent double close.
      *
      * @throws SocketException If socket close fails
+     * @throws HilosException When the subclass fails to announce the close
      */
     public function close(): void
     {
@@ -289,6 +292,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Process read buffer - must be implemented by child classes.
      *
      * @throws HilosException When buffered wire input refuses to become a DTO
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     abstract protected function processReadBuffer(): void;
 
@@ -305,6 +309,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      *
      * This method is called after socket_close() completes without errors.
      * Can be overridden in child classes to perform cleanup or logging.
+     *
+     * @throws HilosException When the subclass fails to announce the close
      */
     abstract protected function onClose(): void;
 }

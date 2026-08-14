@@ -7,6 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Socket\Client\CommandClient;
 use Hilos\Socket\Client\Interface\CommandClientInterface;
@@ -46,6 +47,7 @@ class CommandServer extends AbstractServer
      *
      * @param resource $socket Client socket
      * @return CommandClientInterface Client instance
+     * @throws EnvException When socket read buffer env value is missing or invalid
      */
     protected function onCreateClient($socket): CommandClientInterface
     {

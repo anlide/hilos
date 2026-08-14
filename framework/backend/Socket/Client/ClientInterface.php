@@ -6,6 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
+use Random\RandomException;
 
 /**
  * ClientInterface - Interface for all client implementations.
@@ -26,6 +27,7 @@ interface ClientInterface
      *
      * @throws SocketException If read fails
      * @throws HilosException When buffered wire input refuses to become a DTO
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function read(): void;
 
@@ -53,6 +55,7 @@ interface ClientInterface
      * Close client connection.
      *
      * @throws SocketException If close fails
+     * @throws HilosException When the implementation fails to announce the close
      */
     public function close(): void;
 

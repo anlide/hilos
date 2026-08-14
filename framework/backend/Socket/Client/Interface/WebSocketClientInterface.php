@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client\Interface;
 
+use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Socket\Client\ClientInterface;
 
 /**
@@ -17,6 +18,7 @@ interface WebSocketClientInterface extends ClientInterface
      * Send WebSocket text frame.
      *
      * @param string $data Text data to send (UTF-8)
+     * @throws InvalidStateException When handshake not completed
      */
     public function sendFrame(string $data): void;
 
