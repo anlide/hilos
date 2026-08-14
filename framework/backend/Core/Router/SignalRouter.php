@@ -324,6 +324,7 @@ class SignalRouter
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
      * @param DbSyncSignalDataInterface $signalData Signal data with collectionKey and idString
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function queueDbSyncSignal(string $signalName, DbSyncSignalDataInterface $signalData): void
     {
@@ -360,6 +361,7 @@ class SignalRouter
      * Skips if broadcast disabled. Stamps the payload with this process's emitter identity.
      *
      * @param DbSyncClearedSignalData $signalData Cleared signal data with collectionKey
+     * @throws InvalidArgumentException When the cleared signal cannot be named
      */
     public function queueDbSyncClearedSignal(DbSyncClearedSignalData $signalData): void
     {
@@ -399,6 +401,7 @@ class SignalRouter
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
      * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
     {

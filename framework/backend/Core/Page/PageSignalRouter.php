@@ -12,6 +12,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -93,6 +94,7 @@ class PageSignalRouter
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
     public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -153,6 +155,7 @@ class PageSignalRouter
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
     public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -217,6 +220,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws InvalidArgumentException When the table-window signal cannot be named
      */
     public function dispatchTableViewport(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
@@ -262,6 +266,7 @@ class PageSignalRouter
      *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
+     * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function dispatchAction(WebSocketActionSignalDTO $data, string $source): void
     {
@@ -632,6 +637,7 @@ class PageSignalRouter
      * @throws AgentException
      * @throws FramePopOrderException When the execution frame is unwound out of order
      * @throws ValidationException When a validation failure cannot be mapped to an action error
+     * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
     {

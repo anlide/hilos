@@ -24,6 +24,7 @@ use Hilos\Core\Browser\Config\BrowserSourceKind;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageForbiddenException;
@@ -121,6 +122,7 @@ abstract class BrowserContext
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param PageRouteParams $params Route params for this page subscription
      * @throws PageSubscriptionException When browser params or guards reject the subscription
+     * @throws InvalidArgumentException When the page-response signal cannot be named
      */
     public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
     {
@@ -197,6 +199,7 @@ abstract class BrowserContext
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param TableViewportSubscription $viewport Window descriptor; its delivered row-id set is updated
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws InvalidArgumentException When the table-window signal cannot be named
      */
     public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): void
     {
@@ -325,6 +328,7 @@ abstract class BrowserContext
      * Drains browser source changes at the end of the worker tick.
      *
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
     public function flushToSignalRouter(): void
     {
@@ -428,6 +432,7 @@ abstract class BrowserContext
      * Emits browser signals produced from grouped DB/RT source changes in $this->changes.
      *
      * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
     protected function emitBrowserSignals(): void
     {

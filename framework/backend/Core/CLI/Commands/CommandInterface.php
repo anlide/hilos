@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Core\CLI\CliManager;
+use Hilos\HilosException;
+use JsonException;
 
 /**
  * CommandInterface - Interface for CLI commands.
@@ -25,6 +27,8 @@ interface CommandInterface
      * @param array<string, mixed> $options Parsed command options (--key=value or --flag)
      * @param list<string> $args Positional arguments
      * @return int Exit code (0 = success, non-zero = error)
+     * @throws HilosException When the command refuses its input or its work fails
+     * @throws JsonException When the command cannot encode its output
      */
     public function execute(array $options, array $args): int;
 

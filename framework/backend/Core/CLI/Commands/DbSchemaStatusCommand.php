@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use Hilos\Core\CLI\Exception\CommandException;
@@ -76,6 +77,7 @@ HELP;
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws CommandException If database connection is not established
+     * @throws DatabaseException If the connection cannot be selected or the schema cannot be read
      */
     public function execute(array $options, array $args): int
     {

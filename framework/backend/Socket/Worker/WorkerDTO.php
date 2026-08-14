@@ -7,6 +7,7 @@ namespace Hilos\Socket\Worker;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\HilosException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -60,6 +61,7 @@ abstract class WorkerDTO extends BaseDTO
      * @return WorkerDTO Worker DTO instance
      * @throws InvalidArgumentException If JSON is invalid or message type is unknown
      * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws HilosException When an agent frame's inner signal payload refuses to be restored
      */
     public static function factoryWorkerDTO(string $json): WorkerDTO
     {

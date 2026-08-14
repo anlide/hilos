@@ -7,6 +7,7 @@ namespace Hilos\Socket\Client;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -62,6 +63,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * Parse complete HTTP request(s) from the read buffer when outbound data is fully sent.
      *
      * @throws SocketException When outbound write fails during request handling
+     * @throws InvalidFormatException When the request query string carries a non-string value
      */
     protected function processReadBuffer(): void
     {
@@ -224,6 +226,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * After a full response is sent on a keep-alive connection, parse any pipelined request in the buffer.
      *
      * @throws SocketException When outbound write fails while handling a subsequent request
+     * @throws InvalidFormatException When the request query string carries a non-string value
      */
     protected function onAfterOutboundDrained(): void
     {

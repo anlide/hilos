@@ -183,6 +183,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws UnsupportedOperationException When an internal signal branch is unreachable
      * @throws EnvException When the build timestamp env value cannot be read
      * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws InvalidFormatException When the upgrade request's query string carries a non-string value
      */
     protected function processReadBuffer(): void
     {

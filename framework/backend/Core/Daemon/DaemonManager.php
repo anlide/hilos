@@ -29,6 +29,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
@@ -71,6 +72,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -246,6 +248,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param DaemonContext $context Resolved path context passed to every hook
      * @throws BackupScheduleException When the project backup schedule is malformed
+     * @throws EnvException When a backup env value cannot be read
+     * @throws HilosException When a daemon module fails its activation check or its registration
      */
     public function boot(DaemonContext $context): void
     {
@@ -327,6 +331,7 @@ abstract class DaemonManager extends BaseManager implements
      *     worker, daemon creation, agent lookup, or worker-link failure)
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws SocketException When the WebSocket server cannot be opened for the ready workers
+     * @throws InvalidArgumentException When a due cron rule carries an empty name
      */
     public function run(): void
     {
@@ -698,6 +703,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param ?string $excludeAcceptKey Accept key kept out of the broadcast, or null to tell everyone
+     * @throws InvalidArgumentException When the protected-mode signal cannot be named
      */
     public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void
     {
@@ -724,6 +730,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Attempts to start servers that are not running and registers them in event loop.
      * WebSocket server is started separately when workers are ready.
+     *
+     * @throws SocketException When a server socket cannot be created, bound or listened on
      */
     protected function startServers(): void
     {
@@ -1012,6 +1020,8 @@ abstract class DaemonManager extends BaseManager implements
      *
      * Handles epoll events for all registered servers.
      * Automatically manages server lifecycle and client connections.
+     *
+     * @throws SocketException When a server socket cannot be created, bound or listened on
      */
     protected function processEventLoop(): void
     {
@@ -2102,6 +2112,7 @@ abstract class DaemonManager extends BaseManager implements
      * Override only when cron work must run directly in the daemon process.
      *
      * @param CronRule $rule Cron rule that should be executed
+     * @throws InvalidArgumentException When the cron rule carries an empty name
      */
     protected function onCron(CronRule $rule): void
     {

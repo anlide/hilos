@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use mysqli_sql_exception;
 
@@ -81,6 +82,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (interval, timeout)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
+     * @throws EnvException If a database connection env value is missing or invalid
      */
     public function execute(array $options, array $args): int
     {

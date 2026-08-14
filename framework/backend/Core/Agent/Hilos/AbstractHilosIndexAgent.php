@@ -12,6 +12,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
@@ -118,6 +119,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused; the routing is on $data->command)
+     * @throws InvalidArgumentException When the command reply carries an empty correlation id
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {

@@ -7,6 +7,7 @@ namespace Hilos\Socket\Client;
 use Hilos\Constants\EnvConstants;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
@@ -65,6 +66,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Read data from client socket.
      *
      * @throws SocketException If socket read fails
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function read(): void
     {
@@ -103,6 +105,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Write buffered data to socket.
      *
      * @throws SocketException If socket write fails
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function write(): void
     {
@@ -158,6 +161,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Called when the outbound buffer becomes empty and the connection is not scheduled for close.
      * HttpClient uses this to process pipelined or subsequent HTTP requests on keep-alive.
+     *
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     protected function onAfterOutboundDrained(): void
     {
@@ -282,6 +287,8 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
     /**
      * Process read buffer - must be implemented by child classes.
+     *
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     abstract protected function processReadBuffer(): void;
 

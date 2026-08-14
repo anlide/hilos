@@ -22,6 +22,8 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
@@ -34,6 +36,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -186,6 +189,10 @@ abstract class WorkerManager extends BaseManager
      * shutdown condition requests exit.
      *
      * @throws MissingRequiredParameterException When required signal functions are unavailable
+     * @throws InvalidArgumentException When a message read from the daemon carries invalid JSON or type
+     * @throws InvalidFormatException When a daemon frame's payload is not the object its DTO needs
+     * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
+     * @throws HilosException When a frame read from the daemon refuses to become a DTO
      */
     public function run(): void
     {
@@ -375,6 +382,7 @@ abstract class WorkerManager extends BaseManager
      * @throws AgentCreationFailedException When agent creation fails
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a command handler cannot name its reply
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -998,6 +1006,7 @@ abstract class WorkerManager extends BaseManager
      * @param DaemonAgentMessageDTO $data Daemon-to-worker agent signal
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a command handler cannot name its reply
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\DTO\DbReHydrateOutcome;
@@ -205,6 +206,7 @@ interface AgentInterface
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void;
 }

@@ -6,6 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Constants\WorkerConstants;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -149,6 +150,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @throws InvalidArgumentException When message JSON or worker message type is invalid
      * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     protected function processReadBuffer(): void
     {

@@ -9,6 +9,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -315,6 +316,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * (routing to other agents, WebSocket delivery to clients, etc.).
      *
      * @param WorkerAgentMessageDTO $dto DTO containing signal from worker
+     * @throws InvalidArgumentException When the worker's signal carries an empty name
      */
     public function handleAgentMessage(WorkerAgentMessageDTO $dto): void
     {
@@ -332,6 +334,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle DB sync created message from worker (worker-level broadcast to daemon + all workers).
      *
      * @param WorkerDbSyncCreatedMessageDTO $dto DTO with sync created data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerDbSyncCreated(WorkerDbSyncCreatedMessageDTO $dto): void
     {
@@ -347,6 +350,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle DB sync updated message from worker (worker-level broadcast).
      *
      * @param WorkerDbSyncUpdatedMessageDTO $dto DTO with sync updated data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerDbSyncUpdated(WorkerDbSyncUpdatedMessageDTO $dto): void
     {
@@ -362,6 +366,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle DB sync deleted message from worker (worker-level broadcast).
      *
      * @param WorkerDbSyncDeletedMessageDTO $dto DTO with sync deleted data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerDbSyncDeleted(WorkerDbSyncDeletedMessageDTO $dto): void
     {
@@ -377,6 +382,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle DB sync cleared message from worker (worker-level broadcast).
      *
      * @param WorkerDbSyncClearedMessageDTO $dto DTO with cleared collection data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerDbSyncCleared(WorkerDbSyncClearedMessageDTO $dto): void
     {
@@ -398,6 +404,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * still named in the payload, because it is the one waiting for the verdict (HIL-436).
      *
      * @param ?string $agentId Agent that awaits the barrier's verdict, null when nobody does
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerDbReHydrate(?string $agentId): void
     {
@@ -509,6 +516,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle RT sync created message from worker (worker-level broadcast).
      *
      * @param WorkerRtSyncCreatedMessageDTO $dto DTO with sync created data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerRtSyncCreated(WorkerRtSyncCreatedMessageDTO $dto): void
     {
@@ -524,6 +532,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle RT sync updated message from worker (worker-level broadcast).
      *
      * @param WorkerRtSyncUpdatedMessageDTO $dto DTO with sync updated data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerRtSyncUpdated(WorkerRtSyncUpdatedMessageDTO $dto): void
     {
@@ -539,6 +548,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Handle RT sync deleted message from worker (worker-level broadcast).
      *
      * @param WorkerRtSyncDeletedMessageDTO $dto DTO with sync deleted data
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     public function handleWorkerRtSyncDeleted(WorkerRtSyncDeletedMessageDTO $dto): void
     {

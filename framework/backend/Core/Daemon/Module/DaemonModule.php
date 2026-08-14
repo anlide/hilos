@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon\Module;
 
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\HilosException;
 
 /**
  * An opt-in daemon subsystem: a self-contained unit that a daemon lists in
@@ -20,6 +21,7 @@ interface DaemonModule
 {
     /**
      * @return bool True when this daemon should enable the module (its activation predicate)
+     * @throws HilosException When the module cannot decide whether it is active
      */
     public function isActive(): bool;
 
@@ -29,6 +31,7 @@ interface DaemonModule
      *
      * @param DaemonManager $daemon Daemon to register server(s) on
      * @param DaemonContext $context Resolved path context
+     * @throws HilosException When the module cannot be built or registered
      */
     public function register(DaemonManager $daemon, DaemonContext $context): void;
 }

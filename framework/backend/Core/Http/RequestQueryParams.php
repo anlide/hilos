@@ -35,6 +35,7 @@ final class RequestQueryParams
 
     /**
      * @return self Empty query params
+     * @throws InvalidFormatException When any value is not a string
      */
     public static function empty(): self
     {
@@ -46,6 +47,7 @@ final class RequestQueryParams
      *
      * @param string $path Request path, optionally followed by a query string
      * @return self Query params parsed from the path, empty when there is no query string
+     * @throws InvalidFormatException When any value is not a string
      */
     public static function fromPath(string $path): self
     {
@@ -65,6 +67,7 @@ final class RequestQueryParams
      *
      * @param string $queryString Raw query string without the leading `?`
      * @return self Query params parsed from the query string
+     * @throws InvalidFormatException When any value is not a string
      */
     public static function fromQueryString(string $queryString): self
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\HilosException;
 use Hilos\Socket\SocketException;
 
 /**
@@ -24,6 +25,7 @@ interface ClientInterface
      * Read data from client socket.
      *
      * @throws SocketException If read fails
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function read(): void;
 
@@ -31,6 +33,7 @@ interface ClientInterface
      * Write buffered data to socket.
      *
      * @throws SocketException If write fails
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function write(): void;
 

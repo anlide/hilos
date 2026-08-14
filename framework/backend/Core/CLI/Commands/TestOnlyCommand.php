@@ -8,6 +8,8 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use JsonException;
 
 /**
  * Base for CLI commands that may only run outside production — state-manipulation
@@ -26,6 +28,8 @@ abstract class TestOnlyCommand implements CommandInterface
      * @param list<string> $args Positional arguments
      * @return int Exit code (0 = success)
      * @throws TestOnlyCommandOnProductionException When APP_ENV is production-like or unset
+     * @throws HilosException When the command body refuses its input or its work fails
+     * @throws JsonException When the command cannot encode its output
      */
     final public function execute(array $options, array $args): int
     {
@@ -43,6 +47,8 @@ abstract class TestOnlyCommand implements CommandInterface
      * @param array<string, mixed> $options Parsed options (--key=value or --flag)
      * @param list<string> $args Positional arguments
      * @return int Exit code (0 = success)
+     * @throws HilosException When the command body refuses its input or its work fails
+     * @throws JsonException When the command cannot encode its output
      */
     abstract protected function run(array $options, array $args): int;
 }

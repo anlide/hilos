@@ -15,6 +15,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -97,6 +98,7 @@ class SignalDTO extends BaseDTO
      * @return static DTO instance
      * @throws InvalidFormatException When a required field is missing, or a field holds another type
      * @throws InvalidArgumentException When the signal name is empty
+     * @throws HilosException When the inner payload refuses to be restored
      */
     public static function fromArray(array $data): static
     {

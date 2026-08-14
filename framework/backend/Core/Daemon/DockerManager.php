@@ -14,6 +14,7 @@ use Hilos\Core\Exception\Process\FailedToReadStdOutException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessException;
+use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 use Hilos\Core\Process;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -64,6 +65,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
      * @throws EnvException If required env values are missing or invalid
      * @throws LogRotationException If log rotation fails
      */
@@ -161,6 +163,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws FailedToWriteStdInException If buffered input cannot be written to the daemon process
      * @throws EnvException If the restart interval or failed-start threshold env value is missing or invalid
      */
     private function tickDaemon(): void

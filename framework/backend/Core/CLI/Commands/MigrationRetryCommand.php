@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 
 /**
@@ -76,6 +77,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (e.g. db-index)
      * @param list<string> $args Positional args (version required)
      * @return int Exit code (0 on success)
+     * @throws DatabaseException If the connection cannot be selected or the migrations cannot be retried
      */
     public function execute(array $options, array $args): int
     {

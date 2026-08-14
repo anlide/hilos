@@ -36,6 +36,7 @@ abstract class BaseDTO
      * @param array<string, mixed> $data DTO payload
      * @return static Restored DTO instance
      * @throws InvalidFormatException When the payload is missing a field the DTO cannot be built without
+     * @throws HilosException When the DTO refuses to be restored from this payload at all
      */
     abstract public static function fromArray(array $data): static;
 

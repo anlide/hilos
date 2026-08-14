@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -187,6 +188,7 @@ abstract class AbstractPage
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
      * @throws PageSubscriptionException When browser snapshot rejects the subscription
+     * @throws InvalidArgumentException When the page-response signal cannot be named
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
@@ -302,6 +304,7 @@ abstract class AbstractPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @param Throwable $e Action failure exposed to the client
+     * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
@@ -330,6 +333,7 @@ abstract class AbstractPage
      * @param string $action Action name that committed
      * @param string $requestId Client-minted request id to echo back for correlation
      * @param ?ActionReplyDTO $reply Domain reply the handler returned, or null when the action answered with nothing
+     * @throws InvalidArgumentException When the action-success signal cannot be named
      */
     public function sendActionSuccess(
         string $acceptKey,
@@ -359,6 +363,7 @@ abstract class AbstractPage
      * @param string $reason Human-readable error message exposed to the client
      * @param ?string $errorCode Machine-readable error code (e.g. 'unauthorized'), or null when unclassified
      * @param ?int $retryAfter Seconds the caller should wait before retrying (rate_limited failures), or null
+     * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function sendActionFail(
         string $acceptKey,
@@ -428,6 +433,7 @@ abstract class AbstractPage
      * @param string $signalName Signal name
      * @param string $acceptKey Target connection acceptKey
      * @param SignalDataInterface $data Signal payload
+     * @throws InvalidArgumentException When the signal name is empty
      */
     protected function sendToUser(string $signalName, string $acceptKey, SignalDataInterface $data): void
     {
@@ -448,6 +454,7 @@ abstract class AbstractPage
      * @param string $signalName Signal name
      * @param SignalDataInterface $data Signal payload
      * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     * @throws InvalidArgumentException When the signal name is empty
      */
     protected function sendToAllUsers(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
@@ -470,6 +477,7 @@ abstract class AbstractPage
      * @param string $signalName Signal name
      * @param SignalDataInterface $data Signal payload
      * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     * @throws InvalidArgumentException When the signal name is empty
      */
     protected function sendToAllConnected(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {

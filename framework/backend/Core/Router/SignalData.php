@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\BaseDTO;
+use Hilos\HilosException;
 
 /**
  * SignalData - Generic implementation of signal data.
@@ -39,6 +40,7 @@ class SignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws HilosException When the payload cannot be restored into this signal's data
      */
     public static function fromArray(array $data): static
     {

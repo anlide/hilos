@@ -52,6 +52,7 @@ class TableItem
      * @param string $name Property name (e.g. actions)
      * @return TableItemActions Property value (throws for unknown property)
      * @throws TablePropertyNotFoundException If the property does not exist
+     * @throws TableActionsNotConfiguredException If the table declares no item actions class
      */
     public function __get(string $name): mixed
     {

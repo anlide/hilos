@@ -9,6 +9,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\HilosException;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -80,6 +81,7 @@ class WorkerAgentMessageDTO extends WorkerDTO
      * @return static DTO instance
      * @throws InvalidArgumentException When the signal names an empty signal
      * @throws InvalidFormatException When the payload carries no signal
+     * @throws HilosException When the inner signal payload refuses to be restored
      */
     public static function fromArray(array $data): static
     {

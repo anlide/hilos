@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
@@ -164,6 +165,7 @@ class WorkerDaemonClient extends AbstractSocket
      * @throws SocketException When socket read fails or read buffer limits are exceeded
      * @throws InvalidArgumentException When a complete message has invalid JSON or type
      * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function read(): void
     {

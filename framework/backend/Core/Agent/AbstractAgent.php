@@ -199,6 +199,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $signalName Signal name (e.g. ChatSignalConstants::HANDSHAKE_RESPONSE)
      * @param string $targetAcceptKey Target connection acceptKey
      * @param SignalDataInterface $data Signal payload
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function sendToUser(string $signalName, string $targetAcceptKey, SignalDataInterface $data): void
     {
@@ -217,6 +218,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * to the held CLI connection addressed by the reply's correlation id.
      *
      * @param CommandReplyDTO $reply Command reply (use CommandReplyDTO::ok() / error())
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
      */
     public function replyToCommand(CommandReplyDTO $reply): void
     {
@@ -234,6 +236,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $signalName Signal name
      * @param SignalDataInterface $data Signal payload
      * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function sendToAllUsers(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
@@ -253,6 +256,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $signalName Signal name
      * @param SignalDataInterface $data Signal payload
      * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function sendToAllConnected(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
@@ -271,6 +275,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $targetGroup Group name
      * @param SignalDataInterface $data Signal payload
      * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function sendToGroup(string $signalName, string $targetGroup, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
@@ -290,6 +295,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * @param string $signalName Signal name (used for routing)
      * @param SignalDataInterface $data Signal payload
+     * @throws InvalidArgumentException When the signal name is empty
      */
     public function sendToAgent(string $signalName, SignalDataInterface $data): void
     {
@@ -329,6 +335,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $initiatorAcceptKey Accept key of the connection driving the operation
      * @throws EnvException When a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     protected function requestProtectedModeEnable(string $operation, string $initiatorAcceptKey): void
     {
@@ -360,6 +367,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * initiated, and a single node - where every request comes from the same node - authorizes the
      * release by this identity instead. Nothing here depends on the topology, so unlike
      * {@see requestProtectedModeEnable()} this side reads no cluster state at all.
+     *
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     protected function requestProtectedModeDisable(): void
     {
@@ -472,6 +481,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh database fails
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
      */
     protected function requestDbReHydrate(): void
     {
@@ -769,6 +779,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {

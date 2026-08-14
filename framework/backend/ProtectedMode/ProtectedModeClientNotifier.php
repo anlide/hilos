@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 
 /**
@@ -26,6 +27,7 @@ interface ProtectedModeClientNotifier
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param ?string $excludeAcceptKey Accept key kept out of the broadcast (the initiator, which
      *                                  must keep seeing the real app), or null to tell everyone
+     * @throws InvalidArgumentException When the protected-mode signal cannot be named
      */
     public function notifyProtectedModeState(ProtectedModeStateSignalData $state, ?string $excludeAcceptKey): void;
 }

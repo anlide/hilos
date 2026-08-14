@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -97,6 +98,7 @@ abstract class AbstractPageFactory
      * @param string $signalName Signal name
      * @param SignalDataInterface $payload Inner signal payload from AgentSignalData
      * @return SignalDataInterface Validated or passthrough payload
+     * @throws AgentException When an override refuses the declared payload or cannot hydrate its DTO
      */
     public function createPageSignalPayloadDTO(
         string $signalType,
