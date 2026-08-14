@@ -7,12 +7,12 @@ namespace Hilos\Tests\CodeStyle\Throws;
 use Hilos\Tests\CodeStyle\SourceScanner;
 
 /**
- * One tokenization pass over the backend roots, kept as the little the throws rule
+ * One tokenization pass over the production roots, kept as the little the throws rule
  * needs: which classes exist, what they extend, use and implement, which methods
  * they declare with which visibility and `@throws`, and where inside each body a
  * call or a `throw` sits.
  *
- * The index is always built over every backend root, whatever zone is judged: a
+ * The index is always built over every production root, whatever zone is judged: a
  * demo calls the framework, and an index cut down to the judged zone would answer
  * "no contract" for half the calls in it — a silent pass instead of a hit.
  *

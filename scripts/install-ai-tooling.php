@@ -460,6 +460,7 @@ final class AiToolingInstaller
     private function filesystemSupportsSymlinks(): bool
     {
         $linkPath = $this->repoRoot . '/.hilos-ai-symlink-probe';
+        // warning-suppressed: a filesystem refusing the link is the answer this probe asks for, and the next line reads it back
         $created = @symlink('agents.md', $linkPath);
         $supported = $created && is_link($linkPath);
         if (is_link($linkPath)) {

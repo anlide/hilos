@@ -1,8 +1,8 @@
 # Magic Values
 
 Read this before writing a bare number or a bare string into production code, and
-when a review says "that literal is magic". The rule covers `framework/backend`
-and `demo/*/backend`. Test roots are out of scope — see
+when a review says "that literal is magic". The rule covers the production roots —
+`framework/backend`, `demo/*/backend` and `scripts`. Test roots are out of scope — see
 [Tests are not in scope](#tests-are-not-in-scope).
 
 ## The three tests

@@ -21,8 +21,8 @@ $moved = @rename($tmp, $target);
 The marker is what keeps the distinction visible: "this may legitimately fail"
 stays written down instead of hiding behind a silent operator.
 
-The scope of this rule is production code: `framework/backend` and
-`demo/*/backend`. Test code is out, the same boundary
+The scope of this rule is production code: `framework/backend`, `demo/*/backend`
+and `scripts`. Test code is out, the same boundary
 [reflection.md](reflection.md) draws.
 
 **Checked automatically: `ERROR-SUPPRESSION`.**
@@ -118,7 +118,7 @@ $contents = (new FsFile($directory, $filename))->read();
 ## Validation
 
 `composer run test:framework:unit` runs the `ERROR-SUPPRESSION` guard over
-`framework/backend` and `demo/*/backend`. A hit reads
+`framework/backend`, `demo/*/backend` and `scripts`. A hit reads
 `ERROR-SUPPRESSION <path>:<line> — <what is wrong> (see <doc>)`. Existing debt is
 recorded in `framework/tests/CodeStyle/baseline.txt`, one record per file with
 the leaf that owes its removal; the baseline only shrinks. See

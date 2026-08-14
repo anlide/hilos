@@ -202,6 +202,42 @@ and reading those as addresses reported 46 legitimate mentions the day it was
 tried. In a wrapper the same path *is* an address, because a wrapper exists to be
 followed; that difference is the rule, not an oversight.
 
+### Which roots are read, and how each earns its rules
+
+`framework/tests/CodeStyle/ScannedRoots.php` names them, each with the kind that
+decides its rule set:
+
+| Root | Kind |
+|---|---|
+| `framework/backend` | production |
+| `scripts` | production |
+| `framework/tests` | suite |
+| `demo/*/backend` | production |
+| `demo/*/tests` | suite |
+
+A root is read when it holds PHP this repository runs, or PHP that decides a run —
+which is what puts `scripts/` in the list: it carries the runner every Verify
+verdict comes out of, and the host-side installers. A demo contributes its two
+source directories rather than its whole tree, because `demo/<name>/data/` sits
+beside them and holds the root-owned MariaDB files no walk may descend into; a new
+demo arrives through the glob with no activation step, and a root that is not there
+is skipped in silence, since the framework also ships without the demos. One PHP
+file of the repository stays outside every root on purpose:
+`framework/Stubs/event.php`, a type stub for an IDE that is never executed.
+
+The kind states a property of the code and not the name of the directory holding it.
+A production root is judged by every rule; a suite is judged by every rule but the
+three a suite is allowed to break — `ERROR-SUPPRESSION`, `RANDOM-SOURCE` and
+`MAGIC-REPEAT`, the three marked *Production roots only* in the table above. A rule
+cannot draw that line for itself: it is handed the path relative to the scanned
+root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and reads exactly like
+a backend file.
+
+Reading the kind off the directory name instead — a root ending in `/backend` is
+production, everything else a suite — is what this replaced, and `scripts/` is why:
+it ends in no such suffix, so it would have arrived carrying a suite's rule set and
+let the suppressed call this catalog's own rule exists for pass unseen.
+
 ### Why the rule reads a zone and not the whole tree
 
 `EMPTY-STRING-SENTINEL` is the one rule whose reach depends on the root it is
@@ -226,13 +262,14 @@ tree carries a file directly in a segment for exactly this reason — were the
 match ever narrowed to a prefix, the fixture report would break before any
 production file did.
 
-Every other root — `demo/*/backend`, `framework/tests`, `demo/*/tests` — is judged
-entire. A demo is an application on the framework and has no subsystem outside the
-mechanism to phase, and a new demo root arrives through the glob with no
-activation step, so a segment list would be forever chasing directories that
-already exist. The zone is read relative to the scanned root, so the fixtures
-repeat the segments of the framework zone to be judged by the same code, and a
-fixture root of their own carries what the whole-root mode has to prove.
+Every other root — `scripts`, `demo/*/backend`, `framework/tests`, `demo/*/tests` —
+is judged entire. A demo is an application on the framework and has no subsystem
+outside the mechanism to phase, `scripts/` has no subsystem at all, and a new demo
+root arrives through the glob with no activation step, so a segment list would be
+forever chasing directories that already exist. The zone is read relative to the
+scanned root, so the fixtures repeat the segments of the framework zone to be
+judged by the same code, and a fixture root of their own carries what the
+whole-root mode has to prove.
 
 Inside the zone, a legal reading of outside input is named in place with a
 `// external-boundary: <reason>` marker rather than frozen in the baseline: the
@@ -342,10 +379,11 @@ until a person names the owing leaf.
 5. Register the rule in `CodeStyleGuardTest`, regenerate the baseline, and give
    every new record an owing leaf.
 
-A rule that judges production code only is listed in `BACKEND_ONLY_RULES` in the
-same test. It cannot decide that for itself: `check()` receives the path relative
-to the scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and
-is indistinguishable from a backend file. The root is known to the guard.
+A rule that judges production code only is listed in `RootKind`, beside the kinds it
+is withheld by, and the section on which roots are read says why. It cannot decide
+that for itself: `check()` receives the path relative to the
+scanned root, so `framework/tests/Unit/X.php` arrives as `Unit/X.php` and is
+indistinguishable from a backend file. The kind is declared next to the root.
 
 ### A rule with a second half in another language
 
@@ -374,7 +412,7 @@ steps above cannot reach it: the contract a call has to honour is written in the
 callee, and the callee almost never sits in the file being read.
 
 1. Put it in `framework/tests/CodeStyle/Throws/`, next to `SourceIndex`, which
-   tokenizes the backend roots once and answers what a class extends, uses and
+   tokenizes the production roots once and answers what a class extends, uses and
    implements, what each of its methods declares and with what visibility, and
    where inside a body a call or a `throw` sits.
 2. Implement `Hilos\Tests\CodeStyle\Throws\CrossFileRule`, not `CodeStyleRule`.
@@ -383,7 +421,7 @@ callee, and the callee almost never sits in the file being read.
    `Violation` objects, unlike the markdown rules: a cross-file hit is baselined
    like any other, and the failure line has to read the same whichever kind
    produced it.
-3. Build the index over **every** backend root, whatever zone is judged. A demo
+3. Build the index over **every** production root, whatever zone is judged. A demo
    calls the framework, and an index cut down to the judged zone answers "no
    contract" for half the calls inside it — a silent pass instead of a hit.
 4. Seed `framework/tests/CodeStyle/Fixtures/ThrowsTree/` with a toy tree that
@@ -391,7 +429,7 @@ callee, and the callee almost never sits in the file being read.
    with a production contract, and pin the exact report in
    `ThrowsPropagationFixtureTest`. Seed the look-alikes that must stay silent as
    carefully as the hits. These fixtures need no path exclusion: the index reads
-   the backend roots, and `framework/tests` is not one of them.
+   the production roots, and `framework/tests` is not one of them.
 5. Register it in `CodeStyleGuardTest` as a second source feeding the same
    report — **not** in a guard test of its own. The baseline is one file, and
    `CODESTYLE_BASELINE_UPDATE=1` rewrites it whole from the violations of the

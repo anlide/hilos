@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Tests\CodeStyle\Baseline;
 use Hilos\Tests\CodeStyle\CodeStyleRule;
+use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -16,6 +17,7 @@ use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
+use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
@@ -26,7 +28,9 @@ use PHPUnit\Framework\TestCase;
  * Runs the machine-checkable code-style rules over the whole monorepo and fails on
  * anything the baseline does not already own.
  *
- * A new demo is covered by the glob, so there is no activation step to forget.
+ * Which roots those are, and which rules each of them earns, is declared by
+ * {@see ScannedRoots}; what stays here is what only the guard knows — the paths left
+ * out of a root and the zone of the rule that is phased in one subsystem at a time.
  */
 final class CodeStyleGuardTest extends TestCase
 {
@@ -40,20 +44,6 @@ final class CodeStyleGuardTest extends TestCase
     private const array EXCLUDED_PATHS = ['framework/tests' => ['CodeStyle/Fixtures']];
 
     /**
-     * Rules that judge production code only, listed here because the scanned root
-     * is known here and nowhere else: a rule receives the path relative to its
-     * root, so `framework/tests/Unit/X.php` reaches it as `Unit/X.php` and reads
-     * exactly like a backend file. A suite is allowed what production is not —
-     * suppressing a warning while it arranges a failure, repeating the same
-     * number in a dozen assertions, where a constant would hide from the reader
-     * the very value under test, or drawing throwaway tokens and names from the
-     * tolerant random helper, which it also has to call to check.
-     *
-     * @var array<int, string>
-     */
-    private const array BACKEND_ONLY_RULES = [ErrorSuppressionRule::ID, RandomSourceRule::ID, MagicRepeatRule::ID];
-
-    /**
      * The root the empty-string rule judges by a list of segments rather than whole.
      * A framework subsystem is turned on one phase at a time, so the zone below is
      * the part of it already cleaned; every other root is judged entire.
@@ -62,10 +52,10 @@ final class CodeStyleGuardTest extends TestCase
 
     /**
      * Segments of {@see self::PHASED_EMPTY_STRING_ROOT} the empty-string rule judges,
-     * listed here for the same reason {@see self::BACKEND_ONLY_RULES} is: the rule is
-     * handed a path relative to its root and never learns which root that is. The
-     * list grows one leaf at a time — turned on at once, the baseline of the root
-     * would become a list of exceptions rather than a list of owed work.
+     * listed here for the same reason {@see RootKind} exists: the rule is handed a
+     * path relative to its root and never learns which root that is. The list grows
+     * one leaf at a time — turned on at once, the baseline of the root would become
+     * a list of exceptions rather than a list of owed work.
      *
      * @var array<int, string>
      */
@@ -142,8 +132,8 @@ final class CodeStyleGuardTest extends TestCase
     {
         $reported = [];
 
-        foreach ($this->scannedRoots() as $root) {
-            $rules = $this->rulesFor($root);
+        foreach (ScannedRoots::all($this->repositoryRoot()) as $root => $kind) {
+            $rules = $this->rulesFor($root, $kind);
             $scanner = new SourceScanner($this->repositoryRoot() . '/' . $root, self::EXCLUDED_PATHS[$root] ?? []);
             foreach ($scanner->files() as $file) {
                 $relativePath = $scanner->relativePath($file);
@@ -183,17 +173,18 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
-     * The index spans every backend root whatever zone is judged: a demo calls the
+     * The index spans every production root whatever zone is judged: a demo calls the
      * framework, so an index cut down to the judged zone would answer "no contract"
-     * for half the calls inside it and pass them in silence.
+     * for half the calls inside it and pass them in silence. A suite is left out
+     * because nothing the rule judges calls into one.
      *
      * @return array<int, string> Roots the cross-file index is built over, relative to the repository root
      */
     private function indexedRoots(): array
     {
-        return array_values(array_filter(
-            $this->scannedRoots(),
-            static fn(string $root): bool => str_ends_with($root, '/backend'),
+        return array_keys(array_filter(
+            ScannedRoots::all($this->repositoryRoot()),
+            static fn(RootKind $kind): bool => $kind === RootKind::Production,
         ));
     }
 
@@ -206,27 +197,10 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
-     * Roots are optional: the framework also ships without the demos, and a missing
-     * one is not a configuration error. A demo's `data/` directory is a sibling of
-     * these roots, so the walk never reaches the root-owned MariaDB files.
-     *
-     * @return array<int, string> Scanned roots, relative to the repository root
-     */
-    private function scannedRoots(): array
-    {
-        $roots = ['framework/backend', 'framework/tests'];
-        foreach (glob($this->repositoryRoot() . '/demo/*', GLOB_ONLYDIR) ?: [] as $demo) {
-            $roots[] = 'demo/' . basename($demo) . '/backend';
-            $roots[] = 'demo/' . basename($demo) . '/tests';
-        }
-
-        return $roots;
-    }
-
-    /**
-     * A demo and a test suite have no subsystem outside the mechanism to phase, and
-     * a new demo root arrives through the glob with no activation step — so only the
-     * framework backend is judged by a segment list, and every other root entire.
+     * A demo and a test suite have no subsystem outside the mechanism to phase,
+     * `scripts/` has none at all, and a new demo root arrives through the glob with
+     * no activation step — so only the framework backend is judged by a segment
+     * list, and every other root entire.
      *
      * @param string $root Scanned root, relative to the repository root
      * @return array<int, CodeStyleRule> Rules under the guard, in report order
@@ -251,17 +225,14 @@ final class CodeStyleGuardTest extends TestCase
 
     /**
      * @param string $root Scanned root, relative to the repository root
+     * @param RootKind $kind What the code under that root is
      * @return array<int, CodeStyleRule> Rules that judge this root, in report order
      */
-    private function rulesFor(string $root): array
+    private function rulesFor(string $root, RootKind $kind): array
     {
-        if (str_ends_with($root, '/backend')) {
-            return $this->rules($root);
-        }
-
         return array_values(array_filter(
             $this->rules($root),
-            static fn(CodeStyleRule $rule): bool => !in_array($rule->id(), self::BACKEND_ONLY_RULES, true),
+            static fn(CodeStyleRule $rule): bool => $kind->allows($rule->id()),
         ));
     }
 
