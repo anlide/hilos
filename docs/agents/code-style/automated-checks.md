@@ -22,6 +22,7 @@ rule.
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
+| `SECRET-IN-QUERY` | A query parameter is read only under a name the rule lists. It reads the by-key readers of `RequestQueryParams` — `getString()`, `requireString()`, `requireStringMatching()`, `has()` — and matches the text of the argument as written at the call site, because a token walk cannot resolve another class's constant. Two names are listed today, each with its reason; `toArray()` is out of scope. Every root. | [secret-in-query.md](../antipatterns/secret-in-query.md) |
 
 `MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
 green run must not be read as "the magic-value rule is satisfied". It counts

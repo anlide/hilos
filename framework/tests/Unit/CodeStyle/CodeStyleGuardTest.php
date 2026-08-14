@@ -16,6 +16,7 @@ use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
+use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
@@ -225,6 +226,7 @@ final class CodeStyleGuardTest extends TestCase
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
+            new SecretInQueryRule(),
             new MagicRepeatRule(),
             $root === self::PHASED_EMPTY_STRING_ROOT
                 ? EmptyStringSentinelRule::forZone(self::PHASED_EMPTY_STRING_ZONE)

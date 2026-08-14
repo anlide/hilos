@@ -10,7 +10,6 @@ use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
-use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WebSocketConstants;
@@ -1363,12 +1362,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->sessionIdentity = ThrottleIdentity::forSession($sessionToken);
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
-        $analyticsToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
-            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
-        $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
-        $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
-        Hilos::$ac?->ensureBrowserSession($analyticsToken, $userAgent, $acceptLanguage);
-        Hilos::$ac?->openWsConnection($acceptKey, $analyticsToken, $clientIp);
+        // The connection row is all the master writes here: resolving the browser session
+        // costs a SELECT and an INSERT, and this code runs on the accept loop
+        // (docs/agents/antipatterns/heavy-work-in-master.md). The worker attaches the
+        // session to this row when it picks the handshake signal up.
+        Hilos::$ac?->openWsConnection($acceptKey, $clientIp);
 
         $dto = new WebSocketHandshakeSignalDTO(
             headers: $headers,

@@ -15,6 +15,7 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 - Sockets, event loop, I/O, blocking operations: `docs/agents/architecture/event-loop.md`
 - Freezing a node for a destructive operation: `docs/agents/architecture/protected-mode.md`
 - Blocking risks in handlers or ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
+- Where a client presents a session token, key or signed state, and reading a query parameter: `docs/agents/antipatterns/secret-in-query.md`
 
 ## Workflow
 

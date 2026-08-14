@@ -121,6 +121,7 @@ Minimum ORM rules before editing:
 | [antipatterns/blocking-in-ontick.md](docs/agents/antipatterns/blocking-in-ontick.md) | any time you write code inside onTick() or signal handlers |
 | [antipatterns/heavy-work-in-master.md](docs/agents/antipatterns/heavy-work-in-master.md) | any time you add DB, file, network, or blocking work to the master daemon / connection / handshake path, or weigh such an option |
 | [antipatterns/rt-write-outside-actions.md](docs/agents/antipatterns/rt-write-outside-actions.md) | any time you write to a runtime collection, or register one on an RtContext — writing state directly, or registering it without `setRepresent()`, keeps the data inside a single worker |
+| [antipatterns/secret-in-query.md](docs/agents/antipatterns/secret-in-query.md) | any time you read a query parameter, or choose where a client presents a session token, key, code or signed state |
 
 ## CLI
 

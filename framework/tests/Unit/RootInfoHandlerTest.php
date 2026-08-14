@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RootInfoHandler;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -14,6 +16,23 @@ use PHPUnit\Framework\TestCase;
  */
 final class RootInfoHandlerTest extends TestCase
 {
+    /**
+     * Restores the env facade, which the router reads the session cookie's name from.
+     *
+     * Tests that null it run before this one in the same process, and the bootstrap only
+     * populates it once.
+     *
+     * @throws EnvException When the test env cannot be loaded
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (Hilos::$env === null) {
+            Hilos::initEnv(dirname(__DIR__), copyExample: false);
+        }
+    }
+
     public function testReturnsJsonOkHintPointingToStatus(): void
     {
         $response = (new RootInfoHandler())([]);
@@ -32,6 +51,9 @@ final class RootInfoHandlerTest extends TestCase
         $this->assertSame('/status', $decoded['endpoints']['status']);
     }
 
+    /**
+     * @throws EnvException When the router cannot read the session cookie name
+     */
     public function testRouterAnswersRootWithoutNotFound(): void
     {
         $router = new HttpRouter();

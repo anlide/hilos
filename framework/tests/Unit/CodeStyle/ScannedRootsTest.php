@@ -14,6 +14,7 @@ use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
+use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use PHPUnit\Framework\TestCase;
@@ -54,6 +55,7 @@ final class ScannedRootsTest extends TestCase
         CodeFqnRule::ID,
         PhpDocFqnRule::ID,
         RtStateReachRule::ID,
+        SecretInQueryRule::ID,
         EmptyStringSentinelRule::ID,
         PayloadSentinelRule::ID,
         WireKeyCaseRule::ID,

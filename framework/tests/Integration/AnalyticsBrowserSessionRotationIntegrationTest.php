@@ -17,40 +17,14 @@ use Hilos\Database\Exception\DatabaseException;
  * a token nobody presents again, while the identify that follows opened a second session
  * for the same person. Joining a visitor to the account they just created is the one thing
  * this table exists for, so the rename is played here end to end against the real schema.
- *
- * The analytics schema ships as a stub for projects to copy, so this test builds it from
- * that very file rather than from a second copy of the DDL.
  */
-final class AnalyticsBrowserSessionRotationIntegrationTest extends FrameworkIntegrationTestCase
+final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
     private const string OLD_TOKEN = '0123456789abcdef0123456789abcdef';
 
     private const string NEW_TOKEN = 'fedcba9876543210fedcba9876543210';
 
     private const int USER_ID = 7;
-
-    /**
-     * @throws DatabaseException When the stub schema cannot be built
-     */
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->dropAnalyticsSchema();
-        foreach ($this->analyticsSchemaStatements() as $statement) {
-            Database::sql($statement);
-        }
-    }
-
-    /**
-     * @throws DatabaseException When the stub schema cannot be dropped
-     */
-    protected function tearDown(): void
-    {
-        $this->dropAnalyticsSchema();
-
-        parent::tearDown();
-    }
 
     /**
      * @throws DatabaseException When reading back the recorded sessions fails
@@ -139,46 +113,5 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends FrameworkInte
         $this->assertNotNull($row);
 
         return (string)$row['user_identity_value'];
-    }
-
-    /**
-     * Drops the stub tables child-first, so the foreign keys never block the drop.
-     *
-     * @throws DatabaseException When a drop fails
-     */
-    private function dropAnalyticsSchema(): void
-    {
-        $tables = [];
-        foreach ($this->analyticsSchemaStatements() as $statement) {
-            if (preg_match('/CREATE TABLE `(\w+)`/', $statement, $found) === 1) {
-                $tables[] = $found[1];
-            }
-        }
-
-        foreach (array_reverse($tables) as $table) {
-            Database::sql("DROP TABLE IF EXISTS `{$table}`");
-        }
-    }
-
-    /**
-     * Reads the project-facing stub migration and splits it into statements.
-     *
-     * @return list<string> CREATE TABLE statements, in file order
-     */
-    private function analyticsSchemaStatements(): array
-    {
-        $sql = (string)file_get_contents(
-            dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_analytics.sql',
-        );
-
-        $statements = [];
-        foreach (explode(';', $sql) as $statement) {
-            $trimmed = trim($statement);
-            if (str_contains($trimmed, 'CREATE TABLE')) {
-                $statements[] = $trimmed;
-            }
-        }
-
-        return $statements;
     }
 }

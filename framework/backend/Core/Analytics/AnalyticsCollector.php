@@ -127,11 +127,17 @@ final class AnalyticsCollector
             $nowTs = $this->nowTs();
 
             if ($existing === null) {
+                // Two handshakes of the same visitor can land in different workers at once,
+                // and the token is unique, so the loser of that race must be handed the row
+                // the winner created instead of an error: an exception here would disable
+                // collection for the rest of the process. LAST_INSERT_ID(`id`) is what makes
+                // lastInsertId() answer with the existing id on the duplicate branch.
                 Database::sql(
                     'INSERT INTO `hilos_analytics_browser_session`
                         (`session_token`, `user_identity_type`, `user_identity_value`,
                          `current_user_agent_id`, `current_accept_language_id`, `first_seen_ts`, `last_seen_ts`)
-                     VALUES (?, NULL, NULL, ?, ?, ?, ?)',
+                     VALUES (?, NULL, NULL, ?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`), `last_seen_ts` = VALUES(`last_seen_ts`)',
                     [$sessionToken, $userAgentId, $acceptLanguageId, $nowTs, $nowTs],
                 );
 
@@ -261,39 +267,80 @@ final class AnalyticsCollector
     /**
      * Opens a WebSocket connection row and caches its state.
      *
-     * Resolves the owning browser session from the token when present and
-     * records the opening client IP.
+     * Records the opening client IP and nothing about the visitor: the row is written on
+     * the master's accept loop, where resolving a browser session would cost a SELECT and
+     * an INSERT (docs/agents/antipatterns/heavy-work-in-master.md). The row therefore
+     * starts without an owner, and the worker attaches one on the handshake signal - see
+     * {@see attachWsConnectionToBrowserSession()}.
+     *
+     * Opening stays here rather than moving to the worker with the attach, because every
+     * later event of this connection - its close, its page sessions, its IP changes - finds
+     * the row through the process-local cache written on this line.
      *
      * @param string $acceptKey WebSocket accept key; empty yields null
-     * @param ?string $sessionToken Browser session token, or null for anonymous
      * @param ?string $clientIp Client IP address (IPv4 or IPv6), or null when unknown
      * @return ?int WS connection id, or null when the accept key is empty or collection is disabled
      */
-    public function openWsConnection(string $acceptKey, ?string $sessionToken, ?string $clientIp): ?int
+    public function openWsConnection(string $acceptKey, ?string $clientIp): ?int
     {
         if ($acceptKey === '') {
             return null;
         }
 
-        return $this->runSafely(function () use ($acceptKey, $sessionToken, $clientIp): ?int {
-            $browserSessionId = $sessionToken !== null && $sessionToken !== ''
-                ? (($this->browserSessions[$sessionToken] ?? null)?->id ?? $this->ensureBrowserSession($sessionToken, null, null))
-                : null;
-
+        return $this->runSafely(function () use ($acceptKey, $clientIp): ?int {
             $ip = $clientIp !== null ? $this->parseIp($clientIp) : new ParsedIp(null, null);
-            $nowTs = $this->nowTs();
 
             Database::sql(
                 'INSERT INTO `hilos_analytics_ws_connection`
                     (`browser_session_id`, `accept_key`, `opened_ipv4`, `opened_ipv6`, `opened_ts`, `closed_ts`)
-                 VALUES (?, ?, ?, UNHEX(?), ?, NULL)',
-                [$browserSessionId, $acceptKey, $ip->ipv4, $ip->ipv6Hex, $nowTs],
+                 VALUES (NULL, ?, ?, UNHEX(?), ?, NULL)',
+                [$acceptKey, $ip->ipv4, $ip->ipv6Hex, $this->nowTs()],
             );
 
             $id = Database::lastInsertId();
-            $this->wsConnections[$acceptKey] = new WsConnectionState($id, $browserSessionId, $ip->ipv4, $ip->ipv6Hex);
+            $this->wsConnections[$acceptKey] = new WsConnectionState($id, $ip->ipv4, $ip->ipv6Hex);
 
             return $id;
+        });
+    }
+
+    /**
+     * Gives an already opened WebSocket connection the browser session it belongs to.
+     *
+     * This is the worker half of the handshake: the master wrote the connection row without
+     * an owner, and the handshake signal carries the session token it resolved there, so the
+     * two are joined here, off the accept loop. Called before the agent's handshake hook, so
+     * the session the hook may identify a user on already exists.
+     *
+     * The connection is found by its accept key rather than by the cached id, because the
+     * cache belongs to the master process and this runs in a worker. The key is unique in
+     * the table, so the update needs no id.
+     *
+     * @param string $acceptKey WebSocket accept key; empty is ignored
+     * @param string $sessionToken Browser session token resolved on the handshake; empty is ignored
+     * @param ?string $userAgent Raw User-Agent header, or null
+     * @param ?string $acceptLanguage Raw Accept-Language header, or null
+     */
+    public function attachWsConnectionToBrowserSession(
+        string $acceptKey,
+        string $sessionToken,
+        ?string $userAgent,
+        ?string $acceptLanguage,
+    ): void {
+        if ($acceptKey === '' || $sessionToken === '') {
+            return;
+        }
+
+        $this->runSafely(function () use ($acceptKey, $sessionToken, $userAgent, $acceptLanguage): void {
+            $browserSessionId = $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage);
+            if ($browserSessionId === null) {
+                return;
+            }
+
+            Database::sql(
+                'UPDATE `hilos_analytics_ws_connection` SET `browser_session_id` = ? WHERE `accept_key` = ?',
+                [$browserSessionId, $acceptKey],
+            );
         });
     }
 

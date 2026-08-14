@@ -14,6 +14,7 @@ use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
 use Hilos\Tests\CodeStyle\Rule\RtStateReachRule;
+use Hilos\Tests\CodeStyle\Rule\SecretInQueryRule;
 use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\SourceScanner;
 use PHPUnit\Framework\TestCase;
@@ -190,6 +191,19 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:25 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'SECRET-IN-QUERY Bad/SecretInQuerySamples.php:24 — query param '
+                    . 'HilosHttpHeaders::HILOS_SESSION_TOKEN is read from the url; a session token or any '
+                    . 'other secret arrives in a cookie or a header '
+                    . '(see docs/agents/antipatterns/secret-in-query.md)',
+                'SECRET-IN-QUERY Bad/SecretInQuerySamples.php:25 — query param \'token\' is read from the '
+                    . 'url; a session token or any other secret arrives in a cookie or a header '
+                    . '(see docs/agents/antipatterns/secret-in-query.md)',
+                'SECRET-IN-QUERY Bad/SecretInQuerySamples.php:26 — query param \'code\' is read from the '
+                    . 'url; a session token or any other secret arrives in a cookie or a header '
+                    . '(see docs/agents/antipatterns/secret-in-query.md)',
+                'SECRET-IN-QUERY Bad/SecretInQuerySamples.php:27 — query param \'invite\' is read from the '
+                    . 'url; a session token or any other secret arrives in a cookie or a header '
+                    . '(see docs/agents/antipatterns/secret-in-query.md)',
                 'EMPTY-STRING-SENTINEL Bad/Socket/EmptySentinel.php:25 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -295,6 +309,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
+            new SecretInQueryRule(),
             new MagicRepeatRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),
             new PayloadSentinelRule(),

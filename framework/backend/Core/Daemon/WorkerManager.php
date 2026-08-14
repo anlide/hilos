@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -99,6 +100,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -1061,6 +1063,15 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::HANDSHAKE:
                 if ($signalData instanceof WebSocketHandshakeSignalDTO) {
+                    // The master opened the connection row without an owner because reading a
+                    // browser session on the accept loop is forbidden; the join happens here,
+                    // and before the hook, so a user identified in it lands on a live session.
+                    Hilos::$ac?->attachWsConnectionToBrowserSession(
+                        $signalData->acceptKey,
+                        $signalData->sessionToken,
+                        HttpHeaderHelper::get($signalData->headers, HttpConstants::HEADER_USER_AGENT),
+                        HttpHeaderHelper::get($signalData->headers, HttpConstants::HEADER_ACCEPT_LANGUAGE),
+                    );
                     try {
                         $agent->onSignalHandshake($signalData, $source, $name);
                     } catch (ValidationException $e) {

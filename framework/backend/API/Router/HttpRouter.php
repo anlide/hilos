@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
+use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Throwable;
@@ -26,13 +29,23 @@ class HttpRouter
     /** @var RouteResolver Route resolver */
     private RouteResolver $resolver;
 
+    /** @var string Name of the cookie the daemon issues the session token in */
+    private string $sessionCookieName;
+
     /**
      * Creates HTTP router with default registry and resolver.
+     *
+     * The session cookie's name is read once here rather than per request: it is a boot-time
+     * setting, and a router that reached for env on every request would owe that failure to
+     * everything routing through it, down to the socket read that started the request.
+     *
+     * @throws EnvException When the session cookie name cannot be read
      */
     public function __construct()
     {
         $this->registry = new RouteRegistry();
         $this->resolver = new RouteResolver();
+        $this->sessionCookieName = Hilos::$env->string(EnvConstants::HILOS_SESSION_COOKIE_NAME);
     }
 
     /**
@@ -62,8 +75,7 @@ class HttpRouter
             : [];
         $queryParams = $this->queryParamsFromRequest($request);
         $request[HttpConstants::REQUEST_KEY_QUERY_PARAMS] = $queryParams;
-        $sessionToken = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
-            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
+        $sessionToken = $this->sessionTokenFromRequest($headers);
         $userAgent = HttpHeaderHelper::get($headers, HttpConstants::HEADER_USER_AGENT);
         $acceptLanguage = HttpHeaderHelper::get($headers, HttpConstants::HEADER_ACCEPT_LANGUAGE);
 
@@ -117,6 +129,35 @@ class HttpRouter
     public function getRegistry(): RouteRegistry
     {
         return $this->registry;
+    }
+
+    /**
+     * Reads the session token a request presents, or null when it presents none.
+     *
+     * There are two legitimate carriers and no third. A non-browser API client sets the
+     * header itself; a browser cannot, and presents instead the cookie the daemon set on its
+     * WebSocket handshake. The url is not a carrier: a secret written into a query string
+     * settles in proxy and server logs, stays in browser history and leaves in the Referer
+     * of the next request (docs/agents/antipatterns/secret-in-query.md).
+     *
+     * A value that could not have been issued here is not treated as a token at all - it
+     * would otherwise let any caller name a browser session that never existed, and every
+     * distinct string invented would open one.
+     *
+     * A request carrying neither is simply anonymous. That is the ordinary state of a
+     * browser that has not opened a socket yet: this path mints nothing, because it has no
+     * Set-Cookie to answer with.
+     *
+     * @param array<string, mixed> $headers Request headers
+     * @return ?string Session token presented by the request, or null when it presents none
+     */
+    private function sessionTokenFromRequest(array $headers): ?string
+    {
+        $presented = HttpHeaderHelper::get($headers, HilosHttpHeaders::HILOS_SESSION_TOKEN)
+            ?? HttpHeaderHelper::parseCookies($headers)[$this->sessionCookieName]
+            ?? null;
+
+        return $presented !== null && SessionToken::isValid($presented) ? $presented : null;
     }
 
     /**
