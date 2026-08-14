@@ -255,6 +255,22 @@ enum EnvConstants
     /** @var string Minimum seconds between two issued codes for one (type, identifier). Default 60. */
     case HILOS_VERIFICATION_RESEND_COOLDOWN_SEC;
 
+    /**
+     * Length in seconds of the window issued codes are counted in (HIL-421).
+     * Default 3600 (1h). The cooldown alone stops a burst; this stops a patient
+     * drip that keeps sending forever, one code per cooldown.
+     */
+    case HILOS_VERIFICATION_SEND_WINDOW_SEC;
+
+    /** @var string Codes one (type, identifier) may be sent per window. Default 5. */
+    case HILOS_VERIFICATION_SEND_CAP;
+
+    /**
+     * Codes one (type, identifier) may be sent per window over SMS. Default 3:
+     * lower than the email cap because every message costs money.
+     */
+    case HILOS_VERIFICATION_SEND_CAP_SMS;
+
     // ── Auth throttle (anti-abuse on expensive auth actions) ─────────────────
 
     /**

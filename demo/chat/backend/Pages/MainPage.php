@@ -59,6 +59,7 @@ use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
@@ -224,6 +225,14 @@ final class MainPage extends AbstractPage
     private const string INVALID_CODE_MESSAGE = 'Invalid or expired code';
 
     /**
+     * Message for a send refused by the window cap (HIL-421). It says nothing about
+     * whose address it is - the same sentence answers a mailbox that has an account
+     * and one that does not - and it deliberately quotes no number, because the
+     * window it would name is the one thing worth knowing to pace a script by.
+     */
+    private const string SEND_CAP_MESSAGE = 'Too many codes have been sent to this address. Please try again later.';
+
+    /**
      * Message for a registration submit on an address that already has an account.
      * It rides an outcome that moves the surface to sign-in, so it reads as a
      * redirection rather than a rejection; there is no anti-enumeration concern here
@@ -324,9 +333,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof RequestPasswordResetActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestPasswordResetActionDTO::class, $dto);
                 }
-                $this->handleRequestPasswordReset($dto);
-
-                break;
+                return $this->handleRequestPasswordReset($dto);
 
             case ChatSignalConstants::CONFIRM_PASSWORD_RESET:
                 if (!$dto instanceof ConfirmPasswordResetActionDTO) {
@@ -340,9 +347,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof RequestSmsCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestSmsCodeActionDTO::class, $dto);
                 }
-                $this->handleRequestSmsCode($dto);
-
-                break;
+                return $this->handleRequestSmsCode($dto);
 
             case ChatSignalConstants::CONFIRM_SMS_CODE:
                 if (!$dto instanceof ConfirmSmsCodeActionDTO) {
@@ -356,9 +361,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof RequestMagicLinkActionDTO) {
                     throw new InvalidActionPayloadException($action, RequestMagicLinkActionDTO::class, $dto);
                 }
-                $this->handleRequestMagicLink($dto);
-
-                break;
+                return $this->handleRequestMagicLink($dto);
 
             case ChatSignalConstants::CONFIRM_MAGIC_LINK:
                 if (!$dto instanceof ConfirmMagicLinkActionDTO) {
@@ -746,12 +749,18 @@ final class MainPage extends AbstractPage
      * it. Nothing is disclosed by that which the lookup in front of the form does
      * not already answer.
      *
+     * It answers the send gate's verdict (HIL-421): the seconds until the button
+     * comes back, or a refusal when too many codes already went to this address.
+     * The surface moves nowhere either way - the person is on the screen the code
+     * belongs to.
+     *
      * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
+     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
      * @throws ValidationException When no account at the address has a password
      * @throws HilosException When identity lookup or code issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a code
      */
-    private function handleRequestPasswordReset(RequestPasswordResetActionDTO $dto): void
+    private function handleRequestPasswordReset(RequestPasswordResetActionDTO $dto): AuthFlowOutcome
     {
         $email = strtolower($dto->email);
         $identity = $email !== ''
@@ -762,7 +771,12 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::NO_PASSWORD_TO_RESET_MESSAGE);
         }
 
-        new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
+        $outcome = new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
+        if ($outcome->capReached) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
+        }
+
+        return AuthFlowOutcome::sent($outcome->resendInSeconds);
     }
 
     /**
@@ -809,19 +823,30 @@ final class MainPage extends AbstractPage
      * unconditionally reveals nothing about who has an account. The code is issued
      * with a null owning user because the phone user may not exist yet.
      *
+     * It answers the send gate's verdict (HIL-421), on the SMS numbers: a message
+     * costs money, so the cap that refuses here is the lower of the two. The
+     * refusal says nothing about the number it refused for, exactly as the send
+     * itself says nothing about who owns it.
+     *
      * @param RequestSmsCodeActionDTO $dto Parsed request payload (phone)
+     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
      * @throws ValidationException When the phone number is malformed
      * @throws HilosException When code issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a code
      */
-    private function handleRequestSmsCode(RequestSmsCodeActionDTO $dto): void
+    private function handleRequestSmsCode(RequestSmsCodeActionDTO $dto): AuthFlowOutcome
     {
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null) {
             throw new ValidationException(self::INVALID_PHONE_MESSAGE);
         }
 
-        new VerificationService()->issue(VerificationType::SMS_LOGIN, $phone, null);
+        $outcome = new VerificationService()->issue(VerificationType::SMS_LOGIN, $phone, null);
+        if ($outcome->capReached) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
+        }
+
+        return AuthFlowOutcome::sent($outcome->resendInSeconds);
     }
 
     /**
@@ -881,21 +906,30 @@ final class MainPage extends AbstractPage
      * the address has an account. The token is delivered as a clickable URL by the
      * deliverer seam (dev-stub logs it), which the /auth/magic route relays back.
      *
+     * It is the last blind flow, so the send gate's verdict is deliberately NOT
+     * passed on (HIL-421): the answer is always the nominal cooldown from the
+     * configuration and never the cap code, whether the address is unknown, known,
+     * or over the cap. Any difference in the number or the code would turn this
+     * into the existence oracle the silent no-op exists to avoid - and the honest
+     * remaining cooldown is the worst of them, being smaller for an address that
+     * was mailed recently.
+     *
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
+     * @return AuthFlowOutcome The nominal cooldown, identically in every case
      * @throws HilosException When identity lookup or token issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a token
      */
-    private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): void
+    private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): AuthFlowOutcome
     {
         $email = strtolower($dto->email);
         $userId = $email !== ''
             ? Hilos::$db->identities->findUserIdByVerifiedEmail($email)
             : null;
-        if ($userId === null) {
-            return;
+        if ($userId !== null) {
+            new VerificationService()->issue(VerificationType::MAGIC_LINK, $email, $userId);
         }
 
-        new VerificationService()->issue(VerificationType::MAGIC_LINK, $email, $userId);
+        return AuthFlowOutcome::sent(Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC));
     }
 
     /**
@@ -945,9 +979,11 @@ final class MainPage extends AbstractPage
      * answers with the seconds still to wait - the countdown the screen draws.
      *
      * The hold is pushed out only when a code actually went out, so a button mashed
-     * inside the cooldown moves nothing. It is NOT a cap: a caller patient enough to
-     * press once per cooldown keeps the address held and keeps mailing its owner, and
-     * what answers that is rate limiting (HIL-420/421), not this handler.
+     * inside the cooldown moves nothing. What stops the patient caller - the one that
+     * presses once per cooldown, forever, keeping the address held and its owner
+     * mailed - is the window cap inside the send gate (HIL-421). It refuses out loud
+     * here rather than counting down, because no wait short enough to draw would bring
+     * the button back.
      *
      * Any waiting session may press it: the cooldown belongs to the address, not to the
      * session, and pressing re-parks the presser so a converge reaches it either way.
@@ -976,17 +1012,21 @@ final class MainPage extends AbstractPage
             );
         }
 
-        $verification = new VerificationService();
-        $resendInSeconds = $verification->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email);
-        if ($resendInSeconds === 0) {
-            $verification->issue(VerificationType::REGISTER_CONFIRM, $email, null);
+        $outcome = new VerificationService()->issue(VerificationType::REGISTER_CONFIRM, $email, null);
+        if ($outcome->sent) {
             $reservations->extendTo($email);
-            $resendInSeconds = $verification->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email);
         }
 
+        // Parked before the cap is answered, unlike the expired hold above: a capped
+        // resend leaves the person ON the code screen, so the converge still has to
+        // reach them when somebody else redeems the address.
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
 
-        return AuthFlowOutcome::moveTo(AuthFlowStep::CODE, AuthFlowIntent::REGISTER, $resendInSeconds);
+        if ($outcome->capReached) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
+        }
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::CODE, AuthFlowIntent::REGISTER, $outcome->resendInSeconds);
     }
 
     /**

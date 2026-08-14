@@ -15,16 +15,18 @@ use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Database\Verification\VerificationSendStats;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * UserVerifications object collection.
  *
  * Persistence primitives of the verification layer (HIL-365): mint a challenge,
- * find the single active challenge for a (type, identifier), and void prior
- * active challenges. The orchestration (throttle, delivery, attempt handling)
- * lives in {@see VerificationService}; the code hash is
- * minted here with a targeted query so it never reaches the ORM columns.
+ * find the single active challenge for a (type, identifier), void prior active
+ * challenges, and read how often that pair has been mailed (HIL-421). The
+ * orchestration (throttle, delivery, attempt handling) lives in
+ * {@see VerificationService}; the code hash is minted here with a targeted query
+ * so it never reaches the ORM columns.
  *
  * @extends Objects<ObjectUserVerification>
  * @method ObjectUserVerification|null current()
@@ -73,45 +75,48 @@ final class UserVerifications extends Objects
     }
 
     /**
-     * Whether an active challenge was issued within the resend cooldown.
+     * Reads what the challenge rows say about sends to one (type, identifier).
      *
-     * Throttle guard for issuing: a fresh request is suppressed while a prior
-     * challenge is still young, so a caller cannot spam delivery for a (type,
-     * identifier).
-     *
-     * The challenge age is read off `expires_at` (which equals issue time + TTL,
-     * both known) rather than a mapped `created_at`, so the row stays as lean as
-     * the identity table: a challenge is "recent" when it still has more than
-     * (TTL − cooldown) of life left.
+     * The single query behind the send gate (HIL-421): the newest issue time and
+     * the number of issues inside the window, taken in one pass over the same rows
+     * every other primitive here loads. Both are read off `created_at` and no row
+     * is filtered by state, because a challenge that was voided, consumed or
+     * expired was still delivered to the target - what limits a mailbox is the
+     * issue, not the code's survival.
      *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
-     * @param int $maxAttempts Attempt ceiling excluding exhausted challenges
-     * @param int $cooldownSeconds Minimum age before a new challenge may issue
-     * @param int $ttlSeconds Challenge time-to-live used to derive issue time from expiry
-     * @return bool True when a recent active challenge exists
+     * @param int $windowSeconds Length of the window sends are counted in
+     * @return VerificationSendStats Newest issue time and issues inside the window
      * @throws DatabaseException If the database query fails
      */
-    public function hasRecentActive(
-        string $type,
-        string $identifier,
-        int $maxAttempts,
-        int $cooldownSeconds,
-        int $ttlSeconds,
-    ): bool {
+    public function sendStats(string $type, string $identifier, int $windowSeconds): VerificationSendStats
+    {
         if ($type === '' || $identifier === '') {
-            return false;
+            return VerificationSendStats::never();
         }
 
-        $now = TimeHelper::getSqlDateTime();
-        $recentThreshold = date('Y-m-d H:i:s', time() + $ttlSeconds - $cooldownSeconds);
+        $windowStart = time() - $windowSeconds;
+        $lastIssuedAt = null;
+        $sentInWindow = 0;
         foreach ($this->hydrateByIdentity($type, $identifier) as $verification) {
-            if ($verification->isActive($now, $maxAttempts) && $verification->expiresAt > $recentThreshold) {
-                return true;
+            $issuedAt = strtotime($verification->createdAt);
+            if ($issuedAt === false) {
+                continue;
+            }
+            if ($lastIssuedAt === null || $issuedAt > $lastIssuedAt) {
+                $lastIssuedAt = $issuedAt;
+            }
+            if ($issuedAt > $windowStart) {
+                $sentInWindow++;
             }
         }
 
-        return false;
+        if ($lastIssuedAt === null) {
+            return VerificationSendStats::never();
+        }
+
+        return VerificationSendStats::issued($lastIssuedAt, $sentInWindow);
     }
 
     /**
@@ -124,6 +129,11 @@ final class UserVerifications extends Objects
      * ORM columns, the object/view surface, or the cross-worker sync bus. The row
      * is first inserted through the ORM (which carries the non-secret columns and
      * assigns the id) and the hash is then set with a follow-up UPDATE.
+     *
+     * The issue time is stamped here rather than left to the column default: it is
+     * an ORM-mapped column, so the insert carries a value for it either way, and
+     * this is the one place that knows a challenge is being issued. It is what
+     * {@see sendStats()} counts, and expiry is derived from the same instant.
      *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
@@ -145,11 +155,13 @@ final class UserVerifications extends Objects
             throw new EmptyValueException('Verification identifier and code are required');
         }
 
+        $now = time();
         $verification = ObjectUserVerification::create();
         $verification->userId = $userId;
         $verification->type = $type;
         $verification->identifier = $identifier;
-        $verification->expiresAt = date('Y-m-d H:i:s', time() + $ttlSeconds);
+        $verification->createdAt = date('Y-m-d H:i:s', $now);
+        $verification->expiresAt = date('Y-m-d H:i:s', $now + $ttlSeconds);
         $verification->sync();
 
         $id = $verification->id;

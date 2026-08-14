@@ -36,6 +36,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The registration hold on the identifier ran out: the surface rolls back to the identifier step. */
     public const string CODE_RESERVATION_EXPIRED = 'reservation_expired';
 
+    /** Too many codes went to this address inside the window: the surface stays put and says so. */
+    public const string CODE_SEND_CAP_REACHED = 'send_cap_reached';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 
@@ -89,6 +92,23 @@ final class AuthFlowOutcome extends ActionReplyDTO
     }
 
     /**
+     * Builds a successful outcome that only reports a send, moving nowhere.
+     *
+     * The shape of the resend actions (HIL-421): the person is already on the screen
+     * the code belongs to, so there is nothing to move to - the only news is when the
+     * button comes back. A send held back by the cooldown answers this too, with the
+     * seconds that are left, because a repeat pressed too soon is a countdown and not
+     * an error.
+     *
+     * @param int $resendInSeconds Seconds until a re-send is allowed
+     * @return static Success outcome carrying only the resend gate
+     */
+    public static function sent(int $resendInSeconds): static
+    {
+        return new static(true, null, null, null, null, $resendInSeconds);
+    }
+
+    /**
      * Builds a failed outcome that still moves the surface to a step.
      *
      * The shape auth failures take here: the submit did not do what was asked, but
@@ -103,6 +123,24 @@ final class AuthFlowOutcome extends ActionReplyDTO
     public static function rejectTo(string $code, string $step, string $intent, ?string $message = null): static
     {
         return new static(false, $step, $intent, $code, $message, null);
+    }
+
+    /**
+     * Builds a failed outcome that moves the surface nowhere.
+     *
+     * The sibling of {@see rejectTo()} for a refusal with no better place to be: the
+     * send cap (HIL-421) leaves the person exactly where they are, holding a sentence
+     * instead of a countdown. It carries no seconds on purpose - the core arms its
+     * gate off `resendInSeconds` and would otherwise show a dead timer for a button
+     * that is not coming back this window.
+     *
+     * @param string $code Semantic error code (see self::CODE_*)
+     * @param string $message Backend-authored inline sentence
+     * @return static Failure outcome that stays put
+     */
+    public static function refuse(string $code, string $message): static
+    {
+        return new static(false, null, null, $code, $message, null);
     }
 
     /**

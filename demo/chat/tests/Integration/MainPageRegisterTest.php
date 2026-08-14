@@ -29,6 +29,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationReservation;
+use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -551,6 +552,80 @@ final class MainPageRegisterTest extends IntegrationTestCase
     }
 
     /**
+     * A resend right after the challenge died is still held: the cooldown runs from the send.
+     *
+     * The rule this case exists for changed with HIL-421. The old throttle asked
+     * whether a young challenge was still ALIVE, so voiding it - which anyone can do
+     * by burning the attempts - reopened the send immediately. What is rationed is
+     * the message that reaches the mailbox, and that one was already delivered.
+     *
+     * @throws HilosException When setup or resend handling fails
+     */
+    public function testResendAfterTheChallengeDiedIsStillHeld(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->openSession($agent, 'resend-dead-ak');
+        $this->register($agent, 'resend-dead-ak', $email);
+        $this->verifications()->voidActive(VerificationType::REGISTER_CONFIRM, $email, $this->maxAttempts());
+
+        try {
+            $outcome = $this->resend($agent, 'resend-dead-ak', $email);
+
+            $this->assertTrue($outcome->ok);
+            $this->assertGreaterThan(0, (int)$outcome->resendInSeconds, 'The countdown must be reported');
+            $this->assertNull($this->activeChallenge($email), 'A dead challenge must not buy a fresh send');
+            $this->assertSame(1, $this->sendRowCount($email), 'No second code was minted');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Past the window cap the resend is refused out loud, with no countdown to wait out.
+     *
+     * The patient caller of the design: it presses once per cooldown forever, which
+     * the cooldown alone never stopped. The case walks that caller by ageing the sends
+     * out of the cooldown but leaving them inside the window, so the cap is the only
+     * rule that can refuse.
+     *
+     * @throws HilosException When setup or resend handling fails
+     */
+    public function testTheWindowCapRefusesFurtherSendsOutLoud(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $cap = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP);
+        $cooldown = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC);
+        $this->assertGreaterThan(
+            $cap * ($cooldown + 1),
+            Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC),
+            'The window must outlast the ageing this case does, or the cap could never be reached',
+        );
+        $this->openSession($agent, 'resend-cap-ak');
+        $this->register($agent, 'resend-cap-ak', $email);
+
+        try {
+            for ($sent = 1; $sent < $cap; $sent++) {
+                $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
+                $this->assertTrue($this->resend($agent, 'resend-cap-ak', $email)->ok, "Send {$sent} is under the cap");
+            }
+            $this->assertSame($cap, $this->sendRowCount($email), 'The window is full');
+
+            $this->ageSendsOutOfTheCooldown($email, $cooldown + 1);
+            $outcome = $this->resend($agent, 'resend-cap-ak', $email);
+
+            $this->assertFalse($outcome->ok);
+            $this->assertSame(AuthFlowOutcome::CODE_SEND_CAP_REACHED, $outcome->code);
+            $this->assertNull($outcome->step, 'A cap refusal leaves the surface on the code screen');
+            $this->assertNull($outcome->resendInSeconds, 'A cap refusal promises no countdown');
+            $this->assertSame($cap, $this->sendRowCount($email), 'Nothing is minted past the cap');
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * A resend for an address nobody holds rolls back instead of issuing a code.
      *
      * @throws HilosException When setup or resend handling fails
@@ -747,6 +822,51 @@ final class MainPageRegisterTest extends IntegrationTestCase
             self::CODE,
             self::TTL_SECONDS,
         );
+    }
+
+    /**
+     * Ages every code sent to an address back, so the cooldown reads as elapsed.
+     *
+     * The counting window is left intact on purpose: the shift is small enough that
+     * the aged sends still fall inside it, which is what lets a case reach the cap
+     * without waiting out a real cooldown. The in-memory objects are dropped after
+     * the write, or the collection would answer the send gate off the rows it
+     * hydrated before it.
+     *
+     * @param string $email Address the registration holds
+     * @param int $seconds How far back to move each send
+     * @throws HilosException When the update query fails
+     */
+    private function ageSendsOutOfTheCooldown(string $email, int $seconds): void
+    {
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($seconds));
+        $params->add(SqlParam::string(VerificationType::REGISTER_CONFIRM));
+        $params->add(SqlParam::string($email));
+        Database::sql(
+            'UPDATE `' . EntityUserVerification::_table . '` SET `'
+            . EntityUserVerification::created_at . '` = DATE_SUB(`'
+            . EntityUserVerification::created_at . '`, INTERVAL ? SECOND) WHERE `'
+            . EntityUserVerification::type . '` = ? AND `'
+            . EntityUserVerification::identifier . '` = ?',
+            $params,
+        );
+        $this->verifications()->clearInMemory();
+    }
+
+    /**
+     * Counts the codes ever sent to an address, dead ones included.
+     *
+     * @param string $email Address codes were sent to
+     * @return int Number of challenge rows
+     * @throws HilosException When the count query fails
+     */
+    private function sendRowCount(string $email): int
+    {
+        return EntityUserVerification::count([
+            EntityUserVerification::type => VerificationType::REGISTER_CONFIRM,
+            EntityUserVerification::identifier => $email,
+        ]);
     }
 
     /**

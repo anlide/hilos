@@ -28,64 +28,83 @@ use Random\RandomException;
  * Security posture (do-better vs the copy-pasted reference): cryptographic
  * {@see random_int()} codes; bcrypt-hashed at rest with constant-time compare
  * (the code hash never leaves the object layer, mirroring `identity.secret`);
- * expiry + attempt-throttle + resend-cooldown. Anti-enumeration is the caller's
- * responsibility: {@see issue()} is only called for a real target and always
- * returns void, {@see verify()} returns null on every failure without saying why.
+ * expiry + attempt-throttle + send gate (cooldown and per-window cap, HIL-421).
+ * Anti-enumeration is the caller's responsibility: {@see issue()} answers the same
+ * outcome shape whether or not the target exists, and {@see verify()} returns null
+ * on every failure without saying why.
  */
 class VerificationService
 {
     /**
      * Issues a fresh verification code for a (type, identifier), then delivers it.
      *
-     * Throttled: while an unexpired, unexhausted code issued within the resend
-     * cooldown still exists, the request is silently dropped (no new code, no
-     * delivery) so it cannot be used to spam the target. Otherwise any prior
-     * active code is voided and a new one is minted and handed to the deliverer.
+     * The one send gate of the framework (HIL-421), and it holds two rules, not
+     * one: a cooldown between consecutive sends, and a cap on sends per window.
+     * The cooldown alone let a patient script send forever, one code per cooldown;
+     * the cap alone let a burst through. Both count the ISSUE, so a challenge the
+     * target already threw away and a transport that failed afterwards cannot buy
+     * another send.
+     *
+     * Refused either way, nothing is minted and nothing is delivered - the answer
+     * says which rule refused, and the caller decides how loudly to say so. Only a
+     * send that passes both voids the prior active challenge and mints a new one.
      *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?int $userId Owning user id when known at issue time, else null
+     * @return VerificationSendOutcome Whether a code went out, and the seconds until the next may
      * @throws EmptyValueException When identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
      */
-    public function issue(string $type, string $identifier, ?int $userId): void
+    public function issue(string $type, string $identifier, ?int $userId): VerificationSendOutcome
     {
         if ($identifier === '') {
             throw new EmptyValueException('Verification identifier is required');
         }
 
         $collection = $this->collection();
-        $maxAttempts = $this->maxAttempts();
+        $cooldownSeconds = $this->resendCooldownSeconds();
+        $stats = $collection->sendStats($type, $identifier, $this->sendWindowSeconds());
 
-        $ttlSeconds = $this->ttlSeconds();
-        if ($collection->hasRecentActive($type, $identifier, $maxAttempts, $this->resendCooldownSeconds(), $ttlSeconds)) {
-            return;
+        if ($stats->lastIssuedAt !== null) {
+            $heldForSeconds = $stats->lastIssuedAt + $cooldownSeconds - time();
+            if ($heldForSeconds > 0) {
+                return VerificationSendOutcome::heldByCooldown($heldForSeconds);
+            }
         }
 
-        $collection->voidActive($type, $identifier, $maxAttempts);
+        if ($stats->sentInWindow >= $this->sendCapFor($type)) {
+            return VerificationSendOutcome::capReached();
+        }
+
+        $collection->voidActive($type, $identifier, $this->maxAttempts());
 
         $code = $this->generateSecret($type);
-        $collection->createChallenge($type, $identifier, $userId, $code, $ttlSeconds);
+        $collection->createChallenge($type, $identifier, $userId, $code, $this->ttlSeconds());
 
         $this->createDeliverer()->deliver($identifier, $type, $code);
+
+        return VerificationSendOutcome::sent($cooldownSeconds);
     }
 
     /**
-     * How long the active challenge for a (type, identifier) still blocks a re-send.
+     * How long the cooldown still blocks a re-send for a (type, identifier).
      *
-     * The public read of the throttle {@see issue()} applies silently, opened by the
+     * The public read of the rule {@see issue()} applies silently, opened by the
      * reserve-on-submit surface (HIL-415): the code screen draws a countdown before
      * it offers a resend button, and the only honest source for that number is the
      * rule the resend itself obeys. Without it the frontend would guess a cooldown,
      * and a guess that runs short turns a silently dropped issue into a button that
      * appears to do nothing.
      *
-     * Derived exactly as {@see ObjectUserVerifications::hasRecentActive()} derives
-     * "recent": the challenge's issue time is its expiry minus the TTL, and a
-     * re-send is allowed one cooldown after that. Answers 0 when nothing blocks a
-     * re-send - no active challenge, or its cooldown already elapsed.
+     * Counted from the last issue, so a target whose challenge already died still
+     * waits out the cooldown - which is the point, since it is the delivered message
+     * that is being rationed and not the code. Answers 0 when nothing blocks a
+     * re-send. The cap is deliberately not folded in: it refuses out loud rather
+     * than with a number, and a countdown here would promise a button that is not
+     * coming back.
      *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
@@ -95,17 +114,12 @@ class VerificationService
      */
     public function resendAllowedInSeconds(string $type, string $identifier): int
     {
-        $challenge = $this->collection()->findActive($type, $identifier, $this->maxAttempts());
-        if ($challenge === null) {
+        $stats = $this->collection()->sendStats($type, $identifier, $this->sendWindowSeconds());
+        if ($stats->lastIssuedAt === null) {
             return 0;
         }
 
-        $expiresAt = strtotime($challenge->expiresAt);
-        if ($expiresAt === false) {
-            return 0;
-        }
-
-        return max(0, $expiresAt - $this->ttlSeconds() + $this->resendCooldownSeconds() - time());
+        return max(0, $stats->lastIssuedAt + $this->resendCooldownSeconds() - time());
     }
 
     /**
@@ -315,5 +329,28 @@ class VerificationService
     private function resendCooldownSeconds(): int
     {
         return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC);
+    }
+
+    /**
+     * @return int Configured length in seconds of the window issued codes are counted in
+     */
+    private function sendWindowSeconds(): int
+    {
+        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC);
+    }
+
+    /**
+     * Configured cap on codes one target may be sent per window, per channel.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @return int Codes allowed inside one window for this type
+     */
+    private function sendCapFor(string $type): int
+    {
+        if (VerificationType::isSms($type)) {
+            return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP_SMS);
+        }
+
+        return Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_SEND_CAP);
     }
 }

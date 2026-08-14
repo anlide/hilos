@@ -70,4 +70,25 @@ final class VerificationTypeTest extends TestCase
         self::assertFalse(VerificationType::isValid('unknown'));
         self::assertFalse(VerificationType::isValid('Password_Reset'));
     }
+
+    public function testIsSmsAcceptsExactlyTheSmsDeliveredTypes(): void
+    {
+        self::assertTrue(VerificationType::isSms(VerificationType::SMS_LOGIN));
+        self::assertTrue(VerificationType::isSms(VerificationType::SMS_ADD));
+    }
+
+    public function testIsSmsRejectsEveryOtherKnownType(): void
+    {
+        self::assertFalse(VerificationType::isSms(VerificationType::REGISTER_CONFIRM));
+        self::assertFalse(VerificationType::isSms(VerificationType::PASSWORD_RESET));
+        self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_CHANGE));
+        self::assertFalse(VerificationType::isSms(VerificationType::MAGIC_LINK));
+        self::assertFalse(VerificationType::isSms(VerificationType::EMAIL_ADD));
+    }
+
+    public function testIsSmsRejectsUnknownAndEmptyType(): void
+    {
+        self::assertFalse(VerificationType::isSms(''));
+        self::assertFalse(VerificationType::isSms('sms'));
+    }
 }

@@ -463,10 +463,14 @@ final class ProfilePage extends AbstractHilosProfilePage
      * never the client, and carried on the challenge so step 2 can assert the code
      * was minted for this user. The phone is normalized to E.164 (a malformed number
      * is refused synchronously); the code is issued through the framework
-     * VerificationService, whose resend cooldown makes a repeat request a silent
-     * no-op — so the step always answers `action_success` and the wizard advances to
-     * the code step. No duplicate-phone check here: enumeration is avoided by only
-     * checking uniqueness on confirm, after the code proves possession.
+     * VerificationService, whose send gate can drop the request silently — the resend
+     * cooldown for a repeat pressed too soon, and the per-window cap once too many
+     * codes have gone to that number (HIL-421). Either way the step answers
+     * `action_success` and the wizard advances to the code step, so a capped number
+     * reaches a code screen for a message that is not coming until the window turns
+     * over; there is no resend control here to say so. No duplicate-phone check
+     * here: enumeration is avoided by only checking uniqueness on confirm, after the
+     * code proves possession.
      *
      * @param string $acceptKey Accept key
      * @param RequestSmsAddCodeActionDTO $dto Add-phone request DTO (phone)
@@ -489,6 +493,9 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('Enter a valid phone number');
         }
 
+        // The send gate's verdict - cooldown hold, cap refusal or a real send - is
+        // deliberately dropped: the profile has no resend control to hand a countdown
+        // or a refusal to, and a repeat here is a repeated modal submit (HIL-421).
         new VerificationService()->issue(VerificationType::SMS_ADD, $phone, $userId);
     }
 
@@ -546,9 +553,11 @@ final class ProfilePage extends AbstractHilosProfilePage
      * IS checked here: because the code is mailed to the entered address, an email
      * already verified by ANOTHER account is refused without sending anything (never
      * mail a stranger's verified address); a free email — or one already the user's
-     * own — issues a code through the framework VerificationService, whose resend
-     * cooldown makes a repeat request a silent no-op, so the step always answers
-     * `action_success` and the wizard advances to the code step.
+     * own — issues a code through the framework VerificationService, whose send gate
+     * can drop the request silently: the resend cooldown for a repeat pressed too
+     * soon, and the per-window cap once too many codes have gone to that address
+     * (HIL-421). Either way the step answers `action_success` and the wizard advances
+     * to the code step, with no resend control here to report the difference.
      *
      * @param string $acceptKey Accept key
      * @param RequestAddPasswordActionDTO $dto Add-password request DTO (email)
@@ -576,6 +585,8 @@ final class ProfilePage extends AbstractHilosProfilePage
             throw new ValidationException('That email is already in use');
         }
 
+        // Same as the phone step: no resend control on the profile, so neither the
+        // countdown nor the cap refusal has anywhere to go (HIL-421).
         new VerificationService()->issue(VerificationType::EMAIL_ADD, $email, $userId);
     }
 

@@ -66,6 +66,20 @@ final class VerificationType
     }
 
     /**
+     * Whether codes of this type travel by SMS rather than email.
+     *
+     * The send limit asks because an SMS costs money per message, so the two
+     * channels carry their own caps.
+     *
+     * @param string $type Candidate type value (case-sensitive, matches the SQL ENUM)
+     * @return bool True for the SMS-delivered types
+     */
+    public static function isSms(string $type): bool
+    {
+        return $type === self::SMS_LOGIN || $type === self::SMS_ADD;
+    }
+
+    /**
      * Whether the given string is a known verification type.
      *
      * @param string $type Candidate type value (case-sensitive, matches the SQL ENUM)

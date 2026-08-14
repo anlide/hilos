@@ -38,6 +38,7 @@ final class UserVerification extends Entity
     /** DB-only code hash (see @object-exclude); referenced by the verify query, never ORM-mapped. */
     public const string code_hash = 'code_hash';
     public const string attempts = 'attempts';
+    public const string created_at = 'created_at';
     public const string expires_at = 'expires_at';
     public const string consumed_at = 'consumed_at';
 
@@ -49,6 +50,7 @@ final class UserVerification extends Entity
         self::type,
         self::identifier,
         self::attempts,
+        self::created_at,
         self::expires_at,
         self::consumed_at,
     ];
@@ -59,6 +61,7 @@ final class UserVerification extends Entity
         self::type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
+        self::created_at => PhpType::DATETIME->value,
         self::expires_at => PhpType::DATETIME->value,
         self::consumed_at => PhpType::DATETIME->value,
     ];
@@ -73,6 +76,7 @@ final class UserVerification extends Entity
     public string $type;
     public string $identifier;
     public int $attempts = 0;
+    public string $created_at;
     public string $expires_at;
     public ?string $consumed_at = null;
 }

@@ -30,6 +30,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property string $type
  * @property string $identifier
  * @property-read int $attempts
+ * @property string $createdAt
  * @property string $expiresAt
  * @property-read ?string $consumedAt
  */
@@ -41,6 +42,7 @@ final class UserVerification extends Object_
     public const string type = 'type';
     public const string identifier = 'identifier';
     public const string attempts = 'attempts';
+    public const string createdAt = 'createdAt';
     public const string expiresAt = 'expiresAt';
     public const string consumedAt = 'consumedAt';
 
@@ -57,7 +59,7 @@ final class UserVerification extends Object_
     /**
      * Magic getter for entity properties.
      *
-     * @param string $property Property name (id, userId, type, identifier, attempts, expiresAt, consumedAt)
+     * @param string $property Property name (id, userId, type, identifier, attempts, createdAt, expiresAt, consumedAt)
      * @return mixed Property value
      * @throws DatabaseException When the property is not a known UserVerification field
      */
@@ -69,6 +71,7 @@ final class UserVerification extends Object_
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
             self::attempts => $this->entity->attempts,
+            self::createdAt => $this->entity->created_at,
             self::expiresAt => $this->entity->expires_at,
             self::consumedAt => $this->entity->consumed_at,
             default => parent::__get($property),
@@ -80,8 +83,11 @@ final class UserVerification extends Object_
      *
      * The `code_hash` has no setter here; it is written only through the
      * verification layer's mint path ({@see UserVerifications::createChallenge()}).
+     * The `createdAt` setter exists for that same mint path and nothing else: the
+     * column is ORM-mapped, so the insert carries a value for it, and the value it
+     * must carry is the issue time the send limit counts from.
      *
-     * @param string $property Property name (userId, type, identifier, expiresAt)
+     * @param string $property Property name (userId, type, identifier, createdAt, expiresAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a UserVerification
      */
@@ -91,6 +97,7 @@ final class UserVerification extends Object_
             self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
             self::type => $this->entity->type = (string)$value,
             self::identifier => $this->entity->identifier = (string)$value,
+            self::createdAt => $this->entity->created_at = (string)$value,
             self::expiresAt => $this->entity->expires_at = (string)$value,
             default => parent::__set($property, $value),
         };
@@ -245,7 +252,7 @@ final class UserVerification extends Object_
     /**
      * Converts the challenge to an associative array (never includes the code hash).
      *
-     * @return array<string, mixed> Verification data (id, userId, type, identifier, attempts, expiresAt, consumedAt)
+     * @return array<string, mixed> Verification data (id, userId, type, identifier, attempts, createdAt, expiresAt, consumedAt)
      */
     public function toArray(): array
     {
@@ -255,6 +262,7 @@ final class UserVerification extends Object_
             self::type => $this->entity->type,
             self::identifier => $this->entity->identifier,
             self::attempts => $this->entity->attempts,
+            self::createdAt => $this->entity->created_at,
             self::expiresAt => $this->entity->expires_at,
             self::consumedAt => $this->entity->consumed_at,
         ];
