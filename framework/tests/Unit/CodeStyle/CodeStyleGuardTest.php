@@ -101,9 +101,21 @@ final class CodeStyleGuardTest extends TestCase
      * found, and `Core` and `Socket` are the two roots every other subsystem calls
      * through, so their contracts are the ones a later phase will lean on.
      *
+     * The subsystems of state and data go second: every page request and every table
+     * mutation passes through them, so their contracts are needed before those of the
+     * periphery.
+     *
      * @var array<int, string>
      */
-    private const array THROWS_ZONE = ['framework/backend/Core', 'framework/backend/Socket'];
+    private const array THROWS_ZONE = [
+        'framework/backend/Core',
+        'framework/backend/Socket',
+        'framework/backend/Database',
+        'framework/backend/Runtime',
+        'framework/backend/Tables',
+        'framework/backend/Pages',
+        'framework/backend/Cluster',
+    ];
 
 
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void

@@ -147,9 +147,10 @@ Six things are outside it on purpose:
    whatever was caught, and a `throw SomeException::forErrors(...)` carries the
    type that factory decided to return — following either is type inference under
    another name, and assuming the factory returns its own class would let the rule
-   demand a base where the code throws a subclass. Two sites of the factory form
-   sit inside the judged zone today, in `TopologyValidator` and
-   `FeatureActivationValidator`, and go unreported.
+   demand a base where the code throws a subclass. Fifteen sites of the factory
+   form sit inside the judged zone today and go unreported, ten of them in
+   `Cluster`, where a configuration error is raised through a named constructor
+   rather than a plain `new`.
 5. **The body of a property hook.** A `get`/`set` block is a second shape of
    method body, and the walk does not enter it, so a call made there is checked by
    nobody. The property it belongs to is indexed normally; only the hook's own
@@ -178,11 +179,19 @@ reason, with one mechanical difference: a cross-file rule is handed paths from
 the repository root and not from a scanned root, so its zone lists whole prefixes
 rather than path segments — a bare `Socket` would otherwise turn on the framework
 subsystem and the demos' directories of that name in one move. Judged across
-every root at once the rule reports 779 lines in 234 files, which is a mute list
-and not a list of owed work. The daemon spine — `framework/backend/Core` and
-`framework/backend/Socket`, 43 files — is the first phase: it is where the defect
-that opened the rule was found, and every other subsystem calls through it, so
-its contracts are what the later phases will lean on.
+every root at once the rule reported 779 lines in 234 files, which is a mute list
+and not a list of owed work; that number measured the tree the rule was written
+against, and every phase since has taken a part of it into the judged zone.
+
+The daemon spine — `framework/backend/Core` and `framework/backend/Socket` — was
+the first phase: it is where the defect that opened the rule was found, and every
+other subsystem calls through it, so its contracts are what the later phases lean
+on. It owns no baseline record any more. The subsystems of state and data —
+`Database`, `Runtime`, `Tables`, `Pages` and `Cluster`, 140 lines in 56 files —
+are the second, because every page request and every table mutation passes
+through them. That phase is frozen in the baseline rather than paid off: turning
+the zone on ahead of the fix is what stops the debt growing, since a new
+unpropagated `@throws` inside it fails the guard on the spot.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

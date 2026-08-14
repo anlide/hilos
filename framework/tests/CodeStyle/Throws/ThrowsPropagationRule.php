@@ -72,7 +72,7 @@ final class ThrowsPropagationRule implements CrossFileRule
 
     /**
      * The judged zone grows one phase at a time while the index stays whole. Turned on
-     * across every root at once the rule reports 779 lines in 234 files, and a baseline
+     * across every root at once the rule reported 779 lines in 234 files, and a baseline
      * that size is read as a mute list rather than as owed work — which is the one
      * thing it must never become.
      *
