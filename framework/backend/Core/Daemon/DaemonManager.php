@@ -1570,10 +1570,19 @@ abstract class DaemonManager extends BaseManager implements
      * then builds the type/data frame with optional envelope metadata. Shared by
      * single-client and all-clients delivery so both send an identical frame.
      *
+     * Protected rather than private only so a test subclass can call it. Building
+     * such a subclass is how this class is already exercised — DaemonManagerRoleTickTest,
+     * DaemonManagerClusterReactionTest, DaemonManagerEntropyFailureTest and
+     * DaemonManagerSubscriptionUpdateTest each carry one — and the widening is what
+     * lets that subclass reach the encoder. No override is expected of anyone. It is
+     * not the standing answer either: the neighboring tickServers is left private on
+     * purpose and taken by reflection from its own test, so the difference between
+     * the two is named here rather than read as an oversight.
+     *
      * @param SignalDTO $signal Signal DTO
      * @return ?string Frame JSON ready for sendFrame(), or null when it cannot be encoded
      */
-    private function encodeSignalFrame(SignalDTO $signal): ?string
+    protected function encodeSignalFrame(SignalDTO $signal): ?string
     {
         $signalData = $signal->data;
 

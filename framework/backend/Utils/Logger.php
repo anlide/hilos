@@ -64,6 +64,19 @@ class Logger
     }
 
     /**
+     * Drop the main log file address, sending the output back to stdout/stderr.
+     *
+     * For whoever redirected the log only for a while and has to put it back afterwards;
+     * {@see setLogFile()} takes a path and has no way to say "no path". It restores no
+     * earlier address — the output goes to stdout/stderr, wherever it went before. The
+     * error log address is not touched: it holds independently of this one.
+     */
+    public static function resetLogFile(): void
+    {
+        self::$logFile = null;
+    }
+
+    /**
      * Set error log file path for error-only logging.
      *
      * The address holds independently of the main log: a process that sets only this one
