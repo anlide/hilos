@@ -141,19 +141,22 @@ final class BackupRestoreCommandTest extends TestCase
         $this->assertSame([], $probe->sent, 'A failed digest check must never reach the daemon');
     }
 
-    public function testProdArchiveIntoTestEnvironmentNeedsADeclaredPiiRegistry(): void
+    public function testProdArchiveIntoTestEnvironmentPassesThePiiPreflightOnTheFrameworkRows(): void
     {
         $this->storeBackup('b1', 'archive payload', archiveEnv: 'prod');
 
         $probe = new BackupRestoreCommandProbe();
         $output = $this->runCommand($probe, ['b1'], [BackupConstants::YES_OPTION => true]);
 
-        // The ENV guard demands anonymization and this installation declares no catalog, so
-        // the run is a configuration error rather than a general failure: the operator has
-        // one thing to fix, and it is not the archive.
-        $this->assertSame(ExitCode::CONFIG_ERROR, $output['code']);
-        $this->assertStringContainsString(BackupConstants::CATALOG_PII, $output['text']);
-        $this->assertSame([], $probe->sent, 'An unconfigured registry must never reach the daemon');
+        // The ENV guard demands anonymization, and this installation declares no catalog of
+        // its own - yet the merged registry is not empty, because the framework classifies
+        // the tables it ships (HIL-585). So the preflight has nothing to refuse on and the
+        // run reaches the daemon; what an installation failed to classify is caught later by
+        // the coverage gate, which refuses before the first import and names the tables.
+        $this->assertStringNotContainsString(BackupConstants::CATALOG_PII, $output['text']);
+        $this->assertNotSame([], $probe->sent, 'A declared registry must not hold the run back');
+        // The canned channel answers nothing, so the run ends on the silent-daemon path.
+        $this->assertSame(ExitCode::ERROR, $output['code']);
     }
 
     public function testASchemaOnlyArchiveNeedsNoPiiRegistry(): void

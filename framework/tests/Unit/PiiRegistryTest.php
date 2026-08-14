@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
+use Hilos\Backup\Anonymization\FrameworkPiiDeclaration;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Database\Entity\Item\Entity;
@@ -16,9 +17,42 @@ use PHPUnit\Framework\TestCase;
  * The two things worth pinning here are the ones a reader of the catalog cannot verify
  * for themselves: that a project row replaces a framework row whole rather than merging
  * into it, and that the empty column map is a classification rather than an absence.
+ *
+ * The framework's own declaration is checked here too, on the one axis that needs no
+ * database: that it is a well-formed registry at all. Whether it covers a real archive
+ * is a question about a schema, and demo/chat asks it against a live one.
  */
 final class PiiRegistryTest extends TestCase
 {
+    /**
+     * Lower bound on the framework declaration, so a row list that lost its contents
+     * cannot pass as a healthy one. The count is the framework's share of the demo/chat
+     * schema at the time of writing (15 archive tables, 24 analytics, one push table the
+     * demo does not create); it is a floor, not the exact number, because a new framework
+     * table adds a row here and must not fail this test for it.
+     */
+    private const int MIN_FRAMEWORK_ROWS = 40;
+
+    public function testTheFrameworkDeclarationIsAWellFormedRegistry(): void
+    {
+        $registry = PiiRegistry::fromDeclarations(FrameworkPiiDeclaration::rows());
+        $tables = $registry->declaredTables(0);
+
+        $this->assertGreaterThanOrEqual(
+            self::MIN_FRAMEWORK_ROWS,
+            count($tables),
+            'The framework declaration lost rows; an emptied one would leave every framework '
+            . 'table for a project to classify',
+        );
+        foreach ($tables as $table) {
+            $this->assertStringNotContainsString(
+                '\\',
+                $table,
+                "Declared key [{$table}] stayed a class name, so it names a class that no longer exists",
+            );
+        }
+    }
+
     public function testAnEntityKeyResolvesToItsTable(): void
     {
         $registry = PiiRegistry::fromDeclarations([

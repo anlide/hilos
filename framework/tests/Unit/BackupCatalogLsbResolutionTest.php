@@ -50,14 +50,19 @@ final class BackupCatalogLsbResolutionTest extends TestCase
 
     public function testTheCatalogFedRegistriesSeeTheProjectDeclarationAfterInit(): void
     {
+        // The merged PII registry always carries the framework's own rows, so presence of
+        // the project row - not the size of the list - is what tells the two accessors
+        // apart. Taken before and after init, because "it is there afterwards" proves
+        // nothing about where it came from unless it was absent before.
+        self::assertNotContains('pii_entity', PiiRegistry::fromCatalog()->declaredTables(0));
+
         BackupCatalogTestHilos::initBrowser();
 
-        self::assertSame(
-            ['pii_entity'],
+        self::assertContains(
+            'pii_entity',
             PiiRegistry::fromCatalog()->declaredTables(0),
             'The PII registry must read what the project declared, not the base facade null',
         );
-        self::assertFalse(PiiRegistry::fromCatalog()->isEmpty());
         self::assertSame(
             ['pii_entity'],
             BackupReferenceRegistry::fromCatalog()->tablesForConnection(0),

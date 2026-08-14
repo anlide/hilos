@@ -269,20 +269,25 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         );
     }
 
-    public function testARestoreRequiringAnonymizationIsRefusedWithoutARegistry(): void
+    public function testAnInstallationThatDeclaredNothingIsRefusedOnItsOwnTables(): void
     {
         $this->publishFixtureBackup($this->piiDumpSql());
 
-        $this->expectException(RestoreFailedException::class);
-        $this->expectExceptionMessage(BackupConstants::CATALOG_PII);
-
-        // No project facade is captured, so the catalog declares nothing: an installation
-        // that classified no data must not be told its restore was anonymized.
-        new BackupRestorer()->restore(
-            self::BACKUP_ID,
-            BackupScope::FULL,
-            RestoreEnvDecision::REQUIRE_ANONYMIZATION,
-        );
+        // No project facade is captured, so the catalog declares nothing. The framework
+        // classifies the tables it ships (HIL-585), so the merged registry is never empty
+        // any more - and this is the case that must not be let through on that account:
+        // the rows a project wrote are still nobody's, and every one of them is named.
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+            );
+            $this->fail('An installation that classified no data must not be told it was anonymized');
+        } catch (AnonymizationConfigException $refusal) {
+            $this->assertStringContainsString(self::PROBE_TABLE, $refusal->getMessage());
+            $this->assertStringContainsString(self::TOKEN_TABLE, $refusal->getMessage());
+        }
     }
 
     /**
