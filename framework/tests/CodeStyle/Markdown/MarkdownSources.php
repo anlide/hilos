@@ -129,12 +129,17 @@ final class MarkdownSources
     }
 
     /**
-     * @param string $directory Directory to list, relative to the scanned root
-     * @return array<int, string> Paths of the markdown files directly inside it, relative to the root, sorted
+     * A subdirectory of a judged directory is still that directory: a file put one
+     * level down is the same file, and a rule that stopped at the top would be
+     * walked around by making a folder. The pattern expands `**` as zero or more
+     * directories, so the flat files come along with the nested ones.
+     *
+     * @param string $directory Directory to walk, relative to the scanned root
+     * @return array<int, string> Paths of the markdown files at any depth inside it, relative to the root, sorted
      */
-    public function markdownIn(string $directory): array
+    public function markdownUnder(string $directory): array
     {
-        return $this->matching([$directory . '/*.md']);
+        return $this->matching([$directory . '/**/*.md']);
     }
 
     /**

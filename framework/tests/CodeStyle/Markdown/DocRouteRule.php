@@ -73,7 +73,7 @@ final class DocRouteRule
     {
         $routed = $this->routedPaths();
 
-        foreach ($this->sources->markdownIn($this->catalog) as $path) {
+        foreach ($this->sources->markdownUnder($this->catalog) as $path) {
             $reason = $this->declinedReason($this->sources->read($path));
 
             if (in_array($path, $routed, true)) {

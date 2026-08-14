@@ -31,6 +31,8 @@ final class AgentDocFixtureTest extends TestCase
             [
                 'DOC-ROUTE catalog/declined-no-reason.md — the line declining a route names no reason '
                     . '(see docs/agents/rule-authoring.md)',
+                'DOC-ROUTE catalog/nested/deeper/orphan.md — no skill wrapper routes to this file '
+                    . '(see docs/agents/rule-authoring.md)',
                 'DOC-ROUTE catalog/orphan.md — no skill wrapper routes to this file '
                     . '(see docs/agents/rule-authoring.md)',
                 'DOC-ROUTE catalog/routed-and-declined.md — a wrapper routes to this file, and it also '

@@ -20,7 +20,7 @@ rule.
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type, and only inside the judged zone; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
-| `DOC-ROUTE` | Every file of this catalog is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
+| `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
 
 `MAGIC-REPEAT` is deliberately narrower than the document it enforces, and its
@@ -190,9 +190,12 @@ way worth knowing before you argue with a hit.
 `DOC-ROUTE` reads reachability as a direct mention and never expands it: a
 wrapper that routes to another wrapper does not inherit that wrapper's files, and
 a file reachable only through such a hop is still reported. A route an agent has
-to derive is not a route it takes. The rule also judges this catalog alone. The
-rest of `docs/agents/` has no owning mechanism to route from, and requiring one
-there would decide the fate of documents this check does not own.
+to derive is not a route it takes. The rule also judges this catalog alone, and
+all of it: a subdirectory of the style catalog is still the style catalog, so a
+file put one level down owes a route exactly as a flat one does. That is the
+catalog read whole and not a wider scope — the rest of `docs/agents/` has no
+owning mechanism to route from, and requiring one there would decide the fate of
+documents this check does not own.
 
 `DOC-LINK` judges the file part of a reference and nothing else: `page.md#section`
 is checked as `page.md`, and whether the section exists is not asked. It also

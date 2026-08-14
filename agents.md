@@ -136,6 +136,11 @@ Minimum ORM rules before editing:
 
 ## Code Style Rules
 
+This table is a short way in, not the index: the full list of style rules is the
+catalog linked in its first row. A new rule file does not owe this table a row —
+add one only when the rule is broken by habit and its file name does not give
+the rule away.
+
 | File | Applies to | Read when... |
 |---|---|---|
 | [code-style/README.md](docs/agents/code-style/README.md) | both | choosing which small style rule applies to a code change — the full catalog, with the same *Applies to* column on every rule |
