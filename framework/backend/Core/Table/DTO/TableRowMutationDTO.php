@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DTO;
 
+use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
-use ValueError;
 
 /**
  * DTO for one table row mutation (create/update/delete).
@@ -62,21 +63,40 @@ readonly class TableRowMutationDTO
      * When the concrete table row class is unknown in the current context, the
      * row is restored as {@see GenericTableRow}.
      *
+     * The payload is read the way {@see BaseDTO} reads one — a field the
+     * mutation has no meaning without is refused rather than minted — but the
+     * checks are written here: this is a readonly value object, and PHP does not
+     * let one extend the non-readonly base the helpers live on. The row itself
+     * stays optional, because a delete carries none.
+     *
      * @param array<string, mixed> $data Serialized mutation payload
      * @return self Reconstructed row mutation DTO
-     * @throws ValueError When the serialized type is not a valid TableMutationType value
+     * @throws InvalidFormatException When the payload misses the mutation type or the row key, or names a type that does not exist
      */
     public static function fromArray(array $data): self
     {
-        $row = null;
-        if (isset($data[TableConstants::MUTATION_KEY_ROW]) && is_array($data[TableConstants::MUTATION_KEY_ROW])) {
-            $row = GenericTableRow::fromArray($data[TableConstants::MUTATION_KEY_ROW]);
+        $type = $data[TableConstants::MUTATION_KEY_TYPE] ?? null;
+        if (!is_string($type)) {
+            throw new InvalidFormatException('Payload carries no string under key ' . TableConstants::MUTATION_KEY_TYPE);
+        }
+
+        $rowKey = $data[TableConstants::MUTATION_KEY_ROW_KEY] ?? null;
+        if (!is_int($rowKey) && !is_string($rowKey)) {
+            throw new InvalidFormatException(
+                'Payload carries no integer or string under key ' . TableConstants::MUTATION_KEY_ROW_KEY,
+            );
+        }
+
+        $row = $data[TableConstants::MUTATION_KEY_ROW] ?? null;
+        if ($row !== null && !is_array($row)) {
+            throw new InvalidFormatException('Payload carries a non-array under key ' . TableConstants::MUTATION_KEY_ROW);
         }
 
         return new self(
-            type: TableMutationType::from((string) ($data[TableConstants::MUTATION_KEY_TYPE] ?? '')),
-            rowKey: $data[TableConstants::MUTATION_KEY_ROW_KEY] ?? 0,
-            row: $row,
+            type: TableMutationType::tryFrom($type)
+                ?? throw new InvalidFormatException('Payload names no known mutation type: ' . $type),
+            rowKey: $rowKey,
+            row: $row === null ? null : GenericTableRow::fromArray($row),
         );
     }
 }

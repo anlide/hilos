@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
@@ -56,7 +57,10 @@ final class WorkerManagerAgentIdDispatchTest extends TestCase
         $this->dispatchQueuedSignals($manager);
 
         $this->assertCount(1, $manager->daemonClientDouble->sent);
-        $this->assertInstanceOf(WorkerAgentMessageDTO::class, $manager->daemonClientDouble->sent[0]);
+        $sent = $manager->daemonClientDouble->sent[0];
+        $this->assertInstanceOf(WorkerAgentMessageDTO::class, $sent);
+        $this->assertNull($sent->agentId);
+        $this->assertArrayNotHasKey(AgentConstants::FIELD_AGENT_ID, $sent->toArray());
     }
 
     public function testASourceAgentTypeBecomesTheAgentId(): void

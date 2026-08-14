@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * RtSyncCreatedSignalData - RT sync signal data for created state.
@@ -49,16 +50,15 @@ class RtSyncCreatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no collection key, no state id or no row
      */
     public static function fromArray(array $data): static
     {
-        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
-
         return new static(
-            collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
-            stateId: $data[SyncSignalDataKey::STATE_ID] ?? '',
-            row: $data[SyncSignalDataKey::ROW] ?? [],
-            origin: is_string($origin) && $origin !== '' ? $origin : null,
+            collectionKey: self::requireString($data, SyncSignalDataKey::COLLECTION_KEY),
+            stateId: self::requireString($data, SyncSignalDataKey::STATE_ID),
+            row: self::requireArray($data, SyncSignalDataKey::ROW),
+            origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
         );
     }
 }

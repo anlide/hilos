@@ -15,6 +15,12 @@ use Hilos\Socket\Worker\WorkerDTO;
  * WorkerAgentMessageDTO - DTO for agent message from worker to daemon.
  *
  * Used when worker sends agent message to daemon.
+ *
+ * The message may be unaddressed: a browser flush leaves the worker with no
+ * agent behind it, and the daemon routes the inner signal by its type and its
+ * WebSocket target anyway. That is why the agent id is nullable rather than an
+ * empty string — nobody downstream reads the field, and a blank id would still
+ * have to be told apart from a real one by whoever eventually does.
  */
 class WorkerAgentMessageDTO extends WorkerDTO
 {
@@ -26,11 +32,11 @@ class WorkerAgentMessageDTO extends WorkerDTO
     /**
      * Creates agent message DTO.
      *
-     * @param string $agentId Agent ID
+     * @param ?string $agentId Agent ID, or null when the message is not addressed to an agent
      * @param SignalDTO $signal Signal payload
      */
     public function __construct(
-        public readonly string $agentId,
+        public readonly ?string $agentId,
         public readonly SignalDTO $signal,
     ) {
     }
@@ -54,8 +60,11 @@ class WorkerAgentMessageDTO extends WorkerDTO
     {
         $result = [
             self::TYPE => self::MESSAGE_TYPE,
-            AgentConstants::FIELD_AGENT_ID => $this->agentId,
         ];
+
+        if ($this->agentId !== null) {
+            $result[AgentConstants::FIELD_AGENT_ID] = $this->agentId;
+        }
 
         if (!empty($this->signal)) {
             $result[self::SIGNAL] = $this->signal->toArray();
@@ -70,12 +79,12 @@ class WorkerAgentMessageDTO extends WorkerDTO
      * @param array<string, mixed> $data Source data (agentId, signal)
      * @return static DTO instance
      * @throws InvalidArgumentException When the signal names an empty signal
-     * @throws InvalidFormatException When the payload carries no agent id or no signal
+     * @throws InvalidFormatException When the payload carries no signal
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
+            agentId: self::optionalString($data, AgentConstants::FIELD_AGENT_ID),
             signal: SignalDTO::fromArray(self::requireArray($data, self::SIGNAL)),
         );
     }

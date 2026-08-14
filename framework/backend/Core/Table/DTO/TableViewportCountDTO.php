@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -59,14 +60,15 @@ final class TableViewportCountDTO extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data in the table-viewport-count wire form
      * @return static Restored DTO instance
+     * @throws InvalidFormatException When the payload misses the addressed table or one of the counts
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            page: (string) ($data[self::page] ?? ''),
-            tableKey: (string) ($data[self::tableKey] ?? ''),
-            totalCount: (int) ($data[self::totalCount] ?? 0),
-            pageCount: (int) ($data[self::pageCount] ?? 0),
+            page: self::requireString($data, self::page),
+            tableKey: self::requireString($data, self::tableKey),
+            totalCount: self::requireInt($data, self::totalCount),
+            pageCount: self::requireInt($data, self::pageCount),
         );
     }
 }

@@ -1780,10 +1780,8 @@ abstract class WorkerManager extends BaseManager
             $agentIndex = $signal->signalSource->getIndex();
             // An unaddressed message is the normal case here, not a missing value:
             // BrowserContext flushes carry SignalSource::WORKER with no agent type,
-            // and AgentManagerDaemon::handleAgentMessage() never reads this field.
-            // Making it optional is HIL-532's call, so the empty id stays for now
-            // and is recorded in the code-style baseline under that leaf.
-            $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex) ?? '';
+            // so the message carries no agent id at all rather than an empty one.
+            $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
             $this->daemonClient->send(new WorkerAgentMessageDTO(
                 agentId: $agentId,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -53,19 +54,29 @@ class TableSnapshotDTO extends BaseDTO
     /**
      * Creates snapshot DTO from payload array.
      *
+     * A row that is not an array is refused instead of becoming an empty one:
+     * an empty generic row has no key, so it would travel as a row the table
+     * cannot address rather than as the malformed payload it is. The window
+     * descriptor is required whole, the page size included — defaulted it reads
+     * as {@see TableConstants::NO_LIMIT}, so a payload that lost the field would
+     * describe a page of the collection as the whole of it.
+     *
      * @param array<string, mixed> $data Raw payload with rows, totalCount, offset, limit keys
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload misses the rows or a descriptor field, or a row is not an array
      */
     public static function fromArray(array $data): static
     {
         return new static(
             rows: array_map(
-                static fn(mixed $row): AbstractTableRow => is_array($row) ? GenericTableRow::fromArray($row) : GenericTableRow::fromArray([]),
-                is_array($data[TableConstants::RESULT_KEY_ROWS] ?? null) ? $data[TableConstants::RESULT_KEY_ROWS] : [],
+                static fn(mixed $row): AbstractTableRow => is_array($row)
+                    ? GenericTableRow::fromArray($row)
+                    : throw new InvalidFormatException('Payload carries a snapshot row that is not an array'),
+                self::requireArray($data, TableConstants::RESULT_KEY_ROWS),
             ),
-            totalCount: (int) ($data[TableConstants::RESULT_KEY_TOTAL_COUNT] ?? 0),
-            offset: (int) ($data[TableConstants::RESULT_KEY_OFFSET] ?? 0),
-            limit: (int) ($data[TableConstants::RESULT_KEY_LIMIT] ?? 0),
+            totalCount: self::requireInt($data, TableConstants::RESULT_KEY_TOTAL_COUNT),
+            offset: self::requireInt($data, TableConstants::RESULT_KEY_OFFSET),
+            limit: self::requireInt($data, TableConstants::RESULT_KEY_LIMIT),
         );
     }
 }

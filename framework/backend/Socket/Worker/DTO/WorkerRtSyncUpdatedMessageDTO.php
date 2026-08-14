@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -51,6 +52,7 @@ class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO implements WorkerRtSyncMes
      *
      * @param array<string, mixed> $data Source data with signalData key.
      * @return static DTO instance.
+     * @throws InvalidFormatException When the payload carries no sync fact of the shape this message wraps
      */
     public static function fromArray(array $data): static
     {

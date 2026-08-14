@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DbSyncUpdatedSignalData - DB sync signal data for updated row.
@@ -49,16 +50,15 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no collection key, no row id or no row
      */
     public static function fromArray(array $data): static
     {
-        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
-
         return new static(
-            collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
-            idString: $data[SyncSignalDataKey::ID_STRING] ?? '',
-            row: $data[SyncSignalDataKey::ROW] ?? [],
-            origin: is_string($origin) && $origin !== '' ? $origin : null,
+            collectionKey: self::requireString($data, SyncSignalDataKey::COLLECTION_KEY),
+            idString: self::requireString($data, SyncSignalDataKey::ID_STRING),
+            row: self::requireArray($data, SyncSignalDataKey::ROW),
+            origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
         );
     }
 }

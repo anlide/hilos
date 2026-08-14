@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Source;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
@@ -187,22 +188,29 @@ final class SourceChange extends BaseDTO
     /**
      * Restores a source fact from a serialized payload.
      *
+     * An unknown mutation type is refused rather than read as an update: the
+     * fact says what happened to the source, and guessing it turns a delete
+     * nobody can name into a row every observer keeps.
+     *
+     * An empty source id passes: a whole-collection clear has no single row,
+     * and {@see self::dbCleared()} writes the blank on purpose.
+     *
      * @param array<string, mixed> $data Source change payload
      * @return static Restored source change
+     * @throws InvalidFormatException When the payload misses a field or names a mutation type that does not exist
      */
     public static function fromArray(array $data): static
     {
-        $sourceId = $data[self::FIELD_SOURCE_ID] ?? '';
-        $row = $data[self::FIELD_ROW] ?? [];
-        $origin = $data[self::FIELD_ORIGIN] ?? null;
+        $mutationType = self::requireString($data, self::FIELD_MUTATION_TYPE);
 
         return new static(
-            kind: (string) ($data[self::FIELD_KIND] ?? self::KIND_DB),
-            sourceKey: (string) ($data[self::FIELD_SOURCE_KEY] ?? ''),
-            sourceId: is_string($sourceId) || is_int($sourceId) ? (string) $sourceId : '',
-            mutationType: TableMutationType::tryFrom((string) ($data[self::FIELD_MUTATION_TYPE] ?? '')) ?? TableMutationType::Update,
-            row: is_array($row) ? $row : [],
-            origin: is_string($origin) && $origin !== '' ? $origin : null,
+            kind: self::requireString($data, self::FIELD_KIND),
+            sourceKey: self::requireString($data, self::FIELD_SOURCE_KEY),
+            sourceId: self::requireString($data, self::FIELD_SOURCE_ID),
+            mutationType: TableMutationType::tryFrom($mutationType)
+                ?? throw new InvalidFormatException('Payload names no known mutation type: ' . $mutationType),
+            row: self::requireArray($data, self::FIELD_ROW),
+            origin: self::optionalString($data, self::FIELD_ORIGIN),
         );
     }
 }

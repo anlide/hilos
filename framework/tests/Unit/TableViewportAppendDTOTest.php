@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -26,14 +27,23 @@ final class TableViewportAppendDTOTest extends TestCase
         $this->assertSame(1, $restored->pageCount);
     }
 
-    public function testFromArrayDefaultsToAnEmptyRow(): void
+    public function testFromArrayRefusesAnEmptyPayloadInsteadOfAppendingAnEmptyRow(): void
     {
-        $dto = TableViewportAppendDTO::fromArray([]);
+        $this->expectException(InvalidFormatException::class);
 
-        $this->assertSame('', $dto->page);
-        $this->assertSame('', $dto->tableKey);
-        $this->assertSame([], $dto->row);
-        $this->assertSame(0, $dto->totalCount);
-        $this->assertSame(0, $dto->pageCount);
+        TableViewportAppendDTO::fromArray([]);
+    }
+
+    public function testFromArrayRefusesAPayloadWithoutTheRowAndNamesTheKey(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableViewportAppendDTO::row);
+
+        TableViewportAppendDTO::fromArray([
+            TableViewportAppendDTO::page => 'hilos_settings',
+            TableViewportAppendDTO::tableKey => 'settings',
+            TableViewportAppendDTO::totalCount => 91,
+            TableViewportAppendDTO::pageCount => 1,
+        ]);
     }
 }

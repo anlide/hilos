@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\GenericTableRow;
+use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -50,6 +52,24 @@ final class TableRowMutationDTOTest extends TestCase
         );
 
         $this->assertArrayNotHasKey('acceptKey', $mutation->toArray());
+    }
+
+    public function testFromArrayRefusesAMutationThatNamesNoRow(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableConstants::MUTATION_KEY_ROW_KEY);
+
+        TableRowMutationDTO::fromArray([TableConstants::MUTATION_KEY_TYPE => 'delete']);
+    }
+
+    public function testFromArrayRefusesAnUnknownMutationTypeAsAMalformedPayload(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        TableRowMutationDTO::fromArray([
+            TableConstants::MUTATION_KEY_TYPE => 'reordered',
+            TableConstants::MUTATION_KEY_ROW_KEY => 'chat.title',
+        ]);
     }
 
     public function testGenericRowCanUseStringKeyWithoutDbId(): void

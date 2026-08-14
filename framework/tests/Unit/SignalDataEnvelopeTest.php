@@ -10,6 +10,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataEnvelope;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -79,6 +81,26 @@ final class SignalDataEnvelopeTest extends TestCase
         $this->assertInstanceOf(SignalData::class, $decoded);
         $this->assertStringContainsString(WebSocketFrameSignalDTO::class, $logged);
         $this->assertStringContainsString(WebSocketFrameSignalDTO::PAYLOAD, $logged);
+    }
+
+    public function testSyncFactWithoutItsCollectionDegradesToSignalDataInsteadOfADtoOfStubs(): void
+    {
+        // The same hop for a sync fact: an applicator reads the collection key
+        // and the row id without checking them, so a DTO built out of empty
+        // strings would apply a create to a collection nobody named.
+        ob_start();
+        $decoded = SignalDataEnvelope::decode(
+            [
+                SyncSignalDataKey::ID_STRING => '17',
+                SyncSignalDataKey::ROW => ['id' => 17],
+            ],
+            DbSyncCreatedSignalData::class,
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertInstanceOf(SignalData::class, $decoded);
+        $this->assertStringContainsString(DbSyncCreatedSignalData::class, $logged);
+        $this->assertStringContainsString(SyncSignalDataKey::COLLECTION_KEY, $logged);
     }
 }
 

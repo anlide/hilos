@@ -201,6 +201,100 @@ final class BaseDtoPayloadFieldsTest extends TestCase
 
         PayloadFieldsProbeDTO::readOptionalBool(['monopolistic' => 'yes'], 'monopolistic');
     }
+
+    public function testRequiredFloatReadsTheValueUnderTheKey(): void
+    {
+        $this->assertSame(12.5, PayloadFieldsProbeDTO::readRequiredFloat(['cpu' => 12.5], 'cpu'));
+    }
+
+    public function testRequiredFloatWidensAnIntegerSoADtoSurvivesItsOwnSerialization(): void
+    {
+        $this->assertSame(0.0, PayloadFieldsProbeDTO::readRequiredFloat(['cpu' => 0], 'cpu'));
+    }
+
+    public function testRequiredFloatRefusesAnAbsentKeyAndNamesIt(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('cpu');
+
+        PayloadFieldsProbeDTO::readRequiredFloat([], 'cpu');
+    }
+
+    public function testRequiredFloatRefusesANumberWrittenAsText(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PayloadFieldsProbeDTO::readRequiredFloat(['cpu' => '12.5'], 'cpu');
+    }
+
+    public function testOptionalFloatAnswersNullWhenTheKeyIsAbsent(): void
+    {
+        $this->assertNull(PayloadFieldsProbeDTO::readOptionalFloat([], 'cpu'));
+    }
+
+    public function testOptionalFloatWidensAPresentInteger(): void
+    {
+        $this->assertSame(3.0, PayloadFieldsProbeDTO::readOptionalFloat(['cpu' => 3], 'cpu'));
+    }
+
+    public function testOptionalFloatRefusesAPresentValueOfAnotherType(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('cpu');
+
+        PayloadFieldsProbeDTO::readOptionalFloat(['cpu' => '3'], 'cpu');
+    }
+
+    public function testRequiredIntOrStringReadsAnIntegerKey(): void
+    {
+        $this->assertSame(17, PayloadFieldsProbeDTO::readRequiredIntOrString(['rowKey' => 17], 'rowKey'));
+    }
+
+    public function testRequiredIntOrStringReadsAStringKey(): void
+    {
+        $this->assertSame('u-17', PayloadFieldsProbeDTO::readRequiredIntOrString(['rowKey' => 'u-17'], 'rowKey'));
+    }
+
+    public function testRequiredIntOrStringRefusesAnAbsentKeyAndNamesIt(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('rowKey');
+
+        PayloadFieldsProbeDTO::readRequiredIntOrString([], 'rowKey');
+    }
+
+    public function testRequiredIntOrStringRefusesAnArray(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PayloadFieldsProbeDTO::readRequiredIntOrString(['rowKey' => ['id' => 17]], 'rowKey');
+    }
+
+    public function testRequiredIntOrStringRefusesAFlag(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        PayloadFieldsProbeDTO::readRequiredIntOrString(['rowKey' => true], 'rowKey');
+    }
+
+    public function testOptionalIntOrStringAnswersNullWhenTheKeyIsAbsent(): void
+    {
+        $this->assertNull(PayloadFieldsProbeDTO::readOptionalIntOrString([], 'rowKey'));
+    }
+
+    public function testOptionalIntOrStringReadsEitherTypeWhenPresent(): void
+    {
+        $this->assertSame(17, PayloadFieldsProbeDTO::readOptionalIntOrString(['rowKey' => 17], 'rowKey'));
+        $this->assertSame('u-17', PayloadFieldsProbeDTO::readOptionalIntOrString(['rowKey' => 'u-17'], 'rowKey'));
+    }
+
+    public function testOptionalIntOrStringRefusesAPresentValueOfAnotherType(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('rowKey');
+
+        PayloadFieldsProbeDTO::readOptionalIntOrString(['rowKey' => 1.5], 'rowKey');
+    }
 }
 
 /**
@@ -311,5 +405,49 @@ final class PayloadFieldsProbeDTO extends BaseDTO
     public static function readOptionalBool(array $data, string $key): ?bool
     {
         return self::optionalBool($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return float Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither a float nor an integer
+     */
+    public static function readRequiredFloat(array $data, string $key): float
+    {
+        return self::requireFloat($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?float Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds neither a float nor an integer
+     */
+    public static function readOptionalFloat(array $data, string $key): ?float
+    {
+        return self::optionalFloat($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return int|string Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither an integer nor a string
+     */
+    public static function readRequiredIntOrString(array $data, string $key): int|string
+    {
+        return self::requireIntOrString($data, $key);
+    }
+
+    /**
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return int|string|null Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds neither an integer nor a string
+     */
+    public static function readOptionalIntOrString(array $data, string $key): int|string|null
+    {
+        return self::optionalIntOrString($data, $key);
     }
 }

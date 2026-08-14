@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DbSyncClearedSignalData - DB sync signal data for a whole-collection truncate.
@@ -71,16 +72,14 @@ class DbSyncClearedSignalData extends BaseDTO implements SyncSignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no collection key
      */
     public static function fromArray(array $data): static
     {
-        $origin = $data[SyncSignalDataKey::ORIGIN] ?? null;
-        $emitter = $data[SyncSignalDataKey::EMITTER] ?? null;
-
         return new static(
-            collectionKey: $data[SyncSignalDataKey::COLLECTION_KEY] ?? '',
-            origin: is_string($origin) && $origin !== '' ? $origin : null,
-            emitter: is_string($emitter) && $emitter !== '' ? $emitter : null,
+            collectionKey: self::requireString($data, SyncSignalDataKey::COLLECTION_KEY),
+            origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
+            emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
         );
     }
 }

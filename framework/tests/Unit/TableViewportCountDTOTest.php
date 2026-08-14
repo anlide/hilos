@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableViewportCountDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -24,13 +25,22 @@ final class TableViewportCountDTOTest extends TestCase
         $this->assertSame(5, $restored->pageCount);
     }
 
-    public function testFromArrayDefaultsToZeroCounts(): void
+    public function testFromArrayRefusesAnEmptyPayloadInsteadOfCountingZero(): void
     {
-        $dto = TableViewportCountDTO::fromArray([]);
+        $this->expectException(InvalidFormatException::class);
 
-        $this->assertSame('', $dto->page);
-        $this->assertSame('', $dto->tableKey);
-        $this->assertSame(0, $dto->totalCount);
-        $this->assertSame(0, $dto->pageCount);
+        TableViewportCountDTO::fromArray([]);
+    }
+
+    public function testFromArrayRefusesAPayloadWithoutACountAndNamesTheKey(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableViewportCountDTO::pageCount);
+
+        TableViewportCountDTO::fromArray([
+            TableViewportCountDTO::page => 'hilos_settings',
+            TableViewportCountDTO::tableKey => 'settings',
+            TableViewportCountDTO::totalCount => 42,
+        ]);
     }
 }

@@ -168,6 +168,53 @@ abstract class BaseDTO
     }
 
     /**
+     * Reads a floating-point payload field the DTO cannot be built without.
+     *
+     * An integer is widened instead of refused, because a float is not carried
+     * as one across JSON: `json_encode(0.0)` writes `0`, and a strict
+     * `is_float()` would refuse a DTO its own serialization produced. A string
+     * holding digits stays refused — that is a sender writing a number as text,
+     * not the format losing the fraction.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return float Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither a float nor an integer
+     */
+    protected static function requireFloat(array $data, string $key): float
+    {
+        $value = $data[$key] ?? null;
+        if (!is_float($value) && !is_int($value)) {
+            throw new InvalidFormatException('Payload carries no number under key ' . $key);
+        }
+
+        return (float)$value;
+    }
+
+    /**
+     * Reads a payload field the DTO cannot be built without and that carries either type.
+     *
+     * The two types are one field, not two: a row key is whatever the table's
+     * own key column holds, and narrowing it here would refuse half the tables
+     * over a difference the DTO does not care about. A boolean is refused
+     * despite PHP counting it as neither — it is a flag, not a key.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return int|string Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither an integer nor a string
+     */
+    protected static function requireIntOrString(array $data, string $key): int|string
+    {
+        $value = $data[$key] ?? null;
+        if (!is_int($value) && !is_string($value)) {
+            throw new InvalidFormatException('Payload carries no integer or string under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
      * Reads a payload field that is allowed to be absent.
      *
      * Absence answers `null` — that is what the field being optional means. A
@@ -242,6 +289,45 @@ abstract class BaseDTO
         $value = $data[$key] ?? null;
         if ($value !== null && !is_bool($value)) {
             throw new InvalidFormatException('Payload carries a non-boolean under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Reads a floating-point payload field that is allowed to be absent.
+     *
+     * An integer is widened for the same reason it is in
+     * {@see self::requireFloat()}: JSON does not keep a whole float a float.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return ?float Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds neither a float nor an integer
+     */
+    protected static function optionalFloat(array $data, string $key): ?float
+    {
+        $value = $data[$key] ?? null;
+        if ($value !== null && !is_float($value) && !is_int($value)) {
+            throw new InvalidFormatException('Payload carries a non-number under key ' . $key);
+        }
+
+        return $value !== null ? (float)$value : null;
+    }
+
+    /**
+     * Reads a payload field that carries either type and is allowed to be absent.
+     *
+     * @param array<string, mixed> $data Payload the DTO is being built from
+     * @param string $key Payload key holding the field
+     * @return int|string|null Value stored under the key, or null when the key is absent
+     * @throws InvalidFormatException When the key is present and holds neither an integer nor a string
+     */
+    protected static function optionalIntOrString(array $data, string $key): int|string|null
+    {
+        $value = $data[$key] ?? null;
+        if ($value !== null && !is_int($value) && !is_string($value)) {
+            throw new InvalidFormatException('Payload carries neither an integer nor a string under key ' . $key);
         }
 
         return $value;

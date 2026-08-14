@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -139,23 +140,26 @@ final class TableViewportDeltaDTO extends BaseDTO implements SignalDataInterface
     /**
      * Restores a delta from its wire array.
      *
+     * Only the three fields every kind carries are required. The rest are read
+     * as the optional fields {@see self::toArray()} writes them as: it omits a
+     * key irrelevant to the kind, and omits a lowered flag, so an absent `live`
+     * or `own` is the false that side put there.
+     *
      * @param array<string, mixed> $data Source data in the table-viewport-delta wire form
      * @return static Restored DTO instance
+     * @throws InvalidFormatException When the payload misses the addressed table or the delta kind
      */
     public static function fromArray(array $data): static
     {
-        $rowKey = $data[self::rowKey] ?? null;
-        $row = $data[self::row] ?? null;
-
         return new static(
-            page: (string) ($data[self::page] ?? ''),
-            tableKey: (string) ($data[self::tableKey] ?? ''),
-            kind: (string) ($data[self::kind] ?? ''),
-            rowKey: is_int($rowKey) || is_string($rowKey) ? $rowKey : null,
-            row: is_array($row) ? $row : null,
-            reason: is_string($data[self::reason] ?? null) ? $data[self::reason] : null,
-            live: (bool) ($data[self::live] ?? false),
-            own: (bool) ($data[self::own] ?? false),
+            page: self::requireString($data, self::page),
+            tableKey: self::requireString($data, self::tableKey),
+            kind: self::requireString($data, self::kind),
+            rowKey: self::optionalIntOrString($data, self::rowKey),
+            row: self::optionalArray($data, self::row),
+            reason: self::optionalString($data, self::reason),
+            live: self::optionalBool($data, self::live) ?? false,
+            own: self::optionalBool($data, self::own) ?? false,
         );
     }
 }

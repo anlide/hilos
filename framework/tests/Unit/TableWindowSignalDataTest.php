@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -37,15 +38,24 @@ final class TableWindowSignalDataTest extends TestCase
         $this->assertSame(10, $restored->limit);
     }
 
-    public function testFromArrayDefaultsToAnEmptyWindow(): void
+    public function testFromArrayRefusesAnEmptyPayloadInsteadOfAnEmptyWindow(): void
     {
-        $dto = TableWindowSignalData::fromArray([]);
+        $this->expectException(InvalidFormatException::class);
 
-        $this->assertSame('', $dto->page);
-        $this->assertSame('', $dto->tableKey);
-        $this->assertSame([], $dto->rows);
-        $this->assertSame(0, $dto->totalCount);
-        $this->assertSame(0, $dto->offset);
-        $this->assertSame(0, $dto->limit);
+        TableWindowSignalData::fromArray([]);
+    }
+
+    public function testFromArrayRefusesAWindowWithoutItsDescriptorAndNamesTheKey(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(TableWindowSignalData::limit);
+
+        TableWindowSignalData::fromArray([
+            TableWindowSignalData::page => 'hilos_settings',
+            TableWindowSignalData::tableKey => 'settings',
+            TableWindowSignalData::rows => [],
+            TableWindowSignalData::totalCount => 42,
+            TableWindowSignalData::offset => 10,
+        ]);
     }
 }

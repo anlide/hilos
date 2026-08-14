@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DaemonStatusDTO - Data Transfer Object for daemon status.
@@ -65,19 +66,24 @@ class DaemonStatusDTO extends BaseDTO
     /**
      * Create DTO from array.
      *
+     * Every field is required, the timestamp included: read as the reader's own
+     * `time()` it would date the answer by the moment it was parsed, and a
+     * status read from a daemon that stopped answering would look current.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload misses a field of the daemon status
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            uptime: $data[self::UPTIME] ?? 0,
-            memory: $data[self::MEMORY] ?? 0,
-            cpu: $data[self::CPU] ?? 0.0,
-            timestamp: $data[self::TIMESTAMP] ?? time(),
-            workersRegular: $data[self::WORKERS_REGULAR] ?? 0,
-            workersMonopolistic: $data[self::WORKERS_MONOPOLISTIC] ?? 0,
-            workersMaxRegular: $data[self::WORKERS_MAX_REGULAR] ?? 0,
+            uptime: self::requireInt($data, self::UPTIME),
+            memory: self::requireInt($data, self::MEMORY),
+            cpu: self::requireFloat($data, self::CPU),
+            timestamp: self::requireInt($data, self::TIMESTAMP),
+            workersRegular: self::requireInt($data, self::WORKERS_REGULAR),
+            workersMonopolistic: self::requireInt($data, self::WORKERS_MONOPOLISTIC),
+            workersMaxRegular: self::requireInt($data, self::WORKERS_MAX_REGULAR),
         );
     }
 }

@@ -1145,12 +1145,10 @@ abstract class DaemonManager extends BaseManager implements
                     // Send signal to agent via worker server
                     $agentType = $destination->agentType;
                     $agentIndex = $destination->agentIndex;
-                    // Kept as it was: agentId is a required field of the message DTO,
-                    // and whether an incomplete payload must be rejected is HIL-532's
-                    // call. The destination always names an agent type here, so the
-                    // fallback is unreachable in practice.
-                    $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex) ?? '';
-                    $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
+                    // An agent destination names its agent type, so the id is always
+                    // built; there is nothing here for a fallback to stand in for.
+                    $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
+                    $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
 
                     // Wrap signal in DaemonAgentMessageDTO
                     $messageDto = new DaemonAgentMessageDTO(
@@ -1168,13 +1166,13 @@ abstract class DaemonManager extends BaseManager implements
                         // During shutdown, workers may be unavailable - ignore this error
                         if ($this->shouldExit) {
                             Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName}"
-                                . " -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                                . " -> agent: {$agentLabel} - no suitable worker available");
                             $skipSignal = true;
                             continue;
                         }
                         // Re-throw if not shutting down
                         Logger::error("Failed to send signal: {$signalType}/{$signalName}"
-                            . " -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                            . " -> agent: {$agentLabel} - no suitable worker available");
                         throw $e;
                     }
                 } elseif ($destination instanceof RemoteAgentDestination) {

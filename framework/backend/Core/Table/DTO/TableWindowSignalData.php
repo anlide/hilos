@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -68,18 +69,17 @@ final class TableWindowSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data in the table-window wire form
      * @return static Restored DTO instance
+     * @throws InvalidFormatException When the payload misses a field of the window or its descriptor
      */
     public static function fromArray(array $data): static
     {
-        $rows = $data[self::rows] ?? [];
-
         return new static(
-            page: (string) ($data[self::page] ?? ''),
-            tableKey: (string) ($data[self::tableKey] ?? ''),
-            rows: is_array($rows) ? array_values($rows) : [],
-            totalCount: (int) ($data[self::totalCount] ?? 0),
-            offset: (int) ($data[self::offset] ?? 0),
-            limit: (int) ($data[self::limit] ?? 0),
+            page: self::requireString($data, self::page),
+            tableKey: self::requireString($data, self::tableKey),
+            rows: array_values(self::requireArray($data, self::rows)),
+            totalCount: self::requireInt($data, self::totalCount),
+            offset: self::requireInt($data, self::offset),
+            limit: self::requireInt($data, self::limit),
         );
     }
 }
