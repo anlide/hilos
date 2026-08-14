@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 use PHPUnit\Framework\TestCase;
@@ -93,5 +94,17 @@ final class ActionFailSignalDataTest extends TestCase
             ['reason' => 'This name is already taken'],
             $restored->toArray(),
         );
+    }
+
+    /**
+     * A frame that lost the reason is refused, so the client is never acked
+     * with a failure that explains nothing.
+     */
+    public function testAPayloadWithoutAReasonIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('reason');
+
+        ActionFailSignalData::fromArray([]);
     }
 }

@@ -6,6 +6,7 @@ namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Agent\Hilos\GuardianRunStatus;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -44,13 +45,15 @@ final class GuardianAgentStatus extends RtState
 
     /**
      * @param array<string, mixed> $row Serialized runtime row
+     * @return static Hydrated status row
+     * @throws InvalidFormatException When the row is missing a field the status row is built from
      */
     public static function fromRow(array $row): static
     {
         $instance = new static();
-        $instance->agentId = (string)($row[self::agentId] ?? '');
-        $instance->status = self::normalizeStatus((string)($row[self::status] ?? ''));
-        $instance->updatedAt = (int)($row[self::updatedAt] ?? 0);
+        $instance->agentId = self::requireString($row, self::agentId);
+        $instance->status = self::normalizeStatus(self::requireString($row, self::status));
+        $instance->updatedAt = self::requireInt($row, self::updatedAt);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -67,15 +70,19 @@ final class GuardianAgentStatus extends RtState
     }
 
     /**
+     * A diff carries only the fields that changed, so an absent key means the
+     * field was not touched; a key that is present is read at its declared type.
+     *
      * @param array<string, mixed> $diff Partial update
+     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::status])) {
-            $this->status = self::normalizeStatus((string)$diff[self::status]);
+        if (array_key_exists(self::status, $diff)) {
+            $this->status = self::normalizeStatus(self::requireString($diff, self::status));
         }
-        if (isset($diff[self::updatedAt])) {
-            $this->updatedAt = (int)$diff[self::updatedAt];
+        if (array_key_exists(self::updatedAt, $diff)) {
+            $this->updatedAt = self::requireInt($diff, self::updatedAt);
         }
     }
 
@@ -102,5 +109,44 @@ final class GuardianAgentStatus extends RtState
     private static function normalizeStatus(string $status): string
     {
         return GuardianRunStatus::tryFrom($status)?->value ?? GuardianRunStatus::NOT_STARTED->value;
+    }
+
+    /**
+     * Reads one field of a runtime row or diff that the row cannot be built without.
+     *
+     * A runtime row is written by {@see toArray()} on another worker, so a key
+     * that is absent or holds another type is a row that lost the field on the
+     * way, not a row that never had it. There is nothing to fall back to, and a
+     * cast would only turn the loss into a guardian id nobody registered.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return string Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-string
+     */
+    private static function requireString(array $source, string $key): string
+    {
+        $value = $source[$key] ?? null;
+        if (!is_string($value)) {
+            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return int Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-integer
+     */
+    private static function requireInt(array $source, string $key): int
+    {
+        $value = $source[$key] ?? null;
+        if (!is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
+        }
+
+        return $value;
     }
 }

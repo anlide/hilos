@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * ImpersonateStartActionDTO - payload for the admin users-table impersonate-start
@@ -44,6 +45,7 @@ final class ImpersonateStartActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Impersonate-start DTO instance
+     * @throws InvalidFormatException When the payload names no user to impersonate
      */
     public static function fromArray(array $data): static
     {
@@ -53,7 +55,7 @@ final class ImpersonateStartActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            targetUserId: (int)($inner[self::targetUserId] ?? 0),
+            targetUserId: self::requireInt($inner, self::targetUserId),
         );
     }
 

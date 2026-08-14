@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
@@ -58,10 +59,13 @@ final class ActionFailSignalData extends SignalData implements SignalDataInterfa
      * implements {@see WebSocketEnvelopeAware}, and the outgoing WebSocket
      * frame ends up without the `outcome='fail'` envelope marker — which
      * in turn makes the frontend router drop the signal as unhandled.
+     *
+     * @param array<string, mixed> $data Serialized payload carrying the reason
+     * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no reason text
      */
     public static function fromArray(array $data): static
     {
-        $reason = isset($data['reason']) && is_string($data['reason']) ? $data['reason'] : '';
-        return new static($reason);
+        return new static(self::requireString($data, 'reason'));
     }
 }

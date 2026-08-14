@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -166,10 +167,14 @@ final class AbstractHilosUsersTableTest extends TestCase
                         return $this->baseFields();
                     }
 
-                    // TODO: fix me. Wrong return type
+                    /**
+                     * @param array<string, mixed> $data Raw row payload
+                     * @return static Restored row
+                     * @throws InvalidFormatException When the payload carries no user id
+                     */
                     public static function fromArray(array $data): static
                     {
-                        return new self((int) ($data[self::id] ?? 0));
+                        return new static(self::requireInt($data, self::id));
                     }
                 };
             }

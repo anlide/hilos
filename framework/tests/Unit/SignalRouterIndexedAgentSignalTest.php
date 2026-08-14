@@ -451,10 +451,16 @@ final class IndexedAgentSignalTestPlainPayload implements SignalDataInterface
     /**
      * @param array<string, mixed> $data Wire payload
      * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no message
      */
     public static function fromArray(array $data): static
     {
-        return new static(is_string($data['message'] ?? null) ? $data['message'] : '');
+        $message = $data['message'] ?? null;
+        if (!is_string($message)) {
+            throw new InvalidFormatException('Payload carries no string under key message');
+        }
+
+        return new static($message);
     }
 }
 
@@ -518,18 +524,21 @@ final class IndexedAgentSignalDtoTestPayload extends BaseDTO implements SignalDa
 
     /**
      * @param array<string, mixed> $data
+     * @return static Restored payload
+     * @throws InvalidArgumentException When the payload carries no message, which is what this
+     *                                  fixture refuses with instead of the shared helper's type
+     * @throws InvalidFormatException When the routing field is present and holds a non-integer
      */
     public static function fromArray(array $data): static
     {
-        if (!array_key_exists('message', $data)) {
+        $message = $data['message'] ?? null;
+        if (!is_string($message)) {
             throw new InvalidArgumentException('Missing message');
         }
 
-        $entityId = $data['entityId'] ?? null;
-
         return new static(
-            message: is_string($data['message']) ? $data['message'] : '',
-            entityId: is_int($entityId) ? $entityId : null,
+            message: $message,
+            entityId: self::optionalInt($data, 'entityId'),
         );
     }
 }

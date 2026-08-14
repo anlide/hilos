@@ -158,9 +158,15 @@ final class EnvelopeTestPlainPayload implements SignalDataInterface
     /**
      * @param array<string, mixed> $data Wire payload
      * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no value
      */
     public static function fromArray(array $data): static
     {
-        return new static(is_string($data['value'] ?? null) ? $data['value'] : '');
+        $value = $data['value'] ?? null;
+        if (!is_string($value)) {
+            throw new InvalidFormatException('Payload carries no string under key value');
+        }
+
+        return new static($value);
     }
 }

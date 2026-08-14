@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Demo\Chat\Agents\ChatAgent;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -56,13 +57,14 @@ final class OAuthBindSessionSignalData extends BaseDTO implements SignalDataInte
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no session to bind or no user to bind it to
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            sessionToken: (string)($data['sessionToken'] ?? ''),
-            userId: (int)($data['userId'] ?? 0),
-            initiatorAcceptKey: isset($data['initiatorAcceptKey']) ? (string)$data['initiatorAcceptKey'] : null,
+            sessionToken: self::requireString($data, 'sessionToken'),
+            userId: self::requireInt($data, 'userId'),
+            initiatorAcceptKey: self::optionalString($data, 'initiatorAcceptKey'),
         );
     }
 }

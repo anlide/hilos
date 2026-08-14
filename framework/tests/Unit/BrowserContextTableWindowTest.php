@@ -16,6 +16,7 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalRouter;
@@ -170,6 +171,33 @@ final class BrowserContextTableWindowTest extends TestCase
             'a broken declaration must receive no table window',
         );
     }
+
+    public function testSendTableWindowNamesTheTableWhoseRowRefusedItsOwnPayload(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new TableWindowUnitTableContext([]);
+        Hilos::$table->configure();
+
+        // A row class refusing a payload it cannot be built from lands in the same
+        // catch a broken declaration does, and that catch answers by not sending.
+        // Without the log line the connection would simply never receive its window
+        // and nothing anywhere would say why.
+        ob_start();
+        new TableWindowUnitBrowserContext()->sendTableWindow(
+            TableWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new TableViewportSubscription(tableKey: TableWindowRefusedRowTable::TABLE, offset: 0, limit: 10),
+        );
+        $logged = (string)ob_get_clean();
+
+        $this->assertNull(
+            Hilos::$sr->getNextQueuedSignal(),
+            'a refused row must receive no table window',
+        );
+        $this->assertStringContainsString(TableWindowRefusedRowTable::TABLE, $logged);
+        $this->assertStringContainsString(TableWindowUnitBrowserContext::PAGE, $logged);
+        $this->assertStringContainsString('label', $logged);
+    }
 }
 
 final class TableWindowUnitBrowserContext extends BrowserContext
@@ -249,6 +277,7 @@ final class TableWindowUnitTableContext extends TableContext
     public function configure(): void
     {
         $this->register(TableWindowUnitTable::TABLE, new TableWindowUnitTable($this->rows));
+        $this->register(TableWindowRefusedRowTable::TABLE, new TableWindowRefusedRowTable());
     }
 }
 
@@ -342,12 +371,68 @@ final class TableWindowUnitRow extends AbstractTableRow
     /**
      * @param array<string, mixed> $data Source data
      * @return static Row instance
+     * @throws InvalidFormatException When the payload is missing a field the row is built from
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            (string) $data['key'],
-            (string) $data['label'],
+            self::requireString($data, 'key'),
+            self::requireString($data, 'label'),
         );
+    }
+}
+
+/**
+ * Table whose snapshot rows lost a field the row class is built from — what a row
+ * constructor drifting from its own toArray() produces.
+ */
+final class TableWindowRefusedRowTable extends TableDefinition implements SelfSnapshotTable
+{
+    public const string TABLE = 'windowRefusedRowTable';
+    public const string SLOT = 'windowRefusedRows';
+
+    /**
+     * No source-change reaction in this fixture.
+     *
+     * @param SourceChange $change Source change (unused)
+     * @return ?TableRowMutationDTO Always null
+     */
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Serializes a row into its internal browser-row envelope.
+     *
+     * @param AbstractTableRow $row Self-snapshot row
+     * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
+     * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
+     */
+    public function browserRow(AbstractTableRow $row): array
+    {
+        return [
+            BrowserPageSignalData::rowKey => $row->requireRowKey(),
+            BrowserPageSignalData::sources => [
+                self::SLOT => $row->toArray(),
+            ],
+        ];
+    }
+
+    /**
+     * Configures the row class so makeRows rebuilds typed rows from the filter output.
+     */
+    protected function init(): void
+    {
+        $this->setRowClass(TableWindowUnitRow::class);
+    }
+
+    /**
+     * @param TableQueryDTO $query Window query parameters
+     * @return TableSnapshotDTO Windowed snapshot of rows missing the label field
+     */
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
+    {
+        return InMemoryTableFilter::apply([['key' => 'a']], $query);
     }
 }

@@ -99,4 +99,36 @@ final class AttachmentDraftSignalDataTest extends TestCase
 
         $this->assertSame($draft, $restored->toArray());
     }
+
+    /**
+     * A draft row that lost its size is refused rather than listed at zero bytes.
+     */
+    public function testAttachmentDraftSignalDataRefusesAPayloadWithoutSize(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('size');
+
+        AttachmentDraftSignalData::fromArray([
+            'draftId' => 'draft-1',
+            'filename' => 'report.pdf',
+            'mimeType' => 'application/pdf',
+            'uploadedAt' => 1710000000,
+        ]);
+    }
+
+    /**
+     * A draft row that lost its id is refused rather than pointing at nothing.
+     */
+    public function testAttachmentDraftSignalDataRefusesAPayloadWithoutDraftId(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('draftId');
+
+        AttachmentDraftSignalData::fromArray([
+            'filename' => 'report.pdf',
+            'mimeType' => 'application/pdf',
+            'size' => 1234,
+            'uploadedAt' => 1710000000,
+        ]);
+    }
 }

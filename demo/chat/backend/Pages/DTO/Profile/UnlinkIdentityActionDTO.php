@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * UnlinkIdentityActionDTO - DTO for the profile unlink-identity action payload.
@@ -42,13 +43,12 @@ final class UnlinkIdentityActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Instance
+     * @throws InvalidFormatException When the payload names no identity to unlink
      */
     public static function fromArray(array $data): static
     {
-        $identityId = $data[self::IDENTITY_ID] ?? null;
-
         return new static(
-            identityId: is_numeric($identityId) ? (int)$identityId : 0,
+            identityId: self::requireInt($data, self::IDENTITY_ID),
         );
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Tables\HilosUser;
 
 use Demo\SimplePoll\Database\Object\Item\User as ObjectUser;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Tables\Users\AbstractHilosUserTableRow;
 
 /**
@@ -47,17 +48,19 @@ final class HilosUserTableRow extends AbstractHilosUserTableRow
      * Builds a Hilos users row from raw table payload.
      *
      * @param array<string, mixed> $data Raw row payload
+     * @return static Restored row
+     * @throws InvalidFormatException When the payload is missing a field the row is rendered by
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            id: (int) ($data[self::id] ?? 0),
-            admin: (bool) ($data[self::admin] ?? false),
-            block: (bool) ($data[self::block] ?? false),
-            name: (string) $data[self::name],
-            lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
-            onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),
-            presence: isset($data[self::presence]) ? (string) $data[self::presence] : null,
+            id: self::requireInt($data, self::id),
+            admin: self::requireBool($data, self::admin),
+            block: self::requireBool($data, self::block),
+            name: self::requireString($data, self::name),
+            lastActivity: self::optionalString($data, self::lastActivity),
+            onlineSessionCount: self::requireInt($data, self::onlineSessionCount),
+            presence: self::optionalString($data, self::presence),
         );
     }
 }

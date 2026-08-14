@@ -235,7 +235,15 @@ abstract class BrowserContext
 
         try {
             $snapshot = $table->getPage($this->viewportQuery($viewport));
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            // The window simply does not arrive, and without this line nothing
+            // anywhere says so: a row that refuses its own payload would trade
+            // one invisibility for another.
+            Logger::error(
+                "Browser window skipped a table that failed to build: table={$viewport->tableKey}, "
+                . "page={$page}, error={$e->getMessage()}",
+            );
+
             return;
         }
 

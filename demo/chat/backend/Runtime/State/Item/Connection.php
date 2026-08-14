@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 
 /**
@@ -57,8 +59,8 @@ final class Connection extends HilosSessionConnection
     /** Unix time when the socket was registered. */
     private(set) int $connectedAt = 0;
 
-    /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
-    public string $outboundModerationPhase = '';
+    /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
+    public string $outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
 
     /**
      * Submitted message text associated with the moderation state — empty when
@@ -72,8 +74,8 @@ final class Connection extends HilosSessionConnection
     /** Unix time of last moderation state update. */
     public int $outboundModerationUpdatedAt = 0;
 
-    /** Rename moderation phase: checking, rejected, unavailable, or empty when clear. */
-    public string $renameModerationPhase = '';
+    /** Rename moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
+    public string $renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE;
 
     /** Requested display name associated with rename moderation, or null while none is. */
     public ?string $renameModerationName = null;
@@ -108,8 +110,8 @@ final class Connection extends HilosSessionConnection
     /** Normalized basename for duplicate-name checks, or null when no upload session is open. */
     public ?string $fileSessionNormalizedFilename = null;
 
-    /** Upload UI phase: ready, uploading, failed, or empty when idle. */
-    public string $fileUploadPhase = '';
+    /** Upload UI phase: ready, uploading, failed, or idle while no upload is running. */
+    public string $fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_IDLE;
 
     /** Client-side upload correlation id for ready/failed upload state. */
     public ?string $fileUploadClientUploadId = null;
@@ -142,41 +144,40 @@ final class Connection extends HilosSessionConnection
     }
 
     /**
+     * The row is written by {@see ownToArray()} on another worker, so every key it
+     * declares is required here and a phase field arrives as the empty string only
+     * when that is the phase — the value its own `*_NONE` constant names.
+     *
      * @param array<string, mixed> $row Serialized runtime row (string keys match this class field constants)
+     * @throws InvalidFormatException When the row is missing a field of this socket's chat state
      */
     protected function hydrateOwn(array $row): void
     {
-        $this->connectedAt = (int)($row[self::connectedAt] ?? time());
-        $this->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
-        $this->outboundModerationMessage = self::stringOrNull($row[self::outboundModerationMessage] ?? null);
-        $this->outboundModerationReason = self::nonEmptyStringOrNull($row[self::outboundModerationReason] ?? null);
-        $this->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
-        $this->renameModerationPhase = (string)($row[self::renameModerationPhase] ?? '');
-        $this->renameModerationName = self::nonEmptyStringOrNull($row[self::renameModerationName] ?? null);
-        $this->renameModerationReason = self::nonEmptyStringOrNull($row[self::renameModerationReason] ?? null);
-        $this->renameModerationUpdatedAt = (int)($row[self::renameModerationUpdatedAt] ?? 0);
-        $this->fileSessionUploadId = self::nonEmptyStringOrNull($row[self::fileSessionUploadId] ?? null);
-        $this->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
-        $this->fileSessionReceivedBytes = (int)($row[self::fileSessionReceivedBytes] ?? 0);
-        $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
-            $row[self::fileSessionQuarantineBasename] ?? null,
-        );
-        $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
-            $row[self::fileSessionOriginalFilename] ?? null,
-        );
-        $this->fileSessionMimeType = self::nonEmptyStringOrNull($row[self::fileSessionMimeType] ?? null);
-        $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($row[self::fileSessionClientUploadId] ?? null);
-        $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
-            $row[self::fileSessionNormalizedFilename] ?? null,
-        );
-        $this->fileUploadPhase = (string)($row[self::fileUploadPhase] ?? '');
-        $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($row[self::fileUploadClientUploadId] ?? null);
-        $this->fileUploadErrorCode = self::nonEmptyStringOrNull($row[self::fileUploadErrorCode] ?? null);
-        $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($row[self::fileUploadErrorMessage] ?? null);
-        $this->fileProgressFilename = self::nonEmptyStringOrNull($row[self::fileProgressFilename] ?? null);
-        $this->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
-        $this->fileProgressTotalBytes = (int)($row[self::fileProgressTotalBytes] ?? 0);
-        $this->uploadProgressLastSentAt = (float)($row[self::uploadProgressLastSentAt] ?? 0.0);
+        $this->connectedAt = self::requireInt($row, self::connectedAt);
+        $this->outboundModerationPhase = self::requireString($row, self::outboundModerationPhase);
+        $this->outboundModerationMessage = self::stringOrNull($row, self::outboundModerationMessage);
+        $this->outboundModerationReason = self::nonEmptyStringOrNull($row, self::outboundModerationReason);
+        $this->outboundModerationUpdatedAt = self::requireInt($row, self::outboundModerationUpdatedAt);
+        $this->renameModerationPhase = self::requireString($row, self::renameModerationPhase);
+        $this->renameModerationName = self::nonEmptyStringOrNull($row, self::renameModerationName);
+        $this->renameModerationReason = self::nonEmptyStringOrNull($row, self::renameModerationReason);
+        $this->renameModerationUpdatedAt = self::requireInt($row, self::renameModerationUpdatedAt);
+        $this->fileSessionUploadId = self::nonEmptyStringOrNull($row, self::fileSessionUploadId);
+        $this->fileSessionDeclaredSize = self::requireInt($row, self::fileSessionDeclaredSize);
+        $this->fileSessionReceivedBytes = self::requireInt($row, self::fileSessionReceivedBytes);
+        $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull($row, self::fileSessionQuarantineBasename);
+        $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull($row, self::fileSessionOriginalFilename);
+        $this->fileSessionMimeType = self::nonEmptyStringOrNull($row, self::fileSessionMimeType);
+        $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($row, self::fileSessionClientUploadId);
+        $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull($row, self::fileSessionNormalizedFilename);
+        $this->fileUploadPhase = self::requireString($row, self::fileUploadPhase);
+        $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($row, self::fileUploadClientUploadId);
+        $this->fileUploadErrorCode = self::nonEmptyStringOrNull($row, self::fileUploadErrorCode);
+        $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($row, self::fileUploadErrorMessage);
+        $this->fileProgressFilename = self::nonEmptyStringOrNull($row, self::fileProgressFilename);
+        $this->fileProgressUploadedBytes = self::requireInt($row, self::fileProgressUploadedBytes);
+        $this->fileProgressTotalBytes = self::requireInt($row, self::fileProgressTotalBytes);
+        $this->uploadProgressLastSentAt = self::requireFloat($row, self::uploadProgressLastSentAt);
     }
 
     /**
@@ -190,90 +191,94 @@ final class Connection extends HilosSessionConnection
     }
 
     /**
+     * A diff carries only the fields that changed, so an absent key means the
+     * field was not touched; a key that is present is read at its declared type.
+     *
      * @param array<string, mixed> $diff Partial update; keys are public `* = 'fieldName'` constants on this class
+     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
      */
     protected function applyOwnDiff(array $diff): void
     {
-        if (isset($diff[self::connectedAt])) {
-            $this->connectedAt = (int)$diff[self::connectedAt];
+        if (array_key_exists(self::connectedAt, $diff)) {
+            $this->connectedAt = self::requireInt($diff, self::connectedAt);
         }
-        if (isset($diff[self::outboundModerationPhase])) {
-            $this->outboundModerationPhase = (string)$diff[self::outboundModerationPhase];
+        if (array_key_exists(self::outboundModerationPhase, $diff)) {
+            $this->outboundModerationPhase = self::requireString($diff, self::outboundModerationPhase);
         }
         if (array_key_exists(self::outboundModerationMessage, $diff)) {
-            $this->outboundModerationMessage = self::stringOrNull($diff[self::outboundModerationMessage]);
+            $this->outboundModerationMessage = self::stringOrNull($diff, self::outboundModerationMessage);
         }
         if (array_key_exists(self::outboundModerationReason, $diff)) {
-            $this->outboundModerationReason = self::nonEmptyStringOrNull($diff[self::outboundModerationReason]);
+            $this->outboundModerationReason = self::nonEmptyStringOrNull($diff, self::outboundModerationReason);
         }
-        if (isset($diff[self::outboundModerationUpdatedAt])) {
-            $this->outboundModerationUpdatedAt = (int)$diff[self::outboundModerationUpdatedAt];
+        if (array_key_exists(self::outboundModerationUpdatedAt, $diff)) {
+            $this->outboundModerationUpdatedAt = self::requireInt($diff, self::outboundModerationUpdatedAt);
         }
-        if (isset($diff[self::renameModerationPhase])) {
-            $this->renameModerationPhase = (string)$diff[self::renameModerationPhase];
+        if (array_key_exists(self::renameModerationPhase, $diff)) {
+            $this->renameModerationPhase = self::requireString($diff, self::renameModerationPhase);
         }
         if (array_key_exists(self::renameModerationName, $diff)) {
-            $this->renameModerationName = self::nonEmptyStringOrNull($diff[self::renameModerationName]);
+            $this->renameModerationName = self::nonEmptyStringOrNull($diff, self::renameModerationName);
         }
         if (array_key_exists(self::renameModerationReason, $diff)) {
-            $this->renameModerationReason = self::nonEmptyStringOrNull($diff[self::renameModerationReason]);
+            $this->renameModerationReason = self::nonEmptyStringOrNull($diff, self::renameModerationReason);
         }
-        if (isset($diff[self::renameModerationUpdatedAt])) {
-            $this->renameModerationUpdatedAt = (int)$diff[self::renameModerationUpdatedAt];
+        if (array_key_exists(self::renameModerationUpdatedAt, $diff)) {
+            $this->renameModerationUpdatedAt = self::requireInt($diff, self::renameModerationUpdatedAt);
         }
         if (array_key_exists(self::fileSessionUploadId, $diff)) {
-            $this->fileSessionUploadId = self::nonEmptyStringOrNull($diff[self::fileSessionUploadId]);
+            $this->fileSessionUploadId = self::nonEmptyStringOrNull($diff, self::fileSessionUploadId);
         }
-        if (isset($diff[self::fileSessionDeclaredSize])) {
-            $this->fileSessionDeclaredSize = (int)$diff[self::fileSessionDeclaredSize];
+        if (array_key_exists(self::fileSessionDeclaredSize, $diff)) {
+            $this->fileSessionDeclaredSize = self::requireInt($diff, self::fileSessionDeclaredSize);
         }
-        if (isset($diff[self::fileSessionReceivedBytes])) {
-            $this->fileSessionReceivedBytes = (int)$diff[self::fileSessionReceivedBytes];
+        if (array_key_exists(self::fileSessionReceivedBytes, $diff)) {
+            $this->fileSessionReceivedBytes = self::requireInt($diff, self::fileSessionReceivedBytes);
         }
         if (array_key_exists(self::fileSessionQuarantineBasename, $diff)) {
             $this->fileSessionQuarantineBasename = self::nonEmptyStringOrNull(
-                $diff[self::fileSessionQuarantineBasename],
+                $diff,
+                self::fileSessionQuarantineBasename,
             );
         }
         if (array_key_exists(self::fileSessionOriginalFilename, $diff)) {
-            $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull(
-                $diff[self::fileSessionOriginalFilename],
-            );
+            $this->fileSessionOriginalFilename = self::nonEmptyStringOrNull($diff, self::fileSessionOriginalFilename);
         }
         if (array_key_exists(self::fileSessionMimeType, $diff)) {
-            $this->fileSessionMimeType = self::nonEmptyStringOrNull($diff[self::fileSessionMimeType]);
+            $this->fileSessionMimeType = self::nonEmptyStringOrNull($diff, self::fileSessionMimeType);
         }
         if (array_key_exists(self::fileSessionClientUploadId, $diff)) {
-            $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($diff[self::fileSessionClientUploadId]);
+            $this->fileSessionClientUploadId = self::nonEmptyStringOrNull($diff, self::fileSessionClientUploadId);
         }
         if (array_key_exists(self::fileSessionNormalizedFilename, $diff)) {
             $this->fileSessionNormalizedFilename = self::nonEmptyStringOrNull(
-                $diff[self::fileSessionNormalizedFilename],
+                $diff,
+                self::fileSessionNormalizedFilename,
             );
         }
-        if (isset($diff[self::fileUploadPhase])) {
-            $this->fileUploadPhase = (string)$diff[self::fileUploadPhase];
+        if (array_key_exists(self::fileUploadPhase, $diff)) {
+            $this->fileUploadPhase = self::requireString($diff, self::fileUploadPhase);
         }
         if (array_key_exists(self::fileUploadClientUploadId, $diff)) {
-            $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($diff[self::fileUploadClientUploadId]);
+            $this->fileUploadClientUploadId = self::nonEmptyStringOrNull($diff, self::fileUploadClientUploadId);
         }
         if (array_key_exists(self::fileUploadErrorCode, $diff)) {
-            $this->fileUploadErrorCode = self::nonEmptyStringOrNull($diff[self::fileUploadErrorCode]);
+            $this->fileUploadErrorCode = self::nonEmptyStringOrNull($diff, self::fileUploadErrorCode);
         }
         if (array_key_exists(self::fileUploadErrorMessage, $diff)) {
-            $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($diff[self::fileUploadErrorMessage]);
+            $this->fileUploadErrorMessage = self::nonEmptyStringOrNull($diff, self::fileUploadErrorMessage);
         }
         if (array_key_exists(self::fileProgressFilename, $diff)) {
-            $this->fileProgressFilename = self::nonEmptyStringOrNull($diff[self::fileProgressFilename]);
+            $this->fileProgressFilename = self::nonEmptyStringOrNull($diff, self::fileProgressFilename);
         }
-        if (isset($diff[self::fileProgressUploadedBytes])) {
-            $this->fileProgressUploadedBytes = (int)$diff[self::fileProgressUploadedBytes];
+        if (array_key_exists(self::fileProgressUploadedBytes, $diff)) {
+            $this->fileProgressUploadedBytes = self::requireInt($diff, self::fileProgressUploadedBytes);
         }
-        if (isset($diff[self::fileProgressTotalBytes])) {
-            $this->fileProgressTotalBytes = (int)$diff[self::fileProgressTotalBytes];
+        if (array_key_exists(self::fileProgressTotalBytes, $diff)) {
+            $this->fileProgressTotalBytes = self::requireInt($diff, self::fileProgressTotalBytes);
         }
-        if (isset($diff[self::uploadProgressLastSentAt])) {
-            $this->uploadProgressLastSentAt = (float)$diff[self::uploadProgressLastSentAt];
+        if (array_key_exists(self::uploadProgressLastSentAt, $diff)) {
+            $this->uploadProgressLastSentAt = self::requireFloat($diff, self::uploadProgressLastSentAt);
         }
     }
 
@@ -312,16 +317,79 @@ final class Connection extends HilosSessionConnection
     }
 
     /**
+     * Reads one field of a runtime row or diff that the row cannot be built without.
+     *
+     * The row is written by {@see ownToArray()} on another worker, so a key that
+     * is absent or holds another type is a row that lost the field on the way,
+     * not a row that never had it. A cast would turn that loss into a phase this
+     * socket is not in, and every reader below would act on it.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return string Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-string
+     */
+    private static function requireString(array $source, string $key): string
+    {
+        $value = $source[$key] ?? null;
+        if (!is_string($value)) {
+            throw new InvalidFormatException('Runtime row carries no string under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return int Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds a non-integer
+     */
+    private static function requireInt(array $source, string $key): int
+    {
+        $value = $source[$key] ?? null;
+        if (!is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries no integer under key ' . $key);
+        }
+
+        return $value;
+    }
+
+    /**
+     * An integer is widened rather than refused: the row crosses the workers as
+     * JSON, where `json_encode(0.0)` writes `0`, so a whole throttle stamp comes
+     * back as an integer and refusing it would refuse the row this class wrote.
+     *
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return float Value stored under the key
+     * @throws InvalidFormatException When the key is absent or holds neither a float nor an integer
+     */
+    private static function requireFloat(array $source, string $key): float
+    {
+        $value = $source[$key] ?? null;
+        if (!is_float($value) && !is_int($value)) {
+            throw new InvalidFormatException('Runtime row carries no number under key ' . $key);
+        }
+
+        return (float)$value;
+    }
+
+    /**
      * Reads one optional field of a runtime row or diff. A row written by a node
      * that has not been restarted yet still spells "no value" as the empty string
      * where this class now writes null, and the two say the same thing.
      *
-     * @param mixed $value Raw row or diff value
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
      * @return ?string The value, or null when the field holds none
+     * @throws InvalidFormatException When the key holds neither a string nor null
      */
-    private static function nonEmptyStringOrNull(mixed $value): ?string
+    private static function nonEmptyStringOrNull(array $source, string $key): ?string
     {
-        return is_string($value) && $value !== '' ? $value : null;
+        $value = self::stringOrNull($source, $key);
+
+        return $value === '' ? null : $value;
     }
 
     /**
@@ -332,11 +400,18 @@ final class Connection extends HilosSessionConnection
      * Absence is spelled by the phase field beside it, which such a row leaves
      * clear, so the two are never confused.
      *
-     * @param mixed $value Raw row or diff value
-     * @return ?string The value, or null when the field holds no string at all
+     * @param array<string, mixed> $source Runtime row or diff
+     * @param string $key Row key holding the field
+     * @return ?string The value, or null when the field holds none
+     * @throws InvalidFormatException When the key holds neither a string nor null
      */
-    private static function stringOrNull(mixed $value): ?string
+    private static function stringOrNull(array $source, string $key): ?string
     {
-        return is_string($value) ? $value : null;
+        $value = $source[$key] ?? null;
+        if ($value !== null && !is_string($value)) {
+            throw new InvalidFormatException('Runtime row carries a non-string under key ' . $key);
+        }
+
+        return $value;
     }
 }

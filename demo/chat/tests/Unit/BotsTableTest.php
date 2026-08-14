@@ -9,6 +9,8 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\Bot\BotsTable;
+use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Row\AbstractTableRow;
@@ -99,5 +101,33 @@ final class BotsTableTest extends TestCase
 
         $this->expectException(TableRowKeyMissingException::class);
         $table->browserRow($keyless);
+    }
+
+    public function testTheUpdateActionRefusesAPayloadThatNamesNoBot(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BotTableRow::id);
+
+        BotUpdateActionDTO::fromArray([BotTableRow::name => 'Aria']);
+    }
+
+    public function testTheUpdateActionRefusesAnActiveFlagThatIsNotABoolean(): void
+    {
+        // `?? false` read an absent flag and a flag lowered on purpose as the same
+        // thing; a flag written as anything but a boolean is refused for the same
+        // reason — nobody decided it.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BotTableRow::active);
+
+        BotUpdateActionDTO::fromArray([BotTableRow::id => 3, BotTableRow::active => 'yes']);
+    }
+
+    public function testAnUpdateActionLeavingTheFlagOutStillMeansDoNotTouchIt(): void
+    {
+        $dto = BotUpdateActionDTO::fromArray([BotTableRow::id => 3, BotTableRow::name => ' Aria ']);
+
+        $this->assertSame(3, $dto->id);
+        $this->assertSame('Aria', $dto->name);
+        $this->assertNull($dto->active);
     }
 }

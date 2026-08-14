@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 
 /**
@@ -74,15 +75,16 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing the verdict or whom it is about
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            userId: (int)($data['userId'] ?? 0),
-            message: (string)($data['message'] ?? ''),
-            allow: (bool)($data['allow'] ?? false),
-            reason: (string)($data['reason'] ?? ''),
+            acceptKey: self::requireString($data, 'acceptKey'),
+            userId: self::requireInt($data, 'userId'),
+            message: self::requireString($data, 'message'),
+            allow: self::requireBool($data, 'allow'),
+            reason: self::requireString($data, 'reason'),
         );
     }
 }

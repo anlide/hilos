@@ -6,6 +6,7 @@ namespace Demo\Chat\Tables\Bot;
 
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -84,24 +85,26 @@ final class BotTableRow extends AbstractTableRow
      * Builds a bot table row from raw table payload.
      *
      * @param array<string, mixed> $data Raw row payload
+     * @return static Restored row
+     * @throws InvalidFormatException When the payload is missing a field the row is rendered by
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            id: (int) ($data[self::id] ?? 0),
-            name: (string) $data[self::name],
-            description: isset($data[self::description]) ? (string) $data[self::description] : null,
-            style: isset($data[self::style]) ? (string) $data[self::style] : null,
-            topics: isset($data[self::topics]) ? (string) $data[self::topics] : null,
-            personality: isset($data[self::personality]) ? (string) $data[self::personality] : null,
-            active: (bool) ($data[self::active] ?? false),
-            reactionDelayMin: (int) ($data[self::reactionDelayMin] ?? 0),
-            reactionDelayMax: (int) ($data[self::reactionDelayMax] ?? 0),
-            reactionChance: (int) ($data[self::reactionChance] ?? 0),
-            topicMatchRequired: (bool) ($data[self::topicMatchRequired] ?? false),
-            cooldownAfterMessage: (int) ($data[self::cooldownAfterMessage] ?? 0),
-            priority: (int) ($data[self::priority] ?? 0),
-            status: isset($data[self::status]) ? (string) $data[self::status] : null,
+            id: self::requireInt($data, self::id),
+            name: self::requireString($data, self::name),
+            description: self::optionalString($data, self::description),
+            style: self::optionalString($data, self::style),
+            topics: self::optionalString($data, self::topics),
+            personality: self::optionalString($data, self::personality),
+            active: self::requireBool($data, self::active),
+            reactionDelayMin: self::requireInt($data, self::reactionDelayMin),
+            reactionDelayMax: self::requireInt($data, self::reactionDelayMax),
+            reactionChance: self::requireInt($data, self::reactionChance),
+            topicMatchRequired: self::requireBool($data, self::topicMatchRequired),
+            cooldownAfterMessage: self::requireInt($data, self::cooldownAfterMessage),
+            priority: self::requireInt($data, self::priority),
+            status: self::optionalString($data, self::status),
         );
     }
 }

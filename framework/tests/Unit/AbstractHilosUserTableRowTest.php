@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Tables\Users\AbstractHilosUserTableRow;
 use PHPUnit\Framework\TestCase;
 
@@ -39,6 +40,17 @@ final class AbstractHilosUserTableRowTest extends TestCase
         $this->assertSame('onlineSessionCount', AbstractHilosUserTableRow::onlineSessionCount);
     }
 
+    public function testARowPayloadWithoutTheUserIdIsRefused(): void
+    {
+        // A row payload is the table's own toArray() output, so a missing id is a
+        // row that lost it; read as zero it would address user 0 in the browser
+        // window and in every action fired from that line.
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(AbstractHilosUserTableRow::id);
+
+        $this->row(42)::fromArray([AbstractHilosUserTableRow::admin => true]);
+    }
+
     /**
      * Builds a minimal concrete base row for assertions.
      *
@@ -62,9 +74,14 @@ final class AbstractHilosUserTableRowTest extends TestCase
                 return $this->baseFields();
             }
 
+            /**
+             * @param array<string, mixed> $data Raw row payload
+             * @return static Restored row
+             * @throws InvalidFormatException When the payload carries no user id
+             */
             public static function fromArray(array $data): static
             {
-                return new static((int) ($data[self::id] ?? 0));
+                return new static(self::requireInt($data, self::id));
             }
         };
     }

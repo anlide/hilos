@@ -226,10 +226,16 @@ final class PageSignalPayloadTestPlainData implements SignalDataInterface
     /**
      * @param array<string, mixed> $data Wire payload
      * @return static Restored payload
+     * @throws InvalidFormatException When the payload carries no message
      */
     public static function fromArray(array $data): static
     {
-        return new static(is_string($data['message'] ?? null) ? $data['message'] : '');
+        $message = $data['message'] ?? null;
+        if (!is_string($message)) {
+            throw new InvalidFormatException('Payload carries no string under key message');
+        }
+
+        return new static($message);
     }
 }
 

@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for moderator_piece_update action payload.
@@ -53,16 +54,13 @@ final class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
+        $section = self::optionalString($inner, ObjectModeratorPromptPiece::section);
+        $promptPiece = self::optionalString($inner, ObjectModeratorPromptPiece::promptPiece);
+
         return new static(
-            id: (int) ($inner[ObjectModeratorPromptPiece::id] ?? 0),
-            section: isset($inner[ObjectModeratorPromptPiece::section])
-                && is_string($inner[ObjectModeratorPromptPiece::section])
-                ? trim($inner[ObjectModeratorPromptPiece::section])
-                : null,
-            promptPiece: isset($inner[ObjectModeratorPromptPiece::promptPiece])
-                && is_string($inner[ObjectModeratorPromptPiece::promptPiece])
-                ? trim($inner[ObjectModeratorPromptPiece::promptPiece])
-                : null,
+            id: self::requireInt($inner, ObjectModeratorPromptPiece::id),
+            section: $section !== null ? trim($section) : null,
+            promptPiece: $promptPiece !== null ? trim($promptPiece) : null,
         );
     }
 

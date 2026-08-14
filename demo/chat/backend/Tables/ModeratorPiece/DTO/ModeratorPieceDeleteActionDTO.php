@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for moderator_piece_delete action payload.
@@ -48,7 +49,7 @@ final class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            id: (int) ($inner[ObjectModeratorPromptPiece::id] ?? 0),
+            id: self::requireInt($inner, ObjectModeratorPromptPiece::id),
         );
     }
 

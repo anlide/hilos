@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\State\Item\Connection;
-use Hilos\Runtime\State\Item\HilosConnection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -25,19 +24,18 @@ final class ConnectionModerationRowTest extends TestCase
 {
     public function testAnAttachmentOnlySubmitKeepsItsEmptyTextInARow(): void
     {
-        $connection = Connection::fromRow([
-            HilosConnection::acceptKey => 'ak-1',
+        $connection = Connection::fromRow(self::row([
             Connection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
             Connection::outboundModerationMessage => '',
             Connection::outboundModerationUpdatedAt => 100,
-        ]);
+        ]));
 
         $this->assertSame('', $connection->outboundModerationMessage);
     }
 
     public function testAnAttachmentOnlySubmitKeepsItsEmptyTextInADiff(): void
     {
-        $connection = Connection::fromRow([HilosConnection::acceptKey => 'ak-1']);
+        $connection = Connection::fromRow(self::row([]));
 
         $connection->applyDiff([
             Connection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
@@ -48,20 +46,32 @@ final class ConnectionModerationRowTest extends TestCase
         $this->assertSame('', $connection->outboundModerationMessage);
     }
 
-    public function testARowWithNoMessageAtAllReadsAsNone(): void
+    public function testARowCarryingNoMessageReadsAsNone(): void
     {
-        $connection = Connection::fromRow([HilosConnection::acceptKey => 'ak-1']);
+        $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));
 
         $this->assertNull($connection->outboundModerationMessage);
     }
 
     public function testAnEmptyModerationReasonStillReadsAsNone(): void
     {
-        $connection = Connection::fromRow([
-            HilosConnection::acceptKey => 'ak-1',
-            Connection::outboundModerationReason => '',
-        ]);
+        $connection = Connection::fromRow(self::row([Connection::outboundModerationReason => '']));
 
         $this->assertNull($connection->outboundModerationReason);
+    }
+
+    /**
+     * Builds the row the way a worker does — a whole serialized connection — and
+     * then overrides the moderation fields under test. A row is written by
+     * {@see Connection::toArray()} on the other side of the hop and never carries
+     * a subset of the fields, so a handmade partial row would be testing a shape
+     * that does not cross the wire.
+     *
+     * @param array<string, mixed> $moderation Moderation fields to override
+     * @return array<string, mixed> Complete serialized connection row
+     */
+    private static function row(array $moderation): array
+    {
+        return array_merge(Connection::create('ak-1', null)->toArray(), $moderation);
     }
 }

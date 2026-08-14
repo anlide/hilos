@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Utils\Logger;
 
 /**
  * Applies RT sync signals (created/updated/deleted) to Hilos::$rt.
@@ -21,6 +23,12 @@ final class RtSyncApplicator
 {
     /**
      * Applies RT_SYNC_CREATED payload to Hilos::$rt.
+     *
+     * A row an {@see RtState} refuses never enters the collection: the state is
+     * built whole before it is added, so the refusal costs exactly that row. It
+     * is caught rather than let out because the worker loop around
+     * `handleDaemonMessage()` catches only its two agent exceptions, so an
+     * escaping refusal would take the worker down over one broken row.
      *
      * @param RtSyncCreatedSignalData $data Full created state payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
@@ -48,12 +56,28 @@ final class RtSyncApplicator
         }
 
         /** @var class-string<RtState> $stateClass */
-        $state = $stateClass::fromRow($data->row);
+        try {
+            $state = $stateClass::fromRow($data->row);
+        } catch (InvalidFormatException $e) {
+            self::logRefusedRow($data->collectionKey, $data->stateId, $e);
+
+            return;
+        }
+
         $stateCollection->add($state);
     }
 
     /**
      * Applies RT_SYNC_UPDATED payload to an existing RtState row or standalone item.
+     *
+     * A refused diff is dropped where it broke, and this is NOT a rollback:
+     * `applyDiff()` writes field by field, so the fields ahead of the refused one
+     * are already on the row when the trap catches it. What the trap does
+     * guarantee is that the worker survives — the reason a refused create is
+     * caught too, see {@see applyCreated()} — and that the row is not recorded as
+     * having accepted the diff, because the baseline is left where it was. The
+     * next local `sync()` therefore re-sends those fields instead of treating a
+     * half-applied diff as agreed.
      *
      * @param RtSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
@@ -76,7 +100,14 @@ final class RtSyncApplicator
             return;
         }
 
-        $state->applyDiff($data->row);
+        try {
+            $state->applyDiff($data->row);
+        } catch (InvalidFormatException $e) {
+            self::logRefusedRow($data->collectionKey, $data->stateId, $e);
+
+            return;
+        }
+
         $state->markRtSyncBaseline();
     }
 
@@ -156,9 +187,35 @@ final class RtSyncApplicator
     private static function applyDiffToStandaloneItem(string $collectionKey, string $stateId, array $row): void
     {
         $state = Hilos::$rt?->getStateItem($collectionKey);
-        if ($state !== null && $state->getId() === $stateId) {
-            $state->applyDiff($row);
-            $state->markRtSyncBaseline();
+        if ($state === null || $state->getId() !== $stateId) {
+            return;
         }
+
+        try {
+            $state->applyDiff($row);
+        } catch (InvalidFormatException $e) {
+            self::logRefusedRow($collectionKey, $stateId, $e);
+
+            return;
+        }
+
+        $state->markRtSyncBaseline();
+    }
+
+    /**
+     * Names the row that was dropped, not just the reason it was: the sender is
+     * another process, so the collection key and the row id are the only way to
+     * find what stopped arriving here while everything else kept syncing.
+     *
+     * @param string $collectionKey RT collection key the row belongs to
+     * @param string $stateId Id of the row that was refused
+     * @param InvalidFormatException $e Refusal raised by the row's own reader
+     */
+    private static function logRefusedRow(string $collectionKey, string $stateId, InvalidFormatException $e): void
+    {
+        Logger::warning(
+            'RT sync row refused for collection ' . $collectionKey
+            . ' id ' . $stateId . ': ' . $e->getMessage(),
+        );
     }
 }

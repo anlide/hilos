@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for bot_update action payload.
@@ -53,6 +54,7 @@ final class BotUpdateActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When the payload names no bot, or fills a field with another type
      */
     public static function fromArray(array $data): static
     {
@@ -61,18 +63,16 @@ final class BotUpdateActionDTO extends ChatActionPayloadDTO
             $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
+        $name = self::optionalString($inner, ObjectBot::name);
+
         return new static(
-            id: (int) ($inner[ObjectBot::id] ?? 0),
-            name: isset($inner[ObjectBot::name]) && is_string($inner[ObjectBot::name]) ? trim($inner[ObjectBot::name]) : null,
-            description: array_key_exists(ObjectBot::description, $inner)
-                ? (is_string($inner[ObjectBot::description]) ? $inner[ObjectBot::description] : null)
-                : null,
-            style: array_key_exists(ObjectBot::style, $inner) ? (is_string($inner[ObjectBot::style]) ? $inner[ObjectBot::style] : null) : null,
-            topics: array_key_exists(ObjectBot::topics, $inner) ? (is_string($inner[ObjectBot::topics]) ? $inner[ObjectBot::topics] : null) : null,
-            personality: array_key_exists(ObjectBot::personality, $inner)
-                ? (is_string($inner[ObjectBot::personality]) ? $inner[ObjectBot::personality] : null)
-                : null,
-            active: isset($inner[ObjectBot::active]) ? (bool) $inner[ObjectBot::active] : null,
+            id: self::requireInt($inner, ObjectBot::id),
+            name: $name !== null ? trim($name) : null,
+            description: self::optionalString($inner, ObjectBot::description),
+            style: self::optionalString($inner, ObjectBot::style),
+            topics: self::optionalString($inner, ObjectBot::topics),
+            personality: self::optionalString($inner, ObjectBot::personality),
+            active: self::optionalBool($inner, ObjectBot::active),
         );
     }
 

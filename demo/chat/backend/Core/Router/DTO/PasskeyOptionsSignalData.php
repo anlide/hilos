@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
@@ -72,16 +73,15 @@ final class PasskeyOptionsSignalData extends BaseDTO implements SignalDataInterf
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing the ceremony, its options or the challenge
      */
     public static function fromArray(array $data): static
     {
-        $publicKeyOptions = $data['publicKeyOptions'] ?? [];
-
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            ceremony: (string)($data['ceremony'] ?? ''),
-            publicKeyOptions: is_array($publicKeyOptions) ? $publicKeyOptions : [],
-            signedChallenge: (string)($data['signedChallenge'] ?? ''),
+            acceptKey: self::requireString($data, 'acceptKey'),
+            ceremony: self::requireString($data, 'ceremony'),
+            publicKeyOptions: self::requireArray($data, 'publicKeyOptions'),
+            signedChallenge: self::requireString($data, 'signedChallenge'),
         );
     }
 }

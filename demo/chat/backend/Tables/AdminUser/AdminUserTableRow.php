@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\AdminUser;
 
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -55,15 +56,17 @@ final class AdminUserTableRow extends AbstractTableRow
      * Builds an admin users row from raw table payload.
      *
      * @param array<string, mixed> $data Raw row payload
+     * @return static Restored row
+     * @throws InvalidFormatException When the payload is missing a field the row is rendered by
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            id: (int) ($data[self::id] ?? 0),
-            name: (string) $data[self::name],
-            lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
-            onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),
-            presence: isset($data[self::presence]) ? (string) $data[self::presence] : null,
+            id: self::requireInt($data, self::id),
+            name: self::requireString($data, self::name),
+            lastActivity: self::optionalString($data, self::lastActivity),
+            onlineSessionCount: self::requireInt($data, self::onlineSessionCount),
+            presence: self::optionalString($data, self::presence),
         );
     }
 }

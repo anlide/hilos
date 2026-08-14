@@ -28,7 +28,8 @@ final class AdminUserUpdateActionDTO extends ChatActionPayloadDTO
 
     /**
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
-     * @throws InvalidFormatException When a field the action needs is absent or not a string
+     * @return static Instance
+     * @throws InvalidFormatException When a field the action names the row by is absent or of another type
      */
     public static function fromArray(array $data): static
     {
@@ -44,7 +45,7 @@ final class AdminUserUpdateActionDTO extends ChatActionPayloadDTO
         $name = trim(self::requireString($inner, ObjectUser::name));
 
         return new static(
-            id: (int) ($inner[ObjectUser::id] ?? 0),
+            id: self::requireInt($inner, ObjectUser::id),
             name: $name,
         );
     }

@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Demo\Chat\Agents\ChatAgent;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -54,13 +55,14 @@ final class AccountMergeSignalData extends BaseDTO implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names neither side of the merge or no key to ack
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            survivorUserId: (int)($data['survivorUserId'] ?? 0),
-            loserUserId: (int)($data['loserUserId'] ?? 0),
-            acceptKey: (string)($data['acceptKey'] ?? ''),
+            survivorUserId: self::requireInt($data, 'survivorUserId'),
+            loserUserId: self::requireInt($data, 'loserUserId'),
+            acceptKey: self::requireString($data, 'acceptKey'),
         );
     }
 }

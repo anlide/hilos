@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 
 /**
@@ -65,15 +66,17 @@ final class RenameModerationResultSignalData extends BaseDTO implements ActionEr
 
     /**
      * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing the verdict or the name it is about
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            userId: (int)($data['userId'] ?? 0),
-            newName: (string)($data['newName'] ?? ''),
-            allow: (bool)($data['allow'] ?? false),
-            reason: (string)($data['reason'] ?? ''),
+            acceptKey: self::requireString($data, 'acceptKey'),
+            userId: self::requireInt($data, 'userId'),
+            newName: self::requireString($data, 'newName'),
+            allow: self::requireBool($data, 'allow'),
+            reason: self::requireString($data, 'reason'),
         );
     }
 }

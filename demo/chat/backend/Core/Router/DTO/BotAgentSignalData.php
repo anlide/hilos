@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -41,11 +42,12 @@ final class BotAgentSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no bot
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            botId: (int) ($data['botId'] ?? 0),
+            botId: self::requireInt($data, 'botId'),
         );
     }
 }

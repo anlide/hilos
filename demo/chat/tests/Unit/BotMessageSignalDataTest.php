@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -29,5 +30,21 @@ final class BotMessageSignalDataTest extends TestCase
         $this->assertSame(42, $restored->botId);
         $this->assertSame('hello', $restored->message);
         $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    public function testAPayloadThatLostTheMessageIsRefusedInsteadOfPublishedBlank(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('message');
+
+        BotMessageSignalData::fromArray(['botId' => 42]);
+    }
+
+    public function testAPayloadThatLostTheBotIsRefusedInsteadOfAttributedToZero(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('botId');
+
+        BotMessageSignalData::fromArray(['message' => 'hello']);
     }
 }

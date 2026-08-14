@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\ModeratorPiece;
 
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -49,13 +50,15 @@ final class ModeratorPromptPieceTableRow extends AbstractTableRow
      * Builds a moderator prompt piece row from raw table payload.
      *
      * @param array<string, mixed> $data Raw row payload
+     * @return static Restored row
+     * @throws InvalidFormatException When the payload is missing a field the row is rendered by
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            id: (int) ($data[self::id] ?? 0),
-            section: (string) $data[self::section],
-            promptPiece: (string) $data[self::promptPiece],
+            id: self::requireInt($data, self::id),
+            section: self::requireString($data, self::section),
+            promptPiece: self::requireString($data, self::promptPiece),
         );
     }
 }

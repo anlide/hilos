@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for bot_delete action payload.
@@ -39,6 +40,7 @@ final class BotDeleteActionDTO extends ChatActionPayloadDTO
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When the payload names no bot to delete
      */
     public static function fromArray(array $data): static
     {
@@ -48,7 +50,7 @@ final class BotDeleteActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            id: (int) ($inner[ObjectBot::id] ?? 0),
+            id: self::requireInt($inner, ObjectBot::id),
         );
     }
 

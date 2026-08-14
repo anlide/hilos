@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Browser-facing payload for one uploaded attachment draft.
@@ -43,15 +44,16 @@ final class AttachmentDraftSignalData extends BaseDTO
     /**
      * @param array<string, mixed> $data Wire payload
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing a field the draft is listed by
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            draftId: (string)($data[self::draftId] ?? ''),
-            filename: (string)($data[self::filename] ?? ''),
-            mimeType: (string)($data[self::mimeType] ?? ''),
-            size: (int)($data[self::size] ?? 0),
-            uploadedAt: (int)($data[self::uploadedAt] ?? 0),
+            draftId: self::requireString($data, self::draftId),
+            filename: self::requireString($data, self::filename),
+            mimeType: self::requireString($data, self::mimeType),
+            size: self::requireInt($data, self::size),
+            uploadedAt: self::requireInt($data, self::uploadedAt),
         );
     }
 }

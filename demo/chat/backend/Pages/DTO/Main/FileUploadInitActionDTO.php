@@ -29,17 +29,17 @@ final class FileUploadInitActionDTO extends ChatActionPayloadDTO
     /**
      * @param array<string, mixed> $data Payload data
      * @return static Upload init DTO instance
-     * @throws InvalidFormatException When a field the action needs is absent or not a string
+     * @throws InvalidFormatException When a field the upload is announced by is absent or of another type
      */
     public static function fromArray(array $data): static
     {
-        $clientId = $data['clientUploadId'] ?? null;
+        $clientUploadId = self::optionalString($data, 'clientUploadId');
 
         return new static(
             filename: self::requireString($data, 'filename'),
             mimeType: self::requireString($data, 'mimeType'),
-            size: is_int($data['size'] ?? null) ? $data['size'] : (int)($data['size'] ?? 0),
-            clientUploadId: is_string($clientId) && $clientId !== '' ? $clientId : null,
+            size: self::requireInt($data, 'size'),
+            clientUploadId: $clientUploadId !== '' ? $clientUploadId : null,
         );
     }
 

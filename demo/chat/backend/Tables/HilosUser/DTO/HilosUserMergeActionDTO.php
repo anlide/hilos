@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * DTO for the Hilos users "merge account into this" action payload (HIL-378).
@@ -36,6 +37,8 @@ final class HilosUserMergeActionDTO extends ChatActionPayloadDTO
 
     /**
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
+     * @return static Instance
+     * @throws InvalidFormatException When the payload names neither side of the merge
      */
     public static function fromArray(array $data): static
     {
@@ -45,8 +48,8 @@ final class HilosUserMergeActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            survivorUserId: (int)($inner['survivorUserId'] ?? 0),
-            loserUserId: (int)($inner['loserUserId'] ?? 0),
+            survivorUserId: self::requireInt($inner, 'survivorUserId'),
+            loserUserId: self::requireInt($inner, 'loserUserId'),
         );
     }
 
