@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -52,14 +53,13 @@ final class ProtectedModeDisableSignalData extends BaseDTO implements SignalData
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no initiator agent type
      */
     public static function fromArray(array $data): static
     {
-        $agentIndex = $data[self::initiatorAgentIndex] ?? null;
-
         return new static(
-            initiatorAgentType: (string)($data[self::initiatorAgentType] ?? ''),
-            initiatorAgentIndex: $agentIndex === null ? null : (int)$agentIndex,
+            initiatorAgentType: self::requireString($data, self::initiatorAgentType),
+            initiatorAgentIndex: self::optionalInt($data, self::initiatorAgentIndex),
         );
     }
 }

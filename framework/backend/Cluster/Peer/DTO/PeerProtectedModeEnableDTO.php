@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
@@ -65,7 +66,7 @@ final class PeerProtectedModeEnableDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the enable payload is not an object
+     * @throws PeerTransportException When the enable payload is not an object or is incomplete
      */
     public static function fromArray(array $data): static
     {
@@ -74,6 +75,14 @@ final class PeerProtectedModeEnableDTO extends PeerDTO
             throw new PeerTransportException('Peer protected-mode enable frame carries a non-object payload');
         }
 
-        return new static(ProtectedModeEnableSignalData::fromArray($payload));
+        try {
+            return new static(ProtectedModeEnableSignalData::fromArray($payload));
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException(
+                'Peer protected-mode enable frame is malformed: ' . $exception->getMessage(),
+                0,
+                $exception,
+            );
+        }
     }
 }

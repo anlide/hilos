@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Pages\Communications\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Pages\Communications\DTO\HilosDeliveryRetryActionDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -13,15 +14,16 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for the delivery-retry action payload DTO (HIL-201).
  *
  * Locks the payload contract: the delivery id is read from either a FIELD_DATA
- * wrapper or a flat payload, non-numeric ids coerce to 0, the action name is the
- * retry constant, and round-tripping preserves the id.
+ * wrapper or a flat payload, a payload naming no row is refused rather than
+ * addressed at row 0, the action name is the retry constant, and round-tripping
+ * preserves the id.
  */
 final class HilosDeliveryRetryActionDTOTest extends TestCase
 {
     public function testReadsDeliveryIdFromWrappedPayload(): void
     {
         $dto = HilosDeliveryRetryActionDTO::fromArray([
-            SignalPayloadConstants::FIELD_DATA => [HilosDeliveryRetryActionDTO::deliveryId => '42'],
+            SignalPayloadConstants::FIELD_DATA => [HilosDeliveryRetryActionDTO::deliveryId => 42],
         ]);
 
         self::assertSame(42, $dto->deliveryId);
@@ -34,11 +36,28 @@ final class HilosDeliveryRetryActionDTOTest extends TestCase
         self::assertSame(7, $dto->deliveryId);
     }
 
-    public function testNonNumericDeliveryIdCoercesToZero(): void
+    public function testADeliveryIdWrittenAsTextIsRefusedInsteadOfAddressingRowZero(): void
     {
-        $dto = HilosDeliveryRetryActionDTO::fromArray([HilosDeliveryRetryActionDTO::deliveryId => 'nope']);
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HilosDeliveryRetryActionDTO::deliveryId);
 
-        self::assertSame(0, $dto->deliveryId);
+        HilosDeliveryRetryActionDTO::fromArray([HilosDeliveryRetryActionDTO::deliveryId => 'nope']);
+    }
+
+    public function testAPayloadNamingNoDeliveryIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(HilosDeliveryRetryActionDTO::deliveryId);
+
+        HilosDeliveryRetryActionDTO::fromArray([]);
+    }
+
+    public function testAPayloadWithANonObjectSectionIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('data section');
+
+        HilosDeliveryRetryActionDTO::fromArray([SignalPayloadConstants::FIELD_DATA => 'nope']);
     }
 
     public function testActionNameIsRetryConstant(): void

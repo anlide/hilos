@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\DTO;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Notification\NotificationAction;
 
@@ -51,16 +52,17 @@ final class NotificationMarkReadPayloadDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When the payload carries no data section or no notification id
      */
     public static function fromArray(array $data): static
     {
         $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
         if (!is_array($inner)) {
-            $inner = [];
+            throw new InvalidFormatException('Mark-read payload carries a non-object data section');
         }
 
         return new static(
-            id: (int)($inner[self::id] ?? 0),
+            id: self::requireInt($inner, self::id),
         );
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup\Agent\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -57,15 +58,14 @@ final class BackupSetKeepSignalData extends BaseDTO implements SignalDataInterfa
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no backup or carries no keep pin
      */
     public static function fromArray(array $data): static
     {
-        $initiator = $data[self::initiatorAcceptKey] ?? null;
-
         return new static(
-            backupId: (string)($data[self::backupId] ?? ''),
-            keep: (bool)($data[self::keep] ?? false),
-            initiatorAcceptKey: is_string($initiator) && $initiator !== '' ? $initiator : null,
+            backupId: self::requireString($data, self::backupId),
+            keep: self::requireBool($data, self::keep),
+            initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
         );
     }
 }

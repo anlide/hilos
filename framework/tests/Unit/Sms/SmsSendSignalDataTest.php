@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Sms;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Sms\DTO\SmsSendSignalData;
 use PHPUnit\Framework\TestCase;
@@ -55,18 +56,29 @@ final class SmsSendSignalDataTest extends TestCase
         self::assertNull($restored->locale);
     }
 
-    public function testFromArrayCoercesLooseTypes(): void
+    public function testAPayloadWhoseParamsAreNotASectionIsRefused(): void
     {
-        $restored = SmsSendSignalData::fromArray([
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(SmsSendSignalData::params);
+
+        SmsSendSignalData::fromArray([
             SmsSendSignalData::to => '+10000000000',
-            SmsSendSignalData::shardKey => '7',
+            SmsSendSignalData::shardKey => 7,
             SmsSendSignalData::text => 'Your code is 999',
             SmsSendSignalData::params => 'not-an-array',
         ]);
+    }
 
-        self::assertSame('+10000000000', $restored->to);
-        self::assertSame(7, $restored->shardKey);
-        self::assertSame([], $restored->params);
+    public function testAPayloadThatLostTheRecipientIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(SmsSendSignalData::to);
+
+        SmsSendSignalData::fromArray([
+            SmsSendSignalData::shardKey => 7,
+            SmsSendSignalData::text => 'Your code is 999',
+            SmsSendSignalData::params => [],
+        ]);
     }
 
     public function testAPayloadWithNeitherTemplateNorInlineTextIsRefused(): void
@@ -74,7 +86,16 @@ final class SmsSendSignalDataTest extends TestCase
         $this->expectException(ValidationException::class);
         SmsSendSignalData::fromArray([
             SmsSendSignalData::to => '+10000000000',
-            SmsSendSignalData::shardKey => '7',
+            SmsSendSignalData::shardKey => 7,
+            SmsSendSignalData::params => [],
         ]);
+    }
+
+    public function testABlankRecipientIsRefusedBeforeItReachesTheDriver(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('recipient number');
+
+        new SmsSendSignalData(to: '', shardKey: 1, text: 'Your code is 999');
     }
 }

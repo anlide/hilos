@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\OAuth;
 
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -71,10 +72,21 @@ final class OAuthResultSignalDataTest extends TestCase
         $this->assertSame($array, OAuthResultSignalData::fromArray($array)->toArray());
     }
 
-    public function testFromArrayFallsBackToTheGenericReason(): void
+    public function testFromArrayRefusesAPayloadCarryingNoReason(): void
     {
-        $data = OAuthResultSignalData::fromArray(['acceptKey' => 'a', 'provider' => 'p']);
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('reason');
 
-        $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $data->reason);
+        OAuthResultSignalData::fromArray(['acceptKey' => 'a', 'provider' => 'p']);
+    }
+
+    public function testFromArrayCarriesTheArmsThatNameNoEmailAsNull(): void
+    {
+        $data = OAuthResultSignalData::fromArray(
+            new OAuthResultSignalData('accept-3', 'oauth:stub', OAuthResultSignalData::REASON_LINK_OK)->toArray(),
+        );
+
+        $this->assertNull($data->email);
+        $this->assertNull($data->linkToken);
     }
 }

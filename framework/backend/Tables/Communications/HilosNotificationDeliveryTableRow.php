@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Notification\Delivery\DeliveryStatus;
 
@@ -111,21 +112,22 @@ final class HilosNotificationDeliveryTableRow extends AbstractTableRow
      *
      * @param array<string, mixed> $data Raw row payload
      * @return static Reconstructed delivery table row
+     * @throws InvalidFormatException When the payload is missing a field the row is built from
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            rowKey: (int) ($data[self::rowKey] ?? 0),
-            createdAt: (string) $data[self::createdAt],
-            channel: (string) $data[self::channel],
-            status: (string) $data[self::status],
-            attempts: (int) ($data[self::attempts] ?? 0),
-            deliveredAt: isset($data[self::deliveredAt]) ? (string) $data[self::deliveredAt] : null,
-            lastError: isset($data[self::lastError]) ? (string) $data[self::lastError] : null,
-            userId: isset($data[self::userId]) ? (int) $data[self::userId] : null,
-            userLabel: isset($data[self::userLabel]) ? (string) $data[self::userLabel] : null,
-            notificationType: isset($data[self::notificationType]) ? (string) $data[self::notificationType] : null,
-            notificationTitle: isset($data[self::notificationTitle]) ? (string) $data[self::notificationTitle] : null,
+            rowKey: self::requireInt($data, self::rowKey),
+            createdAt: self::requireString($data, self::createdAt),
+            channel: self::requireString($data, self::channel),
+            status: self::requireString($data, self::status),
+            attempts: self::requireInt($data, self::attempts),
+            deliveredAt: self::optionalString($data, self::deliveredAt),
+            lastError: self::optionalString($data, self::lastError),
+            userId: self::optionalInt($data, self::userId),
+            userLabel: self::optionalString($data, self::userLabel),
+            notificationType: self::optionalString($data, self::notificationType),
+            notificationTitle: self::optionalString($data, self::notificationTitle),
         );
     }
 }

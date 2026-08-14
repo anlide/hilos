@@ -101,14 +101,29 @@ final class BackupActionDtoTest extends TestCase
         $this->assertNull($dto->initiatorAcceptKey);
     }
 
-    public function testCreateSignalTreatsAnEmptyInitiatorAsUnattended(): void
+    public function testCreateSignalRoundTripsAnUnattendedRunAsNoInitiator(): void
     {
-        $dto = BackupCreateSignalData::fromArray([
-            BackupCreateSignalData::scope => 'full',
-            BackupCreateSignalData::initiatorAcceptKey => '',
-        ]);
+        $dto = BackupCreateSignalData::fromArray(new BackupCreateSignalData('full')->toArray());
 
         $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testCreateSignalRefusesAPayloadNamingNoScope(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BackupCreateSignalData::scope);
+
+        BackupCreateSignalData::fromArray([
+            BackupCreateSignalData::initiatorAcceptKey => 'accept-key-1',
+        ]);
+    }
+
+    public function testSetKeepSignalRefusesAPayloadCarryingNoPin(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BackupSetKeepSignalData::keep);
+
+        BackupSetKeepSignalData::fromArray([BackupSetKeepSignalData::backupId => 'bk-2']);
     }
 
     public function testDeleteSignalRoundTripsTheRequestingConnection(): void

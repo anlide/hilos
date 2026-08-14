@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\OAuth\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
@@ -52,12 +53,13 @@ final class OAuthAuthorizeSignalData extends BaseDTO implements SignalDataInterf
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key or no authorize URL
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            authorizeUrl: (string)($data['authorizeUrl'] ?? ''),
+            acceptKey: self::requireString($data, 'acceptKey'),
+            authorizeUrl: self::requireString($data, 'authorizeUrl'),
         );
     }
 }

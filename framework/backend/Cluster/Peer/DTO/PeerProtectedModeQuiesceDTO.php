@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
@@ -64,7 +65,7 @@ final class PeerProtectedModeQuiesceDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the quiesce payload is not an object
+     * @throws PeerTransportException When the quiesce payload is not an object or is incomplete
      */
     public static function fromArray(array $data): static
     {
@@ -73,6 +74,14 @@ final class PeerProtectedModeQuiesceDTO extends PeerDTO
             throw new PeerTransportException('Peer protected-mode quiesce frame carries a non-object payload');
         }
 
-        return new static(ProtectedModeQuiesceData::fromArray($payload));
+        try {
+            return new static(ProtectedModeQuiesceData::fromArray($payload));
+        } catch (InvalidFormatException $exception) {
+            throw new PeerTransportException(
+                'Peer protected-mode quiesce frame is malformed: ' . $exception->getMessage(),
+                0,
+                $exception,
+            );
+        }
     }
 }

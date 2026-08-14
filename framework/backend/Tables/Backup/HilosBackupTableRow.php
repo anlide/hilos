@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Runtime\View\Item\BackupHistory;
 
@@ -117,26 +118,27 @@ final class HilosBackupTableRow extends AbstractTableRow
      *
      * @param array<string, mixed> $data Raw row payload
      * @return static Reconstructed backup table row
+     * @throws InvalidFormatException When the payload is missing a field the row is built from
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            rowKey: (string) $data[self::rowKey],
-            createdAt: (string) $data[self::createdAt],
-            env: isset($data[self::env]) ? (string) $data[self::env] : null,
-            scope: isset($data[self::scope]) ? (string) $data[self::scope] : null,
-            sizeBytes: (int) ($data[self::sizeBytes] ?? 0),
-            durationSeconds: (int) ($data[self::durationSeconds] ?? 0),
-            keep: (bool) ($data[self::keep] ?? false),
-            status: (string) $data[self::status],
+            rowKey: self::requireString($data, self::rowKey),
+            createdAt: self::requireString($data, self::createdAt),
+            env: self::optionalString($data, self::env),
+            scope: self::optionalString($data, self::scope),
+            sizeBytes: self::requireInt($data, self::sizeBytes),
+            durationSeconds: self::requireInt($data, self::durationSeconds),
+            keep: self::requireBool($data, self::keep),
+            status: self::requireString($data, self::status),
             finished: array_key_exists(self::finished, $data) ? self::toTriState($data[self::finished]) : null,
-            failureReason: isset($data[self::failureReason]) ? (string) $data[self::failureReason] : null,
+            failureReason: self::optionalString($data, self::failureReason),
             // An unknown or absent state reads back as "no digest": a row that cannot say it was
             // checked must not claim it was.
             checksumState: BackupChecksumState::fromString(
                 isset($data[self::checksumState]) ? (string) $data[self::checksumState] : null,
             ) ?? BackupChecksumState::NONE,
-            verifiedAt: isset($data[self::verifiedAt]) ? (string) $data[self::verifiedAt] : null,
+            verifiedAt: self::optionalString($data, self::verifiedAt),
         );
     }
 

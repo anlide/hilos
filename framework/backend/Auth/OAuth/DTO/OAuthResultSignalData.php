@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\OAuth\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
@@ -91,17 +92,27 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
+     * Rebuilds the result the OAuth agent minted.
+     *
+     * {@see reason} is required even though the constructor defaults it: the
+     * default answers a call site that reports a plain failure, while
+     * {@see toArray()} always writes the key, and a reason lost in transit read
+     * as a failure would tell the surface an accomplished link went wrong.
+     * {@see email} and {@see linkToken} are the arm-specific fields the other
+     * reasons legitimately carry as null.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no accept key, provider or reason
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            provider: (string)($data['provider'] ?? ''),
-            reason: (string)($data['reason'] ?? self::REASON_LOGIN_FAILED),
-            email: isset($data['email']) ? (string)$data['email'] : null,
-            linkToken: isset($data['linkToken']) ? (string)$data['linkToken'] : null,
+            acceptKey: self::requireString($data, 'acceptKey'),
+            provider: self::requireString($data, 'provider'),
+            reason: self::requireString($data, 'reason'),
+            email: self::optionalString($data, 'email'),
+            linkToken: self::optionalString($data, 'linkToken'),
         );
     }
 }

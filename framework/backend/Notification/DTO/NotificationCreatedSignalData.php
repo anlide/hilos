@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 
@@ -90,24 +91,21 @@ final class NotificationCreatedSignalData extends BaseDTO implements SignalDataI
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing a field the row is addressed
+     *                                and rendered by
      */
     public static function fromArray(array $data): static
     {
-        $structured = $data[self::data] ?? null;
-        $body = $data[self::body] ?? null;
-        $readAt = $data[self::readAt] ?? null;
-        $createdAt = $data[self::createdAt] ?? null;
-
         return new static(
-            id: (int)($data[self::id] ?? 0),
-            userId: (int)($data[self::userId] ?? 0),
-            type: (string)($data[self::type] ?? ''),
-            severity: (string)($data[self::severity] ?? ''),
-            title: (string)($data[self::title] ?? ''),
-            body: is_string($body) ? $body : null,
-            data: is_array($structured) ? $structured : null,
-            readAt: is_string($readAt) ? $readAt : null,
-            createdAt: is_string($createdAt) ? $createdAt : null,
+            id: self::requireInt($data, self::id),
+            userId: self::requireInt($data, self::userId),
+            type: self::requireString($data, self::type),
+            severity: self::requireString($data, self::severity),
+            title: self::requireString($data, self::title),
+            body: self::optionalString($data, self::body),
+            data: self::optionalArray($data, self::data),
+            readAt: self::optionalString($data, self::readAt),
+            createdAt: self::optionalString($data, self::createdAt),
         );
     }
 }

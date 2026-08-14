@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Mail;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use PHPUnit\Framework\TestCase;
@@ -43,12 +44,13 @@ final class MailSendSignalDataTest extends TestCase
         $this->assertEquals($original, $restored);
     }
 
-    public function testFromArrayCoercesTypesAndDefaults(): void
+    public function testFromArrayCarriesTheFieldsATemplateSendLeavesOutAsNull(): void
     {
         $restored = MailSendSignalData::fromArray([
             MailSendSignalData::to => 'user@example.com',
-            MailSendSignalData::shardKey => '7',
+            MailSendSignalData::shardKey => 7,
             MailSendSignalData::templateKey => 'auth.register_confirm',
+            MailSendSignalData::params => [],
         ]);
 
         $this->assertSame('user@example.com', $restored->to);
@@ -59,13 +61,46 @@ final class MailSendSignalDataTest extends TestCase
         $this->assertNull($restored->locale);
     }
 
+    public function testAPayloadThatLostTheShardKeyIsRefusedInsteadOfPooledAtZero(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(MailSendSignalData::shardKey);
+
+        MailSendSignalData::fromArray([
+            MailSendSignalData::to => 'user@example.com',
+            MailSendSignalData::templateKey => 'auth.register_confirm',
+            MailSendSignalData::params => [],
+        ]);
+    }
+
+    public function testAShardKeyWrittenAsTextIsRefusedRatherThanRead(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        MailSendSignalData::fromArray([
+            MailSendSignalData::to => 'user@example.com',
+            MailSendSignalData::shardKey => '7',
+            MailSendSignalData::templateKey => 'auth.register_confirm',
+            MailSendSignalData::params => [],
+        ]);
+    }
+
     public function testAPayloadWithNeitherTemplateNorInlineContentIsRefused(): void
     {
         $this->expectException(ValidationException::class);
         MailSendSignalData::fromArray([
             MailSendSignalData::to => 'user@example.com',
-            MailSendSignalData::shardKey => '7',
+            MailSendSignalData::shardKey => 7,
+            MailSendSignalData::params => [],
         ]);
+    }
+
+    public function testABlankRecipientIsRefusedBeforeItReachesTheEnvelope(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('recipient address');
+
+        new MailSendSignalData(to: '', shardKey: 1, subject: 'Hi', text: 'plain');
     }
 
     public function testAnInlinePayloadCarryingOnlyASubjectIsRefused(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -34,6 +35,7 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
      * @param string $type Verification type (see VerificationType)
      * @param string $code Plaintext code to deliver
      * @throws EnvException When the SMS worker count is unreadable while sharding the number
+     * @throws ValidationException When the code was issued for a blank number
      */
     public function deliver(string $identifier, string $type, string $code): void
     {

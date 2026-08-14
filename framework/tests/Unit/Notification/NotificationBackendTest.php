@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Notification;
 
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
@@ -124,9 +125,22 @@ final class NotificationBackendTest extends TestCase
             SignalPayloadConstants::FIELD_DATA => [NotificationMarkReadPayloadDTO::id => 34],
         ]);
         self::assertSame(34, $enveloped->id);
+    }
 
-        $missing = NotificationMarkReadPayloadDTO::fromArray([]);
-        self::assertSame(0, $missing->id);
+    public function testMarkReadPayloadNamingNoNotificationIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(NotificationMarkReadPayloadDTO::id);
+
+        NotificationMarkReadPayloadDTO::fromArray([]);
+    }
+
+    public function testMarkReadPayloadWithANonObjectSectionIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('data section');
+
+        NotificationMarkReadPayloadDTO::fromArray([SignalPayloadConstants::FIELD_DATA => 'nope']);
     }
 
     public function testMarkAllReadPayloadCarriesNoFields(): void

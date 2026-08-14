@@ -6,6 +6,7 @@ namespace Hilos\Pages\Communications\DTO;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -39,16 +40,17 @@ final class HilosDeliveryRetryActionDTO extends ActionPayloadDTO
     /**
      * @param array<string, mixed> $data Raw payload (may contain a FIELD_DATA wrapper)
      * @return static Instance
+     * @throws InvalidFormatException When the payload carries no data section or no delivery id
      */
     public static function fromArray(array $data): static
     {
         $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
         if (!is_array($inner)) {
-            $inner = [];
+            throw new InvalidFormatException('Delivery retry payload carries a non-object data section');
         }
 
         return new static(
-            deliveryId: is_numeric($inner[self::deliveryId] ?? null) ? (int) $inner[self::deliveryId] : 0,
+            deliveryId: self::requireInt($inner, self::deliveryId),
         );
     }
 

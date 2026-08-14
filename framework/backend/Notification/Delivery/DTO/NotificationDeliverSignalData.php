@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Notification\HilosNotifier;
 
@@ -60,15 +61,14 @@ final class NotificationDeliverSignalData extends BaseDTO implements SignalDataI
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no notification or no channel
      */
     public static function fromArray(array $data): static
     {
-        $shardKey = $data[self::shardKey] ?? null;
-
         return new static(
-            notificationId: (int)($data[self::notificationId] ?? 0),
-            channel: (string)($data[self::channel] ?? ''),
-            shardKey: is_numeric($shardKey) ? (int)$shardKey : null,
+            notificationId: self::requireInt($data, self::notificationId),
+            channel: self::requireString($data, self::channel),
+            shardKey: self::optionalInt($data, self::shardKey),
         );
     }
 }

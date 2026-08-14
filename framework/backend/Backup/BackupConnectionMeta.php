@@ -40,6 +40,7 @@ final class BackupConnectionMeta extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new self(
+            // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::index] ?? 0),
             // external-boundary: the sidecar is read from disk and an older one names no database
             (string)($data[self::database] ?? ''),

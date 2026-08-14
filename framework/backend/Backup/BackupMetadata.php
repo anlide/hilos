@@ -154,13 +154,16 @@ final class BackupMetadata extends BaseDTO
             // external-boundary: the sidecar is read from disk and an unnamed scope collapses into the default
             BackupScope::fromString((string)($data[self::scope] ?? '')) ?? BackupScope::FULL,
             $connections,
+            // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::sizeBytes] ?? 0),
+            // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::durationSeconds] ?? 0),
             (bool)($data[self::keep] ?? false),
             // external-boundary: the sidecar is read from disk and an unnamed status collapses into the default
             BackupStatus::fromString((string)($data[self::status] ?? '')) ?? BackupStatus::SUCCESS,
             $warnings,
             isset($data[self::failureReason]) ? (string)$data[self::failureReason] : null,
+            // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::dumpBytes] ?? 0),
             isset($data[self::sha256]) ? (string)$data[self::sha256] : null,
             isset($data[self::verifiedAt]) ? (string)$data[self::verifiedAt] : null,

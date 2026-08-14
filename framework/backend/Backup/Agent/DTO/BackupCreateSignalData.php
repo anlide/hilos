@@ -6,6 +6,7 @@ namespace Hilos\Backup\Agent\DTO;
 
 use Hilos\Backup\BackupScope;
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
@@ -53,14 +54,13 @@ final class BackupCreateSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no scope to capture
      */
     public static function fromArray(array $data): static
     {
-        $initiator = $data[self::initiatorAcceptKey] ?? null;
-
         return new static(
-            scope: (string)($data[self::scope] ?? ''),
-            initiatorAcceptKey: is_string($initiator) && $initiator !== '' ? $initiator : null,
+            scope: self::requireString($data, self::scope),
+            initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
         );
     }
 }

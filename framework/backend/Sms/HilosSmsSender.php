@@ -7,6 +7,7 @@ namespace Hilos\Sms;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -40,6 +41,7 @@ class HilosSmsSender
      *
      * @param SmsMessage|SmsSendSignalData $message Inline message the sender shards, or a ready raw-send payload
      * @throws EnvException When SMS_WORKER_COUNT is unreadable while sharding an inline SmsMessage
+     * @throws ValidationException When an inline SmsMessage names no recipient number
      */
     public function send(SmsMessage|SmsSendSignalData $message): void
     {

@@ -7,6 +7,7 @@ namespace Hilos\Mail;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -42,6 +43,7 @@ class HilosMailer
      *
      * @param EmailMessage|MailSendSignalData $message Inline message the mailer shards, or a ready raw-send payload
      * @throws EnvException When MAIL_WORKER_COUNT is unreadable while sharding an inline EmailMessage
+     * @throws ValidationException When an inline EmailMessage names no recipient address
      */
     public function send(EmailMessage|MailSendSignalData $message): void
     {

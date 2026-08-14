@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Communications;
 
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -83,16 +84,17 @@ final class HilosCommunicationsChannelsTableRow extends AbstractTableRow
      *
      * @param array<string, mixed> $data Raw row payload
      * @return static Reconstructed channels table row
+     * @throws InvalidFormatException When the payload is missing a field the row is built from
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            channel: (string) $data[self::channel],
-            label: isset($data[self::label]) ? (string) $data[self::label] : null,
-            enabled: (bool) ($data[self::enabled] ?? false),
-            configured: (bool) ($data[self::configured] ?? false),
-            driver: isset($data[self::driver]) ? (string) $data[self::driver] : null,
-            missingFields: (int) ($data[self::missingFields] ?? 0),
+            channel: self::requireString($data, self::channel),
+            label: self::optionalString($data, self::label),
+            enabled: self::requireBool($data, self::enabled),
+            configured: self::requireBool($data, self::configured),
+            driver: self::optionalString($data, self::driver),
+            missingFields: self::requireInt($data, self::missingFields),
         );
     }
 }

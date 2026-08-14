@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
 
@@ -66,17 +67,15 @@ final class ProtectedModeQuiesceData extends BaseDTO
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload names no operation or no initiator agent type
      */
     public static function fromArray(array $data): static
     {
-        $agentIndex = $data[self::initiatorAgentIndex] ?? null;
-        $nodeId = $data[self::initiatorNodeId] ?? null;
-
         return new static(
-            operation: (string)($data[self::operation] ?? ''),
-            initiatorAgentType: (string)($data[self::initiatorAgentType] ?? ''),
-            initiatorAgentIndex: $agentIndex === null ? null : (int)$agentIndex,
-            initiatorNodeId: $nodeId === null ? null : (string)$nodeId,
+            operation: self::requireString($data, self::operation),
+            initiatorAgentType: self::requireString($data, self::initiatorAgentType),
+            initiatorAgentIndex: self::optionalInt($data, self::initiatorAgentIndex),
+            initiatorNodeId: self::optionalString($data, self::initiatorNodeId),
         );
     }
 }

@@ -6,6 +6,7 @@ namespace Hilos\Auth\OAuth\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 
@@ -81,19 +82,29 @@ final class OAuthPendingLoginSignalData extends BaseDTO implements SignalDataInt
     }
 
     /**
+     * Rebuilds the payload the callback action minted.
+     *
+     * Every field is required, {@see mode} and {@see linkUserId} included: their
+     * constructor defaults answer a call site that builds the op, while
+     * {@see toArray()} always writes both keys, so a payload that lost one lost
+     * it in transit. A missing {@see linkUserId} read as `0` would name a login
+     * exchange, and the agent would sign the initiator in where it was asked to
+     * link an identity to an account.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload is missing a field of the pending op
      */
     public static function fromArray(array $data): static
     {
         return new static(
-            acceptKey: (string)($data['acceptKey'] ?? ''),
-            sessionToken: (string)($data['sessionToken'] ?? ''),
-            provider: (string)($data['provider'] ?? ''),
-            code: (string)($data['code'] ?? ''),
-            deadlineMs: (float)($data['deadlineMs'] ?? 0.0),
-            mode: (string)($data['mode'] ?? OAuthPendingLogin::MODE_LOGIN),
-            linkUserId: (int)($data['linkUserId'] ?? 0),
+            acceptKey: self::requireString($data, 'acceptKey'),
+            sessionToken: self::requireString($data, 'sessionToken'),
+            provider: self::requireString($data, 'provider'),
+            code: self::requireString($data, 'code'),
+            deadlineMs: self::requireFloat($data, 'deadlineMs'),
+            mode: self::requireString($data, 'mode'),
+            linkUserId: self::requireInt($data, 'linkUserId'),
         );
     }
 }

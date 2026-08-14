@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Pages\AbstractHilosNotificationsPage;
@@ -55,22 +56,23 @@ final class NotificationsSnapshotSignalData extends BaseDTO implements SignalDat
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When the payload carries no list of rows, no unread count,
+     *                                or a row that is not a notification
      */
     public static function fromArray(array $data): static
     {
-        $rawRecent = $data[self::recent] ?? [];
         $recent = [];
-        if (is_array($rawRecent)) {
-            foreach ($rawRecent as $row) {
-                if (is_array($row)) {
-                    $recent[] = NotificationCreatedSignalData::fromArray($row);
-                }
+        foreach (self::requireArray($data, self::recent) as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Notifications snapshot carries a row that is not an object');
             }
+
+            $recent[] = NotificationCreatedSignalData::fromArray($row);
         }
 
         return new static(
             recent: $recent,
-            unreadCount: (int)($data[self::unreadCount] ?? 0),
+            unreadCount: self::requireInt($data, self::unreadCount),
         );
     }
 }

@@ -6,6 +6,7 @@ namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -66,6 +67,7 @@ class WorkerProtectedModeEnableDTO extends WorkerDTO
      * @param array<string, mixed> $data Source data (payload)
      * @return static DTO instance
      * @throws InvalidArgumentException When the enable payload is not an object
+     * @throws InvalidFormatException When the enable payload is missing a field of the freeze request
      */
     public static function fromArray(array $data): static
     {

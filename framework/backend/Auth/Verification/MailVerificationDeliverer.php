@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -37,6 +38,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
      * @param string $type Verification type (see VerificationType)
      * @param string $code Plaintext code (or magic-link token) to deliver
      * @throws EnvException When the mail worker count is unreadable while sharding the address
+     * @throws ValidationException When the code was issued for a blank address
      */
     public function deliver(string $identifier, string $type, string $code): void
     {
