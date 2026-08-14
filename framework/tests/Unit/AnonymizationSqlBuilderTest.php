@@ -6,7 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
-use Hilos\Backup\Anonymization\ArchiveTableSchema;
+use Hilos\Backup\Anonymization\LiveTableSchema;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use PHPUnit\Framework\TestCase;
@@ -52,8 +52,10 @@ final class AnonymizationSqlBuilderTest extends TestCase
         );
     }
 
-    public function testHashIsLeftWholeWhenTheColumnCarriesNoLength(): void
+    public function testHashIsLeftWholeWhenTheColumnIsWiderThanIt(): void
     {
+        // `text` reports its maximum rather than nothing, so the truncation branch is decided
+        // by the width itself and not by the absence of one.
         $expression = $this->builder()->columnExpression(
             AnonymizationStrategy::HASH,
             'bio',
@@ -178,7 +180,58 @@ final class AnonymizationSqlBuilderTest extends TestCase
         $this->builder()->columnExpression(
             AnonymizationStrategy::FAKE_NAME,
             'label',
-            new ArchiveTableSchema('keyless', ['label' => false], ['label' => 32], []),
+            new LiveTableSchema(
+                'keyless',
+                ['label' => false],
+                ['label' => 'varchar'],
+                ['label' => 32],
+                [],
+                [],
+            ),
+        );
+    }
+
+    public function testAStrategyThatCannotOverflowReportsNoWidth(): void
+    {
+        // A hash cuts itself down to whatever the column takes, and the other two write no
+        // characters at all; a gate asking "does it fit" has nothing to ask about them.
+        $this->assertNull(AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::HASH, 1));
+        $this->assertNull(AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::NULLIFY, 1));
+        $this->assertNull(AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::PURGE, 1));
+    }
+
+    public function testAMaskIsAsWideAsItsOwnText(): void
+    {
+        $this->assertSame(
+            strlen(BackupConstants::ANONYMIZATION_MASK),
+            AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::MASK, 1000000),
+        );
+    }
+
+    public function testADerivedValueGrowsWithTheKeyItRenders(): void
+    {
+        // `user` + the key + `@example.invalid`, and `User ` + the key.
+        $this->assertSame(21, AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_EMAIL, 1));
+        $this->assertSame(25, AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_EMAIL, 10000));
+        $this->assertSame(6, AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_NAME, 9));
+        $this->assertSame(9, AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_NAME, 9999));
+    }
+
+    public function testAFakedPhoneNumberIsTheSameWidthForEveryKey(): void
+    {
+        // LPAD cuts a longer key rather than growing the value, so the number stays a number.
+        $this->assertSame(12, AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_PHONE, 1));
+        $this->assertSame(
+            12,
+            AnonymizationSqlBuilder::substitutionLength(AnonymizationStrategy::FAKE_PHONE, 123456789),
+        );
+    }
+
+    public function testTheLargestKeyQueryNamesTheTableAndItsKey(): void
+    {
+        $this->assertSame(
+            'SELECT MAX(`id`) AS `' . AnonymizationSqlBuilder::MAX_PRIMARY_KEY_ALIAS . '` FROM `hilos_identity`',
+            AnonymizationSqlBuilder::maxPrimaryKeyStatement('hilos_identity', 'id'),
         );
     }
 
@@ -199,15 +252,23 @@ final class AnonymizationSqlBuilderTest extends TestCase
     }
 
     /**
-     * @return ArchiveTableSchema Identity table with one column of each shape the cases need
+     * @return LiveTableSchema Identity table with one column of each shape the cases need
      */
-    private function identitySchema(): ArchiveTableSchema
+    private function identitySchema(): LiveTableSchema
     {
-        return new ArchiveTableSchema(
+        return new LiveTableSchema(
             'hilos_identity',
             ['id' => false, 'email' => false, 'phone' => true, 'nickname' => true, 'bio' => true],
-            ['id' => null, 'email' => 255, 'phone' => 32, 'nickname' => 32, 'bio' => null],
+            [
+                'id' => 'int',
+                'email' => 'varchar',
+                'phone' => 'varchar',
+                'nickname' => 'varchar',
+                'bio' => 'text',
+            ],
+            ['id' => null, 'email' => 255, 'phone' => 32, 'nickname' => 32, 'bio' => 65535],
             ['id'],
+            ['PRIMARY' => ['id']],
         );
     }
 }

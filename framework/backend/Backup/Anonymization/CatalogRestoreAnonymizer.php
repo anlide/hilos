@@ -22,10 +22,10 @@ use Random\RandomException;
  * hashed email still works inside the restored copy, while two restores of the same
  * archive produce two sets of hashes nobody can line up against each other.
  *
- * The archive schemas arrive through {@see validateArchive()} and are kept for the pass
- * rather than read twice: the pass runs against the tables the archive actually carries,
- * and re-reading the dump files after the import would ask the same question of files
- * that are about to be swept.
+ * The live schemas arrive through {@see validateTargetSchema()} and are kept for the pass
+ * rather than read twice: the statements are built against the very schema the gate just
+ * judged, so there is no window in which the pass could be writing by one description of
+ * a column while the refusal was decided by another.
  */
 final class CatalogRestoreAnonymizer implements RestoreAnonymizer
 {
@@ -36,7 +36,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      */
     private const int SALT_BYTES = 32;
 
-    /** @var array<int, list<ArchiveTableSchema>> Archive tables per connection, as validated */
+    /** @var array<int, array<string, LiveTableSchema>> Live tables per connection, as validated */
     private array $schemasByConnection = [];
 
     /**
@@ -67,15 +67,50 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
     }
 
     /**
-     * Checks the registry against the archive and keeps the schemas for the pass.
+     * Checks that the registry classifies every table the archive carries.
      *
-     * @param array<int, list<ArchiveTableSchema>> $schemasByConnection Archive tables per connection index
-     * @throws AnonymizationConfigException When the registry does not cover or does not fit the archive
+     * @param array<int, list<string>> $tablesByConnection Archive table names per connection index
+     * @throws AnonymizationConfigException When the registry leaves a table of the archive
+     *     unclassified
      */
-    public function validateArchive(array $schemasByConnection): void
+    public function validateArchive(array $tablesByConnection): void
     {
-        AnonymizationValidator::validate($this->registry, $schemasByConnection);
-        $this->schemasByConnection = $schemasByConnection;
+        AnonymizationCoverageValidator::validate($this->registry, $tablesByConnection);
+    }
+
+    /**
+     * Checks the registry against one connection's live schema and keeps it for the pass.
+     *
+     * @param int $index Connection index whose schema is judged
+     * @param string $database Database name the connection imported into, for the refusal
+     * @throws AnonymizationConfigException When the schema cannot be read, or a declared column
+     *     is absent from it or cannot carry its strategy
+     */
+    public function validateTargetSchema(int $index, string $database): void
+    {
+        try {
+            $schemas = LiveSchemaReader::read($index);
+            AnonymizationCompatibilityValidator::validate(
+                $this->registry,
+                $index,
+                $schemas,
+                self::maxPrimaryKey(...),
+            );
+        } catch (AnonymizationConfigException $refusal) {
+            throw new AnonymizationConfigException(
+                self::holdsPii($index, $database) . $refusal->getMessage(),
+                0,
+                $refusal,
+            );
+        } catch (DatabaseException $failure) {
+            throw new AnonymizationConfigException(
+                self::holdsPii($index, $database) . 'its schema cannot be read: ' . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        }
+
+        $this->schemasByConnection[$index] = $schemas;
     }
 
     /**
@@ -112,8 +147,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
             self::rollBack();
 
             throw new RestoreFailedException(
-                "Database [{$database}] on connection {$index} is restored but NOT anonymized - "
-                . 'it holds PII: ' . $failure->getMessage(),
+                self::holdsPii($index, $database) . $failure->getMessage(),
                 0,
                 $failure,
             );
@@ -121,26 +155,36 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
     }
 
     /**
-     * Builds the statements one connection's pass runs, in archive order.
+     * Builds the statements one connection's pass runs, in the registry's declaration order.
+     *
+     * The registry leads rather than the schema: it is the shorter list of the two, it is
+     * the one a person wrote and can read the pass back against, and a table it declares
+     * that this installation does not carry is a row that simply has nothing to do here -
+     * the archive was already judged for coverage before the import.
      *
      * @param int $index Connection index
      * @return list<string> Statements to run
-     * @throws AnonymizationConfigException When a strategy cannot be expressed; the preflight
-     *     gate refuses these before a restore reaches this point
+     * @throws AnonymizationConfigException When a strategy cannot be expressed; the gate over
+     *     the live schema refuses these before a restore reaches this point
      */
     private function statementsFor(int $index): array
     {
+        $schemas = $this->schemasByConnection[$index] ?? [];
         $statements = [];
-        foreach ($this->schemasByConnection[$index] ?? [] as $schema) {
-            if ($this->registry->isPurged($index, $schema->table)) {
-                $statements[] = $this->sql->purgeStatement($schema->table);
+        foreach ($this->registry->declaredTables($index) as $table) {
+            $schema = $schemas[$table] ?? null;
+            if ($schema === null) {
+                continue;
+            }
+            if ($this->registry->isPurged($index, $table)) {
+                $statements[] = $this->sql->purgeStatement($table);
 
                 continue;
             }
 
             $update = $this->sql->updateStatement(
                 $schema,
-                $this->registry->strategiesFor($index, $schema->table) ?? [],
+                $this->registry->strategiesFor($index, $table) ?? [],
             );
             if ($update !== null) {
                 $statements[] = $update;
@@ -148,6 +192,44 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
         }
 
         return $statements;
+    }
+
+    /**
+     * Reads the largest primary key one table currently holds.
+     *
+     * The gate measures a `fake-*` value against this rather than against the width of the
+     * key's type: the widest `int` renders to ten characters, and refusing a `varchar(32)`
+     * column over a table whose ids are four digits long would be a refusal about arithmetic
+     * rather than about data. The rows are already imported when this runs, so the number is
+     * the real one and not a forecast.
+     *
+     * @param string $table Table to read
+     * @param string $column Its single primary key column
+     * @return int Largest key value, or 0 when the table holds no rows
+     * @throws DatabaseException When the query fails
+     */
+    private static function maxPrimaryKey(string $table, string $column): int
+    {
+        Database::sql(AnonymizationSqlBuilder::maxPrimaryKeyStatement($table, $column));
+
+        return (int)Database::field(AnonymizationSqlBuilder::MAX_PRIMARY_KEY_ALIAS);
+    }
+
+    /**
+     * Opens a refusal that has to say the database already holds personal data.
+     *
+     * Both refusals raised past the import say it, and they say it identically on purpose:
+     * an operator reading either one is in the same situation and needs the same words -
+     * the restore happened, and what came out of it is production data.
+     *
+     * @param int $index Connection index the refusal is about
+     * @param string $database Database name the connection imported into
+     * @return string Opening of the message, ending where the cause continues it
+     */
+    private static function holdsPii(int $index, string $database): string
+    {
+        return "Database [{$database}] on connection {$index} is restored but NOT anonymized - "
+            . 'it holds PII: ';
     }
 
     /**

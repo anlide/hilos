@@ -6,7 +6,6 @@ namespace Hilos\Backup;
 
 use Closure;
 use Hilos\Backup\Anonymization\ArchiveSchemaReader;
-use Hilos\Backup\Anonymization\ArchiveTableSchema;
 use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
@@ -154,7 +153,7 @@ final class BackupRestorer
                 => $a->index <=> $b->index);
 
             // The last refusal, and the only one that needs the archive open: the registry is
-            // judged against the schema the dump declares, while the target database still
+            // judged against the tables the dump declares, while the target database still
             // holds whatever it held. Every failure past this line leaves data behind.
             if ($anonymizer !== null) {
                 $anonymizer->validateArchive($this->readArchiveSchemas($connections, $workDir));
@@ -173,7 +172,9 @@ final class BackupRestorer
                 }
 
                 // Before anonymization, not after: the anonymizer (HIL-275) works against the
-                // schema the CODE knows, which is the schema these migrations produce.
+                // schema the CODE knows, which is the schema these migrations produce - and
+                // since HIL-600 that is true of its second gate as well, which reads that
+                // schema back out of the database rather than believing the archive's.
                 if ($onPhase !== null) {
                     $onPhase(RestorePhase::MIGRATING);
                 }
@@ -184,6 +185,16 @@ final class BackupRestorer
                 if ($anonymizer !== null) {
                     if ($onPhase !== null) {
                         $onPhase(RestorePhase::ANONYMIZING);
+                    }
+                    // Every connection is judged before any is rewritten: a refusal on the
+                    // second one is bad news either way, but it must not arrive over a first
+                    // one that has already been anonymized and can no longer be compared with
+                    // the archive it came from.
+                    foreach ($connections as $connection) {
+                        $anonymizer->validateTargetSchema(
+                            $connection->index,
+                            $this->targetDatabaseOf($connection->index),
+                        );
                     }
                     foreach ($connections as $connection) {
                         $anonymizer->anonymizeConnection(
@@ -448,11 +459,11 @@ final class BackupRestorer
     }
 
     /**
-     * Reads the table schemas every connection's dump file declares.
+     * Reads the tables every connection's dump file declares.
      *
      * @param list<BackupConnectionMeta> $connections Connections the archive carries
      * @param string $workDir Temp workdir holding the extracted dump files
-     * @return array<int, list<ArchiveTableSchema>> Declared tables per connection index
+     * @return array<int, list<string>> Declared table names per connection index
      * @throws RestoreFailedException When a connection's dump file is missing or unreadable
      */
     private function readArchiveSchemas(array $connections, string $workDir): array

@@ -74,4 +74,37 @@ enum AnonymizationStrategy: string
             default => false,
         };
     }
+
+    /**
+     * Tells whether this strategy writes text into the column.
+     *
+     * Which types count as text is not asked here: a strategy knows the shape of what it
+     * produces, and the dictionary of MySQL types that can hold it belongs to the check
+     * ({@see AnonymizationCompatibilityValidator}).
+     *
+     * @return bool Whether the strategy needs a column that holds characters
+     */
+    public function needsTextualColumn(): bool
+    {
+        return match ($this) {
+            self::NULLIFY, self::PURGE => false,
+            default => true,
+        };
+    }
+
+    /**
+     * Tells whether this strategy leaves rows that differed still differing.
+     *
+     * A UNIQUE index survives the pass only under a strategy that does. Hashes and the
+     * `fake-*` family qualify by construction - one derives from the value, the others from
+     * the primary key. {@see self::MASK} writes one constant over every row and is the only
+     * one that does not. {@see self::NULLIFY} does: MySQL lets a UNIQUE index hold any
+     * number of NULLs, so a column of nothing collides with nothing.
+     *
+     * @return bool Whether distinct values stay distinct through the strategy
+     */
+    public function keepsValuesDistinct(): bool
+    {
+        return $this !== self::MASK;
+    }
 }

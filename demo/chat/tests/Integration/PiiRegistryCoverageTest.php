@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
+use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
-use Hilos\Backup\Anonymization\AnonymizationValidator;
-use Hilos\Backup\Anonymization\ArchiveSchemaReader;
-use Hilos\Backup\Anonymization\ArchiveTableSchema;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Database\Database;
@@ -59,25 +59,15 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     /** Name the probe row is written with, so the pass has a row to rewrite. */
     private const string PROBE_USER_NAME = 'PII coverage probe';
 
-    /** `information_schema` result keys. */
-    private const string COL_TABLE_NAME = 'TABLE_NAME';
-    private const string COL_COLUMN_NAME = 'COLUMN_NAME';
-    private const string COL_IS_NULLABLE = 'IS_NULLABLE';
-    private const string COL_MAX_LENGTH = 'CHARACTER_MAXIMUM_LENGTH';
-    private const string COL_KEY = 'COLUMN_KEY';
-
-    /** `IS_NULLABLE` marker for a column that accepts NULL. */
-    private const string NULLABLE_YES = 'YES';
-
-    /** `COLUMN_KEY` marker for a column of the primary key. */
-    private const string KEY_PRIMARY = 'PRI';
-
     /**
-     * Every table the demo creates must carry a classification.
+     * Every table the demo creates must carry a classification, and every column it
+     * classifies must be able to carry its strategy.
      *
-     * The assertion is the real {@see AnonymizationValidator}, not a comparison written
-     * here: the gate a restore trips is the only judge whose verdict means anything, and a
-     * second implementation of it would be free to be more forgiving than the first.
+     * The assertions are the real gates, not comparisons written here: the gates a restore
+     * trips are the only judges whose verdict means anything, and a second implementation
+     * of them would be free to be more forgiving than the first. The coverage gate is fed
+     * the live table names, which for a restore into this demo is what the archive would
+     * carry; the compatibility gate is fed the live schema, which is what it is for.
      *
      * @throws AnonymizationConfigException When a table is unclassified, or a declared column
      *     is absent or cannot carry its strategy
@@ -85,7 +75,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      */
     public function testRegistryCoversLiveSchema(): void
     {
-        $schemas = self::liveSchemas();
+        $schemas = LiveSchemaReader::read(self::CONNECTION_INDEX);
 
         $this->assertGreaterThanOrEqual(
             self::MIN_LIVE_TABLE_COUNT,
@@ -94,20 +84,27 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             . 'query, not the registry, is what to look at first',
         );
 
-        AnonymizationValidator::validate(
-            PiiRegistry::fromCatalog(),
-            [self::CONNECTION_INDEX => $schemas],
+        $registry = PiiRegistry::fromCatalog();
+        AnonymizationCoverageValidator::validate(
+            $registry,
+            [self::CONNECTION_INDEX => array_keys($schemas)],
+        );
+        AnonymizationCompatibilityValidator::validate(
+            $registry,
+            self::CONNECTION_INDEX,
+            $schemas,
+            self::maxPrimaryKey(...),
         );
     }
 
     /**
      * Every statement the pass would run must be one the database accepts.
      *
-     * What the gate cannot know, because it reads a schema rather than asks the server: a
-     * strategy whose value the column's type refuses, a purge held back by an incoming
-     * RESTRICT key, a hash too long for the column it goes back into. The statements are
-     * built exactly as a restore builds them and run in archive order, which is the order
-     * that decides whether a purged parent meets its children first.
+     * What no gate can know, because it reads a schema rather than asks the server: a value
+     * the column refuses for a reason its declaration does not show, and a purge held back
+     * by an incoming RESTRICT key (P-070). The statements are built exactly as a restore
+     * builds them and run in the registry's declaration order, which is the order that
+     * decides whether a purged parent meets its children first.
      *
      * @throws AnonymizationConfigException When a strategy cannot be expressed for its column
      * @throws DatabaseException When a statement of the pass is refused
@@ -115,17 +112,22 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     public function testPassStatementsExecute(): void
     {
         $registry = PiiRegistry::fromCatalog();
+        $schemas = LiveSchemaReader::read(self::CONNECTION_INDEX);
         $builder = new AnonymizationSqlBuilder(self::TEST_SALT);
         $statements = [];
-        foreach (self::liveSchemas() as $schema) {
-            if ($registry->isPurged(self::CONNECTION_INDEX, $schema->table)) {
-                $statements[] = $builder->purgeStatement($schema->table);
+        foreach ($registry->declaredTables(self::CONNECTION_INDEX) as $table) {
+            $schema = $schemas[$table] ?? null;
+            if ($schema === null) {
+                continue;
+            }
+            if ($registry->isPurged(self::CONNECTION_INDEX, $table)) {
+                $statements[] = $builder->purgeStatement($table);
 
                 continue;
             }
             $update = $builder->updateStatement(
                 $schema,
-                $registry->strategiesFor(self::CONNECTION_INDEX, $schema->table) ?? [],
+                $registry->strategiesFor(self::CONNECTION_INDEX, $table) ?? [],
             );
             if ($update !== null) {
                 $statements[] = $update;
@@ -154,52 +156,18 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
     }
 
     /**
-     * Reads the live schema in the shape the archive reader produces.
+     * Reads the largest primary key a table holds, the way a restore reads it.
      *
-     * The tables come back in name order, which is the order mysqldump writes them and
-     * therefore the order the pass runs in. Lengths are taken as `information_schema`
-     * reports them: {@see ArchiveSchemaReader} leaves a `text` column without one while
-     * this reports its maximum, and the difference cannot reach the SQL, because a length
-     * is only ever used to truncate a hash and both values are far wider than one.
-     *
-     * @return list<ArchiveTableSchema> Live tables, in name order
-     * @throws DatabaseException When an introspection query fails
+     * @param string $table Table to read
+     * @param string $column Its single primary key column
+     * @return int Largest key value, or 0 when the table holds no rows
+     * @throws DatabaseException When the query fails
      */
-    private static function liveSchemas(): array
+    private static function maxPrimaryKey(string $table, string $column): int
     {
-        Database::sql(
-            'SELECT ' . self::COL_TABLE_NAME . ', ' . self::COL_COLUMN_NAME . ', '
-            . self::COL_IS_NULLABLE . ', ' . self::COL_MAX_LENGTH . ', ' . self::COL_KEY
-            . ' FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()'
-            . ' ORDER BY ' . self::COL_TABLE_NAME . ', ORDINAL_POSITION',
-        );
+        Database::sql(AnonymizationSqlBuilder::maxPrimaryKeyStatement($table, $column));
 
-        $columns = [];
-        $lengths = [];
-        $primaryKeys = [];
-        foreach (Database::rows() as $row) {
-            $table = (string)$row[self::COL_TABLE_NAME];
-            $column = (string)$row[self::COL_COLUMN_NAME];
-            $length = $row[self::COL_MAX_LENGTH];
-            $columns[$table][$column] = $row[self::COL_IS_NULLABLE] === self::NULLABLE_YES;
-            $lengths[$table][$column] = $length === null ? null : (int)$length;
-            $primaryKeys[$table] ??= [];
-            if ($row[self::COL_KEY] === self::KEY_PRIMARY) {
-                $primaryKeys[$table][] = $column;
-            }
-        }
-
-        $schemas = [];
-        foreach ($columns as $table => $tableColumns) {
-            $schemas[] = new ArchiveTableSchema(
-                (string)$table,
-                $tableColumns,
-                $lengths[$table],
-                $primaryKeys[$table],
-            );
-        }
-
-        return $schemas;
+        return (int)Database::field(AnonymizationSqlBuilder::MAX_PRIMARY_KEY_ALIAS);
     }
 
     /**

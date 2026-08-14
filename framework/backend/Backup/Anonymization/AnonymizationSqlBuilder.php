@@ -27,6 +27,9 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
  */
 final class AnonymizationSqlBuilder
 {
+    /** Result column {@see maxPrimaryKeyStatement()} returns its number under. */
+    public const string MAX_PRIMARY_KEY_ALIAS = 'max_primary_key';
+
     /** SHA-256 as {@see AnonymizationStrategy::HASH} asks the database for it. */
     private const int HASH_BITS = 256;
 
@@ -87,13 +90,13 @@ final class AnonymizationSqlBuilder
      * One `UPDATE` per table rather than one per column: the columns are independent of
      * each other, and a single pass over the table does the work of N.
      *
-     * @param ArchiveTableSchema $schema Table as the archive declares it
+     * @param LiveTableSchema $schema Table as the live database declares it
      * @param array<string, AnonymizationStrategy> $strategies Declared column strategies
      * @return ?string SQL statement, or null when the table declares no column to rewrite
      * @throws AnonymizationConfigException When a strategy cannot be expressed for its column;
      *     the preflight gate refuses these before a restore reaches this point
      */
-    public function updateStatement(ArchiveTableSchema $schema, array $strategies): ?string
+    public function updateStatement(LiveTableSchema $schema, array $strategies): ?string
     {
         $assignments = [];
         foreach ($strategies as $column => $strategy) {
@@ -113,7 +116,7 @@ final class AnonymizationSqlBuilder
      *
      * @param AnonymizationStrategy $strategy Strategy declared for the column
      * @param string $column Column being rewritten
-     * @param ArchiveTableSchema $schema Table as the archive declares it
+     * @param LiveTableSchema $schema Table as the live database declares it
      * @return string SQL expression
      * @throws AnonymizationConfigException When the strategy is table-level, or needs a single
      *     primary key the table does not have
@@ -121,7 +124,7 @@ final class AnonymizationSqlBuilder
     public function columnExpression(
         AnonymizationStrategy $strategy,
         string $column,
-        ArchiveTableSchema $schema,
+        LiveTableSchema $schema,
     ): string {
         $quoted = self::quoteIdentifier($column);
 
@@ -159,6 +162,59 @@ final class AnonymizationSqlBuilder
     }
 
     /**
+     * Returns the widest value a strategy can write, so a gate can ask whether it fits.
+     *
+     * Answered here rather than in the gate because the form of a replacement is this
+     * class's own knowledge: every literal it prefixes and every digit it pads to is a
+     * constant above, and a second place counting those characters would be a copy that
+     * silently stops agreeing with the SQL.
+     *
+     * {@see AnonymizationStrategy::HASH} answers null and means it: it truncates itself to
+     * whatever the column takes ({@see hashExpression()}), so no column is too narrow for
+     * it. So do the strategies that write no characters at all.
+     *
+     * @param AnonymizationStrategy $strategy Strategy declared for a column
+     * @param int $maxPrimaryKey Largest primary key value the table currently holds; the
+     *     `fake-*` family renders it into the value
+     * @return ?int Characters the widest replacement takes, or null when no width can be
+     *     exceeded
+     */
+    public static function substitutionLength(AnonymizationStrategy $strategy, int $maxPrimaryKey): ?int
+    {
+        $keyDigits = strlen((string)$maxPrimaryKey);
+
+        return match ($strategy) {
+            AnonymizationStrategy::HASH,
+            AnonymizationStrategy::NULLIFY,
+            AnonymizationStrategy::PURGE => null,
+            AnonymizationStrategy::MASK => strlen(BackupConstants::ANONYMIZATION_MASK),
+            AnonymizationStrategy::FAKE_EMAIL => strlen(self::FAKE_EMAIL_PREFIX) + $keyDigits
+                + strlen(self::FAKE_EMAIL_DOMAIN),
+            AnonymizationStrategy::FAKE_NAME => strlen(self::FAKE_NAME_PREFIX) + $keyDigits,
+            // LPAD cuts a longer key down rather than growing the value, so the width of a
+            // faked phone number is the same for every row of every table.
+            AnonymizationStrategy::FAKE_PHONE => strlen(self::FAKE_PHONE_PREFIX) + self::FAKE_PHONE_DIGITS,
+        };
+    }
+
+    /**
+     * Builds the query that reads the largest primary key a table currently holds.
+     *
+     * Kept beside the statements it serves rather than at the caller: it is SQL over
+     * identifiers that came out of a schema, and quoting those is this class's job.
+     *
+     * @param string $table Table to read
+     * @param string $column Its single primary key column
+     * @return string SQL statement returning one row, under {@see MAX_PRIMARY_KEY_ALIAS}
+     */
+    public static function maxPrimaryKeyStatement(string $table, string $column): string
+    {
+        return 'SELECT MAX(' . self::quoteIdentifier($column) . ') AS '
+            . self::quoteIdentifier(self::MAX_PRIMARY_KEY_ALIAS)
+            . ' FROM ' . self::quoteIdentifier($table);
+    }
+
+    /**
      * Wraps a replacement so a column that held nothing keeps holding nothing.
      *
      * @param string $quotedColumn Quoted column being rewritten
@@ -191,12 +247,12 @@ final class AnonymizationSqlBuilder
     /**
      * Returns the quoted primary key column a `fake-*` strategy derives from.
      *
-     * @param ArchiveTableSchema $schema Table as the archive declares it
+     * @param LiveTableSchema $schema Table as the live database declares it
      * @param string $column Column being rewritten, named in the refusal
      * @return string Quoted primary key column
      * @throws AnonymizationConfigException When the table has no single primary key column
      */
-    private static function primaryKeyOf(ArchiveTableSchema $schema, string $column): string
+    private static function primaryKeyOf(LiveTableSchema $schema, string $column): string
     {
         $primaryKey = $schema->singlePrimaryKey();
         if ($primaryKey === null) {

@@ -62,8 +62,20 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
     /** Level the fixture archive records: one behind the code, the migrate-forward case. */
     private const int ARCHIVE_MIGRATION_INDEX = 9000;
 
-    /** Column the fixture migration adds; the proof that migrations ran after the import. */
-    private const string MIGRATED_COLUMN = 'note';
+    /**
+     * Column the fixture migration adds; the proof that migrations ran after the import.
+     * Read by the catalog fixtures below, one of which classifies it.
+     */
+    public const string MIGRATED_COLUMN = 'note';
+
+    /** Value the fixture migration backfills {@see MIGRATED_COLUMN} with, so the pass has work. */
+    private const string MIGRATED_VALUE = 'from the migration';
+
+    /**
+     * Column the PII archive carries as nullable; one case migrates it to NOT NULL under a
+     * registry that declared it for `null`. Read by the catalog fixtures below.
+     */
+    public const string NULLABLE_COLUMN = 'nickname';
 
     private string $storeRoot = '';
 
@@ -240,6 +252,69 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertSame([], $this->tokenRows(), 'A purged table must arrive empty');
     }
 
+    public function testAColumnOnlyTheMigratedSchemaCarriesIsAnonymized(): void
+    {
+        // The case the archive-shaped gate got wrong: the registry describes the code's
+        // schema, the archive predates the column, and judging the registry against the dump
+        // refused a restore that had nothing wrong with it. What the pass writes into is the
+        // schema the migrations leave behind, so that is what is judged.
+        $this->listFixtureMigration();
+        $this->publishFixtureBackup($this->piiDumpSql(), self::ARCHIVE_MIGRATION_INDEX);
+        MigratedPiiRestoreTestHilos::initBrowser();
+
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+        );
+
+        $this->assertSame(
+            [['1', '[redacted]'], ['2', '[redacted]']],
+            $this->probeNotes(),
+            'A column the archive never carried must still be rewritten once the code has it',
+        );
+    }
+
+    public function testASchemaTightenedByAMigrationRefusesBeforeTheFirstRowIsRewritten(): void
+    {
+        // The other half of judging the live schema: the archive says the column takes NULL,
+        // the migration that runs after the import says it does not, and only the second one
+        // describes what the pass would write into.
+        $this->listFixtureMigration(
+            'ALTER TABLE `' . self::PROBE_TABLE . '` MODIFY `' . self::NULLABLE_COLUMN
+            . "` VARCHAR(32) NOT NULL DEFAULT ''",
+        );
+        $this->publishFixtureBackup($this->piiDumpSql(), self::ARCHIVE_MIGRATION_INDEX);
+        TightenedPiiRestoreTestHilos::initBrowser();
+
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::REQUIRE_ANONYMIZATION,
+            );
+            $this->fail('A column the migrations made NOT NULL must not be told to hold NULL');
+        } catch (RestoreFailedException $refusal) {
+            $this->assertStringContainsString(self::NULLABLE_COLUMN, $refusal->getMessage());
+            $this->assertTrue(
+                $refusal->databaseTouched(),
+                'The refusal comes after the import, and an operator must be told the data is there',
+            );
+            $this->assertStringContainsString('NOT anonymized', $refusal->getMessage());
+        }
+
+        // Read the column this case's registry DOES declare: `label` is not one of its rows,
+        // so a probe of it would look untouched whether the pass ran or not.
+        $this->assertSame(
+            [
+                ['1', 'Alice', 'alice@real.example'],
+                ['2', 'Bob', 'bob@real.example'],
+            ],
+            $this->piiRows(),
+            'The refusal must land before the first UPDATE, with every connection still unwritten',
+        );
+    }
+
     public function testAnUnclassifiedTableRefusesTheRestoreBeforeTheFirstImport(): void
     {
         $this->publishFixtureBackup($this->piiDumpSql());
@@ -371,10 +446,11 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             . "  `id` int NOT NULL,\n"
             . "  `label` varchar(32) NOT NULL,\n"
             . "  `email` varchar(255) NOT NULL,\n"
+            . '  `' . self::NULLABLE_COLUMN . "` varchar(32) DEFAULT NULL,\n"
             . "  PRIMARY KEY (`id`)\n"
             . ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
             . 'INSERT INTO `' . self::PROBE_TABLE . "` VALUES "
-            . "(1, 'Alice', 'alice@real.example'), (2, 'Bob', 'bob@real.example');\n"
+            . "(1, 'Alice', 'alice@real.example', 'ally'), (2, 'Bob', 'bob@real.example', 'bobby');\n"
             . 'DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . "`;\n"
             . 'CREATE TABLE `' . self::TOKEN_TABLE . "` (\n"
             . "  `id` int NOT NULL,\n"
@@ -393,6 +469,22 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $rows = [];
         while (($row = Database::row()) !== null) {
             $rows[] = [(string)$row['id'], (string)$row['label'], (string)$row['email']];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<array{0: string, 1: string}> Probe rows with the column the migration adds
+     */
+    private function probeNotes(): array
+    {
+        Database::sql(
+            'SELECT id, `' . self::MIGRATED_COLUMN . '` FROM `' . self::PROBE_TABLE . '` ORDER BY id',
+        );
+        $rows = [];
+        while (($row = Database::row()) !== null) {
+            $rows[] = [(string)$row['id'], (string)$row[self::MIGRATED_COLUMN]];
         }
 
         return $rows;
@@ -419,13 +511,17 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      * takes its "level not comparable" branch, and the test quietly stops being about
      * migrating forward at all.
      */
-    private function listFixtureMigration(): void
+    private function listFixtureMigration(?string $statement = null): void
     {
         $trackDir = $this->storeRoot . '/migrations/' . self::MIGRATION_TRACK;
         mkdir($trackDir, 0700, true);
+        // The column arrives filled rather than empty: a column of NULLs would be rewritten
+        // to NULLs by any strategy (the pass leaves nothing as nothing), so a case about a
+        // migrated column being anonymized would pass without the pass doing anything.
         file_put_contents(
             $trackDir . '/' . self::CODE_MIGRATION_INDEX . '_up.sql',
-            'ALTER TABLE `' . self::PROBE_TABLE . '` ADD COLUMN `' . self::MIGRATED_COLUMN . "` VARCHAR(32) NULL;\n",
+            ($statement ?? 'ALTER TABLE `' . self::PROBE_TABLE . '` ADD COLUMN `' . self::MIGRATED_COLUMN
+                . "` VARCHAR(32) NOT NULL DEFAULT '" . self::MIGRATED_VALUE . "'") . ";\n",
         );
         $this->fixtureMigrationListed = true;
     }
@@ -536,6 +632,38 @@ final class PartialPiiRestoreTestHilos extends Hilos
 }
 
 /**
+ * Project facade fixture whose catalog classifies a column only the migrated schema has.
+ */
+final class MigratedPiiRestoreTestHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = MigratedPiiRestoreTestCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PiiRestoreTestDbContext();
+    }
+}
+
+/**
+ * Project facade fixture whose catalog declares `null` on a column a migration tightens.
+ */
+final class TightenedPiiRestoreTestHilos extends Hilos
+{
+    protected const ?string BACKUP_CATALOG = TightenedPiiRestoreTestCatalog::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new PiiRestoreTestDbContext();
+    }
+}
+
+/**
  * No-op DB context so the facade fixtures are instantiable.
  */
 final class PiiRestoreTestDbContext extends DbContext
@@ -566,6 +694,57 @@ final class FullPiiRestoreTestCatalog implements CatalogProviderInterface
                     BackupRestorerIntegrationTest::PROBE_TABLE => [
                         'label' => AnonymizationStrategy::MASK,
                         'email' => AnonymizationStrategy::FAKE_EMAIL,
+                    ],
+                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+                ],
+            ],
+        ];
+    }
+}
+
+/**
+ * Catalog of a project whose registry has run ahead of the archive: it classifies the
+ * column a forward migration adds, which no dump written before that migration carries.
+ */
+final class MigratedPiiRestoreTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<int, mixed>> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_PII => [
+                0 => [
+                    BackupRestorerIntegrationTest::PROBE_TABLE => [
+                        'label' => AnonymizationStrategy::MASK,
+                        'email' => AnonymizationStrategy::FAKE_EMAIL,
+                        BackupRestorerIntegrationTest::MIGRATED_COLUMN => AnonymizationStrategy::MASK,
+                    ],
+                    BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
+                ],
+            ],
+        ];
+    }
+}
+
+/**
+ * Catalog of a project that declared `null` on a column the archive carries as nullable
+ * and the code has since made NOT NULL.
+ */
+final class TightenedPiiRestoreTestCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<int, mixed>> Backup catalog of the fixture project
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            BackupConstants::CATALOG_PII => [
+                0 => [
+                    BackupRestorerIntegrationTest::PROBE_TABLE => [
+                        'email' => AnonymizationStrategy::FAKE_EMAIL,
+                        BackupRestorerIntegrationTest::NULLABLE_COLUMN => AnonymizationStrategy::NULLIFY,
                     ],
                     BackupRestorerIntegrationTest::TOKEN_TABLE => AnonymizationStrategy::PURGE,
                 ],
