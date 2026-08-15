@@ -14,11 +14,25 @@ use Hilos\Auth\OAuth\Exception\OAuthProviderException;
  * Its authorize URL redirects straight back to the SPA callback carrying a canned
  * code, and {@see resolve()} maps that code to a deterministic account so a test
  * can log in as distinct identities by varying the code. No network, no sockets.
+ *
+ * The code also carries the withholding markers a real provider expresses by
+ * omitting a userinfo field: a code containing {@see MARKER_NO_EMAIL} resolves
+ * with no email, one containing {@see MARKER_NO_NAME} with no name (HIL-573).
+ * They are read as substrings, not as whole codes, so one code asks for both.
  */
 final class StubOAuthProvider implements OfflineOAuthProvider
 {
     public const string DEFAULT_KEY = 'oauth:stub';
     public const string DEFAULT_CODE = 'stub';
+
+    /** Substring of the code asking the stub to resolve with no email. */
+    public const string MARKER_NO_EMAIL = 'noemail';
+
+    /** Substring of the code asking the stub to resolve with no name. */
+    public const string MARKER_NO_NAME = 'noname';
+
+    /** Prefix of the display name the stub derives from the code. */
+    public const string NAME_PREFIX = 'stub-';
 
     /**
      * @param string $key Provider key this stub answers to
@@ -55,8 +69,18 @@ final class StubOAuthProvider implements OfflineOAuthProvider
     }
 
     /**
+     * Resolves the canned account, honouring the same output contract a real provider does.
+     *
+     * The address is lowercased like {@see GenericOAuthProvider} lowercases the one
+     * it reads: normalization belongs to the provider (HIL-573), and the code that
+     * feeds it comes off a client-supplied callback query, so a mixed-case one would
+     * otherwise reach the account resolver, which takes a lowercased address and does
+     * not normalize. The subject keeps the code verbatim — it is an identity, not an
+     * address — so two codes differing only in case remain two accounts sharing one
+     * address, which is the collision the dev flow wants to be able to stage.
+     *
      * @param string $code Authorization code returned to the SPA callback
-     * @return OAuthUserInfo Resolved subject/email
+     * @return OAuthUserInfo Resolved subject, email and name
      * @throws OAuthProviderException When the code is empty
      */
     public function resolve(string $code): OAuthUserInfo
@@ -65,9 +89,10 @@ final class StubOAuthProvider implements OfflineOAuthProvider
             throw new OAuthProviderException('OAuth stub code is empty');
         }
 
-        $subject = 'stub:' . $code;
-        $email = $code . '@stub.local';
-
-        return new OAuthUserInfo($subject, $email);
+        return new OAuthUserInfo(
+            'stub:' . $code,
+            str_contains($code, self::MARKER_NO_EMAIL) ? null : mb_strtolower($code) . '@stub.local',
+            str_contains($code, self::MARKER_NO_NAME) ? null : self::NAME_PREFIX . $code,
+        );
     }
 }

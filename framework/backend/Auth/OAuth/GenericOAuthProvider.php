@@ -16,7 +16,7 @@ use Hilos\Constants\HttpConstants;
  * flow with a JSON userinfo endpoint (GitHub is the reference dev instance —
  * simplest, no OIDC / no id_token JWT to verify). Providers differ only by
  * their {@see OAuthProviderConfig}: endpoint URLs, credentials, scope, and the
- * field map naming the subject/email keys. Providers that need OIDC/JWT
+ * field map naming the subject/email/name keys. Providers that need OIDC/JWT
  * verification are a later, separate implementation, not a config change here.
  */
 final class GenericOAuthProvider implements HttpOAuthProvider
@@ -126,7 +126,7 @@ final class GenericOAuthProvider implements HttpOAuthProvider
 
     /**
      * @param AsyncHttpResponse $response Completed userinfo endpoint response
-     * @return OAuthUserInfo Resolved subject/email
+     * @return OAuthUserInfo Resolved subject, email and name
      * @throws OAuthProviderException When the body is malformed or has no subject
      */
     public function parseUserInfoResponse(AsyncHttpResponse $response): OAuthUserInfo
@@ -141,11 +141,36 @@ final class GenericOAuthProvider implements HttpOAuthProvider
             throw new OAuthProviderException('OAuth userinfo response has no subject');
         }
 
-        $emailRaw = $decoded[$this->config->emailKey] ?? null;
-        // external-boundary: the provider's userinfo JSON may carry no address at all
-        $email = is_string($emailRaw) ? strtolower($emailRaw) : '';
+        $email = $this->optionalField($decoded, $this->config->emailKey);
 
-        return new OAuthUserInfo((string)$subjectRaw, $email);
+        return new OAuthUserInfo(
+            (string)$subjectRaw,
+            $email === null ? null : mb_strtolower($email),
+            $this->optionalField($decoded, $this->config->nameKey),
+        );
+    }
+
+    /**
+     * Reads one optional userinfo field, turning provider absence into null.
+     *
+     * The provider's userinfo JSON may carry no address and no name at all — the
+     * key can be missing, hold JSON null, or hold a blank string — and all three
+     * spellings of "the provider withheld it" answer the same null (HIL-573).
+     *
+     * @param array<mixed> $decoded Decoded userinfo payload
+     * @param string $key Field name from the provider's field map
+     * @return ?string Trimmed field value, or null when the provider withheld it
+     */
+    private function optionalField(array $decoded, string $key): ?string
+    {
+        $raw = $decoded[$key] ?? null;
+        if (!is_string($raw)) {
+            return null;
+        }
+
+        $value = trim($raw);
+
+        return $value === '' ? null : $value;
     }
 
     /**

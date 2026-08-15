@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\HilosException;
 
 /**
@@ -27,5 +28,27 @@ final class UsersActionsTest extends IntegrationTestCase
 
         $this->assertNotNull($user->id);
         $this->assertSame('Alice', $user->name);
+    }
+
+    /**
+     * An empty name is refused at the one door every registration road passes through (HIL-573).
+     *
+     * @throws HilosException On database error
+     */
+    public function testCreateWithNameRefusesAnEmptyName(): void
+    {
+        $this->expectException(EmptyValueException::class);
+        Hilos::$db->users->actions->createWithName('');
+    }
+
+    /**
+     * A name of nothing but whitespace is the same absence, and is refused the same way.
+     *
+     * @throws HilosException On database error
+     */
+    public function testCreateWithNameRefusesABlankName(): void
+    {
+        $this->expectException(EmptyValueException::class);
+        Hilos::$db->users->actions->createWithName("  \t ");
     }
 }

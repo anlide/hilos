@@ -1018,6 +1018,7 @@ final class MainPage extends AbstractPage
      * @param ConfirmSmsCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the phone or code is invalid
+     * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws HilosException When verification, user/identity creation, or session promotion fails
      */
     private function handleConfirmSmsCode(ConfirmSmsCodeActionDTO $dto): void
@@ -1214,6 +1215,7 @@ final class MainPage extends AbstractPage
      * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the code is wrong, expired, or exhausted
+     * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException When the account, identity, event, or session write fails
      */

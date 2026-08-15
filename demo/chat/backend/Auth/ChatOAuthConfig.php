@@ -67,6 +67,15 @@ final class ChatOAuthConfig
     private const string GITHUB_EMAIL_KEY = 'email';
 
     /**
+     * Userinfo field carrying the GitHub display name.
+     *
+     * `login` and not `name`: a GitHub profile name is optional and often blank,
+     * while the login handle is always there — and a name the provider withheld
+     * costs the new account its human-readable name (HIL-573).
+     */
+    private const string GITHUB_NAME_KEY = 'login';
+
+    /**
      * Builds the synchronous OAuth service for the page actions and the async agent.
      *
      * The state signer and the account-link signer (HIL-282) share the one OAuth
@@ -124,6 +133,7 @@ final class ChatOAuthConfig
             redirectUri: $redirectUri,
             subjectKey: self::GITHUB_SUBJECT_KEY,
             emailKey: self::GITHUB_EMAIL_KEY,
+            nameKey: self::GITHUB_NAME_KEY,
         ));
     }
 }

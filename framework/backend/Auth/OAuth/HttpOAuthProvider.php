@@ -50,7 +50,7 @@ interface HttpOAuthProvider extends OAuthProviderInterface
      * Maps the userinfo response to a resolved account identity.
      *
      * @param AsyncHttpResponse $response Completed userinfo endpoint response
-     * @return OAuthUserInfo Resolved subject/email
+     * @return OAuthUserInfo Resolved subject, email and name
      * @throws OAuthProviderException When the body is malformed or has no subject
      */
     public function parseUserInfoResponse(AsyncHttpResponse $response): OAuthUserInfo;

@@ -504,7 +504,7 @@ final class Hilos extends HilosFacade
      *
      * @param string $displayName Display name for the seeded user
      * @return ?int Created user id
-     * @throws HilosException When the user write fails
+     * @throws HilosException When the user write fails, including a blank display name
      */
     public static function createFixtureUser(string $displayName): ?int
     {

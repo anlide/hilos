@@ -10,7 +10,7 @@ namespace Hilos\Auth\OAuth;
  * The immutable recipe a {@see GenericOAuthProvider} runs on, the OAuth analog
  * of an LLM profile: authorize/token/userinfo endpoints, the client credential
  * pair, the requested scope, the SPA callback the provider redirects to, and the
- * field map naming the subject/email keys in the userinfo payload. `clientSecret`
+ * field map naming the subject/email/name keys in the userinfo payload. `clientSecret`
  * is env-only (never synced to any client); the resolver reads it from env while
  * the rest may be settings-overridable. A project builds these from its provider
  * catalog and hands them to the registry.
@@ -28,6 +28,7 @@ final readonly class OAuthProviderConfig
      * @param string $redirectUri SPA callback the provider redirects back to
      * @param string $subjectKey Userinfo field holding the immutable subject id
      * @param string $emailKey Userinfo field holding the account email
+     * @param string $nameKey Userinfo field holding the display name
      */
     public function __construct(
         public string $key,
@@ -40,6 +41,7 @@ final readonly class OAuthProviderConfig
         public string $redirectUri,
         public string $subjectKey,
         public string $emailKey,
+        public string $nameKey,
     ) {
     }
 }

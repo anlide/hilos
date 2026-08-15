@@ -171,8 +171,11 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * existing session/currentUser signal (HIL-161). It must not throw on an expected miss;
      * a thrown failure is reported to the client as a generic login failure.
      *
+     * Only the subject is guaranteed: the email and the name are null whenever the
+     * provider withholds them (HIL-573), and naming the account is the project's call.
+     *
      * @param OAuthPendingLogin $op The pending op being completed
-     * @param OAuthUserInfo $info Resolved provider subject and email
+     * @param OAuthUserInfo $info Resolved provider subject, and email/name when the provider gave them
      */
     abstract protected function completeOAuthLogin(OAuthPendingLogin $op, OAuthUserInfo $info): void;
 

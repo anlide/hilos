@@ -88,7 +88,7 @@ final class OAuthService
      *
      * @param string $providerKey Provider key the pending link belongs to
      * @param string $subject Provider-immutable account id to link
-     * @param string $email Provider-reported email that collided with a verified identity
+     * @param string $email Colliding address — non-empty and already normalized by the provider
      * @return string Signed link token
      */
     public function issueLinkToken(string $providerKey, string $subject, string $email): string

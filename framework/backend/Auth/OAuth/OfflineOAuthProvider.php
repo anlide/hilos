@@ -20,7 +20,7 @@ interface OfflineOAuthProvider extends OAuthProviderInterface
      * Resolves the authorization code to an account identity without any I/O.
      *
      * @param string $code Authorization code returned to the SPA callback
-     * @return OAuthUserInfo Resolved subject/email
+     * @return OAuthUserInfo Resolved subject, email and name
      * @throws OAuthProviderException When the code cannot be resolved
      */
     public function resolve(string $code): OAuthUserInfo;

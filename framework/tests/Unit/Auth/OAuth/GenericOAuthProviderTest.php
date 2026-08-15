@@ -32,6 +32,7 @@ final class GenericOAuthProviderTest extends TestCase
             redirectUri: 'https://app.example/auth/callback',
             subjectKey: 'id',
             emailKey: 'email',
+            nameKey: 'login',
         ));
     }
 
@@ -89,7 +90,7 @@ final class GenericOAuthProviderTest extends TestCase
         self::assertSame('Bearer gho_abc', $request->headers['Authorization']);
     }
 
-    public function testParseUserInfoResponseMapsSubjectAndEmail(): void
+    public function testParseUserInfoResponseMapsSubjectEmailAndName(): void
     {
         $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":"User@Example.com","login":"octo"}');
 
@@ -97,6 +98,45 @@ final class GenericOAuthProviderTest extends TestCase
 
         self::assertSame('4711', $info->subject);
         self::assertSame('user@example.com', $info->email);
+        self::assertSame('octo', $info->name);
+    }
+
+    public function testParseUserInfoResponseNormalizesTheEmailItReports(): void
+    {
+        $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":"  User@Example.COM  ","login":"  octo  "}');
+
+        $info = $this->provider()->parseUserInfoResponse($response);
+
+        self::assertSame('user@example.com', $info->email);
+        self::assertSame('octo', $info->name);
+    }
+
+    public function testParseUserInfoResponseReadsAWithheldEmailAsNull(): void
+    {
+        $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":null,"login":"octo"}');
+
+        self::assertNull($this->provider()->parseUserInfoResponse($response)->email);
+    }
+
+    public function testParseUserInfoResponseReadsABlankEmailAsNull(): void
+    {
+        $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":"   ","login":"octo"}');
+
+        self::assertNull($this->provider()->parseUserInfoResponse($response)->email);
+    }
+
+    public function testParseUserInfoResponseReadsAMissingNameKeyAsNull(): void
+    {
+        $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":"user@example.com"}');
+
+        self::assertNull($this->provider()->parseUserInfoResponse($response)->name);
+    }
+
+    public function testParseUserInfoResponseReadsABlankNameAsNull(): void
+    {
+        $response = new AsyncHttpResponse(200, '', '{"id":4711,"email":"user@example.com","login":"   "}');
+
+        self::assertNull($this->provider()->parseUserInfoResponse($response)->name);
     }
 
     public function testParseUserInfoResponseRejectsAMissingSubject(): void
