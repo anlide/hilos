@@ -38,6 +38,9 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
     /** Payload key: the current {@see RestorePhase} value. */
     public const string phase = 'phase';
 
+    /** Payload key: ISO-8601 instant the current phase began. */
+    public const string phaseStartedAt = 'phaseStartedAt';
+
     /** Payload key: ISO-8601 start time of the run. */
     public const string startedAt = 'startedAt';
 
@@ -49,6 +52,9 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
 
     /** Payload key: why the run failed. */
     public const string failureReason = 'failureReason';
+
+    /** Payload key: how long the run is expected to take, in seconds. */
+    public const string estimatedSeconds = 'estimatedSeconds';
 
     /** Payload key: whether every process confirmed re-reading the replaced database. */
     public const string rehydrateComplete = 'rehydrateComplete';
@@ -64,10 +70,12 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
      * @param ?string $backupId Id of the archive being replayed; null when idle
      * @param ?string $scope Scope value of that archive; null when idle
      * @param ?string $phase Current {@see RestorePhase} value; null when idle
+     * @param ?string $phaseStartedAt ISO-8601 instant the current phase began; null when there is no phase
      * @param ?string $startedAt ISO-8601 start time of the run; null when idle
      * @param ?string $finishedAt ISO-8601 finish time of the last run; null while it runs
      * @param ?string $outcome Terminal {@see BackupStatus} value; null until one finishes
      * @param ?string $failureReason Why the last run failed; null when it succeeded or never ran
+     * @param ?int $estimatedSeconds How long the run is expected to take; null when there is no history for it
      * @param bool $rehydrateComplete Whether every process confirmed re-reading the replaced database
      * @param list<string> $rehydrateProblems Processes that failed to re-read or never answered
      * @param bool $databaseTouched Whether the run reached its first destructive step
@@ -77,10 +85,12 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
         public readonly ?string $backupId,
         public readonly ?string $scope,
         public readonly ?string $phase,
+        public readonly ?string $phaseStartedAt,
         public readonly ?string $startedAt,
         public readonly ?string $finishedAt,
         public readonly ?string $outcome,
         public readonly ?string $failureReason,
+        public readonly ?int $estimatedSeconds,
         public readonly bool $rehydrateComplete,
         public readonly array $rehydrateProblems,
         public readonly bool $databaseTouched,
@@ -100,10 +110,12 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
             backupId: $runtime->backupId,
             scope: $runtime->scope,
             phase: $runtime->phase,
+            phaseStartedAt: $runtime->phaseStartedAt,
             startedAt: $runtime->startedAt,
             finishedAt: $runtime->finishedAt,
             outcome: $runtime->outcome,
             failureReason: $runtime->failureReason,
+            estimatedSeconds: $runtime->estimatedSeconds,
             rehydrateComplete: $runtime->rehydrateComplete,
             rehydrateProblems: $runtime->rehydrateProblems,
             databaseTouched: $runtime->databaseTouched,
@@ -120,10 +132,12 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
             self::backupId => $this->backupId,
             self::scope => $this->scope,
             self::phase => $this->phase,
+            self::phaseStartedAt => $this->phaseStartedAt,
             self::startedAt => $this->startedAt,
             self::finishedAt => $this->finishedAt,
             self::outcome => $this->outcome,
             self::failureReason => $this->failureReason,
+            self::estimatedSeconds => $this->estimatedSeconds,
             self::rehydrateComplete => $this->rehydrateComplete,
             self::rehydrateProblems => $this->rehydrateProblems,
             self::databaseTouched => $this->databaseTouched,
@@ -142,10 +156,12 @@ final class BackupRestoreProgressSignalData extends BaseDTO implements SignalDat
             backupId: self::optionalString($data, self::backupId),
             scope: self::optionalString($data, self::scope),
             phase: self::optionalString($data, self::phase),
+            phaseStartedAt: self::optionalString($data, self::phaseStartedAt),
             startedAt: self::optionalString($data, self::startedAt),
             finishedAt: self::optionalString($data, self::finishedAt),
             outcome: self::optionalString($data, self::outcome),
             failureReason: self::optionalString($data, self::failureReason),
+            estimatedSeconds: self::optionalInt($data, self::estimatedSeconds),
             rehydrateComplete: self::requireBool($data, self::rehydrateComplete),
             rehydrateProblems: self::problemList($data),
             databaseTouched: self::requireBool($data, self::databaseTouched),

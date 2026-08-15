@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Backup\BackupPhase;
+
 /**
  * BackupRuntime - the singleton runtime state of the backup subsystem.
  *
@@ -24,6 +26,9 @@ final class BackupRuntime extends RtState
     public const string currentBackupId = 'currentBackupId';
     public const string scope = 'scope';
     public const string startedAt = 'startedAt';
+    public const string phase = 'phase';
+    public const string phaseStartedAt = 'phaseStartedAt';
+    public const string estimatedSeconds = 'estimatedSeconds';
 
     /** Whether a backup is currently running. */
     public bool $running = false;
@@ -36,6 +41,20 @@ final class BackupRuntime extends RtState
 
     /** ISO-8601 start time of the backup in progress, or null when idle. */
     public ?string $startedAt = null;
+
+    /** Phase value ({@see BackupPhase}) the run is in, or null when idle or not yet reported. */
+    public ?string $phase = null;
+
+    /** ISO-8601 instant the current phase began, or null when there is no phase. */
+    public ?string $phaseStartedAt = null;
+
+    /**
+     * How long the run is expected to take in seconds, or null when there is no history to
+     * estimate from. The three anchors are what a progress bar is drawn from: the percentage and
+     * the time left are computed by whoever shows them, so this row is written only when a phase
+     * changes rather than on a timer.
+     */
+    public ?int $estimatedSeconds = null;
 
     /**
      * Creates the idle singleton runtime row.
@@ -58,12 +77,18 @@ final class BackupRuntime extends RtState
         $currentBackupId = $row[self::currentBackupId] ?? null;
         $scope = $row[self::scope] ?? null;
         $startedAt = $row[self::startedAt] ?? null;
+        $phase = $row[self::phase] ?? null;
+        $phaseStartedAt = $row[self::phaseStartedAt] ?? null;
+        $estimatedSeconds = $row[self::estimatedSeconds] ?? null;
 
         $instance = new static();
         $instance->running = (bool)($row[self::running] ?? false);
         $instance->currentBackupId = $currentBackupId === null ? null : (string)$currentBackupId;
         $instance->scope = $scope === null ? null : (string)$scope;
         $instance->startedAt = $startedAt === null ? null : (string)$startedAt;
+        $instance->phase = $phase === null ? null : (string)$phase;
+        $instance->phaseStartedAt = $phaseStartedAt === null ? null : (string)$phaseStartedAt;
+        $instance->estimatedSeconds = $estimatedSeconds === null ? null : (int)$estimatedSeconds;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -97,6 +122,18 @@ final class BackupRuntime extends RtState
             $value = $diff[self::startedAt];
             $this->startedAt = $value === null ? null : (string)$value;
         }
+        if (array_key_exists(self::phase, $diff)) {
+            $value = $diff[self::phase];
+            $this->phase = $value === null ? null : (string)$value;
+        }
+        if (array_key_exists(self::phaseStartedAt, $diff)) {
+            $value = $diff[self::phaseStartedAt];
+            $this->phaseStartedAt = $value === null ? null : (string)$value;
+        }
+        if (array_key_exists(self::estimatedSeconds, $diff)) {
+            $value = $diff[self::estimatedSeconds];
+            $this->estimatedSeconds = $value === null ? null : (int)$value;
+        }
     }
 
     /**
@@ -125,6 +162,9 @@ final class BackupRuntime extends RtState
             self::currentBackupId => $this->currentBackupId,
             self::scope => $this->scope,
             self::startedAt => $this->startedAt,
+            self::phase => $this->phase,
+            self::phaseStartedAt => $this->phaseStartedAt,
+            self::estimatedSeconds => $this->estimatedSeconds,
         ];
     }
 }

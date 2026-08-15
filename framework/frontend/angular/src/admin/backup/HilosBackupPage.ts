@@ -1,8 +1,10 @@
 // HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 // stored-backup list inside the admin shell, with its row actions. The list is
 // live — rows arrive over the socket from the backup runtime index plus the
-// single in-progress backup, so an in-progress row shows an indeterminate
-// progress bar until it completes and merges into the index. Its actions (create
+// single in-progress backup, so an in-progress row shows a live progress bar until
+// it completes and merges into the index. The bar is drawn from the phase anchors
+// the row carries and a page-wide one-second clock, and falls back to the
+// indeterminate striped bar on a run the backend cannot estimate. Its actions (create
 // with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
 // the core headless's (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
@@ -33,12 +35,16 @@ import {
   BACKUP_STATUS_FIELD,
   BACKUP_RESTORE_OUTCOME_FIELD,
   BACKUP_KEEP_FIELD,
+  backupProgressPercent,
+  backupRowAnchors,
+  createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupDuration,
   formatBackupChecksum,
+  formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
@@ -159,11 +165,22 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
               }
             </div>
           } @else {
-            <div class="progress mt-2" role="presentation">
+            <div
+              class="progress mt-2"
+              role="progressbar"
+              aria-label="Restore progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-valuenow]="restorePercent(status)"
+              data-id="hilos-backup-progress-bar"
+            >
               <div
-                class="progress-bar progress-bar-striped progress-bar-animated"
-                style="width: 100%"
+                [class]="progressBarClass(restorePercent(status))"
+                [style.width.%]="restorePercent(status) ?? 100"
               ></div>
+            </div>
+            <div class="small" data-id="hilos-backup-progress-label">
+              {{ restoreProgressLabel(status) }}
             </div>
           }
         </div>
@@ -190,13 +207,22 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
           <td class="text-end">{{ formatDuration(row) }}</td>
           <td style="min-width: 10rem">
             @if (isRunning(row)) {
-              <div class="progress" role="status">
+              <div
+                class="progress"
+                role="progressbar"
+                aria-label="Backup progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                [attr.aria-valuenow]="rowPercent(row)"
+                data-id="hilos-backup-progress-bar"
+              >
                 <div
-                  class="progress-bar progress-bar-striped progress-bar-animated"
-                  style="width: 100%"
-                >
-                  In progress
-                </div>
+                  [class]="progressBarClass(rowPercent(row))"
+                  [style.width.%]="rowPercent(row) ?? 100"
+                ></div>
+              </div>
+              <div class="small" data-id="hilos-backup-progress-label">
+                {{ rowProgressLabel(row) }}
               </div>
             } @else if (row.finished === true) {
               <span class="badge text-bg-success">{{ row.status }}</span>
@@ -517,6 +543,10 @@ export class HilosBackupPage {
     createHilosRestoreProgress(this.context()),
   )
 
+  // One ticker for the whole page: a percentage moves with wall time, while the socket
+  // only speaks on a change of phase, so every bar here redraws from this signal.
+  protected readonly progressNow = signal(Date.now())
+
   // Create toolbar: pick a scope and start a backup as a tracked action.
   protected readonly createScope = signal(HILOS_BACKUP_SCOPES[0].value)
   protected readonly create = createHilosTrackedAction()
@@ -612,6 +642,19 @@ export class HilosBackupPage {
       const backups = this.backups()
       backups.start()
       onCleanup(() => backups.dispose())
+    })
+    // The progress clock belongs to the page rather than to the context: it ticks off
+    // wall time, not off anything that arrives over a connection, so it is built once
+    // and torn down with the component.
+    effect((onCleanup) => {
+      const clock = createBackupProgressClock()
+      const unsubscribe = subscribeSignal(clock.now, (value) =>
+        this.progressNow.set(value),
+      )
+      onCleanup(() => {
+        unsubscribe()
+        clock.dispose()
+      })
     })
     // The context arrives via input and carries core signals; build the restore
     // selectors once it binds, mirror them into Angular, and drop the subscriptions
@@ -744,6 +787,55 @@ export class HilosBackupPage {
   /** Whether the backup is the single in-progress row (renders a live progress bar). */
   protected isRunning(row: HilosBackupRow): boolean {
     return isBackupInProgress(row)
+  }
+
+  /**
+   * How far along the run of this row is, or null when it cannot be told — an
+   * installation with no history to estimate from, or a phase this build does not know.
+   *
+   * @param row The backup row being rendered.
+   */
+  protected rowPercent(row: HilosBackupRow): number | null {
+    return backupProgressPercent(backupRowAnchors(row), this.progressNow())
+  }
+
+  /**
+   * The caption under this row's bar: the phase, the percentage, and the time left.
+   *
+   * @param row The backup row being rendered.
+   */
+  protected rowProgressLabel(row: HilosBackupRow): string {
+    return formatBackupProgressLabel(backupRowAnchors(row), this.progressNow())
+  }
+
+  /**
+   * How far along the restore this tab is watching is, or null when it cannot be told.
+   *
+   * @param status The latest restore frame this connection received.
+   */
+  protected restorePercent(status: HilosRestoreStatus): number | null {
+    return backupProgressPercent(status, this.progressNow())
+  }
+
+  /**
+   * The caption under the restore panel's bar.
+   *
+   * @param status The latest restore frame this connection received.
+   */
+  protected restoreProgressLabel(status: HilosRestoreStatus): string {
+    return formatBackupProgressLabel(status, this.progressNow())
+  }
+
+  /**
+   * The classes of the bar itself: the striped, animated one while the run cannot be
+   * estimated, and a plain determinate bar once it can.
+   *
+   * @param percent How far along the run is, or null when it cannot be told.
+   */
+  protected progressBarClass(percent: number | null): string {
+    return percent === null
+      ? 'progress-bar progress-bar-striped progress-bar-animated'
+      : 'progress-bar'
   }
 
   /** Human-readable archive size, shared with the other view layers. */

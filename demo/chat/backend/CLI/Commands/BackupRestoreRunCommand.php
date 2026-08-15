@@ -6,12 +6,14 @@ namespace Demo\Chat\CLI\Commands;
 
 use Demo\Chat\Constants\ChatCliCommands;
 use Hilos\Backup\BackupConstants;
+use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Backup\RestorePhase;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\Process;
@@ -122,7 +124,12 @@ HELP;
         }
 
         try {
-            new BackupRestorer()->restore($id, $scope, $decision);
+            new BackupRestorer()->restore($id, $scope, $decision, static function (RestorePhase $phase): void {
+                // Flushed line by line: the pipe buffers, and a phase that arrives when the run is
+                // over is a phase nobody was shown.
+                fwrite(STDOUT, BackupProgressMarker::statement($phase->value));
+                fflush(STDOUT);
+            });
         } catch (RestoreFailedException $e) {
             fwrite(STDERR, 'Restore failed: ' . $e->getMessage() . "\n");
 

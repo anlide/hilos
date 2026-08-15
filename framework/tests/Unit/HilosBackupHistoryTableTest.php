@@ -162,6 +162,36 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertCount(2, $keys);
     }
 
+    public function testTheInProgressRowCarriesTheProgressAnchorsAndAStoredArchiveCarriesNone(): void
+    {
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+            ),
+            runtime: $this->runningRuntime([
+                StateBackupRuntime::phase => 'archiving',
+                StateBackupRuntime::phaseStartedAt => '2026-07-20T11:02:00+00:00',
+                StateBackupRuntime::estimatedSeconds => 300,
+            ]),
+        );
+
+        $rows = [];
+        foreach ($table->getFullSnapshot()->rows as $row) {
+            $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+            $rows[$row->getRowKey()] = $row;
+        }
+
+        $running = $rows[HilosBackupTableRow::RUNNING_ROW_KEY];
+        $this->assertSame('archiving', $running->progressPhase);
+        $this->assertSame('2026-07-20T11:02:00+00:00', $running->progressPhaseStartedAt);
+        $this->assertSame(300, $running->progressEstimatedSeconds);
+
+        $stored = $rows['b1'];
+        $this->assertNull($stored->progressPhase, 'A stored archive is not a run and has no bar to fill');
+        $this->assertNull($stored->progressPhaseStartedAt);
+        $this->assertNull($stored->progressEstimatedSeconds);
+    }
+
     public function testBrowserRowRidesSingleBackupSlot(): void
     {
         $table = $this->table();
@@ -203,6 +233,9 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::restoreFinishedAt => null,
                         HilosBackupTableRow::restoreFailureReason => null,
                         HilosBackupTableRow::restoreDatabaseTouched => false,
+                        HilosBackupTableRow::progressPhase => null,
+                        HilosBackupTableRow::progressPhaseStartedAt => null,
+                        HilosBackupTableRow::progressEstimatedSeconds => null,
                     ],
                 ],
             ],
@@ -525,11 +558,12 @@ final class HilosBackupHistoryTableTest extends TestCase
     /**
      * Builds a running backup runtime singleton fixture.
      *
+     * @param array<string, mixed> $overrides Fields replacing the mid-run default
      * @return BackupRuntime Running backup runtime singleton, seen the way the table sees it
      */
-    private function runningRuntime(): BackupRuntime
+    private function runningRuntime(array $overrides = []): BackupRuntime
     {
-        $state = StateBackupRuntime::fromRow([
+        $state = StateBackupRuntime::fromRow($overrides + [
             StateBackupRuntime::running => true,
             StateBackupRuntime::currentBackupId => 'b9',
             StateBackupRuntime::scope => 'full',

@@ -7,6 +7,8 @@ namespace Demo\Chat\CLI\Commands;
 use Demo\Chat\Constants\ChatCliCommands;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupPhase;
+use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\Exception\BackupException;
 use Hilos\Constants\ExitCode;
@@ -85,7 +87,12 @@ HELP;
         }
 
         try {
-            $metadata = new BackupCreator()->create($id, $scope);
+            $metadata = new BackupCreator()->create($id, $scope, static function (BackupPhase $phase): void {
+                // Flushed line by line: the pipe buffers, and a phase that arrives when the run is
+                // over is a phase nobody was shown.
+                fwrite(STDOUT, BackupProgressMarker::statement($phase->value));
+                fflush(STDOUT);
+            });
         } catch (BackupException $e) {
             fwrite(STDERR, 'Backup failed: ' . $e->getMessage() . "\n");
 

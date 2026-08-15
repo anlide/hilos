@@ -160,6 +160,9 @@ final class BackupConstants
      * wire key would be the same concept free to drift.
      */
     public const string FIELD_RESTORE_PHASE = RestoreRuntime::phase;
+    public const string FIELD_RESTORE_PHASE_STARTED_AT = RestoreRuntime::phaseStartedAt;
+    public const string FIELD_RESTORE_STARTED_AT = RestoreRuntime::startedAt;
+    public const string FIELD_RESTORE_ESTIMATED_SECONDS = RestoreRuntime::estimatedSeconds;
     public const string FIELD_RESTORE_OUTCOME = RestoreRuntime::outcome;
     public const string FIELD_RESTORE_FAILURE = RestoreRuntime::failureReason;
     public const string FIELD_RESTORE_RUNNING = RestoreRuntime::running;

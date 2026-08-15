@@ -1,8 +1,10 @@
 <!-- HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 stored-backup list inside the admin shell, with its row actions. The list is live
 — rows arrive over the socket from the backup runtime index plus the single
-in-progress backup, so an in-progress row shows an indeterminate progress bar
-until it completes and merges into the index. Its actions (create with a scope
+in-progress backup, so an in-progress row shows a live progress bar until it
+completes and merges into the index. The bar is drawn from the phase anchors the
+row carries and a page-wide one-second clock, and falls back to the indeterminate
+striped bar on a run the backend cannot estimate. Its actions (create with a scope
 picker, per-row delete, per-row keep toggle, per-row restore) are the core
 headless's (createHilosBackupsActions); each dispatches a tracked action and
 surfaces the backend's failure (authoritative-backend). Restore is the
@@ -23,12 +25,16 @@ import {
   BACKUP_SCOPE_FIELD,
   BACKUP_SIZE_BYTES_FIELD,
   BACKUP_STATUS_FIELD,
+  backupProgressPercent,
+  backupRowAnchors,
+  createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupChecksum,
   formatBackupDuration,
+  formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
@@ -75,6 +81,21 @@ const restoreGate = useSignal(createHilosBackupsRestoreGate(props.context))
 const restoreProgress = createHilosRestoreProgress(props.context)
 const restoreStatus = useSignal(restoreProgress.status)
 const rows = useSignal(backupsTable.rows)
+
+// One ticker for the whole page: a percentage moves with wall time, while the socket
+// only speaks on a change of phase, so every bar here redraws from this signal.
+const progressClock = createBackupProgressClock()
+const progressNow = useSignal(progressClock.now)
+const restorePercent = computed(() =>
+  restoreStatus.value === null
+    ? null
+    : backupProgressPercent(restoreStatus.value, progressNow.value),
+)
+const restoreProgressLabel = computed(() =>
+  restoreStatus.value === null
+    ? ''
+    : formatBackupProgressLabel(restoreStatus.value, progressNow.value),
+)
 const subsystemBusy = computed(() =>
   isBackupSubsystemBusy(
     rows.value.map((entry) => entry.row),
@@ -91,7 +112,28 @@ onMounted(() => {
 onUnmounted(() => {
   backups.dispose()
   restoreProgress.dispose()
+  progressClock.dispose()
 })
+
+/**
+ * How far along the run of this row is, or null when it cannot be told — an
+ * installation with no history to estimate from, or a phase this build does not know.
+ *
+ * @param row The backup row being rendered.
+ */
+function rowProgressPercent(row: HilosBackupRow): number | null {
+  return backupProgressPercent(backupRowAnchors(row), progressNow.value)
+}
+
+/**
+ * The caption under this row's bar: the phase, the percentage, and the time left,
+ * each dropped when the run cannot say it.
+ *
+ * @param row The backup row being rendered.
+ */
+function rowProgressLabel(row: HilosBackupRow): string {
+  return formatBackupProgressLabel(backupRowAnchors(row), progressNow.value)
+}
 
 const columns: HilosTableColumnOf<HilosBackupRow>[] = [
   { key: BACKUP_CREATED_AT_FIELD, label: 'Date', sortable: true },
@@ -334,12 +376,29 @@ function openOutcome(row: HilosBackupRow): void {
           <code>php cli.php protected-mode:open</code>.
         </div>
       </div>
-      <div v-else class="progress mt-2" role="presentation">
+      <template v-else>
         <div
-          class="progress-bar progress-bar-striped progress-bar-animated"
-          style="width: 100%"
-        ></div>
-      </div>
+          class="progress mt-2"
+          role="progressbar"
+          aria-label="Restore progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-valuenow="restorePercent ?? undefined"
+          data-id="hilos-backup-progress-bar"
+        >
+          <div
+            :class="
+              restorePercent === null
+                ? 'progress-bar progress-bar-striped progress-bar-animated'
+                : 'progress-bar'
+            "
+            :style="{ width: `${restorePercent ?? 100}%` }"
+          ></div>
+        </div>
+        <div class="small" data-id="hilos-backup-progress-label">
+          {{ restoreProgressLabel }}
+        </div>
+      </template>
     </div>
 
     <HilosViewportTable
@@ -369,14 +428,29 @@ function openOutcome(row: HilosBackupRow): void {
         </td>
         <td class="text-end">{{ formatBackupDuration(row) }}</td>
         <td style="min-width: 10rem">
-          <div v-if="isBackupInProgress(row)" class="progress" role="status">
+          <template v-if="isBackupInProgress(row)">
             <div
-              class="progress-bar progress-bar-striped progress-bar-animated"
-              style="width: 100%"
+              class="progress"
+              role="progressbar"
+              aria-label="Backup progress"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="rowProgressPercent(row) ?? undefined"
+              data-id="hilos-backup-progress-bar"
             >
-              In progress
+              <div
+                :class="
+                  rowProgressPercent(row) === null
+                    ? 'progress-bar progress-bar-striped progress-bar-animated'
+                    : 'progress-bar'
+                "
+                :style="{ width: `${rowProgressPercent(row) ?? 100}%` }"
+              ></div>
             </div>
-          </div>
+            <div class="small" data-id="hilos-backup-progress-label">
+              {{ rowProgressLabel(row) }}
+            </div>
+          </template>
           <span
             v-else-if="row.finished === true"
             class="badge text-bg-success"

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -52,6 +53,29 @@ final class BackupHistoryActions extends RtActions
         }
 
         $this->applyDiffWithSync($diff);
+    }
+
+    /**
+     * Records that this archive has just been restored, syncing the two fields to readers.
+     *
+     * The index half of what {@see BackupCreator::recordRestore()} writes into the sidecar: files
+     * are the truth, and this keeps the readers from having to wait for the next scan to learn a
+     * restore happened. A restore is the only history restores have, which is why the archive
+     * carries it - the estimate for the next one is read back out of these rows.
+     *
+     * @param string $restoredAt ISO-8601 instant the restore finished
+     * @param int $durationSeconds How long that restore took, in seconds
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function recordRestore(string $restoredAt, int $durationSeconds): void
+    {
+        $this->ensureCanWrite();
+
+        $this->applyDiffWithSync([
+            StateBackupHistory::restoredAt => $restoredAt,
+            StateBackupHistory::restoreDurationSeconds => $durationSeconds,
+        ]);
     }
 
     /**

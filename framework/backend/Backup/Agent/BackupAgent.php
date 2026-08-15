@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Backup\Agent;
 
 use DateTimeImmutable;
+use DateTimeInterface;
 use DateTimeZone;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
@@ -15,7 +16,10 @@ use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupEstimator;
 use Hilos\Backup\BackupHistoryScanner;
+use Hilos\Backup\BackupPhase;
+use Hilos\Backup\BackupProgressMarker;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
@@ -168,6 +172,14 @@ final class BackupAgent extends AbstractAgent
 
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
+
+    /**
+     * The part of the child's last stdout chunk that had no line break yet.
+     *
+     * A pipe hands over whatever happened to be written by the time the tick read it, so a phase
+     * announcement routinely arrives in two pieces. Kept here, the second piece finds the first.
+     */
+    private string $childProgressTail = '';
 
     /** What the in-flight child is doing, or null when idle. */
     private ?BackupRunKind $runKind = null;
@@ -679,7 +691,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = $timeoutSeconds;
         $this->pendingRestoreSince = microtime(true);
         $this->pendingRestoreInitiator = $initiator;
-        $this->restoreView()?->actions->markRunning($id, $scope);
+        $this->restoreView()?->actions->markRunning($id, $scope, $this->restoreEstimate($id, $scope));
         $this->notifyRestoreProgress();
         if ($initiator === null) {
             // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
@@ -994,9 +1006,11 @@ final class BackupAgent extends AbstractAgent
         $this->timeoutSeconds = $this->pendingRestoreTimeout;
         $this->runKind = BackupRunKind::RESTORE;
         $this->pendingCarryover = $this->captureSessions();
-        // The coarse hot-path phase: the supervisor only sees its child's lifecycle, so the
-        // whole verify/extract/import sequence reports as importing (per-step is HIL-277).
-        $this->restoreView()?->actions->markPhase(RestorePhase::IMPORTING);
+        // The phase the child opens with, marked before it can say so itself: from here on the
+        // child announces each one on its stdout and {@see consumeChildProgress()} follows along.
+        // A child too old to announce anything therefore reports the truth up to this point
+        // rather than standing in PENDING for the whole run.
+        $this->restoreView()?->actions->markPhase(RestorePhase::VERIFYING);
         $this->notifyRestoreProgress();
 
         try {
@@ -1088,7 +1102,7 @@ final class BackupAgent extends AbstractAgent
         $this->startedAt = microtime(true);
         $this->timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_TIMEOUT);
         $this->runKind = BackupRunKind::CREATE;
-        $this->markRuntimeRunning($id, $scope);
+        $this->markRuntimeRunning($id, $scope, BackupEstimator::createSeconds($this->indexRows(), $scope));
 
         try {
             // cwd stays null: the child inherits the worker's project-root cwd, and cli.php
@@ -1278,6 +1292,9 @@ final class BackupAgent extends AbstractAgent
      * end of a run, a storage rescan; the heavy dump or import lives in the spawned child.
      * The timeout budget was captured at spawn from the kind's own env key, so one poll
      * serves both kinds; only the finish routes by {@see BackupRunKind}.
+     *
+     * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
      */
     private function pollRunningBackup(): void
     {
@@ -1288,6 +1305,7 @@ final class BackupAgent extends AbstractAgent
         }
 
         $this->childProcess->tick();
+        $this->consumeChildProgress($this->childProcess->getStdOut());
 
         if ($this->childProcess->getStatus()[Process::STATUS_RUNNING] === true) {
             if (microtime(true) - $this->startedAt >= $this->timeoutSeconds) {
@@ -1308,6 +1326,106 @@ final class BackupAgent extends AbstractAgent
         } else {
             $this->finishChild(false, 'child exited with code ' . ($exitCode ?? 'unknown'), $exitCode);
         }
+    }
+
+    /**
+     * Puts whatever phase announcements the child has printed into the runtime row.
+     *
+     * The chunk is passed in rather than read here: the tick already drains the child's stdout
+     * into the process buffer, and taking it at the one call site keeps the pipe out of this
+     * method - which is what lets the phase channel be tested without a live child.
+     *
+     * Anything that is not a phase of the run in flight is dropped without a word: the child's own
+     * output, an unknown token, a create phase arriving during a restore. A phase equal to the one
+     * already on the row is dropped too, because the row's instant is what a progress bar measures
+     * from and re-stamping it would walk the bar backwards inside its own phase.
+     *
+     * @param string $chunk Whatever the child wrote to stdout since the last tick
+     * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     */
+    private function consumeChildProgress(string $chunk): void
+    {
+        $read = BackupProgressMarker::read($this->childProgressTail . $chunk);
+        $this->childProgressTail = $read->tail;
+        if ($read->phases === []) {
+            return;
+        }
+
+        if ($this->runKind === BackupRunKind::RESTORE) {
+            $this->applyRestorePhases($read->phases);
+
+            return;
+        }
+
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        foreach ($read->phases as $value) {
+            $phase = BackupPhase::tryFrom($value);
+            if ($phase === null || $phase->value === $view->phase) {
+                continue;
+            }
+
+            $view->actions->markPhase($phase);
+        }
+    }
+
+    /**
+     * Puts the phases a restore child announced on the restore runtime row.
+     *
+     * Each accepted phase is also pushed to the connection that asked for the restore: protected
+     * mode stopped the page's agent, so the addressed frame is the only channel that tab has left
+     * (HIL-276).
+     *
+     * @param list<string> $values Phase values the child announced, in order
+     * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     */
+    private function applyRestorePhases(array $values): void
+    {
+        $view = $this->restoreView();
+        if ($view === null) {
+            return;
+        }
+
+        foreach ($values as $value) {
+            $phase = RestorePhase::tryFrom($value);
+            if ($phase === null || $phase->value === $view->phase) {
+                continue;
+            }
+
+            $view->actions->markPhase($phase);
+            $this->notifyRestoreProgress();
+        }
+    }
+
+    /**
+     * How long the restore of one stored archive is expected to take.
+     *
+     * The size comes from the index row of the archive being restored, because the estimate is a
+     * speed times a size: an archive twice as large is promised twice the time. An archive with no
+     * row - a restore of a file that arrived outside the index - simply has no estimate.
+     *
+     * @param string $id Backup id being restored
+     * @param BackupScope $scope Scope the archive was captured under
+     * @return ?int Estimated seconds, or null when the archive or the history says nothing
+     */
+    private function restoreEstimate(string $id, BackupScope $scope): ?int
+    {
+        $histories = $this->historiesView();
+        if ($histories === null) {
+            return null;
+        }
+
+        $row = $histories[$id];
+        if ($row === null) {
+            return null;
+        }
+
+        return BackupEstimator::restoreSeconds($this->indexRows(), $scope, $row->sizeBytes);
     }
 
     /**
@@ -1553,6 +1671,7 @@ final class BackupAgent extends AbstractAgent
 
         if ($this->rehydrateChildSucceeded && $complete) {
             $this->logAgentInfo("Restore {$id} completed");
+            $this->recordRestoreHistory($id, $this->restoreElapsedSeconds());
             $view?->actions->finish(BackupStatus::SUCCESS);
         } else {
             $view?->actions->finish(BackupStatus::ERROR, $this->restoreFailureDetail($complete, $problems));
@@ -1568,6 +1687,69 @@ final class BackupAgent extends AbstractAgent
         // A manual create coalesced while the restore held the child slot must not rot in
         // its slot until some unrelated later run happens to drain it.
         $this->drainPendingCreate();
+    }
+
+    /**
+     * How long this restore has taken, from the point of view of whoever asked for it.
+     *
+     * Measured from ADMISSION rather than from the spawn: the two differ by the freeze, the
+     * runtime row's `startedAt` is stamped at the former, and every surface counts its elapsed
+     * from there. The number written back is what the next restore is estimated from, so it has
+     * to cover the same span it will later be compared against - an estimate built over the
+     * shorter one turns a perfectly normal restore into "taking longer than usual" a freeze
+     * window early. The child's own replay time is a different figure and is only logged.
+     *
+     * @return int Seconds since the restore was admitted
+     */
+    private function restoreElapsedSeconds(): int
+    {
+        return (int)round(microtime(true) - $this->pendingRestoreSince);
+    }
+
+    /**
+     * Writes this restore onto the archive it replayed: first the sidecar, then the index row.
+     *
+     * Only a restore that came back whole is recorded. A run that failed or left the node closed
+     * measured something other than the work - and the number is read back as the speed the next
+     * restore is promised by, so a wrong one is worse than none.
+     *
+     * The sidecar goes first because files are the truth and the index is its projection; the row
+     * is updated beside it so readers do not wait for the next scan. Neither is worth taking the
+     * finalization down for: a restore that came back is a success whether or not its own history
+     * could be written, so a failure here is logged and the run ends as it would have.
+     *
+     * @param string $id Backup id of the archive that was replayed
+     * @param int $durationSeconds How long the run took, in seconds
+     */
+    private function recordRestoreHistory(string $id, int $durationSeconds): void
+    {
+        $histories = $this->historiesView();
+        if ($histories === null) {
+            return;
+        }
+
+        $row = $histories[$id];
+        if ($row === null) {
+            $this->logAgentInfo("Restore {$id} is not in the index; its duration is not recorded");
+
+            return;
+        }
+
+        $restoredAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+
+        try {
+            new BackupCreator()->recordRestore(
+                $id,
+                $row->env,
+                $row->scope,
+                Hilos::$env->string(EnvConstants::BACKUP_DIR),
+                $restoredAt,
+                $durationSeconds,
+            );
+            $row->actions->recordRestore($restoredAt, $durationSeconds);
+        } catch (Throwable $e) {
+            $this->logAgentError("Restore {$id} could not be recorded on its archive: {$e->getMessage()}");
+        }
     }
 
     /**
@@ -1878,6 +2060,7 @@ final class BackupAgent extends AbstractAgent
     private function resetRun(): void
     {
         $this->childProcess = null;
+        $this->childProgressTail = '';
         $this->runKind = null;
         $this->currentBackupId = null;
         $this->currentScope = null;
@@ -1901,10 +2084,11 @@ final class BackupAgent extends AbstractAgent
      *
      * @param string $id Backup id in progress
      * @param BackupScope $scope Scope in progress
+     * @param ?int $estimatedSeconds How long the run is expected to take; null without history
      */
-    private function markRuntimeRunning(string $id, BackupScope $scope): void
+    private function markRuntimeRunning(string $id, BackupScope $scope, ?int $estimatedSeconds): void
     {
-        $this->runtimeView()?->actions->markRunning($id, $scope);
+        $this->runtimeView()?->actions->markRunning($id, $scope, $estimatedSeconds);
     }
 
     /**

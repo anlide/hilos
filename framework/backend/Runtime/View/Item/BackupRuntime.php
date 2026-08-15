@@ -24,6 +24,9 @@ use Hilos\Runtime\View\Actions\Item\BackupRuntimeActions;
  * @property-read ?string $currentBackupId Id of the backup in progress; null when idle
  * @property-read ?string $scope Scope value of the backup in progress; null when idle
  * @property-read ?string $startedAt ISO-8601 start time of the backup in progress; null when idle
+ * @property-read ?string $phase Phase the run is in; null when idle or not yet reported
+ * @property-read ?string $phaseStartedAt ISO-8601 instant the current phase began; null when there is no phase
+ * @property-read ?int $estimatedSeconds Expected duration of the run; null when there is no history to estimate from
  * @property-read BackupRuntimeActions $actions Write operations for the runtime singleton
  */
 final class BackupRuntime extends RtItem
@@ -38,17 +41,20 @@ final class BackupRuntime extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|bool|BackupRuntimeActions|null Property value
+     * @return string|int|bool|BackupRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|bool|BackupRuntimeActions|null
+    public function __get(string $name): string|int|bool|BackupRuntimeActions|null
     {
         return match ($name) {
             StateBackupRuntime::running => $this->_state->running,
             StateBackupRuntime::currentBackupId => $this->_state->currentBackupId,
             StateBackupRuntime::scope => $this->_state->scope,
             StateBackupRuntime::startedAt => $this->_state->startedAt,
+            StateBackupRuntime::phase => $this->_state->phase,
+            StateBackupRuntime::phaseStartedAt => $this->_state->phaseStartedAt,
+            StateBackupRuntime::estimatedSeconds => $this->_state->estimatedSeconds,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

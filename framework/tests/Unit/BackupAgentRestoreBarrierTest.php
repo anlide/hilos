@@ -276,8 +276,64 @@ final class BackupAgentRestoreBarrierTest extends TestCase
         $this->assertSame(
             RestorePhase::REHYDRATING->value,
             $this->restoreRow()->phase,
-            'A spawn would have moved the row back to importing',
+            'A spawn would have moved the row back to the phase a child opens with',
         );
+    }
+
+    public function testTheLengthWrittenBackCoversTheFreezeTheOperatorWaitedThrough(): void
+    {
+        $agent = $this->admittedRestore();
+        $this->rewindRun($agent, admittedSecondsAgo: 100.0, spawnedSecondsAgo: 40.0);
+
+        // What is recorded on the archive is what the NEXT restore is estimated from, and every
+        // surface counts its elapsed from the instant of admission - the freeze included. Measured
+        // from the spawn instead, the estimate would come out a freeze shorter than the span it is
+        // compared against, and a normal run would report itself late every time.
+        $this->assertSame(100, $this->restoreElapsed($agent));
+    }
+
+    /**
+     * Moves an admitted restore's two instants into the past, independently of each other.
+     *
+     * They are separate on purpose: the gap between them is the freeze, and it is the whole
+     * subject of the case above.
+     *
+     * @param BackupAgent $agent Agent holding an admitted restore
+     * @param float $admittedSecondsAgo How long ago the restore was admitted
+     * @param float $spawnedSecondsAgo How long ago its child was spawned
+     */
+    private function rewindRun(
+        BackupAgent $agent,
+        float $admittedSecondsAgo,
+        float $spawnedSecondsAgo,
+    ): void {
+        $rewind = Closure::bind(
+            static function (BackupAgent $agent, float $admitted, float $spawned): void {
+                $agent->pendingRestoreSince = microtime(true) - $admitted;
+                $agent->startedAt = microtime(true) - $spawned;
+            },
+            null,
+            BackupAgent::class,
+        );
+
+        $rewind($agent, $admittedSecondsAgo, $spawnedSecondsAgo);
+    }
+
+    /**
+     * The span the agent would write back as the length of this restore.
+     *
+     * @param BackupAgent $agent Agent holding an admitted restore
+     * @return int Seconds the agent counts the run as having taken
+     */
+    private function restoreElapsed(BackupAgent $agent): int
+    {
+        $read = Closure::bind(
+            static fn (BackupAgent $agent): int => $agent->restoreElapsedSeconds(),
+            null,
+            BackupAgent::class,
+        );
+
+        return $read($agent);
     }
 
     /**

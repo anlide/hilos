@@ -34,6 +34,8 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read ?string $sha256 Archive digest; null for error rows and backups written before digests
  * @property-read ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
  * @property-read ?string $verifyOutcome Outcome value of that verification; null means never verified
+ * @property-read ?string $restoredAt ISO-8601 instant this archive was last restored from; null means never
+ * @property-read int $restoreDurationSeconds How long that restore took; 0 means never restored
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -69,6 +71,8 @@ final class BackupHistory extends RtItem
             StateBackupHistory::sha256 => $this->_state->sha256,
             StateBackupHistory::verifiedAt => $this->_state->verifiedAt,
             StateBackupHistory::verifyOutcome => $this->_state->verifyOutcome,
+            StateBackupHistory::restoredAt => $this->_state->restoredAt,
+            StateBackupHistory::restoreDurationSeconds => $this->_state->restoreDurationSeconds,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

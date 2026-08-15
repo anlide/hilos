@@ -39,6 +39,8 @@ final class BackupHistory extends RtState
     public const string sha256 = 'sha256';
     public const string verifiedAt = 'verifiedAt';
     public const string verifyOutcome = 'verifyOutcome';
+    public const string restoredAt = 'restoredAt';
+    public const string restoreDurationSeconds = 'restoreDurationSeconds';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -86,6 +88,16 @@ final class BackupHistory extends RtState
     /** Outcome value of that verification ({@see BackupVerifyOutcome}); null if never verified. */
     public ?string $verifyOutcome = null;
 
+    /** ISO-8601 instant this archive was last restored from; null means never restored. */
+    public ?string $restoredAt = null;
+
+    /**
+     * How long that restore took in seconds; 0 means "no data". Restores have no history of their
+     * own - the runtime row of a restore holds only the run in flight - so the archive keeps it,
+     * and the estimate for the next restore is read from these rows.
+     */
+    public int $restoreDurationSeconds = 0;
+
     /**
      * Builds a history row from a scanned sidecar's metadata.
      *
@@ -109,6 +121,8 @@ final class BackupHistory extends RtState
         $instance->sha256 = $metadata->sha256;
         $instance->verifiedAt = $metadata->verifiedAt;
         $instance->verifyOutcome = $metadata->verifyOutcome?->value;
+        $instance->restoredAt = $metadata->restoredAt;
+        $instance->restoreDurationSeconds = $metadata->restoreDurationSeconds;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -141,6 +155,8 @@ final class BackupHistory extends RtState
         $instance->sha256 = isset($row[self::sha256]) ? (string)$row[self::sha256] : null;
         $instance->verifiedAt = isset($row[self::verifiedAt]) ? (string)$row[self::verifiedAt] : null;
         $instance->verifyOutcome = isset($row[self::verifyOutcome]) ? (string)$row[self::verifyOutcome] : null;
+        $instance->restoredAt = isset($row[self::restoredAt]) ? (string)$row[self::restoredAt] : null;
+        $instance->restoreDurationSeconds = (int)($row[self::restoreDurationSeconds] ?? 0);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -201,6 +217,12 @@ final class BackupHistory extends RtState
         if (array_key_exists(self::verifyOutcome, $diff)) {
             $this->verifyOutcome = $diff[self::verifyOutcome] === null ? null : (string)$diff[self::verifyOutcome];
         }
+        if (array_key_exists(self::restoredAt, $diff)) {
+            $this->restoredAt = $diff[self::restoredAt] === null ? null : (string)$diff[self::restoredAt];
+        }
+        if (array_key_exists(self::restoreDurationSeconds, $diff)) {
+            $this->restoreDurationSeconds = (int)$diff[self::restoreDurationSeconds];
+        }
     }
 
     /**
@@ -242,6 +264,8 @@ final class BackupHistory extends RtState
             self::sha256 => $this->sha256,
             self::verifiedAt => $this->verifiedAt,
             self::verifyOutcome => $this->verifyOutcome,
+            self::restoredAt => $this->restoredAt,
+            self::restoreDurationSeconds => $this->restoreDurationSeconds,
         ];
     }
 

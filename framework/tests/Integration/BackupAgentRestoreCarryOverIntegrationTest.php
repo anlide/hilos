@@ -1,0 +1,382 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Integration;
+
+use Closure;
+use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Backup\Agent\BackupRunKind;
+use Hilos\Backup\BackupScope;
+use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\ExitCode;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Database;
+use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Runtime\State\Collection\BackupHistories;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
+use Hilos\Runtime\View\Collection\BackupHistories as ViewBackupHistories;
+use Hilos\Runtime\View\Item\RestoreRuntime;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use RuntimeException;
+
+/**
+ * Where the supervisor photographs live sessions, and where it puts them back (HIL-479, HIL-436).
+ *
+ * {@see SessionCarrierIntegrationTest} pins the carry-over itself - which session lands on which
+ * account across a swapped database. What is left uncovered is the supervisor's ORDER, and order
+ * is the whole mechanism: a snapshot taken one step later would photograph a database that was
+ * already being overwritten, and rows written one step earlier would land in a node that has not
+ * finished re-reading the database they are written into.
+ *
+ * The three properties here have no other door: they need a live database on one side and a
+ * restore's lifecycle on the other. The child is the one thing not real - the test replaces the
+ * database itself, exactly as {@see SessionCarrierIntegrationTest} does, because what the child
+ * does to the data is not what is under test here; when it did it is.
+ */
+final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionIntegrationTestCase
+{
+    private const string BACKUP_ID = '2026-08-15_10-30-00';
+
+    private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+    private const string CREATED_AT = '2026-08-01 09:15:00';
+
+    /** Well past any run of this suite: these cases are about a live session, not about expiry. */
+    private const string EXPIRES_AT = '2036-09-01 09:15:00';
+
+    private const int OLD_USER_ID = 41;
+
+    private const int NEW_USER_ID = 77;
+
+    private const string EMAIL_TYPE = 'password';
+
+    private const string EMAIL = 'ann@example.test';
+
+    /** @var ?RtContext Runtime context to restore after the test */
+    private ?RtContext $previousRt = null;
+
+    /**
+     * @throws HilosException When the schema reset or the context build fails
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->previousRt = Hilos::$rt;
+        $rt = new CarryOverTestRtContext();
+        $rt->configure();
+        // The index is mounted empty on purpose: the archive these cases restore was never
+        // scanned into it, so the supervisor finds no row to write this restore's duration onto
+        // and says so - which is the quiet half of the same path a real installation takes.
+        $rt->mountFeatureCollection(StateBackupHistory::RT_COLLECTION, BackupHistories::init());
+        $rt->setRepresent(
+            StateBackupHistory::RT_COLLECTION,
+            ViewBackupHistories::class,
+            BackupHistoriesActions::class,
+        );
+        $rt->mountFeatureItem(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::create());
+        $rt->mountFeatureItem(StateBackupRuntime::RT_ITEM, StateBackupRuntime::create());
+        Hilos::$rt = $rt;
+        RtTruthSourceRegistry::registerDaemon(StateRestoreRuntime::RT_ITEM);
+        RtTruthSourceRegistry::registerDaemon(StateBackupRuntime::RT_ITEM);
+
+        Hilos::$sr = new SignalRouter();
+        Hilos::$env = $this->env();
+    }
+
+    /**
+     * @throws HilosException When dropping the stub tables fails
+     */
+    protected function tearDown(): void
+    {
+        RtTruthSourceRegistry::unregisterDaemon(StateBackupRuntime::RT_ITEM);
+        RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
+        Hilos::$env = null;
+        Hilos::$sr = null;
+        Hilos::$rt = $this->previousRt;
+
+        parent::tearDown();
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testTheSessionsArePhotographedBeforeTheChildIsLetNearTheDatabase(): void
+    {
+        $this->seedLiveSession();
+        $agent = $this->admittedRestore();
+
+        $agent->onProtectedModeReady();
+
+        $this->assertCount(
+            1,
+            $this->snapshotOf($agent),
+            'A snapshot taken any later would photograph a database already being overwritten',
+        );
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testTheSessionsComeBackOnlyAfterTheBarrierHasClosed(): void
+    {
+        $this->seedLiveSession();
+        $agent = $this->admittedRestore();
+        $agent->onProtectedModeReady();
+        $this->swapDatabase();
+
+        $this->endRestoreChild($agent, ExitCode::SUCCESS);
+        $this->assertNull(
+            self::sessionRow(self::TOKEN),
+            'Written here, the rows would land in a node still holding caches of the database that is gone',
+        );
+
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+
+        $row = self::sessionRow(self::TOKEN);
+        $this->assertNotNull($row, 'The token resolves again once everybody has re-read');
+        $this->assertSame((string)self::NEW_USER_ID, (string)$row['user_id']);
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testAFailedImportCarriesNothingOverAtAll(): void
+    {
+        $this->seedLiveSession();
+        $agent = $this->admittedRestore();
+        $agent->onProtectedModeReady();
+        $this->swapDatabase();
+
+        $this->endRestoreChild($agent, ExitCode::ERROR);
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+
+        $this->assertNull(
+            self::sessionRow(self::TOKEN),
+            'Writing sessions into a half-imported database would build on top of the damage',
+        );
+    }
+
+    /**
+     * Seeds one live authenticated session with a single identity, and a connection holding it.
+     *
+     * @throws HilosException When a step against the database fails
+     */
+    private function seedLiveSession(): void
+    {
+        self::seedSession(self::TOKEN, self::OLD_USER_ID, self::CREATED_AT, self::EXPIRES_AT);
+        self::seedIdentity(self::OLD_USER_ID, self::EMAIL_TYPE, self::EMAIL);
+
+        /** @var CarryOverTestRtContext $rt */
+        $rt = Hilos::$rt;
+        $rt->connections()->add(CarryOverTestConnection::create('accept-1', self::OLD_USER_ID, self::TOKEN));
+    }
+
+    /**
+     * Replaces the database contents the way the restore child does, and re-reads the collections.
+     *
+     * @throws HilosException When the swap or the re-read fails
+     */
+    private function swapDatabase(): void
+    {
+        Database::sqlRun('DELETE FROM `hilos_session`');
+        Database::sqlRun('DELETE FROM `hilos_identity`');
+        self::seedIdentity(self::NEW_USER_ID, self::EMAIL_TYPE, self::EMAIL);
+
+        Hilos::$db->reHydrateDbBackedCollections();
+    }
+
+    /**
+     * Builds an agent standing where an admitted restore leaves it, with the freeze still ahead.
+     *
+     * Admission is driven from the command channel against project configuration a framework test
+     * has no catalog for, so the state that path produces is set rather than re-enacted - the same
+     * technique, and the same reason, as the restore barrier unit cases.
+     *
+     * @return BackupAgent Agent holding an admitted restore
+     */
+    private function admittedRestore(): BackupAgent
+    {
+        $this->restoreRow()->actions->markRunning(self::BACKUP_ID, BackupScope::FULL);
+
+        $agent = new BackupAgent();
+        $enter = Closure::bind(
+            static function (BackupAgent $agent, string $backupId): void {
+                $agent->pendingRestoreId = $backupId;
+                $agent->pendingRestoreScope = BackupScope::FULL;
+                $agent->pendingRestoreDecision = RestoreEnvDecision::ALLOW;
+                $agent->pendingRestoreSince = microtime(true);
+            },
+            null,
+            BackupAgent::class,
+        );
+
+        $enter($agent, self::BACKUP_ID);
+
+        return $agent;
+    }
+
+    /**
+     * Ends the restore child the way the poller does when it finds the process gone.
+     *
+     * @param BackupAgent $agent Agent whose restore child has just exited
+     * @param int $exitCode Exit code the child reported
+     */
+    private function endRestoreChild(BackupAgent $agent, int $exitCode): void
+    {
+        $end = Closure::bind(
+            static function (BackupAgent $agent, int $exitCode): void {
+                $agent->runKind = BackupRunKind::RESTORE;
+                $agent->finishChild(
+                    $exitCode === ExitCode::SUCCESS,
+                    $exitCode === ExitCode::SUCCESS ? null : 'child exited with code ' . $exitCode,
+                    $exitCode,
+                );
+            },
+            null,
+            BackupAgent::class,
+        );
+
+        $end($agent, $exitCode);
+    }
+
+    /**
+     * Reads the snapshot the agent is holding for the run in flight.
+     *
+     * @param BackupAgent $agent Agent in the middle of a restore
+     * @return array<int, object> Photographed sessions, empty when none were taken
+     */
+    private function snapshotOf(BackupAgent $agent): array
+    {
+        $read = Closure::bind(
+            static fn(BackupAgent $agent): array => $agent->pendingCarryover ?? [],
+            null,
+            BackupAgent::class,
+        );
+
+        return $read($agent);
+    }
+
+    /**
+     * @return RestoreRuntime The mounted restore runtime row
+     */
+    private function restoreRow(): RestoreRuntime
+    {
+        $view = Hilos::$rt?->hilosRestoreRuntime;
+
+        return $view instanceof RestoreRuntime
+            ? $view
+            : throw new RuntimeException('The restore runtime singleton is not mounted.');
+    }
+
+    /**
+     * Builds an environment the restore path can read every value it needs from.
+     *
+     * The CLI entry names an empty file on purpose: the spawn is real, so the case exercises the
+     * supervisor's own path, but the child it starts has nothing to do and no database to reach.
+     *
+     * @return EnvAccessor Accessor answering the backup keys with fixtures
+     */
+    private function env(): EnvAccessor
+    {
+        return new class extends EnvAccessor {
+            public function string(EnvConstants|string $name): string
+            {
+                return $name === EnvConstants::BACKUP_DIR ? '/tmp/hilos-backup-test' : '/dev/null';
+            }
+
+            public function int(EnvConstants|string $name): int
+            {
+                return 600;
+            }
+        };
+    }
+}
+
+/**
+ * The smallest concrete connection row: the framework session triple and nothing else.
+ */
+final class CarryOverTestConnection extends HilosSessionConnection
+{
+    /**
+     * @return string Runtime collection key
+     */
+    public static function getRtCollectionKey(): string
+    {
+        return CarryOverTestRtContext::connections;
+    }
+
+    protected function initOwn(): void
+    {
+    }
+
+    /**
+     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /**
+     * @return array<string, mixed> Always empty: the row is the framework base
+     */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     */
+    protected function applyOwnDiff(array $diff): void
+    {
+    }
+}
+
+/**
+ * A project connections collection, as every project that has sessions declares one.
+ *
+ * @extends HilosSessionConnections<CarryOverTestConnection>
+ */
+final class CarryOverTestConnections extends HilosSessionConnections
+{
+    public const string STATE_CLASS = CarryOverTestConnection::class;
+}
+
+/**
+ * A runtime context carrying the project's live connections; the backup rows are mounted onto it.
+ */
+final class CarryOverTestRtContext extends RtContext
+{
+    public const string connections = 'connections';
+
+    /**
+     * Mounts the one collection these cases need: the project's live connections.
+     */
+    public function configure(): void
+    {
+        $this->_stateCollections[self::connections] = CarryOverTestConnections::init();
+    }
+
+    /**
+     * @return CarryOverTestConnections Live connections of this context
+     */
+    public function connections(): CarryOverTestConnections
+    {
+        /** @var CarryOverTestConnections $connections */
+        $connections = $this->_stateCollections[self::connections];
+
+        return $connections;
+    }
+}

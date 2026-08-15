@@ -28,7 +28,9 @@ final class RestoreRuntime extends RtState
     public const string backupId = 'backupId';
     public const string scope = 'scope';
     public const string phase = 'phase';
+    public const string phaseStartedAt = 'phaseStartedAt';
     public const string startedAt = 'startedAt';
+    public const string estimatedSeconds = 'estimatedSeconds';
     public const string finishedAt = 'finishedAt';
     public const string outcome = 'outcome';
     public const string failureReason = 'failureReason';
@@ -48,6 +50,9 @@ final class RestoreRuntime extends RtState
     /** Current {@see RestorePhase} value, or null when idle. */
     public ?string $phase = null;
 
+    /** ISO-8601 instant the current phase began, or null when there is no phase. */
+    public ?string $phaseStartedAt = null;
+
     /** ISO-8601 start time of the restore in progress, or null when idle. */
     public ?string $startedAt = null;
 
@@ -59,6 +64,14 @@ final class RestoreRuntime extends RtState
 
     /** Why the last restore failed, or null when it succeeded or never ran. */
     public ?string $failureReason = null;
+
+    /**
+     * How long the restore is expected to take in seconds, or null when no restore of this scope
+     * has been recorded yet. It sits beside the phase and the instant it began because those three
+     * are what a progress bar is drawn from - the percentage and the time left are computed by
+     * whoever shows them, which is why this row is written on a phase change and never on a timer.
+     */
+    public ?int $estimatedSeconds = null;
 
     /** Whether every process confirmed re-reading the replaced database (HIL-436). */
     public bool $rehydrateComplete = false;
@@ -103,10 +116,13 @@ final class RestoreRuntime extends RtState
         $instance->backupId = self::nullableString($row[self::backupId] ?? null);
         $instance->scope = self::nullableString($row[self::scope] ?? null);
         $instance->phase = self::nullableString($row[self::phase] ?? null);
+        $instance->phaseStartedAt = self::nullableString($row[self::phaseStartedAt] ?? null);
         $instance->startedAt = self::nullableString($row[self::startedAt] ?? null);
         $instance->finishedAt = self::nullableString($row[self::finishedAt] ?? null);
         $instance->outcome = self::nullableString($row[self::outcome] ?? null);
         $instance->failureReason = self::nullableString($row[self::failureReason] ?? null);
+        $estimatedSeconds = $row[self::estimatedSeconds] ?? null;
+        $instance->estimatedSeconds = $estimatedSeconds === null ? null : (int)$estimatedSeconds;
         $instance->rehydrateComplete = (bool)($row[self::rehydrateComplete] ?? false);
         $instance->rehydrateProblems = self::stringList($row[self::rehydrateProblems] ?? []);
         $instance->databaseTouched = (bool)($row[self::databaseTouched] ?? false);
@@ -133,11 +149,16 @@ final class RestoreRuntime extends RtState
         if (array_key_exists(self::rehydrateProblems, $diff)) {
             $this->rehydrateProblems = self::stringList($diff[self::rehydrateProblems]);
         }
+        if (array_key_exists(self::estimatedSeconds, $diff)) {
+            $value = $diff[self::estimatedSeconds];
+            $this->estimatedSeconds = $value === null ? null : (int)$value;
+        }
         foreach (
             [
                 self::backupId,
                 self::scope,
                 self::phase,
+                self::phaseStartedAt,
                 self::startedAt,
                 self::finishedAt,
                 self::outcome,
@@ -176,10 +197,12 @@ final class RestoreRuntime extends RtState
             self::backupId => $this->backupId,
             self::scope => $this->scope,
             self::phase => $this->phase,
+            self::phaseStartedAt => $this->phaseStartedAt,
             self::startedAt => $this->startedAt,
             self::finishedAt => $this->finishedAt,
             self::outcome => $this->outcome,
             self::failureReason => $this->failureReason,
+            self::estimatedSeconds => $this->estimatedSeconds,
             self::rehydrateComplete => $this->rehydrateComplete,
             self::rehydrateProblems => $this->rehydrateProblems,
             self::databaseTouched => $this->databaseTouched,

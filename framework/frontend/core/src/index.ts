@@ -358,6 +358,11 @@ export {
   formatBackupChecksum,
   formatBackupDuration,
   formatBackupSize,
+  formatBackupEta,
+  formatBackupProgressLabel,
+  backupProgressPercent,
+  backupRowAnchors,
+  createBackupProgressClock,
   isBackupChecksumMismatch,
   isBackupInProgress,
   isBackupDeletable,
@@ -396,6 +401,8 @@ export {
   type HilosBackupRestoreGate,
   type HilosRestoreProgress,
   type HilosRestoreStatus,
+  type HilosProgressAnchors,
+  type HilosBackupProgressClock,
 } from './admin/backup/hilosBackups.js'
 export {
   resolveHilosChannelRow,

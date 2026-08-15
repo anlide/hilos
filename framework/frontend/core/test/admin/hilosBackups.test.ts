@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  backupProgressPercent,
+  backupRowAnchors,
   formatBackupChecksum,
   formatBackupDuration,
+  formatBackupEta,
+  formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
@@ -11,6 +15,7 @@ import {
   isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
+  type HilosProgressAnchors,
 } from '../../src/admin/backup/hilosBackups.js'
 import { type TableRow } from '../../src/state/TableRowsStore.js'
 
@@ -33,6 +38,9 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     restoreFinishedAt: null,
     restoreFailureReason: null,
     restoreDatabaseTouched: false,
+    progressPhase: null,
+    progressPhaseStartedAt: null,
+    progressEstimatedSeconds: null,
     ...overrides,
   }
 }
@@ -160,6 +168,32 @@ describe('resolveHilosBackupRow', () => {
     expect(resolved.restoreDatabaseTouched).toBe(true)
   })
 
+  it('reads the progress anchors of the run in progress from the slot', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('__running__', {
+        status: 'running',
+        finished: false,
+        progressPhase: 'dumping',
+        progressPhaseStartedAt: '2026-08-15T11:59:25+00:00',
+        progressEstimatedSeconds: 100,
+      }),
+    )
+
+    expect(resolved.progressPhase).toBe('dumping')
+    expect(resolved.progressPhaseStartedAt).toBe('2026-08-15T11:59:25+00:00')
+    expect(resolved.progressEstimatedSeconds).toBe(100)
+  })
+
+  it('reads a stored archive as carrying no progress anchors', () => {
+    // A run that cannot be estimated sends a null rather than a zero: zero seconds left
+    // is a claim about the run, and "we have no history for this" is not one.
+    const resolved = resolveHilosBackupRow(backupTableRow('b1', {}))
+
+    expect(resolved.progressPhase).toBeNull()
+    expect(resolved.progressPhaseStartedAt).toBeNull()
+    expect(resolved.progressEstimatedSeconds).toBeNull()
+  })
+
   it('reads an archive nobody restored as carrying no restore at all', () => {
     const resolved = resolveHilosBackupRow(backupTableRow('b1', {}))
 
@@ -170,6 +204,177 @@ describe('resolveHilosBackupRow', () => {
     // Not "unknown": a row that says nothing about a restore says nothing about its
     // damage either, and the flag only ever means "this run had begun writing".
     expect(resolved.restoreDatabaseTouched).toBe(false)
+  })
+})
+
+// The progress cases below are the frontend half of
+// `framework/tests/Unit/BackupProgressTest.php`: the same phases, the same
+// hundred-second run, and the same expected numbers. That pairing is the only thing
+// holding the two implementations of one formula together, so a case changed here
+// belongs in the PHP suite as well.
+
+/** A run long enough for one weight point to be one percent of it. */
+const RUN_SECONDS = 100
+
+/** The instant every progress case measures against. */
+const NOW_MS = Date.parse('2026-08-15T12:00:00+00:00')
+
+/** Milliseconds in a second, for turning a case's elapsed seconds into an instant. */
+const SECOND_MS = 1000
+
+function anchors(
+  phase: string | null,
+  phaseElapsedSeconds: number,
+  overrides: Partial<HilosProgressAnchors> = {},
+): HilosProgressAnchors {
+  return {
+    phase,
+    phaseStartedAt: new Date(
+      NOW_MS - phaseElapsedSeconds * SECOND_MS,
+    ).toISOString(),
+    startedAt: new Date(NOW_MS - phaseElapsedSeconds * SECOND_MS).toISOString(),
+    estimatedSeconds: RUN_SECONDS,
+    ...overrides,
+  }
+}
+
+describe('backupProgressPercent', () => {
+  it('starts each create phase at the weight behind it', () => {
+    expect(backupProgressPercent(anchors('dumping', 0), NOW_MS)).toBe(0)
+    expect(backupProgressPercent(anchors('archiving', 0), NOW_MS)).toBe(70)
+    expect(backupProgressPercent(anchors('digesting', 0), NOW_MS)).toBe(95)
+    expect(backupProgressPercent(anchors('publishing', 0), NOW_MS)).toBe(99)
+  })
+
+  it('starts each restore phase at the weight behind it', () => {
+    expect(backupProgressPercent(anchors('verifying', 0), NOW_MS)).toBe(0)
+    expect(backupProgressPercent(anchors('extracting', 0), NOW_MS)).toBe(5)
+    expect(backupProgressPercent(anchors('importing', 0), NOW_MS)).toBe(20)
+    expect(backupProgressPercent(anchors('migrating', 0), NOW_MS)).toBe(75)
+    expect(backupProgressPercent(anchors('anonymizing', 0), NOW_MS)).toBe(85)
+    expect(backupProgressPercent(anchors('rehydrating', 0), NOW_MS)).toBe(95)
+  })
+
+  it('fills a phase from its own share of the run', () => {
+    // Dumping owns 70 of the 100 seconds, so half of it is 35 percent of the whole run.
+    expect(backupProgressPercent(anchors('dumping', 35), NOW_MS)).toBe(35)
+    // Importing owns 55 seconds and starts at 20 percent: a fifth of it lands at 31.
+    expect(backupProgressPercent(anchors('importing', 11), NOW_MS)).toBe(31)
+  })
+
+  it('stops a phase that outlives its share at its own ceiling', () => {
+    expect(backupProgressPercent(anchors('dumping', 5000), NOW_MS)).toBe(70)
+    expect(backupProgressPercent(anchors('importing', 5000), NOW_MS)).toBe(75)
+  })
+
+  it('never fills the bar while the run is still going', () => {
+    // Publishing ends the run arithmetically, but only a terminal phase shows a full bar.
+    expect(backupProgressPercent(anchors('publishing', 5000), NOW_MS)).toBe(99)
+    expect(backupProgressPercent(anchors('succeeded', 0), NOW_MS)).toBe(100)
+    expect(backupProgressPercent(anchors('failed', 0), NOW_MS)).toBe(100)
+  })
+
+  it('reports no percentage at all when the run cannot be estimated', () => {
+    expect(
+      backupProgressPercent(
+        anchors('dumping', 10, { estimatedSeconds: null }),
+        NOW_MS,
+      ),
+    ).toBeNull()
+    expect(
+      backupProgressPercent(
+        anchors('dumping', 10, { estimatedSeconds: 0 }),
+        NOW_MS,
+      ),
+    ).toBeNull()
+  })
+
+  it('reports no percentage for a phase this frontend does not know', () => {
+    // A value from a newer backend draws no bar rather than an arbitrary one.
+    expect(backupProgressPercent(anchors('transmuting', 10), NOW_MS)).toBeNull()
+    expect(backupProgressPercent(anchors(null, 0), NOW_MS)).toBeNull()
+  })
+
+  it('puts a phase with no instant at its own floor', () => {
+    expect(
+      backupProgressPercent(
+        anchors('importing', 0, { phaseStartedAt: null }),
+        NOW_MS,
+      ),
+    ).toBe(20)
+  })
+})
+
+describe('formatBackupEta', () => {
+  it('counts down what is left of the estimate', () => {
+    expect(formatBackupEta(anchors('dumping', 40), NOW_MS)).toBe('~60s left')
+  })
+
+  it('says an overrun in words rather than as a number that reads as almost done', () => {
+    expect(formatBackupEta(anchors('archiving', 140), NOW_MS)).toBe(
+      'taking longer than usual',
+    )
+  })
+
+  it('says nothing at all when the run cannot be estimated', () => {
+    expect(
+      formatBackupEta(
+        anchors('dumping', 40, { estimatedSeconds: null }),
+        NOW_MS,
+      ),
+    ).toBe('')
+    expect(
+      formatBackupEta(anchors('dumping', 40, { startedAt: null }), NOW_MS),
+    ).toBe('')
+  })
+})
+
+describe('formatBackupProgressLabel', () => {
+  it('names the phase, how far along it is, and how much longer it has', () => {
+    expect(formatBackupProgressLabel(anchors('importing', 11), NOW_MS)).toBe(
+      'importing · 31% · ~89s left',
+    )
+  })
+
+  it('drops the parts a run without an estimate cannot say', () => {
+    expect(
+      formatBackupProgressLabel(
+        anchors('importing', 11, { estimatedSeconds: null }),
+        NOW_MS,
+      ),
+    ).toBe('importing')
+  })
+
+  it('keeps the old wording for a run that has announced no phase', () => {
+    expect(formatBackupProgressLabel(anchors(null, 0), NOW_MS)).toBe(
+      'In progress',
+    )
+  })
+})
+
+describe('backupRowAnchors', () => {
+  it('draws the in-progress row from its own creation instant', () => {
+    const anchored = backupRowAnchors(
+      row({
+        finished: false,
+        status: 'running',
+        createdAt: '2026-08-15T11:59:20+00:00',
+        progressPhase: 'dumping',
+        progressPhaseStartedAt: '2026-08-15T11:59:25+00:00',
+        progressEstimatedSeconds: RUN_SECONDS,
+      }),
+    )
+
+    expect(backupProgressPercent(anchored, NOW_MS)).toBe(35)
+    expect(formatBackupEta(anchored, NOW_MS)).toBe('~60s left')
+  })
+
+  it('reads a stored archive as a run that is not happening', () => {
+    const anchored = backupRowAnchors(row())
+
+    expect(anchored.phase).toBeNull()
+    expect(backupProgressPercent(anchored, NOW_MS)).toBeNull()
+    expect(formatBackupEta(anchored, NOW_MS)).toBe('')
   })
 })
 

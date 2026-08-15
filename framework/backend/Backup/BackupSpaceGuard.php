@@ -26,9 +26,11 @@ final class BackupSpaceGuard
 {
     /**
      * How many recent successful runs the medians are taken over. A code constant, not env: this is
-     * a statistical smoothing depth, not a deployment policy, and HIL-277's ETA reuses the same one.
+     * a statistical smoothing depth, not a deployment policy, and {@see BackupEstimator} reads the
+     * same one - one depth over one history, so the space a run is refused for and the time it is
+     * promised are smoothed over the same runs.
      */
-    private const int ESTIMATE_DEPTH = 5;
+    public const int ESTIMATE_DEPTH = 5;
 
     /**
      * Decides whether a backup of the given scope may run against the measured free space.

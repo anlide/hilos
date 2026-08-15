@@ -271,6 +271,9 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     /**
      * Builds the single in-progress backup row, or null when no backup is running.
      *
+     * It is the only row that carries the progress anchors: a stored archive is not a run, so its
+     * row leaves them null rather than describing a bar that has nothing to fill.
+     *
      * @return ?HilosBackupTableRow In-progress backup row, or null when idle
      */
     private function runningRow(): ?HilosBackupTableRow
@@ -297,6 +300,9 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             // A running backup has no archive yet, so it has nothing to checksum.
             checksumState: BackupChecksumState::NONE,
             verifiedAt: null,
+            progressPhase: $runtime->phase,
+            progressPhaseStartedAt: $runtime->phaseStartedAt,
+            progressEstimatedSeconds: $runtime->estimatedSeconds,
         );
     }
 

@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use DateTimeImmutable;
+use DateTimeInterface;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
+use Hilos\Backup\BackupCreator;
+use Hilos\Backup\BackupEstimator;
+use Hilos\Backup\BackupHistoryScanner;
 use Hilos\Backup\BackupMetadata;
+use Hilos\Backup\BackupProgress;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifier;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\Exception\AnonymizationConfigException;
+use Hilos\Backup\Exception\BackupException;
 use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
@@ -28,6 +35,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\View\Item\BackupHistory;
 
 /**
  * BackupRestoreCommand - restore a stored backup into this installation's databases.
@@ -226,7 +235,7 @@ HELP;
         }
 
         return isset($options[BackupConstants::COLD_OPTION])
-            ? $this->runCold($id, $scope, $decision)
+            ? $this->runCold($metadata, $root, $scope, $decision)
             : $this->runHot($id, $scope, $decision);
     }
 
@@ -352,19 +361,40 @@ HELP;
     /**
      * Runs the engine synchronously in this process (the cold path).
      *
-     * @param string $id Backup id
+     * @param BackupMetadata $metadata Sidecar of the archive being replayed
+     * @param string $root Backup storage root
      * @param BackupScope $scope Scope of the stored backup
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict
      * @return int Exit code (0 success, 1 failed)
      */
-    private function runCold(string $id, BackupScope $scope, RestoreEnvDecision $decision): int
-    {
+    private function runCold(
+        BackupMetadata $metadata,
+        string $root,
+        BackupScope $scope,
+        RestoreEnvDecision $decision,
+    ): int {
+        $id = $metadata->id;
         echo "Restoring {$id} (scope={$scope->value}) cold, in this process\n";
 
+        // The cold path has no index to read, so it builds one: a single scan of the store before
+        // the run, for the same estimate the hot path is given by the agent. Without it the ETA
+        // would be a property of which entrance the operator used, which is not a difference the
+        // two entrances are allowed to have.
+        $estimatedSeconds = self::coldEstimate($root, $metadata, $scope);
+        $startedAt = microtime(true);
+
         try {
-            $this->createRestorer()->restore($id, $scope, $decision, static function (RestorePhase $phase): void {
-                echo '  ' . self::phaseLabel($phase->value) . "...\n";
-            });
+            $this->createRestorer()->restore(
+                $id,
+                $scope,
+                $decision,
+                static function (RestorePhase $phase) use ($estimatedSeconds, $startedAt): void {
+                    echo '  ' . self::phaseLabel($phase->value) . '...' . self::remainingLabel(
+                        $estimatedSeconds,
+                        microtime(true) - $startedAt,
+                    ) . "\n";
+                },
+            );
         } catch (RestoreFailedException $failure) {
             echo "Error: {$failure->getMessage()}\n";
             // The same sentence the hot path prints, from the exception rather than from a runtime
@@ -379,8 +409,45 @@ HELP;
         }
 
         echo "Restore completed\n";
+        $this->recordColdRestore($metadata, $root, (int)round(microtime(true) - $startedAt));
 
         return ExitCode::SUCCESS;
+    }
+
+    /**
+     * Writes a finished cold restore onto the archive it replayed.
+     *
+     * The hot path records through the agent, which holds an index row to update beside the
+     * sidecar; here there is neither, so the sidecar named by the archive's own metadata is
+     * rewritten alone. Skipping it would leave the estimate above reading a history that this
+     * entrance never writes: a store restored only with `--cold` would accumulate nothing, and
+     * the ETA would after all become a property of which entrance the operator used.
+     *
+     * The span is the one the ETA was counted over, so what is written back measures the same
+     * thing the next estimate is compared against.
+     *
+     * A record that cannot be written is reported and swallowed: the database has already been
+     * replaced, and reporting a completed restore as an error because a sidecar could not be
+     * rewritten would be a lie about the work that mattered.
+     *
+     * @param BackupMetadata $metadata Sidecar of the archive that was replayed
+     * @param string $root Backup storage root
+     * @param int $durationSeconds How long the restore took, in seconds
+     */
+    private function recordColdRestore(BackupMetadata $metadata, string $root, int $durationSeconds): void
+    {
+        try {
+            new BackupCreator()->recordRestore(
+                $metadata->id,
+                $metadata->env,
+                $metadata->scope->value,
+                $root,
+                new DateTimeImmutable()->format(DateTimeInterface::ATOM),
+                $durationSeconds,
+            );
+        } catch (BackupException $e) {
+            echo "Note: the length of this restore was not recorded: {$e->getMessage()}\n";
+        }
     }
 
     /**
@@ -459,7 +526,10 @@ HELP;
             // is a legitimate answer during the poll — hence the null, not an empty string.
             $phase = $reply->payload[BackupConstants::FIELD_RESTORE_PHASE] ?? null;
             if (is_string($phase) && $phase !== '' && $phase !== $lastPhase) {
-                echo '  ' . self::phaseLabel($phase) . "...\n";
+                echo '  ' . self::phaseLabel($phase) . '...' . self::remainingLabel(
+                    self::payloadSeconds($reply->payload[BackupConstants::FIELD_RESTORE_ESTIMATED_SECONDS] ?? null),
+                    self::elapsedSince($reply->payload[BackupConstants::FIELD_RESTORE_STARTED_AT] ?? null),
+                ) . "\n";
                 $lastPhase = $phase;
             }
 
@@ -490,6 +560,100 @@ HELP;
 
             sleep(self::MONITOR_POLL_SECONDS);
         }
+    }
+
+    /**
+     * How long the cold run is expected to take, from a single scan of the store.
+     *
+     * The scan is the cold path's whole index: it works straight off disk, and reading the same
+     * sidecars the agent's index is built from is what makes the two entrances agree. A store it
+     * cannot read, or an archive nothing was ever restored from, simply yields no estimate.
+     *
+     * @param string $root Backup storage root
+     * @param BackupMetadata $metadata Sidecar of the archive being replayed (its size scales the estimate)
+     * @param BackupScope $scope Scope the archive was captured under
+     * @return ?int Estimated seconds, or null when nothing can be estimated from
+     */
+    private static function coldEstimate(string $root, BackupMetadata $metadata, BackupScope $scope): ?int
+    {
+        $rows = [];
+        foreach (new BackupHistoryScanner()->scan($root)->metadatas as $scanned) {
+            $rows[] = self::indexRow($scanned);
+        }
+
+        return BackupEstimator::restoreSeconds($rows, $scope, $metadata->sizeBytes);
+    }
+
+    /**
+     * Wraps one scanned sidecar in the index row the estimator reads.
+     *
+     * A method of its own rather than two lines in the loop above, because the view binds its
+     * state BY REFERENCE: built in the loop, every row would end up sharing the loop variable and
+     * therefore describing the last sidecar scanned. Each call here has a local of its own.
+     *
+     * @param BackupMetadata $metadata Scanned sidecar
+     * @return BackupHistory Detached index row over that sidecar
+     */
+    private static function indexRow(BackupMetadata $metadata): BackupHistory
+    {
+        $state = StateBackupHistory::fromMetadata($metadata);
+
+        return new BackupHistory($state);
+    }
+
+    /**
+     * What the monitor prints after a phase to say how much longer the run has.
+     *
+     * A run that outlived its estimate is told so in words rather than in a negative number or a
+     * zero that never moves: both of those read as "about to finish", which is the one thing that
+     * is certainly not true. A run with no estimate says nothing at all.
+     *
+     * @param ?int $estimatedSeconds Expected duration of the whole run; null when it cannot be estimated
+     * @param ?float $elapsedSeconds Seconds since the run started; null when that instant is unknown
+     * @return string Suffix for the phase line, empty when there is nothing to say
+     */
+    private static function remainingLabel(?int $estimatedSeconds, ?float $elapsedSeconds): string
+    {
+        if ($elapsedSeconds === null) {
+            return '';
+        }
+
+        $remaining = BackupProgress::remainingSeconds($estimatedSeconds, $elapsedSeconds);
+        if ($remaining === null) {
+            return '';
+        }
+
+        return $remaining > 0 ? " (~{$remaining}s left)" : ' (taking longer than usual)';
+    }
+
+    /**
+     * Reads a duration out of a status payload the daemon answered with.
+     *
+     * @param mixed $value Payload value under a seconds field
+     * @return ?int Duration in seconds, or null when the field carries no number
+     */
+    private static function payloadSeconds(mixed $value): ?int
+    {
+        // external-boundary: the payload crossed the command channel as JSON and may carry anything
+        return is_numeric($value) ? (int)$value : null;
+    }
+
+    /**
+     * Seconds since an ISO-8601 instant a status payload named.
+     *
+     * @param mixed $startedAt Payload value under an instant field
+     * @return ?float Seconds since that instant, or null when it names none
+     */
+    private static function elapsedSince(mixed $startedAt): ?float
+    {
+        // external-boundary: the payload crossed the command channel as JSON and may carry anything
+        if (!is_string($startedAt) || $startedAt === '') {
+            return null;
+        }
+
+        $started = strtotime($startedAt);
+
+        return $started === false ? null : microtime(true) - $started;
     }
 
     /**

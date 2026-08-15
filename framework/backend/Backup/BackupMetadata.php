@@ -32,6 +32,8 @@ final class BackupMetadata extends BaseDTO
     public const string sha256 = 'sha256';
     public const string verifiedAt = 'verifiedAt';
     public const string verifyOutcome = 'verifyOutcome';
+    public const string restoredAt = 'restoredAt';
+    public const string restoreDurationSeconds = 'restoreDurationSeconds';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -52,6 +54,9 @@ final class BackupMetadata extends BaseDTO
      * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
      * @param ?BackupVerifyOutcome $verifyOutcome Outcome of that verification; only ok/mismatch are ever
      *     stored, and an unknown stored value reads back as null
+     * @param ?string $restoredAt ISO-8601 instant this archive was last restored from; null means never
+     * @param int $restoreDurationSeconds How long that restore took; 0 means "no data", the same way
+     *     dumpBytes does - the archive was never restored, or it was before the field existed
      */
     public function __construct(
         public readonly string $id,
@@ -69,6 +74,8 @@ final class BackupMetadata extends BaseDTO
         public readonly ?string $sha256 = null,
         public readonly ?string $verifiedAt = null,
         public readonly ?BackupVerifyOutcome $verifyOutcome = null,
+        public readonly ?string $restoredAt = null,
+        public readonly int $restoreDurationSeconds = 0,
     ) {
     }
 
@@ -96,6 +103,8 @@ final class BackupMetadata extends BaseDTO
             $this->sha256,
             $this->verifiedAt,
             $this->verifyOutcome,
+            $this->restoredAt,
+            $this->restoreDurationSeconds,
         );
     }
 
@@ -124,6 +133,41 @@ final class BackupMetadata extends BaseDTO
             $this->sha256,
             $verifiedAt,
             $verifyOutcome,
+            $this->restoredAt,
+            $this->restoreDurationSeconds,
+        );
+    }
+
+    /**
+     * Returns a copy carrying the result of a restore run made from this archive.
+     *
+     * Written after the fact, the same way {@see self::withVerification()} is: the sidecar is the
+     * only history a restore has, and the estimate of the next one is read back out of it.
+     *
+     * @param string $restoredAt ISO-8601 instant the restore finished
+     * @param int $durationSeconds How long that restore took, in seconds
+     * @return self Copy with the restore recorded
+     */
+    public function withRestore(string $restoredAt, int $durationSeconds): self
+    {
+        return new self(
+            $this->id,
+            $this->createdAt,
+            $this->env,
+            $this->scope,
+            $this->connections,
+            $this->sizeBytes,
+            $this->durationSeconds,
+            $this->keep,
+            $this->status,
+            $this->warnings,
+            $this->failureReason,
+            $this->dumpBytes,
+            $this->sha256,
+            $this->verifiedAt,
+            $this->verifyOutcome,
+            $restoredAt,
+            $durationSeconds,
         );
     }
 
@@ -170,6 +214,9 @@ final class BackupMetadata extends BaseDTO
             BackupVerifyOutcome::fromString(
                 isset($data[self::verifyOutcome]) ? (string)$data[self::verifyOutcome] : null,
             ),
+            isset($data[self::restoredAt]) ? (string)$data[self::restoredAt] : null,
+            // external-boundary: the sidecar is read from disk and may come from an older version
+            (int)($data[self::restoreDurationSeconds] ?? 0),
         );
     }
 
@@ -224,6 +271,8 @@ final class BackupMetadata extends BaseDTO
             self::sha256 => $this->sha256,
             self::verifiedAt => $this->verifiedAt,
             self::verifyOutcome => $this->verifyOutcome?->value,
+            self::restoredAt => $this->restoredAt,
+            self::restoreDurationSeconds => $this->restoreDurationSeconds,
         ];
     }
 }

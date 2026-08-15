@@ -21,6 +21,7 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
   readNumber,
+  readNumberOrNull,
   readString,
   readStringOrNull,
 } from '../../state/fieldReaders.js'
@@ -92,6 +93,20 @@ export interface HilosBackupRow {
    * first thing an operator needs after reloading onto a failed restore.
    */
   readonly restoreDatabaseTouched: boolean
+  /**
+   * Phase the run in progress is in, or null on a stored archive — a finished
+   * backup has no run left to report on. Only the single in-progress row ever
+   * carries the three progress anchors.
+   */
+  readonly progressPhase: string | null
+  /** ISO-8601 instant that phase began, or null when there is no phase. */
+  readonly progressPhaseStartedAt: string | null
+  /**
+   * How long the run in progress is expected to take, in seconds, or null when
+   * there is no history to estimate it from — an installation's first backups run
+   * without a percentage rather than against a made-up one.
+   */
+  readonly progressEstimatedSeconds: number | null
 }
 
 /**
@@ -187,6 +202,15 @@ export const BACKUP_RESTORE_FAILURE_REASON_FIELD = 'restoreFailureReason'
 
 /** Row payload key of whether that restore had begun replacing the database. */
 export const BACKUP_RESTORE_DATABASE_TOUCHED_FIELD = 'restoreDatabaseTouched'
+
+/** Row payload key of the phase the run in progress is in. */
+const BACKUP_PROGRESS_PHASE_FIELD = 'progressPhase'
+
+/** Row payload key of the instant that phase began. */
+const BACKUP_PROGRESS_PHASE_STARTED_AT_FIELD = 'progressPhaseStartedAt'
+
+/** Row payload key of the expected duration of the run in progress. */
+const BACKUP_PROGRESS_ESTIMATED_SECONDS_FIELD = 'progressEstimatedSeconds'
 
 /** A selectable backup scope: its wire value and a human-readable label. */
 export interface HilosBackupScopeOption {
@@ -368,6 +392,15 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
       slot,
       BACKUP_RESTORE_DATABASE_TOUCHED_FIELD,
     ),
+    progressPhase: readStringOrNull(slot, BACKUP_PROGRESS_PHASE_FIELD),
+    progressPhaseStartedAt: readStringOrNull(
+      slot,
+      BACKUP_PROGRESS_PHASE_STARTED_AT_FIELD,
+    ),
+    progressEstimatedSeconds: readNumberOrNull(
+      slot,
+      BACKUP_PROGRESS_ESTIMATED_SECONDS_FIELD,
+    ),
   }
 }
 
@@ -436,6 +469,225 @@ export function formatBackupChecksum(row: HilosBackupRow): string {
       return 'present'
     default:
       return '—'
+  }
+}
+
+/** What share of a run one phase takes, and what share is already behind it. */
+interface HilosBackupPhaseWeight {
+  /** Share of the run completed before this phase (0..1). */
+  readonly before: number
+  /** Share of the run this phase is expected to take (0..1). */
+  readonly weight: number
+}
+
+/**
+ * How the wall-clock of a run divides between its phases — the frontend copy of the
+ * backend `BackupPhase::WEIGHTS` and `RestorePhase::WEIGHTS`.
+ *
+ * The two sets share one map because a run is either a creation or a restore and the
+ * phase values do not collide, so one formula serves both surfaces. The numbers are
+ * duplicated rather than sent down with each row: they are code constants on the
+ * backend too, and a per-frame copy would put a fixed table on the wire once a second.
+ * What keeps the two copies together is the unit suite — the cases in
+ * `framework/tests/Unit/BackupProgressTest.php` and the ones here are the same numbers
+ * on purpose, so a weight changed on one side reddens the other.
+ */
+const BACKUP_PHASE_WEIGHTS: Readonly<Record<string, HilosBackupPhaseWeight>> = {
+  dumping: { before: 0, weight: 0.7 },
+  archiving: { before: 0.7, weight: 0.25 },
+  digesting: { before: 0.95, weight: 0.04 },
+  publishing: { before: 0.99, weight: 0.01 },
+  pending: { before: 0, weight: 0 },
+  verifying: { before: 0, weight: 0.05 },
+  extracting: { before: 0.05, weight: 0.15 },
+  importing: { before: 0.2, weight: 0.55 },
+  migrating: { before: 0.75, weight: 0.1 },
+  anonymizing: { before: 0.85, weight: 0.1 },
+  rehydrating: { before: 0.95, weight: 0.05 },
+  succeeded: { before: 1, weight: 0 },
+  failed: { before: 1, weight: 0 },
+}
+
+/** Percent is reported as a whole number of hundredths of a run (PHP `PERCENT_SCALE`). */
+const PERCENT_SCALE = 100
+
+/** A run still going never shows a full bar, whatever the arithmetic says. */
+const MAX_RUNNING_PERCENT = 99
+
+/** Milliseconds in a second, for turning two instants into elapsed seconds. */
+const MILLISECONDS_PER_SECOND = 1000
+
+/**
+ * The anchors a running backup or restore is drawn from, wherever they arrive.
+ *
+ * The table row and the addressed restore frame carry the same four values, so one
+ * formula serves both surfaces — the alternative is two implementations of one
+ * arithmetic on one page. The names are the frame's, so a {@link HilosRestoreStatus}
+ * is already of this shape and only a table row needs {@link backupRowAnchors}.
+ */
+export interface HilosProgressAnchors {
+  /** Current phase value (a `BackupPhase` or a `RestorePhase`), or null when nothing runs. */
+  readonly phase: string | null
+  /** ISO-8601 instant the current phase began, or null when there is no phase. */
+  readonly phaseStartedAt: string | null
+  /** ISO-8601 instant the run began, or null when nothing runs. */
+  readonly startedAt: string | null
+  /** Expected duration of the whole run in seconds, or null when it cannot be estimated. */
+  readonly estimatedSeconds: number | null
+}
+
+/**
+ * Seconds between an ISO-8601 instant and `nowMs`, or null when there is no instant
+ * to count from. An unparsable one reads as absent rather than as NaN seconds: a
+ * malformed timestamp must leave the surface without a number, not with a broken one.
+ *
+ * @param instant The ISO-8601 instant to measure from, or null.
+ * @param nowMs The current epoch milliseconds the caller counts against.
+ */
+function elapsedSecondsSince(
+  instant: string | null,
+  nowMs: number,
+): number | null {
+  if (instant === null) {
+    return null
+  }
+  const startedMs = Date.parse(instant)
+
+  return Number.isNaN(startedMs)
+    ? null
+    : (nowMs - startedMs) / MILLISECONDS_PER_SECOND
+}
+
+/**
+ * How far along a run is, in whole percent — the frontend half of the backend
+ * `BackupProgress::percent()`, arithmetic for arithmetic.
+ *
+ * The phases before the current one count whole; the current one contributes the
+ * share of its own budget that has already elapsed, capped at that budget. The result
+ * is clamped to the current phase's own span, so a browser clock running against the
+ * server's moves the bar to the edge of that phase rather than somewhere absurd.
+ *
+ * A run whose duration cannot be estimated has no percentage at all rather than an
+ * invented one — the surfaces then show the phase name and an indeterminate bar.
+ *
+ * @param anchors The progress anchors of the run.
+ * @param nowMs The current epoch milliseconds (from {@link createBackupProgressClock}).
+ */
+export function backupProgressPercent(
+  anchors: HilosProgressAnchors,
+  nowMs: number,
+): number | null {
+  const phase =
+    anchors.phase === null ? undefined : BACKUP_PHASE_WEIGHTS[anchors.phase]
+  if (phase === undefined) {
+    return null
+  }
+  if (anchors.estimatedSeconds === null || anchors.estimatedSeconds <= 0) {
+    return null
+  }
+  if (phase.before >= 1) {
+    return PERCENT_SCALE
+  }
+
+  // No instant for the phase means no time spent in it yet, which puts the bar at the
+  // phase's own floor — the honest reading of "this phase has just been announced".
+  const phaseElapsed = elapsedSecondsSince(anchors.phaseStartedAt, nowMs) ?? 0
+  const phaseBudget = anchors.estimatedSeconds * phase.weight
+  const withinPhase =
+    phaseBudget > 0 ? Math.min(1, Math.max(0, phaseElapsed) / phaseBudget) : 0
+
+  const reached = Math.floor(
+    (phase.before + phase.weight * withinPhase) * PERCENT_SCALE,
+  )
+  const floor = Math.floor(phase.before * PERCENT_SCALE)
+  const ceiling = Math.min(
+    MAX_RUNNING_PERCENT,
+    Math.floor((phase.before + phase.weight) * PERCENT_SCALE),
+  )
+
+  return Math.max(floor, Math.min(ceiling, reached))
+}
+
+/**
+ * What the surfaces print next to the phase to say how much longer the run has — the
+ * frontend wording of the backend `BackupProgress::remainingSeconds()`, which the CLI
+ * monitor prints in the same two forms.
+ *
+ * A run that outlived its estimate is told so in words rather than as a negative
+ * number or a zero that never moves: both of those read as "about to finish", which
+ * is the one thing that is certainly not true. A run with no estimate says nothing.
+ *
+ * @param anchors The progress anchors of the run.
+ * @param nowMs The current epoch milliseconds (from {@link createBackupProgressClock}).
+ */
+export function formatBackupEta(
+  anchors: HilosProgressAnchors,
+  nowMs: number,
+): string {
+  const totalElapsed = elapsedSecondsSince(anchors.startedAt, nowMs)
+  if (
+    totalElapsed === null ||
+    anchors.estimatedSeconds === null ||
+    anchors.estimatedSeconds <= 0
+  ) {
+    return ''
+  }
+
+  const remaining = Math.ceil(anchors.estimatedSeconds - totalElapsed)
+
+  return remaining > 0 ? `~${remaining}s left` : 'taking longer than usual'
+}
+
+/**
+ * The caption under a progress bar: the phase, how far along it is, and how much
+ * longer it has — `importing · 62% · ~40s left`, with each part dropped when the run
+ * cannot say it.
+ *
+ * Composed here rather than in the views because the three of them render the same
+ * cell: a caption assembled per framework drifts a separator at a time, and this one
+ * is read while an operator waits on a destructive operation.
+ *
+ * A run that has not announced a phase yet keeps the old wording — the bar has always
+ * said "In progress" before there was anything more precise to say — and it is told
+ * no time either: a run with no phase may not have begun at all (a create waits its
+ * turn behind the one already going), and counting down from acceptance would promise
+ * an end to something that has not started.
+ *
+ * @param anchors The progress anchors of the run.
+ * @param nowMs The current epoch milliseconds (from {@link createBackupProgressClock}).
+ */
+export function formatBackupProgressLabel(
+  anchors: HilosProgressAnchors,
+  nowMs: number,
+): string {
+  const percent = backupProgressPercent(anchors, nowMs)
+  if (percent === null) {
+    return anchors.phase ?? 'In progress'
+  }
+
+  const parts = [anchors.phase ?? 'In progress', `${percent}%`]
+  const eta = formatBackupEta(anchors, nowMs)
+  if (eta !== '') {
+    parts.push(eta)
+  }
+
+  return parts.join(' · ')
+}
+
+/**
+ * The progress anchors of a backup row, for the in-progress row's bar. A stored
+ * archive carries none of them and reads as a run that is not happening.
+ *
+ * @param row The backup row to read the anchors off.
+ */
+export function backupRowAnchors(row: HilosBackupRow): HilosProgressAnchors {
+  return {
+    phase: row.progressPhase,
+    phaseStartedAt: row.progressPhaseStartedAt,
+    // The creation instant of the in-progress row IS the moment its run started —
+    // the row is the run, and it is written when the run is accepted.
+    startedAt: row.createdAt === '' ? null : row.createdAt,
+    estimatedSeconds: row.progressEstimatedSeconds,
   }
 }
 
@@ -565,10 +817,12 @@ const restoreProgressSchema = z.looseObject({
   backupId: z.string().nullable(),
   scope: z.string().nullable(),
   phase: z.string().nullable(),
+  phaseStartedAt: z.string().nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
   outcome: z.string().nullable(),
   failureReason: z.string().nullable(),
+  estimatedSeconds: z.number().nullable(),
   rehydrateComplete: z.boolean(),
   rehydrateProblems: z.array(z.string()),
   databaseTouched: z.boolean(),
@@ -658,6 +912,40 @@ export function createHilosRestoreProgress(
       for (const off of teardown.splice(0)) {
         off()
       }
+    },
+  }
+}
+
+/** The shared clock a backup view redraws its progress from. */
+export interface HilosBackupProgressClock {
+  /** Epoch milliseconds, republished once a second while the clock lives. */
+  readonly now: ReadonlySignal<number>
+  /** Stop the tick — call on unmount. */
+  dispose(): void
+}
+
+/**
+ * The one-second clock the backup page's progress bars are redrawn from.
+ *
+ * A percentage moves with wall time, not with the socket: the phase anchors arrive
+ * once per phase, and everything between them is arithmetic against "now". Something
+ * therefore has to re-render on its own, and this is that something — ONE ticker the
+ * page owns, which every bar on it reads. Per-row timers were the alternative, and
+ * they cost a timer per visible run and drift apart from each other on a busy tab.
+ *
+ * The tick keeps running while a page shows no run at all. That is deliberate: a
+ * ticker that started and stopped with the in-progress row would have to be owned by
+ * the row rather than the page, which is exactly the per-row timer this replaces, and
+ * a signal republished once a second with no subscriber costs nothing to nobody.
+ */
+export function createBackupProgressClock(): HilosBackupProgressClock {
+  const now = createSignal(Date.now())
+  const timer = setInterval(() => now.set(Date.now()), MILLISECONDS_PER_SECOND)
+
+  return {
+    now,
+    dispose() {
+      clearInterval(timer)
     },
   }
 }

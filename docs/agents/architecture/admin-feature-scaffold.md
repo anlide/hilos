@@ -321,9 +321,10 @@ the page's own agent is stopped, so no delta is produced by anyone. The agent in
 addresses a `backup_restore_progress` frame to the connection that asked — protected
 mode keeps that one connection alive precisely so the operation has somewhere to
 report — carrying the same snapshot the CLI monitor is answered with, at the four
-points where the runtime row itself changes. The phases are coarse by construction:
-the supervisor only sees its child's lifecycle, and per-step detail needs a channel
-out of the child (HIL-277). The terminal frame is where the human is told what is
+points where the runtime row itself changes. The phases the supervisor sees on its
+own are coarse — it watches a child's lifecycle, not the steps inside it — so the
+child prints each phase it enters up the pipe (HIL-277, below). The terminal frame
+is where the human is told what is
 expected of them: a success reloads the page when the mode lifts, while a failure
 names the reason, whether the database was touched, and — when the re-hydrate barrier
 did not close — that the system stays shut until `protected-mode:open`, because in
@@ -331,6 +332,30 @@ that case no reload is coming to say so. Afterwards the outcome lives on the row
 the archive that was replayed (`restorePhase`, `restoreOutcome`, `restoreFinishedAt`,
 `restoreFailureReason`, `restoreDatabaseTouched`), which is what an operator who
 reloads later reads instead of the frame.
+
+Both runs report progress the same way (HIL-277), and the runtime row carries three
+anchors rather than a number: the current phase, the instant it began, and how long
+the whole run is expected to take. The percentage and the time left are *computed by
+whoever shows them* — the browser from the table row or the restore frame, the CLI
+monitor from the status payload — over one formula that exists twice, in
+`Hilos\Backup\BackupProgress` and in `@hilos/core`, with the two unit suites pinned to
+the same numbers so the copies cannot drift. That is the price of the choice, and it
+buys the property that matters: RT is written **only on a change of phase** — four
+writes for a create, six for a restore — so there is no periodic timer anywhere and
+nothing to throttle, while the bar still moves every second because the client is the
+one doing the arithmetic. The phases arrive from the child process, which prints
+`hilos-backup-phase <value>` to stdout on entering each (`BackupProgressMarker`); the
+agent reads that off the pipe on its tick. The estimate comes from history —
+`BackupEstimator` takes the median duration of the last five successful runs of the
+same scope for a create, and for a restore the median seconds-per-byte of the last
+five recorded restores of that scope times this archive's size, which is why a restore
+first needs a history to have one: the length of the last restore of each archive is
+written into its sidecar, the same postfactum rewrite `recordVerification()` already
+does, and the scanner lifts it into the index. A run that cannot be estimated shows no
+percentage at all rather than an invented one — the surfaces fall back to the phase
+name and an indeterminate bar — and a run that outlives its estimate is told in words
+("taking longer than usual"), because a negative number and a frozen zero both read as
+"almost done".
 
 ### a future framework feature (roles, …)
 

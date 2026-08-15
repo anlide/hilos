@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Hilos\Backup\Agent\BackupAgent;
@@ -84,6 +85,7 @@ final class BackupCreator
     /** Temp-name discriminators for in-place sidecar rewrites; they keep concurrent rewrites apart. */
     private const string TEMP_KIND_KEEP = 'keep';
     private const string TEMP_KIND_VERIFY = 'verify';
+    private const string TEMP_KIND_RESTORE = 'restore';
 
     /** Longest failure reason kept in an error sidecar; a killed dump's stderr can be a wall of text. */
     private const int FAILURE_REASON_LIMIT = 2000;
@@ -115,12 +117,15 @@ final class BackupCreator
      *
      * @param string $id Backup id and archive/sidecar base name (a filesystem-safe stem)
      * @param BackupScope $scope What to capture; also the storage subdirectory
+     * @param ?Closure(BackupPhase): void $onPhase Observer told as each phase begins, in the form
+     *     {@see BackupRestorer::restore()} uses; the child prints them for its supervisor, a caller
+     *     with nobody to tell passes null
      * @return BackupMetadata The published sidecar metadata
      * @throws BackupException When the id or backup directory is invalid
      * @throws BackupDumpFailedException When a dump, archive, or publish step fails
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
-    public function create(string $id, BackupScope $scope): BackupMetadata
+    public function create(string $id, BackupScope $scope, ?Closure $onPhase = null): BackupMetadata
     {
         if (preg_match(self::ID_PATTERN, $id) !== 1) {
             throw new BackupException("Invalid backup id: {$id}");
@@ -147,6 +152,9 @@ final class BackupCreator
         try {
             $this->ensureDirectory($workDir);
 
+            if ($onPhase !== null) {
+                $onPhase(BackupPhase::DUMPING);
+            }
             $connections = $this->dumpAllConnections($scope, $workDir, $references);
             $warnings = $this->collectWarnings($scope, $references);
 
@@ -162,6 +170,9 @@ final class BackupCreator
             // future runs from (a multiplier on the archive size would systematically under-estimate).
             $dumpBytes = self::measureWorkDir($workDir);
 
+            if ($onPhase !== null) {
+                $onPhase(BackupPhase::ARCHIVING);
+            }
             $this->archive($workDir, $tmpArchive);
 
             $sizeBytes = $this->fileSize($tmpArchive);
@@ -175,6 +186,9 @@ final class BackupCreator
             // to finish just inside that budget would now be killed mid-hash - and a killed child
             // loses the FINISHED archive, because the supervisor sweeps its temp files. So the
             // digest yields to the backup: no room, no digest, and the archive still gets published.
+            if ($onPhase !== null) {
+                $onPhase(BackupPhase::DIGESTING);
+            }
             $sha256 = null;
             if (!$this->digestFitsBudget($sizeBytes, $startedAt)) {
                 $warnings[] = self::WARNING_DIGEST_SKIPPED;
@@ -202,6 +216,9 @@ final class BackupCreator
 
             $this->writeJson($tmpSidecar, $metadata->toArray());
 
+            if ($onPhase !== null) {
+                $onPhase(BackupPhase::PUBLISHING);
+            }
             // Publish archive before sidecar: the read path treats a sidecar without an
             // archive as an anomaly, never the reverse, so this order is never half-valid.
             $this->publish($tmpArchive, $scopeDir . '/' . $base . self::ARCHIVE_EXTENSION);
@@ -381,6 +398,45 @@ final class BackupCreator
             $sidecarPath,
             self::TEMP_KIND_VERIFY,
             $metadata->withVerification($verifiedAt, $outcome),
+        );
+    }
+
+    /**
+     * Records that this archive was restored, in the stored sidecar, atomically.
+     *
+     * The archive is where a restore's history lives, because a restore has none of its own: its
+     * runtime row holds the run in flight and is overwritten by the next one. Written the same way
+     * {@see recordVerification()} writes its stamp, over the file that is the source of truth
+     * (files=truth); the caller updates the runtime index row beside it.
+     *
+     * What it is read back for is the estimate of the next restore: a duration next to the size of
+     * the archive it was spent on is a speed, and a speed is what carries over between archives of
+     * different sizes ({@see BackupEstimator::restoreSeconds()}).
+     *
+     * @param string $id Backup id of the restored archive
+     * @param ?string $env Application environment the archive was taken in
+     * @param ?string $scope Scope value the archive was captured under
+     * @param string $root Backup storage root
+     * @param string $restoredAt ISO-8601 instant the restore finished
+     * @param int $durationSeconds How long that restore took, in seconds
+     * @throws BackupException When the scope, root, or stored sidecar is invalid or missing
+     * @throws BackupDumpFailedException When the rewritten sidecar cannot be published
+     */
+    public function recordRestore(
+        string $id,
+        ?string $env,
+        ?string $scope,
+        string $root,
+        string $restoredAt,
+        int $durationSeconds,
+    ): void {
+        $sidecarPath = $this->storedSidecarPath($id, $env, $scope, $root);
+        $metadata = $this->readSidecar($sidecarPath);
+
+        $this->republishSidecar(
+            $sidecarPath,
+            self::TEMP_KIND_RESTORE,
+            $metadata->withRestore($restoredAt, $durationSeconds),
         );
     }
 

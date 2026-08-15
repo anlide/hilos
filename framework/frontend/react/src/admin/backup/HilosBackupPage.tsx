@@ -1,8 +1,10 @@
 // HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
 // stored-backup list inside the admin shell, with its row actions. The list is
 // live — rows arrive over the socket from the backup runtime index plus the
-// single in-progress backup, so an in-progress row shows an indeterminate
-// progress bar until it completes and merges into the index. Its actions (create
+// single in-progress backup, so an in-progress row shows a live progress bar until
+// it completes and merges into the index. The bar is drawn from the phase anchors
+// the row carries and a page-wide one-second clock, and falls back to the
+// indeterminate striped bar on a run the backend cannot estimate. Its actions (create
 // with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
 // the core headless's (createHilosBackupsActions); each dispatches a tracked action
 // and surfaces the backend's failure (authoritative-backend). Restore is the
@@ -26,12 +28,16 @@ import {
   BACKUP_STATUS_FIELD,
   BACKUP_RESTORE_OUTCOME_FIELD,
   BACKUP_KEEP_FIELD,
+  backupProgressPercent,
+  backupRowAnchors,
+  createBackupProgressClock,
   createHilosBackupsActions,
   createHilosBackupsRestoreGate,
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupChecksum,
   formatBackupDuration,
+  formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
@@ -47,6 +53,7 @@ import {
 import type {
   HilosBackupRow,
   HilosBackupsContext,
+  HilosProgressAnchors,
   HilosTableColumnOf,
 } from '@hilos/core'
 
@@ -86,19 +93,55 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
 
-/** The backup status cell: a live progress bar, a success badge, or a failure badge. */
-function statusCell(row: HilosBackupRow) {
-  if (isBackupInProgress(row)) {
-    return (
-      <div className="progress" role="status" style={{ minWidth: '10rem' }}>
+/**
+ * The progress bar of a running backup or restore: a determinate bar once the run can
+ * be estimated, and the indeterminate striped one until then. The caption under it
+ * names the phase, the percentage, and the time left.
+ *
+ * @param anchors The progress anchors of the run (a table row's or a restore frame's).
+ * @param nowMs The current epoch milliseconds the percentage is measured against.
+ * @param className Extra classes for the bar's own element (spacing at its use site).
+ * @param label The accessible name of the bar, which its caption does not provide.
+ */
+function progressBar(
+  anchors: HilosProgressAnchors,
+  nowMs: number,
+  className: string,
+  label: string,
+) {
+  const percent = backupProgressPercent(anchors, nowMs)
+
+  return (
+    <>
+      <div
+        className={`progress ${className}`}
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+        data-id="hilos-backup-progress-bar"
+      >
         <div
-          className="progress-bar progress-bar-striped progress-bar-animated"
-          style={{ width: '100%' }}
-        >
-          In progress
-        </div>
+          className={
+            percent === null
+              ? 'progress-bar progress-bar-striped progress-bar-animated'
+              : 'progress-bar'
+          }
+          style={{ width: `${percent ?? 100}%` }}
+        />
       </div>
-    )
+      <div className="small" data-id="hilos-backup-progress-label">
+        {formatBackupProgressLabel(anchors, nowMs)}
+      </div>
+    </>
+  )
+}
+
+/** The backup status cell: a live progress bar, a success badge, or a failure badge. */
+function statusCell(row: HilosBackupRow, nowMs: number) {
+  if (isBackupInProgress(row)) {
+    return progressBar(backupRowAnchors(row), nowMs, '', 'Backup progress')
   }
   if (row.finished === true) {
     return <span className="badge text-bg-success">{row.status}</span>
@@ -124,6 +167,10 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     useMemo(() => createHilosBackupsRestoreGate(context), [context]),
   )
   const restoreStatus = useSignal(restoreProgress.status)
+  // One ticker for the whole page: a percentage moves with wall time, while the socket
+  // only speaks on a change of phase, so every bar here redraws from this signal.
+  const progressClock = useMemo(() => createBackupProgressClock(), [])
+  const progressNow = useSignal(progressClock.now)
   const rows = useSignal(backups.controller.rows)
   const subsystemBusy = isBackupSubsystemBusy(
     rows.map((entry) => entry.row),
@@ -140,8 +187,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
     return () => {
       backups.dispose()
       restoreProgress.dispose()
+      progressClock.dispose()
     }
-  }, [backups, restoreProgress])
+  }, [backups, restoreProgress, progressClock])
 
   // Create toolbar: pick a scope and start a backup as a tracked action.
   const [createScope, setCreateScope] = useState(HILOS_BACKUP_SCOPES[0].value)
@@ -353,14 +401,14 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               ) : null}
             </div>
           ) : null}
-          {restoreStatus.outcome === null ? (
-            <div className="progress mt-2" role="presentation">
-              <div
-                className="progress-bar progress-bar-striped progress-bar-animated"
-                style={{ width: '100%' }}
-              />
-            </div>
-          ) : null}
+          {restoreStatus.outcome === null
+            ? progressBar(
+                restoreStatus,
+                progressNow,
+                'mt-2',
+                'Restore progress',
+              )
+            : null}
         </div>
       ) : null}
 
@@ -391,7 +439,9 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
               </span>
             </td>
             <td className="text-end">{formatBackupDuration(row)}</td>
-            <td style={{ minWidth: '10rem' }}>{statusCell(row)}</td>
+            <td style={{ minWidth: '10rem' }}>
+              {statusCell(row, progressNow)}
+            </td>
             <td className="text-nowrap">
               {hasRestoreOutcome(row) ? (
                 <button

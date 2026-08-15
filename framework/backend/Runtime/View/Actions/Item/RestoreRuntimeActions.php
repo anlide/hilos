@@ -39,18 +39,24 @@ final class RestoreRuntimeActions extends RtActions
      *
      * @param string $backupId Backup id being restored
      * @param BackupScope $scope Scope of the backup being restored
+     * @param ?int $estimatedSeconds How long the run is expected to take; null when no restore of the
+     *     scope has been recorded yet
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function markRunning(string $backupId, BackupScope $scope): void
+    public function markRunning(string $backupId, BackupScope $scope, ?int $estimatedSeconds = null): void
     {
         $this->ensureCanWrite();
 
         $this->state->running = true;
         $this->state->backupId = $backupId;
         $this->state->scope = $scope->value;
+        $startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+
         $this->state->phase = RestorePhase::PENDING->value;
-        $this->state->startedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+        $this->state->phaseStartedAt = $startedAt;
+        $this->state->startedAt = $startedAt;
+        $this->state->estimatedSeconds = $estimatedSeconds;
         $this->state->finishedAt = null;
         $this->state->outcome = null;
         $this->state->failureReason = null;
@@ -66,6 +72,10 @@ final class RestoreRuntimeActions extends RtActions
      * Terminal phases do not pass through here: {@see self::finish()} derives them from
      * the outcome, so a run cannot read as failed in one field and running in another.
      *
+     * The instant is stamped beside the phase, for the reason the start time is: a phase without
+     * the moment it began says which share of the run is behind it and nothing about the share in
+     * flight, so a progress bar would move once per phase and stand still in between.
+     *
      * @param RestorePhase $phase Non-terminal phase the run is entering
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -75,6 +85,7 @@ final class RestoreRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = $phase->value;
+        $this->state->phaseStartedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
         $this->sync();
     }
 
@@ -94,6 +105,7 @@ final class RestoreRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = RestorePhase::REHYDRATING->value;
+        $this->state->phaseStartedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
         $this->state->rehydrateComplete = false;
         $this->state->rehydrateProblems = [];
         $this->sync();
@@ -145,6 +157,10 @@ final class RestoreRuntimeActions extends RtActions
      * scope and times stay: a monitor polling just after the finish still needs to see
      * how the run it watched ended. {@see self::clear()} is the eventual reset.
      *
+     * The progress anchors go out here rather than staying with the times: the run is over, and a
+     * bar that kept filling against an estimate nobody is running against anymore would be the one
+     * thing on the screen still claiming work is happening.
+     *
      * @param BackupStatus $outcome How the run ended
      * @param ?string $failureReason Operator-facing failure detail; null on success
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -158,6 +174,8 @@ final class RestoreRuntimeActions extends RtActions
         $this->state->phase = $outcome === BackupStatus::SUCCESS
             ? RestorePhase::SUCCEEDED->value
             : RestorePhase::FAILED->value;
+        $this->state->phaseStartedAt = null;
+        $this->state->estimatedSeconds = null;
         $this->state->finishedAt = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
         $this->state->outcome = $outcome->value;
         $this->state->failureReason = $failureReason;
@@ -181,7 +199,9 @@ final class RestoreRuntimeActions extends RtActions
         $this->state->backupId = null;
         $this->state->scope = null;
         $this->state->phase = null;
+        $this->state->phaseStartedAt = null;
         $this->state->startedAt = null;
+        $this->state->estimatedSeconds = null;
         $this->state->finishedAt = null;
         $this->state->outcome = null;
         $this->state->failureReason = null;

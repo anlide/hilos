@@ -51,6 +51,9 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string restoreFinishedAt = 'restoreFinishedAt';
     public const string restoreFailureReason = 'restoreFailureReason';
     public const string restoreDatabaseTouched = 'restoreDatabaseTouched';
+    public const string progressPhase = 'progressPhase';
+    public const string progressPhaseStartedAt = 'progressPhaseStartedAt';
+    public const string progressEstimatedSeconds = 'progressEstimatedSeconds';
 
     /**
      * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
@@ -72,6 +75,9 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param ?string $restoreFailureReason Why that restore failed; null when it succeeded or was never run
      * @param bool $restoreDatabaseTouched Whether the failed restore of this archive had begun replacing the
      *     database; false for a run that never started one
+     * @param ?string $progressPhase Phase the run in progress is in; null on a stored archive, which has no run
+     * @param ?string $progressPhaseStartedAt ISO-8601 instant that phase began; null when there is no phase
+     * @param ?int $progressEstimatedSeconds How long the run in progress is expected to take; null without history
      */
     public function __construct(
         public string $rowKey,
@@ -94,6 +100,13 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $restoreFinishedAt = null,
         public ?string $restoreFailureReason = null,
         public bool $restoreDatabaseTouched = false,
+        // The three anchors a progress bar is drawn from, and only the in-progress row carries
+        // them: the percentage and the time left are computed by the browser, which is why the
+        // row ships the phase and its instants rather than a number that would be stale on
+        // arrival and would need a table update per second to stay fresh.
+        public ?string $progressPhase = null,
+        public ?string $progressPhaseStartedAt = null,
+        public ?int $progressEstimatedSeconds = null,
     ) {
     }
 
@@ -134,6 +147,9 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::restoreFinishedAt => $this->restoreFinishedAt,
             self::restoreFailureReason => $this->restoreFailureReason,
             self::restoreDatabaseTouched => $this->restoreDatabaseTouched,
+            self::progressPhase => $this->progressPhase,
+            self::progressPhaseStartedAt => $this->progressPhaseStartedAt,
+            self::progressEstimatedSeconds => $this->progressEstimatedSeconds,
         ];
     }
 
@@ -170,6 +186,9 @@ final class HilosBackupTableRow extends AbstractTableRow
             // A row that says nothing about a restore says nothing about its damage either, and
             // "not touched" is the only reading that does not invent reassurance.
             restoreDatabaseTouched: (bool)($data[self::restoreDatabaseTouched] ?? false),
+            progressPhase: self::optionalString($data, self::progressPhase),
+            progressPhaseStartedAt: self::optionalString($data, self::progressPhaseStartedAt),
+            progressEstimatedSeconds: self::optionalInt($data, self::progressEstimatedSeconds),
         );
     }
 
