@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Closure;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupRunKind;
+use Hilos\Backup\BackupNotificationType;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Constants\EnvConstants;
@@ -14,9 +15,11 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\HilosNotifier;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -55,7 +58,8 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     /** Well past any run of this suite: these cases are about a live session, not about expiry. */
     private const string EXPIRES_AT = '2036-09-01 09:15:00';
 
-    private const int OLD_USER_ID = 41;
+    /** The initiator before the swap; the announcement must not be sent to this id afterwards. */
+    public const int OLD_USER_ID = 41;
 
     private const int NEW_USER_ID = 77;
 
@@ -93,6 +97,15 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
 
         Hilos::$sr = new SignalRouter();
         Hilos::$env = $this->env();
+
+        // The announcement of the finished run writes into the same database the sessions land in,
+        // so its table is raised here beside them - and the schema map is re-read, because the
+        // activation gate reads a map that was built before this table existed.
+        self::runNotificationStub(down: true);
+        self::runNotificationStub(down: false);
+        Schema::reset();
+        Schema::initialize();
+        Hilos::$notify = new HilosNotifier();
     }
 
     /**
@@ -104,7 +117,10 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
         RtTruthSourceRegistry::unregisterDaemon(StateRestoreRuntime::RT_ITEM);
         Hilos::$env = null;
         Hilos::$sr = null;
+        Hilos::$notify = null;
         Hilos::$rt = $this->previousRt;
+        self::runNotificationStub(down: true);
+        Schema::reset();
 
         parent::tearDown();
     }
@@ -169,6 +185,79 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
     }
 
     /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testTheOutcomeIsAnnouncedToTheInitiatorInTheDatabaseThatReplacedTheirs(): void
+    {
+        $this->seedLiveSession();
+        $agent = $this->admittedRestore();
+        $agent->onProtectedModeReady();
+        $this->swapDatabase();
+
+        $this->endRestoreChild($agent, ExitCode::SUCCESS);
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+
+        $row = self::notificationRow(self::NEW_USER_ID);
+        $this->assertNotNull($row, 'The person who asked is found again by identity, not by the id they had');
+        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $row['type']);
+        $this->assertNull(
+            self::notificationRow(self::OLD_USER_ID),
+            'That id belongs to somebody else in the restored database, and mailing them would be the'
+            . ' whole reason the initiator travels as identities',
+        );
+    }
+
+    /**
+     * @throws HilosException When a step against the database fails
+     */
+    public function testARestoreThatDidNotComeBackIsAnnouncedAsAFailure(): void
+    {
+        $this->seedLiveSession();
+        $agent = $this->admittedRestore();
+        $agent->onProtectedModeReady();
+        $this->swapDatabase();
+
+        $this->endRestoreChild($agent, ExitCode::ERROR);
+        $agent->onDbReHydrateComplete(new DbReHydrateOutcome(true, []));
+
+        $row = self::notificationRow(self::NEW_USER_ID);
+        $this->assertNotNull($row, 'A restore that failed is exactly the one nobody may find out about by chance');
+        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $row['type']);
+    }
+
+    /**
+     * Reads the newest notification of a recipient straight from the database.
+     *
+     * @param int $userId Recipient user id
+     * @return ?array<string, mixed> Raw notification row, or null when the recipient has none
+     * @throws HilosException When the query fails
+     */
+    private static function notificationRow(int $userId): ?array
+    {
+        Database::sql(
+            'SELECT `type`, `severity`, `body` FROM `hilos_notification` '
+            . 'WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 1',
+            [$userId],
+        );
+
+        return Database::row();
+    }
+
+    /**
+     * Runs one direction of the notification table's stub file.
+     *
+     * @param bool $down Run the down (drop) stub when true, the create stub when false
+     * @throws HilosException When the stub statement fails
+     */
+    private static function runNotificationStub(bool $down): void
+    {
+        // external-boundary: the neutral element of the name being built - the up file carries no suffix
+        $suffix = $down ? '_down' : '';
+        $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_hilos_notification{$suffix}.sql";
+        Database::sqlRun((string)file_get_contents($stub));
+    }
+
+    /**
      * Seeds one live authenticated session with a single identity, and a connection holding it.
      *
      * @throws HilosException When a step against the database fails
@@ -217,6 +306,11 @@ final class BackupAgentRestoreCarryOverIntegrationTest extends HilosSessionInteg
                 $agent->pendingRestoreScope = BackupScope::FULL;
                 $agent->pendingRestoreDecision = RestoreEnvDecision::ALLOW;
                 $agent->pendingRestoreSince = microtime(true);
+                // Admission's own step, taken here for the same reason as the three above: it reads
+                // the initiator's identities while the database that knows them is still the live one.
+                $agent->pendingRestoreInitiatorIdentities = $agent->captureInitiatorIdentities(
+                    BackupAgentRestoreCarryOverIntegrationTest::OLD_USER_ID,
+                );
             },
             null,
             BackupAgent::class,

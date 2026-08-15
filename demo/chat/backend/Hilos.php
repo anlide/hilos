@@ -130,6 +130,7 @@ use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
+use Demo\Chat\Users\ChatAdminAudience;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
@@ -197,6 +198,8 @@ final class Hilos extends HilosFacade
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
+
+    protected const string ADMIN_AUDIENCE = ChatAdminAudience::class;
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,

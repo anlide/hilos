@@ -19,6 +19,7 @@ use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Context\DbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -53,6 +54,7 @@ final class BackupAgentTest extends TestCase
     {
         Hilos::$sr = null;
         Hilos::$env = null;
+        Hilos::$db = null;
 
         parent::tearDown();
     }
@@ -244,6 +246,31 @@ final class BackupAgentTest extends TestCase
         $this->assertNull($this->lastActionError(), 'An unattended restore has no connection to answer');
     }
 
+    public function testTheInitiatorIdentitiesArePhotographedWhileTheOldDatabaseIsStillTheLiveOne(): void
+    {
+        $db = new BackupAgentIdentityTestDbContext();
+        Hilos::$db = $db;
+
+        $this->admitFromPage(initiatorUserId: 41);
+
+        self::assertSame(
+            [41],
+            $db->askedFor,
+            'The identities are read at admission, before the freeze and long before the archive'
+            . ' replaces the database that knows the answer',
+        );
+    }
+
+    public function testAnUnattendedRestoreAsksTheDatabaseAboutNobody(): void
+    {
+        $db = new BackupAgentIdentityTestDbContext();
+        Hilos::$db = $db;
+
+        $this->admitFromPage(initiator: null);
+
+        self::assertSame([], $db->askedFor, 'A CLI restore names no person to announce the outcome to');
+    }
+
     public function testARestoreNamingAnUnknownScopeIsDroppedRatherThanAdmitted(): void
     {
         $agent = new BackupAgent();
@@ -266,13 +293,16 @@ final class BackupAgentTest extends TestCase
      * Drives one page restore through the agent's public signal entrance.
      *
      * @param ?string $initiator Accept key of the connection that asked, or null for an unattended run
+     * @param ?int $initiatorUserId User id behind that connection, or null when unattended
      * @return BackupAgent The agent that admitted it, for a follow-up request
      */
-    private function admitFromPage(?string $initiator = self::INITIATOR): BackupAgent
-    {
+    private function admitFromPage(
+        ?string $initiator = self::INITIATOR,
+        ?int $initiatorUserId = null,
+    ): BackupAgent {
         $agent = new BackupAgent();
         $agent->onSignalAgent(
-            new AgentSignalData($this->restoreRequest('2026-08-15_10-30-00', $initiator)),
+            new AgentSignalData($this->restoreRequest('2026-08-15_10-30-00', $initiator, initiatorUserId: $initiatorUserId)),
             'test',
             HilosSignalConstants::BACKUP_AGENT_RESTORE,
         );
@@ -284,14 +314,22 @@ final class BackupAgentTest extends TestCase
      * @param string $id Backup id to restore
      * @param ?string $initiator Accept key of the connection that asked, or null when unattended
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict
+     * @param ?int $initiatorUserId User id behind the connection, or null when unattended
      * @return BackupRestoreSignalData Page → agent restore request
      */
     private function restoreRequest(
         string $id,
         ?string $initiator,
         RestoreEnvDecision $decision = RestoreEnvDecision::ALLOW,
+        ?int $initiatorUserId = null,
     ): BackupRestoreSignalData {
-        return new BackupRestoreSignalData($id, BackupScope::FULL->value, $decision->value, $initiator);
+        return new BackupRestoreSignalData(
+            $id,
+            BackupScope::FULL->value,
+            $decision->value,
+            $initiator,
+            $initiatorUserId,
+        );
     }
 
     /**
@@ -348,6 +386,65 @@ final class BackupAgentTest extends TestCase
             public function int(EnvConstants|string $name): int
             {
                 return 600;
+            }
+        };
+    }
+}
+
+/**
+ * DB context recording whose identities the admission asked for.
+ */
+final class BackupAgentIdentityTestDbContext extends DbContext
+{
+    /** @var list<int> User ids the agent asked the identities of, in order */
+    public array $askedFor = [];
+
+    /**
+     * No-op DB configuration for the fixture.
+     */
+    public function configure(): void
+    {
+    }
+
+    /**
+     * Answers any collection name with the identities stand-in: it is the only one asked for.
+     *
+     * @param string $name Collection name
+     * @return object Identities collection stand-in
+     */
+    public function __get(string $name)
+    {
+        $context = $this;
+
+        return new class ($context) {
+            /**
+             * @param BackupAgentIdentityTestDbContext $context Context recording the calls
+             */
+            public function __construct(private readonly BackupAgentIdentityTestDbContext $context)
+            {
+            }
+
+            /**
+             * @param int $userId Owning user id
+             * @return list<object> Identity stand-ins of that user
+             */
+            public function listByUser(int $userId): array
+            {
+                $this->context->askedFor[] = $userId;
+
+                return [
+                    new class ('email', 'boss@example.test') {
+                        /**
+                         * @param string $type Identity type
+                         * @param string $identifier Normalized identifier
+                         */
+                        public function __construct(
+                            public readonly string $type,
+                            public readonly string $identifier,
+                        ) {
+                        }
+                    },
+                ];
             }
         };
     }

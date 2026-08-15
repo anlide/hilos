@@ -9,6 +9,7 @@ use DateTimeInterface;
 use DateTimeZone;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
+use Hilos\Auth\Session\SessionIdentityRef;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
 use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
@@ -31,6 +32,7 @@ use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
+use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\CliCommands;
@@ -203,6 +205,15 @@ final class BackupAgent extends AbstractAgent
      * restore leaves it null and is watched by nobody.
      */
     private ?string $pendingRestoreInitiator = null;
+
+    /**
+     * @var ?list<SessionIdentityRef> Identity pairs of the person who asked for the restore, read at
+     *     admission; null when no restore is in flight, empty when nobody asked or they could not be
+     *     read. Photographed for the same reason the sessions are, and kept in memory beside them:
+     *     the numeric user id does not survive the swap ({@see SessionIdentityRef}), so this is the
+     *     only thing left to recognize the initiator by once the announcement is due (HIL-279).
+     */
+    private ?array $pendingRestoreInitiatorIdentities = null;
 
     /** Child timeout (seconds) of the accepted restore, read at admission; 0.0 when none is pending. */
     private float $pendingRestoreTimeout = 0.0;
@@ -590,7 +601,7 @@ final class BackupAgent extends AbstractAgent
 
         // No initiator: the requester is a CLI, not a browser connection, so the freeze has no
         // connection to keep alive and the run has nobody to report progress to.
-        $refusal = $this->admitRestore($id, $scope, $decision, null);
+        $refusal = $this->admitRestore($id, $scope, $decision, null, null);
         if ($refusal !== null) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal));
 
@@ -623,7 +634,13 @@ final class BackupAgent extends AbstractAgent
             return;
         }
 
-        $refusal = $this->admitRestore($data->backupId, $scope, $decision, $data->initiatorAcceptKey);
+        $refusal = $this->admitRestore(
+            $data->backupId,
+            $scope,
+            $decision,
+            $data->initiatorAcceptKey,
+            $data->initiatorUserId,
+        );
         if ($refusal !== null) {
             $this->sendRestoreRefusal($data->initiatorAcceptKey, $refusal);
         }
@@ -655,6 +672,7 @@ final class BackupAgent extends AbstractAgent
      * @param BackupScope $scope Scope the archive was captured under
      * @param RestoreEnvDecision $decision Recorded ENV guard verdict for this archive/target pair
      * @param ?string $initiator Accept key of the connection that asked, or null when unattended
+     * @param ?int $initiatorUserId User id behind that connection, or null when unattended
      * @return ?string Refusal reason, or null when the restore was admitted
      */
     private function admitRestore(
@@ -662,6 +680,7 @@ final class BackupAgent extends AbstractAgent
         BackupScope $scope,
         RestoreEnvDecision $decision,
         ?string $initiator,
+        ?int $initiatorUserId,
     ): ?string {
         if ($this->childProcess !== null || $this->restoreEngaged()) {
             $busyId = $this->currentBackupId ?? $this->pendingRestoreId;
@@ -691,6 +710,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = $timeoutSeconds;
         $this->pendingRestoreSince = microtime(true);
         $this->pendingRestoreInitiator = $initiator;
+        $this->pendingRestoreInitiatorIdentities = $this->captureInitiatorIdentities($initiatorUserId);
         $this->restoreView()?->actions->markRunning($id, $scope, $this->restoreEstimate($id, $scope));
         $this->notifyRestoreProgress();
         if ($initiator === null) {
@@ -1682,11 +1702,59 @@ final class BackupAgent extends AbstractAgent
         // ever say so - the node stays frozen, so no reload follows to show the row instead.
         $this->notifyRestoreProgress();
 
+        $this->announceRestoreOutcome($id, $complete, $problems);
+
         $this->rehydrateFailureDetail = null;
         $this->resetRun();
         // A manual create coalesced while the restore held the child slot must not rot in
         // its slot until some unrelated later run happens to drain it.
         $this->drainPendingCreate();
+    }
+
+    /**
+     * Announces the finished restore to the administrators and to whoever asked for it (HIL-279).
+     *
+     * Placed at the very end of the run rather than at its start, because a notification written
+     * before the import is erased by the import: the row and its delivery queue live in the
+     * database the archive replaces. Here the new database is in place and every process has
+     * already re-read it, so the row lands in the world that will be read from - and on a barrier
+     * that did not close it lands anyway, waiting in the queue until a human opens the node,
+     * because that is the only trace the administrators will ever get.
+     *
+     * The state it needs is still in memory and is gone one statement later ({@see resetRun()}),
+     * which is what fixes this call's position rather than taste.
+     *
+     * The span is the one every other surface of this run counts ({@see restoreElapsedSeconds()}):
+     * from the admission, not from the spawn. A notification measuring the child alone would name a
+     * shorter run than the page the reader is being sent to, and start it at a different instant
+     * than the row does - for the same restore, in two places the same person reads.
+     *
+     * @param string $id Backup id that was replayed
+     * @param bool $complete Whether every process confirmed re-reading the replaced database
+     * @param list<string> $problems Processes that failed to re-read or never answered
+     */
+    private function announceRestoreOutcome(string $id, bool $complete, array $problems): void
+    {
+        $scope = $this->currentScope;
+        if ($scope === null) {
+            // The scope is written in the same breath as the id the caller has already checked, so
+            // a missing one is a broken invariant. The run's own outcome is recorded either way;
+            // only the announcement, which states what the archive held, cannot be composed.
+            $this->logAgentError("Restore {$id} finished with no scope to announce");
+
+            return;
+        }
+
+        new RestoreNotifier()->notifyOutcome(
+            $id,
+            $scope,
+            $this->rehydrateChildSucceeded && $complete,
+            $this->restoreFailureDetail($complete, $problems),
+            date('Y-m-d H:i:s', (int)$this->pendingRestoreSince),
+            $this->restoreElapsedSeconds(),
+            $complete,
+            $this->pendingRestoreInitiatorIdentities ?? [],
+        );
     }
 
     /**
@@ -2006,6 +2074,41 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
+     * Photographs the identities of the person who asked for the restore, before the swap.
+     *
+     * The numeric user id the page sent is worth nothing once the database under it is replaced -
+     * the same id in another installation's archive belongs to somebody else - so it is turned
+     * into (type, identifier) pairs here, while the database that knows the answer is still the
+     * live one. After the restore those pairs are looked up in the new database, exactly as the
+     * carried-over sessions are ({@see SessionCarrier}).
+     *
+     * Contained like the session snapshot: an announcement nobody could compose must not be the
+     * reason a restore the operator asked for is refused before it starts.
+     *
+     * @param ?int $userId User id behind the requesting connection, or null when unattended
+     * @return list<SessionIdentityRef> Identity pairs to recognize the initiator by (empty when none)
+     */
+    private function captureInitiatorIdentities(?int $userId): array
+    {
+        if ($userId === null) {
+            return [];
+        }
+
+        try {
+            $references = [];
+            foreach (Hilos::$db->identities->listByUser($userId) as $identity) {
+                $references[] = new SessionIdentityRef($identity->type, $identity->identifier);
+            }
+
+            return $references;
+        } catch (Throwable $e) {
+            $this->logAgentError('Restore could not photograph the initiator identities: ' . $e->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
      * Photographs the live authenticated sessions before the child replaces the database.
      *
      * A snapshot that cannot be read must not stop a restore the operator asked for: the cost
@@ -2073,6 +2176,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
         $this->pendingRestoreInitiator = null;
+        $this->pendingRestoreInitiatorIdentities = null;
         $this->pendingCarryover = null;
         $this->rehydrateDeadline = 0.0;
         $this->rehydrateChildSucceeded = false;

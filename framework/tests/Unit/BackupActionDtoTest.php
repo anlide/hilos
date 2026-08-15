@@ -26,7 +26,8 @@ use PHPUnit\Framework\TestCase;
  * Each action DTO parses from the raw WebSocket envelope — tolerating the optional FIELD_DATA
  * wrapper — and round-trips its typed fields. The create signal additionally carries who asked,
  * which is what lets the agent address the run's outcome back to that one connection; the restore
- * signal carries the same, plus the verdict and scope the page resolved. The restore progress
+ * signal carries the same, plus the verdict and scope the page resolved and the user id whose
+ * identities the agent photographs before the swap (HIL-279). The restore progress
  * frame is pinned against the runtime row it photographs, because the initiator's view and the
  * CLI monitor's are meant to be the same snapshot.
  */
@@ -199,13 +200,14 @@ final class BackupActionDtoTest extends TestCase
     public function testRestoreSignalRoundTripsEveryKeyTheAgentActsOn(): void
     {
         $dto = BackupRestoreSignalData::fromArray(
-            new BackupRestoreSignalData('bk-3', 'full', 'allow', 'accept-key-3')->toArray(),
+            new BackupRestoreSignalData('bk-3', 'full', 'allow', 'accept-key-3', 41)->toArray(),
         );
 
         $this->assertSame('bk-3', $dto->backupId);
         $this->assertSame('full', $dto->scope);
         $this->assertSame('allow', $dto->decision);
         $this->assertSame('accept-key-3', $dto->initiatorAcceptKey);
+        $this->assertSame(41, $dto->initiatorUserId);
     }
 
     public function testRestoreSignalHasNoInitiatorWhenAbsent(): void
@@ -217,6 +219,23 @@ final class BackupActionDtoTest extends TestCase
         ]);
 
         $this->assertNull($dto->initiatorAcceptKey);
+        $this->assertNull(
+            $dto->initiatorUserId,
+            'A CLI restore names no person, and the agent has nobody to photograph identities of',
+        );
+    }
+
+    public function testRestoreSignalRefusesAnInitiatorThatIsNotAUserId(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BackupRestoreSignalData::initiatorUserId);
+
+        BackupRestoreSignalData::fromArray([
+            BackupRestoreSignalData::backupId => 'bk-3',
+            BackupRestoreSignalData::scope => 'full',
+            BackupRestoreSignalData::decision => 'allow',
+            BackupRestoreSignalData::initiatorUserId => '41',
+        ]);
     }
 
     public function testRestoreSignalRefusesAPayloadCarryingNoVerdict(): void

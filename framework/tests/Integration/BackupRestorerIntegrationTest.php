@@ -9,6 +9,7 @@ use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
+use Hilos\Backup\BackupNotificationType;
 use Hilos\Backup\BackupRestorer;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
@@ -17,17 +18,23 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreMigrationGuard;
+use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
+use Hilos\Database\Schema\Schema;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
+use Hilos\Notification\HilosNotifier;
+use Hilos\Notification\NotificationSeverity;
+use Hilos\Users\AdminAudience;
 
 /**
  * Integration coverage for the restore engine against the live test database.
@@ -77,11 +84,22 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
      */
     public const string NULLABLE_COLUMN = 'nickname';
 
+    /** Administrator of the restored database, as its audience names them. */
+    public const int ADMIN_USER_ID = 41;
+
+    /** @var list<string> Framework notification tables the announcement cases raise and drop. */
+    private const array NOTIFICATION_TABLES = ['hilos_notification', 'hilos_setting'];
+
     private string $storeRoot = '';
 
     private ?EnvAccessor $previousEnv = null;
 
     private bool $fixtureMigrationListed = false;
+
+    /** @var ?DbContext Database context to put back after an announcement case swapped it. */
+    private ?DbContext $previousDb = null;
+
+    private bool $notificationTablesRaised = false;
 
     protected function setUp(): void
     {
@@ -115,6 +133,13 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         $this->removeTree($this->storeRoot);
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
         Database::sql('DROP TABLE IF EXISTS `' . self::TOKEN_TABLE . '`');
+        if ($this->notificationTablesRaised) {
+            Hilos::$db = $this->previousDb;
+            Hilos::$notify = null;
+            self::runNotificationStubs(down: true);
+            Schema::reset();
+            $this->notificationTablesRaised = false;
+        }
         // The anonymization cases capture a project facade; later cases must find the base.
         Hilos::initBrowser();
         Hilos::resetBrowser();
@@ -362,6 +387,121 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         } catch (AnonymizationConfigException $refusal) {
             $this->assertStringContainsString(self::PROBE_TABLE, $refusal->getMessage());
             $this->assertStringContainsString(self::TOKEN_TABLE, $refusal->getMessage());
+        }
+    }
+
+    public function testAFinishedRestoreIsAnnouncedInTheDatabaseItRestored(): void
+    {
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]));
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+
+        // Raised after the replay, because that is where the table comes from: the announcement is
+        // written into the database the archive brought, not into the one it replaced.
+        $this->raiseNotificationTables();
+
+        new RestoreNotifier()->notifyOutcome(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            success: true,
+            failureDetail: null,
+            startedAt: '2026-08-08 12:00:00',
+            durationSeconds: 12,
+            rehydrateComplete: true,
+            initiatorIdentities: [],
+        );
+
+        $row = $this->notificationRow(self::ADMIN_USER_ID);
+        $this->assertNotNull($row, 'The administrator of the restored database is told the restore happened');
+        $this->assertSame(BackupNotificationType::RESTORE_SUCCEEDED, $row['type']);
+        $this->assertSame(NotificationSeverity::SUCCESS, $row['severity']);
+        $this->assertStringContainsString(self::BACKUP_ID, (string)$row['body']);
+        $this->assertStringContainsString('"outcome":"succeeded"', (string)$row['data']);
+    }
+
+    public function testAFailedRestoreIsAnnouncedWithItsOneLineReason(): void
+    {
+        $this->publishFixtureBackup($this->probeDumpSql([['1', 'alpha']]));
+
+        new BackupRestorer()->restore(self::BACKUP_ID, BackupScope::FULL, RestoreEnvDecision::ALLOW);
+        $this->raiseNotificationTables();
+
+        new RestoreNotifier()->notifyOutcome(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            success: false,
+            failureDetail: "import failed on db-0\nmysql: syntax error near line 4",
+            startedAt: '2026-08-08 12:00:00',
+            durationSeconds: 12,
+            rehydrateComplete: false,
+            initiatorIdentities: [],
+        );
+
+        $row = $this->notificationRow(self::ADMIN_USER_ID);
+        $this->assertNotNull($row);
+        $this->assertSame(BackupNotificationType::RESTORE_FAILED, $row['type']);
+        $this->assertSame(NotificationSeverity::ERROR, $row['severity']);
+        $this->assertSame(
+            'import failed on db-0 Details are on the backups page.',
+            $row['body'],
+            'The second line of the reason stays in the log rather than going out by mail',
+        );
+    }
+
+    /**
+     * Raises the notification tables of the restored database and mounts a context over them.
+     *
+     * @throws DatabaseException When a stub statement fails
+     */
+    private function raiseNotificationTables(): void
+    {
+        self::runNotificationStubs(down: true);
+        self::runNotificationStubs(down: false);
+        $this->notificationTablesRaised = true;
+        // The activation gate reads the cached schema map, and these tables were raised after it
+        // was built; without the re-read the collection would refuse a table that is right there.
+        Schema::reset();
+        Schema::initialize();
+
+        $this->previousDb = Hilos::$db;
+        $db = new RestoreAnnouncementTestDbContext();
+        $db->configure();
+        Hilos::$db = $db;
+        Hilos::$notify = new HilosNotifier();
+        RestoreAnnouncementTestHilos::initBrowser();
+    }
+
+    /**
+     * Reads the newest notification of a recipient straight from the database.
+     *
+     * @param int $userId Recipient user id
+     * @return ?array<string, mixed> Raw notification row, or null when the recipient has none
+     * @throws DatabaseException When the query fails
+     */
+    private function notificationRow(int $userId): ?array
+    {
+        Database::sql(
+            'SELECT `type`, `severity`, `title`, `body`, `data` FROM `hilos_notification` '
+            . 'WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 1',
+            [$userId],
+        );
+
+        return Database::row();
+    }
+
+    /**
+     * Runs one direction of the stub file of every notification table these cases need.
+     *
+     * @param bool $down Run the down (drop) stubs when true, the create stubs when false
+     * @throws DatabaseException When a stub statement fails
+     */
+    private static function runNotificationStubs(bool $down): void
+    {
+        // external-boundary: the neutral element of the name being built - the up file carries no suffix
+        $suffix = $down ? '_down' : '';
+        foreach (self::NOTIFICATION_TABLES as $table) {
+            $stub = dirname(__DIR__, 2) . "/backend/Database/Migration/Stub/create_{$table}{$suffix}.sql";
+            Database::sqlRun((string)file_get_contents($stub));
         }
     }
 
@@ -774,4 +914,41 @@ final class PartialPiiRestoreTestCatalog implements CatalogProviderInterface
             ],
         ];
     }
+}
+
+/**
+ * Project facade fixture naming the administrator of the restored database.
+ */
+final class RestoreAnnouncementTestHilos extends Hilos
+{
+    protected const string ADMIN_AUDIENCE = RestoreAnnouncementTestAudience::class;
+
+    /**
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new RestoreAnnouncementTestDbContext();
+    }
+}
+
+/**
+ * The audience the restored database answers with.
+ */
+final class RestoreAnnouncementTestAudience extends AdminAudience
+{
+    /**
+     * @return list<int> Fixture admin user ids
+     */
+    protected static function userIds(): array
+    {
+        return [BackupRestorerIntegrationTest::ADMIN_USER_ID];
+    }
+}
+
+/**
+ * A framework database context with nothing but the framework's own collections.
+ */
+final class RestoreAnnouncementTestDbContext extends HilosDbContext
+{
 }

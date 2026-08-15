@@ -268,6 +268,11 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * connection alive, addresses the progress frames to it, and tells it if the agent refuses
      * the run after all.
      *
+     * Who the requester is travels beside their connection, because the outcome outlives both:
+     * the agent turns the user id into identity pairs before the database is replaced, so the
+     * finished restore can be announced to that person in the database that replaced it
+     * (HIL-279). It is read here, where a browser request still exists to read it from.
+     *
      * @param string $acceptKey Accept key of the requesting connection, kept alive through the freeze
      * @param BackupRestoreActionDTO $dto Restore action payload
      * @throws TableActionException When the environment, the archive or the subsystem's state refuses
@@ -297,7 +302,13 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
 
         $this->agent->sendToAgent(
             HilosSignalConstants::BACKUP_AGENT_RESTORE,
-            new BackupRestoreSignalData($dto->backupId, $scope->value, $envVerdict->decision->value, $acceptKey),
+            new BackupRestoreSignalData(
+                $dto->backupId,
+                $scope->value,
+                $envVerdict->decision->value,
+                $acceptKey,
+                Hilos::$browser?->resolveActionUserId($acceptKey),
+            ),
         );
     }
 

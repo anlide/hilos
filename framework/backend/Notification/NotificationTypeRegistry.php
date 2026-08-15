@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Notification;
 
+use Hilos\Backup\BackupNotificationType;
 use Hilos\Hilos;
 
 /**
  * NotificationTypeRegistry - the code-side catalog of notification types (HIL-485).
  *
- * Maps a machine notification type to its {@see NotificationTypeDescriptor}. The
- * framework ships this empty base; a project points
+ * Maps a machine notification type to its {@see NotificationTypeDescriptor}. The base
+ * carries the types the framework itself emits; a project points
  * {@see Hilos::NOTIFICATION_TYPE_REGISTRY} at its own subclass and adds
  * types by overriding {@see types()} with `array_replace(parent::types(), [...])`.
  *
@@ -34,11 +35,19 @@ abstract class NotificationTypeRegistry
      * }
      * ```
      *
+     * The framework's own entries are the restore outcomes (HIL-279), and they are mandatory:
+     * the database an administrator works on was replaced under them, which is not a thing a
+     * personal channel setting may turn off. A project that does not activate backups inherits
+     * two types nothing ever emits, which costs it nothing.
+     *
      * @return array<string, NotificationTypeDescriptor> Type descriptors keyed by type
      */
     protected static function types(): array
     {
-        return [];
+        return [
+            BackupNotificationType::RESTORE_SUCCEEDED => new NotificationTypeDescriptor(mandatory: true),
+            BackupNotificationType::RESTORE_FAILED => new NotificationTypeDescriptor(mandatory: true),
+        ];
     }
 
     /**

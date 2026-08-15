@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Notification;
 
+use Hilos\Backup\BackupNotificationType;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
@@ -137,10 +138,22 @@ final class NotificationPreferenceTest extends TestCase
 
     public function testTypeRegistryReportsMandatoryPresence(): void
     {
-        // The profile section renders its always-on note only when the project
-        // declares a mandatory type; the empty framework base declares none.
-        self::assertFalse(NotificationTypeRegistry::hasMandatory());
+        // The profile section renders its always-on note when a mandatory type exists. The
+        // framework base carries its own since HIL-279 - a restore replaces the database an
+        // administrator works on, and that is not silenceable - and a project's types are
+        // merged onto them.
+        self::assertTrue(NotificationTypeRegistry::hasMandatory());
         self::assertTrue(NotificationPreferenceTestTypeRegistry::hasMandatory());
+    }
+
+    public function testTheFrameworksOwnRestoreTypesAreMandatoryForEveryProject(): void
+    {
+        self::assertTrue(NotificationTypeRegistry::isMandatory(BackupNotificationType::RESTORE_SUCCEEDED));
+        self::assertTrue(NotificationTypeRegistry::isMandatory(BackupNotificationType::RESTORE_FAILED));
+        self::assertTrue(
+            NotificationPreferenceTestTypeRegistry::isMandatory(BackupNotificationType::RESTORE_FAILED),
+            'A project registry merges its types onto the parent, so it cannot silently lose these',
+        );
     }
 
     public function testSectionDataSerializesChannelsAndMandatoryNote(): void

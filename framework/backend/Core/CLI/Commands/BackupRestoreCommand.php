@@ -27,6 +27,7 @@ use Hilos\Backup\RestoreEnvGuard;
 use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Backup\RestoreMigrationGap;
 use Hilos\Backup\RestoreMigrationGuard;
+use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
@@ -35,6 +36,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory;
 
@@ -404,14 +406,67 @@ HELP;
             echo $failure->databaseTouched()
                 ? "The database may be left partially replaced - check it before starting the system\n"
                 : "The database was not touched\n";
+            $this->announceColdOutcome($id, $scope, false, $failure->getMessage(), $startedAt);
 
             return ExitCode::ERROR;
         }
 
         echo "Restore completed\n";
         $this->recordColdRestore($metadata, $root, (int)round(microtime(true) - $startedAt));
+        $this->announceColdOutcome($id, $scope, true, null, $startedAt);
 
         return ExitCode::SUCCESS;
+    }
+
+    /**
+     * Announces how the cold restore ended to the administrators of the restored database (HIL-279).
+     *
+     * **The collections are re-read first, and that order is the whole point.** This process was
+     * started against the database the archive has just replaced and still holds it in memory; the
+     * administrators read out of that memory would be the ones the archive overwrote, and the
+     * notification would go to whoever holds their ids today - which is the same mistake the
+     * initiator's identities exist to avoid on the hot path. There is no barrier to wait for here,
+     * so re-reading is a single call and the run is complete the moment it returns.
+     *
+     * Nobody is watching a cold restore: the operator is at a console with no user id, so the
+     * announcement carries no initiator and reaches the audience alone. The live signal inside the
+     * emit reaches nobody either (no router in a CLI process), while the row and its delivery
+     * queue wait in the database until the daemon is started and take the channels from there.
+     *
+     * @param string $id Backup id that was replayed
+     * @param BackupScope $scope Scope the archive was captured under
+     * @param bool $success Whether the engine replayed the archive
+     * @param ?string $failureDetail Why it did not, or null on success
+     * @param float $startedAt Microtime the run started
+     */
+    private function announceColdOutcome(
+        string $id,
+        BackupScope $scope,
+        bool $success,
+        ?string $failureDetail,
+        float $startedAt,
+    ): void {
+        try {
+            Hilos::$db?->reHydrateDbBackedCollections();
+        } catch (HilosException $e) {
+            // Announcing out of the replaced world is the one thing that must not happen, so a
+            // re-read that failed ends the announcement rather than proceeding without it. The
+            // restore itself is over either way and its own outcome has already been printed.
+            echo "Note: this restore was not announced: the new database could not be read ({$e->getMessage()})\n";
+
+            return;
+        }
+
+        new RestoreNotifier()->notifyOutcome(
+            $id,
+            $scope,
+            $success,
+            $failureDetail,
+            date('Y-m-d H:i:s', (int)$startedAt),
+            (int)round(microtime(true) - $startedAt),
+            rehydrateComplete: true,
+            initiatorIdentities: [],
+        );
     }
 
     /**

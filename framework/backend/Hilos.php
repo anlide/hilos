@@ -51,6 +51,7 @@ use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Users\AdminAudience;
 
 /**
  * Main framework facade providing global access to core layer singletons.
@@ -115,6 +116,18 @@ abstract class Hilos
      * @var class-string<NotificationTypeRegistry>
      */
     protected const string NOTIFICATION_TYPE_REGISTRY = NotificationTypeRegistry::class;
+
+    /**
+     * Admin audience class (HIL-279).
+     *
+     * Framework code that must notify the administrators from outside a browser request
+     * reads them through this class. The framework default is the empty base, so a project
+     * that declares nothing is notified about nothing; a project points this at its own
+     * subclass to name its administrators.
+     *
+     * @var class-string<AdminAudience>
+     */
+    protected const string ADMIN_AUDIENCE = AdminAudience::class;
 
     /**
      * Words of the maintenance surface shown while protected mode holds the node (HIL-268).
@@ -323,6 +336,16 @@ abstract class Hilos
     public static function notificationTypeRegistryClass(): string
     {
         return static::appClass()::NOTIFICATION_TYPE_REGISTRY;
+    }
+
+    /**
+     * Returns the project's admin audience class (HIL-279).
+     *
+     * @return class-string<AdminAudience> Admin audience class
+     */
+    public static function adminAudienceClass(): string
+    {
+        return static::appClass()::ADMIN_AUDIENCE;
     }
 
     /**
