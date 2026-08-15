@@ -148,7 +148,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     /**
-     * Writes one user's admin flag and reports the flag the row now carries (HIL-553).
+     * Writes one user's admin flag and answers with the flag it was asked to set (HIL-553).
      *
      * Both wire names land here and the flag comes from the payload rather than from the
      * command name, so the two commands are one handler: grant and revoke differ in nothing

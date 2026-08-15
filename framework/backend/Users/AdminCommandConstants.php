@@ -17,10 +17,8 @@ use Hilos\Core\CLI\Commands\AbstractSetAdminCommand;
  * {@see CliCommands::ADMIN_REVOKE}, which share one payload shape and differ only in the
  * flag they carry.
  *
- * The reply repeats both fields rather than answering bare ok so that a caller reading only
- * the reply can name the user and the state it ended in; the proof that the write happened
- * is the ok status itself, since the agent answers ok only after the project's write
- * returned. The fields are an echo of the request, not a read-back of the row.
+ * The reply repeats both fields rather than answering bare ok, so a caller reading only the
+ * reply can name the user and the flag that was set.
  */
 final class AdminCommandConstants
 {

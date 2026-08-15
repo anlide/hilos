@@ -188,6 +188,39 @@ declaration rather than guessed at. See
 [automated-checks.md](automated-checks.md) for what it judges and what it leaves
 to the audit.
 
+## A comment does not prove the state of the database
+
+This section holds for every comment in a PHP file — a docblock and a `//` line
+alike — because the argument it forbids reads the same in both.
+
+Do not argue in a comment that a value can be trusted because it was read back,
+and do not name a reply, an ack, or an `ok` status as the proof of what a row
+now carries. A sentence like that does not describe the code; it defends it,
+and what it defends is a read-back nobody asked for.
+
+The cure is to delete the argument, not to restate it as a better proof. What
+remains is the flat fact — what the field carries and why it is on the wire. If
+nothing remains, the comment was retelling the line under it, which is the
+restatement rule 4 already refuses.
+
+The reason is that re-reading a row to confirm a write would mean distrusting
+the database, and this project does not: a write that returned did what it
+said. A reply assembled from the request payload proves nothing about the row
+in any case — it echoes what was asked, not what was stored — so a comment that
+insists on the difference keeps the read-back alive as an option instead of
+closing it.
+
+The boundary is the read-back that is real, which stays legitimate whenever it
+carries the caller something the caller does not have. Describe such a read as
+a mechanism rather than as evidence: the restore path re-reads the replaced
+database because every collection in memory is stale once the file is swapped,
+and `NotificationCommandConstants::FIELD_QUEUED_CHANNELS` reports the delivery
+rows the emit produced, which the CLI never saw.
+
+Not checked automatically. `proof` and `evidence` are legitimate words in auth
+code, where a verification code really does prove ownership of an address, so
+no grep separates this form from that one.
+
 ## Example
 
 ```php

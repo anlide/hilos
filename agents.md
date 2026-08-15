@@ -145,7 +145,7 @@ the rule away.
 | File | Applies to | Read when... |
 |---|---|---|
 | [code-style/README.md](docs/agents/code-style/README.md) | both | choosing which small style rule applies to a code change — the full catalog, with the same *Applies to* column on every rule |
-| [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | PHP | writing PHPDoc, overriding inherited methods, adding `@see` links |
+| [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | PHP | writing PHPDoc, overriding inherited methods, adding `@see` links, or explaining in a comment why a value can be trusted |
 | [code-style/static-factories.md](docs/agents/code-style/static-factories.md) | PHP | writing or changing static factories (`fromArray`, `fromRow`, `create`) and their `self`/`static` return contract |
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | PHP | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | PHP | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |

@@ -71,9 +71,6 @@ abstract class AbstractSetAdminCommand implements CommandInterface, DatabaseFree
             return ExitCode::ERROR;
         }
 
-        // Report the reply's flag rather than the requested one: what proves the grant landed
-        // is the ok status above - the agent answers ok only after the project's write
-        // returned - and the flag then says which way the row went.
         $state = ((bool)($reply->payload[AdminCommandConstants::FIELD_ADMIN] ?? false)) ? 'admin' : 'not admin';
         echo "Reply (ok): user #{$userId} is now {$state}\n";
 
