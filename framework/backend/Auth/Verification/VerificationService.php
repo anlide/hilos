@@ -199,6 +199,111 @@ class VerificationService
     }
 
     /**
+     * Whether a (type, identifier) still has a challenge that could be answered (HIL-416).
+     *
+     * A pure read, and the one question a submitted code cannot answer: a wrong code and
+     * a challenge that is no longer there both fail, and the person is owed different
+     * things - one is a typo to correct on the spot, the other is a flow to start again.
+     * Every flow that rolls its surface back rather than rejecting a code asks this
+     * first; nothing is written and no attempt is counted.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @return bool True when a live challenge is waiting for a code
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    public function hasActive(string $type, string $identifier): bool
+    {
+        return $this->collection()->findActive($type, $identifier, $this->maxAttempts()) !== null;
+    }
+
+    /**
+     * Checks a submitted code against the live challenge WITHOUT spending it (HIL-416).
+     *
+     * The half of {@see verifyCode()} that recovery needs: password reset accepts the
+     * code on one screen and saves the new password on the next, so the code has to
+     * survive the step in between - it is what the grant to save is made of. Spending
+     * it at the code screen would mean either holding the reset open with no proof
+     * behind it, or asking for the code twice.
+     *
+     * Everything the ceiling protects is kept: a wrong code costs an attempt, and one
+     * that reaches the ceiling voids the challenge exactly as it does on the consuming
+     * path - so this is not a way to guess a code without cost. The spend moves to
+     * {@see consumeActive()}, which the saving step calls.
+     *
+     * Only a WRONG code is counted, which is where this parts company with
+     * {@see verify()}. There the attempt is recorded first and a match consumes the
+     * challenge, so what the counter then reads never matters. Here the challenge has
+     * to survive the match: counting a correct code would let the right answer, given
+     * on the last permitted attempt, put the challenge over the ceiling and leave the
+     * person holding a password step with nothing left to spend.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param string $code Submitted plaintext code
+     * @return bool True when the code matched the live challenge, false on any failure
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    public function matchCode(string $type, string $identifier, string $code): bool
+    {
+        $collection = $this->collection();
+        $maxAttempts = $this->maxAttempts();
+
+        $challenge = $collection->findActive($type, $identifier, $maxAttempts);
+        if ($challenge === null) {
+            return false;
+        }
+
+        if ($challenge->verifyCode($code)) {
+            return true;
+        }
+
+        $challenge->incrementAttempts();
+        if ($challenge->attempts >= $maxAttempts) {
+            $challenge->consume();
+        }
+
+        return false;
+    }
+
+    /**
+     * Spends the live challenge of a (type, identifier) without asking for the code.
+     *
+     * The other half of the split {@see matchCode()} opens (HIL-416): the code was
+     * already proven a step earlier and is not on the wire any more, so what the
+     * saving step has to do is burn it. Answering whether there WAS one to burn is
+     * the point of the return - the challenge is the recovery's single-use ticket,
+     * so an absent one means this session is too late (another one finished the
+     * reset, or the code died waiting), and false is that fact rather than a
+     * failure to work.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @return bool True when a live challenge existed and was spent, false when none was left
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    public function consumeActive(string $type, string $identifier): bool
+    {
+        $challenge = $this->collection()->findActive($type, $identifier, $this->maxAttempts());
+        if ($challenge === null) {
+            return false;
+        }
+
+        $challenge->consume();
+
+        return true;
+    }
+
+    /**
      * Shared verify core: loads the single active challenge, records the attempt,
      * compares the code in constant time, and single-use consumes it on a match.
      *

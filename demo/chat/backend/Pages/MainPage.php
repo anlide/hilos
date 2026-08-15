@@ -15,6 +15,7 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
+use Demo\Chat\Pages\DTO\Main\CompletePasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
@@ -51,6 +52,7 @@ use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\PhoneNumber;
+use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
@@ -110,6 +112,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::REGISTER => RegisterActionDTO::class,
         ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
         ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
+        ChatSignalConstants::COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
         ChatSignalConstants::REQUEST_SMS_CODE => RequestSmsCodeActionDTO::class,
         ChatSignalConstants::CONFIRM_SMS_CODE => ConfirmSmsCodeActionDTO::class,
         ChatSignalConstants::REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
@@ -162,6 +165,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::REGISTER,
         ChatSignalConstants::REQUEST_PASSWORD_RESET,
         ChatSignalConstants::CONFIRM_PASSWORD_RESET,
+        ChatSignalConstants::COMPLETE_PASSWORD_RESET,
         ChatSignalConstants::REQUEST_SMS_CODE,
         ChatSignalConstants::CONFIRM_SMS_CODE,
         ChatSignalConstants::REQUEST_MAGIC_LINK,
@@ -250,6 +254,22 @@ final class MainPage extends AbstractPage
      * for a mistake they did not make.
      */
     private const string RESERVATION_EXPIRED_MESSAGE = 'That registration expired, please start again';
+
+    /**
+     * Message for a recovery whose code is no longer live - never issued, expired, or
+     * spent while the person was still typing. Distinct from
+     * {@see self::INVALID_CODE_MESSAGE} for the same reason the registration one is: it
+     * rides an outcome that rolls the surface back to the address field, so it has to
+     * explain a move rather than accuse a typo.
+     */
+    private const string RESET_CODE_EXPIRED_MESSAGE = 'That reset code is no longer valid, please start again';
+
+    /**
+     * Message for the losing save of a two-device recovery. The code is single-use, so
+     * the second device is not wrong about anything - the password it was about to set
+     * is simply not the one the account has now, and signing in is what is left to do.
+     */
+    private const string PASSWORD_ALREADY_CHANGED_MESSAGE = 'The password was already changed, please sign in';
 
     /**
      * Generic failure message for a malformed phone number. A format error is not
@@ -342,9 +362,13 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof ConfirmPasswordResetActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmPasswordResetActionDTO::class, $dto);
                 }
-                $this->handleConfirmPasswordReset($dto);
+                return $this->handleConfirmPasswordReset($dto);
 
-                break;
+            case ChatSignalConstants::COMPLETE_PASSWORD_RESET:
+                if (!$dto instanceof CompletePasswordResetActionDTO) {
+                    throw new InvalidActionPayloadException($action, CompletePasswordResetActionDTO::class, $dto);
+                }
+                return $this->handleCompletePasswordReset($dto);
 
             case ChatSignalConstants::REQUEST_SMS_CODE:
                 if (!$dto instanceof RequestSmsCodeActionDTO) {
@@ -757,63 +781,191 @@ final class MainPage extends AbstractPage
      * The surface moves nowhere either way - the person is on the screen the code
      * belongs to.
      *
+     * The connection is parked as a recovery waiter before returning (HIL-416), and
+     * that is also what makes a second device cheap: the cooldown answers it with a
+     * countdown off the code that is already in the inbox rather than mailing another,
+     * and the same call puts it where the converge broadcast can reach it
+     * ({@see ChatAgent::convergeRecovery()}). Nothing is parked for a send the cap
+     * refused - no code went out for that session to wait on.
+     *
      * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
      * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When no account at the address has a password
-     * @throws HilosException When identity lookup or code issuing fails
+     * @throws HilosException When identity lookup, code issuing, or the runtime write fails
      * @throws RandomException When the platform CSPRNG cannot produce a code
      */
     private function handleRequestPasswordReset(RequestPasswordResetActionDTO $dto): AuthFlowOutcome
     {
-        $email = strtolower($dto->email);
-        $identity = $email !== ''
-            ? Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email)
-            : null;
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
 
-        if ($identity === null || $identity->userId === null) {
+        $email = strtolower($dto->email);
+        $outcome = new PasswordRecoveryService()->requestCode($email);
+        if ($outcome === null) {
             throw new ValidationException(self::NO_PASSWORD_TO_RESET_MESSAGE);
         }
 
-        $outcome = new VerificationService()->issue(VerificationType::PASSWORD_RESET, $email, $identity->userId);
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
         }
+
+        Hilos::$rt->hilosRecoveryWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
 
         return AuthFlowOutcome::sent($outcome->resendInSeconds);
     }
 
     /**
-     * Verifies a password-reset code and sets the new password on the identity.
+     * Accepts a password-reset code and opens the password step for that session.
      *
-     * The new password is length-checked before the code is verified so a weak
-     * password does not burn a valid code. A missing/expired/wrong code fails
-     * with the same generic message (no enumeration). On success the code is
-     * single-use consumed inside the service and the `password` identity's secret
-     * is rewritten through the identity layer; there is no auto-login (the user
-     * signs in afterwards).
+     * Half of what this handler used to do left it with HIL-416: it no longer sets a
+     * password, because the password is not on the wire yet. Recovery is two submits,
+     * and this is the first - it proves the code WITHOUT spending it, so the grant it
+     * hands out has something behind it when the second submit arrives
+     * ({@see handleCompletePasswordReset()}).
      *
-     * @param ConfirmPasswordResetActionDTO $dto Parsed confirm payload (email, code, newPassword)
-     * @throws ValidationException When the new password is too short or the code is invalid
-     * @throws HilosException When verification or the identity secret write fails
+     * Three answers, and the middle one is why the code screen is not a dead end: a
+     * recovery whose code is no longer live rolls the surface back to the address field
+     * with a reason of its own, while a wrong code is an inline error that leaves the
+     * person exactly where they are to try again. The order matters - a challenge that
+     * is already gone is answered before a code is judged against it, so a stale screen
+     * is never told it made a typo.
+     *
+     * The grant is written on the SESSION and not on this connection, so every tab of
+     * this browser moves to the password step and no other device does; the tabs are
+     * told by {@see ChatAgent::grantRecoveryToSession()}, since nobody in them submitted
+     * anything. It is written for THIS address only - a session with a second tab parked
+     * on another address must not have that one opened by a code proven here. The
+     * connection is (re-)parked first, because a browser that reconnected between the
+     * code and this submit lost the row its grant would be written on.
+     *
+     * @param ConfirmPasswordResetActionDTO $dto Parsed confirm payload (email, code)
+     * @return AuthFlowOutcome The password step, or the rollback to the address field
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the submitted code does not match the live one
+     * @throws HilosException When verification or the runtime write fails
      */
-    private function handleConfirmPasswordReset(ConfirmPasswordResetActionDTO $dto): void
+    private function handleConfirmPasswordReset(ConfirmPasswordResetActionDTO $dto): AuthFlowOutcome
     {
-        if (strlen($dto->newPassword) < PasswordPolicy::MIN_LENGTH) {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        $email = strtolower($dto->email);
+        $recovery = new PasswordRecoveryService();
+
+        if (!$recovery->hasLiveCode($email)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESET_CODE_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::RECOVERY,
+                self::RESET_CODE_EXPIRED_MESSAGE,
+            );
+        }
+
+        if (!$recovery->acceptCode($email, $dto->code)) {
+            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        }
+
+        Hilos::$rt->hilosRecoveryWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
+        Hilos::$rt->hilosRecoveryWaiters->actions->acceptCodeForSession($connection->sessionToken, $email);
+        $this->agent->grantRecoveryToSession($email, $connection->sessionToken, $connection->acceptKey);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::SET_PASSWORD, AuthFlowIntent::RECOVERY);
+    }
+
+    /**
+     * Saves the new password of an accepted recovery and returns the account whole.
+     *
+     * The second submit, and everything that ends a recovery happens here in an order
+     * that is the mechanism rather than a preference: the address comes off the grant
+     * (never off the payload - a password screen that could name an account would be a
+     * way to reset somebody else's), the code is spent, the secret is written, this
+     * session is signed in, the sessions still waiting on the address are told, and the
+     * account's OTHER sessions are logged out.
+     *
+     * Two ways it does not go through, both answered by a move rather than an error: no
+     * grant on this session - the code expired, or the browser came back to a screen
+     * whose recovery is long over - and a grant that lost the race, which is what the
+     * single-use code makes of a second device saving second. The winner has already
+     * changed the password by then, so the loser is sent to sign in with it.
+     *
+     * The force-logout is the point of resetting a password at all: it is done when
+     * access has leaked, so the reset takes the account back rather than adding one more
+     * live session to it. The token it keeps is read after the sign-in, not before - the
+     * login rotates the session onto a fresh token (HIL-582), and keeping the old one
+     * would log this browser out along with the intruder.
+     *
+     * @param CompletePasswordResetActionDTO $dto Parsed complete payload (password)
+     * @return AuthFlowOutcome The done step, or the rollback the losing session gets
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the new password is too short
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When the secret write, the session writes, or the runtime write fails
+     */
+    private function handleCompletePasswordReset(CompletePasswordResetActionDTO $dto): AuthFlowOutcome
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+        $sessionToken = $connection->sessionToken;
+
+        $email = $this->grantedRecoveryIdentifier($sessionToken);
+        if ($email === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESET_CODE_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::RECOVERY,
+                self::RESET_CODE_EXPIRED_MESSAGE,
+            );
+        }
+
+        if (strlen($dto->password) < PasswordPolicy::MIN_LENGTH) {
             throw new ValidationException('Password must be at least ' . PasswordPolicy::MIN_LENGTH . ' characters');
         }
 
-        $email = strtolower($dto->email);
-        $userId = new VerificationService()->verify(VerificationType::PASSWORD_RESET, $email, $dto->code);
+        $userId = new PasswordRecoveryService()->complete($email, $dto->password);
         if ($userId === null) {
-            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                self::PASSWORD_ALREADY_CHANGED_MESSAGE,
+            );
         }
 
-        $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
-        if ($identity === null) {
-            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        $this->agent->authenticateSession($sessionToken, $userId, $connection->acceptKey);
+        $this->agent->convergeRecovery($email, $sessionToken, $connection->acceptKey);
+        $this->agent->deauthenticateOtherSessions($userId, Hilos::$rt->selfConnection->sessionToken);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::RECOVERY);
+    }
+
+    /**
+     * The address a session may currently set a password for, if any.
+     *
+     * The whole of what the password screen is allowed to act on. A session holds a
+     * grant only after one of its tabs proved the code, and the address is read off
+     * that row rather than off the submit, so the payload carries a password and
+     * nothing that could point it at another account.
+     *
+     * @param string $sessionToken Session token asking to save a password
+     * @return ?string Address whose recovery this session may finish, or null when it holds no grant
+     * @throws HilosException When the runtime read fails
+     */
+    private function grantedRecoveryIdentifier(string $sessionToken): ?string
+    {
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
+            if ($waiter->codeAccepted) {
+                return $waiter->identifier;
+            }
         }
 
-        $identity->setPassword($dto->newPassword);
+        return null;
     }
 
     /**

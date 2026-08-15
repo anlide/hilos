@@ -410,4 +410,40 @@ trait HilosSessionHost
             $this->sendToUser($signalName, $acceptKey, $response);
         }
     }
+
+    /**
+     * Reverts every session of a user to anonymous EXCEPT one (HIL-416).
+     *
+     * What a finished password recovery owes the account. A password is reset when
+     * access to it has leaked, so returning the account means returning it whole: the
+     * sessions someone else may be holding go, and the one that just proved the
+     * mailbox stays. Doing it the other way round - dropping everything and asking the
+     * person to sign in again with the password they typed thirty seconds ago - throws
+     * away the proof they just gave.
+     *
+     * Each session goes through {@see deauthenticateSession()}, the same seam logout
+     * and the merge force-logout use, so the session row and its cookie survive as
+     * anonymous and the live connections learn about it. The kept token does not have
+     * to be one of the user's sessions - a token that is not among them simply keeps
+     * nothing, which is the honest answer for a caller that has none.
+     *
+     * Reaches the connections of THIS node only, exactly like the logout it is built
+     * from; a session held open on another node of a cluster keeps its socket until
+     * that node hears about the row. That limit belongs to the seam and is not
+     * recovery's to fix.
+     *
+     * @param int $userId User whose other sessions are dropped
+     * @param string $keepSessionToken Session token that stays signed in
+     * @throws HilosException On database or runtime failure
+     */
+    public function deauthenticateOtherSessions(int $userId, string $keepSessionToken): void
+    {
+        foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
+            if ($session->token === $keepSessionToken) {
+                continue;
+            }
+
+            $this->deauthenticateSession($session->token);
+        }
+    }
 }

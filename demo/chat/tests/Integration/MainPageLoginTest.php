@@ -177,6 +177,8 @@ final class MainPageLoginTest extends IntegrationTestCase
         $email = $this->uniqueEmail();
         $this->seedUserWithoutPassword($email);
 
+        $this->openSession($agent, 'reset-refused-ak');
+
         try {
             $this->expectException(ValidationException::class);
             $this->expectExceptionMessage('No password to reset for this email');
@@ -184,6 +186,7 @@ final class MainPageLoginTest extends IntegrationTestCase
             $this->requestPasswordReset($agent, 'reset-refused-ak', $email);
         } finally {
             $this->assertNull($this->activeResetChallenge($email), 'Nothing is issued for an address it refuses');
+            $this->clearRecoveryWaiters();
             Hilos::$rt->connections->actions->clear();
         }
     }
@@ -199,12 +202,36 @@ final class MainPageLoginTest extends IntegrationTestCase
         $email = $this->uniqueEmail();
         $this->seedUserWithPassword($email, self::PASSWORD, password_hash(self::PASSWORD, PASSWORD_DEFAULT));
 
+        $this->openSession($agent, 'reset-ok-ak');
+
         try {
             $this->requestPasswordReset($agent, 'reset-ok-ak', $email);
 
             $this->assertNotNull($this->activeResetChallenge($email));
+            $this->assertCount(
+                1,
+                Hilos::$rt->hilosRecoveryWaiters->forIdentifier($email),
+                'The asking session waits on the code it just asked for',
+            );
         } finally {
+            $this->clearRecoveryWaiters();
             Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * Empties the recovery waiters a case parked, so the next one starts on an empty stand.
+     *
+     * @throws HilosException When the runtime write fails
+     */
+    private function clearRecoveryWaiters(): void
+    {
+        $parked = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters as $waiter) {
+            $parked[] = $waiter->acceptKey;
+        }
+        foreach ($parked as $acceptKey) {
+            Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
         }
     }
 
@@ -218,6 +245,7 @@ final class MainPageLoginTest extends IntegrationTestCase
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::recoveryWaiters, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);

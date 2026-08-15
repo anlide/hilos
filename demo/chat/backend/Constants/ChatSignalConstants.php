@@ -38,8 +38,11 @@ final class ChatSignalConstants
     /** @var string Client → server: request a password-reset code (public, anonymous-reachable) */
     public const string REQUEST_PASSWORD_RESET = 'request_password_reset';
 
-    /** @var string Client → server: submit a password-reset code + new password (public, anonymous-reachable) */
+    /** @var string Client → server: submit a password-reset code, without the new password (public, anonymous-reachable) */
     public const string CONFIRM_PASSWORD_RESET = 'confirm_password_reset';
+
+    /** @var string Client → server: save the new password of an accepted recovery (public, anonymous-reachable, HIL-416) */
+    public const string COMPLETE_PASSWORD_RESET = 'complete_password_reset';
 
     /** @var string Client → server: request an SMS one-time login code for a phone (public, anonymous-reachable) */
     public const string REQUEST_SMS_CODE = 'request_sms_code';

@@ -39,6 +39,12 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** Too many codes went to this address inside the window: the surface stays put and says so. */
     public const string CODE_SEND_CAP_REACHED = 'send_cap_reached';
 
+    /** No recovery code is live for the address any more: the surface rolls back to the identifier step. */
+    public const string CODE_RESET_CODE_EXPIRED = 'reset_code_expired';
+
+    /** Another session finished the recovery this one was on: the password is already the new one. */
+    public const string CODE_PASSWORD_ALREADY_CHANGED = 'password_already_changed';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 

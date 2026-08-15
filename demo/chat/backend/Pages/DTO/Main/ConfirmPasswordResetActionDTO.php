@@ -11,10 +11,15 @@ use Hilos\Core\Exception\InvalidFormatException;
 /**
  * ConfirmPasswordResetActionDTO - DTO for submitting a password-reset code.
  *
- * Public (anonymous-reachable) submit that carries the emailed code and the new
- * password. The email is trimmed here and lowercased by the handler; the code
- * and new password are passed through verbatim so leading/trailing characters
- * stay significant.
+ * Public (anonymous-reachable) submit that carries the emailed code and nothing
+ * else. The new password left this payload with HIL-416: recovery is two screens,
+ * and the one that saves the password has an action of its own
+ * ({@see CompletePasswordResetActionDTO}) - a code and a password in one submit
+ * would mean the person types the password before anything has been proven, and
+ * that the code must be spent before it can be checked.
+ *
+ * The email is trimmed here and lowercased by the handler; the code is passed
+ * through verbatim so leading/trailing characters stay significant.
  */
 final class ConfirmPasswordResetActionDTO extends ChatActionPayloadDTO
 {
@@ -23,12 +28,10 @@ final class ConfirmPasswordResetActionDTO extends ChatActionPayloadDTO
      *
      * @param string $email Submitted account email (trimmed)
      * @param string $code Submitted verification code
-     * @param string $newPassword Submitted new plaintext password
      */
     public function __construct(
         public readonly string $email,
         public readonly string $code,
-        public readonly string $newPassword,
     ) {
     }
 
@@ -54,21 +57,19 @@ final class ConfirmPasswordResetActionDTO extends ChatActionPayloadDTO
         return new static(
             email: trim(self::requireString($data, 'email')),
             code: trim(self::requireString($data, 'code')),
-            newPassword: self::requireString($data, 'newPassword'),
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{email: string, code: string, newPassword: string} Confirm payload
+     * @return array{email: string, code: string} Confirm payload
      */
     public function toArray(): array
     {
         return [
             'email' => $this->email,
             'code' => $this->code,
-            'newPassword' => $this->newPassword,
         ];
     }
 }

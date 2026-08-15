@@ -106,20 +106,22 @@ final class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(ChatRtContext::userStates);
         $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
         $this->registerRtTruthSource(ChatRtContext::registrationWaiters);
+        $this->registerRtTruthSource(ChatRtContext::recoveryWaiters);
         $this->startSessionRotations();
 
         Hilos::$db->events->actions->addChatStarted();
     }
 
     /**
-     * Drops login rotations whose ticket is past its moment (HIL-582) and registration
-     * waiters whose connection is gone (HIL-415).
+     * Drops login rotations whose ticket is past its moment (HIL-582) and the sign-in
+     * surfaces whose connection is gone - parked on a registration code (HIL-415) or on
+     * a password-recovery one (HIL-416).
      *
      * The whole tick: walks over in-memory collections that hold one row per login in the
      * last thirty seconds and one per sign-in surface parked on a confirmation code, so it
      * is measured in microseconds and never touches the database or the network - which is
-     * what the tick rule requires of it. The waiter walk is skipped outright while nobody
-     * is registering, which is almost always.
+     * what the tick rule requires of it. Each waiter walk is skipped outright while nobody
+     * is registering or recovering, which is almost always.
      *
      * @throws HilosException On runtime failure
      */
@@ -127,6 +129,7 @@ final class ChatAgent extends AbstractAgent
     {
         $this->sweepSessionRotations();
         $this->sweepRegistrationWaiters();
+        $this->sweepRecoveryWaiters();
     }
 
     /**
@@ -1021,6 +1024,146 @@ final class ChatAgent extends AbstractAgent
     {
         $parked = [];
         foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
+            $parked[$waiter->acceptKey] = $waiter->sessionToken;
+        }
+
+        return $parked;
+    }
+
+    /**
+     * Opens the password step in the other tabs of a session that just proved a code (HIL-416).
+     *
+     * The push half of session-binding. A code accepted in one tab is accepted for the
+     * session, so the tabs that were sitting on the code screen of the same address are
+     * moved forward with it - otherwise the person would be looking at two windows of
+     * one browser disagreeing about which screen they are on, and typing the code again
+     * in the second would cost an attempt for nothing.
+     *
+     * The rows stay parked: the grant is written on them and the wait is not over yet.
+     * The answering connection is skipped - its caller answered it with the action reply.
+     *
+     * @param string $identifier Normalized address being recovered (lowercased email)
+     * @param string $sessionToken Session token that just proved the code
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
+     * @throws HilosException On runtime failure
+     */
+    public function grantRecoveryToSession(
+        string $identifier,
+        string $sessionToken,
+        string $initiatorAcceptKey,
+    ): void {
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
+            if ($waiter->acceptKey === $initiatorAcceptKey || $waiter->identifier !== $identifier) {
+                continue;
+            }
+
+            $this->sendToUser(
+                ChatSignalConstants::AUTH_CONVERGE,
+                $waiter->acceptKey,
+                new AuthConvergeSignalData(
+                    $waiter->acceptKey,
+                    $identifier,
+                    AuthFlowStep::SET_PASSWORD,
+                    AuthFlowIntent::RECOVERY,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Settles an address for everyone the moment one session saves its new password (HIL-416).
+     *
+     * The converge half of recovery, and the reason nobody has to be refused a code:
+     * two devices may both reach the password screen, and what ends the race is the
+     * save, not the code. The code is single-use, so the first save spends it and every
+     * other waiter is now holding a grant that buys nothing - they are told so rather
+     * than left to discover it by typing a password into a refusal.
+     *
+     * Where they are sent depends on whose they are, and the split is the whole of
+     * session-binding seen from the other end: the tabs of the session that saved are
+     * signed in along with it, so they get the done step under recovery, exactly like
+     * the tab that submitted; the sessions of other devices get the identifier step
+     * under sign-in, with the news that the password is already the new one. Every row
+     * goes either way - the wait is over for all of them.
+     *
+     * @param string $identifier Normalized address whose password was just saved (lowercased email)
+     * @param string $sessionToken Session token that saved it, whose tabs go to done
+     * @param string $initiatorAcceptKey Accept key of the connection that submitted the password
+     * @throws HilosException On runtime failure
+     */
+    public function convergeRecovery(
+        string $identifier,
+        string $sessionToken,
+        string $initiatorAcceptKey,
+    ): void {
+        foreach ($this->parkedRecoveryAcceptKeys($identifier) as $acceptKey => $parkedSessionToken) {
+            Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            $isSameSession = $parkedSessionToken === $sessionToken;
+
+            $this->sendToUser(
+                ChatSignalConstants::AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    $isSameSession ? AuthFlowStep::DONE : AuthFlowStep::IDENTIFIER,
+                    $isSameSession ? AuthFlowIntent::RECOVERY : AuthFlowIntent::LOGIN,
+                    $isSameSession ? null : AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,
+                ),
+            );
+        }
+    }
+
+    /**
+     * Drops recovery waiters whose connection is no longer live (HIL-416).
+     *
+     * The same reclamation the registration waiters get, and needed for the same reason:
+     * a browser closed on the code or password screen resolves nothing, so without this
+     * the collection would only grow and a converge would be broadcast to sockets that
+     * are gone. It is a second walk rather than a shared one because the two collections
+     * are two: they are parked by different flows, and a sweep that knew about both
+     * would have to be told which is which anyway.
+     *
+     * @throws HilosException On runtime failure
+     */
+    private function sweepRecoveryWaiters(): void
+    {
+        if (count(Hilos::$rt->hilosRecoveryWaiters) === 0) {
+            return;
+        }
+
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters as $waiter) {
+            $parked[] = $waiter->acceptKey;
+        }
+
+        foreach ($parked as $acceptKey) {
+            if (!isset(Hilos::$rt->connections[$acceptKey])) {
+                Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+            }
+        }
+    }
+
+    /**
+     * Reads the connections parked on one recovery before any of them is released.
+     *
+     * The list is materialized first on purpose: releasing a waiter mutates the collection
+     * a foreach over it would be walking, and the session token has to be read while the
+     * row is still there - it is what tells the saver's own tabs from another device's.
+     *
+     * @param string $identifier Normalized identifier being converged
+     * @return array<string, string> Session token by waiting connection accept key
+     * @throws HilosException On runtime failure
+     */
+    private function parkedRecoveryAcceptKeys(string $identifier): array
+    {
+        $parked = [];
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forIdentifier($identifier) as $waiter) {
             $parked[$waiter->acceptKey] = $waiter->sessionToken;
         }
 

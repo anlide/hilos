@@ -30,11 +30,15 @@ use Demo\Chat\Runtime\View\Collection\UserStates;
 use Demo\Chat\Runtime\View\Item\ChatContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaiters;
+use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
+use Hilos\Runtime\View\Actions\Collection\RecoveryWaitersActions;
 use Hilos\Runtime\View\Actions\Collection\RegistrationWaitersActions;
+use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -48,6 +52,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   - botAgentStatuses: Runtime lifecycle markers for bot agents
  *   - guardianAgentStatuses: Runtime UI statuses for Hilos guardian agents
  *   - hilosRegistrationWaiters: Sign-in surfaces parked on a registration code step (HIL-415)
+ *   - hilosRecoveryWaiters: Sign-in surfaces parked on a password-recovery code step (HIL-416)
  *
  * Usage:
  *   Hilos::$rt->connections[$acceptKey];
@@ -65,6 +70,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read BotAgentStatuses $botAgentStatuses Bot agent lifecycle status collection
  * @property-read GuardianAgentStatuses $guardianAgentStatuses Guardian run status collection
  * @property-read RegistrationWaiters $hilosRegistrationWaiters Sessions waiting on a registration confirmation
+ * @property-read RecoveryWaiters $hilosRecoveryWaiters Sessions waiting on a password-recovery code
  */
 final class ChatRtContext extends RtContext
 {
@@ -74,6 +80,7 @@ final class ChatRtContext extends RtContext
     public const string botAgentStatuses = 'botAgentStatuses';
     public const string guardianAgentStatuses = 'guardianAgentStatuses';
     public const string registrationWaiters = StateRegistrationWaiter::RT_COLLECTION;
+    public const string recoveryWaiters = StateRecoveryWaiter::RT_COLLECTION;
 
     public const string connection = 'connection';
     public const string chatUserState = 'chatUserState';
@@ -98,6 +105,7 @@ final class ChatRtContext extends RtContext
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
         $this->_stateCollections[self::registrationWaiters] = StateRegistrationWaiters::init();
+        $this->_stateCollections[self::recoveryWaiters] = StateRecoveryWaiters::init();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];
@@ -139,6 +147,11 @@ final class ChatRtContext extends RtContext
             self::registrationWaiters,
             RegistrationWaiters::class,
             RegistrationWaitersActions::class,
+        );
+        $this->setRepresent(
+            self::recoveryWaiters,
+            RecoveryWaiters::class,
+            RecoveryWaitersActions::class,
         );
         $this->setRepresentItem(
             self::selfConnection,
