@@ -7,6 +7,7 @@ namespace Hilos\Log;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Exception\LogRotationException;
 
 /**
@@ -48,6 +49,9 @@ final class LogRotationAgent extends AbstractAgent
      *
      * The daemon already rotated the live logs on start, so the baseline is now. A non-empty but
      * unparseable cron expression disables the schedule axis only and is logged once.
+     *
+     * @throws EnvException When a rotation env key is missing, outside the catalog, or of the
+     *                      wrong type
      */
     public function onStart(): void
     {

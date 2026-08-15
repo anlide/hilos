@@ -7,6 +7,7 @@ namespace Hilos\Sms;
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\Auth\OAuth\HttpOAuthProvider;
+use Hilos\Sms\Exception\SmsConfigException;
 
 /**
  * HttpSmsProvider - an SMS provider whose send runs over real HTTP (HIL-285).
@@ -30,6 +31,7 @@ interface HttpSmsProvider extends SmsProviderInterface
      *
      * @param SmsMessage $message Recipient message to send
      * @return SmsHttpRequest Request the agent replays to the gateway
+     * @throws SmsConfigException When the gateway endpoint or its credentials are unusable
      */
     public function buildRequest(SmsMessage $message): SmsHttpRequest;
 

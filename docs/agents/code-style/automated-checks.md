@@ -197,12 +197,17 @@ rather than subsystem by subsystem: outside the ten that owe lines there is no
 debt at all, so turning the other directories and the three root files on cost
 nothing, and a directory left outside would first be judged on the day the zone
 is dropped — mixed in with the demos, where its own hits would be the hardest to
-tell apart. That phase is frozen in the baseline rather than paid off: 174 lines
-in 37 files across `Auth`, `Log`, `Mail`, `ProtectedMode`, `Sms`, `LLM`, `Push`,
-`Notification`, `API` and `AI`. Freezing is what stops the debt growing, since a
-new unpropagated `@throws` inside the zone fails the guard on the spot.
-`framework/backend/Backup` is the one path still outside, and it is a leaf of its
-own; the demos are another.
+tell apart. The 174 lines those ten owed in 37 files — `Auth`, `Log`, `Mail`,
+`ProtectedMode`, `Sms`, `LLM`, `Push`, `Notification`, `API` and `AI` — are paid,
+and they own no baseline record.
+
+`framework/backend/Backup` is the fourth phase, and it is the one that enters
+frozen rather than paid: 119 lines in 4 files, a leaf of its own. It went in last
+because it calls through the ten above, so its own count could only be read once
+their contracts were declared. Freezing is what stops the debt growing, since a
+new unpropagated `@throws` inside the zone fails the guard on the spot. With this
+phase in, the zone covers `framework/backend` whole and the demos are all that is
+left outside.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

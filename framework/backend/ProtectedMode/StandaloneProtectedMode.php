@@ -11,6 +11,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
@@ -64,6 +66,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * Freezes this node for a destructive operation and tells the initiator it may run.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -95,6 +99,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * Releases this node once the initiator that froze it says its operation has finished.
      *
      * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void
     {
@@ -111,6 +117,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * Opens the verification window once the initiator that froze this node says its operation is over.
      *
      * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void
     {
@@ -145,6 +153,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      * Closes this node back from the verification window, voiding every pass.
      *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {

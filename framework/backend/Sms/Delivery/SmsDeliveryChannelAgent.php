@@ -15,6 +15,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
@@ -139,6 +140,8 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     /**
      * Pumps the delivery pipeline, then the raw-send pool.
+     *
+     * @throws HilosException Whatever the delivery bookkeeping or the SMS gateway raises
      */
     public function onTick(): void
     {

@@ -10,6 +10,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\WorkerClient;
 
@@ -30,6 +32,8 @@ interface ProtectedModeSwitch
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void;
 
@@ -42,6 +46,8 @@ interface ProtectedModeSwitch
      *
      * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void;
 
@@ -55,6 +61,8 @@ interface ProtectedModeSwitch
      *
      * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void;
 
@@ -79,6 +87,8 @@ interface ProtectedModeSwitch
      *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
 }

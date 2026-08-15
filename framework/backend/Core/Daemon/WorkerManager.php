@@ -541,6 +541,7 @@ abstract class WorkerManager extends BaseManager
      *
      * @param AgentStartDTO $data Agent start request
      * @throws AgentCreationFailedException When agent creation fails
+     * @throws HilosException Whatever the started agent's start hook raises
      */
     private function handleAgentStart(AgentStartDTO $data): void
     {

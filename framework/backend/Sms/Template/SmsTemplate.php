@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Sms\Template;
 
 use Hilos\Mail\Template\MailTemplate;
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 
 /**
  * SmsTemplate - renders one framework SMS template key into a single text line (HIL-285).
@@ -24,6 +25,7 @@ interface SmsTemplate
      * @param array<string, mixed> $params Template params (see the template's PARAM_* keys)
      * @param ?string $locale Target locale, or null for the project default (reserved for i18n)
      * @return string Rendered message text
+     * @throws SmsTemplateParamMissingException When a param the template requires is absent
      */
     public function render(array $params, ?string $locale): string;
 }

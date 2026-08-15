@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Push\Delivery;
 
+use Hilos\API\Exception\AsyncHttpResultUnavailableException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
@@ -42,6 +43,7 @@ final class PushDeliveryAttempt implements DeliveryAttempt
      * Pumps every endpoint send one step, then settles the aggregate once all have settled.
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws AsyncHttpResultUnavailableException When a client reports a result it then withholds
      */
     public function tick(float $nowMs): void
     {

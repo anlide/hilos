@@ -13,6 +13,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
@@ -126,6 +128,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -160,6 +164,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *                                             the initiator node id it recorded, which is what
      *                                             the peer frame carries
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void
     {
@@ -187,6 +193,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *                                            unused here for the same reason the disable
      *                                            payload is: a cluster authorizes by node id
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void
     {
@@ -232,6 +240,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back,
      *                                              unused here: a cluster authorizes by node id
      * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {
@@ -252,6 +262,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     /**
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void
     {
@@ -297,6 +309,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
 
     /**
      * @param string $fromNodeId Node id of the follower that quiesced
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onQuiesced(string $fromNodeId): void
     {
@@ -311,6 +325,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
 
     /**
      * @param string $fromNodeId Node id of the initiator that released the freeze
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onDisable(string $fromNodeId): void
     {
@@ -343,6 +359,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *
      * @param string $fromNodeId Node id of the leader that ordered the freeze
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
@@ -400,6 +418,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * handshaked peer must not thaw the node mid-operation.
      *
      * @param string $fromNodeId Node id of the leader that lifted the freeze
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onLift(string $fromNodeId): void
     {
@@ -418,6 +438,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
 
     /**
      * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onVerify(string $fromNodeId): void
     {
@@ -475,6 +497,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
 
     /**
      * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onRefreeze(string $fromNodeId): void
     {

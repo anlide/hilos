@@ -6,6 +6,7 @@ namespace Hilos\LLM\Agent;
 
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -35,6 +36,8 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      *
      * @throws LLMConfigurationException When the profile cannot be resolved, or an external one
      *                                   carries no API key
+     * @throws EnvException When an env variable the profile names is missing, outside the
+     *                      catalog, or of the wrong type
      */
     public function __construct()
     {

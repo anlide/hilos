@@ -64,6 +64,8 @@ interface AgentInterface
      * Called when agent is started
      *
      * Called once when agent is created and started.
+     *
+     * @throws HilosException Whatever the concrete agent's start raises
      */
     public function onStart(): void;
 

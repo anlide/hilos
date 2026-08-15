@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Hilos\API;
 
 use Hilos\API\Exception\AsyncCommandResultUnavailableException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Core\Exception\NonArrayPayloadException;
+use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Exception\SocketConnectException;
@@ -112,6 +116,10 @@ class AsyncCommandClient
      * Advances the state machine one step.
      *
      * @throws SocketException When an underlying socket operation fails
+     * @throws InvalidJsonException When the reply line does not decode as JSON
+     * @throws NonArrayPayloadException When the reply line decodes into something other than an array
+     * @throws InvalidFormatException When the reply is missing a field the DTO cannot be built without
+     * @throws HilosException When the reply refuses to be restored into a DTO at all
      */
     public function tick(): void
     {

@@ -21,6 +21,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -131,6 +132,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
 
     /**
      * Pumps every in-flight exchange one step and starts any freshly delivered op.
+     *
+     * @throws InvalidArgumentException When the failed-login result signal cannot be named or queued
      */
     public function onTick(): void
     {

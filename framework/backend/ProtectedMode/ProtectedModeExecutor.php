@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
@@ -27,6 +29,8 @@ interface ProtectedModeExecutor
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
      *                                    freezes itself; null on a follower, which locks out every
      *                                    connection and has no initiator to let through
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterActivating(ProtectedModeQuiesceData $freeze, ?string $initiatorAcceptKey): void;
 
@@ -35,6 +39,9 @@ interface ProtectedModeExecutor
      *
      * Leader-only: the follower rows stay at activating (they are already locked out) since no
      * activated frame exists; active is the leader's marker that the initiator may run.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterActive(): void;
 
@@ -42,6 +49,9 @@ interface ProtectedModeExecutor
      * Marks the freeze deactivating locally before the leader broadcasts the lift.
      *
      * Leader-only.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterDeactivating(): void;
 
@@ -52,6 +62,9 @@ interface ProtectedModeExecutor
      * while the page agents are stopped. The phase is written FIRST: the agent-start gate refuses
      * every start while the phase is not inactive, so a resume ordered before the phase moved would
      * hand the verifier an empty system.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterVerifying(): void;
 
@@ -60,11 +73,17 @@ interface ProtectedModeExecutor
      *
      * The mirror of {@see enterVerifying()}, and not the same thing as {@see enterActive()}: that
      * one only marks the freeze established, while this one has agents to stop and passes to void.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function reenterActive(): void;
 
     /**
      * Releases this node: writes phase inactive locally and resumes the agents that were stopped.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterInactive(): void;
 

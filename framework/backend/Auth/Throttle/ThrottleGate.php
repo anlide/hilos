@@ -10,6 +10,7 @@ use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
@@ -141,6 +142,7 @@ final class ThrottleGate
      * borrowing its voice.
      *
      * @param ThrottleCheckSignalData $check Attempt to judge
+     * @throws InvalidArgumentException When the throttle signal cannot be named or queued
      */
     public function requestVerdict(ThrottleCheckSignalData $check): void
     {
@@ -161,6 +163,7 @@ final class ThrottleGate
      * reason it cannot count them - one process owns them.
      *
      * @param string $sessionToken Session token that authenticated, as the connection presented it
+     * @throws InvalidArgumentException When the throttle signal cannot be named or queued
      */
     public function reportAuthenticated(string $sessionToken): void
     {

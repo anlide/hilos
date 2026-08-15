@@ -17,6 +17,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
@@ -102,6 +103,7 @@ final class AuthThrottleAgent extends AbstractAgent
      * @param string $source Signal source (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
+     * @throws InvalidArgumentException When the verdict signal cannot be named or queued
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -135,6 +137,7 @@ final class AuthThrottleAgent extends AbstractAgent
      * @param CommandRequestDTO $data Command request (no payload fields consumed)
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused)
+     * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {

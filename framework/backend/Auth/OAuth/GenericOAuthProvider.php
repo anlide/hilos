@@ -55,6 +55,11 @@ final class GenericOAuthProvider implements HttpOAuthProvider
         return $this->config->authorizeUrl . $separator . $query;
     }
 
+    /**
+     * @param string $code Authorization code returned to the SPA callback
+     * @return OAuthHttpRequest Request the agent replays to the token endpoint
+     * @throws OAuthProviderException When the configured token endpoint is not a usable URL
+     */
     public function buildTokenRequest(string $code): OAuthHttpRequest
     {
         $body = http_build_query(
@@ -81,6 +86,11 @@ final class GenericOAuthProvider implements HttpOAuthProvider
         );
     }
 
+    /**
+     * @param AsyncHttpResponse $response Completed token endpoint response
+     * @return string Access token
+     * @throws OAuthProviderException When the body is malformed or has no token
+     */
     public function parseTokenResponse(AsyncHttpResponse $response): string
     {
         $decoded = json_decode($response->body, true);
@@ -96,6 +106,11 @@ final class GenericOAuthProvider implements HttpOAuthProvider
         return $token;
     }
 
+    /**
+     * @param string $accessToken Access token from the token exchange
+     * @return OAuthHttpRequest Request the agent replays to the userinfo endpoint
+     * @throws OAuthProviderException When the configured userinfo endpoint is not a usable URL
+     */
     public function buildUserInfoRequest(string $accessToken): OAuthHttpRequest
     {
         return $this->requestFor(
@@ -109,6 +124,11 @@ final class GenericOAuthProvider implements HttpOAuthProvider
         );
     }
 
+    /**
+     * @param AsyncHttpResponse $response Completed userinfo endpoint response
+     * @return OAuthUserInfo Resolved subject/email
+     * @throws OAuthProviderException When the body is malformed or has no subject
+     */
     public function parseUserInfoResponse(AsyncHttpResponse $response): OAuthUserInfo
     {
         $decoded = json_decode($response->body, true);

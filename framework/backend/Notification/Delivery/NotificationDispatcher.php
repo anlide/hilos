@@ -46,6 +46,7 @@ class NotificationDispatcher
      * @param ObjectNotification $notification The persisted notification to deliver
      * @param ?list<string> $channels Draft channel narrowing: null delivers to all enabled channels; a non-empty list restricts to the named channels
      * @throws DatabaseException When a delivery row cannot be persisted
+     * @throws InvalidArgumentException When a channel's deliver signal cannot be named or queued
      */
     public function dispatch(ObjectNotification $notification, ?array $channels): void
     {

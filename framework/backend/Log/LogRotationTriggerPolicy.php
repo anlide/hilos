@@ -6,6 +6,7 @@ namespace Hilos\Log;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -44,6 +45,7 @@ final class LogRotationTriggerPolicy
      * Builds the policy from the environment, clamping negative numeric thresholds to 0 (disabled).
      *
      * @return self Policy carrying the configured age, size, and schedule axes
+     * @throws EnvException When a rotation key is missing, outside the catalog, or of the wrong type
      */
     public static function fromEnv(): self
     {

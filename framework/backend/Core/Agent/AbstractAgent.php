@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -522,6 +523,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * Default implementation - no action on start.
      *
      * Child classes can override this method.
+     *
+     * @throws HilosException Whatever the concrete agent's start raises
      */
     public function onStart(): void
     {
@@ -768,6 +771,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param AgentSignalData $data Signal data (container with inner payload)
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws AgentUnknownSignalException When the handler is reached by a signal it does not know
+     * @throws InvalidArgumentException When the handler cannot name the signal it answers with
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {

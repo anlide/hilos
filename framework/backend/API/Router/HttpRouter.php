@@ -9,6 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -65,6 +66,7 @@ class HttpRouter
      *
      * @param array<string, mixed> $request Request data (method, path, etc.)
      * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
+     * @throws InvalidFormatException When the request carries a query-string map it cannot read
      */
     public function route(array $request): array
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\HilosException;
 
 /**
  * DeliveryAttempt - one non-blocking send in flight, the channel transport seam (HIL-196).
@@ -23,6 +24,7 @@ interface DeliveryAttempt
      * Advances the in-flight send one non-blocking step.
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws HilosException Whatever the channel's transport raises while it settles
      */
     public function tick(float $nowMs): void;
 

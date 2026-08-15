@@ -6,6 +6,7 @@ namespace Hilos\Mail\Delivery;
 
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\Exception\MailBusyException;
+use Hilos\Mail\Exception\MailResultUnavailableException;
 use Hilos\Mail\MailSendOutcome;
 use Hilos\Mail\MailTransportInterface;
 use Hilos\Notification\Delivery\DeliveryAttempt;
@@ -45,6 +46,7 @@ final class MailDeliveryAttempt implements DeliveryAttempt
      * Pumps the transport one step and latches its outcome once the send settles.
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws MailResultUnavailableException When the transport reports a result it then withholds
      */
     public function tick(float $nowMs): void
     {

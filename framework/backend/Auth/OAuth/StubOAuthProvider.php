@@ -54,6 +54,11 @@ final class StubOAuthProvider implements OfflineOAuthProvider
         return $this->redirectUri . $separator . $query;
     }
 
+    /**
+     * @param string $code Authorization code returned to the SPA callback
+     * @return OAuthUserInfo Resolved subject/email
+     * @throws OAuthProviderException When the code is empty
+     */
     public function resolve(string $code): OAuthUserInfo
     {
         if ($code === '') {

@@ -7,6 +7,8 @@ namespace Hilos\ProtectedMode;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 
 /**
  * Node-local handler for the protected-mode frames the peer transport delivers.
@@ -36,6 +38,8 @@ interface ProtectedModeCoordinator
      *
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void;
 
@@ -54,6 +58,8 @@ interface ProtectedModeCoordinator
      * Arrives on the leader; the leader drives the cluster-wide release.
      *
      * @param string $fromNodeId Node id of the initiator that released the freeze
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onDisable(string $fromNodeId): void;
 
@@ -65,6 +71,8 @@ interface ProtectedModeCoordinator
      *
      * @param string $fromNodeId Node id of the leader that ordered the freeze
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void;
 
@@ -74,6 +82,8 @@ interface ProtectedModeCoordinator
      * Arrives on the leader; the leader activates the mode once every follower has reported.
      *
      * @param string $fromNodeId Node id of the follower that quiesced
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onQuiesced(string $fromNodeId): void;
 
@@ -83,6 +93,8 @@ interface ProtectedModeCoordinator
      * Arrives on a follower; the follower clears its local freeze and resumes normal operation.
      *
      * @param string $fromNodeId Node id of the leader that lifted the freeze
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onLift(string $fromNodeId): void;
 
@@ -96,6 +108,8 @@ interface ProtectedModeCoordinator
      * about itself, exactly as the enable/quiesce pair splits the same knowledge across two names.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onVerify(string $fromNodeId): void;
 
@@ -114,6 +128,8 @@ interface ProtectedModeCoordinator
      * Handles the close-back out of the verification window, in either direction.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onRefreeze(string $fromNodeId): void;
 }

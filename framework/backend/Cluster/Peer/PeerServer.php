@@ -63,6 +63,8 @@ use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\ProtectedMode\ProtectedModeMesh;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
@@ -914,6 +916,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerProtectedModeEnableDTO $frame Received protected-mode enable frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeEnableReceived(PeerLink $link, PeerProtectedModeEnableDTO $frame): void
     {
@@ -942,6 +946,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the request arrived on
      * @param PeerProtectedModeDisableDTO $frame Received protected-mode disable frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeDisableReceived(PeerLink $link, PeerProtectedModeDisableDTO $frame): void
     {
@@ -959,6 +965,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the order arrived on
      * @param PeerProtectedModeQuiesceDTO $frame Received protected-mode quiesce frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeQuiesceReceived(PeerLink $link, PeerProtectedModeQuiesceDTO $frame): void
     {
@@ -973,6 +981,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the report arrived on
      * @param PeerProtectedModeQuiescedDTO $frame Received protected-mode quiesced frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeQuiescedReceived(PeerLink $link, PeerProtectedModeQuiescedDTO $frame): void
     {
@@ -1055,6 +1065,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the order arrived on
      * @param PeerProtectedModeLiftDTO $frame Received protected-mode lift frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeLiftReceived(PeerLink $link, PeerProtectedModeLiftDTO $frame): void
     {
@@ -1072,6 +1084,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the frame arrived on
      * @param PeerProtectedModeVerifyDTO $frame Received protected-mode verify frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeVerifyReceived(PeerLink $link, PeerProtectedModeVerifyDTO $frame): void
     {
@@ -1100,6 +1114,8 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the frame arrived on
      * @param PeerProtectedModeRefreezeDTO $frame Received protected-mode refreeze frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function onProtectedModeRefreezeReceived(PeerLink $link, PeerProtectedModeRefreezeDTO $frame): void
     {

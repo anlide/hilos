@@ -24,6 +24,10 @@ class AiAgentFactory
 {
     /**
      * Create one AI agent by its identifier.
+     *
+     * @param GuardianAiAgentId $agentId Identifier of the agent to build
+     * @return AiAgentInterface The framework-level agent for that identifier
+     * @throws LogicException When the identifier names an agent only a project can implement
      */
     public static function create(GuardianAiAgentId $agentId): AiAgentInterface
     {
@@ -68,6 +72,7 @@ class AiAgentFactory
      * Create all registered AI agents.
      *
      * @return array<string, AiAgentInterface>
+     * @throws LogicException When an identifier names an agent only a project can implement
      */
     public static function createAll(): array
     {

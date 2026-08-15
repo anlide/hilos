@@ -113,6 +113,7 @@ class PushDeliveryChannel extends AbstractDeliveryChannel
      * @param int $userId Recipient user id
      * @param int $notificationId Notification id being delivered (unused; the recipient is the shard dimension)
      * @return ?int Positive pool shard key in the range 1..PUSH_WORKER_COUNT
+     * @throws EnvException When the push worker count is missing, outside the catalog, or not an int
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {

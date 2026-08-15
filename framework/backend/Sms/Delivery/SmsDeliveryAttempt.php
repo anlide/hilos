@@ -6,6 +6,7 @@ namespace Hilos\Sms\Delivery;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\API\Exception\AsyncHttpResultUnavailableException;
 use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\Notification\Delivery\DeliveryAttempt;
 use Hilos\Sms\Exception\SmsConfigException;
@@ -59,6 +60,7 @@ final class SmsDeliveryAttempt implements SmsSendAttempt
      * Pumps the client one step and latches the settled outcome (or a classified failure).
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws AsyncHttpResultUnavailableException When the client reports a result it then withholds
      */
     public function tick(float $nowMs): void
     {

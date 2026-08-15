@@ -111,8 +111,11 @@ final class CodeStyleGuardTest extends TestCase
      * directories and the three root files cost nothing to turn on, and a directory
      * left outside would first be judged on the day the zone is dropped — mixed in
      * with the demos, where its own hits would be the hardest to tell apart.
-     * `framework/backend/Backup` is the one path still outside, and it is a leaf of
-     * its own.
+     *
+     * `framework/backend/Backup` is the fourth phase, and it enters frozen rather than
+     * paid: its debt is a leaf of its own, and it could only be counted once the ten
+     * subsystems it calls through had declared their contracts. With it in, the zone
+     * covers `framework/backend` whole and the demos are all that is left outside.
      *
      * The phases above are the order the debt was paid in, not the order of the list:
      * the entries are sorted so the zone can be read against the directory listing,
@@ -124,6 +127,7 @@ final class CodeStyleGuardTest extends TestCase
         'framework/backend/AI',
         'framework/backend/API',
         'framework/backend/Auth',
+        'framework/backend/Backup',
         'framework/backend/Bootstrap',
         'framework/backend/Cluster',
         'framework/backend/Constants',

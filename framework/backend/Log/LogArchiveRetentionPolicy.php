@@ -6,6 +6,7 @@ namespace Hilos\Log;
 
 use Hilos\Backup\BackupPruner;
 use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 
 /**
@@ -44,6 +45,7 @@ final class LogArchiveRetentionPolicy
      * Builds the policy from the environment, clamping negatives to 0 (disabled).
      *
      * @return self Policy carrying the configured keep-count and max-age thresholds
+     * @throws EnvException When a retention key is missing, outside the catalog, or not an int
      */
     public static function fromEnv(): self
     {

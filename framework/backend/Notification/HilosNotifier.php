@@ -6,6 +6,7 @@ namespace Hilos\Notification;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -54,6 +55,7 @@ class HilosNotifier
      * @throws EmptyValueException When the draft type or title is empty
      * @throws DatabaseException When the notification cannot be persisted
      * @throws LogicException When the notifications object collection is unavailable
+     * @throws InvalidArgumentException When the live or channel signal cannot be named or queued
      */
     public function emit(NotificationDraft $draft): int
     {
@@ -106,6 +108,7 @@ class HilosNotifier
      *
      * @param int $userId Recipient user id whose connections receive the signal
      * @param int|string $idOrAll Marked-read notification id, or the "all" sentinel
+     * @throws InvalidArgumentException When the mark-read signal cannot be named or queued
      */
     public function notifyRead(int $userId, int|string $idOrAll): void
     {
@@ -126,6 +129,7 @@ class HilosNotifier
      *
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException When the row reset fails
+     * @throws InvalidArgumentException When the channel's deliver signal cannot be named or queued
      */
     public function retryDelivery(ObjectNotificationDelivery $delivery): void
     {

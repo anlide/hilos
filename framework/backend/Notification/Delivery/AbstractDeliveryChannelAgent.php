@@ -10,12 +10,19 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Object\Item\NotificationDelivery as ObjectNotificationDelivery;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Mail\Exception\MailBusyException;
+use Hilos\Mail\Exception\MailTemplateNotInCatalogException;
+use Hilos\Mail\Exception\MailTemplateParamMissingException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
+use Hilos\Sms\Exception\SmsTemplateNotInCatalogException;
+use Hilos\Sms\Exception\SmsTemplateParamMissingException;
 
 /**
  * AbstractDeliveryChannelAgent - the async owner of one channel's deliveries (HIL-196).
@@ -71,6 +78,12 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * @param string $address Resolved recipient address for this channel
      * @param ObjectNotification $notification The notification to deliver
      * @return DeliveryAttempt The started, non-blocking attempt
+     * @throws DatabaseException When the channel reads the delivery payload from the database
+     * @throws MailBusyException When the mail transport is already carrying a message
+     * @throws MailTemplateNotInCatalogException When the mail template key is not in the catalog
+     * @throws MailTemplateParamMissingException When a param the mail template requires is absent
+     * @throws SmsTemplateNotInCatalogException When the SMS template key is not in the catalog
+     * @throws SmsTemplateParamMissingException When a param the SMS template requires is absent
      */
     abstract protected function createAttempt(string $address, ObjectNotification $notification): DeliveryAttempt;
 
@@ -122,6 +135,8 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
 
     /**
      * Pumps every in-flight attempt one step, then starts freshly queued ops.
+     *
+     * @throws HilosException Whatever the delivery bookkeeping or the channel transport raises
      */
     public function onTick(): void
     {

@@ -6,6 +6,7 @@ namespace Hilos\LLM\Routing;
 
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -60,6 +61,8 @@ class LlmRouter
      * @return LlmProfile Effective profile (base plus any runtime override)
      * @throws LLMConfigurationException When the key is not declared, the provider
      *   is invalid, or the external provider is selected without an API key
+     * @throws EnvException When an env variable the profile names is missing, outside
+     *   the catalog, or of the wrong type
      */
     public function resolve(string $profileKey): LlmProfile
     {
@@ -80,6 +83,8 @@ class LlmRouter
      * @return LlmProfile Env-backed profile, before any runtime override
      * @throws LLMConfigurationException When the key is not declared, the provider
      *   is invalid, or the external provider is selected without an API key
+     * @throws EnvException When an env variable the profile names is missing, outside
+     *   the catalog, or of the wrong type
      */
     public function resolveBase(string $profileKey): LlmProfile
     {
@@ -131,6 +136,8 @@ class LlmRouter
      * @param string $profileKey Profile key, e.g. 'default'
      * @return AsyncChatLLMInterface Async chat client configured for the profile
      * @throws LLMConfigurationException When the profile cannot be resolved
+     * @throws EnvException When an env variable the profile names is missing, outside
+     *   the catalog, or of the wrong type
      */
     public function chatClientFor(string $profileKey): AsyncChatLLMInterface
     {

@@ -24,6 +24,7 @@ interface HttpOAuthProvider extends OAuthProviderInterface
      *
      * @param string $code Authorization code returned to the SPA callback
      * @return OAuthHttpRequest Request the agent replays to the token endpoint
+     * @throws OAuthProviderException When the configured token endpoint is not a usable URL
      */
     public function buildTokenRequest(string $code): OAuthHttpRequest;
 
@@ -41,6 +42,7 @@ interface HttpOAuthProvider extends OAuthProviderInterface
      *
      * @param string $accessToken Access token from the token exchange
      * @return OAuthHttpRequest Request the agent replays to the userinfo endpoint
+     * @throws OAuthProviderException When the configured userinfo endpoint is not a usable URL
      */
     public function buildUserInfoRequest(string $accessToken): OAuthHttpRequest;
 

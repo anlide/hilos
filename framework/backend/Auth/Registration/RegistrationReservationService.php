@@ -8,13 +8,16 @@ use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Random\RandomException;
 
@@ -86,6 +89,10 @@ final class RegistrationReservationService
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws DatabaseException When a reservation or verification query fails
      * @throws LogicException When the reservations or verifications object collection is unavailable
+     * @throws EnvException When a reservation or verification env key is missing, outside the
+     *   catalog, or of the wrong type
+     * @throws ValidationException When the confirmation code cannot be delivered to the identifier
+     * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      */
     public function reserve(string $type, string $identifier, ?string $plainSecret): void
     {
@@ -119,6 +126,8 @@ final class RegistrationReservationService
      * @param string $identifier Normalized identifier (lowercased email)
      * @throws DatabaseException When a reservation query fails
      * @throws LogicException When the reservations object collection is unavailable
+     * @throws EnvException When the reservation TTL key is missing, outside the catalog, or
+     *   not an int
      */
     public function extendTo(string $identifier): void
     {

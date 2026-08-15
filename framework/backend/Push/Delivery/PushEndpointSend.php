@@ -6,6 +6,7 @@ namespace Hilos\Push\Delivery;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\API\Exception\AsyncHttpResultUnavailableException;
 use Hilos\API\Exception\AsyncHttpStatusException;
 use Hilos\Socket\SocketException;
 
@@ -69,6 +70,7 @@ final class PushEndpointSend
      * Pumps the client one step and latches the classified outcome once the send settles.
      *
      * @param float $nowMs Current time in milliseconds
+     * @throws AsyncHttpResultUnavailableException When the client reports a result it then withholds
      */
     public function tick(float $nowMs): void
     {

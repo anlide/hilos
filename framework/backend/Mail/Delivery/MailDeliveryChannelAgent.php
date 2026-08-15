@@ -13,6 +13,7 @@ use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
@@ -138,6 +139,8 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
     /**
      * Pumps the delivery pipeline, then the raw-send pool.
+     *
+     * @throws HilosException Whatever the delivery bookkeeping or the mail transport raises
      */
     public function onTick(): void
     {

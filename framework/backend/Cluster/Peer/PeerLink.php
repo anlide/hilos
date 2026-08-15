@@ -42,6 +42,8 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
@@ -173,6 +175,8 @@ final class PeerLink extends AbstractClient
      *
      * @throws SocketException If buffer size or JSON depth exceeds limits
      * @throws InvalidArgumentException When the re-hydrate signal cannot be named
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     protected function processReadBuffer(): void
     {

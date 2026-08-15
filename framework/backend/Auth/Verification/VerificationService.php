@@ -6,12 +6,15 @@ namespace Hilos\Auth\Verification;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Random\RandomException;
 
@@ -57,6 +60,10 @@ class VerificationService
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When a send-gate or challenge env key is missing, outside the
+     *   catalog, or of the wrong type
+     * @throws ValidationException When the code was issued for a target the transport refuses
+     * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      */
     public function issue(string $type, string $identifier, ?int $userId): VerificationSendOutcome
     {
@@ -111,6 +118,8 @@ class VerificationService
      * @return int Seconds until a re-send is allowed, or 0 when it is allowed now
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When a send-gate env key is missing, outside the catalog, or
+     *   not an int
      */
     public function resendAllowedInSeconds(string $type, string $identifier): int
     {
@@ -137,6 +146,8 @@ class VerificationService
      * @return ?int Resolved user id on success, null on any failure
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
      */
     public function verify(string $type, string $identifier, string $code): ?int
     {
@@ -179,6 +190,8 @@ class VerificationService
      * @return bool True when the code matched and was consumed, false on any failure
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
      */
     public function verifyCode(string $type, string $identifier, string $code): bool
     {

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Database\DatabaseException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Notification\Delivery\DTO\NotificationDeliverSignalData;
 
 /**
@@ -80,6 +82,7 @@ abstract class AbstractDeliveryChannel
      *
      * @param int $userId Recipient user id
      * @return ?string Channel address, or null when the recipient has none
+     * @throws DatabaseException When the channel's address store cannot be read
      */
     abstract public function resolveAddress(int $userId): ?string;
 
@@ -113,6 +116,8 @@ abstract class AbstractDeliveryChannel
      * @param int $userId Recipient user id
      * @param int $notificationId Notification id being delivered
      * @return ?int Positive shard key for a pooled channel, or null for a singleton
+     * @throws DatabaseException When the channel reads the shard dimension from the database
+     * @throws EnvException When the channel reads its pool width from the environment
      */
     public function shardKeyFor(int $userId, int $notificationId): ?int
     {
