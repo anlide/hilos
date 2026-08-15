@@ -10,6 +10,8 @@ use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Backup\BackupCreator;
@@ -86,7 +88,9 @@ use Throwable;
  * through the single guarded {@see startBackup()}; this class owns the launch path and the lock.
  *
  * And it supervises the hot restore path (HIL-274). A `backup:restore` CLI asks over the
- * command channel ({@see handleRestoreRequest()}); the agent freezes the node through
+ * command channel ({@see handleRestoreRequest()}) and the backup page asks over an agent signal
+ * ({@see handleRestoreSignal()}, HIL-276) - both through the one admission
+ * ({@see admitRestore()}); the agent freezes the node through
  * protected mode, spawns the `backup:restore-run` child once the freeze is ready
  * ({@see onProtectedModeReady()}), polls it under {@see EnvConstants::BACKUP_RESTORE_TIMEOUT},
  * and lifts the freeze when the run ends ({@see finishRestore()}). Create and restore share
@@ -100,13 +104,14 @@ final class BackupAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_BACKUP;
 
     /**
-     * Page → agent routes for the list-page actions (HIL-333). All three are singleton
-     * signals (the agent is monopolistic), so each maps straight to its payload DTO.
+     * Page → agent routes for the list-page actions (HIL-333, restore HIL-276). All four are
+     * singleton signals (the agent is monopolistic), so each maps straight to its payload DTO.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
         HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
+        HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
     ];
 
     /**
@@ -175,6 +180,17 @@ final class BackupAgent extends AbstractAgent
 
     /** Recorded ENV guard verdict of the accepted restore, or null when none is pending. */
     private ?RestoreEnvDecision $pendingRestoreDecision = null;
+
+    /**
+     * Accept key of the connection that asked for the restore, or null when nobody is watching.
+     *
+     * It outlives the admission for the length of the run, because it is the only address the
+     * operation has: protected mode keeps this one connection alive through the freeze
+     * ({@see ProtectedModeOperatorTrait}), the progress frames are sent to it, and so is the
+     * refusal when the agent turns the run away after the page accepted it. A CLI or scheduled
+     * restore leaves it null and is watched by nobody.
+     */
+    private ?string $pendingRestoreInitiator = null;
 
     /** Child timeout (seconds) of the accepted restore, read at admission; 0.0 when none is pending. */
     private float $pendingRestoreTimeout = 0.0;
@@ -538,32 +554,16 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Admits one restore run: parks it pending and asks the cluster to freeze (HIL-274).
+     * Admits one restore run asked for over the command channel (HIL-274).
      *
-     * The reply is immediate - accepted or refused - because the freeze and the restore
-     * outlive any command-channel wait. On accept the restore runtime row starts in
-     * {@see RestorePhase::PENDING} and the child is spawned only once the freeze is ready
-     * ({@see onProtectedModeReady()}). The ENV verdict arrives as a value the CLI preflight
-     * recorded (per the ticket, the matrix is authoritative there); only the plainly
-     * un-actable {@see RestoreEnvDecision::REFUSE} is rejected here as a backstop.
-     *
-     * The single-flight lock covers both kinds and both windows: a running child (create or
-     * restore) and a restore still waiting for its freeze each refuse a second admission.
+     * The operator's entrance to {@see admitRestore()}: it parses the command line's payload,
+     * hands it over, and turns the answer into a command reply. That reply is immediate -
+     * accepted or refused - because the freeze and the restore outlive any command-channel wait.
      *
      * @param CommandRequestDTO $data Command request carrying the backup id, scope and decision
      */
     private function handleRestoreRequest(CommandRequestDTO $data): void
     {
-        if ($this->childProcess !== null || $this->restoreEngaged()) {
-            $busyId = $this->currentBackupId ?? $this->pendingRestoreId;
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                "Backup subsystem busy: {$busyId}",
-            ));
-
-            return;
-        }
-
         // external-boundary: the payload is the operator's command line and a missing id is rejected below
         $id = (string)($data->payload[BackupConstants::FIELD_BACKUP_ID] ?? '');
         // external-boundary: the payload is the operator's command line and a missing scope is rejected below
@@ -575,18 +575,91 @@ final class BackupAgent extends AbstractAgent
 
             return;
         }
-        if ($decision === RestoreEnvDecision::REFUSE) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                'Restore refused by the environment guard',
-            ));
+
+        // No initiator: the requester is a CLI, not a browser connection, so the freeze has no
+        // connection to keep alive and the run has nobody to report progress to.
+        $refusal = $this->admitRestore($id, $scope, $decision, null);
+        if ($refusal !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal));
 
             return;
         }
 
-        // Every env value the run will need is read HERE, where a failure can still be an
-        // error reply: the ready relay and the frozen node are no place for a first read of
-        // a key a project catalog may not carry.
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_BACKUP_ID => $id,
+        ]));
+    }
+
+    /**
+     * Admits one restore from the backup page: the second entrance to the CLI's path (HIL-276).
+     *
+     * The page has already validated the request against its restore gate and acked the
+     * client, so what is left here is the part only the live agent knows - whether it is free -
+     * plus the same backstops the command channel gets. A malformed payload is dropped with a
+     * log rather than answered: the page builds this signal from its own validated row, so a
+     * broken one is a framework defect and there is no operator to tell.
+     *
+     * @param BackupRestoreSignalData $data Restore request carrying the id, scope, verdict and initiator
+     */
+    private function handleRestoreSignal(BackupRestoreSignalData $data): void
+    {
+        $scope = BackupScope::fromString($data->scope);
+        $decision = RestoreEnvDecision::tryFrom($data->decision);
+        if ($data->backupId === '' || $scope === null || $decision === null) {
+            $this->logAgentWarning("Ignoring malformed restore request for backup {$data->backupId}");
+
+            return;
+        }
+
+        $refusal = $this->admitRestore($data->backupId, $scope, $decision, $data->initiatorAcceptKey);
+        if ($refusal !== null) {
+            $this->sendRestoreRefusal($data->initiatorAcceptKey, $refusal);
+        }
+    }
+
+    /**
+     * Admits one restore run: parks it pending and asks the cluster to freeze.
+     *
+     * The single admission both entrances go through, so the CLI and the page cannot drift into
+     * two sets of preconditions. It answers rather than replies - the caller owns the channel the
+     * refusal travels on, a command reply for the CLI and an addressed action error for the page -
+     * and everything it checks is checked in the same order it always was:
+     *
+     * - the single-flight lock, covering both kinds and both windows: a running child (create or
+     *   restore) and a restore still waiting for its freeze each refuse a second admission;
+     * - {@see RestoreEnvDecision::REFUSE} as a backstop. The matrix is authoritative where the
+     *   request was validated (the CLI preflight, or the page's gate), and only the plainly
+     *   un-actable verdict is re-checked here;
+     * - every env value the run will need, read HERE, where a failure can still be an answer: the
+     *   ready relay and the frozen node are no place for a first read of a key a project catalog
+     *   may not carry.
+     *
+     * On accept the restore runtime row starts in {@see RestorePhase::PENDING} and the child is
+     * spawned only once the freeze is ready ({@see onProtectedModeReady()}); the freeze and the
+     * restore both outlive any reply window, which is why acceptance is answered immediately and
+     * the outcome is not.
+     *
+     * @param string $id Backup id to restore
+     * @param BackupScope $scope Scope the archive was captured under
+     * @param RestoreEnvDecision $decision Recorded ENV guard verdict for this archive/target pair
+     * @param ?string $initiator Accept key of the connection that asked, or null when unattended
+     * @return ?string Refusal reason, or null when the restore was admitted
+     */
+    private function admitRestore(
+        string $id,
+        BackupScope $scope,
+        RestoreEnvDecision $decision,
+        ?string $initiator,
+    ): ?string {
+        if ($this->childProcess !== null || $this->restoreEngaged()) {
+            $busyId = $this->currentBackupId ?? $this->pendingRestoreId;
+
+            return "Backup subsystem busy: {$busyId}";
+        }
+        if ($decision === RestoreEnvDecision::REFUSE) {
+            return 'Restore refused by the environment guard';
+        }
+
         try {
             $missing = self::missingCreateConfig(
                 Hilos::$env->string(EnvConstants::BACKUP_DIR),
@@ -594,20 +667,10 @@ final class BackupAgent extends AbstractAgent
             );
             $timeoutSeconds = (float)Hilos::$env->int(EnvConstants::BACKUP_RESTORE_TIMEOUT);
         } catch (EnvException $e) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                'Cannot restore: ' . $e->getMessage(),
-            ));
-
-            return;
+            return 'Cannot restore: ' . $e->getMessage();
         }
         if ($missing !== []) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                'Cannot restore: missing configuration (' . implode(', ', $missing) . ')',
-            ));
-
-            return;
+            return 'Cannot restore: missing configuration (' . implode(', ', $missing) . ')';
         }
 
         $this->pendingRestoreId = $id;
@@ -615,15 +678,77 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreDecision = $decision;
         $this->pendingRestoreTimeout = $timeoutSeconds;
         $this->pendingRestoreSince = microtime(true);
+        $this->pendingRestoreInitiator = $initiator;
         $this->restoreView()?->actions->markRunning($id, $scope);
-        // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
-        // has no connection to keep alive on its behalf.
-        $this->requestProtectedModeEnable(self::RESTORE_OPERATION, '');
+        $this->notifyRestoreProgress();
+        if ($initiator === null) {
+            // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
+            // has no connection to keep alive on its behalf.
+            $this->requestProtectedModeEnable(self::RESTORE_OPERATION, '');
+        } else {
+            // The tab that asked stays connected through the freeze - protected mode lets its
+            // accept key through - because it is the one being shown the operation.
+            $this->requestProtectedModeEnable(self::RESTORE_OPERATION, $initiator);
+        }
         $this->logAgentInfo("Restore accepted: {$id} (scope={$scope->value}); requesting protected mode");
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            BackupConstants::FIELD_BACKUP_ID => $id,
-        ]));
+        return null;
+    }
+
+    /**
+     * Tells the connection that asked for a restore that the agent turned it away.
+     *
+     * The page accepted the action and acked it, so a refusal decided here has no reply to ride
+     * back on: it goes as an addressed, uncorrelated action error the client keeps as that
+     * action's latest failure - the same device a failed create uses
+     * ({@see sendFailureNotice()}), under this action's own name so the button that sent it is
+     * the one that shows it. A CLI restore has no initiator and is answered by its command reply
+     * instead.
+     *
+     * @param ?string $initiator Connection to tell, or null when the request came from a CLI
+     * @param string $reason Why the run was refused, shown as it is
+     */
+    private function sendRestoreRefusal(?string $initiator, string $reason): void
+    {
+        if ($initiator === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            SignalConstants::ACTION_ERROR,
+            $initiator,
+            new PageActionErrorSignalData(HilosSignalConstants::BACKUP_RESTORE, $reason),
+        );
+    }
+
+    /**
+     * Sends the restore's current runtime row to the connection that asked for the run.
+     *
+     * The node is frozen while a restore runs: the page's own agent is stopped, so its table
+     * produces no deltas, and this addressed frame is the only thing moving on the initiator's
+     * screen. It carries the snapshot the CLI monitor is answered with, so the two views of one
+     * run cannot disagree, and it is sent at the four points where the row itself changes.
+     *
+     * An unattended run (CLI, schedule) has no initiator and quietly sends nothing, exactly as
+     * {@see sendFailureNotice()} does - its progress is read from the row instead.
+     */
+    private function notifyRestoreProgress(): void
+    {
+        $initiator = $this->pendingRestoreInitiator;
+        if ($initiator === null) {
+            return;
+        }
+
+        $view = $this->restoreView();
+        if ($view === null) {
+            return;
+        }
+
+        $this->sendToUser(
+            HilosSignalConstants::BACKUP_RESTORE_PROGRESS,
+            $initiator,
+            BackupRestoreProgressSignalData::fromRuntime($view),
+        );
     }
 
     /**
@@ -651,14 +776,16 @@ final class BackupAgent extends AbstractAgent
      *
      * The page validates each request synchronously and acks the client; this owns the
      * storage mutation: create funnels through the guarded {@see startBackup()} (with an
-     * in-memory pending slot when busy), delete through the shared delete path, and
-     * set-keep through an atomic sidecar rewrite plus an index re-mirror.
+     * in-memory pending slot when busy), delete through the shared delete path, set-keep
+     * through an atomic sidecar rewrite plus an index re-mirror, and restore through the same
+     * admission the `backup:restore` CLI goes through ({@see admitRestore()}).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $source Signal source (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not a backup list action
      * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
      * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -681,6 +808,13 @@ final class BackupAgent extends AbstractAgent
             case HilosSignalConstants::BACKUP_AGENT_SET_KEEP:
                 if ($data->data instanceof BackupSetKeepSignalData) {
                     $this->handleSetKeepRequest($data->data);
+                }
+
+                return;
+
+            case HilosSignalConstants::BACKUP_AGENT_RESTORE:
+                if ($data->data instanceof BackupRestoreSignalData) {
+                    $this->handleRestoreSignal($data->data);
                 }
 
                 return;
@@ -863,6 +997,7 @@ final class BackupAgent extends AbstractAgent
         // The coarse hot-path phase: the supervisor only sees its child's lifecycle, so the
         // whole verify/extract/import sequence reports as importing (per-step is HIL-277).
         $this->restoreView()?->actions->markPhase(RestorePhase::IMPORTING);
+        $this->notifyRestoreProgress();
 
         try {
             $this->childProcess = new Process(
@@ -1344,6 +1479,7 @@ final class BackupAgent extends AbstractAgent
         $view = $this->restoreView();
         $view?->actions->markDatabaseTouched($databaseTouched);
         $view?->actions->markRehydrating();
+        $this->notifyRestoreProgress();
 
         // The child slot is released here rather than in completeRestore(): its process is over,
         // and a poller that found it again would finalize the same run twice. Everything else the
@@ -1421,6 +1557,11 @@ final class BackupAgent extends AbstractAgent
         } else {
             $view?->actions->finish(BackupStatus::ERROR, $this->restoreFailureDetail($complete, $problems));
         }
+
+        // The terminal frame goes out before the run is forgotten: it is the last thing the
+        // initiator hears, and on a barrier that did not close it is the only thing that will
+        // ever say so - the node stays frozen, so no reload follows to show the row instead.
+        $this->notifyRestoreProgress();
 
         $this->rehydrateFailureDetail = null;
         $this->resetRun();
@@ -1748,6 +1889,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreDecision = null;
         $this->pendingRestoreTimeout = 0.0;
         $this->pendingRestoreSince = 0.0;
+        $this->pendingRestoreInitiator = null;
         $this->pendingCarryover = null;
         $this->rehydrateDeadline = 0.0;
         $this->rehydrateChildSucceeded = false;

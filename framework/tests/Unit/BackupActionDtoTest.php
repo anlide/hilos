@@ -6,21 +6,29 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreProgressSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
+use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
+use Hilos\Runtime\View\Item\RestoreRuntime;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the backup list-page action DTOs (HIL-333) and the create signal the page
- * hands the agent.
+ * Unit tests for the backup list-page action DTOs (HIL-333, restore HIL-276) and the signals the
+ * page hands the agent.
  *
  * Each action DTO parses from the raw WebSocket envelope — tolerating the optional FIELD_DATA
  * wrapper — and round-trips its typed fields. The create signal additionally carries who asked,
- * which is what lets the agent address the run's outcome back to that one connection.
+ * which is what lets the agent address the run's outcome back to that one connection; the restore
+ * signal carries the same, plus the verdict and scope the page resolved. The restore progress
+ * frame is pinned against the runtime row it photographs, because the initiator's view and the
+ * CLI monitor's are meant to be the same snapshot.
  */
 final class BackupActionDtoTest extends TestCase
 {
@@ -162,5 +170,120 @@ final class BackupActionDtoTest extends TestCase
         ]);
 
         $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testRestoreReadsTheArchiveFromABarePayload(): void
+    {
+        $dto = BackupRestoreActionDTO::fromArray([BackupRestoreActionDTO::backupId => 'bk-3']);
+
+        $this->assertSame('bk-3', $dto->backupId);
+        $this->assertSame([BackupRestoreActionDTO::backupId => 'bk-3'], $dto->toArray());
+    }
+
+    public function testRestoreUnwrapsTheFieldDataEnvelopeAndTrims(): void
+    {
+        $dto = BackupRestoreActionDTO::fromArray([
+            SignalPayloadConstants::FIELD_DATA => [BackupRestoreActionDTO::backupId => '  bk-3  '],
+        ]);
+
+        $this->assertSame('bk-3', $dto->backupId);
+    }
+
+    public function testRestoreRefusesAPayloadThatNamesNoArchive(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        BackupRestoreActionDTO::fromArray([]);
+    }
+
+    public function testRestoreSignalRoundTripsEveryKeyTheAgentActsOn(): void
+    {
+        $dto = BackupRestoreSignalData::fromArray(
+            new BackupRestoreSignalData('bk-3', 'full', 'allow', 'accept-key-3')->toArray(),
+        );
+
+        $this->assertSame('bk-3', $dto->backupId);
+        $this->assertSame('full', $dto->scope);
+        $this->assertSame('allow', $dto->decision);
+        $this->assertSame('accept-key-3', $dto->initiatorAcceptKey);
+    }
+
+    public function testRestoreSignalHasNoInitiatorWhenAbsent(): void
+    {
+        $dto = BackupRestoreSignalData::fromArray([
+            BackupRestoreSignalData::backupId => 'bk-3',
+            BackupRestoreSignalData::scope => 'full',
+            BackupRestoreSignalData::decision => 'allow',
+        ]);
+
+        $this->assertNull($dto->initiatorAcceptKey);
+    }
+
+    public function testRestoreSignalRefusesAPayloadCarryingNoVerdict(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage(BackupRestoreSignalData::decision);
+
+        BackupRestoreSignalData::fromArray([
+            BackupRestoreSignalData::backupId => 'bk-3',
+            BackupRestoreSignalData::scope => 'full',
+        ]);
+    }
+
+    public function testTheProgressFrameIsTheRuntimeRowsOwnSnapshot(): void
+    {
+        $state = StateRestoreRuntime::fromRow([
+            StateRestoreRuntime::running => true,
+            StateRestoreRuntime::backupId => 'bk-3',
+            StateRestoreRuntime::scope => 'full',
+            StateRestoreRuntime::phase => 'importing',
+            StateRestoreRuntime::startedAt => '2026-08-15T10:30:00+00:00',
+            StateRestoreRuntime::databaseTouched => true,
+        ]);
+        $view = new RestoreRuntime($state);
+
+        $frame = BackupRestoreProgressSignalData::fromRuntime($view);
+
+        $this->assertSame(
+            $view->toArray(),
+            $frame->toArray(),
+            'The initiator and the CLI monitor are shown one run: the frame carries the row as it is,'
+            . ' key for key, so the two representations cannot drift',
+        );
+    }
+
+    public function testTheProgressFrameRoundTripsOffTheWire(): void
+    {
+        $frame = BackupRestoreProgressSignalData::fromArray([
+            BackupRestoreProgressSignalData::running => false,
+            BackupRestoreProgressSignalData::backupId => 'bk-3',
+            BackupRestoreProgressSignalData::scope => 'full',
+            BackupRestoreProgressSignalData::phase => 'failed',
+            BackupRestoreProgressSignalData::startedAt => '2026-08-15T10:30:00+00:00',
+            BackupRestoreProgressSignalData::finishedAt => '2026-08-15T10:34:00+00:00',
+            BackupRestoreProgressSignalData::outcome => 'error',
+            BackupRestoreProgressSignalData::failureReason => 'import failed',
+            BackupRestoreProgressSignalData::rehydrateComplete => false,
+            BackupRestoreProgressSignalData::rehydrateProblems => ['worker 2: no answer'],
+            BackupRestoreProgressSignalData::databaseTouched => true,
+        ]);
+
+        $this->assertSame('error', $frame->outcome);
+        $this->assertSame(['worker 2: no answer'], $frame->rehydrateProblems);
+        $this->assertTrue($frame->databaseTouched);
+    }
+
+    public function testAProgressFrameCarryingNoProblemsReadsAsAnEmptyList(): void
+    {
+        // Every successful restore has this shape, so an absent list is the normal case rather
+        // than a broken frame.
+        $frame = BackupRestoreProgressSignalData::fromArray([
+            BackupRestoreProgressSignalData::running => true,
+            BackupRestoreProgressSignalData::rehydrateComplete => false,
+            BackupRestoreProgressSignalData::databaseTouched => false,
+        ]);
+
+        $this->assertSame([], $frame->rehydrateProblems);
+        $this->assertNull($frame->backupId);
     }
 }

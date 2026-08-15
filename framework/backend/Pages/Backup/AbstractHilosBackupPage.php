@@ -7,19 +7,26 @@ namespace Hilos\Pages\Backup;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\RestoreEnvGuard;
+use Hilos\Backup\RestoreUiGate;
+use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Environment\Exception\EnvKeyInvalidException;
 use Hilos\Environment\Exception\EnvNotInCatalogException;
@@ -28,6 +35,7 @@ use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
+use Hilos\Pages\Backup\DTO\BackupRestoreActionDTO;
 use Hilos\Pages\Backup\DTO\BackupSetKeepActionDTO;
 use Hilos\Runtime\View\Collection\BackupHistories;
 
@@ -60,14 +68,24 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         HilosSignalConstants::BACKUP_CREATE => BackupCreateActionDTO::class,
         HilosSignalConstants::BACKUP_DELETE => BackupDeleteActionDTO::class,
         HilosSignalConstants::BACKUP_SET_KEEP => BackupSetKeepActionDTO::class,
+        HilosSignalConstants::BACKUP_RESTORE => BackupRestoreActionDTO::class,
     ];
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_BACKUP,
     ];
 
+    /** Page-data section carrying what the page may offer for restoring. */
+    public const string RESTORE_SECTION = 'backupRestore';
+
+    /** Restore section key: whether this environment offers the restore button at all. */
+    public const string RESTORE_UI_ENABLED = 'uiEnabled';
+
+    /** Restore section key: the environment this installation runs in, as the modal names it. */
+    public const string RESTORE_TARGET_ENV = 'targetEnv';
+
     /**
-     * Routes backup create, delete, and set-keep actions to typed handlers.
+     * Routes backup create, delete, set-keep, and restore actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -106,6 +124,14 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, BackupSetKeepActionDTO::class, $dto);
                 }
                 $this->handleSetKeep($acceptKey, $dto);
+
+                break;
+
+            case HilosSignalConstants::BACKUP_RESTORE:
+                if (!$dto instanceof BackupRestoreActionDTO) {
+                    throw new InvalidActionPayloadException($action, BackupRestoreActionDTO::class, $dto);
+                }
+                $this->handleRestore($acceptKey, $dto);
 
                 break;
 
@@ -222,6 +248,116 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP,
             new BackupSetKeepSignalData($dto->backupId, $dto->keep, $acceptKey),
         );
+    }
+
+    /**
+     * Validates the target against the whole restore gate and routes it to the backup agent.
+     *
+     * Every check lives in {@see RestoreUiGate} rather than here, so the decision can be tested
+     * without a page: the environment this installation runs in, the archive's presence, its
+     * status and checksum, whether the subsystem is busy, and the ENV matrix
+     * ({@see RestoreEnvGuard}) for this archive/target pair. The environment is re-checked on
+     * the action and not only on the button, because a client is not the source of truth about
+     * where it runs.
+     *
+     * The scope travels from the index row, never from the client: it says how the archive was
+     * captured, which is something only the record that produced it knows.
+     *
+     * As with a create, the ack answers acceptance and not the run. A restore freezes the node
+     * for minutes; the requester's accept key rides along so protected mode keeps that one
+     * connection alive, addresses the progress frames to it, and tells it if the agent refuses
+     * the run after all.
+     *
+     * @param string $acceptKey Accept key of the requesting connection, kept alive through the freeze
+     * @param BackupRestoreActionDTO $dto Restore action payload
+     * @throws TableActionException When the environment, the archive or the subsystem's state refuses
+     *     the restore, or the record names no scope to replay
+     */
+    private function handleRestore(string $acceptKey, BackupRestoreActionDTO $dto): void
+    {
+        $targetEnv = $this->currentEnv();
+        $histories = $this->histories();
+        $row = $histories === null ? null : $histories[$dto->backupId];
+        $envVerdict = $row === null || $targetEnv === null
+            ? null
+            : RestoreEnvGuard::decide(AppEnv::fromString($row->env), $targetEnv, force: false);
+
+        $refusal = RestoreUiGate::decide($targetEnv, $dto->backupId, $row, $this->isBusy(), $envVerdict)->reason;
+        if ($refusal !== null) {
+            throw new TableActionException($refusal);
+        }
+
+        $scope = $row === null ? null : BackupScope::fromString($row->scope);
+        if ($scope === null || $envVerdict === null) {
+            // The gate has already refused a missing row and an unnamed environment, so what is
+            // left of this guard is the real case: a record whose scope does not parse, which the
+            // engine has no way to replay.
+            throw new TableActionException("Backup {$dto->backupId} does not name a scope to restore");
+        }
+
+        $this->agent->sendToAgent(
+            HilosSignalConstants::BACKUP_AGENT_RESTORE,
+            new BackupRestoreSignalData($dto->backupId, $scope->value, $envVerdict->decision->value, $acceptKey),
+        );
+    }
+
+    /**
+     * Tells the subscribing client what this environment offers for restoring.
+     *
+     * The button is a property of the installation, not of a row, so it is answered once at
+     * subscribe rather than per row. Production - and an installation whose APP_ENV names no
+     * known environment - gets `uiEnabled: false` and shows the CLI instruction instead; the
+     * environment name travels with it because the confirmation modal names the pair the
+     * operator is about to bridge (archive's environment → this one).
+     *
+     * @param PageRouteParams $params Route params from page subscription (unused; the page takes none)
+     * @return PagePayload Restore section of the page data
+     */
+    protected function buildPagePayload(PageRouteParams $params): PagePayload
+    {
+        $targetEnv = $this->currentEnv();
+
+        return new PagePayload(data: [
+            self::RESTORE_SECTION => [
+                self::RESTORE_UI_ENABLED => $targetEnv !== null && $targetEnv !== AppEnv::PROD,
+                self::RESTORE_TARGET_ENV => $targetEnv?->value,
+            ],
+        ]);
+    }
+
+    /**
+     * Reads the environment this installation runs in.
+     *
+     * An installation that cannot name its environment reads as null, and every reader of this
+     * treats that as production: the destructive surface is withheld from anyone who cannot say
+     * they are not live. That is why the failure degrades here instead of propagating - APP_ENV
+     * is always cataloged, so an unreadable one is a broken install, and the safe answer for a
+     * broken install is the same as for production.
+     *
+     * @return ?AppEnv Current application environment, or null when it is unset or unrecognized
+     */
+    private function currentEnv(): ?AppEnv
+    {
+        try {
+            return AppEnv::fromString(Hilos::$env->string(EnvConstants::APP_ENV));
+        } catch (EnvException) {
+            return null;
+        }
+    }
+
+    /**
+     * Reports whether the backup subsystem is occupied by a run of either kind.
+     *
+     * Not the same question as {@see isInProgress()}: that one asks about one archive, this one
+     * asks whether the single child slot is taken at all. The agent enforces it too - it is the
+     * lock - but a refusal computed here explains itself before the click instead of after it.
+     *
+     * @return bool True while a backup or a restore is running
+     */
+    private function isBusy(): bool
+    {
+        return (Hilos::$rt?->hilosBackupRuntime?->running ?? false)
+            || (Hilos::$rt?->hilosRestoreRuntime?->running ?? false);
     }
 
     /**

@@ -46,6 +46,11 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string failureReason = 'failureReason';
     public const string checksumState = 'checksumState';
     public const string verifiedAt = 'verifiedAt';
+    public const string restorePhase = 'restorePhase';
+    public const string restoreOutcome = 'restoreOutcome';
+    public const string restoreFinishedAt = 'restoreFinishedAt';
+    public const string restoreFailureReason = 'restoreFailureReason';
+    public const string restoreDatabaseTouched = 'restoreDatabaseTouched';
 
     /**
      * @param string $rowKey Stable table row key (backup id, or RUNNING_ROW_KEY)
@@ -61,6 +66,12 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param BackupChecksumState $checksumState Whether the backup carries a digest and how it last verified;
      *     the digest itself never reaches the browser
      * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+     * @param ?string $restorePhase Phase value of the restore of THIS archive; null when it was never restored
+     * @param ?string $restoreOutcome Terminal status value of that restore; null while it runs or was never run
+     * @param ?string $restoreFinishedAt ISO-8601 instant that restore ended; null while it runs or was never run
+     * @param ?string $restoreFailureReason Why that restore failed; null when it succeeded or was never run
+     * @param bool $restoreDatabaseTouched Whether the failed restore of this archive had begun replacing the
+     *     database; false for a run that never started one
      */
     public function __construct(
         public string $rowKey,
@@ -75,6 +86,14 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $failureReason,
         public BackupChecksumState $checksumState,
         public ?string $verifiedAt,
+        // The restore of an archive is a property of the run, not of the archive, and only one
+        // archive is ever the restored one - so every other row says "no restore" by omission
+        // rather than by five nulls written out at each of its construction sites.
+        public ?string $restorePhase = null,
+        public ?string $restoreOutcome = null,
+        public ?string $restoreFinishedAt = null,
+        public ?string $restoreFailureReason = null,
+        public bool $restoreDatabaseTouched = false,
     ) {
     }
 
@@ -110,6 +129,11 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::failureReason => $this->failureReason,
             self::checksumState => $this->checksumState->value,
             self::verifiedAt => $this->verifiedAt,
+            self::restorePhase => $this->restorePhase,
+            self::restoreOutcome => $this->restoreOutcome,
+            self::restoreFinishedAt => $this->restoreFinishedAt,
+            self::restoreFailureReason => $this->restoreFailureReason,
+            self::restoreDatabaseTouched => $this->restoreDatabaseTouched,
         ];
     }
 
@@ -139,6 +163,13 @@ final class HilosBackupTableRow extends AbstractTableRow
                 isset($data[self::checksumState]) ? (string) $data[self::checksumState] : null,
             ) ?? BackupChecksumState::NONE,
             verifiedAt: self::optionalString($data, self::verifiedAt),
+            restorePhase: self::optionalString($data, self::restorePhase),
+            restoreOutcome: self::optionalString($data, self::restoreOutcome),
+            restoreFinishedAt: self::optionalString($data, self::restoreFinishedAt),
+            restoreFailureReason: self::optionalString($data, self::restoreFailureReason),
+            // A row that says nothing about a restore says nothing about its damage either, and
+            // "not touched" is the only reading that does not invent reassurance.
+            restoreDatabaseTouched: (bool)($data[self::restoreDatabaseTouched] ?? false),
         );
     }
 

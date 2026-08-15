@@ -2,6 +2,7 @@
 // the framework session and page schemas already merged, the action-error store
 // attached, and the stale-build welcome wired to a reload. Lifted from every
 // project's connection bootstrap (docs/agents/frontend/bootstrap-structure.md).
+import { BACKUP_SIGNAL_SCHEMAS } from '../admin/backup/hilosBackups.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { type ProjectSignalSchemas } from '../protocol/parseSignal.js'
@@ -105,6 +106,7 @@ export function createHilosConnection(
     projectSchemas: {
       ...SESSION_SIGNAL_SCHEMAS,
       ...PAGE_SIGNAL_SCHEMAS,
+      ...BACKUP_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...options.projectSchemas,

@@ -11,6 +11,7 @@
 // connection — and the framework owns the rest. Row actions (create / delete /
 // keep) are a separate page (HIL-333) and are not part of this view.
 
+import { z } from 'zod'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -24,6 +25,11 @@ import {
   readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
+import {
+  computedSignal,
+  createSignal,
+  type ReadonlySignal,
+} from '../../state/signal.js'
 import { hilosToasts } from '../../state/toasts.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
@@ -68,6 +74,24 @@ export interface HilosBackupRow {
    * been checked (which includes every backup written before checksums existed).
    */
   readonly verifiedAt: string | null
+  /**
+   * Phase of the restore of THIS archive, or null when it was never restored. Only
+   * one row in the list ever carries these: the restore runtime row is a singleton
+   * about the last run, and the backend decorates only the archive it names.
+   */
+  readonly restorePhase: string | null
+  /** Terminal status of that restore (`success` | `error`), or null while it runs or never ran. */
+  readonly restoreOutcome: string | null
+  /** ISO-8601 instant that restore ended, or null while it runs or never ran. */
+  readonly restoreFinishedAt: string | null
+  /** Why that restore failed, or null when it succeeded or never ran. */
+  readonly restoreFailureReason: string | null
+  /**
+   * Whether a failed restore of this archive had already begun replacing the
+   * database. It rides the row rather than only the live frame because it is the
+   * first thing an operator needs after reloading onto a failed restore.
+   */
+  readonly restoreDatabaseTouched: boolean
 }
 
 /**
@@ -90,12 +114,20 @@ const HILOS_BACKUPS_PAGE_SIZE = 10
 const BACKUP_CREATE_ACTION = 'backup_create'
 const BACKUP_DELETE_ACTION = 'backup_delete'
 const BACKUP_SET_KEEP_ACTION = 'backup_set_keep'
+const BACKUP_RESTORE_ACTION = 'backup_restore'
 /** The page's own actions, so an addressed failure notice for one is recognized as ours. */
 const BACKUP_ACTIONS = new Set<string>([
   BACKUP_CREATE_ACTION,
   BACKUP_DELETE_ACTION,
   BACKUP_SET_KEEP_ACTION,
+  BACKUP_RESTORE_ACTION,
 ])
+
+/** Page-data section saying what this installation offers for restoring (backend `RESTORE_SECTION`). */
+const BACKUP_RESTORE_DATA = 'backupRestore'
+
+/** Server→initiator signal `type` carrying one restore runtime snapshot (PHP `BACKUP_RESTORE_PROGRESS`). */
+export const BACKUP_RESTORE_PROGRESS_SIGNAL = 'backup_restore_progress'
 
 // Row payload keys of the backup slot. They are declared here because this module
 // owns the view-model they resolve into, and exported where a view also names them
@@ -137,6 +169,24 @@ export const BACKUP_CHECKSUM_STATE_FIELD = 'checksumState'
 
 /** Row payload key of the last verification instant. */
 export const BACKUP_VERIFIED_AT_FIELD = 'verifiedAt'
+
+/** Row payload key of the phase of the restore of this archive. */
+export const BACKUP_RESTORE_PHASE_FIELD = 'restorePhase'
+
+/**
+ * Row payload key of the outcome of that restore. Exported because it is also the
+ * table column key the three views declare, so the wire name has one owner.
+ */
+export const BACKUP_RESTORE_OUTCOME_FIELD = 'restoreOutcome'
+
+/** Row payload key of the instant that restore ended. */
+export const BACKUP_RESTORE_FINISHED_AT_FIELD = 'restoreFinishedAt'
+
+/** Row payload key of the reason that restore failed. */
+export const BACKUP_RESTORE_FAILURE_REASON_FIELD = 'restoreFailureReason'
+
+/** Row payload key of whether that restore had begun replacing the database. */
+export const BACKUP_RESTORE_DATABASE_TOUCHED_FIELD = 'restoreDatabaseTouched'
 
 /** A selectable backup scope: its wire value and a human-readable label. */
 export interface HilosBackupScopeOption {
@@ -196,6 +246,26 @@ export interface HilosBackupsActions {
    * @param keep The desired pin (true excludes the backup from rotation).
    */
   sendBackupSetKeep(id: string, keep: boolean): ActionHandle
+  /**
+   * Restore a stored backup, as a tracked action. The ack answers acceptance, never
+   * the run: the node freezes for the length of the restore and the outcome arrives
+   * as progress frames addressed to this connection.
+   *
+   * @param id The backup id (also the table row key).
+   */
+  sendBackupRestore(id: string): ActionHandle
+}
+
+/** What this installation offers for restoring, from the page-data section. */
+export interface HilosBackupRestoreGate {
+  /**
+   * Whether the restore button is offered at all. False on production, and on an
+   * installation whose APP_ENV names no known environment — one that cannot say it is
+   * not live does not get the destructive button.
+   */
+  readonly uiEnabled: boolean
+  /** The environment this installation runs in, as the confirmation modal names it. */
+  readonly targetEnv: string | null
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -252,6 +322,17 @@ function toVerifiedAt(value: unknown): string | null {
 }
 
 /**
+ * Narrow a raw optional-text slot value to the view-model field: a non-empty string,
+ * or null for anything else. The restore fields are all of this shape — every row but
+ * the restored one omits them, and an empty string is the same "nothing happened here".
+ *
+ * @param value The raw value from a payload slot.
+ */
+function toTextOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
  * Resolve one raw backup table row into its view-model. The merged runtime fields
  * ride a single inline `backup` slot (no entity reference — a backup row is
  * page-scoped, keyed by its id), so this reads the slot as a plain record.
@@ -277,6 +358,16 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     failureReason: toFailureReason(slot[BACKUP_FAILURE_REASON_FIELD]),
     checksumState: toChecksumState(slot[BACKUP_CHECKSUM_STATE_FIELD]),
     verifiedAt: toVerifiedAt(slot[BACKUP_VERIFIED_AT_FIELD]),
+    restorePhase: toTextOrNull(slot[BACKUP_RESTORE_PHASE_FIELD]),
+    restoreOutcome: toTextOrNull(slot[BACKUP_RESTORE_OUTCOME_FIELD]),
+    restoreFinishedAt: toTextOrNull(slot[BACKUP_RESTORE_FINISHED_AT_FIELD]),
+    restoreFailureReason: toTextOrNull(
+      slot[BACKUP_RESTORE_FAILURE_REASON_FIELD],
+    ),
+    restoreDatabaseTouched: readBoolean(
+      slot,
+      BACKUP_RESTORE_DATABASE_TOUCHED_FIELD,
+    ),
   }
 }
 
@@ -380,6 +471,195 @@ export function isBackupKeepable(row: HilosBackupRow): boolean {
  */
 export function hasBackupFailureDetail(row: HilosBackupRow): boolean {
   return row.finished === null && row.failureReason !== null
+}
+
+/**
+ * A completed, successful archive — the rows that carry a restore control at all.
+ *
+ * Separate from {@link isBackupRestorable} on purpose, though a success is what both
+ * start from: this decides whether the control is THERE, and that one whether it is
+ * usable. A corrupt archive keeps its button and loses its enablement, because a row
+ * with no button at all leaves the operator wondering whether restore even exists,
+ * while a disabled one names what is wrong with this archive.
+ */
+export function offersBackupRestore(row: HilosBackupRow): boolean {
+  return row.finished === true
+}
+
+/**
+ * An archive that can be replayed: completed successfully, and not known to differ
+ * from its recorded digest. The backend decides again on the action — the client is
+ * not the source of truth about an installation's environment, or about what the
+ * agent is busy with right now.
+ */
+export function isBackupRestorable(row: HilosBackupRow): boolean {
+  return row.finished === true && !isBackupChecksumMismatch(row)
+}
+
+/**
+ * Whether the backup subsystem looks occupied from here: a run in the list, or a
+ * restore this connection is watching.
+ *
+ * The agent is single-flight and refuses the second run itself; this is what turns
+ * that refusal into a disabled button with a reason instead of a toast after the
+ * click. It is deliberately only what the client can see — another admin's restore
+ * sends its frames to them, not here — so the server's answer stays the real one.
+ *
+ * @param rows The rows currently in the window (a removed placeholder reads as null).
+ * @param restore The latest restore frame this connection received, or null.
+ */
+export function isBackupSubsystemBusy(
+  rows: readonly (HilosBackupRow | null)[],
+  restore: HilosRestoreStatus | null,
+): boolean {
+  return (
+    restore?.running === true ||
+    rows.some((row) => row !== null && isBackupInProgress(row))
+  )
+}
+
+/**
+ * An archive whose restore has ended — the only kind that shows a restore outcome.
+ * The single source the three views share, so the cell cannot appear in one and not
+ * the others.
+ */
+export function hasRestoreOutcome(row: HilosBackupRow): boolean {
+  return row.restoreOutcome !== null
+}
+
+/**
+ * The CLI command that restores this archive, for the environments where the button
+ * is withheld. The id and scope are substituted so nobody retypes an identifier —
+ * the very mistake the confirmation guards against where the button does exist.
+ *
+ * The configured entry path is deliberately not revealed: where the script lives
+ * inside the container says nothing about how an operator reaches the machine.
+ *
+ * @param row The backup row to name in the command.
+ */
+export function formatRestoreCliCommand(row: HilosBackupRow): string {
+  // A record that names no scope (a sidecar written before scopes were stored) gets a
+  // placeholder rather than a guess: naming the wrong scope in a command an operator
+  // is about to paste is worse than making them fill one word in.
+  const scope = row.scope ?? '<scope>'
+
+  return `php cli.php backup:restore ${row.id} --scope=${scope} --yes`
+}
+
+/**
+ * Payload of the restore page-data section: whether this environment offers the
+ * button, and which environment it is.
+ */
+const restoreGateSchema = z.looseObject({
+  uiEnabled: z.boolean(),
+  targetEnv: z.string().nullable(),
+})
+
+/**
+ * Payload of one restore progress frame — the restore runtime row as the agent
+ * photographs it, key for key with what the CLI monitor is answered
+ * (PHP `BackupRestoreProgressSignalData`).
+ */
+const restoreProgressSchema = z.looseObject({
+  running: z.boolean(),
+  backupId: z.string().nullable(),
+  scope: z.string().nullable(),
+  phase: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  outcome: z.string().nullable(),
+  failureReason: z.string().nullable(),
+  rehydrateComplete: z.boolean(),
+  rehydrateProblems: z.array(z.string()),
+  databaseTouched: z.boolean(),
+})
+
+/** One restore progress frame: where the run is, and how it ended. */
+export type HilosRestoreStatus = z.infer<typeof restoreProgressSchema>
+
+/**
+ * The backup signal schemas keyed for a connection's `projectSchemas`, so the parse
+ * boundary validates the restore frames {@link createHilosRestoreProgress} ingests.
+ * {@link createHilosConnection} merges them in, so a project never restates them.
+ */
+export const BACKUP_SIGNAL_SCHEMAS = {
+  [BACKUP_RESTORE_PROGRESS_SIGNAL]: restoreProgressSchema,
+}
+
+/**
+ * What this installation offers for restoring, reactively. The section is answered
+ * once at subscribe, so it re-resolves on navigation rather than on every delta.
+ *
+ * A page scope without the section — an older backend, or the moment before the
+ * subscription lands — reads as no button and no environment name. Withholding is
+ * the safe answer: the environments that hide the button are exactly the ones where
+ * pressing it would be worst, and the backend refuses the action there anyway.
+ *
+ * @param context The project context (the scope stores holding the page scope).
+ */
+export function createHilosBackupsRestoreGate(
+  context: HilosBackupsContext,
+): ReadonlySignal<HilosBackupRestoreGate> {
+  const section = context.scopes.pageDataSignal(BACKUP_RESTORE_DATA)
+
+  return computedSignal(() => {
+    const parsed = restoreGateSchema.safeParse(section.get())
+
+    return parsed.success
+      ? { uiEnabled: parsed.data.uiEnabled, targetEnv: parsed.data.targetEnv }
+      : { uiEnabled: false, targetEnv: null }
+  })
+}
+
+/** The live restore status a backup view renders while a restore of its own runs. */
+export interface HilosRestoreProgress {
+  /** The latest frame this connection was sent, or null until the first one arrives. */
+  readonly status: ReadonlySignal<HilosRestoreStatus | null>
+  /** Start listening for frames — call on mount. */
+  start(): void
+  /** Stop listening — call on unmount. */
+  dispose(): void
+}
+
+/**
+ * The live restore status for the connection that asked for a restore.
+ *
+ * It exists because the table cannot report during a restore: the node is frozen, the
+ * page's own agent is stopped, and the only channel left is the addressed frame the
+ * backup agent sends to the initiator. Frames arrive on the connection rather than in
+ * the page scope for the same reason — page scopes are fed by the machinery that is
+ * down for the length of the operation.
+ *
+ * Another admin's restore is not shown here: the frames are addressed, so a tab that
+ * did not start one simply never receives any and keeps a null status.
+ *
+ * @param context The project context (the connection the frames arrive on).
+ */
+export function createHilosRestoreProgress(
+  context: HilosBackupsContext,
+): HilosRestoreProgress {
+  const status = createSignal<HilosRestoreStatus | null>(null)
+  const teardown: Array<() => void> = []
+
+  return {
+    status,
+    start() {
+      teardown.push(
+        context.connection.on('projectSignal', (signal) => {
+          if (signal.type === BACKUP_RESTORE_PROGRESS_SIGNAL) {
+            // Validated against restoreProgressSchema at the parse boundary; this cast is
+            // the declared typed selector for that schema's output.
+            status.set(signal.data as HilosRestoreStatus)
+          }
+        }),
+      )
+    },
+    dispose() {
+      for (const off of teardown.splice(0)) {
+        off()
+      }
+    },
+  }
 }
 
 /** The backup table handle a backup view drives: the controller plus its mount lifecycle. */
@@ -487,6 +767,11 @@ export function createHilosBackupsActions(
       return context.actions.dispatch(BACKUP_SET_KEEP_ACTION, {
         backupId: id,
         keep,
+      })
+    },
+    sendBackupRestore(id) {
+      return context.actions.dispatch(BACKUP_RESTORE_ACTION, {
+        backupId: id,
       })
     },
   }

@@ -246,6 +246,28 @@ final class HilosSignalConstants
     /** Client → server: toggle a stored backup's rotation pin on the HILOS_BACKUP page. */
     public const string BACKUP_SET_KEEP = 'backup_set_keep';
 
+    /**
+     * Client → server: restore the named stored backup on the HILOS_BACKUP page (HIL-276).
+     *
+     * The destructive one, and the only page action the environment can withhold: the
+     * button exists everywhere but production, where the page hands out the CLI command
+     * instead. The refusal is recomputed on this action all the same — a client is not the
+     * source of truth about where it runs.
+     */
+    public const string BACKUP_RESTORE = 'backup_restore';
+
+    // ── Hilos backup admin: restore progress (server → the connection that asked) ──
+    /**
+     * BackupAgent → restore initiator: one snapshot of the restore runtime row.
+     *
+     * The freeze stops the page's own agent, so the table sends no deltas while a restore
+     * runs and the initiator would otherwise watch a spinner that never moves. The agent
+     * addresses this frame to the one connection protected mode keeps alive, on every phase
+     * change and on the terminal outcome; it carries exactly what the CLI monitor is told, so
+     * the two views of one run cannot disagree.
+     */
+    public const string BACKUP_RESTORE_PROGRESS = 'backup_restore_progress';
+
     // ── Hilos communications admin: channel-config actions (client → server) ──
     /**
      * Client → server: write one channel config field's settings override.
@@ -360,6 +382,15 @@ final class HilosSignalConstants
 
     /** Page → BackupAgent: set the carried backup id's keep pin (sidecar rewrite). */
     public const string BACKUP_AGENT_SET_KEEP = 'backup_agent_set_keep';
+
+    /**
+     * Page → BackupAgent: restore the carried backup id (the hot restore path, HIL-276).
+     *
+     * The second entrance to the path the `backup:restore` CLI already takes over the command
+     * channel. The page carries its own verdict along, and the agent re-checks it as a
+     * backstop: between the page's answer and this signal the agent may have taken work on.
+     */
+    public const string BACKUP_AGENT_RESTORE = 'backup_agent_restore';
 
     // ── Mail subsystem: facade → sharded hilos_mail agent pool (agent signal) ──
     /**

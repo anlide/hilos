@@ -3,9 +3,13 @@
 // live — rows arrive over the socket from the backup runtime index plus the
 // single in-progress backup, so an in-progress row shows an indeterminate
 // progress bar until it completes and merges into the index. Its actions (create
-// with a scope picker, per-row delete, per-row keep toggle) are the core
-// headless's (createHilosBackupsActions); each dispatches a tracked action and
-// surfaces the backend's failure (authoritative-backend). All table logic and the
+// with a scope picker, per-row delete, per-row keep toggle, per-row restore) are
+// the core headless's (createHilosBackupsActions); each dispatches a tracked action
+// and surfaces the backend's failure (authoritative-backend). Restore is the
+// destructive one: it is offered as a button only where the backend says so
+// (everywhere but production), it confirms by typing the archive id, and while it
+// runs the addressed progress frames are the only live thing on the page — the node
+// is frozen and the table sends nothing. All table logic and the
 // row view-model are the core headless's too; this view owns only the markup, so a
 // project mounts it by passing its HilosBackupsContext. Bootstrap classes only
 // (styling-rules.md).
@@ -27,21 +31,32 @@ import {
   BACKUP_CHECKSUM_STATE_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
   BACKUP_STATUS_FIELD,
+  BACKUP_RESTORE_OUTCOME_FIELD,
   BACKUP_KEEP_FIELD,
   createHilosBackupsActions,
+  createHilosBackupsRestoreGate,
   createHilosBackupsTable,
+  createHilosRestoreProgress,
   formatBackupDuration,
   formatBackupChecksum,
   formatBackupSize,
+  formatRestoreCliCommand,
   hasBackupFailureDetail,
+  hasRestoreOutcome,
   isBackupChecksumMismatch,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
+  isBackupRestorable,
+  isBackupSubsystemBusy,
+  offersBackupRestore,
+  subscribeSignal,
 } from '@hilos/core'
 import type {
+  HilosBackupRestoreGate,
   HilosBackupRow,
   HilosBackupsContext,
+  HilosRestoreStatus,
   HilosTableColumnOf,
 } from '@hilos/core'
 
@@ -69,6 +84,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     headerClass: 'text-end',
   },
   { key: BACKUP_STATUS_FIELD, label: 'Status', sortable: true },
+  { key: BACKUP_RESTORE_OUTCOME_FIELD, label: 'Restore' },
   { key: BACKUP_KEEP_FIELD, label: 'Keep', headerClass: 'text-center' },
   { key: 'actions', label: '', headerClass: 'text-end' },
 ]
@@ -110,6 +126,49 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
         </button>
       </div>
 
+      @if (restoreStatus(); as status) {
+        <div
+          class="alert"
+          [class.alert-danger]="status.outcome === 'error'"
+          [class.alert-success]="status.outcome === 'success'"
+          [class.alert-info]="status.outcome === null"
+          role="status"
+          data-id="hilos-backup-restore-phase"
+        >
+          <div class="fw-semibold">
+            Restore {{ status.backupId }} · {{ status.phase }}
+          </div>
+          @if (status.outcome === 'success') {
+            <div class="small">
+              Restored. This page reloads itself as soon as the system reopens.
+            </div>
+          } @else if (status.outcome === 'error') {
+            <div class="small">
+              <div>{{ status.failureReason }}</div>
+              @if (status.databaseTouched) {
+                <div>
+                  The database was already being replaced when this failed.
+                </div>
+              }
+              @if (!status.rehydrateComplete) {
+                <div>
+                  The system stays closed: not every process re-read the
+                  replaced database. Reopen it from the CLI with
+                  <code>php cli.php protected-mode:open</code>.
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="progress mt-2" role="presentation">
+              <div
+                class="progress-bar progress-bar-striped progress-bar-animated"
+                style="width: 100%"
+              ></div>
+            </div>
+          }
+        </div>
+      }
+
       <hilos-viewport-table
         label="Backups"
         [controller]="backups().controller"
@@ -143,6 +202,28 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
               <span class="badge text-bg-success">{{ row.status }}</span>
             } @else {
               <span class="badge text-bg-danger">{{ row.status }}</span>
+            }
+          </td>
+          <td class="text-nowrap">
+            @if (hasRestoreOutcome(row)) {
+              <button
+                type="button"
+                class="btn btn-sm p-0 border-0 bg-transparent"
+                [attr.title]="'Show how the restore of ' + row.id + ' ended'"
+                [attr.data-id]="'hilos-backup-restore-outcome-' + row.id"
+                (click)="openOutcome(row)"
+              >
+                <span
+                  class="badge"
+                  [class.text-bg-success]="row.restoreOutcome === 'success'"
+                  [class.text-bg-danger]="row.restoreOutcome !== 'success'"
+                  >{{ row.restoreOutcome }}</span
+                >
+              </button>
+            } @else if (row.restorePhase) {
+              <span class="badge text-bg-info">{{ row.restorePhase }}</span>
+            } @else {
+              <span class="text-body-secondary">—</span>
             }
           </td>
           <td class="text-center">
@@ -180,6 +261,37 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
               >
                 <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
               </button>
+            }
+            @if (offersRestore(row)) {
+              @if (restoreGate().uiEnabled) {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-warning me-1"
+                  [disabled]="restoreBlockedReason(row) !== null"
+                  [attr.title]="
+                    restoreBlockedReason(row) ?? 'Restore this backup'
+                  "
+                  aria-label="Restore this backup"
+                  [attr.data-id]="'hilos-backup-restore-' + row.id"
+                  (click)="openRestore(row)"
+                >
+                  <i
+                    class="bi bi-arrow-counterclockwise"
+                    aria-hidden="true"
+                  ></i>
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary me-1"
+                  title="How to restore this backup"
+                  aria-label="How to restore this backup"
+                  [attr.data-id]="'hilos-backup-restore-cli-' + row.id"
+                  (click)="openCli(row)"
+                >
+                  <i class="bi bi-terminal" aria-hidden="true"></i>
+                </button>
+              }
             }
             @if (isDeletable(row)) {
               <button
@@ -256,6 +368,129 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
           </button>
         </ng-template>
       </hilos-modal>
+
+      <hilos-modal
+        [open]="restoreOpen()"
+        (openChange)="restoreOpen.set($event)"
+        [title]="restoreTitle()"
+        [closeOnBackdrop]="!restore.busy()"
+        [closeOnEsc]="!restore.busy()"
+      >
+        <p class="mb-2">
+          This overwrites every database of this installation with the contents
+          of the archive. Everyone else is shown a maintenance screen until it
+          ends, and if the system does not come back on its own it is reopened
+          from the CLI.
+        </p>
+        @if (restoreRow(); as row) {
+          <p class="mb-2 text-body-secondary">
+            Archive taken in
+            <code>{{ row.env || 'an unnamed environment' }}</code> → this
+            installation is
+            <code>{{ restoreGate().targetEnv || 'unnamed' }}</code>
+          </p>
+        }
+        <label class="form-label" for="hilos-backup-restore-id"
+          >Type the archive id to confirm</label
+        >
+        <input
+          id="hilos-backup-restore-id"
+          type="text"
+          class="form-control"
+          autocomplete="off"
+          [disabled]="restore.busy()"
+          [attr.placeholder]="restoreRow()?.id"
+          data-id="hilos-backup-restore-id"
+          [value]="restoreTyped()"
+          (input)="onRestoreTyped($event)"
+        />
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            [disabled]="restore.busy()"
+            (click)="requestClose()"
+          >
+            Cancel
+          </button>
+          <button
+            hilosLoadingButton
+            class="btn-warning"
+            [loading]="restore.loading()"
+            [disabled]="!restoreConfirmed()"
+            data-id="hilos-backup-restore-confirm"
+            (click)="submitRestore()"
+          >
+            Restore
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="cliOpen()"
+        (openChange)="cliOpen.set($event)"
+        [title]="cliTitle()"
+      >
+        <p class="mb-2 text-body-secondary">
+          Restoring is not offered from the browser on this environment. Run
+          this on the machine that hosts the installation:
+        </p>
+        <pre
+          class="mb-0 small text-break"
+          data-id="hilos-backup-restore-cli-text"
+          >{{ cliCommand() }}</pre
+        >
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-id="hilos-backup-restore-cli-copy"
+            (click)="copyCliCommand()"
+          >
+            {{ cliCopied() ? 'Copied' : 'Copy' }}
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
+
+      <hilos-modal
+        [open]="outcomeOpen()"
+        (openChange)="outcomeOpen.set($event)"
+        [title]="outcomeTitle()"
+      >
+        <p class="mb-2">
+          Finished {{ outcomeRow()?.restoreFinishedAt || '—' }} ·
+          <span class="fw-semibold">{{ outcomeRow()?.restoreOutcome }}</span>
+        </p>
+        @if (outcomeRow()?.restoreDatabaseTouched) {
+          <p class="mb-2">
+            The database was already being replaced when this run ended.
+          </p>
+        }
+        <pre
+          class="mb-0 small text-break"
+          style="max-height: 60vh; overflow-y: auto"
+          data-id="hilos-backup-restore-outcome-text"
+          >{{
+            outcomeRow()?.restoreFailureReason || 'No failure recorded.'
+          }}</pre
+        >
+        <ng-template #modalActions let-requestClose="requestClose">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            (click)="requestClose()"
+          >
+            Close
+          </button>
+        </ng-template>
+      </hilos-modal>
     </hilos-admin-page>
   `,
 })
@@ -269,12 +504,17 @@ export class HilosBackupPage {
   protected readonly isKeepable = isBackupKeepable
   protected readonly isDeletable = isBackupDeletable
   protected readonly hasFailureDetail = hasBackupFailureDetail
+  protected readonly hasRestoreOutcome = hasRestoreOutcome
+  protected readonly offersRestore = offersBackupRestore
 
   protected readonly backups = computed(() =>
     createHilosBackupsTable(this.context()),
   )
   private readonly actions = computed(() =>
     createHilosBackupsActions(this.context()),
+  )
+  private readonly restoreProgress = computed(() =>
+    createHilosRestoreProgress(this.context()),
   )
 
   // Create toolbar: pick a scope and start a backup as a tracked action.
@@ -308,6 +548,63 @@ export class HilosBackupPage {
     return row ? `Backup failed · ${row.id}` : 'Backup failed'
   })
 
+  // Restore dialog: the destructive one. Confirmation is typing the archive's id —
+  // the one barrier muscle memory cannot pass, and the one that makes the operator
+  // read WHICH archive they picked, since the likely mistake here is restoring the
+  // wrong one rather than clicking the wrong button.
+  protected readonly restoreOpen = signal(false)
+  protected readonly restoreRow = signal<HilosBackupRow | null>(null)
+  protected readonly restoreTyped = signal('')
+  protected readonly restore = createHilosTrackedAction()
+  protected readonly restoreTitle = computed(() => {
+    const row = this.restoreRow()
+
+    return row ? `Restore · ${row.id}` : 'Restore backup'
+  })
+  protected readonly restoreConfirmed = computed(() => {
+    const row = this.restoreRow()
+
+    return row !== null && this.restoreTyped() === row.id
+  })
+
+  // CLI instruction dialog: what the production surface offers instead of a button.
+  protected readonly cliOpen = signal(false)
+  protected readonly cliRow = signal<HilosBackupRow | null>(null)
+  protected readonly cliCopied = signal(false)
+  protected readonly cliTitle = computed(() => {
+    const row = this.cliRow()
+
+    return row ? `How to restore · ${row.id}` : 'How to restore'
+  })
+  protected readonly cliCommand = computed(() => {
+    const row = this.cliRow()
+
+    return row === null ? '' : formatRestoreCliCommand(row)
+  })
+
+  // Restore-outcome dialog: how the last restore of this archive ended, read from
+  // the row, so it survives the reload the successful path ends with.
+  protected readonly outcomeOpen = signal(false)
+  protected readonly outcomeRow = signal<HilosBackupRow | null>(null)
+  protected readonly outcomeTitle = computed(() => {
+    const row = this.outcomeRow()
+
+    return row ? `Restore · ${row.id}` : 'Restore of this backup'
+  })
+
+  // Mirrored from the core selectors, which derive from the context input: what this
+  // installation offers for restoring, the addressed frames a restore this tab started
+  // sends back while the node is frozen, and the rows the busy check reads.
+  protected readonly restoreGate = signal<HilosBackupRestoreGate>({
+    uiEnabled: false,
+    targetEnv: null,
+  })
+  protected readonly restoreStatus = signal<HilosRestoreStatus | null>(null)
+  private readonly rows = signal<readonly (HilosBackupRow | null)[]>([])
+  protected readonly subsystemBusy = computed(() =>
+    isBackupSubsystemBusy(this.rows(), this.restoreStatus()),
+  )
+
   constructor() {
     // Bind the server-windowed table to the connection and request the first
     // window once the context input is bound; unbind on destroy or context swap.
@@ -315,6 +612,33 @@ export class HilosBackupPage {
       const backups = this.backups()
       backups.start()
       onCleanup(() => backups.dispose())
+    })
+    // The context arrives via input and carries core signals; build the restore
+    // selectors once it binds, mirror them into Angular, and drop the subscriptions
+    // if the context is replaced. The frames are addressed to this connection and
+    // start arriving the moment it asks for a run.
+    effect((onCleanup) => {
+      const gate = createHilosBackupsRestoreGate(this.context())
+      const progress = this.restoreProgress()
+      const windowRows = this.backups().controller.rows
+      progress.start()
+      this.restoreGate.set(gate.get())
+      this.rows.set(windowRows.get().map((entry) => entry.row))
+      const subscriptions = [
+        subscribeSignal(gate, (value) => this.restoreGate.set(value)),
+        subscribeSignal(progress.status, (value) =>
+          this.restoreStatus.set(value),
+        ),
+        subscribeSignal(windowRows, (value) =>
+          this.rows.set(value.map((entry) => entry.row)),
+        ),
+      ]
+      onCleanup(() => {
+        for (const unsubscribe of subscriptions) {
+          unsubscribe()
+        }
+        progress.dispose()
+      })
     })
   }
 
@@ -359,6 +683,62 @@ export class HilosBackupPage {
     if (await this.del.run(this.actions().sendBackupDelete(row.id))) {
       this.deleteOpen.set(false)
     }
+  }
+
+  protected onRestoreTyped(event: Event): void {
+    this.restoreTyped.set((event.target as HTMLInputElement).value)
+  }
+
+  protected openRestore(row: HilosBackupRow): void {
+    this.restore.clearError()
+    this.restoreRow.set(row)
+    this.restoreTyped.set('')
+    this.restoreOpen.set(true)
+  }
+
+  protected openCli(row: HilosBackupRow): void {
+    this.cliRow.set(row)
+    this.cliCopied.set(false)
+    this.cliOpen.set(true)
+  }
+
+  protected openOutcome(row: HilosBackupRow): void {
+    this.outcomeRow.set(row)
+    this.outcomeOpen.set(true)
+  }
+
+  protected async copyCliCommand(): Promise<void> {
+    await navigator.clipboard.writeText(this.cliCommand())
+    this.cliCopied.set(true)
+  }
+
+  // Authoritative-backend: dispatch the tracked action, close on its `::success`
+  // reply; a failure stays open with the reason shown.
+  protected async submitRestore(): Promise<void> {
+    const row = this.restoreRow()
+    if (!row || this.restore.busy() || !this.restoreConfirmed()) {
+      return
+    }
+    if (await this.restore.run(this.actions().sendBackupRestore(row.id))) {
+      this.restoreOpen.set(false)
+    }
+  }
+
+  /**
+   * Why an archive cannot be restored right now, or null when it can. The button
+   * stays visible and carries this as its title, so the answer arrives before the
+   * click rather than as a toast after it.
+   *
+   * @param row The backup row the button belongs to.
+   */
+  protected restoreBlockedReason(row: HilosBackupRow): string | null {
+    if (!isBackupRestorable(row)) {
+      return 'This archive does not match its recorded checksum'
+    }
+
+    return this.subsystemBusy()
+      ? 'The backup subsystem is busy; wait for the current run to end'
+      : null
   }
 
   /** Whether the backup is the single in-progress row (renders a live progress bar). */

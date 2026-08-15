@@ -36,6 +36,9 @@ test('closes the backup page to a guest', async ({ page }) => {
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  // The destructive control is behind the same door as the rest of the page
+  // (HIL-276): no surface, no restore.
+  await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(0)
 })
 
 test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
@@ -47,6 +50,7 @@ test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
   await expect(error).toHaveAttribute('data-error-code', '403')
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
   await expect(page.getByTestId('hilos-backup-create')).toHaveCount(0)
+  await expect(page.locator('[data-id^="hilos-backup-restore-"]')).toHaveCount(0)
 })
 
 test('creates a backup, shows it as a completed row, and deletes it', async ({
@@ -125,9 +129,89 @@ test('creates a backup, shows it as a completed row, and deletes it', async ({
   )
 })
 
-// NOT covered on purpose: there is no gating case here, because the page has no
-// gate to assert. AbstractHilosBackupPage declares neither an ACCESS guard on its
-// subscription nor AUTH_ACTIONS on create / delete / set-keep, so today any
-// connection — including an anonymous one — can list and delete backups. Writing a
-// test that asserts the current behavior would freeze the hole in place; the gate
-// is a fix, and the test lands with it.
+test('offers a restore on this stand and holds it behind the typed id', async ({
+  page,
+}) => {
+  // The stand runs with APP_ENV=test, so the restore button is offered here — that
+  // is the environment half of HIL-276 asserted by being on the non-prod side of it.
+  // What is NOT asserted is a restore actually running: it would overwrite the
+  // stand's database and freeze the node for every other spec. The confirmation is
+  // driven right up to the enabled button and then cancelled.
+  await openBackups(page)
+
+  // A row to aim at. The live arrival of a created row is parked (HIL-432 above), so
+  // the row is picked up from a fresh snapshot instead of from a delta.
+  await page
+    .getByTestId('hilos-backup-create-scope')
+    .selectOption('schema-only')
+  await page.getByTestId('hilos-backup-create').click()
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+
+  // The row key is what the poll waits on, and the restore button is then named in
+  // full. A `hilos-backup-restore-` prefix would not name it: the outcome cell, the
+  // CLI hint and the confirmation field share that prefix, and the outcome cell comes
+  // first in the row — so the first prefix match stops being the button as soon as
+  // any restore has run here.
+  const rows = page.locator('[data-id^="hilos-table-row-"]')
+  let backupId = ''
+  await expect
+    .poll(
+      async () => {
+        await gotoPage(page, '/hilos/backup')
+        await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+        if ((await rows.count()) === 0) {
+          return 0
+        }
+        backupId =
+          (await rows.first().getAttribute('data-id'))?.replace(
+            'hilos-table-row-',
+            '',
+          ) ?? ''
+
+        return page
+          .locator(`[data-id="hilos-backup-restore-${backupId}"]`)
+          .count()
+      },
+      { timeout: 60_000 },
+    )
+    .toBeGreaterThan(0)
+
+  expect(backupId).toBeTruthy()
+  await page.locator(`[data-id="hilos-backup-restore-${backupId}"]`).click()
+
+  // The barrier is the id, not a yes/no: the likely mistake is restoring the wrong
+  // archive, and only typing its id proves the operator read which one is selected.
+  const confirm = page.getByTestId('hilos-backup-restore-confirm')
+  const input = page.getByTestId('hilos-backup-restore-id')
+  await expect(confirm).toBeDisabled()
+  await input.fill('')
+  await input.pressSequentially('not-the-id')
+  await expect(confirm).toBeDisabled()
+  await input.fill('')
+  await input.pressSequentially(backupId)
+  await expect(confirm).toBeEnabled()
+
+  // Cancel rather than confirm — see the note at the top of this test.
+  await page.keyboard.press('Escape')
+  await expect(confirm).toHaveCount(0)
+
+  // Clean up the archive this test created, so a shared storage directory does not
+  // grow one per run.
+  const row = page.locator(`[data-id="hilos-table-row-${backupId}"]`)
+  await row.locator('[data-id^="hilos-backup-delete-"]').click()
+  await page.getByTestId('hilos-backup-delete-confirm').click()
+  await expect(page.getByTestId('hilos-toast-error')).toHaveCount(0)
+})
+
+// NOT covered on purpose: a refused restore reaching the tab as a toast. Producing
+// the refusal needs an archive the backend rejects — a checksum mismatch, or a run
+// the agent is already busy with — and both mean corrupting or occupying the shared
+// stand to assert one string. The refusals themselves are unit-tested where they are
+// decided (RestoreUiGateTest, BackupAgentTest), and the delivery path is the same
+// addressed action_error the create failure already uses.
+//
+// Covered above rather than here: who may reach the control at all. The restore
+// button lives behind the page's own door — AbstractHilosBackupPage inherits
+// AbstractHilosPage's ADMIN access level, which closes the actions along with the
+// subscription — so the two assertions belong in the guest and non-admin tests that
+// already stand at the top of this file, and that is where they were added.

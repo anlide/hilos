@@ -4,8 +4,11 @@ import {
   formatBackupChecksum,
   formatBackupDuration,
   formatBackupSize,
+  formatRestoreCliCommand,
   hasBackupFailureDetail,
+  hasRestoreOutcome,
   isBackupChecksumMismatch,
+  isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
 } from '../../src/admin/backup/hilosBackups.js'
@@ -25,6 +28,11 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     failureReason: null,
     checksumState: 'none',
     verifiedAt: null,
+    restorePhase: null,
+    restoreOutcome: null,
+    restoreFinishedAt: null,
+    restoreFailureReason: null,
+    restoreDatabaseTouched: false,
     ...overrides,
   }
 }
@@ -132,6 +140,90 @@ describe('resolveHilosBackupRow', () => {
       resolveHilosBackupRow(backupTableRow('b1', { failureReason: '' }))
         .failureReason,
     ).toBeNull()
+  })
+
+  it('reads the five restore fields of the archive that was replayed', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        restorePhase: 'failed',
+        restoreOutcome: 'error',
+        restoreFinishedAt: '2026-08-15T10:34:00+00:00',
+        restoreFailureReason: 'import failed',
+        restoreDatabaseTouched: true,
+      }),
+    )
+
+    expect(resolved.restorePhase).toBe('failed')
+    expect(resolved.restoreOutcome).toBe('error')
+    expect(resolved.restoreFinishedAt).toBe('2026-08-15T10:34:00+00:00')
+    expect(resolved.restoreFailureReason).toBe('import failed')
+    expect(resolved.restoreDatabaseTouched).toBe(true)
+  })
+
+  it('reads an archive nobody restored as carrying no restore at all', () => {
+    const resolved = resolveHilosBackupRow(backupTableRow('b1', {}))
+
+    expect(resolved.restorePhase).toBeNull()
+    expect(resolved.restoreOutcome).toBeNull()
+    expect(resolved.restoreFinishedAt).toBeNull()
+    expect(resolved.restoreFailureReason).toBeNull()
+    // Not "unknown": a row that says nothing about a restore says nothing about its
+    // damage either, and the flag only ever means "this run had begun writing".
+    expect(resolved.restoreDatabaseTouched).toBe(false)
+  })
+})
+
+describe('isBackupRestorable', () => {
+  it('is true for a completed backup whose archive still matches its digest', () => {
+    expect(isBackupRestorable(row({ finished: true }))).toBe(true)
+    expect(
+      isBackupRestorable(row({ finished: true, checksumState: 'verified' })),
+    ).toBe(true)
+  })
+
+  it('is false for an archive known to differ from its digest', () => {
+    expect(
+      isBackupRestorable(row({ finished: true, checksumState: 'mismatch' })),
+    ).toBe(false)
+  })
+
+  it('is false for a failure and for the in-progress row', () => {
+    expect(isBackupRestorable(row({ finished: null, status: 'error' }))).toBe(
+      false,
+    )
+    expect(
+      isBackupRestorable(row({ finished: false, status: 'running' })),
+    ).toBe(false)
+  })
+})
+
+describe('hasRestoreOutcome', () => {
+  it('is true only once a restore of this archive has ended', () => {
+    expect(hasRestoreOutcome(row({ restoreOutcome: 'success' }))).toBe(true)
+    expect(hasRestoreOutcome(row({ restorePhase: 'importing' }))).toBe(false)
+    expect(hasRestoreOutcome(row())).toBe(false)
+  })
+})
+
+describe('formatRestoreCliCommand', () => {
+  it('substitutes the archive and its scope, so nothing is retyped', () => {
+    expect(
+      formatRestoreCliCommand(
+        row({ id: '2026-08-15_10-30-00', scope: 'full' }),
+      ),
+    ).toBe('php cli.php backup:restore 2026-08-15_10-30-00 --scope=full --yes')
+  })
+
+  it('keeps the configured entry path out of the instruction', () => {
+    // Where the script lives inside the container says nothing about how an operator
+    // reaches the machine, so the command names the canonical entry and not the env value.
+    expect(formatRestoreCliCommand(row())).toContain('php cli.php')
+  })
+
+  it('leaves a placeholder rather than guessing a scope the record never named', () => {
+    expect(formatRestoreCliCommand(row({ scope: null }))).toContain(
+      '--scope=<scope>',
+    )
   })
 })
 

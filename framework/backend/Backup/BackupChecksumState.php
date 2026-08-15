@@ -34,6 +34,35 @@ enum BackupChecksumState: string
     case MISMATCH = 'mismatch';
 
     /**
+     * Derives the standing checksum state of one stored backup from what its record carries.
+     *
+     * No digest wins over everything else: a row that was never hashed has nothing to have
+     * been verified, whatever else it carries. Any other stored outcome than ok/mismatch (none
+     * is ever written today) degrades to {@see PRESENT} - a digest exists, and nothing
+     * trustworthy is known about a check of it.
+     *
+     * Lives on the enum rather than on the one table that shows it, because the restore gate
+     * asks the same question of the same record ({@see RestoreUiGate}) and two derivations of
+     * one state are one derivation waiting to disagree.
+     *
+     * @param ?string $sha256 Archive digest recorded in the sidecar; null when none was ever taken
+     * @param ?string $verifyOutcome Recorded {@see BackupVerifyOutcome} value; null when never verified
+     * @return self Checksum state the record stands in
+     */
+    public static function fromRecord(?string $sha256, ?string $verifyOutcome): self
+    {
+        if ($sha256 === null) {
+            return self::NONE;
+        }
+
+        return match (BackupVerifyOutcome::fromString($verifyOutcome)) {
+            BackupVerifyOutcome::OK => self::VERIFIED,
+            BackupVerifyOutcome::MISMATCH => self::MISMATCH,
+            default => self::PRESENT,
+        };
+    }
+
+    /**
      * Parses a stored checksum state, tolerating unknown/empty input.
      *
      * @param ?string $value Raw state value

@@ -296,6 +296,42 @@ partially replaced" — so a project's own `backup:restore-run` command must map
 failures through `RestoreFailedException::databaseTouched()` rather than
 returning one error code for everything.
 
+The CLI is not the only entrance any more (HIL-276): the backup page carries a
+per-row Restore, and both entrances meet at the agent's single admission, so the
+preconditions cannot drift into two sets. The button exists on every environment
+except `APP_ENV=prod` — and except an installation whose `APP_ENV` names nothing
+known, which is treated as production, because one that cannot say it is not live
+does not get a destructive button. This is deliberately *not* `isProductionLike()`:
+that question is about seeds and test-only commands, where staging is production on
+purpose, while restore is exactly what a staging stand is for. Where the button is
+withheld the row offers `How to restore` instead — the canonical command with the id
+and scope already substituted, so nobody retypes an identifier; the value of
+`BACKUP_CLI_ENTRY` is not revealed, since where the script lives inside the container
+says nothing about how an operator reaches the machine. Confirmation is typing the
+archive's id rather than pressing Yes: it is the one barrier muscle memory cannot
+pass, and the likely mistake here is restoring the wrong archive rather than clicking
+the wrong button. Everything the page checks lives in `RestoreUiGate` — environment,
+the archive's presence, status and checksum, whether the subsystem is busy, and the
+ENV matrix verdict — so the validation is testable without a page; the scope travels
+from the index row, never from the client, and `--force`, `--cold` and
+`--migration-index` have no UI at all.
+
+While a restore runs the page cannot report from the table: the node is frozen and
+the page's own agent is stopped, so no delta is produced by anyone. The agent instead
+addresses a `backup_restore_progress` frame to the connection that asked — protected
+mode keeps that one connection alive precisely so the operation has somewhere to
+report — carrying the same snapshot the CLI monitor is answered with, at the four
+points where the runtime row itself changes. The phases are coarse by construction:
+the supervisor only sees its child's lifecycle, and per-step detail needs a channel
+out of the child (HIL-277). The terminal frame is where the human is told what is
+expected of them: a success reloads the page when the mode lifts, while a failure
+names the reason, whether the database was touched, and — when the re-hydrate barrier
+did not close — that the system stays shut until `protected-mode:open`, because in
+that case no reload is coming to say so. Afterwards the outcome lives on the row of
+the archive that was replayed (`restorePhase`, `restoreOutcome`, `restoreFinishedAt`,
+`restoreFailureReason`, `restoreDatabaseTouched`), which is what an operator who
+reloads later reads instead of the frame.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +

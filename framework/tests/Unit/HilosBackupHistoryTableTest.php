@@ -11,8 +11,10 @@ use Hilos\Backup\BackupChecksumState;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupRuntime;
+use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Backup\HilosBackupTableRow;
 use PHPUnit\Framework\TestCase;
@@ -195,6 +197,12 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::failureReason => null,
                         HilosBackupTableRow::checksumState => 'verified',
                         HilosBackupTableRow::verifiedAt => '2026-08-02T06:00:00+00:00',
+                        // An archive nobody restored says so in every restore field.
+                        HilosBackupTableRow::restorePhase => null,
+                        HilosBackupTableRow::restoreOutcome => null,
+                        HilosBackupTableRow::restoreFinishedAt => null,
+                        HilosBackupTableRow::restoreFailureReason => null,
+                        HilosBackupTableRow::restoreDatabaseTouched => false,
                     ],
                 ],
             ],
@@ -361,6 +369,136 @@ final class HilosBackupHistoryTableTest extends TestCase
         $this->assertSame(HilosBackupTableRow::RUNNING_ROW_KEY, $row->requireRowKey());
     }
 
+    public function testARestoreUpdatesTheRowOfTheArchiveItReplays(): void
+    {
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+                BackupHistory::fromRow([BackupHistory::id => 'b2', BackupHistory::status => 'success']),
+            ),
+            restore: $this->restoreRuntime('b2'),
+        );
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::ID, []),
+        );
+
+        $this->assertNotNull($mutation);
+        $this->assertSame(TableMutationType::Update, $mutation->type);
+        $this->assertSame('b2', $mutation->rowKey, 'Only the archive being replayed moves');
+        $this->assertTrue($mutation->live, 'A phase held behind Apply would outlive the run it describes');
+        $this->assertSame('importing', $mutation->row?->restorePhase);
+    }
+
+    public function testARestoreOfAnArchiveTheIndexDoesNotCarryMovesNothing(): void
+    {
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+            ),
+            restore: $this->restoreRuntime('gone'),
+        );
+
+        $this->assertNull($table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::ID, []),
+        ));
+    }
+
+    public function testAnIdleRestoreRowMovesNothing(): void
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+        ));
+
+        $this->assertNull($table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(StateRestoreRuntime::RT_ITEM, StateRestoreRuntime::ID, []),
+        ));
+    }
+
+    public function testTheRestoredArchiveCarriesTheOutcomeAndTheRestIsBlank(): void
+    {
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+                BackupHistory::fromRow([BackupHistory::id => 'b2', BackupHistory::status => 'success']),
+            ),
+            restore: $this->restoreRuntime('b2', [
+                StateRestoreRuntime::running => false,
+                StateRestoreRuntime::phase => 'failed',
+                StateRestoreRuntime::outcome => 'error',
+                StateRestoreRuntime::finishedAt => '2026-08-15T10:34:00+00:00',
+                StateRestoreRuntime::failureReason => 'import failed',
+                StateRestoreRuntime::databaseTouched => true,
+            ]),
+        );
+
+        $rows = [];
+        foreach ($table->getFullSnapshot()->rows as $row) {
+            $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+            $rows[$row->requireRowKey()] = $row;
+        }
+
+        $this->assertSame('error', $rows['b2']->restoreOutcome);
+        $this->assertSame('2026-08-15T10:34:00+00:00', $rows['b2']->restoreFinishedAt);
+        $this->assertSame('import failed', $rows['b2']->restoreFailureReason);
+        $this->assertTrue($rows['b2']->restoreDatabaseTouched);
+
+        // The runtime row is a singleton about the LAST run; a neighbour must not read as
+        // restored just because it shares the list with the archive that was.
+        $this->assertNull($rows['b1']->restoreOutcome);
+        $this->assertNull($rows['b1']->restorePhase);
+        $this->assertFalse($rows['b1']->restoreDatabaseTouched);
+    }
+
+    public function testASucceededRestoreDoesNotReportADamagedDatabase(): void
+    {
+        // The runtime flag is true after every restore that got past its first destructive
+        // step, and a successful one always does. On the row the field answers whether damage
+        // was left behind, so a success has to read as false - otherwise the outcome modal
+        // warns about a half-replaced database on every restore that worked.
+        $table = $this->table(
+            histories: $this->historiesWith(
+                BackupHistory::fromRow([BackupHistory::id => 'b1', BackupHistory::status => 'success']),
+            ),
+            restore: $this->restoreRuntime('b1', [
+                StateRestoreRuntime::running => false,
+                StateRestoreRuntime::phase => 'succeeded',
+                StateRestoreRuntime::outcome => 'success',
+                StateRestoreRuntime::finishedAt => '2026-08-15T10:34:00+00:00',
+                StateRestoreRuntime::databaseTouched => true,
+            ]),
+        );
+
+        $rows = [];
+        foreach ($table->getFullSnapshot()->rows as $row) {
+            $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+            $rows[$row->requireRowKey()] = $row;
+        }
+
+        $this->assertSame('success', $rows['b1']->restoreOutcome);
+        $this->assertFalse($rows['b1']->restoreDatabaseTouched);
+    }
+
+    /**
+     * Builds a restore runtime singleton fixture naming one archive.
+     *
+     * @param string $backupId Archive the restore names
+     * @param array<string, mixed> $overrides Fields replacing the mid-run default
+     * @return RestoreRuntime Restore runtime singleton, seen the way the table sees it
+     */
+    private function restoreRuntime(string $backupId, array $overrides = []): RestoreRuntime
+    {
+        $state = StateRestoreRuntime::fromRow($overrides + [
+            StateRestoreRuntime::running => true,
+            StateRestoreRuntime::backupId => $backupId,
+            StateRestoreRuntime::scope => 'full',
+            StateRestoreRuntime::phase => 'importing',
+            StateRestoreRuntime::startedAt => '2026-08-15T10:30:00+00:00',
+        ]);
+
+        return new RestoreRuntime($state);
+    }
+
     /**
      * Builds a backup index the way the table reads one: a view over a seeded state collection.
      *
@@ -408,12 +546,16 @@ final class HilosBackupHistoryTableTest extends TestCase
      * @param ?BackupRuntime $runtime In-progress runtime singleton, or null when idle
      * @return HilosBackupHistoryTable Table over the bound sources
      */
-    private function table(?BackupHistories $histories = null, ?BackupRuntime $runtime = null): HilosBackupHistoryTable
-    {
-        return new class($histories, $runtime) extends HilosBackupHistoryTable {
+    private function table(
+        ?BackupHistories $histories = null,
+        ?BackupRuntime $runtime = null,
+        ?RestoreRuntime $restore = null,
+    ): HilosBackupHistoryTable {
+        return new class($histories, $runtime, $restore) extends HilosBackupHistoryTable {
             public function __construct(
                 private readonly ?BackupHistories $historiesFixture,
                 private readonly ?BackupRuntime $runtimeFixture,
+                private readonly ?RestoreRuntime $restoreFixture,
             ) {
                 parent::__construct();
             }
@@ -426,6 +568,11 @@ final class HilosBackupHistoryTableTest extends TestCase
             protected function runtimeView(): ?BackupRuntime
             {
                 return $this->runtimeFixture;
+            }
+
+            protected function restoreRuntimeView(): ?RestoreRuntime
+            {
+                return $this->restoreFixture;
             }
         };
     }

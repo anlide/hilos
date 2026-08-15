@@ -27,6 +27,7 @@ use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Backup\Agent\DTO\BackupCreateSignalData;
 use Hilos\Backup\Agent\DTO\BackupDeleteSignalData;
+use Hilos\Backup\Agent\DTO\BackupRestoreSignalData;
 use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupConstants;
 use Hilos\Constants\CliCommands;
@@ -208,6 +209,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_CREATE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_DELETE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_SET_KEEP => PageConstants::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_RESTORE => PageConstants::HILOS_BACKUP,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             ChatSignalConstants::ACCOUNT_MERGE => PageConstants::HILOS_USER,
             NotificationAction::MARK_READ => PageConstants::HILOS_NOTIFICATIONS,
@@ -273,6 +275,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_CREATE => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::BACKUP_SET_KEEP => AgentType::HILOS_INDEX,
+            HilosSignalConstants::BACKUP_RESTORE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             ChatSignalConstants::ACCOUNT_MERGE => AgentType::HILOS_INDEX,
             NotificationAction::MARK_READ => AgentType::HILOS_INDEX,
@@ -318,6 +321,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
+            HilosSignalConstants::BACKUP_AGENT_RESTORE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::HILOS_OAUTH_PENDING => AgentType::HILOS_OAUTH,
             HilosSignalConstants::HILOS_MAIL_DELIVER => AgentType::HILOS_MAIL,
             HilosSignalConstants::HILOS_MAIL_SEND => AgentType::HILOS_MAIL,
@@ -400,6 +404,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
+            HilosSignalConstants::BACKUP_AGENT_RESTORE => BackupRestoreSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::class,

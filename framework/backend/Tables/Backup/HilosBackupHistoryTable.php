@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Backup;
 
+use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupStatus;
-use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
@@ -22,18 +22,22 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
+use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupHistory;
 use Hilos\Runtime\View\Item\BackupRuntime;
+use Hilos\Runtime\View\Item\RestoreRuntime;
 use Throwable;
 
 /**
  * Framework backup list table: the stored backup index plus the in-progress row.
  *
- * Read-only and live. Rows come from two framework-owned runtime sources, no DB:
+ * Read-only and live. Rows come from three framework-owned runtime sources, no DB:
  * the {@see BackupHistory} index collection (one row per stored backup, files =
- * truth) and the {@see BackupRuntime} singleton (the single in-progress row while
- * a backup runs). The monopoly backup agent is the sole writer of both, so a
+ * truth), the {@see BackupRuntime} singleton (the single in-progress row while
+ * a backup runs), and the {@see RestoreRuntime} singleton, which decorates the one
+ * archive being replayed with its restore's phase and outcome (HIL-276). The
+ * monopoly backup agent is the sole writer of all three, so a
  * completed backup fans out as an index-row create while the runtime clears — the
  * in-progress row is deleted and the finished row appears in its place. Row
  * actions (create/delete/keep) are out of scope here; they land in HIL-333.
@@ -67,6 +71,10 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
 
         if ($change->sourceKey === StateBackupRuntime::RT_ITEM) {
             return $this->runtimeMutation();
+        }
+
+        if ($change->sourceKey === StateRestoreRuntime::RT_ITEM) {
+            return $this->restoreMutation();
         }
 
         return null;
@@ -176,6 +184,36 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
     }
 
     /**
+     * Builds the row mutation for a change of the restore runtime singleton (HIL-276).
+     *
+     * A restore is about one archive, so it moves one row: the archive being replayed grows the
+     * live phase while the run is on and keeps its outcome afterwards. Declared live for the same
+     * reason the in-progress row is - this is status about work, not content being read, and a
+     * phase held behind Apply would still say "importing" long after the run ended.
+     *
+     * The row is left alone when the restore names an archive this index does not carry, which is
+     * what an idle row and a restore of a since-deleted archive both look like.
+     *
+     * @return ?TableRowMutationDTO Row update for the restored archive, or null when there is none to update
+     */
+    private function restoreMutation(): ?TableRowMutationDTO
+    {
+        $restoredId = $this->restoreRuntimeView()?->backupId;
+        $histories = $this->histories();
+        $history = $restoredId === null || $histories === null ? null : $histories[$restoredId];
+        if ($history === null) {
+            return null;
+        }
+
+        return $this->mutation(
+            TableMutationType::Update,
+            $restoredId,
+            $this->rowFromHistory($history),
+            live: true,
+        );
+    }
+
+    /**
      * Projects a stored backup index row into a table row.
      *
      * @param BackupHistory $history Stored backup index row
@@ -183,8 +221,15 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      */
     private function rowFromHistory(BackupHistory $history): HilosBackupTableRow
     {
+        $id = $history->getId();
+        // Only the archive the restore names carries restore fields: the runtime row is a
+        // singleton about the last run, and copying it onto every row would tell the whole list
+        // that it had been restored.
+        $restore = $this->restoreRuntimeView();
+        $restored = $restore !== null && $restore->backupId === $id ? $restore : null;
+
         return new HilosBackupTableRow(
-            rowKey: $history->getId(),
+            rowKey: $id,
             createdAt: $history->createdAt,
             env: $history->env,
             scope: $history->scope,
@@ -194,33 +239,33 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             status: $history->status,
             finished: $history->status === BackupStatus::SUCCESS->value ? true : null,
             failureReason: $history->failureReason,
-            checksumState: self::checksumStateOf($history),
+            checksumState: BackupChecksumState::fromRecord($history->sha256, $history->verifyOutcome),
             verifiedAt: $history->verifiedAt,
+            restorePhase: $restored?->phase,
+            restoreOutcome: $restored?->outcome,
+            restoreFinishedAt: $restored?->finishedAt,
+            restoreFailureReason: $restored?->failureReason,
+            restoreDatabaseTouched: self::restoreDamagedDatabase($restored),
         );
     }
 
     /**
-     * Derives the checksum state a list row shows from what the index row carries.
+     * Whether the restore this row carries left the database half-replaced.
      *
-     * No digest wins over everything else: a row that was never hashed has nothing to have
-     * been verified, whatever else it carries. Any other stored outcome than ok/mismatch (none
-     * is ever written today) degrades to "present" - a digest exists, and nothing trustworthy
-     * is known about a check of it.
+     * Not the runtime flag as it stands: the run reaches its first destructive step on the way
+     * to succeeding too ({@see BackupAgent::restoreTouchedDatabase()} reads one exit code as
+     * "intact" and everything else as "assume touched"), so the raw flag is true after every
+     * successful restore. On the row it answers a different question - whether the archive's
+     * restore left damage behind - and that question only exists for a run that failed. A
+     * success replaced the database on purpose and completely, which is not damage but the
+     * point of the operation.
      *
-     * @param BackupHistory $history Stored backup index row
-     * @return BackupChecksumState Checksum state for the row
+     * @param ?RestoreRuntime $restored Restore runtime row of THIS archive, or null when it was never restored
+     * @return bool True when a failed restore of this archive had begun replacing the database
      */
-    private static function checksumStateOf(BackupHistory $history): BackupChecksumState
+    private static function restoreDamagedDatabase(?RestoreRuntime $restored): bool
     {
-        if ($history->sha256 === null) {
-            return BackupChecksumState::NONE;
-        }
-
-        return match (BackupVerifyOutcome::fromString($history->verifyOutcome)) {
-            BackupVerifyOutcome::OK => BackupChecksumState::VERIFIED,
-            BackupVerifyOutcome::MISMATCH => BackupChecksumState::MISMATCH,
-            default => BackupChecksumState::PRESENT,
-        };
+        return $restored?->outcome === BackupStatus::ERROR->value && $restored->databaseTouched;
     }
 
     /**
@@ -300,5 +345,20 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         $runtime = Hilos::$rt?->hilosBackupRuntime;
 
         return $runtime instanceof BackupRuntime ? $runtime : null;
+    }
+
+    /**
+     * Resolves the restore runtime singleton, or null when unavailable.
+     *
+     * The same seam as {@see runtimeView()}, over the row the restore path writes: the table
+     * only reads it, and the monopoly backup agent stays its single writer.
+     *
+     * @return ?RestoreRuntime Restore runtime singleton, or null
+     */
+    protected function restoreRuntimeView(): ?RestoreRuntime
+    {
+        $restore = Hilos::$rt?->hilosRestoreRuntime;
+
+        return $restore instanceof RestoreRuntime ? $restore : null;
     }
 }
