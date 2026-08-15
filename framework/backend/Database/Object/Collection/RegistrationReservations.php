@@ -8,6 +8,7 @@ use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -69,6 +70,7 @@ final class RegistrationReservations extends Objects
      * @throws EmptyValueException When identifier is empty
      * @throws DuplicateValueException When another live reservation already holds the identifier
      * @throws DatabaseException If the insert or secret write query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createReservation(
         string $type,
@@ -127,6 +129,7 @@ final class RegistrationReservations extends Objects
      * @param string $identifier Normalized identifier (lowercased email)
      * @return ?ObjectRegistrationReservation Live reservation, or null when the identifier is free
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findActive(string $identifier): ?ObjectRegistrationReservation
     {
@@ -149,6 +152,7 @@ final class RegistrationReservations extends Objects
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $expiresAtSql New expiry as an SQL datetime string
      * @throws DatabaseException If the lookup or expiry update query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function extendTo(string $identifier, string $expiresAtSql): void
     {
@@ -167,6 +171,7 @@ final class RegistrationReservations extends Objects
      *
      * @param string $identifier Normalized identifier (lowercased email)
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function consume(string $identifier): void
     {
@@ -189,6 +194,7 @@ final class RegistrationReservations extends Objects
      *
      * @return list<string> Identifiers freed by this sweep (empty when none expired)
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function deleteExpired(): array
     {

@@ -8,9 +8,11 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 
@@ -38,6 +40,8 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
      * @param PageRouteParams $params Route params for the page subscription
      * @throws MissingPageRouteParamException When `agentId` is absent or empty
      * @throws InvalidPageRouteParamException Reserved for future typed constraints on the id
+     * @throws PageSubscriptionException When browser snapshot rejects the subscription
+     * @throws InvalidArgumentException When the page-response signal cannot be named
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {

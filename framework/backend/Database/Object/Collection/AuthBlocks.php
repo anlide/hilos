@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\AuthBlocks as EntityAuthBlocks;
@@ -45,6 +46,7 @@ final class AuthBlocks extends Objects
      * @param string $action Throttled action name
      * @return ?ObjectAuthBlock Block object or null when none recorded
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByKey(string $scope, string $identity, string $action): ?ObjectAuthBlock
     {
@@ -80,6 +82,7 @@ final class AuthBlocks extends Objects
      * @param string $now Datetime a block must outlast to still be in force
      * @return list<ObjectAuthBlock> Blocks still in force, in no particular order
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findActive(string $now): array
     {
@@ -117,6 +120,7 @@ final class AuthBlocks extends Objects
      * @return ObjectAuthBlock The persisted block object
      * @throws EmptyValueException When scope, identity or action is empty
      * @throws DatabaseException If the insert or update query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function recordBlock(string $scope, string $identity, string $action, int $level, ?string $blockedUntil): ObjectAuthBlock
     {
@@ -156,6 +160,7 @@ final class AuthBlocks extends Objects
      * @param string $before Datetime a block must have lifted before to be deleted
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function clearServed(string $before): int
     {
@@ -183,6 +188,7 @@ final class AuthBlocks extends Objects
      * @param string $identity Throttle identity (IP or session-token hash)
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function clearIdentity(string $scope, string $identity): int
     {
@@ -213,6 +219,7 @@ final class AuthBlocks extends Objects
      *
      * @return int Number of blocks deleted
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function clearAll(): int
     {
@@ -254,6 +261,7 @@ final class AuthBlocks extends Objects
      * @param string $identity Throttle identity (IP or session-token hash)
      * @param string $action Throttled action name
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function clearBlock(string $scope, string $identity, string $action): void
     {

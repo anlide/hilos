@@ -16,6 +16,7 @@ use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Exception\View\UnknownLazyStrategyException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * DbContext - Database context (instance layer only).
@@ -141,6 +142,7 @@ abstract class DbContext
      *
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function reHydrateDbBackedCollections(): void
     {
@@ -171,6 +173,7 @@ abstract class DbContext
      * @return bool True when the DB changed and collections were re-hydrated
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function reHydrateIfDbChanged(): bool
     {
@@ -258,6 +261,8 @@ abstract class DbContext
      * Configure collections (register object collections and setRepresent).
      *
      * Called from facade init() after createDb() and createRuntime().
+     *
+     * @throws HilosException When registering the project's collections fails
      */
     abstract public function configure(): void;
 

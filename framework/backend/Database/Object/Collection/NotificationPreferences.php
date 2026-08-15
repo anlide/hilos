@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\NotificationPreferences as EntityNotificationPreferences;
@@ -53,6 +54,7 @@ final class NotificationPreferences extends Objects
      * @param bool $enabled True to allow the channel (delete the row), false to mute it (upsert)
      * @throws EmptyValueException When the channel name is empty
      * @throws DatabaseException When the delete or insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function setChannel(int $userId, string $channel, bool $enabled): void
     {
@@ -98,6 +100,7 @@ final class NotificationPreferences extends Objects
      * @param string $channel Channel name
      * @return bool True when the channel is not muted for the recipient
      * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function isAllowed(int $userId, string $channel): bool
     {
@@ -117,6 +120,7 @@ final class NotificationPreferences extends Objects
      * @param int $userId Recipient user id
      * @return list<string> Muted channel names (empty when the recipient muted nothing, or the table is not activated)
      * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function mutedChannels(int $userId): array
     {
@@ -144,6 +148,7 @@ final class NotificationPreferences extends Objects
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function deleteForUser(int $userId): void
     {

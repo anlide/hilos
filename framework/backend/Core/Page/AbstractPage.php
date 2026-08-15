@@ -24,8 +24,10 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
+use LogicException;
 use Throwable;
 
 /**
@@ -257,6 +259,8 @@ abstract class AbstractPage
      * @param ActionPayloadDTO $dto Action payload DTO
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
      * @throws AgentUnknownActionException When the page does not support the action
+     * @throws HilosException Whatever the concrete page's action handler raises
+     * @throws LogicException When a concrete page finds its own collection unavailable
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -28,6 +29,7 @@ interface ProtectedModeSwitch
      * Asks for the freeze that protects a destructive operation.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void;
 
@@ -39,6 +41,7 @@ interface ProtectedModeSwitch
      * implementation authorizes by initiator node id and ignores it.
      *
      * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void;
 
@@ -51,6 +54,7 @@ interface ProtectedModeSwitch
      * that reached {@see ProtectedModeRuntime::PHASE_ACTIVE} has an operation to verify.
      *
      * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void;
 
@@ -62,6 +66,7 @@ interface ProtectedModeSwitch
      * window that is not open would sit on the row waiting for one.
      *
      * @param ProtectedModePassSignalData $data Minting agent identity and the hash of the pass
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestPass(ProtectedModePassSignalData $data): void;
 
@@ -73,6 +78,7 @@ interface ProtectedModeSwitch
      * {@see ProtectedModeRuntime::PHASE_VERIFYING}.
      *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void;
 }

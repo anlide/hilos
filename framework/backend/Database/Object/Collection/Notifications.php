@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -106,6 +107,7 @@ final class Notifications extends Objects
      * @return list<ObjectNotification> Notifications newest-first (empty when none)
      * @throws TableNotActivatedException When the project has not activated the notification table
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function listForUser(int $userId, int $limit = 100): array
     {

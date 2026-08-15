@@ -106,16 +106,48 @@ final class CodeStyleGuardTest extends TestCase
      * mutation passes through them, so their contracts are needed before those of the
      * periphery.
      *
+     * The rest of the framework goes third, and goes in whole rather than subsystem by
+     * subsystem: outside the ten that owe lines there is no debt at all, so the other
+     * directories and the three root files cost nothing to turn on, and a directory
+     * left outside would first be judged on the day the zone is dropped — mixed in
+     * with the demos, where its own hits would be the hardest to tell apart.
+     * `framework/backend/Backup` is the one path still outside, and it is a leaf of
+     * its own.
+     *
+     * The phases above are the order the debt was paid in, not the order of the list:
+     * the entries are sorted so the zone can be read against the directory listing,
+     * and which phase brought one in is history rather than anything the rule reads.
+     *
      * @var array<int, string>
      */
     private const array THROWS_ZONE = [
-        'framework/backend/Core',
-        'framework/backend/Socket',
-        'framework/backend/Database',
-        'framework/backend/Runtime',
-        'framework/backend/Tables',
-        'framework/backend/Pages',
+        'framework/backend/AI',
+        'framework/backend/API',
+        'framework/backend/Auth',
+        'framework/backend/Bootstrap',
         'framework/backend/Cluster',
+        'framework/backend/Constants',
+        'framework/backend/Core',
+        'framework/backend/Database',
+        'framework/backend/Environment',
+        'framework/backend/Fs',
+        'framework/backend/LLM',
+        'framework/backend/Log',
+        'framework/backend/Mail',
+        'framework/backend/Notification',
+        'framework/backend/Pages',
+        'framework/backend/ProtectedMode',
+        'framework/backend/Push',
+        'framework/backend/Runtime',
+        'framework/backend/Sms',
+        'framework/backend/Socket',
+        'framework/backend/Tables',
+        'framework/backend/TruthSource',
+        'framework/backend/Users',
+        'framework/backend/Utils',
+        'framework/backend/BaseDTO.php',
+        'framework/backend/Hilos.php',
+        'framework/backend/HilosException.php',
     ];
 
 

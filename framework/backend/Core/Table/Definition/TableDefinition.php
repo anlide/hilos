@@ -26,6 +26,8 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
+use Throwable;
 
 /**
  * Base definition for one registered table.
@@ -159,6 +161,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Mutation to fan out, or null when the table is unaffected
+     * @throws Throwable Whatever the concrete table's row build raises
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -212,6 +215,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param TableQueryDTO $query Query parameters
      * @return TableSnapshotDTO Snapshot with raw or typed rows
+     * @throws HilosException When the concrete table cannot read its row source
      */
     abstract protected function query(TableQueryDTO $query): TableSnapshotDTO;
 
@@ -252,6 +256,7 @@ abstract class TableDefinition implements ArrayAccess
      * Loads a complete table snapshot — the empty-query case of getPage().
      *
      * @return TableSnapshotDTO Full snapshot with typed rows and metadata
+     * @throws HilosException When the concrete table cannot read its row source
      */
     public function getFullSnapshot(): TableSnapshotDTO
     {
@@ -271,6 +276,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param TableQueryDTO $query Window query parameters
      * @return TableSnapshotDTO Window snapshot with typed rows and metadata
+     * @throws HilosException When the concrete table cannot read its row source
      */
     public function getPage(TableQueryDTO $query): TableSnapshotDTO
     {

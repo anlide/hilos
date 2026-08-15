@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
@@ -149,6 +150,7 @@ final class DbSyncApplicator
      *
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public static function applyReHydrate(): void
     {

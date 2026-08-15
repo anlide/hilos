@@ -49,6 +49,7 @@ final class AuthAttempts extends RtCollection
     /**
      * @param mixed $offset Throttle key `scope|identity|action`
      * @return ?AuthAttempt Item or null when the key has no counter yet
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?AuthAttempt
     {

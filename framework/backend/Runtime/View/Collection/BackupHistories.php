@@ -51,6 +51,7 @@ final class BackupHistories extends RtCollection
     /**
      * @param mixed $offset Backup id
      * @return ?BackupHistory Item or null
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?BackupHistory
     {

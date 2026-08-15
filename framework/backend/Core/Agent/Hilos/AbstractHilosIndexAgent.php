@@ -19,6 +19,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\TableNotActivatedException;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Notification\DeliveryLogPruner;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationCommandConstants;
@@ -98,6 +99,8 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
     /**
      * Runs the due-once-a-day delivery-log prune and finishes any protected-mode drive in flight.
+     *
+     * @throws HilosException Whatever the concrete agent's tick raises
      */
     public function onTick(): void
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PushSubscriptions as EntityPushSubscriptions;
@@ -53,6 +54,7 @@ final class PushSubscriptions extends Objects
      * @param ?string $userAgent Subscribing device user agent, or null
      * @throws EmptyValueException When the endpoint is empty
      * @throws DatabaseException When the lookup or write query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function subscribe(int $userId, string $endpoint, string $p256dh, string $auth, ?string $userAgent): void
     {
@@ -89,6 +91,7 @@ final class PushSubscriptions extends Objects
      *
      * @param string $endpoint Browser push endpoint URL
      * @throws DatabaseException When the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function unsubscribe(string $endpoint): void
     {
@@ -120,6 +123,7 @@ final class PushSubscriptions extends Objects
      * @param int $userId Recipient user id
      * @return list<ObjectPushSubscription> The recipient's subscriptions (empty when none, or the table is not activated)
      * @throws DatabaseException When the lookup query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function forUser(int $userId): array
     {
@@ -152,6 +156,7 @@ final class PushSubscriptions extends Objects
      *
      * @param int $userId Recipient user id
      * @throws DatabaseException When a delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function deleteForUser(int $userId): void
     {

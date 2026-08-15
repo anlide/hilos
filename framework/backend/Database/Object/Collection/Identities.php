@@ -8,6 +8,7 @@ use Hilos\Auth\PhoneNumber;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -47,6 +48,7 @@ final class Identities extends Objects
      * @param string $identifier Normalized identifier for the type
      * @return ?ObjectIdentity Identity object or null if not found
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByIdentity(string $type, string $identifier): ?ObjectIdentity
     {
@@ -86,6 +88,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When identifier or secret is empty
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
      * @throws DatabaseException If the insert or secret write query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): ObjectIdentity
     {
@@ -118,6 +121,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When identifier is empty
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
      * @throws DatabaseException If the insert or secret write query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): ObjectIdentity
     {
@@ -170,6 +174,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When identifier is empty
      * @throws DuplicateValueException When an identity already exists for (sms, identifier)
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createSmsIdentity(int $userId, string $identifier): ObjectIdentity
     {
@@ -216,6 +221,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When provider or subject is empty
      * @throws DuplicateValueException When an identity already exists for (oauth, identifier)
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createOauthIdentity(int $userId, string $provider, string $subject): ObjectIdentity
     {
@@ -265,6 +271,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When credential id is empty
      * @throws DuplicateValueException When an identity already exists for (passkey, identifier)
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createPasskeyIdentity(int $userId, string $credentialId): ObjectIdentity
     {
@@ -311,6 +318,7 @@ final class Identities extends Objects
      * @throws EmptyValueException When the normalized email is empty
      * @throws DuplicateValueException When an identity already exists for (magic_link, identifier)
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createMagicLinkIdentity(int $userId, string $email): ObjectIdentity
     {
@@ -356,6 +364,7 @@ final class Identities extends Objects
      * @param int $identityId Identity id to unlink
      * @throws ValidationException When the identity is not owned by the user, or is their last one
      * @throws DatabaseException If the lookup or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function deleteIdentity(int $userId, int $identityId): void
     {
@@ -396,6 +405,7 @@ final class Identities extends Objects
      * @param int $toUserId Survivor user id that receives the identities
      * @return int Number of identities re-pointed to the survivor
      * @throws DatabaseException If a lookup, move, or delete query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function rePointToUser(int $fromUserId, int $toUserId): int
     {
@@ -433,6 +443,7 @@ final class Identities extends Objects
      * @param string $email Lowercased account email
      * @return ?int Owning user id of a verified email identity, or null when none
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserIdByVerifiedEmail(string $email): ?int
     {
@@ -467,6 +478,7 @@ final class Identities extends Objects
      * @param string $email Lowercased account email
      * @return ?int Owning user id of any email identity, or null when none
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserIdByEmail(string $email): ?int
     {
@@ -498,6 +510,7 @@ final class Identities extends Objects
      * @param int $userId Owning user id
      * @return ?string Lowercased email of a verified email-bearing identity, or null when none
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findVerifiedEmailByUser(int $userId): ?string
     {
@@ -526,6 +539,7 @@ final class Identities extends Objects
      * @param int $userId Owning user id
      * @return ?string E.164 number of a verified `sms` identity, or null when none
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findVerifiedSmsByUser(int $userId): ?string
     {
@@ -545,6 +559,7 @@ final class Identities extends Objects
      * @param int $userId Owning user id
      * @return list<ObjectIdentity> Identity objects for the user (empty when none)
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function listByUser(int $userId): array
     {

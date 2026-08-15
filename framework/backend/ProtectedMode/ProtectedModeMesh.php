@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 
@@ -29,6 +30,7 @@ interface ProtectedModeMesh
     /**
      * @return ?string Node id of the current leader an initiator addresses its request to, or null
      *                 when leadership is unknown
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function leaderNodeId(): ?string;
 

@@ -222,6 +222,7 @@ final class ClusterContext
      * @return NodeLifecycleState Current lifecycle phase of the local node
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
+     * @throws ClusterDisabledException When cluster mode is disabled
      */
     public function lifecycleState(): NodeLifecycleState
     {
@@ -602,6 +603,7 @@ final class ClusterContext
      * @return array{enabled: bool, nodes: list<array<string, mixed>>} Node snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
+     * @throws ClusterDisabledException When cluster mode is disabled
      */
     public function snapshot(): array
     {
@@ -643,6 +645,7 @@ final class ClusterContext
      * @return array<string, mixed> Inspection snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
+     * @throws ClusterDisabledException When cluster mode is disabled
      */
     public function inspect(): array
     {

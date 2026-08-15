@@ -72,6 +72,7 @@ final class RegistrationWaiters extends RtCollection
     /**
      * @param mixed $offset Waiting connection accept key
      * @return ?RegistrationWaiter Item or null
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?RegistrationWaiter
     {

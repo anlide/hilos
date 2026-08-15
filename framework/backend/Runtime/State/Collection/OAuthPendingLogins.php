@@ -37,6 +37,7 @@ final class OAuthPendingLogins extends RtStates
      *
      * @param mixed $offset Initiating accept key
      * @return OAuthPendingLogin Pending-login op
+     * @throws OutOfBoundsException When no state is stored under the key
      */
     public function offsetGet(mixed $offset): OAuthPendingLogin
     {

@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
@@ -21,6 +22,8 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
 
     /**
      * Delegates the per-tick logs overview refresh to the logs page.
+     *
+     * @throws InvalidArgumentException When the overview signal cannot be named
      */
     public function onTick(): void
     {

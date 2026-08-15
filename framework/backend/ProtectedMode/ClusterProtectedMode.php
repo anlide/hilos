@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -124,6 +125,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * (HIL-266), not this path.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
@@ -157,6 +159,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *                                             unused here: a cluster authorizes the release by
      *                                             the initiator node id it recorded, which is what
      *                                             the peer frame carries
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestDisable(ProtectedModeDisableSignalData $data): void
     {
@@ -183,6 +186,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window,
      *                                            unused here for the same reason the disable
      *                                            payload is: a cluster authorizes by node id
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void
     {
@@ -204,6 +208,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      * Entry point on the initiator's own node: routes one minted pass to the leader.
      *
      * @param ProtectedModePassSignalData $data Minting agent identity and the hash of the pass
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestPass(ProtectedModePassSignalData $data): void
     {
@@ -226,6 +231,7 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *
      * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back,
      *                                              unused here: a cluster authorizes by node id
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {

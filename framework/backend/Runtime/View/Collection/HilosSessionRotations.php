@@ -72,6 +72,7 @@ final class HilosSessionRotations extends RtCollection
     /**
      * @param mixed $offset One-time rotation ticket
      * @return ?HilosSessionRotation Item or null
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?HilosSessionRotation
     {

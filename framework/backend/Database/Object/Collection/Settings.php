@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Collection\Settings as EntitySettings;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
@@ -11,6 +12,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
 
 /**
  * Settings object collection.
@@ -34,6 +36,7 @@ final class Settings extends Objects
      * @param string $key Setting key
      * @return ?ObjectSetting Setting object or null if not found
      * @throws DatabaseException If database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByKey(string $key): ?ObjectSetting
     {
@@ -61,6 +64,7 @@ final class Settings extends Objects
      * @return list<ObjectSetting> Orphan settings
      * @throws LogicException When the entity collection class is not configured
      * @throws DatabaseException When loading all settings from the database fails
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function getOrphans(array $catalog): array
     {

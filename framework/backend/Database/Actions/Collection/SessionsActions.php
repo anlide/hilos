@@ -13,6 +13,11 @@ use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Item\Session;
+use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Environment\Exception\EnvKeyInvalidException;
+use Hilos\Environment\Exception\EnvNotInCatalogException;
+use Hilos\Environment\Exception\EnvTypeMismatchException;
+use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -129,6 +134,11 @@ final class SessionsActions extends DbActions
      * Computes a session expiry timestamp from the configured session lifetime.
      *
      * @return string Expiry as an SQL datetime (now + HILOS_SESSION_COOKIE_MAX_AGE)
+     * @throws EnvInvalidValueException When catalog metadata or the integer value is invalid
+     * @throws EnvKeyInvalidException When the key is invalid
+     * @throws EnvNotInCatalogException When the key is not declared in the catalog
+     * @throws EnvTypeMismatchException When the key is not cataloged as integer
+     * @throws MissingEnvironmentVariableException When a required value is missing
      */
     public static function expiryFromNow(): string
     {

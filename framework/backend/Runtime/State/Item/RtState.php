@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\State\Item;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
@@ -124,6 +125,7 @@ abstract class RtState
      * Does not persist to DB; cross-worker runtime sync only.
      *
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function sync(): void
     {

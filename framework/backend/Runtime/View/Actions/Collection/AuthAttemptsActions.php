@@ -6,8 +6,10 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\CliCommands;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -44,6 +46,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function open(string $scope, string $identity, string $action): void
     {
@@ -73,6 +76,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When a retired row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function sweep(float $now, float $windowSeconds, float $cooldownSeconds): int
     {
@@ -105,6 +109,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function forgetSession(string $identity): int
     {
@@ -136,6 +141,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function clear(): int
     {

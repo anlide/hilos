@@ -8,6 +8,7 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
@@ -22,6 +23,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
+use Hilos\HilosException;
 
 /**
  * Settings Actions - write operations for Settings collection.
@@ -51,6 +53,7 @@ final class SettingsActions extends DbActions
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects settings collection creation
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function add(string $key, mixed $value, array $catalog): Setting
     {
@@ -98,6 +101,7 @@ final class SettingsActions extends DbActions
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
      * @throws CreateNotAllowedException When the truth source rejects settings collection creation
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function addOrphan(string $key, string $type, mixed $value, array $catalog): Setting
     {
@@ -136,6 +140,7 @@ final class SettingsActions extends DbActions
      * @throws DatabaseException When collection loading or setting deletion fails
      * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
      * @throws LogicException When the settings object collection entity class is not configured
+     * @throws WriteNotAllowedException When the truth source rejects the setting delete
      */
     public function deleteOrphan(string $key, array $catalog): void
     {

@@ -40,6 +40,7 @@ final class HilosSessionRotations extends RtStates
      *
      * @param mixed $offset One-time rotation ticket
      * @return HilosSessionRotation Rotation row
+     * @throws OutOfBoundsException When no state is stored under the key
      */
     public function offsetGet(mixed $offset): HilosSessionRotation
     {

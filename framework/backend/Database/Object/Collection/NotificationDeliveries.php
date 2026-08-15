@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\NotificationDeliveries as EntityNotificationDeliveries;
@@ -98,6 +99,7 @@ final class NotificationDeliveries extends Objects
      * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
      * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findFor(int $notificationId, string $channel): ?ObjectNotificationDelivery
     {
@@ -135,6 +137,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function beginAttempt(ObjectNotificationDelivery $delivery): void
     {
@@ -148,6 +151,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded delivery row
      * @throws DatabaseException If the update query fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function markSent(ObjectNotificationDelivery $delivery): void
     {
@@ -168,6 +172,7 @@ final class NotificationDeliveries extends Objects
      * @return ?ObjectNotificationDelivery The delivery object, or null when none exists
      * @throws TableNotActivatedException When the project has not activated the delivery table
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findById(int $id): ?ObjectNotificationDelivery
     {
@@ -196,6 +201,7 @@ final class NotificationDeliveries extends Objects
      *
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException If the update query fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function resetForRetry(ObjectNotificationDelivery $delivery): void
     {
@@ -218,6 +224,7 @@ final class NotificationDeliveries extends Objects
      * @param string $error Failure detail (truncated to the column width)
      * @param int $maxAttempts Attempt ceiling after which the row fails terminally
      * @throws DatabaseException If the update query fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function recordFailure(ObjectNotificationDelivery $delivery, string $error, int $maxAttempts): void
     {

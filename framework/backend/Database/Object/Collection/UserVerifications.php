@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -53,6 +54,7 @@ final class UserVerifications extends Objects
      * @param int $maxAttempts Attempt ceiling excluding exhausted challenges
      * @return ?ObjectUserVerification Active challenge or null when none
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findActive(string $type, string $identifier, int $maxAttempts): ?ObjectUserVerification
     {
@@ -89,6 +91,7 @@ final class UserVerifications extends Objects
      * @param int $windowSeconds Length of the window sends are counted in
      * @return VerificationSendStats Newest issue time and issues inside the window
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function sendStats(string $type, string $identifier, int $windowSeconds): VerificationSendStats
     {
@@ -193,6 +196,7 @@ final class UserVerifications extends Objects
      * @param string $identifier Normalized identifier (lowercased email)
      * @param int $maxAttempts Attempt ceiling excluding exhausted challenges
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function voidActive(string $type, string $identifier, int $maxAttempts): void
     {
@@ -221,6 +225,7 @@ final class UserVerifications extends Objects
      * @param string $identifier Normalized identifier (matched verbatim)
      * @return ?ObjectUserVerification The expired challenge, or null when none active
      * @throws DatabaseException If the lookup or expiry query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function expireActive(string $type, string $identifier): ?ObjectUserVerification
     {

@@ -36,6 +36,7 @@ final class BackupHistories extends RtStates
      *
      * @param mixed $offset Backup id
      * @return BackupHistory Backup history row
+     * @throws OutOfBoundsException When no state is stored under the key
      */
     public function offsetGet(mixed $offset): BackupHistory
     {

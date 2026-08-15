@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -38,6 +39,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function register(
         string $ticket,
@@ -64,6 +66,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function forget(string $ticket): void
     {
@@ -88,6 +91,7 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function forgetExpired(): int
     {

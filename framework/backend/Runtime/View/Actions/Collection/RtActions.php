@@ -12,6 +12,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -96,6 +97,7 @@ abstract class RtActions
      * @param RtState $state State instance (reference)
      * @return T Concrete RtItem for this collection, bound by subclass `@extends`
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     protected function createRtItemFromState(RtState &$state): RtItem
     {
@@ -182,6 +184,7 @@ abstract class RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function addStateToCollection(RtState $state): void
     {
@@ -199,6 +202,7 @@ abstract class RtActions
      * @param array<string, mixed> $diff Changed fields and values
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
@@ -215,6 +219,7 @@ abstract class RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function removeStateFromCollection(string $id): void
     {
@@ -232,6 +237,7 @@ abstract class RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function clearAllStates(): void
     {

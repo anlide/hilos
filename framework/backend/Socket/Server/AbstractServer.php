@@ -66,6 +66,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      *
      * @return bool True on success
      * @throws SocketException When socket create, bind or listen fails
+     * @throws HilosException Whatever the concrete server's start hook raises
      */
     public function start(): bool
     {
@@ -113,6 +114,8 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      *
      * Must be implemented in child classes to perform actions when server starts.
      * Called once after server socket is bound and listening.
+     *
+     * @throws HilosException Whatever the concrete server's start hook raises
      */
     abstract protected function onStart(): void;
 

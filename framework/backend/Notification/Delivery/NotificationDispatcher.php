@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Notification\Delivery;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -99,6 +100,7 @@ class NotificationDispatcher
      *
      * @param ObjectNotificationDelivery $delivery Loaded failed delivery row
      * @throws DatabaseException When the row reset fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function requeue(ObjectNotificationDelivery $delivery): void
     {

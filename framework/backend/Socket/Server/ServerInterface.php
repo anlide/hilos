@@ -24,6 +24,7 @@ interface ServerInterface
      *
      * @return bool True on success
      * @throws SocketException When socket create, bind or listen fails
+     * @throws HilosException Whatever the concrete server's start hook raises
      */
     public function start(): bool;
 

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Backup\BackupMetadata;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -43,6 +45,8 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function syncToScan(array $metadatas): int
     {
@@ -118,6 +122,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When the row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
      */
     public function forget(string $id): bool
     {

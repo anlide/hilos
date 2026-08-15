@@ -792,6 +792,7 @@ abstract class DaemonManager extends BaseManager implements
      * WebSocket server is started separately when workers are ready.
      *
      * @throws SocketException When a server socket cannot be created, bound or listened on
+     * @throws HilosException Whatever the concrete server's start hook raises
      */
     protected function startServers(): void
     {
@@ -1082,6 +1083,7 @@ abstract class DaemonManager extends BaseManager implements
      * Automatically manages server lifecycle and client connections.
      *
      * @throws SocketException When a server socket cannot be created, bound or listened on
+     * @throws HilosException Whatever the concrete server's start hook raises
      */
     protected function processEventLoop(): void
     {
@@ -1473,6 +1475,7 @@ abstract class DaemonManager extends BaseManager implements
      * Default dispatches DB/RT sync and the DB re-hydrate signal to their apply methods.
      *
      * @param SignalDTO $signal Signal DTO
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     protected function handleDaemonSignal(SignalDTO $signal): void
     {
@@ -1533,6 +1536,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void
     {

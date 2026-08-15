@@ -22,6 +22,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Base class for Db collection actions.
@@ -262,6 +263,7 @@ abstract class DbActions
      * @throws TableNameUndeterminedException If table name cannot be determined
      * @throws LogicException When a represented collection entity class is not configured (re-hydrate reload)
      * @throws DatabaseException If reloading an eager collection from the fresh DB fails (re-hydrate)
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     protected function addObjectToCollection(Object_ $object): void
     {

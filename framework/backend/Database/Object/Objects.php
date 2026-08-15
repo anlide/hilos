@@ -20,6 +20,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlSortDirection;
+use Hilos\HilosException;
 use Iterator;
 
 /**
@@ -109,6 +110,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @throws LogicException When entity collection class is not configured
      * @throws DatabaseException If database query fails
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function loadAllFromDB(): void
     {
@@ -127,6 +129,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Initialize empty collection.
      *
      * @return static Empty collection instance
+     * @throws HilosException When the concrete collection refuses to be initialized directly
      */
     public static function initEmpty(): static
     {
@@ -580,6 +583,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Deletes all rows from the table and clears the collection.
      *
      * @throws DatabaseException If delete fails
+     * @throws InvalidArgumentException When the cleared DB-sync signal cannot be named
      */
     public function deleteAll(): void
     {
@@ -620,6 +624,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @throws LogicException When the entity collection class is not configured (eager reload)
      * @throws DatabaseException If reloading the full collection from the fresh DB fails (eager reload)
+     * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function reHydrate(): void
     {

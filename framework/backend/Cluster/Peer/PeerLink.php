@@ -39,9 +39,11 @@ use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
 
 /**
@@ -168,6 +170,9 @@ final class PeerLink extends AbstractClient
 
     /**
      * Parses complete peer frames and dispatches them, closing on a bad frame.
+     *
+     * @throws SocketException If buffer size or JSON depth exceeds limits
+     * @throws InvalidArgumentException When the re-hydrate signal cannot be named
      */
     protected function processReadBuffer(): void
     {

@@ -116,6 +116,7 @@ abstract class RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When item is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function remove(): void
     {

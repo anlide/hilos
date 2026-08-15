@@ -460,6 +460,7 @@ abstract class Entity
      * @param mixed $id Primary key value
      * @return ?static Entity or null if not found
      * @throws DatabaseException When SQL execution fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public static function getById(mixed $id): ?static
     {
@@ -483,6 +484,7 @@ abstract class Entity
      *
      * @return EntityCollection Entity collection
      * @throws DatabaseException When SQL execution fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public static function getAll(): EntityCollection
     {

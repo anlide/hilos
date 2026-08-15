@@ -39,6 +39,7 @@ final class RegistrationWaiters extends RtStates
      *
      * @param mixed $offset Waiting connection accept key
      * @return RegistrationWaiter Waiter row
+     * @throws OutOfBoundsException When no state is stored under the key
      */
     public function offsetGet(mixed $offset): RegistrationWaiter
     {

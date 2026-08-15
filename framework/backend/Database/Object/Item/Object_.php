@@ -3,6 +3,7 @@
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -115,6 +116,7 @@ abstract class Object_
      * Saves only changed columns by comparing entity with entitySync.
      *
      * @throws DatabaseException If database operation fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function sync(): void
     {
@@ -156,6 +158,7 @@ abstract class Object_
      * (for example a settings key or any derived frontend/table lookup key).
      *
      * @throws DatabaseException If database operation fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
     public function delete(): void
     {

@@ -6,6 +6,7 @@ namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\HilosException;
 
 /**
  * Local port between the peer transport and the daemon's runtime state.
@@ -29,6 +30,7 @@ interface RtSyncSink
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void;
 

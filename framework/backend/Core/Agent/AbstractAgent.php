@@ -33,6 +33,7 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -482,6 +483,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @throws LogicException When a represented collection entity class is not configured (eager reload)
      * @throws DatabaseException If reloading an eager collection from the fresh database fails
      * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     protected function requestDbReHydrate(): void
     {
@@ -530,6 +532,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * Default implementation - no action on tick.
      *
      * Child classes can override this method.
+     *
+     * @throws HilosException Whatever the concrete agent's tick raises
      */
     public function onTick(): void
     {

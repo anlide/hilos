@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Item;
 
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionRotationsActions;
@@ -37,6 +38,7 @@ final class HilosSessionRotation extends RtItem
      * @param string $name Property name
      * @return string|float|array<int, string>|null Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws RtItemActionsClassException When the item actions class is missing or invalid
      */
     public function __get(string $name): string|float|array|null
     {

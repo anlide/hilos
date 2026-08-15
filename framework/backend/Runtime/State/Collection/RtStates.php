@@ -8,6 +8,7 @@ use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
 use Iterator;
+use OutOfBoundsException;
 
 /**
  * Base class for runtime state collections.
@@ -222,6 +223,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
      *
      * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return ?T State instance or null if not found
+     * @throws OutOfBoundsException When the concrete collection requires the key and no state is stored under it
      */
     public function offsetGet(mixed $offset): ?RtState
     {

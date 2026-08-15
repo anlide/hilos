@@ -148,6 +148,7 @@ abstract class RtItem
      * @param string $name Property name
      * @return mixed Property value (never reached, throws instead)
      * @throws RtItemPropertyNotFoundException When the property does not exist
+     * @throws RtItemActionsClassException When the item actions class is missing or invalid
      */
     public function __get(string $name): mixed
     {

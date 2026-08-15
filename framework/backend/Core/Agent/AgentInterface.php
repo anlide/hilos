@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -54,6 +55,8 @@ interface AgentInterface
      * Tick method - called regularly in worker loop
      *
      * Performs agent's work on each tick. Called approximately every 100ms.
+     *
+     * @throws HilosException Whatever the concrete agent's tick raises
      */
     public function onTick(): void;
 

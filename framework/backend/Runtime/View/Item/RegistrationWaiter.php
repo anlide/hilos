@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Item;
 
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Actions\Collection\RegistrationWaitersActions;
@@ -36,6 +37,7 @@ final class RegistrationWaiter extends RtItem
      * @param string $name Property name
      * @return string Property value
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
+     * @throws RtItemActionsClassException When the item actions class is missing or invalid
      */
     public function __get(string $name): string
     {

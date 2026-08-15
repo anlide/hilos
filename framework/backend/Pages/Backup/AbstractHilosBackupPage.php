@@ -20,6 +20,11 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Environment\Exception\EnvKeyInvalidException;
+use Hilos\Environment\Exception\EnvNotInCatalogException;
+use Hilos\Environment\Exception\EnvTypeMismatchException;
+use Hilos\Environment\Exception\MissingEnvironmentVariableException;
 use Hilos\Hilos;
 use Hilos\Pages\Backup\DTO\BackupCreateActionDTO;
 use Hilos\Pages\Backup\DTO\BackupDeleteActionDTO;
@@ -71,6 +76,11 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * @throws InvalidActionPayloadException When the action payload does not match the action name
      * @throws TableActionException When the action target or state is invalid
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws EnvInvalidValueException When catalog metadata or the backup value is invalid
+     * @throws EnvKeyInvalidException When the key is invalid
+     * @throws EnvNotInCatalogException When the key is not declared in the catalog
+     * @throws EnvTypeMismatchException When the key is not cataloged as the type read
+     * @throws MissingEnvironmentVariableException When a required value is missing
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {

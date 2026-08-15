@@ -188,11 +188,21 @@ The daemon spine — `framework/backend/Core` and `framework/backend/Socket` —
 the first phase: it is where the defect that opened the rule was found, and every
 other subsystem calls through it, so its contracts are what the later phases lean
 on. It owns no baseline record any more. The subsystems of state and data —
-`Database`, `Runtime`, `Tables`, `Pages` and `Cluster`, 140 lines in 56 files —
-are the second, because every page request and every table mutation passes
-through them. That phase is frozen in the baseline rather than paid off: turning
-the zone on ahead of the fix is what stops the debt growing, since a new
-unpropagated `@throws` inside it fails the guard on the spot.
+`Database`, `Runtime`, `Tables`, `Pages` and `Cluster` — were the second, because
+every page request and every table mutation passes through them; the 140 lines
+they owed in 56 files are paid, and they own no record either.
+
+The rest of the framework is the third phase, and it went into the zone whole
+rather than subsystem by subsystem: outside the ten that owe lines there is no
+debt at all, so turning the other directories and the three root files on cost
+nothing, and a directory left outside would first be judged on the day the zone
+is dropped — mixed in with the demos, where its own hits would be the hardest to
+tell apart. That phase is frozen in the baseline rather than paid off: 174 lines
+in 37 files across `Auth`, `Log`, `Mail`, `ProtectedMode`, `Sms`, `LLM`, `Push`,
+`Notification`, `API` and `AI`. Freezing is what stops the debt growing, since a
+new unpropagated `@throws` inside the zone fails the guard on the spot.
+`framework/backend/Backup` is the one path still outside, and it is a leaf of its
+own; the demos are another.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

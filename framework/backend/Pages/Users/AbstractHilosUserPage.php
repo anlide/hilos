@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Pages\Users;
 
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
@@ -33,6 +34,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * @throws PageSubscriptionException When the page subscription snapshot rejects the subscription
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
+     * @throws InvalidArgumentException When the page-response signal cannot be named
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {

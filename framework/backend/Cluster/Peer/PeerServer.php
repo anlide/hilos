@@ -46,6 +46,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -55,6 +56,7 @@ use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -65,6 +67,7 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 use Throwable;
 
 /**
@@ -237,6 +240,8 @@ final class PeerServer extends AbstractServer implements
      * The coordinator ticks after the links are serviced so any request-vote,
      * vote-reply, or heartbeat that arrived this iteration is already folded in
      * before it recomputes deadlines, quorum, and leadership.
+     *
+     * @throws RandomException When the secure random source refuses a handshake secret
      */
     public function onTick(): void
     {
@@ -321,6 +326,7 @@ final class PeerServer extends AbstractServer implements
      * Closes in-flight connecting sockets, then stops the server.
      *
      * @throws SocketException When the server socket close fails
+     * @throws HilosException When a peer fails to announce its close
      */
     public function stop(): void
     {
@@ -997,6 +1003,7 @@ final class PeerServer extends AbstractServer implements
      *
      * @param PeerLink $link Link the announcement arrived on
      * @param PeerDbReHydrateDTO $frame Received database re-hydrate frame
+     * @throws InvalidArgumentException When the re-hydrate signal cannot be named
      */
     public function onDbReHydrateReceived(PeerLink $link, PeerDbReHydrateDTO $frame): void
     {
@@ -1127,6 +1134,7 @@ final class PeerServer extends AbstractServer implements
      * Returns the node id of the current cluster leader for an initiator to address its request.
      *
      * @return ?string Leader node id, or null when leadership is unknown or the cluster is absent
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
     public function leaderNodeId(): ?string
     {

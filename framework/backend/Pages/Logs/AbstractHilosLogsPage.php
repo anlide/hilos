@@ -12,6 +12,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalName;
@@ -96,6 +97,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * Worker tick hook for the Hilos logs agent: throttled incremental rescan (~100ms) and broadcast on change.
      *
      * @param PageAgentInterface $agent Hilos logs agent (for {@see PageAgentInterface::getAgentSignalSource()} when broadcasting)
+     * @throws InvalidArgumentException When the overview signal cannot be named
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -125,6 +127,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
+     * @throws InvalidArgumentException When the overview signal cannot be named
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {

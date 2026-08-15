@@ -39,6 +39,7 @@ final class AuthAttempts extends RtStates
      *
      * @param mixed $offset Throttle key `scope|identity|action`
      * @return AuthAttempt Attempt counter
+     * @throws OutOfBoundsException When no state is stored under the key
      */
     public function offsetGet(mixed $offset): AuthAttempt
     {

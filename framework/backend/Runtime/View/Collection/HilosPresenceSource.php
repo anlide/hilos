@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Collection;
 
+use Hilos\HilosException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 
 /**
@@ -21,6 +22,7 @@ interface HilosPresenceSource
      *
      * @param ?int $userId User id to summarize, or null for an empty summary
      * @return HilosUserPresenceSummary Presence and active session count for the user
+     * @throws HilosException When the presence source cannot read its runtime state
      */
     public function summaryForUser(?int $userId): HilosUserPresenceSummary;
 }

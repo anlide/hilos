@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
@@ -58,6 +59,7 @@ final class PasskeyCredentials extends Objects
      * @throws EmptyValueException When credential id, public key or user handle is empty
      * @throws DuplicateValueException When a credential already exists for this credential id
      * @throws DatabaseException If the insert query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function createFromRegistration(
         int $identityId,
@@ -111,6 +113,7 @@ final class PasskeyCredentials extends Objects
      * @param string $credentialId Base64url credential id from the assertion
      * @return ?ObjectPasskeyCredential Credential object or null if not found
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByCredentialId(string $credentialId): ?ObjectPasskeyCredential
     {
@@ -144,6 +147,7 @@ final class PasskeyCredentials extends Objects
      * @param int $userId Owning user id
      * @return list<ObjectPasskeyCredential> Credential objects for the user (empty when none)
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function listByUser(int $userId): array
     {
@@ -175,6 +179,7 @@ final class PasskeyCredentials extends Objects
      * @param string $userHandle WebAuthn user handle (binary) from the assertion
      * @return ?int Owning user id, or null when no credential carries the handle
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findUserByUserHandle(string $userHandle): ?int
     {

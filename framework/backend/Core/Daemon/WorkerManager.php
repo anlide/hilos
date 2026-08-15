@@ -387,6 +387,7 @@ abstract class WorkerManager extends BaseManager
      * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
      * @throws InvalidArgumentException When a command handler cannot name its reply
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {

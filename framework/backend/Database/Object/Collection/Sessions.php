@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\Sessions as EntitySessions;
@@ -33,6 +34,7 @@ final class Sessions extends Objects
      * @param string $token Session cookie token (empty string returns null)
      * @return ?ObjectSession Session object or null if not found
      * @throws DatabaseException If database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByToken(string $token): ?ObjectSession
     {
@@ -64,6 +66,7 @@ final class Sessions extends Objects
      * @param int $userId Owning user id
      * @return list<ObjectSession> Session objects bound to the user (empty when none)
      * @throws DatabaseException If the database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
     public function findByUserId(int $userId): array
     {

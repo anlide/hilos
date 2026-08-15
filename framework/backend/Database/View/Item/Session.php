@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Database\View\Item;
 
 use Hilos\Database\Actions\Item\SessionActions;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 
 /**
@@ -31,6 +33,8 @@ final class Session extends DbItem
      *
      * @param string $name Property name
      * @return int|string|SessionActions|null Property value or actions
+     * @throws ActionsClassException When the actions class for the session collection is not configured
+     * @throws PropertyNotFoundException When the property is not exposed by the session item
      */
     public function __get(string $name): int|string|SessionActions|null
     {

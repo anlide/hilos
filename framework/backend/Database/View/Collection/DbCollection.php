@@ -616,6 +616,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset Primary key ID, or null for a missing optional relation key
      * @return bool True if element exists at offset
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When object type does not match the collection
+     * @throws DatabaseException When lazy-loading an object from the database fails
      */
     public function offsetExists(mixed $offset): bool
     {

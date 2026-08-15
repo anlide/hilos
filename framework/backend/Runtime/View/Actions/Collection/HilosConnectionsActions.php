@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -42,6 +43,7 @@ abstract class HilosConnectionsActions extends RtActions
      * @throws RtActionsStateClassException When the mounted collection names a non-connection state class
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function register(string $acceptKey, ?int $userId): HilosConnection
     {
@@ -59,6 +61,7 @@ abstract class HilosConnectionsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function clear(): void
     {
