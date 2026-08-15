@@ -218,6 +218,20 @@ recover the type.
 - Updated: item actions when the item key is known, or direct field set + `sync()` inside RT internals
 - Deleted: item actions when one item key is known; collection actions only for clear/bulk cleanup
 - On worker sync: `applyDiff()` called with changed fields only
+- On another node: the same `fromRow()` / `applyDiff()` / `remove()`, reached from
+  the daemon rather than from a worker — a row travels the mesh as the row the
+  writer's process produced
+
+The node dimension changes nothing about how a row is written and one thing about
+where: a collection is shared by the whole cluster, its truth source is unique
+cluster-wide, and every other node holds a read-only replica (see
+[rt-context.md](rt-context.md)). So `fromRow()` has to hold on a payload that
+arrived from another machine, not just another process, and a row it refuses is
+dropped and logged rather than hydrated as zeros — the same trap, one hop wider.
+
+A node that joins is handed each collection whole and **replaces** its copy with
+it, row by row through `fromRow()`. Nothing is merged: the owner's copy is the
+truth about the collection.
 
 ## markRtSyncBaseline()
 

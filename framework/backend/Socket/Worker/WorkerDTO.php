@@ -30,6 +30,8 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -94,6 +96,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
             WorkerRtSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncUpdatedMessageDTO::fromArray($data),
             WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),
+            WorkerRtSourceRegisteredDTO::MESSAGE_TYPE => WorkerRtSourceRegisteredDTO::fromArray($data),
+            WorkerRtSourceReleasedDTO::MESSAGE_TYPE => WorkerRtSourceReleasedDTO::fromArray($data),
             WorkerProtectedModeEnableDTO::MESSAGE_TYPE => WorkerProtectedModeEnableDTO::fromArray($data),
             WorkerProtectedModeDisableDTO::MESSAGE_TYPE => WorkerProtectedModeDisableDTO::fromArray($data),
             WorkerProtectedModeVerifyDTO::MESSAGE_TYPE => WorkerProtectedModeVerifyDTO::fromArray($data),

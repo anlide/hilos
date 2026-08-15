@@ -28,9 +28,12 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\Utils\Logger;
 
 /**
@@ -67,6 +70,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
     /** @var ?string Node that announced the swap to this one; null when this node announced it itself */
     private ?string $reHydrateReplyToNodeId = null;
+
+    /**
+     * @var ?RtNodeSourceMap What RT collections this node owns, built lazily on first use.
+     *
+     * Here for the same reason the barrier above is: the reports arrive on the workers' links
+     * and the answer is read by the daemon loop, and this object is what those two share. It is
+     * keyed by agent because that is what a report names - which is also this class's subject.
+     */
+    private ?RtNodeSourceMap $rtNodeSourceMap = null;
 
     /**
      * Create agent daemon instance (factory method)
@@ -558,5 +570,56 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             signalName: new SignalName(SignalConstants::RT_SYNC_DELETED),
             signalData: $dto->signalData,
         );
+    }
+
+    /**
+     * Records what an agent started on this node took ownership of.
+     *
+     * @param WorkerRtSourceRegisteredDTO $dto DTO with the agent and the collections it owns
+     */
+    public function handleRtSourceRegistered(WorkerRtSourceRegisteredDTO $dto): void
+    {
+        $this->rtNodeSourceMap()->note($dto->agentId, $dto->collectionKeys);
+    }
+
+    /**
+     * Records that an agent stopped here and owns nothing any more.
+     *
+     * @param WorkerRtSourceReleasedDTO $dto DTO with the agent that stopped
+     */
+    public function handleRtSourceReleased(WorkerRtSourceReleasedDTO $dto): void
+    {
+        $this->rtNodeSourceMap()->release($dto->agentId);
+    }
+
+    /**
+     * Drops what the agents of one worker owned, because that worker is gone.
+     *
+     * A worker that dies never gets to send its releases, and an ownership claim that outlives
+     * the process holding it is worse than none: the node would go on refusing every replica
+     * for a collection nobody here writes any more. The same reason a dead worker is taken off
+     * the re-hydrate barrier rather than waited for.
+     *
+     * @param int $workerIndex Index of the worker whose link closed
+     * @param bool $isMonopolistic Whether that worker was the monopolistic one
+     */
+    public function releaseRtSourcesOfWorker(int $workerIndex, bool $isMonopolistic): void
+    {
+        $workerId = $this->calculateWorkerId($workerIndex, $isMonopolistic);
+        foreach ($this->agentToWorker as $agentId => $agentWorkerId) {
+            if ($agentWorkerId === $workerId) {
+                $this->rtNodeSourceMap()->release((string)$agentId);
+            }
+        }
+    }
+
+    /**
+     * Returns what this node owns, as its workers have reported it.
+     *
+     * @return RtNodeSourceMap Map of the RT collections owned on this node
+     */
+    public function rtNodeSourceMap(): RtNodeSourceMap
+    {
+        return $this->rtNodeSourceMap ??= new RtNodeSourceMap();
     }
 }

@@ -32,7 +32,14 @@ Use this skill for agent business logic and registration work. Start by reading 
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
    ignored shared-broadcast names and document the ignore contract in PHPDoc.
-6. Register and unregister truth sources in matching lifecycle hooks.
+6. Register and unregister truth sources in matching lifecycle hooks, and check
+   `requiresClusterLeadership()` against what the agent registers: an RT truth
+   source is unique for the whole cluster, not per node, so an agent that
+   registers one keeps the default `true` and runs on the leader alone. An agent
+   that returns `false` runs on every node and must therefore own no RT
+   collection — a second owner splits it, and all the daemon can do about that is
+   refuse the other node's writes and log
+   `RT collection <key> has truth sources on two nodes`.
 7. Add focused tests through composer scripts when behavior changes.
 8. After registering the agent or its `AGENT_SIGNALS` in the topology, update the
    demo's `*TopologyRegistryTest` snapshot and run its `test:unit` — a shared
@@ -44,4 +51,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 - Never add routing logic directly inside agents; use topology declarations or `SignalRouter`.
 - Routing for indexed multi-instance agents must stay declarative in `AGENT_SIGNALS` with `AgentSignalConfigKey::INDEX_FIELD`; do not add `switch` by signal name inside agents or routers for this purpose.
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
+- Never register an RT truth source in an agent with
+  `requiresClusterLeadership()` returning `false`; a per-node agent may read a
+  shared collection, and changes what it does not own by signalling the owner.
 - Never add Repository or Service layers above `DbCollection`.

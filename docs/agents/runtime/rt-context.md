@@ -371,9 +371,73 @@ RT changes are broadcast to all workers via `RT_SYNC_*` signals:
 - Signal queued
 - Daemon broadcasts
 - All workers apply via `RtSyncApplicator`
+- On a cluster, the daemon also announces the fact to every other node, whose
+  daemon applies it and feeds its own workers the same way
 
 Only the **truth source** agent should write to a runtime collection. Other
 agents read the synchronized state.
+
+### The truth source is unique per cluster, not per process
+
+A runtime collection is **always shared across the whole cluster**: there is no
+per-node collection, no flag that makes one, and none is coming. So the
+single-writer rule is a rule about the mesh, not about a process — the node
+hosting the truth source writes, every other node holds a **read-only replica**,
+and replication is one-way from the one to the others. There is no merge, no
+version, no clock and no arbiter, because with one writer there is nothing to
+arbitrate.
+
+What this means when you write an agent that owns a collection:
+
+- **Say it in `requiresClusterLeadership()`.** An agent that registers as a truth
+  source must return `true` (the default), so it runs on exactly one node. An
+  agent that returns `false` runs on every node — and if it registers as a truth
+  source, that collection now has two owners, which is the one thing the model
+  does not allow.
+- **A per-node agent may read a shared collection, not write it.** Writing on a
+  node where the source is not registered fails with
+  `RtTruthSourceWriteNotAllowedException`, exactly as it does off-cluster.
+- **To change a row this node does not own, send a signal to the owning agent.**
+  Cross-node signal delivery already exists; it is the only write path to
+  somebody else's collection.
+
+A node that receives a replica for a collection it owns itself refuses it and
+writes `RT collection <key> has truth sources on two nodes: local and <node>`.
+That line means an agent is registered as a source on two nodes at once — look
+at its `requiresClusterLeadership()` first.
+
+A node joining the mesh is handed each collection whole by its owner, because it
+has no history for the deltas to apply to. That hand-over **replaces** the
+receiver's copy: a row the owner does not send is a row that no longer exists.
+
+**What travels is what an agent owns.** The node announces a write only for the
+collections its own agents registered, so a project's collection is replicated
+by having an owner, and nothing else has to be declared. Two framework
+collections stand outside that rule, because the daemon master registers them
+on every node and no agent stands behind them:
+
+- **`hilosProtectedModeRuntime` is node-local and never travels.** Each master
+  writes its own node's freeze row — the leader by decision, the followers in
+  reaction to the peer frames carrying it — so a replica of it would be one
+  node's freeze overwriting another's.
+- **`hilosSessionRotations` travels both ways.** One cluster-wide store with a
+  second writer by act: the agent owning the session seam announces a rotation
+  from a worker, and whichever master receives the handshake that spends the
+  ticket burns the row. That burn is announced from a node hosting no owning
+  agent, and it is applied on the node that hosts one instead of being refused
+  as a split — or the spent ticket would survive there and buy a second
+  handshake inside its lifetime.
+
+Both are framework-owned and both are named in `DaemonManager`; an application
+collection has no such case, and adding one is not a knob that exists.
+
+**Ownership travels per collection, not per key.** `register()` accepts a list of
+keys, and on one node that is exactly what it means — but the node-level map
+knows only collections, so an agent registered for three keys makes its node
+claim the whole collection cluster-wide. Two nodes owning different keys of one
+collection therefore read as the split the guard exists to name: each refuses
+the other's rows, and a hand-over offers the collection whole. Until that is
+decided, keep a key-scoped truth source on one node.
 
 Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT

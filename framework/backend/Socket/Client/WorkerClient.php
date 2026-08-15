@@ -35,6 +35,8 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -196,6 +198,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
             $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSourceRegisteredDTO => $this->handleWorkerRtSourceRegisteredMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSourceReleasedDTO => $this->handleWorkerRtSourceReleasedMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
@@ -374,6 +378,26 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
+     * Handle the RT collections a started agent owns, reported by its worker.
+     *
+     * @param WorkerRtSourceRegisteredDTO $dto DTO with the agent and the collections it took
+     */
+    private function handleWorkerRtSourceRegisteredMessage(WorkerRtSourceRegisteredDTO $dto): void
+    {
+        $this->agentManager->handleRtSourceRegistered($dto);
+    }
+
+    /**
+     * Handle the release of the RT collections a stopped agent owned.
+     *
+     * @param WorkerRtSourceReleasedDTO $dto DTO with the agent that stopped
+     */
+    private function handleWorkerRtSourceReleasedMessage(WorkerRtSourceReleasedDTO $dto): void
+    {
+        $this->agentManager->handleRtSourceReleased($dto);
+    }
+
+    /**
      * Handle protected-mode enable request from an initiator worker.
      *
      * Hands the carried initiator identity to this node's freeze switch, which freezes the single
@@ -536,6 +560,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * (HIL-436): it cannot answer with a fiction, and whatever starts in its place opens the
      * database that is already in place. Waiting would cost the initiator the full deadline and
      * then close the node over a process that no longer exists.
+     *
+     * What its agents owned in RT is given back here for the same reason (HIL-586): the release
+     * a stopping agent sends never comes from a process that died, and an ownership claim left
+     * behind would have this node refusing replicas for a collection nobody here writes.
      */
     protected function onClose(): void
     {
@@ -546,5 +574,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         }
 
         $this->agentManager->dropReHydrateParticipant(ReHydrateRound::workerParticipant($this->workerIndex));
+        $this->agentManager->releaseRtSourcesOfWorker($this->workerIndex, $this->isMonopolistic);
     }
 }

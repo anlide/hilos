@@ -36,6 +36,9 @@ switch to the focused data-layer skill first.
 - `Hilos::$rt` is the live runtime state entry point. Use it for active
   connections, upload progress, pending UI flags, and state that can be rebuilt
   or safely lost.
+- On a cluster, an `Hilos::$rt` collection is shared by every node, but only the
+  node hosting its truth source writes it; everywhere else it is a read-only
+  replica kept current by the daemon. Reads look the same on every node.
 - Collection access is for loading and querying groups of items.
 - Item access is for reading one loaded model and its item-level calculated
   properties.
@@ -235,6 +238,9 @@ then call that API from the table/page.
 - Do not duplicate project page or table registries in caller code; use the
   project `Hilos` topology registry.
 - Do not store durable business state in `Hilos::$rt`.
+- Do not write an RT collection this node does not own; send a signal to the
+  owning agent instead. The write fails with
+  `RtTruthSourceWriteNotAllowedException`, on a cluster as off it.
 - Do not write DB/RT state directly from pages, tables, or signal handlers when
   a collection/item action owns the mutation.
 - Do not update or delete one known DB/RT item through collection actions that

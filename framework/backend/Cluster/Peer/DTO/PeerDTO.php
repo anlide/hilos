@@ -21,6 +21,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * {@see PeerAgentStatusDTO}, {@see PeerPlacementQueryDTO}, {@see PeerPlacementReportDTO})
  * launch, stop, and track agents placed on a named node; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
+ * RT replication frames ({@see PeerRtSyncDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
+ * fact, and one whole collection to a node that just joined, from the node that owns it to
+ * the other nodes' read-only copies; the
  * protected-mode frames ({@see PeerProtectedModeEnableDTO}, {@see PeerProtectedModeReadyDTO},
  * {@see PeerProtectedModeDisableDTO}) carry the initiator↔leader freeze hand-off that the
  * agent-signal fabric cannot deliver to a leader daemon, and their cluster-wide mirror
@@ -74,6 +77,8 @@ abstract class PeerDTO extends BaseDTO
             PeerPlacementQueryDTO::MESSAGE_TYPE => PeerPlacementQueryDTO::fromArray($data),
             PeerPlacementReportDTO::MESSAGE_TYPE => PeerPlacementReportDTO::fromArray($data),
             PeerSignalDTO::MESSAGE_TYPE => PeerSignalDTO::fromArray($data),
+            PeerRtSyncDTO::MESSAGE_TYPE => PeerRtSyncDTO::fromArray($data),
+            PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
             PeerProtectedModeEnableDTO::MESSAGE_TYPE => PeerProtectedModeEnableDTO::fromArray($data),
             PeerProtectedModeReadyDTO::MESSAGE_TYPE => PeerProtectedModeReadyDTO::fromArray($data),
             PeerProtectedModeDisableDTO::MESSAGE_TYPE => PeerProtectedModeDisableDTO::fromArray($data),

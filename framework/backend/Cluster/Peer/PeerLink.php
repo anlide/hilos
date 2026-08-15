@@ -31,6 +31,8 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -265,6 +267,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
+            $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
+            $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
             $frame instanceof PeerProtectedModeReadyDTO => $this->onProtectedModeReady($frame),
             $frame instanceof PeerProtectedModeDisableDTO => $this->onProtectedModeDisable($frame),
@@ -472,6 +476,30 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('signal');
         $this->server->onSignalReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received RT replica to the server for this node's copy to be updated.
+     *
+     * @param PeerRtSyncDTO $frame Incoming RT sync frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtSync(PeerRtSyncDTO $frame): void
+    {
+        $this->requireHandshaked('RT sync');
+        $this->server->onRtSyncReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received RT collection to the server for this node's copy to be replaced.
+     *
+     * @param PeerRtSnapshotDTO $frame Incoming RT snapshot frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtSnapshot(PeerRtSnapshotDTO $frame): void
+    {
+        $this->requireHandshaked('RT snapshot');
+        $this->server->onRtSnapshotReceived($this, $frame);
     }
 
     /**

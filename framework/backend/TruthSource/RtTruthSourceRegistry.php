@@ -93,6 +93,29 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Lists the runtime collections one agent is a truth source for.
+     *
+     * The granularity of the registration is dropped on purpose: whether an agent owns a whole
+     * collection or three of its keys, the collection has an owner in this process, and that is
+     * the whole question the node-level map ({@see RtNodeSourceMap}) puts to it.
+     *
+     * @param string $agentId Agent to ask about
+     * @return list<string> Collections it is registered for, each named once
+     */
+    public static function collectionsOf(string $agentId): array
+    {
+        $collections = [];
+        $sources = &self::getSources();
+        foreach ($sources as $collection => $agents) {
+            if (isset($agents[$agentId])) {
+                $collections[] = (string)$collection;
+            }
+        }
+
+        return $collections;
+    }
+
+    /**
      * Check if collection-wide write operation is allowed for runtime collection.
      *
      * @param string $collection Collection name

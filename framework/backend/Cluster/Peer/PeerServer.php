@@ -34,11 +34,14 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\RtSyncMesh;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -88,7 +91,12 @@ use Throwable;
  *
  * @extends AbstractServer<PeerLink>
  */
-final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, ConsensusMesh, PlacementMesh, ProtectedModeMesh
+final class PeerServer extends AbstractServer implements
+    LocalNodeAnnouncer,
+    ConsensusMesh,
+    PlacementMesh,
+    ProtectedModeMesh,
+    RtSyncMesh
 {
     /** @var float Seconds to wait before retrying a failed or dropped seed dial */
     private const float DIAL_RETRY_INTERVAL_SEC = 5.0;
@@ -630,6 +638,11 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
         // Reconcile-on-rejoin: report the agents this node still hosts so a leader on the
         // other end can stop any that it has already re-placed elsewhere (a no-op otherwise).
         $this->placement?->onPeerHandshaked($remote->nodeId);
+
+        // Hand the peer the RT collections this node owns (HIL-586). Unconditional for the same
+        // reason the line above is: the peer may be a member already, but this link is what lets
+        // anything reach it, and nothing else will ask later.
+        Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
     }
 
     /**
@@ -1538,6 +1551,98 @@ final class PeerServer extends AbstractServer implements LocalNodeAnnouncer, Con
             $sink->deliverSignalToAgent($frame->agentType, $frame->agentIndex, $frame->signal);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer signal to agent '{$frame->agentType}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Announces one RT sync fact written on this node to every other node of the mesh.
+     *
+     * Implements {@see RtSyncMesh}. An RT collection has one truth source in the cluster, so
+     * there is nobody to address:
+     * the fact goes to every handshaked link, and each receiver applies it to its read-only
+     * copy. Delivery is best-effort in the same sense as {@see sendSignalToNode()} — a node
+     * that is not linked right now simply does not get this fact; it is re-offered the whole
+     * collection when it joins, and durability is out of scope (HIL-183).
+     *
+     * @param string $signalType RT sync signal type being announced
+     * @param SignalDTO $signal RT sync signal the other nodes apply
+     */
+    public function broadcastRtSync(string $signalType, SignalDTO $signal): void
+    {
+        $this->broadcastToNodes(new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal));
+    }
+
+    /**
+     * Applies a received RT replica to this node's copy of the collection.
+     *
+     * Hands the frame to the local apply port and stops there: the fact is not passed on to
+     * the rest of the mesh, because the owner already announced it to everyone. That is the
+     * whole echo defense — one hop, no hop counters, no de-duplication by id. An unregistered
+     * sink or a failing apply is dropped and logged, so a bad frame cannot end the daemon loop.
+     *
+     * @param PeerLink $link Link the replica arrived on
+     * @param PeerRtSyncDTO $frame Received RT sync frame
+     */
+    public function onRtSyncReceived(PeerLink $link, PeerRtSyncDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->rtSyncSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer RT sync from node '{$frame->originNodeId}': no local RT sync sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->applyRemoteRtSync($frame->originNodeId, $frame->signalType, $frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning("Failed to apply peer RT sync from node '{$frame->originNodeId}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Hands one whole RT collection to the node that just joined the mesh.
+     *
+     * Implements {@see RtSyncMesh}. Addressed rather than broadcast: only the joining node is
+     * behind on this collection, and the others would be told to replace a copy that is already
+     * current. A node that is not linked is silently skipped — it cannot be behind on anything
+     * it is not connected for, and it will be offered the collection when it does join.
+     *
+     * @param string $nodeId Node that joined and is being handed the collection
+     * @param string $collectionKey RT collection this node owns
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
+     */
+    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows): void
+    {
+        $this->sendToNode($nodeId, new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows));
+    }
+
+    /**
+     * Replaces this node's copy of an RT collection with the one its owner handed over.
+     *
+     * The receiving twin of {@see sendRtSnapshotToNode()}, and it stops here in the same way
+     * {@see onRtSyncReceived()} does: nothing is passed on, since the owner addressed the node
+     * that needed it. An unregistered sink or a failing apply is dropped and logged.
+     *
+     * @param PeerLink $link Link the snapshot arrived on
+     * @param PeerRtSnapshotDTO $frame Received RT snapshot frame
+     */
+    public function onRtSnapshotReceived(PeerLink $link, PeerRtSnapshotDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->rtSyncSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer RT snapshot from node '{$frame->originNodeId}': no local RT sync sink registered",
+            );
+            return;
+        }
+
+        try {
+            $sink->applyRemoteRtSnapshot($frame->originNodeId, $frame->collectionKey, $frame->rows);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
         }
     }
 

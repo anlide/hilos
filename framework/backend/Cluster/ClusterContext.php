@@ -91,6 +91,9 @@ final class ClusterContext
     /** @var ?AgentSignalSink Local delivery port for cross-node signals, registered by the daemon at start. */
     private ?AgentSignalSink $agentSignalSink = null;
 
+    /** @var ?RtSyncSink Local apply port for cross-node RT replicas, registered by the daemon at start. */
+    private ?RtSyncSink $rtSyncSink = null;
+
     /**
      * @return bool True when cluster mode is enabled
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -512,6 +515,30 @@ final class ClusterContext
     public function agentSignalSink(): ?AgentSignalSink
     {
         return $this->agentSignalSink;
+    }
+
+    /**
+     * Registers the local apply port for RT replicas broadcast from other nodes.
+     *
+     * The daemon registers itself here at start: unlike a forwarded signal, which belongs to
+     * an agent and travels on to a worker, an RT replica is applied by the master to the copy
+     * it holds. Symmetric to {@see registerAgentSignalSink()}.
+     *
+     * @param RtSyncSink $sink Local apply port for cross-node RT replicas
+     */
+    public function registerRtSyncSink(RtSyncSink $sink): void
+    {
+        $this->rtSyncSink = $sink;
+    }
+
+    /**
+     * Returns the local apply port for cross-node RT replicas, or null when none is set.
+     *
+     * @return ?RtSyncSink Apply port, or null
+     */
+    public function rtSyncSink(): ?RtSyncSink
+    {
+        return $this->rtSyncSink;
     }
 
     /**

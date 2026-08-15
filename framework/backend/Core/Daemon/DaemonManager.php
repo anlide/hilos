@@ -15,9 +15,12 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\RtSyncMesh;
+use Hilos\Cluster\RtSyncSink;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -54,6 +57,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\ReHydrateRound;
@@ -65,9 +69,11 @@ use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\RtBaseException;
+use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
@@ -99,6 +105,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
@@ -130,7 +137,8 @@ abstract class DaemonManager extends BaseManager implements
     ConnectionDropper,
     ProtectedModeSnapshotSource,
     ProtectedModeAdmissionRecorder,
-    ProtectedModeClientNotifier
+    ProtectedModeClientNotifier,
+    RtSyncSink
 {
     /** @var float Seconds between stuck-readiness log lines while the WebSocket server waits for startup agents */
     private const float READINESS_LOG_INTERVAL = 60.0;
@@ -384,6 +392,9 @@ abstract class DaemonManager extends BaseManager implements
         // connections through: the WebSocket server it broadcasts over is ours, not the
         // worker server's.
         Hilos::$cluster?->registerProtectedModeClientNotifier($this);
+        // Expose this daemon as the port an RT replica from another node is applied through: the
+        // copy a receiving node holds lives in the master, and the workers are fed from here.
+        Hilos::$cluster?->registerRtSyncSink($this);
         // Off-cluster there is no peer transport to build a freeze coordinator, and this is the one
         // start-up path both topologies run, so the single-node freeze is built here. The clustered
         // one is built by PeerServer::onStart(); the two are mutually exclusive by construction.
@@ -1161,6 +1172,7 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 $this->sendSyncToWorkers($workerServer, $signal);
                 $this->handleDaemonSignal($signal);
+                $this->broadcastRtSyncToPeers($peerServer, $signal);
             }
 
             // Get destinations for signal
@@ -1374,10 +1386,84 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        $this->sendToWorkers($workerServer, $dto);
+    }
+
+    /**
+     * Writes one already-built frame to every worker of this node.
+     *
+     * @param WorkerServer $workerServer Worker server instance
+     * @param WorkerDTO $dto Frame to write to each worker link
+     */
+    private function sendToWorkers(WorkerServer $workerServer, WorkerDTO $dto): void
+    {
         foreach ($workerServer->getClients() as $client) {
             if ($client instanceof WorkerClient) {
                 $client->send($dto->toJson());
             }
+        }
+    }
+
+    /**
+     * Announces a local RT sync fact to the rest of the mesh, and nothing else.
+     *
+     * Sits in the sync branch of {@see dispatchSignals()}, which carries the DB sync family as
+     * well, so the RT filter is the point of the method rather than a formality: the nodes share
+     * one database, and re-announcing a DB fact over the mesh would be a second copy of a write
+     * they already have. Off-cluster there is no peer server and nothing is announced.
+     *
+     * What this node has no business announcing is filtered out by {@see announcesRtCollection()},
+     * and a fact whose payload does not say which collection it belongs to is not announced at
+     * all: the wire carries facts a receiving node applies by their owner's word, so an
+     * unattributable one has no owner to speak for it.
+     *
+     * Protected rather than private so that what this node tells the mesh can be observed from a
+     * subclass; the port it announces through is an interface for the same reason.
+     *
+     * @param ?RtSyncMesh $mesh Peer server found for this dispatch pass, or null off-cluster
+     * @param SignalDTO $signal Signal being dispatched
+     */
+    protected function broadcastRtSyncToPeers(?RtSyncMesh $mesh, SignalDTO $signal): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+
+        $signalType = $signal->signalType->getType();
+        if (!in_array($signalType, PeerRtSyncDTO::SIGNAL_TYPES, true)) {
+            return;
+        }
+
+        $syncData = $signal->data instanceof SyncSignalDataInterface ? $signal->data : null;
+        if ($syncData === null || !$this->announcesRtCollection($syncData->collectionKey)) {
+            return;
+        }
+
+        $mesh->broadcastRtSync($signalType, $signal);
+    }
+
+    /**
+     * Hands every RT collection this node owns to one other node of the mesh.
+     *
+     * Only the owner offers a collection, and only to the node it just linked to: everybody else
+     * has been kept current by the deltas. What this node merely holds a copy of is not offered
+     * at all — passing on somebody else's collection would make this node a second source of it,
+     * which is the very thing the map is here to prevent.
+     *
+     * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
+     * what this node hands over.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     * @param string $nodeId Node the collections go to
+     */
+    protected function sendRtSnapshotsToNode(?RtSyncMesh $mesh, string $nodeId): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+
+        foreach ($this->agentManagerDaemon->rtNodeSourceMap()->collections() as $collectionKey) {
+            $mesh->sendRtSnapshotToNode($nodeId, $collectionKey, RtSnapshot::rows($collectionKey));
         }
     }
 
@@ -1416,6 +1502,153 @@ abstract class DaemonManager extends BaseManager implements
             ),
             default => null,
         };
+    }
+
+    /**
+     * Applies one RT sync fact written on another node and fans it out to this node's workers.
+     *
+     * Implements {@see RtSyncSink}. What arrives is the very signal the owning node's worker
+     * produced, so it takes the same two steps a locally-written fact does — the workers of this
+     * node, then the copy this master holds — and stops there. Nothing is announced back to the
+     * mesh: the owner already told everyone, and a second announcement is the echo that this
+     * transport is built to make impossible rather than to filter.
+     *
+     * A frame whose inner signal is not the RT sync type it declares is dropped: the seam is
+     * reachable from the wire, and applying an arbitrary sync signal by another node's word is
+     * the one thing it must not do. The name is checked beside the type because the two steps
+     * below read different fields — {@see sendSyncToWorkers()} builds its frame from the signal
+     * NAME — so a signal named after another sync fact would reach the workers as that fact
+     * however well its type checked out. A payload that is no sync payload at all goes the same
+     * way, and it has to: it names no collection, so the ownership question below cannot even be
+     * asked of it, and the apply step would be left converting it blind.
+     *
+     * A replica for a collection an agent of this node owns is dropped too, and that line in the
+     * log is the machine-readable form of the defect this whole ticket is about: one collection
+     * with a truth source on two nodes. Applying it would let the two owners overwrite each other
+     * for as long as both keep running, and there is no arbitration in the model to decide between
+     * them - so the node keeps what it wrote itself and says whose write it refused. The one
+     * collection every master co-writes is exempt for the reason given on
+     * {@see isMasterCoWritten()}: there the second writer is not a split, it is the design.
+     *
+     * @param string $originNodeId Id of the node the write happened on
+     * @param string $signalType RT sync signal type the frame carried
+     * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     */
+    public function applyRemoteRtSync(string $originNodeId, string $signalType, SignalDTO $signal): void
+    {
+        $carriedType = $signal->signalType->getType();
+        $carriedName = $signal->signalName->getName();
+        if (
+            $carriedType !== $signalType
+            || $carriedName !== $signalType
+            || !in_array($carriedType, PeerRtSyncDTO::SIGNAL_TYPES, true)
+        ) {
+            Logger::warning(
+                "Dropping peer RT sync from node '{$originNodeId}': declared '{$signalType}',"
+                . " carried type '{$carriedType}' name '{$carriedName}'"
+                . ' - only a matching RT sync fact is applied',
+            );
+
+            return;
+        }
+
+        $syncData = $signal->data instanceof SyncSignalDataInterface ? $signal->data : null;
+        if ($syncData === null) {
+            Logger::warning(
+                "Dropping peer RT sync from node '{$originNodeId}': its payload names no collection"
+                . ' - there is nothing to check ownership against',
+            );
+
+            return;
+        }
+
+        if (
+            $this->agentManagerDaemon->rtNodeSourceMap()->owns($syncData->collectionKey)
+            && !self::isMasterCoWritten($syncData->collectionKey)
+        ) {
+            Logger::warning(
+                "RT collection {$syncData->collectionKey} has truth sources on two nodes:"
+                . " local and {$originNodeId}",
+            );
+
+            return;
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer !== null) {
+            $this->sendSyncToWorkers($workerServer, $signal);
+        }
+
+        $this->handleDaemonSignal($signal);
+    }
+
+    /**
+     * Replaces this node's copy of one RT collection with the one its owner handed over.
+     *
+     * Implements {@see RtSyncSink}. Replacement, not merge: the owner's copy is the whole truth
+     * about the collection, so what this node held and the snapshot does not carry is gone.
+     * The workers are told the same thing the only way the wire says it — every row this node
+     * held is deleted, then every row the owner sent is created — because a create alone leaves
+     * a row a worker already has untouched, and this node's copy would then agree with the
+     * owner while its workers did not.
+     *
+     * A snapshot for a collection this node owns is refused exactly as a delta is, and for the
+     * same reason: two owners is the defect, not an input. The exemption a delta of the
+     * co-written collection gets ({@see isMasterCoWritten()}) has no place here: a snapshot is
+     * only ever offered by the node whose own agent owns the collection
+     * ({@see sendRtSnapshotsToNode()}), so one arriving for a collection this node's agent owns
+     * is that split and not a master's half of a shared store.
+     *
+     * @param string $originNodeId Id of the node that owns the collection
+     * @param string $collectionKey RT collection being replaced
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     */
+    public function applyRemoteRtSnapshot(string $originNodeId, string $collectionKey, array $rows): void
+    {
+        if ($this->agentManagerDaemon->rtNodeSourceMap()->owns($collectionKey)) {
+            Logger::warning(
+                "RT collection {$collectionKey} has truth sources on two nodes:"
+                . " local and {$originNodeId}",
+            );
+
+            return;
+        }
+
+        $held = RtSnapshot::rows($collectionKey);
+        RtSnapshot::replace($collectionKey, $rows);
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        foreach (array_keys($held) as $stateId) {
+            $this->sendToWorkers($workerServer, new WorkerRtSyncDeletedMessageDTO(
+                new RtSyncDeletedSignalData($collectionKey, (string)$stateId),
+            ));
+        }
+
+        foreach ($rows as $stateId => $row) {
+            $this->sendToWorkers($workerServer, new WorkerRtSyncCreatedMessageDTO(
+                new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row),
+            ));
+        }
+    }
+
+    /**
+     * Hands this node's own RT collections to a node the peer transport has just linked to.
+     *
+     * Implements {@see RtSyncSink}. The transport calls it off the completed handshake rather
+     * than off the join, because a join only says the other node is a member of the mesh -
+     * learned, on three nodes and up, from a third node long before there is a link to send
+     * anything over. Nothing re-asks later: the handshake that finally opens the link merges no
+     * membership change, so a hand-over hung off the join would simply never happen there.
+     *
+     * @param string $nodeId Node this one can now reach
+     */
+    public function handOverRtSnapshots(string $nodeId): void
+    {
+        $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId);
     }
 
     /**
@@ -2013,9 +2246,13 @@ abstract class DaemonManager extends BaseManager implements
      * Invoked by the cluster context after the peer transport merged the join into the
      * master registry. The framework default drives placement recovery: a returning node
      * cancels a pending failover for its agents, and a newly-capable node lets the leader
-     * retry any agent that failover had left unplaced. A project may override to react,
-     * calling parent::onNodeJoined() first. Runs on the daemon master loop, so it must stay
+     * retry any agent that failover had left unplaced. A project may override to react, calling
+     * parent::onNodeJoined() first. Runs on the daemon master loop, so it must stay
      * non-blocking.
+     *
+     * Handing that node this one's RT state is NOT done here, though a node that has just come
+     * up needs it: a join says the node is a member, not that this node can reach it. See
+     * {@see handOverRtSnapshots()}, which the transport calls off the handshake instead.
      *
      * @param ClusterNode $node Node that joined
      */
@@ -2297,6 +2534,45 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
+    }
+
+    /**
+     * Names the one runtime collection every node's master writes beside its owning agent.
+     *
+     * The two registrations above are what the node-level ownership map cannot see: it is built
+     * from agent reports, and these two writers are masters. They are opposites, which is why the
+     * exception is this narrow. The protected-mode freeze row is node-local by design - each
+     * master writes its own - so it is nobody's to announce and is refused as any other write of
+     * a collection this node writes itself. The rotation store is the opposite: one cluster-wide
+     * store, written by the agent that owns the session seam and by whichever master trades a
+     * ticket on a 101 (HIL-582). That second writer is a master, on any node, so the burn has to
+     * travel and has to be applied where the agent lives - or the spent ticket survives there and
+     * buys a second handshake inside its TTL.
+     *
+     * @param string $collectionKey Runtime collection a write belongs to
+     * @return bool True for the collection masters co-write with its owner
+     */
+    private static function isMasterCoWritten(string $collectionKey): bool
+    {
+        return $collectionKey === StateHilosSessionRotation::RT_COLLECTION;
+    }
+
+    /**
+     * Tells whether a write to a runtime collection is this node's to announce to the mesh.
+     *
+     * Announcing is a claim of ownership, and this node may make it for what its own agents
+     * registered - {@see RtNodeSourceMap} is that list - plus the store every master co-writes.
+     * Everything else it holds is somebody else's, kept current by that owner's announcements:
+     * passing such a write on would make this node a second source of it, which is the split the
+     * receiving side warns about rather than an update.
+     *
+     * @param string $collectionKey Runtime collection the write belongs to
+     * @return bool True when the mesh should hear about the write
+     */
+    private function announcesRtCollection(string $collectionKey): bool
+    {
+        return $this->agentManagerDaemon->rtNodeSourceMap()->owns($collectionKey)
+            || self::isMasterCoWritten($collectionKey);
     }
 
     /**

@@ -86,6 +86,12 @@ final class WorkerConstants
     /** @var string RT sync deleted (daemon/worker broadcast); canonical value in SignalTypeConstants */
     public const string MESSAGE_RT_SYNC_DELETED = SignalTypeConstants::RT_SYNC_DELETED;
 
+    /** @var string Worker reporting which RT collections an agent it started owns */
+    public const string MESSAGE_RT_SOURCE_REGISTERED = 'rt_source_registered';
+
+    /** @var string Worker reporting that a stopped agent owns no RT collection any more */
+    public const string MESSAGE_RT_SOURCE_RELEASED = 'rt_source_released';
+
     // Message types from worker to daemon
     /** @var string Worker registration request */
     public const string MESSAGE_WORKER_REGISTER = 'worker_register';

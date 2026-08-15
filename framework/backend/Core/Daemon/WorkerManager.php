@@ -86,6 +86,8 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
@@ -566,6 +568,11 @@ abstract class WorkerManager extends BaseManager
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+
+        // Tell the daemon what this agent took ownership of before reporting that it started:
+        // the master replicates RT by that map, and the agent is addressable from the moment
+        // the started notification lands.
+        $this->notifyRtSourcesRegistered($agentId);
 
         // Notify daemon that agent started
         $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
@@ -1577,6 +1584,48 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Reports to the daemon which RT collections an agent of this worker owns.
+     *
+     * The truth-source registry is worker-local, and the master is where cross-node replication
+     * is decided, so what the agent registered in its own process has to be told rather than
+     * read. An agent that registered nothing is not reported at all: the map answers "does this
+     * node own the collection", and an empty answer is the same as no entry.
+     *
+     * @param string $agentId Agent whose registrations are being reported
+     */
+    private function notifyRtSourcesRegistered(string $agentId): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $collectionKeys = RtTruthSourceRegistry::collectionsOf($agentId);
+        if ($collectionKeys === []) {
+            return;
+        }
+
+        $this->daemonClient->send(new WorkerRtSourceRegisteredDTO($agentId, $collectionKeys));
+    }
+
+    /**
+     * Reports to the daemon that a stopped agent of this worker owns nothing any more.
+     *
+     * Sent for every stopped agent, including one that never registered anything: the worker
+     * would otherwise have to remember what it once reported, and the master drops an agent it
+     * does not know about anyway.
+     *
+     * @param string $agentId Agent that stopped
+     */
+    private function notifyRtSourcesReleased(string $agentId): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $this->daemonClient->send(new WorkerRtSourceReleasedDTO($agentId));
+    }
+
+    /**
      * Notifies the daemon that a worker-local agent has stopped.
      *
      * @param string $agentId Agent id
@@ -1652,6 +1701,7 @@ abstract class WorkerManager extends BaseManager
         } finally {
             TruthSourceRegistry::unregisterAgent($agent->getId());
             RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            $this->notifyRtSourcesReleased($agent->getId());
         }
     }
 

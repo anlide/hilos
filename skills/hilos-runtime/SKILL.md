@@ -27,6 +27,13 @@ Start with `agents.md`, then read the matching runtime guide.
   calling `setRepresentItem()`; collection-backed aliases auto-attach to their
   represented parent collection when one exists.
 - `RtStates` stores runtime-only `RtState` rows in memory.
+- A runtime collection is shared by the whole **cluster**, not by one node: its
+  truth source is unique cluster-wide, every other node holds a read-only
+  replica, and the daemon replicates each write one way from the owner. There is
+  no per-node collection and no flag that makes one. What travels is what an
+  agent of the node owns; the two collections the daemon master registers itself
+  are framework-owned exceptions, named in `DaemonManager` and explained in
+  `docs/agents/runtime/rt-context.md`.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
   state rows. RT View collection reads treat `null` offsets as missing optional
   keys.
@@ -190,6 +197,13 @@ of duplicating runtime mutation logic in the page/table layer.
 - Never write to an `RtStates` collection directly (`add()`, `remove()`,
   `clear()`): those queue no RT sync, so the change exists in the writing worker
   and nowhere else. Write through the collection or item actions.
+- An agent that registers as a truth source must run on exactly one node:
+  keep `requiresClusterLeadership()` at its default `true`. Two nodes owning one
+  collection is the split the daemon can only refuse and log
+  (`RT collection <key> has truth sources on two nodes`).
+- To change a collection this node does not own, send a signal to the owning
+  agent. A replica is read-only, and writing it raises
+  `RtTruthSourceWriteNotAllowedException`.
 - Never register a state collection without its `setRepresent()` representation:
   with no actions class there is no write path that syncs, and every other
   worker keeps an empty collection forever.
