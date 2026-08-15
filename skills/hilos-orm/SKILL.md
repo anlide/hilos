@@ -25,6 +25,9 @@ touched ORM surfaces.
   `docs/agents/code-style/table-names.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`
+- A new table needs a row in the project's PII registry, an empty column map
+  included: `docs/agents/architecture/backup-anonymization.md` or
+  `$hilos-backup-anonymization`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
 - Test commands: use `$hilos-testing-cli`
 

@@ -113,9 +113,11 @@ Description:
   does not answer is an error, not a silent fallback to cold.
 
   Environment matrix: prod archive -> prod is allowed (disaster recovery); prod archive
-  -> non-prod requires anonymization (unavailable until HIL-275, so refused); non-prod
-  archive -> prod is always refused; an archive with no recorded environment needs
-  --force to enter prod.
+  -> non-prod restores through the anonymization pass, which rewrites the personal data
+  the backup catalog declares under its [pii] registry and refuses when no registry is
+  declared (a schema-only archive carries no rows and is exempt); non-prod archive ->
+  prod is always refused; an archive with no recorded environment needs --force to enter
+  prod.
 
   Migration gate: each connection's migration level recorded in the archive is compared
   with the level this code expects. Behind -> restored, then migrated forward; the gap is
@@ -135,7 +137,7 @@ Exit codes:
   0  restore completed (hot: reported by the agent; cold: engine returned)
   1  refused (digest mismatch, ENV guard, migration gate, daemon silent or busy) or failed
   2  unknown id/scope, or missing --yes
-  3  BACKUP_DIR is not configured
+  3  BACKUP_DIR is not configured, or no [pii] registry where anonymization is required
 
 Examples:
   php cli.php backup:restore 2026-08-08_03-00-00 --yes

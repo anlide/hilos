@@ -49,6 +49,10 @@ php cli.php db:seed:apply 001
 - Migration runs in transaction where possible
 - Test migrations in test environment before applying to production
 - After schema change: update corresponding `Entity` class fields to match
+- A new table needs a row in the project's PII registry — an empty column map when
+  it holds nothing personal — or a restore that requires anonymization refuses
+  before it imports anything
+  ([../architecture/backup-anonymization.md](../architecture/backup-anonymization.md))
 
 ## Test reset
 

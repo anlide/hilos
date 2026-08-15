@@ -148,12 +148,17 @@ also registers those. Generate, in any order:
 2. A backup catalog — `final class … implements
    Hilos\Core\Catalog\CatalogProviderInterface` — bound through the
    `BACKUP_CATALOG` constant on the project `Hilos` facade (the framework default
-   is `null` = subsystem off). It carries two content keys: the per-connection
+   is `null` = subsystem off). It carries three content keys: the per-connection
    reference-table registry under `BackupConstants::CATALOG_REFERENCES` (a list of
    Entity/Object collection class-strings per connection index — the framework
    derives table names from the classes, so the registry survives table renames,
    and keeps their rows under the schema-seed scope; an empty registry is valid —
-   schema-seed then captures schema only, with a warning), and an optional
+   schema-seed then captures schema only, with a warning), the PII registry under
+   `BackupConstants::CATALOG_PII` (a table-to-strategy map per connection index,
+   classifying every table the project creates — without it a restore that requires
+   anonymization refuses at the coverage gate before it imports anything, so this
+   key is not optional for a project that will ever restore into a lesser
+   environment: [backup-anonymization.md](backup-anonymization.md)), and an optional
    schedule under `BackupConstants::CATALOG_SCHEDULE` (omit it to take the
    framework default: one daily full backup at 03:00 on the agent mechanism).
 3. Environment values through the project `EnvCatalog`: `BACKUP_ENABLED`,
@@ -261,7 +266,8 @@ Restoring is an operator action too (HIL-274): `php cli.php backup:restore <id>
 the CLI on both paths — archive resolution, a digest re-check, the environment
 matrix, and the explicit `--yes` a destructive operation requires. The matrix: a
 prod archive restores into prod as-is (disaster recovery); a prod archive into a
-non-prod target requires anonymization (refused until the HIL-275 toolkit lands); a
+non-prod target restores through the anonymization pass, which needs a declared PII
+registry and refuses without one ([backup-anonymization.md](backup-anonymization.md)); a
 non-prod archive never enters prod; an archive whose sidecar records no environment
 needs `--force` to enter prod. By default the restore is HOT: the daemon's backup
 agent freezes the node through protected mode, spawns the `backup:restore-run`

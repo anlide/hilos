@@ -13,6 +13,8 @@ the recipe before generating code.
 - Per-feature generation recipe + the contract shapes:
   `docs/agents/architecture/admin-feature-scaffold.md`
 - Normative boundary + the two modes: `docs/agents/architecture/admin-features.md`
+- The PII registry a backup catalog must declare, and the restore gates that
+  demand it: `docs/agents/architecture/backup-anonymization.md`
 - Browser table / source fan-out mechanics:
   `docs/agents/architecture/browser-source-fanout.md`
 - Topology registration (PAGES / TABLES / PAGE_TABLES): `docs/agents/app-topology.md`
@@ -25,8 +27,9 @@ the recipe before generating code.
 1. Identify the framework feature and its contract shape: framework-owned data
    source (settings — configure-only), project-owned data behind a framework
    contract (hilos-users — bound), or a configure-only engine with a monopoly
-   agent (backup — a catalog + env + agent/CLI/RT-index binding). Read the base
-   class; generate what it leaves abstract.
+   agent (backup — a catalog carrying the reference and PII registries, env
+   values, and agent/CLI/RT-index binding). Read the base class; generate what it
+   leaves abstract.
 2. Generate against the framework base classes and their extension points, never
    by copying another project. The engine — table merge, page subscribe, action
    lifecycle — stays in the framework base.

@@ -42,6 +42,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/command-server.md](docs/agents/architecture/command-server.md) | CLI↔daemon control plane: the command socket, request/reply DTOs, held-parking, routing a command to an agent, admin:grant as the worked example |
 | [architecture/llm-routing.md](docs/agents/architecture/llm-routing.md) | choosing an LLM provider or adding an agent that talks to an LLM: named-profile routing, provider decoupled from credentials, env-default+settings-override resolution, the reserved worker/node placement seam |
 | [architecture/protected-mode.md](docs/agents/architecture/protected-mode.md) | freezing a node for a destructive operation: the unconditional freeze row and its RtContext boundary, the agent-only entry with CLI as trigger, fail-closed guards, what null means to the RT readers |
+| [architecture/backup-anonymization.md](docs/agents/architecture/backup-anonymization.md) | declaring a project's PII registry, classifying a new table or column, choosing an anonymization strategy, reading a refusal from the coverage or compatibility gate |
 
 ## Framework Development
 
