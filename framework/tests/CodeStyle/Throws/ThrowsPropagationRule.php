@@ -50,9 +50,6 @@ final class ThrowsPropagationRule implements CrossFileRule
     /** Prefix the report puts on a link the rule walked through instead of trusting. */
     private const string PRIVATE_MARK = 'private ';
 
-    /** @var array<int, string>|null Paths judged, addressed from the repository root; null judges the whole index */
-    private readonly ?array $zone;
-
     private SourceIndex $index;
 
     private CallResolver $resolver;
@@ -62,37 +59,22 @@ final class ThrowsPropagationRule implements CrossFileRule
     /** @var array<string, array<string, array<int, string>>> Exceptions reachable through a private link, by method key */
     private array $throughPrivateMemo = [];
 
-    /**
-     * @param array<int, string>|null $zone Judged paths from the repository root; null judges the whole index
-     */
-    private function __construct(?array $zone)
+    private function __construct()
     {
-        $this->zone = $zone;
     }
 
     /**
-     * The judged zone grows one phase at a time while the index stays whole. Turned on
-     * across every root at once the rule reported 779 lines in 234 files, and a baseline
-     * that size is read as a mute list rather than as owed work — which is the one
-     * thing it must never become.
-     *
-     * @param array<int, string> $paths Judged paths, each addressed from the repository root
-     * @return self Rule that judges the files under those paths and no others
-     */
-    public static function forZone(array $paths): self
-    {
-        return new self($paths);
-    }
-
-    /**
-     * The fixture tree has no subsystem to phase, and neither will the last phase of
-     * the real one.
+     * The only constructor there is. The rule was phased in behind a judged zone that
+     * grew one subsystem at a time while the index stayed whole — turned on across
+     * every root at once it reported 779 lines in 234 files, and a baseline that size
+     * is read as a mute list rather than as owed work. The phases are over: what is
+     * left outside the index is left outside by the index, not by the rule.
      *
      * @return self Rule that judges every class the index holds
      */
     public static function forWholeIndex(): self
     {
-        return new self(null);
+        return new self();
     }
 
     /**
@@ -143,12 +125,9 @@ final class ThrowsPropagationRule implements CrossFileRule
 
     /**
      * One trait used by two classes that implement the same interface reaches the same
-     * line twice, and the report says a thing once.
-     *
-     * The zone is applied to the hit and not to the class it was found from, because
-     * the two differ: a trait's widening is reported where its tag is written, so
-     * judging by the using class would let a hit fall outside the zone in one
-     * direction and leave a trait inside it unjudged in the other.
+     * line twice, and the report says a thing once. Deduplication is by the hit and not
+     * by the class it was found from, because the two differ: a trait's widening is
+     * reported where its tag is written rather than where it is used.
      *
      * @param array<int, Violation> $violations Hits collected across the tree
      * @return array<int, Violation> The same hits, deduplicated and ordered by file and line
@@ -157,9 +136,6 @@ final class ThrowsPropagationRule implements CrossFileRule
     {
         $unique = [];
         foreach ($violations as $violation) {
-            if (!$this->judges($violation->relativePath)) {
-                continue;
-            }
             $unique[$violation->relativePath . ':' . $violation->line . ' ' . $violation->message] = $violation;
         }
 
@@ -169,35 +145,6 @@ final class ThrowsPropagationRule implements CrossFileRule
                 <=> [$right->relativePath, $right->line, $right->message]);
 
         return $ordered;
-    }
-
-    /**
-     * A judged path is a whole prefix and not a path segment, unlike the zone of
-     * `EMPTY-STRING-SENTINEL`: a cross-file rule is handed paths from the repository
-     * root rather than from a scanned root, so a bare `Socket` would turn on the
-     * framework subsystem and the demos' own directories of that name in one move.
-     *
-     * An entry may name a single file as well as a directory. The sibling zone lists
-     * `Hilos.php` among its segments, so an entry of that shape is one copied line
-     * away — and a directory-only test would answer it with silence that reads as
-     * coverage.
-     *
-     * @param string $path File path of a hit, addressed from the repository root
-     * @return bool True when the file is inside the judged zone
-     */
-    private function judges(string $path): bool
-    {
-        if ($this->zone === null) {
-            return true;
-        }
-
-        foreach ($this->zone as $judged) {
-            if ($path === $judged || str_starts_with($path, $judged . '/')) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

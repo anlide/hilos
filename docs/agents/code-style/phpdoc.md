@@ -148,8 +148,8 @@ documenting non-obvious error contracts.
 Checked automatically: `THROWS-PROPAGATION`, see
 [automated-checks.md](automated-checks.md). The check is narrower than this
 section by declaration — it judges the call forms whose target is written down,
-inside the zone it has reached so far — so a green run answers for that zone and
-those forms, and the audit above answers for everything else.
+across every production root — so a green run answers for those forms wherever
+they sit, and the audit above answers for everything else.
 
 Before finishing, review the full direct-callee audit and every added or
 changed `@throws`. Verify where each exception originates, whether the callee

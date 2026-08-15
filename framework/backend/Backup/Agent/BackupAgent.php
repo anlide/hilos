@@ -26,6 +26,7 @@ use Hilos\Backup\BackupStatus;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestorePhase;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
@@ -36,6 +37,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ProcessException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
@@ -48,6 +50,7 @@ use Hilos\Core\Process;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
@@ -249,6 +252,7 @@ final class BackupAgent extends AbstractAgent
      * No-ops entirely when disabled: no scan, and no cron rules, so scheduling is off.
      *
      * @throws BackupScheduleException When the project backup schedule is malformed
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
     public function onStart(): void
     {
@@ -286,6 +290,11 @@ final class BackupAgent extends AbstractAgent
      * is checked, letting a coincident scheduled fire start rather than be skipped as an overlap.
      * The operator command follows it for the same reason: a restore that ends on this very tick
      * asks for the verification window, and answering afterwards reports the row it produced.
+     *
+     * @throws ProcessException When the running child cannot be polled, read or terminated
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws HilosException Whatever finishing a restore that ended on this tick raises
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onTick(): void
     {
@@ -308,6 +317,10 @@ final class BackupAgent extends AbstractAgent
      * {@see CliCommands::PROTECTED_MODE_OPEN} is the way out of every such phase, and the same
      * agent type answers it after a restart, because the row records an identity rather than an
      * instance.
+     *
+     * @throws ProcessException When the in-flight child cannot be halted
+     * @throws HilosException Whatever finishing the engaged restore as failed raises
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onStop(): void
     {
@@ -364,6 +377,8 @@ final class BackupAgent extends AbstractAgent
      * @param SignalDataInterface $data Cron signal payload (unused; the name carries the routing)
      * @param string $source Signal source (unused)
      * @param string $name Fired cron name, matched against the backup schedule
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -389,6 +404,9 @@ final class BackupAgent extends AbstractAgent
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
      * @param string $name Signal name (unused; the routing is on $data->command)
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ClusterConfigurationException When the restore request cannot read the cluster layout
+     * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
@@ -640,6 +658,8 @@ final class BackupAgent extends AbstractAgent
      * @param string $source Signal source (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not a backup list action
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -812,6 +832,8 @@ final class BackupAgent extends AbstractAgent
      *
      * @throws RtActionsCollectionNameNullException When the restore row's collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
+     * @throws HilosException Whatever finishing a restore whose child never started raises
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onProtectedModeReady(): void
     {
@@ -876,6 +898,8 @@ final class BackupAgent extends AbstractAgent
      *
      * @param BackupScope $scope What the backup should capture
      * @param ?string $initiatorAcceptKey Connection to tell when the run fails, or null when unattended
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function startBackup(BackupScope $scope, ?string $initiatorAcceptKey = null): void
     {
@@ -1452,6 +1476,8 @@ final class BackupAgent extends AbstractAgent
      * twice and drain the pending create slot into a second child.
      *
      * @param DbReHydrateOutcome $outcome Whether every process re-read, and who did not
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws InvalidArgumentException When the failure notice to the initiator cannot be named
      */
     public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
     {

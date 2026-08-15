@@ -547,6 +547,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * Called when agent is stopped.
      *
      * Must be implemented in child classes to handle cleanup.
+     *
+     * @throws HilosException Whatever the concrete agent's stop raises
+     * @throws InvalidArgumentException Whatever the concrete agent's stop raises from SPL
      */
     abstract public function onStop(): void;
 
@@ -556,6 +559,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * The initiator agent overrides this to run its destructive operation once the cluster has
      * frozen. Reaches this node over the daemon->worker ready relay driven by
      * {@see requestProtectedModeEnable()}; a no-op for agents that never request protected mode.
+     *
+     * @throws HilosException Whatever the concrete agent's protected operation raises
+     * @throws InvalidArgumentException Whatever the concrete agent's protected operation raises from SPL
      */
     public function onProtectedModeReady(): void
     {
@@ -571,6 +577,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * no-op for agents that never replace a database.
      *
      * @param DbReHydrateOutcome $outcome Whether the barrier closed, and who is missing from it
+     * @throws HilosException Whatever the concrete agent finishes the swap with
+     * @throws InvalidArgumentException Whatever the concrete agent finishes the swap with from SPL
      */
     public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void
     {
@@ -756,6 +764,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's cron handler raises
+     * @throws InvalidArgumentException Whatever the concrete agent's cron handler raises from SPL
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -772,6 +782,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $source Signal source
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the handler is reached by a signal it does not know
+     * @throws HilosException Whatever the concrete agent's agent-signal handler raises
      * @throws InvalidArgumentException When the handler cannot name the signal it answers with
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -788,6 +799,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's command handler raises
      * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void

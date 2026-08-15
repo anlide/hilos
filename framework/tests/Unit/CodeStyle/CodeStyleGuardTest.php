@@ -92,69 +92,6 @@ final class CodeStyleGuardTest extends TestCase
         'Hilos.php',
     ];
 
-    /**
-     * Paths the throws rule judges, addressed from the repository root. It carries a
-     * zone for the reason the empty-string rule does and phases the same way, but its
-     * zone is written out whole: a cross-file rule reads paths from the repository
-     * root, so it has no scanned root to read a bare segment against.
-     *
-     * The daemon spine goes first — it is where the defect that opened the rule was
-     * found, and `Core` and `Socket` are the two roots every other subsystem calls
-     * through, so their contracts are the ones a later phase will lean on.
-     *
-     * The subsystems of state and data go second: every page request and every table
-     * mutation passes through them, so their contracts are needed before those of the
-     * periphery.
-     *
-     * The rest of the framework goes third, and goes in whole rather than subsystem by
-     * subsystem: outside the ten that owe lines there is no debt at all, so the other
-     * directories and the three root files cost nothing to turn on, and a directory
-     * left outside would first be judged on the day the zone is dropped — mixed in
-     * with the demos, where its own hits would be the hardest to tell apart.
-     *
-     * `framework/backend/Backup` is the fourth phase, and it enters frozen rather than
-     * paid: its debt is a leaf of its own, and it could only be counted once the ten
-     * subsystems it calls through had declared their contracts. With it in, the zone
-     * covers `framework/backend` whole and the demos are all that is left outside.
-     *
-     * The phases above are the order the debt was paid in, not the order of the list:
-     * the entries are sorted so the zone can be read against the directory listing,
-     * and which phase brought one in is history rather than anything the rule reads.
-     *
-     * @var array<int, string>
-     */
-    private const array THROWS_ZONE = [
-        'framework/backend/AI',
-        'framework/backend/API',
-        'framework/backend/Auth',
-        'framework/backend/Backup',
-        'framework/backend/Bootstrap',
-        'framework/backend/Cluster',
-        'framework/backend/Constants',
-        'framework/backend/Core',
-        'framework/backend/Database',
-        'framework/backend/Environment',
-        'framework/backend/Fs',
-        'framework/backend/LLM',
-        'framework/backend/Log',
-        'framework/backend/Mail',
-        'framework/backend/Notification',
-        'framework/backend/Pages',
-        'framework/backend/ProtectedMode',
-        'framework/backend/Push',
-        'framework/backend/Runtime',
-        'framework/backend/Sms',
-        'framework/backend/Socket',
-        'framework/backend/Tables',
-        'framework/backend/TruthSource',
-        'framework/backend/Users',
-        'framework/backend/Utils',
-        'framework/backend/BaseDTO.php',
-        'framework/backend/Hilos.php',
-        'framework/backend/HilosException.php',
-    ];
-
-
     public function testSourcesCarryNoCodeStyleViolationsBeyondTheBaseline(): void
     {
         $reported = $this->reportedViolations();
@@ -222,10 +159,10 @@ final class CodeStyleGuardTest extends TestCase
     }
 
     /**
-     * The index spans every production root whatever zone is judged: a demo calls the
-     * framework, so an index cut down to the judged zone would answer "no contract"
-     * for half the calls inside it and pass them in silence. A suite is left out
-     * because nothing the rule judges calls into one.
+     * The index spans every production root, and the throws rule now judges all of it:
+     * a demo calls the framework, so an index cut down to part of the tree would answer
+     * "no contract" for half the calls inside it and pass them in silence. A suite is
+     * left out because nothing the rule judges calls into one.
      *
      * @return array<int, string> Roots the cross-file index is built over, relative to the repository root
      */
@@ -242,7 +179,7 @@ final class CodeStyleGuardTest extends TestCase
      */
     private function crossFileRules(): array
     {
-        return [ThrowsPropagationRule::forZone(self::THROWS_ZONE)];
+        return [ThrowsPropagationRule::forWholeIndex()];
     }
 
     /**

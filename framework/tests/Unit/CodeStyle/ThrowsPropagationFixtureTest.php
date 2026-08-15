@@ -26,9 +26,6 @@ final class ThrowsPropagationFixtureTest extends TestCase
     /** The toy tree, indexed and judged whole; its own exception hierarchy is inside it. */
     private const string FIXTURE_ROOT = 'ThrowsTree';
 
-    /** A zone entry naming one file rather than a directory, which the sibling zone also has. */
-    private const string SINGLE_FILE_ZONE = 'ThrowsTree/Contract/AbstractSource.php';
-
     public function testRuleReportsExactlyTheSeededCases(): void
     {
         $this->assertSame(
@@ -86,36 +83,18 @@ final class ThrowsPropagationFixtureTest extends TestCase
                     . 'NarrowException that SourceInterface::start() does not declare (see '
                     . 'docs/agents/code-style/phpdoc.md)',
             ],
-            $this->report(ThrowsPropagationRule::forWholeIndex()),
+            $this->report(),
             'Fixture report drifted: THROWS-PROPAGATION either stopped catching a seeded case or started '
                 . 'reporting a legitimate one.',
         );
     }
 
     /**
-     * A zone entry may name one file, because the sibling empty-string zone has such
-     * an entry and the shape is one copied line away. Judged by prefix alone it would
-     * match nothing and read as coverage.
-     */
-    public function testZoneEntryNamingOneFileJudgesThatFileAlone(): void
-    {
-        $this->assertSame(
-            [
-                'THROWS-PROPAGATION ThrowsTree/Contract/AbstractSource.php:20 — AbstractSource::start() '
-                    . 'documents OtherException that SourceInterface::start() does not declare '
-                    . '(see docs/agents/code-style/phpdoc.md)',
-            ],
-            $this->report(ThrowsPropagationRule::forZone([self::SINGLE_FILE_ZONE])),
-            'The zone either stopped matching a file-shaped entry or stopped narrowing to it.',
-        );
-    }
-
-    /**
-     * @param ThrowsPropagationRule $rule Rule under test, judging the whole toy tree or a zone of it
      * @return array<int, string> Reported lines, in the order the rule yields them
      */
-    private function report(ThrowsPropagationRule $rule): array
+    private function report(): array
     {
+        $rule = ThrowsPropagationRule::forWholeIndex();
         $index = SourceIndex::forRoots(dirname(__DIR__, 2) . '/CodeStyle/Fixtures', [self::FIXTURE_ROOT]);
 
         $reported = [];

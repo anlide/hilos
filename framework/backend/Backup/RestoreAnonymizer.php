@@ -7,6 +7,7 @@ namespace Hilos\Backup;
 use Hilos\Backup\Anonymization\CatalogRestoreAnonymizer;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Database\DatabaseException;
 
 /**
  * RestoreAnonymizer - the seam a restore runs its anonymization pass through.
@@ -66,6 +67,7 @@ interface RestoreAnonymizer
      * @param string $database Database name the connection imported into
      * @throws RestoreFailedException When the pass fails; the data is already imported, so
      *     the run ends with a restored database that still holds personal data
+     * @throws DatabaseException When the connection the pass rewrites over cannot be reached
      */
     public function anonymizeConnection(int $index, string $database): void;
 }

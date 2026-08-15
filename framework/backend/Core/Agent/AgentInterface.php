@@ -73,6 +73,9 @@ interface AgentInterface
      * Called when agent is stopped
      *
      * Called once when agent is being destroyed/stopped.
+     *
+     * @throws HilosException Whatever the concrete agent's stop raises
+     * @throws InvalidArgumentException Whatever the concrete agent's stop raises from SPL
      */
     public function onStop(): void;
 
@@ -82,6 +85,9 @@ interface AgentInterface
      * Delivered on the initiator node after {@see AbstractAgent::requestProtectedModeEnable()} and
      * every node has frozen: the initiator may now run its destructive operation. Never called on a
      * non-initiator agent.
+     *
+     * @throws HilosException Whatever the concrete agent's protected operation raises
+     * @throws InvalidArgumentException Whatever the concrete agent's protected operation raises from SPL
      */
     public function onProtectedModeReady(): void;
 
@@ -93,6 +99,8 @@ interface AgentInterface
      * not announce a swap.
      *
      * @param DbReHydrateOutcome $outcome Whether the barrier closed, and who is missing from it
+     * @throws HilosException Whatever the concrete agent finishes the swap with
+     * @throws InvalidArgumentException Whatever the concrete agent finishes the swap with from SPL
      */
     public function onDbReHydrateComplete(DbReHydrateOutcome $outcome): void;
 
@@ -202,6 +210,8 @@ interface AgentInterface
      * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's cron handler raises
+     * @throws InvalidArgumentException Whatever the concrete agent's cron handler raises from SPL
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void;
 
@@ -211,6 +221,7 @@ interface AgentInterface
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's command handler raises
      * @throws InvalidArgumentException When the handler cannot name its reply to the command
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void;

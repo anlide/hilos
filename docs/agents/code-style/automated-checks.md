@@ -18,7 +18,7 @@ rule.
 | `PAYLOAD-SENTINEL` | A payload reader mints a stub for a field that did not arrive: inside the body of `fromArray()` or `fromJson()`, `''`, `0` or `0.0` is fallen back to with `??`, handed back by a ternary branch, or returned by a `match` `default` arm. `?? null` and `?? []` are legal there, and a `// external-boundary: <reason>` marker on the line directly above legalizes one occurrence. Every root. | [method-contracts.md](method-contracts.md) |
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
-| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type, and only inside the judged zone; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
+| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
 | `E2E-PAGE-GOTO` | An e2e spec opens a page through `gotoPage()`, never through Playwright's `goto`, which waits for the document and not for the subscription's answer. TypeScript only; the `helpers/page.ts` that owns the wrappers is the one place the call is allowed. | [testing-strategy.md](../frontend/testing-strategy.md) |
 | `DOC-ROUTE` | Every file of this catalog, at any depth, is mentioned by at least one `skills/*/SKILL.md`, or declines a route in itself and says why. A file that is both routed and declining is reported the same way. | [rule-authoring.md](../rule-authoring.md) |
 | `DOC-LINK` | A local reference in the agent docs names something that exists. In a skill wrapper both a markdown link and a backticked path count as one; in a document only a markdown link does. | [rule-authoring.md](../rule-authoring.md) |
@@ -148,8 +148,8 @@ Six things are outside it on purpose:
    whatever was caught, and a `throw SomeException::forErrors(...)` carries the
    type that factory decided to return — following either is type inference under
    another name, and assuming the factory returns its own class would let the rule
-   demand a base where the code throws a subclass. Fifteen sites of the factory
-   form sit inside the judged zone today and go unreported, ten of them in
+   demand a base where the code throws a subclass. Nineteen sites of the factory
+   form sit in the indexed roots today and go unreported, ten of them in
    `Cluster`, where a configuration error is raised through a named constructor
    rather than a plain `new`.
 5. **The body of a property hook.** A `get`/`set` block is a second shape of
@@ -175,39 +175,25 @@ hit, because it says something untrue. A `catch` absorbs on the same terms, and
 block, so an exception converted and rethrown there is judged as a fresh
 `throw new`.
 
-The zone works exactly like the empty-string rule's below and for the same
-reason, with one mechanical difference: a cross-file rule is handed paths from
-the repository root and not from a scanned root, so its zone lists whole prefixes
-rather than path segments — a bare `Socket` would otherwise turn on the framework
-subsystem and the demos' directories of that name in one move. Judged across
-every root at once the rule reported 779 lines in 234 files, which is a mute list
-and not a list of owed work; that number measured the tree the rule was written
-against, and every phase since has taken a part of it into the judged zone.
+The rule has no zone of its own any more: it judges every production root the
+index is built over — `framework/backend`, each demo's backend and `scripts/`.
+It was phased in behind one, because judged across every root at once it reported
+779 lines in 234 files, which is a mute list and not a list of owed work. The
+phases went daemon spine first, then the subsystems of state and data, then the
+rest of the framework whole, and `framework/backend/Backup` last, because it
+calls through all of them and its own count could only be read once their
+contracts were declared. Every one of them is paid, and none owns a baseline
+record.
 
-The daemon spine — `framework/backend/Core` and `framework/backend/Socket` — was
-the first phase: it is where the defect that opened the rule was found, and every
-other subsystem calls through it, so its contracts are what the later phases lean
-on. It owns no baseline record any more. The subsystems of state and data —
-`Database`, `Runtime`, `Tables`, `Pages` and `Cluster` — were the second, because
-every page request and every table mutation passes through them; the 140 lines
-they owed in 56 files are paid, and they own no record either.
-
-The rest of the framework is the third phase, and it went into the zone whole
-rather than subsystem by subsystem: outside the ten that owe lines there is no
-debt at all, so turning the other directories and the three root files on cost
-nothing, and a directory left outside would first be judged on the day the zone
-is dropped — mixed in with the demos, where its own hits would be the hardest to
-tell apart. The 174 lines those ten owed in 37 files — `Auth`, `Log`, `Mail`,
-`ProtectedMode`, `Sms`, `LLM`, `Push`, `Notification`, `API` and `AI` — are paid,
-and they own no baseline record.
-
-`framework/backend/Backup` is the fourth phase, and it is the one that enters
-frozen rather than paid: 119 lines in 4 files, a leaf of its own. It went in last
-because it calls through the ten above, so its own count could only be read once
-their contracts were declared. Freezing is what stops the debt growing, since a
-new unpropagated `@throws` inside the zone fails the guard on the spot. With this
-phase in, the zone covers `framework/backend` whole and the demos are all that is
-left outside.
+What the demos owe is what the last phase turned up, and it is frozen rather than
+paid: 233 lines in 86 files — 165 in 53 for `demo/chat`, 28 in 14 each for
+`demo/simple-poll` and `demo/simple-todo`, 12 in 5 for `demo/cluster`. Freezing
+is what stops the debt growing, since a new unpropagated `@throws` fails the
+guard on the spot, and the records name HIL-449 as the leaf that pays it. 124 of
+those lines are the implementation-widens-a-declaration form, which is owed by
+the framework's own declarations rather than by the demos: they go out together
+as those declarations widen, not file by file. `scripts/` came under the rule
+owing nothing at all.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.
@@ -449,9 +435,9 @@ callee, and the callee almost never sits in the file being read.
    `Violation` objects, unlike the markdown rules: a cross-file hit is baselined
    like any other, and the failure line has to read the same whichever kind
    produced it.
-3. Build the index over **every** production root, whatever zone is judged. A demo
-   calls the framework, and an index cut down to the judged zone answers "no
-   contract" for half the calls inside it — a silent pass instead of a hit.
+3. Build the index over **every** production root, and judge every root it spans.
+   A demo calls the framework, and an index cut down to part of the tree answers
+   "no contract" for half the calls inside it — a silent pass instead of a hit.
 4. Seed `framework/tests/CodeStyle/Fixtures/ThrowsTree/` with a toy tree that
    carries its own exception hierarchy, so a fixture question is never answered
    with a production contract, and pin the exact report in

@@ -72,6 +72,7 @@ final class BackupRestorer
      * @throws RestoreFailedException When any step refuses or fails; the raised failure says
      *     whether the database was already being replaced ({@see RestoreFailedException::databaseTouched()})
      * @throws EnvException When the backup storage env value cannot be read
+     * @throws DatabaseException When a connection the archive imports into cannot be reached
      */
     public function restore(
         string $id,

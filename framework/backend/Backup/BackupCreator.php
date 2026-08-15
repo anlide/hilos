@@ -118,6 +118,7 @@ final class BackupCreator
      * @return BackupMetadata The published sidecar metadata
      * @throws BackupException When the id or backup directory is invalid
      * @throws BackupDumpFailedException When a dump, archive, or publish step fails
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
     public function create(string $id, BackupScope $scope): BackupMetadata
     {
@@ -262,6 +263,7 @@ final class BackupCreator
      * @param ?string $failureReason Why the run failed; trimmed, capped, and empty-to-null before storage
      * @throws BackupException When the id or backup directory is invalid
      * @throws BackupDumpFailedException When the error sidecar cannot be written
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
      */
     public function recordFailure(string $id, BackupScope $scope, int $durationSeconds, ?string $failureReason): void
     {

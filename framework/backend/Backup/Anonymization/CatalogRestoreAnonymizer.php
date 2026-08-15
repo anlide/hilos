@@ -125,6 +125,7 @@ final class CatalogRestoreAnonymizer implements RestoreAnonymizer
      * @param int $index Connection index the pass runs over
      * @param string $database Database name the connection imported into
      * @throws RestoreFailedException When a statement of the pass fails
+     * @throws DatabaseException When the connection the pass rewrites over cannot be reached
      */
     public function anonymizeConnection(int $index, string $database): void
     {
