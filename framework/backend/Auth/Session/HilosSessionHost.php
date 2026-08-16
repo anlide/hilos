@@ -110,6 +110,24 @@ trait HilosSessionHost
     }
 
     /**
+     * Returns the success ack one live connection still owes its person (HIL-422).
+     *
+     * Every handshake response has to be re-addressed with this before it goes out,
+     * including the ones that have nothing to do with acks: the payload states the
+     * mark rather than amending it, so a response that left the key out of its own
+     * ignorance would clear an announcement the person has not read yet. A socket
+     * this node does not hold owes nothing, which is also what a project without
+     * session-stage connections answers.
+     *
+     * @param string $acceptKey Connection accept key
+     * @return ?string Ack the connection owes (a {@see SessionAck} value), or null for none
+     */
+    final protected function connectionPendingAck(string $acceptKey): ?string
+    {
+        return Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->pendingAck;
+    }
+
+    /**
      * Re-points one live connection's bound user through the project runtime registry.
      *
      * Project-owned because the write goes through the project's per-connection
@@ -120,6 +138,19 @@ trait HilosSessionHost
      * @param ?int $userId User id to bind the connection to, or null for anonymous
      */
     abstract protected function bindConnectionUser(string $acceptKey, ?int $userId): void;
+
+    /**
+     * Writes one live connection's pending success ack through the project runtime registry.
+     *
+     * Project-owned for the same reason {@see bindConnectionUser()} is: the write goes
+     * through the project's own per-connection runtime actions, which the framework
+     * cannot name. The read side needs no hook — the row stands on a framework base,
+     * so {@see connectionPendingAck()} finds the value by type.
+     *
+     * @param string $acceptKey Connection accept key to mark
+     * @param ?string $ack Ack the connection owes (a {@see SessionAck} value), or null to clear it
+     */
+    abstract protected function markConnectionAck(string $acceptKey, ?string $ack): void;
 
     /**
      * Returns the signal name the project emits the handshake response under.
@@ -279,7 +310,9 @@ trait HilosSessionHost
             // that session have to learn who they are now.
             foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
                 $this->bindConnectionUser($acceptKey, $userId);
-                $this->sendToUser($signalName, $acceptKey, $response);
+                $this->sendToUser($signalName, $acceptKey, $response->withPendingAck(
+                    $this->connectionPendingAck($acceptKey),
+                ));
             }
 
             return;
@@ -297,7 +330,9 @@ trait HilosSessionHost
 
         $this->repointInitiatorSessionToken($initiatorAcceptKey, $rotated);
         $this->bindConnectionUser($initiatorAcceptKey, $userId);
-        $this->sendToUser($signalName, $initiatorAcceptKey, $response);
+        $this->sendToUser($signalName, $initiatorAcceptKey, $response->withPendingAck(
+            $this->connectionPendingAck($initiatorAcceptKey),
+        ));
 
         $this->announceRotation($rotated, $keysToDrop, $initiatorAcceptKey);
     }
@@ -407,7 +442,9 @@ trait HilosSessionHost
         $signalName = $this->handshakeResponseSignalName();
         foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
             $this->bindConnectionUser($acceptKey, null);
-            $this->sendToUser($signalName, $acceptKey, $response);
+            $this->sendToUser($signalName, $acceptKey, $response->withPendingAck(
+                $this->connectionPendingAck($acceptKey),
+            ));
         }
     }
 
@@ -444,6 +481,85 @@ trait HilosSessionHost
             }
 
             $this->deauthenticateSession($session->token);
+        }
+    }
+
+    /**
+     * Marks every live socket of a session with the ack its flow just earned (HIL-422).
+     *
+     * Called by the handler that FINISHES a flow, and before it authenticates the
+     * session: the mark has to be on the rows by the time the identity goes out, or the
+     * frontend learns it is signed in one frame earlier than it learns there is
+     * something to read, and closes the surface in between.
+     *
+     * Every live socket of the session is marked, not only the one that acted, because the
+     * announcement belongs to the session and not to the socket that happened to carry the
+     * submit. What that buys is limited, and the limit is worth naming: the login rotation
+     * (HIL-582) drops every socket except the initiator's, and they come back on the new
+     * token owing nothing — so a second tab reliably keeps the mark only where no rotation
+     * follows. The spread still earns its place on the way out, where {@see clearSessionAck()}
+     * has to reach every tab the panel is standing in.
+     *
+     * A session with no live socket marks nothing — the announcement is a thing said to a
+     * connection, and there is no one to say it to.
+     *
+     * @param string $sessionToken Session cookie token whose sockets are marked
+     * @param string $ack Ack kind to show (a {@see SessionAck} value)
+     * @throws HilosException On database or runtime failure
+     */
+    public function markSessionAck(string $sessionToken, string $ack): void
+    {
+        $this->republishSessionAck($sessionToken, $ack);
+    }
+
+    /**
+     * Clears the pending ack from every live socket of a session (HIL-422).
+     *
+     * What the Continue button ends up calling. The truth is the row, so the surface
+     * disappears when the cleared mark comes back through the projection rather than on
+     * the click — which is also what makes the second tab close its copy, and what makes
+     * a double click harmless: the second one marks rows that already carry null.
+     *
+     * @param string $sessionToken Session cookie token whose sockets are cleared
+     * @throws HilosException On database or runtime failure
+     */
+    public function clearSessionAck(string $sessionToken): void
+    {
+        $this->republishSessionAck($sessionToken, null);
+    }
+
+    /**
+     * Writes one ack onto every live socket of a session and re-publishes the session scope.
+     *
+     * The write and the re-publish are one step on purpose: the frontend draws from the
+     * projection alone, so a mark nobody published is a mark nobody sees, and the two
+     * drifting apart is the only way this mechanism can fail silently.
+     *
+     * A token no session answers to is a no-op, the same guard {@see deauthenticateSession()}
+     * takes and for a sharper reason: sockets CAN outlive their token. The login rotation
+     * re-points only the connection that initiated it, so the session's other sockets go on
+     * naming a token the row no longer has — and building the response anyway would resolve
+     * that token to no session and publish `currentUser: null`, signing those tabs out of
+     * their own shell to tell them an announcement was dismissed. They are dropped by the
+     * rotation moments later and come back knowing who they are; saying nothing until then
+     * is the honest answer.
+     *
+     * @param string $sessionToken Session cookie token whose sockets are written
+     * @param ?string $ack Ack kind to show (a {@see SessionAck} value), or null to clear it
+     * @throws HilosException On database or runtime failure
+     */
+    private function republishSessionAck(string $sessionToken, ?string $ack): void
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($session === null) {
+            return;
+        }
+
+        $response = $this->handshakeResponseFor($session)->withPendingAck($ack);
+        $signalName = $this->handshakeResponseSignalName();
+        foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+            $this->markConnectionAck($acceptKey, $ack);
+            $this->sendToUser($signalName, $acceptKey, $response);
         }
     }
 }

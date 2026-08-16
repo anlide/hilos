@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +35,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     ],
                     'impersonatedBy' => null,
                 ],
+                'data' => ['pendingAck' => null],
             ],
             $data->toArray(),
         );
@@ -58,7 +60,10 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
         $this->assertNull($data->selfId);
         $this->assertSame(
-            ['entities' => ['currentUser' => null, 'impersonatedBy' => null]],
+            [
+                'entities' => ['currentUser' => null, 'impersonatedBy' => null],
+                'data' => ['pendingAck' => null],
+            ],
             $data->toArray(),
         );
     }
@@ -95,6 +100,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'name' => 'Admin 3',
                     ],
                 ],
+                'data' => ['pendingAck' => null],
             ],
             $data->toArray(),
         );
@@ -115,6 +121,61 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame('User 7', $restored->selfName);
         $this->assertSame(3, $restored->impersonatorId);
         $this->assertSame('Admin 3', $restored->impersonatorName);
+        $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    public function testPendingAckTravelsInTheDataSection(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
+            ->withPendingAck(SessionAck::REGISTERED);
+
+        $this->assertSame(
+            ['pendingAck' => SessionAck::REGISTERED],
+            $data->toArray()['data'],
+        );
+    }
+
+    public function testReAddressingKeepsTheIdentityAndReplacesTheAck(): void
+    {
+        $data = new HandshakeResponseSignalData(
+            selfId: 7,
+            selfName: 'User 7',
+            selfAdmin: true,
+            impersonatorId: 3,
+            impersonatorName: 'Admin 3',
+            pendingAck: SessionAck::REGISTERED,
+        );
+
+        $reAddressed = $data->withPendingAck(null);
+
+        $this->assertNull($reAddressed->pendingAck);
+        $this->assertSame(7, $reAddressed->selfId);
+        $this->assertSame('User 7', $reAddressed->selfName);
+        $this->assertTrue($reAddressed->selfAdmin);
+        $this->assertSame(3, $reAddressed->impersonatorId);
+        $this->assertSame('Admin 3', $reAddressed->impersonatorName);
+        $this->assertSame($data->toArray()['entities'], $reAddressed->toArray()['entities']);
+    }
+
+    public function testAnonymousRoundtripKeepsAPendingAck(): void
+    {
+        $data = new HandshakeResponseSignalData()->withPendingAck(SessionAck::PASSWORD_CHANGED);
+
+        $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+        $this->assertNull($restored->selfId);
+        $this->assertSame(SessionAck::PASSWORD_CHANGED, $restored->pendingAck);
+        $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    public function testAuthenticatedRoundtripKeepsAPendingAck(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7')
+            ->withPendingAck(SessionAck::SIGNED_IN);
+
+        $restored = HandshakeResponseSignalData::fromArray($data->toArray());
+
+        $this->assertSame(SessionAck::SIGNED_IN, $restored->pendingAck);
         $this->assertSame($data->toArray(), $restored->toArray());
     }
 }

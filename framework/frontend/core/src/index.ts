@@ -101,6 +101,10 @@ export {
   sessionUserIsAdmin,
   sessionImpersonating,
   sessionImpersonatedByName,
+  sessionPendingAck,
+  SESSION_ACK_PASSWORD_CHANGED,
+  SESSION_ACK_REGISTERED,
+  SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
@@ -146,6 +150,7 @@ export {
   type HilosPushSubscriptionStore,
 } from './notifications/pushSubscription.js'
 export { bootHilos, type BootHilosConfig } from './bootstrap/bootHilos.js'
+export { authAckToFlowPatch } from './auth/authAck.js'
 export {
   createAuthGate,
   type AuthGate,

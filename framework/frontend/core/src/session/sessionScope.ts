@@ -26,6 +26,20 @@ const DEFAULT_CURRENT_USER_ENTITY_TYPE = 'user'
 const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
 const DEFAULT_CURRENT_USER_ADMIN_FIELD = 'admin'
 const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'
+const DEFAULT_PENDING_ACK_SLOT = 'pendingAck'
+
+/**
+ * A registration whose confirmation just landed the person inside. Byte-equal to
+ * the backend `SessionAck::REGISTERED` — the value IS the contract, so the two
+ * sides spell it out rather than deriving it.
+ */
+export const SESSION_ACK_REGISTERED = 'auth_registered'
+
+/** A recovery whose new password was just saved (`SessionAck::PASSWORD_CHANGED`). */
+export const SESSION_ACK_PASSWORD_CHANGED = 'auth_password_changed'
+
+/** A magic link that just signed the person in (`SessionAck::SIGNED_IN`). */
+export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
 
 /**
  * The handshake-response payload keyed for a connection's `projectSchemas`, so
@@ -51,6 +65,11 @@ export interface SessionScopeOptions {
    * type and name field. Default `impersonatedBy`.
    */
   impersonatedBySlot?: string
+  /**
+   * Plain session-scope key carrying the ack the connection still owes its
+   * person, or null when it owes none. Default `pendingAck`.
+   */
+  pendingAckSlot?: string
 }
 
 /**
@@ -78,7 +97,16 @@ export function bindSessionScope(
       // the declared typed selector for that schema's output. The impersonating
       // admin shares the current-user entity type so it dedupes against the same
       // user delivered elsewhere; a null slot clears it (no longer impersonated).
-      ingest(scopes.session, signal.data as ScopePayloadWire, {
+      const payload = signal.data as ScopePayloadWire
+      // The plain section goes in FIRST, and the two-step is the mechanism rather
+      // than a detail (HIL-422). `ingest` publishes entity slots before plain data
+      // and subscribers run synchronously, so a subscriber of `currentUser` would
+      // read the ack of the PREVIOUS response — and the auth gate decides whether
+      // the rising session may close the surface exactly by that read. One frame
+      // late is the surface closing over the sentence it exists to show. The
+      // second pass rewrites the same values, which notifies nobody.
+      ingest(scopes.session, { data: payload.data ?? {} })
+      ingest(scopes.session, payload, {
         entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
       })
     }
@@ -192,6 +220,34 @@ export function sessionImpersonating(
   >
 
   return computedSignal(() => impersonatedByRef.get() != null)
+}
+
+/**
+ * The ack this connection still owes its person, or null when it owes none.
+ *
+ * What a finished auth flow leaves behind so the surface has something to say
+ * before it closes (HIL-422). It is per-CONNECTION, not per-session: a reload
+ * opens a new socket, which owes nothing, so the announcement does not survive an
+ * F5 and needs no expiry. The value is one of the `SESSION_ACK_*` kinds; an
+ * unknown string is passed through rather than swallowed, so a client older than
+ * the server fails visibly at the view that cannot draw it instead of silently
+ * showing nothing.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ * @param options Pending-ack slot override.
+ */
+export function sessionPendingAck(
+  scopes: ScopeManager,
+  options: SessionScopeOptions = {},
+): ReadonlySignal<string | null> {
+  const slot = options.pendingAckSlot ?? DEFAULT_PENDING_ACK_SLOT
+  const pendingAck = scopes.session.data.signal(slot)
+
+  return computedSignal(() => {
+    const ack = pendingAck.get()
+
+    return typeof ack === 'string' && ack !== '' ? ack : null
+  })
 }
 
 /**

@@ -93,6 +93,12 @@ final class ChatSignalConstants
     public const string LOGOUT = 'logout';
 
     /**
+     * @var string Client → agent (page-independent): the person has read the success ack an auth
+     *     flow left on this session, so clear it from every socket of the session (HIL-422)
+     */
+    public const string DISMISS_SESSION_ACK = 'dismiss_session_ack';
+
+    /**
      * @var string Client → agent (page-independent): impersonating session reverts to its admin
      *     (browser name; the CLI command is ChatCommandConstants::IMPERSONATE_STOP)
      */

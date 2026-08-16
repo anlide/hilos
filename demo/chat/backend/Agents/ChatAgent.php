@@ -8,6 +8,7 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Agents\DTO\AccountMergeSummary;
+use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -26,6 +27,7 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
 use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\Session\HilosSessionHost;
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -33,6 +35,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -44,6 +47,7 @@ use Hilos\Database\Database;
 use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -85,6 +89,7 @@ final class ChatAgent extends AbstractAgent
 
     public const array AGENT_ACTIONS = [
         ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
+        ChatSignalConstants::DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
         ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
     ];
 
@@ -647,6 +652,11 @@ final class ChatAgent extends AbstractAgent
      * no session row to describe, and asking for one by a null token is a type
      * error rather than a miss.
      *
+     * The pending ack rides along for the reason every other re-send carries it
+     * (HIL-422): the response states the ack rather than amending it, so a rename or
+     * an admin flip that went out without one would wipe an announcement the person
+     * has not read yet.
+     *
      * @param int $userId User whose connections are told
      */
     private function broadcastHandshakeResponseToUser(int $userId): void
@@ -662,7 +672,7 @@ final class ChatAgent extends AbstractAgent
             $this->sendToUser(
                 $signalName,
                 $connection->acceptKey,
-                $this->handshakeResponseFor($session),
+                $this->handshakeResponseFor($session)->withPendingAck($connection->pendingAck),
             );
         }
     }
@@ -679,6 +689,22 @@ final class ChatAgent extends AbstractAgent
     protected function bindConnectionUser(string $acceptKey, ?int $userId): void
     {
         Hilos::$rt->connections[$acceptKey]?->actions->bindUser($userId);
+    }
+
+    /**
+     * Writes one live chat connection's pending success ack — the {@see HilosSessionHost}
+     * hook. A missing connection is a no-op, handled inside the collection action.
+     *
+     * @param string $acceptKey Connection accept key to mark
+     * @param ?string $ack Ack the connection owes (a {@see SessionAck} value), or null to clear it
+     * @throws RtActionsCollectionNameNullException When the runtime connection collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime connection state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent is not the connection truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     */
+    protected function markConnectionAck(string $acceptKey, ?string $ack): void
+    {
+        Hilos::$rt->connections->actions->markAck($acceptKey, $ack);
     }
 
     /**
@@ -729,6 +755,14 @@ final class ChatAgent extends AbstractAgent
 
                 return;
 
+            case ChatSignalConstants::DISMISS_SESSION_ACK:
+                if (!$dto instanceof DismissSessionAckActionDTO) {
+                    throw new InvalidActionPayloadException($action, DismissSessionAckActionDTO::class, $dto);
+                }
+                $this->handleDismissSessionAck($acceptKey);
+
+                return;
+
             case ChatSignalConstants::IMPERSONATE_STOP:
                 if (!$dto instanceof ImpersonateStopActionDTO) {
                     throw new InvalidActionPayloadException($action, ImpersonateStopActionDTO::class, $dto);
@@ -759,6 +793,31 @@ final class ChatAgent extends AbstractAgent
         }
 
         $this->deauthenticateSession($sessionToken);
+    }
+
+    /**
+     * Clears the success ack from the acting connection's session (HIL-422).
+     *
+     * The Continue button, arriving from whichever tab the person pressed it in. It
+     * clears the whole session rather than the one socket, because the announcement was
+     * put on the whole session: having read it once, nobody wants to dismiss it again in
+     * the other tab.
+     *
+     * Resolves the session from the acting connection, exactly as {@see handleLogout()}
+     * does; a stale accept key or a connection with no token is a no-op, and so is a
+     * session that carries no ack — a second press, or two tabs pressing at once.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @throws HilosException When clearing the ack exposes database or runtime failure
+     */
+    private function handleDismissSessionAck(string $acceptKey): void
+    {
+        $sessionToken = Hilos::$rt->connections[$acceptKey]?->sessionToken;
+        if ($sessionToken === null || $sessionToken === '') {
+            return;
+        }
+
+        $this->clearSessionAck($sessionToken);
     }
 
     /**
@@ -937,6 +996,12 @@ final class ChatAgent extends AbstractAgent
             }
 
             if (Hilos::$rt->connections[$acceptKey]?->userId === null) {
+                // Marked before the session goes up, so the identity and the news that
+                // there is an account arrive in one frame (HIL-422). This waiter did not
+                // type the code — somebody else's confirmation signed it in — which is
+                // exactly why it is owed the sentence rather than a screen that changed
+                // under it.
+                $this->markSessionAck($sessionToken, SessionAck::REGISTERED);
                 $this->authenticateSession($sessionToken, $userId, $acceptKey);
             }
 
@@ -1085,6 +1150,13 @@ final class ChatAgent extends AbstractAgent
      * the tab that submitted; the sessions of other devices get the identifier step
      * under sign-in, with the news that the password is already the new one. Every row
      * goes either way - the wait is over for all of them.
+     *
+     * No ack is marked here, and the asymmetry with {@see convergeRegistration()} is the
+     * mechanism rather than an omission (HIL-422). The waiters that go to done are on the
+     * saving session itself, whose sockets were all marked before it was signed in, so
+     * they already carry the announcement; the waiters on OTHER sessions must NOT get one
+     * - nothing was achieved on their device, and what they are owed is the inline
+     * "already changed" line this method sends them.
      *
      * @param string $identifier Normalized address whose password was just saved (lowercased email)
      * @param string $sessionToken Session token that saved it, whose tabs go to done

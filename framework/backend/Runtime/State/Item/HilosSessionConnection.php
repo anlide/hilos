@@ -23,6 +23,14 @@ use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
  * {@see HilosSessionConnectionsActions::repointSessionToken()}. The row's identity is
  * the accept key, and that is what stays immutable.
  *
+ * The stage also carries the pending success ack (HIL-422) — the mark a finished
+ * auth flow leaves on the sockets of its session, so that the surface knows it has
+ * something left to say before it closes. It lives on the CONNECTION rather than on
+ * the session row on purpose: a reload kills the socket and the mark dies with it,
+ * which is the whole of the "ephemeral" requirement, and nothing has to expire it.
+ * It is seeded by no creation path — a socket opens with nothing to announce — and
+ * only {@see HilosSessionConnectionsActions::markAck()} ever moves it.
+ *
  * The base half of the row is composed by chaining {@see initBase()} /
  * {@see hydrateBase()} / {@see baseToArray()} / {@see applyBaseDiff()} through
  * `parent::` — the chain lives entirely inside the framework, so the "cannot be
@@ -33,9 +41,13 @@ use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
 abstract class HilosSessionConnection extends HilosConnection
 {
     public const string sessionToken = 'sessionToken';
+    public const string pendingAck = 'pendingAck';
 
     /** Session cookie token this connection belongs to, or null when it belongs to none. */
     private(set) ?string $sessionToken = null;
+
+    /** Success ack this socket has yet to show, or null when it owes none. */
+    private(set) ?string $pendingAck = null;
 
     /**
      * Creates a connection row for a freshly opened socket of a session.
@@ -78,15 +90,17 @@ abstract class HilosSessionConnection extends HilosConnection
     {
         parent::hydrateBase($row);
         $this->sessionToken = self::stringOrNull($row[self::sessionToken] ?? null);
+        $this->pendingAck = self::stringOrNull($row[self::pendingAck] ?? null);
     }
 
     /**
-     * @return array<string, mixed> Base fields of both stages (acceptKey, userId, sessionToken)
+     * @return array<string, mixed> Base fields of both stages (acceptKey, userId, sessionToken, pendingAck)
      */
     protected function baseToArray(): array
     {
         return array_merge(parent::baseToArray(), [
             self::sessionToken => $this->sessionToken,
+            self::pendingAck => $this->pendingAck,
         ]);
     }
 
@@ -98,6 +112,9 @@ abstract class HilosSessionConnection extends HilosConnection
         parent::applyBaseDiff($diff);
         if (array_key_exists(self::sessionToken, $diff)) {
             $this->sessionToken = self::stringOrNull($diff[self::sessionToken]);
+        }
+        if (array_key_exists(self::pendingAck, $diff)) {
+            $this->pendingAck = self::stringOrNull($diff[self::pendingAck]);
         }
     }
 

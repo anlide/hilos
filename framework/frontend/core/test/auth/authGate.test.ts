@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { createAuthGate } from '../../src/auth/authGate.js'
 import { createSignal, type WritableSignal } from '../../src/state/signal.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
+import {
+  SESSION_ACK_PASSWORD_CHANGED,
+  SESSION_ACK_REGISTERED,
+  SESSION_ACK_SIGNED_IN,
+} from '../../src/session/sessionScope.js'
 
 /** A router double: a writable page-error signal plus a clear() that records. */
 function fakeRouter(pageError: PageSubscriptionError | null = null) {
@@ -148,5 +153,96 @@ describe('createAuthGate', () => {
     currentUserId.set(9)
     expect(router.pageError.get()).toBeNull()
     expect(gate.modalOpen.get()).toBe(false)
+  })
+})
+
+describe('createAuthGate with a pending ack', () => {
+  function setupWithAck(pageError: PageSubscriptionError | null = null) {
+    const router = fakeRouter(pageError)
+    const currentUserId = createSignal<number | null>(null)
+    const pendingAck = createSignal<string | null>(null)
+    const gate = createAuthGate({ router, currentUserId, pendingAck })
+
+    return { router, currentUserId, pendingAck, gate }
+  }
+
+  it('holds the resume while the session owes an ack', () => {
+    const { gate, router, currentUserId, pendingAck } =
+      setupWithAck(UNAUTHORIZED)
+    gate.requireAuth()
+
+    pendingAck.set(SESSION_ACK_REGISTERED)
+    currentUserId.set(42)
+
+    expect(gate.modalOpen.get()).toBe(true)
+    expect(router.clearedCount()).toBe(0)
+    expect(router.pageError.get()?.httpCode).toBe(401)
+  })
+
+  it('plays the held resume out when the ack clears', () => {
+    const { gate, router, currentUserId, pendingAck } =
+      setupWithAck(UNAUTHORIZED)
+    pendingAck.set(SESSION_ACK_PASSWORD_CHANGED)
+    currentUserId.set(42)
+
+    pendingAck.set(null)
+
+    expect(gate.modalOpen.get()).toBe(false)
+    expect(router.clearedCount()).toBe(1)
+    expect(router.pageError.get()).toBeNull()
+  })
+
+  it('opens the surface on an ack that arrives on its own', () => {
+    const { gate, pendingAck } = setupWithAck()
+
+    pendingAck.set(SESSION_ACK_SIGNED_IN)
+
+    expect(gate.modalOpen.get()).toBe(true)
+  })
+
+  it('resumes immediately when the session rises owing nothing', () => {
+    const { gate, router, currentUserId } = setupWithAck(UNAUTHORIZED)
+    gate.requireAuth()
+
+    currentUserId.set(42)
+
+    expect(gate.modalOpen.get()).toBe(false)
+    expect(router.clearedCount()).toBe(1)
+  })
+
+  it('does not resume on an ack that clears without an upgrade behind it', () => {
+    const { router, pendingAck } = setupWithAck(UNAUTHORIZED)
+
+    pendingAck.set(SESSION_ACK_REGISTERED)
+    pendingAck.set(null)
+
+    expect(router.clearedCount()).toBe(0)
+    expect(router.pageError.get()?.httpCode).toBe(401)
+  })
+
+  it('settles a held resume when the surface is dismissed by hand', () => {
+    const { gate, router, currentUserId, pendingAck } =
+      setupWithAck(UNAUTHORIZED)
+    pendingAck.set(SESSION_ACK_REGISTERED)
+    currentUserId.set(42)
+
+    gate.dismiss()
+
+    expect(gate.modalOpen.get()).toBe(false)
+    expect(router.clearedCount()).toBe(1)
+    expect(router.pageError.get()).toBeNull()
+  })
+
+  it('voids a held resume when the session goes anonymous again', () => {
+    const { router, currentUserId, pendingAck } = setupWithAck(UNAUTHORIZED)
+    pendingAck.set(SESSION_ACK_REGISTERED)
+    currentUserId.set(42)
+
+    // A force-logout from another device leaves the ack standing.
+    currentUserId.set(null)
+    pendingAck.set(null)
+
+    expect(router.clearedCount()).toBe(0)
+    expect(router.pageError.get()?.httpCode).toBe(401)
   })
 })

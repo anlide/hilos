@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\DTO;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -23,6 +24,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * Display name updates, page snapshots, and session fields are sent through
  * browser rows after page subscription.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
+ *
+ * Alongside the entities travels the plain `{data: {pendingAck: ...}}` section
+ * (HIL-422): the ack the receiving CONNECTION still owes its person, or null when it
+ * owes none. The key is written on every response rather than only when set, because
+ * the frontend derives the surface from it — an omitted key would read as "unchanged"
+ * where the clearing is the whole message. It is per-connection, so one broadcast of
+ * the same identity carries a different value to each socket of the session.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -32,6 +40,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string id = 'id';
     public const string name = 'name';
     public const string admin = 'admin';
+    public const string data = 'data';
+    public const string pendingAck = 'pendingAck';
 
     /**
      * Creates handshake response signal data.
@@ -52,6 +62,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param bool $selfAdmin Whether the authenticated user holds the admin privilege
      * @param ?int $impersonatorId Impersonating admin's user id, or null when not impersonating
      * @param ?string $impersonatorName Impersonating admin's display name, or null when not impersonating
+     * @param ?string $pendingAck Ack the receiving connection still owes (a {@see SessionAck} value), or null
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -59,7 +70,31 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly bool $selfAdmin = false,
         public readonly ?int $impersonatorId = null,
         public readonly ?string $impersonatorName = null,
+        public readonly ?string $pendingAck = null,
     ) {
+    }
+
+    /**
+     * Returns the same identity addressed to a connection that owes a different ack.
+     *
+     * The identity half of the response is built once per session — one user, one
+     * name, one impersonator — while the ack half belongs to a single socket. A
+     * broadcast therefore builds the response once and re-addresses it per connection
+     * through this, instead of resolving the user again for every tab.
+     *
+     * @param ?string $pendingAck Ack the addressed connection owes (a {@see SessionAck} value), or null for none
+     * @return self The same response carrying that ack
+     */
+    public function withPendingAck(?string $pendingAck): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $pendingAck,
+        );
     }
 
     /**
@@ -85,6 +120,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                         self::name => $this->impersonatorName,
                     ],
             ],
+            self::data => [
+                self::pendingAck => $this->pendingAck,
+            ],
         ];
     }
 
@@ -98,6 +136,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * inside it, and the display name is the one field a project is allowed to
      * answer as null. The impersonator node is read the same way when it is there.
      *
+     * The ack is read on both branches: a response can clear the current user and
+     * still owe the socket a sentence, and dropping it on the anonymous branch would
+     * make the round trip lossy for exactly the payload the logout path sends.
+     *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When a present identity node carries no id or no admin flag
@@ -107,8 +149,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         $entities = self::optionalArray($data, self::entities) ?? [];
         $currentUser = self::optionalArray($entities, self::currentUser);
         $impersonatedBy = self::optionalArray($entities, self::impersonatedBy);
+        $pendingAck = self::optionalString(self::optionalArray($data, self::data) ?? [], self::pendingAck);
         if ($currentUser === null) {
-            return new static();
+            return new static(pendingAck: $pendingAck);
         }
 
         return new static(
@@ -117,6 +160,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfAdmin: self::requireBool($currentUser, self::admin),
             impersonatorId: $impersonatedBy === null ? null : self::requireInt($impersonatedBy, self::id),
             impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
+            pendingAck: $pendingAck,
         );
     }
 }

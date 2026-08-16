@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -89,6 +90,7 @@ final class HilosConnectionStateTest extends TestCase
                 HilosConnection::acceptKey => 'ak-4',
                 HilosConnection::userId => 5,
                 HilosSessionConnection::sessionToken => 'tok-a',
+                HilosSessionConnection::pendingAck => null,
                 SessionConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),
@@ -106,6 +108,26 @@ final class HilosConnectionStateTest extends TestCase
         $connection = SessionConnectionFixture::create('ak-5', null);
 
         $this->assertNull($connection->sessionToken);
+    }
+
+    public function testPresenceStageCarriesNoPendingAck(): void
+    {
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::pendingAck));
+    }
+
+    public function testAFreshSocketOwesNoAckAndTheMarkTravelsAsADiff(): void
+    {
+        $connection = SessionConnectionFixture::create('ak-6', 5, 'tok-a');
+        $this->assertNull($connection->pendingAck);
+
+        $connection->applyDiff([HilosSessionConnection::pendingAck => SessionAck::REGISTERED]);
+        $this->assertSame(SessionAck::REGISTERED, $connection->pendingAck);
+
+        $hydrated = SessionConnectionFixture::fromRow($connection->toArray());
+        $this->assertSame(SessionAck::REGISTERED, $hydrated->pendingAck);
+
+        $hydrated->applyDiff([HilosSessionConnection::pendingAck => null]);
+        $this->assertNull($hydrated->pendingAck);
     }
 
     public function testPresenceCollectionLooksUpByUser(): void

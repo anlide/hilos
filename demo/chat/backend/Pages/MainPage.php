@@ -53,6 +53,7 @@ use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
@@ -929,6 +930,9 @@ final class MainPage extends AbstractPage
             );
         }
 
+        // Before the sign-in, not after: the surface closes on the session coming up, so
+        // the mark has to be on the sockets by the time that frame goes out (HIL-422).
+        $this->agent->markSessionAck($sessionToken, SessionAck::PASSWORD_CHANGED);
         $this->agent->authenticateSession($sessionToken, $userId, $connection->acceptKey);
         $this->agent->convergeRecovery($email, $sessionToken, $connection->acceptKey);
         $this->agent->deauthenticateOtherSessions($userId, Hilos::$rt->selfConnection->sessionToken);
@@ -1109,6 +1113,10 @@ final class MainPage extends AbstractPage
             throw new ValidationException(self::INVALID_CODE_MESSAGE);
         }
 
+        // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
+        // Following a link is the whole of what this flow asks for, so "you are in" is
+        // all there is to say about it.
+        $this->agent->markSessionAck(Hilos::$rt->selfConnection->sessionToken, SessionAck::SIGNED_IN);
         $this->agent->authenticateSession(
             Hilos::$rt->selfConnection->sessionToken,
             $userId,
@@ -1253,6 +1261,9 @@ final class MainPage extends AbstractPage
         // the account itself: at the submit there was nobody to announce yet.
         Hilos::$db->events->actions->addUserRegistered($userId);
 
+        // Before the sign-in: the surface closes on the session coming up, so the mark has
+        // to be on the sockets by the time that frame goes out (HIL-422).
+        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
         $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
 
         Hilos::$rt->hilosRegistrationWaiters->actions->release($connection->acceptKey);

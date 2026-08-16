@@ -6,9 +6,12 @@ import {
   sessionUserId,
   sessionImpersonating,
   sessionImpersonatedByName,
+  sessionPendingAck,
+  SESSION_ACK_REGISTERED,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { subscribeSignal } from '../../src/state/signal.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
 
 /** A connection double replaying handshake-response project signals. */
@@ -154,5 +157,48 @@ describe('sessionScope', () => {
 
     expect(impersonating.get()).toBe(false)
     expect(byName.get()).toBe('')
+  })
+
+  it('resolves the pending ack and drops it back to null when the slot clears', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const ack = sessionPendingAck(scopes)
+
+    expect(ack.get()).toBeNull()
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: { pendingAck: SESSION_ACK_REGISTERED },
+    })
+    expect(ack.get()).toBe(SESSION_ACK_REGISTERED)
+
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: { pendingAck: null },
+    })
+
+    expect(ack.get()).toBeNull()
+  })
+
+  it('has the ack of the same response ready when the current user lands', () => {
+    // The gate decides whether the rising session may close the surface by
+    // reading the ack inside its currentUserId subscriber, so the two arriving in
+    // one response is not enough — the ack has to be applied FIRST.
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const userId = sessionUserId(scopes)
+    const ack = sessionPendingAck(scopes)
+    const seen: Array<string | null> = []
+    subscribeSignal(userId, () => seen.push(ack.get()))
+
+    connection.emitHandshakeResponse({ data: { pendingAck: null } })
+    connection.emitHandshakeResponse({
+      entities: { currentUser: { id: 1, name: 'Ada' } },
+      data: { pendingAck: SESSION_ACK_REGISTERED },
+    })
+
+    expect(seen).toStrictEqual([SESSION_ACK_REGISTERED])
   })
 })

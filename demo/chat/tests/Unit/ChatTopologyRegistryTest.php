@@ -14,6 +14,7 @@ use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\OAuthBindSessionSignalData;
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\DTO\DismissSessionAckActionDTO;
 use Demo\Chat\Agents\DTO\ImpersonateStopActionDTO;
 use Demo\Chat\Agents\DTO\LogoutActionDTO;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
@@ -419,6 +420,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::LOGOUT => AgentType::CHAT,
+            ChatSignalConstants::DISMISS_SESSION_ACK => AgentType::CHAT,
             ChatSignalConstants::IMPERSONATE_STOP => AgentType::CHAT,
         ], Hilos::getAgentActionRoutes());
     }
@@ -436,6 +438,7 @@ final class ChatTopologyRegistryTest extends TestCase
 
         $this->assertSame([
             ChatSignalConstants::LOGOUT => LogoutActionDTO::class,
+            ChatSignalConstants::DISMISS_SESSION_ACK => DismissSessionAckActionDTO::class,
             ChatSignalConstants::IMPERSONATE_STOP => ImpersonateStopActionDTO::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentActionDtoRoutes());

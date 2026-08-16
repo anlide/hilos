@@ -19,13 +19,14 @@ use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnecti
  * @extends HilosConnection<TState>
  *
  * @property-read ?string $sessionToken Session cookie token this connection belongs to
+ * @property-read ?string $pendingAck Success ack this socket has yet to show, or null
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
     /**
-     * Adds the session token to the base fields of {@see HilosConnection::__get()}.
+     * Adds the session-stage fields to the base ones of {@see HilosConnection::__get()}.
      *
-     * @param string $name Property name (sessionToken, or a presence-stage one)
+     * @param string $name Property name (sessionToken, pendingAck, or a presence-stage one)
      * @return mixed Property value or item actions
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
@@ -34,6 +35,7 @@ abstract class HilosSessionConnection extends HilosConnection
     {
         return match ($name) {
             StateHilosSessionConnection::sessionToken => $this->_state->sessionToken,
+            StateHilosSessionConnection::pendingAck => $this->_state->pendingAck,
             default => parent::__get($name),
         };
     }
