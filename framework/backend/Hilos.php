@@ -774,6 +774,7 @@ abstract class Hilos
             static::$fs?->configure();
         }
 
+        static::validateTopologyReferences();
     }
 
     /**
@@ -784,6 +785,21 @@ abstract class Hilos
     public static function validateTopology(): void
     {
         static::createTopologyValidator()->validate(static::class);
+    }
+
+    /**
+     * Validates browser source references against the layers this node mounted.
+     *
+     * The half of topology validation that cannot run with the other half: a source key names a
+     * collection, and whether that collection exists is only knowable once `$db` and `$rt` are
+     * up. Same shape as the pair {@see self::validateFeatureActivation()} and
+     * {@see RtContext::assertFeatureRuntimeIntact()} already form around mounting.
+     *
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     */
+    public static function validateTopologyReferences(): void
+    {
+        static::createTopologyValidator()->validateReferences(static::class);
     }
 
     /**

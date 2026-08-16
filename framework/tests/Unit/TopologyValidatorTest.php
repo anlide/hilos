@@ -10,6 +10,19 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Core\Browser\Config\BrowserRefKey;
+use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -19,6 +32,8 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Object\Objects;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use PHPUnit\Framework\TestCase;
@@ -476,6 +491,175 @@ final class TopologyValidatorTest extends TestCase
                 'PROTECTED_MODE_STUB contains a non-string or empty operation key',
             ],
         );
+    }
+
+    public function testWellFormedBrowserDeclarationsPass(): void
+    {
+        TopologyBrowserValidHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testPageBrowserDeclarationShapeIsJudged(): void
+    {
+        $path = 'PAGES[' . TopologyBrowserBrokenPage::PAGE . '] class ' . TopologyBrowserBrokenPage::class
+            . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserBrokenPageHilos::validateTopology();
+            },
+            [
+                "{$path} declares an unknown key unknown_browser_key",
+                "{$path} signal must be a non-empty string",
+                "{$path} params[untyped_param] must declare type string or positive_int",
+                "{$path} params[unbooled_param] required must be a bool",
+                "{$path} guards[0] must declare a known type (db_exists, access, authenticated)",
+                "{$path} guards[1] of type access must declare a non-empty field",
+                "{$path} guards[2] source must declare type and key",
+                "{$path} guards[2] key ref must declare a known type (accept_key, page_param, table_param)",
+                "{$path} guards[2] error must be one of 404, 403",
+                "{$path} guards[3] of type authenticated must declare neither source nor field",
+            ],
+        );
+    }
+
+    public function testBrowserSourceDeclarationShapeIsJudged(): void
+    {
+        $path = 'BROWSER_LISTS[' . TopologyBrowserBrokenList::LIST . '] class ' . TopologyBrowserBrokenList::class
+            . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserBrokenListHilos::validateTopology();
+            },
+            [
+                "{$path} declares an unknown key unknown_source_key",
+                "{$path} items[0] source must declare type db or rt",
+                "{$path} items[0] must declare a non-empty itemKey",
+                "{$path} items[0] where[ownerId] ref must declare a known type"
+                    . ' (accept_key, page_param, table_param)',
+                "{$path} items[0] where[draftId] table_param missing_param is not declared in params",
+                "{$path} sources must list exactly the sources items reference"
+                    . ' (missing: memcache:drafts; unused: db:unused_collection)',
+            ],
+        );
+    }
+
+    public function testBrowserDeclarationContainersMustBeArrays(): void
+    {
+        $pagePath = 'PAGES[' . TopologyBrowserNonArrayPage::PAGE . '] class ' . TopologyBrowserNonArrayPage::class
+            . '::BROWSER';
+        $tablePath = 'BROWSER_TABLES[' . TopologyBrowserNonArrayTable::TABLE . '] class '
+            . TopologyBrowserNonArrayTable::class . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserNonArrayHilos::validateTopology();
+            },
+            [
+                "{$pagePath} params must be a map of param declarations",
+                "{$pagePath} guards must be a list of guard declarations",
+                "{$tablePath} rows[0] fields must be an array",
+                "{$tablePath} rows[0] where must be an array",
+                "{$tablePath} rows[1] must be an array",
+                "{$tablePath} sources must be a list of source declarations",
+            ],
+        );
+    }
+
+    public function testBrowserBindingParamNamesAreCrossChecked(): void
+    {
+        $path = 'PAGE_LISTS[' . TopologyBrowserBindingPage::PAGE . '][' . TopologyBrowserBindingList::LIST . ']';
+        $otherPath = 'PAGE_LISTS[' . TopologyBrowserBindingPage::PAGE . ']['
+            . TopologyBrowserBindingOtherList::LIST . ']';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserBrokenBindingHilos::validateTopology();
+            },
+            [
+                "{$path} params[unknown_param] is not declared by " . TopologyBrowserBindingList::class
+                    . '::BROWSER params',
+                "{$path} params[ownerId] page_param missing_page_param is not declared in params",
+                "{$path} does not fill required param viewerId of " . TopologyBrowserBindingList::class . '::BROWSER',
+                "{$otherPath} params must be a map of param references",
+            ],
+        );
+    }
+
+    public function testTopologyReferencesRejectSourcesNoLayerMounts(): void
+    {
+        HilosFacade::$db = new TopologyTestDbContext();
+        HilosFacade::$rt = null;
+        $tablePath = 'BROWSER_TABLES[' . TopologyBrowserUnmountedTable::TABLE . '] class '
+            . TopologyBrowserUnmountedTable::class . '::BROWSER';
+        $pagePath = 'PAGES[' . TopologyBrowserUnmountedPage::PAGE . '] class '
+            . TopologyBrowserUnmountedPage::class . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserUnmountedHilos::validateTopologyReferences();
+            },
+            [
+                "{$tablePath} rows[0] source key owners is not a mounted db collection",
+                "{$tablePath} rows[1] names an rt source, but this project mounts no runtime",
+                "{$pagePath} guards[0] source key guardians is not a mounted db collection",
+            ],
+        );
+    }
+
+    public function testTopologyReferencesRejectSourcesTheRuntimeDoesNotMount(): void
+    {
+        HilosFacade::$db = new TopologyTestDbContext();
+        $runtime = new TopologyEmptyRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+        $tablePath = 'BROWSER_TABLES[' . TopologyBrowserUnmountedTable::TABLE . '] class '
+            . TopologyBrowserUnmountedTable::class . '::BROWSER';
+
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyBrowserUnmountedHilos::validateTopologyReferences();
+            },
+            [
+                "{$tablePath} rows[1] source key presences is not a mounted rt source",
+            ],
+        );
+    }
+
+    public function testTopologyReferencesAcceptMountedSources(): void
+    {
+        $db = new TopologyMountedDbContext();
+        $db->configure();
+        HilosFacade::$db = $db;
+        $runtime = new TopologyMountedRtContext();
+        $runtime->configure();
+        HilosFacade::$rt = $runtime;
+
+        $this->assertFalse(isset($runtime->presences));
+        $this->assertTrue($runtime->hasSource('presences'));
+
+        TopologyBrowserMountedHilos::validateTopologyReferences();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testInitRunsTopologyReferenceValidationAfterLayerInitialization(): void
+    {
+        try {
+            TopologyBrowserUnmountedHilos::init();
+        } catch (InvalidTopologyException $exception) {
+            $this->assertStringContainsString(
+                'source key owners is not a mounted db collection',
+                $exception->getMessage(),
+            );
+            $this->assertInstanceOf(TopologyTestDbContext::class, HilosFacade::$db);
+
+            return;
+        }
+
+        $this->fail('Expected topology reference validation to run once the layers were up');
     }
 
     /**
@@ -1681,5 +1865,564 @@ final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserValidPage extends AbstractPage
+{
+    public const string PAGE = 'browser_valid_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => 'browser_valid_signal',
+        BrowserConfigKey::PARAMS => [
+            'ownerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserGuardKey::KEY => [
+                    BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                    BrowserRefKey::KEY => 'ownerId',
+                ],
+                BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+            ],
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED,
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserValidSourceTable
+{
+    public const string TABLE = 'browser_valid_source_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::PARAMS => [
+            'ownerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::WHERE => [
+                    'id' => [
+                        BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
+                        BrowserRefKey::KEY => 'ownerId',
+                    ],
+                ],
+                BrowserTableFieldKey::FIELDS => [
+                    'id',
+                ],
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserBrokenPage extends AbstractPage
+{
+    public const string PAGE = 'browser_broken_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => '',
+        'unknown_browser_key' => true,
+        BrowserConfigKey::PARAMS => [
+            'untyped_param' => [
+                BrowserParamKey::REQUIRED => true,
+            ],
+            'unbooled_param' => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
+                BrowserParamKey::REQUIRED => 'yes',
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => 'sudo',
+            ],
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::ACCESS,
+                BrowserGuardKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+            ],
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::KEY => [
+                    BrowserRefKey::TYPE => 'route_param',
+                ],
+                BrowserGuardKey::ERROR => 500,
+            ],
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED,
+                BrowserGuardKey::FIELD => 'admin',
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserBrokenList
+{
+    public const string LIST = 'browser_broken_list';
+
+    public const array BROWSER = [
+        'unknown_source_key' => true,
+        BrowserListConfigKey::PARAMS => [
+            'declared_param' => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserListConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'unused_collection',
+            ],
+        ],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => 'memcache',
+                    BrowserSourceKey::KEY => 'drafts',
+                ],
+                BrowserListFieldKey::ITEM_KEY => '',
+                BrowserListFieldKey::WHERE => [
+                    'ownerId' => [
+                        BrowserRefKey::TYPE => 'route_param',
+                    ],
+                    'draftId' => [
+                        BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
+                        BrowserRefKey::KEY => 'missing_param',
+                    ],
+                ],
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserNonArrayPage extends AbstractPage
+{
+    public const string PAGE = 'browser_non_array_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::PARAMS => 'nope',
+        BrowserConfigKey::GUARDS => 'nope',
+    ];
+}
+
+final class TopologyBrowserNonArrayTable
+{
+    public const string TABLE = 'browser_non_array_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => 'nope',
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+                BrowserTableFieldKey::FIELDS => 'nope',
+                BrowserTableFieldKey::WHERE => 'nope',
+            ],
+            'not an array',
+        ],
+    ];
+}
+
+final class TopologyBrowserValidHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserValidPage::PAGE => TopologyBrowserValidPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    public const array BROWSER_TABLES = [
+        TopologyBrowserValidSourceTable::TABLE => TopologyBrowserValidSourceTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        TopologyBrowserValidPage::PAGE => [
+            TopologyBrowserValidSourceTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    'ownerId' => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'ownerId',
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserBrokenPageHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserBrokenPage::PAGE => TopologyBrowserBrokenPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserBrokenListHilos extends HilosFacade
+{
+    public const array BROWSER_LISTS = [
+        TopologyBrowserBrokenList::LIST => TopologyBrowserBrokenList::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserNonArrayHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserNonArrayPage::PAGE => TopologyBrowserNonArrayPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    public const array BROWSER_TABLES = [
+        TopologyBrowserNonArrayTable::TABLE => TopologyBrowserNonArrayTable::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserBindingPage extends AbstractPage
+{
+    public const string PAGE = 'browser_binding_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => 'browser_binding_signal',
+        BrowserConfigKey::PARAMS => [
+            'ownerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserBindingList
+{
+    public const string LIST = 'browser_binding_list';
+
+    public const array BROWSER = [
+        BrowserListConfigKey::PARAMS => [
+            'ownerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+            'viewerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserListConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+        ],
+        BrowserListConfigKey::ITEMS => [
+            [
+                BrowserListFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserListFieldKey::ITEM_KEY => 'id',
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserBindingOtherList
+{
+    public const string LIST = 'browser_binding_other_list';
+
+    public const array BROWSER = [];
+}
+
+final class TopologyBrowserBrokenBindingHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserBindingPage::PAGE => TopologyBrowserBindingPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    public const array BROWSER_LISTS = [
+        TopologyBrowserBindingList::LIST => TopologyBrowserBindingList::class,
+        TopologyBrowserBindingOtherList::LIST => TopologyBrowserBindingOtherList::class,
+    ];
+
+    public const array PAGE_LISTS = [
+        TopologyBrowserBindingPage::PAGE => [
+            TopologyBrowserBindingList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    'unknown_param' => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'ownerId',
+                    ],
+                    'ownerId' => [
+                        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                        BrowserRefKey::KEY => 'missing_page_param',
+                    ],
+                ],
+            ],
+            TopologyBrowserBindingOtherList::LIST => [
+                BrowserParamKey::PARAMS => 'nope',
+            ],
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyTestObjects extends Objects
+{
+}
+
+final class TopologyMountedDbContext extends DbContext
+{
+    /**
+     * Mounts the two empty object collections the reference fixtures name.
+     */
+    public function configure(): void
+    {
+        $this->_objectCollections['owners'] = TopologyTestObjects::initEmpty();
+        $this->_objectCollections['guardians'] = TopologyTestObjects::initEmpty();
+    }
+}
+
+final class TopologyEmptyRtContext extends RtContext
+{
+    /**
+     * Mounts no runtime source at all, the state a project has before it declares any.
+     */
+    public function configure(): void
+    {
+    }
+}
+
+final class TopologyMountedRtContext extends RtContext
+{
+    /**
+     * Declares one item alias and nothing behind it, the state a browser source is judged in:
+     * the alias is mounted by the project but resolves to nothing outside a subscription.
+     */
+    public function configure(): void
+    {
+        $this->_rtItems['presences'] = [
+            'itemClass' => TopologyMountedRtContext::class,
+            'itemActionsClass' => null,
+        ];
+    }
+}
+
+final class TopologyBrowserUnmountedPage extends AbstractPage
+{
+    public const string PAGE = 'browser_unmounted_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => 'browser_unmounted_signal',
+        BrowserConfigKey::PARAMS => [
+            'ownerId' => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'guardians',
+                ],
+                BrowserGuardKey::KEY => [
+                    BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+                    BrowserRefKey::KEY => 'ownerId',
+                ],
+                BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserUnmountedTable
+{
+    public const string TABLE = 'browser_unmounted_table';
+
+    public const array BROWSER = [
+        BrowserTableConfigKey::SOURCES => [
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                BrowserSourceKey::KEY => 'owners',
+            ],
+            [
+                BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                BrowserSourceKey::KEY => 'presences',
+            ],
+        ],
+        BrowserTableConfigKey::ROWS => [
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::DB,
+                    BrowserSourceKey::KEY => 'owners',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'id',
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => [
+                    BrowserSourceKey::TYPE => BrowserSourceType::RT,
+                    BrowserSourceKey::KEY => 'presences',
+                ],
+                BrowserTableFieldKey::ROW_KEY => 'ownerId',
+            ],
+        ],
+    ];
+}
+
+final class TopologyBrowserUnmountedHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserUnmountedPage::PAGE => TopologyBrowserUnmountedPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    public const array BROWSER_TABLES = [
+        TopologyBrowserUnmountedTable::TABLE => TopologyBrowserUnmountedTable::class,
+    ];
+
+    /**
+     * Creates a DB context that mounts nothing, so a source key names no collection.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyBrowserMountedHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyBrowserUnmountedPage::PAGE => TopologyBrowserUnmountedPage::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        TopologyBrowserUnmountedTable::TABLE => TopologyBrowserUnmountedTable::class,
+    ];
+
+    /**
+     * Creates a DB context mounting the collections the fixtures name.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyMountedDbContext();
     }
 }

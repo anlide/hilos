@@ -12,7 +12,23 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataConfigKey;
+use Hilos\Core\Browser\Config\BrowserDataFieldKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Core\Browser\Config\BrowserRefKey;
+use Hilos\Core\Browser\Config\BrowserRefType;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceKind;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -75,6 +91,10 @@ final class TopologyValidator
         $this->validateBrowserTables($browserTables, self::SECTION_BROWSER_TABLES, $errors);
         $this->validateBrowserTables($browserLists, self::SECTION_BROWSER_LISTS, $errors);
         $this->validateBrowserTables($browserData, self::SECTION_BROWSER_DATA, $errors);
+        $this->validatePageBrowserConfigs($pages, $errors);
+        $this->validateBrowserSourceConfigs($browserTables, self::SECTION_BROWSER_TABLES, $errors);
+        $this->validateBrowserSourceConfigs($browserLists, self::SECTION_BROWSER_LISTS, $errors);
+        $this->validateBrowserSourceConfigs($browserData, self::SECTION_BROWSER_DATA, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
@@ -99,6 +119,9 @@ final class TopologyValidator
         $this->validatePageTables($pages, $tables, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
+        $this->validateBrowserBindings($pages, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
+        $this->validateBrowserBindings($pages, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
+        $this->validateBrowserBindings($pages, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
         $this->validateProtectedModeStub(
             Hilos::catalogConstantOf($hilosClass, self::SECTION_PROTECTED_MODE_STUB),
             $errors,
@@ -106,6 +129,143 @@ final class TopologyValidator
 
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors($hilosClass, $errors);
+        }
+    }
+
+    /**
+     * Validates that every browser source declaration names something the mounted layers hold.
+     *
+     * The second of the two moments a browser declaration is judged in, and it cannot be folded
+     * into the first: {@see self::validate()} runs before `$db` and `$rt` exist, so nothing there
+     * can be asked whether a collection is mounted. Called at the end of {@see Hilos::init()},
+     * where both layers stand, by the same accumulate-then-throw rule as the first moment.
+     *
+     * @param class-string<Hilos> $hilosClass Project facade class
+     * @throws InvalidTopologyException When a declaration names a collection no layer mounts
+     */
+    public function validateReferences(string $hilosClass): void
+    {
+        $errors = [];
+        $declarations = [];
+        foreach ([self::SECTION_BROWSER_TABLES, self::SECTION_BROWSER_LISTS, self::SECTION_BROWSER_DATA] as $registry) {
+            $this->collectBrowserSourceReferences(
+                $this->constantArray($hilosClass, $registry, $errors),
+                $registry,
+                $declarations,
+            );
+        }
+
+        $this->collectPageGuardReferences($this->constantArray($hilosClass, 'PAGES', $errors), $declarations);
+
+        foreach ($declarations as $identity => $path) {
+            [$type, $name] = explode(':', $identity, 2);
+            if ($type === BrowserSourceType::DB) {
+                if (Hilos::$db?->getObjectCollection($name) === null) {
+                    $errors[] = "{$path} source key {$name} is not a mounted db collection";
+                }
+
+                continue;
+            }
+
+            if ($type !== BrowserSourceType::RT) {
+                continue;
+            }
+
+            if (Hilos::$rt === null) {
+                $errors[] = "{$path} names an rt source, but this project mounts no runtime";
+            } elseif (!Hilos::$rt->hasSource($name)) {
+                $errors[] = "{$path} source key {$name} is not a mounted rt source";
+            }
+        }
+
+        if ($errors !== []) {
+            throw InvalidTopologyException::forErrors($hilosClass, $errors);
+        }
+    }
+
+    /**
+     * Collects the source declarations one browser registry's rows reference.
+     *
+     * @param array $browserSources Browser source registry (tables, lists, or data)
+     * @param string $registry Registry constant name for error messages
+     * @param array<string, string> $declarations Identity-to-path accumulator
+     */
+    private function collectBrowserSourceReferences(
+        array $browserSources,
+        string $registry,
+        array &$declarations,
+    ): void {
+        foreach ($browserSources as $key => $sourceClass) {
+            if (!is_string($key) || !is_string($sourceClass) || !class_exists($sourceClass)) {
+                continue;
+            }
+
+            $browser = defined("{$sourceClass}::BROWSER") ? constant("{$sourceClass}::BROWSER") : null;
+            if (!is_array($browser)) {
+                continue;
+            }
+
+            $rowsKey = match (true) {
+                defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::LIST)) => BrowserListConfigKey::ITEMS,
+                defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::DATA)) => BrowserDataConfigKey::ROWS,
+                default => BrowserTableConfigKey::ROWS,
+            };
+            $rows = $browser[$rowsKey] ?? [];
+            if (!is_array($rows)) {
+                continue;
+            }
+
+            $path = "{$registry}[{$key}] class {$sourceClass}::BROWSER";
+            foreach ($rows as $index => $row) {
+                if (is_array($row)) {
+                    $source = $row[BrowserFieldKey::SOURCE] ?? null;
+                    $this->rememberBrowserSourceReference($source, "{$path} {$rowsKey}[{$index}]", $declarations);
+                }
+            }
+        }
+    }
+
+    /**
+     * Collects the source declarations page guards reference.
+     *
+     * @param array $pages Page registry
+     * @param array<string, string> $declarations Identity-to-path accumulator
+     */
+    private function collectPageGuardReferences(array $pages, array &$declarations): void
+    {
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            /** @var class-string<AbstractPage> $pageClass */
+            $guards = $pageClass::BROWSER[BrowserConfigKey::GUARDS] ?? [];
+            if (!is_array($guards)) {
+                continue;
+            }
+
+            $path = "PAGES[{$page}] class {$pageClass}::BROWSER";
+            foreach ($guards as $index => $guard) {
+                if (is_array($guard)) {
+                    $source = $guard[BrowserGuardKey::SOURCE] ?? null;
+                    $this->rememberBrowserSourceReference($source, "{$path} guards[{$index}]", $declarations);
+                }
+            }
+        }
+    }
+
+    /**
+     * Remembers one source declaration under its identity, keeping the first path that named it
+     * so a collection referenced by ten rows is asked about once and reported once.
+     *
+     * @param mixed $source Declared source entry
+     * @param string $path Topology path of the declaration that referenced it
+     * @param array<string, string> $declarations Identity-to-path accumulator
+     */
+    private function rememberBrowserSourceReference(mixed $source, string $path, array &$declarations): void
+    {
+        foreach (array_keys($this->browserSourceIdentity($source)) as $identity) {
+            $declarations[$identity] ??= $path;
         }
     }
 
@@ -404,6 +564,468 @@ final class TopologyValidator
                 $errors[] = "{$registry}[{$table}] class {$tableClass}::BROWSER must be an array";
             }
         }
+    }
+
+    /**
+     * Validates the contents of every registered page's BROWSER declaration.
+     *
+     * Judged at startup for the same reason the protected-mode stub is: a browser declaration
+     * has no earlier reader than a subscription, so a misspelled key reaches the developer as
+     * an end user's error or blank screen instead of as a node that refuses to come up.
+     *
+     * The `tables` key is left out of the unknown-key report on purpose - {@see
+     * self::validatePages()} already answers it with a message naming PAGE_TABLES as the place
+     * bindings belong, and one mistake deserves one sentence.
+     *
+     * @param array $pages Page registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageBrowserConfigs(array $pages, array &$errors): void
+    {
+        $knownKeys = [
+            BrowserConfigKey::SIGNAL,
+            BrowserConfigKey::PARAMS,
+            BrowserConfigKey::GUARDS,
+            BrowserConfigKey::TABLES,
+        ];
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            /** @var class-string<AbstractPage> $pageClass */
+            $browser = $pageClass::BROWSER;
+            $path = "PAGES[{$page}] class {$pageClass}::BROWSER";
+            foreach (array_keys($browser) as $declaredKey) {
+                if (!in_array($declaredKey, $knownKeys, true)) {
+                    $errors[] = "{$path} declares an unknown key {$declaredKey}";
+                }
+            }
+
+            $signal = $browser[BrowserConfigKey::SIGNAL] ?? null;
+            if ($signal !== null && (!is_string($signal) || $signal === '')) {
+                $errors[] = "{$path} signal must be a non-empty string";
+            }
+
+            $this->validateBrowserParamDeclarations($browser[BrowserConfigKey::PARAMS] ?? [], $path, $errors);
+
+            $guards = $browser[BrowserConfigKey::GUARDS] ?? [];
+            if (!is_array($guards)) {
+                $errors[] = "{$path} guards must be a list of guard declarations";
+                continue;
+            }
+
+            foreach ($guards as $index => $guard) {
+                $this->validateBrowserGuard($guard, "{$path} guards[{$index}]", $errors);
+            }
+        }
+    }
+
+    /**
+     * Validates the contents of every BROWSER declaration in one browser source registry.
+     *
+     * The kind constant a source class declares (LIST, DATA, or TABLE) decides which dictionary
+     * names its keys, so a list declaring `rows` reads as an unknown key rather than as a table
+     * that happens to work.
+     *
+     * @param array $browserSources Browser source registry (tables, lists, or data)
+     * @param string $registry Registry constant name for error messages
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserSourceConfigs(array $browserSources, string $registry, array &$errors): void
+    {
+        foreach ($browserSources as $key => $sourceClass) {
+            if (!is_string($key) || !is_string($sourceClass) || !class_exists($sourceClass)) {
+                continue;
+            }
+
+            $browser = defined("{$sourceClass}::BROWSER") ? constant("{$sourceClass}::BROWSER") : null;
+            if (!is_array($browser)) {
+                continue;
+            }
+
+            [$sourcesKey, $rowsKey, $paramsKey, $rowKeyKey] = match (true) {
+                defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::LIST)) => [
+                    BrowserListConfigKey::SOURCES,
+                    BrowserListConfigKey::ITEMS,
+                    BrowserListConfigKey::PARAMS,
+                    BrowserListFieldKey::ITEM_KEY,
+                ],
+                defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::DATA)) => [
+                    BrowserDataConfigKey::SOURCES,
+                    BrowserDataConfigKey::ROWS,
+                    BrowserDataConfigKey::PARAMS,
+                    BrowserDataFieldKey::ROW_KEY,
+                ],
+                default => [
+                    BrowserTableConfigKey::SOURCES,
+                    BrowserTableConfigKey::ROWS,
+                    BrowserTableConfigKey::PARAMS,
+                    BrowserTableFieldKey::ROW_KEY,
+                ],
+            };
+
+            $path = "{$registry}[{$key}] class {$sourceClass}::BROWSER";
+            foreach (array_keys($browser) as $declaredKey) {
+                if (!in_array($declaredKey, [$sourcesKey, $rowsKey, $paramsKey], true)) {
+                    $errors[] = "{$path} declares an unknown key {$declaredKey}";
+                }
+            }
+
+            $params = $browser[$paramsKey] ?? [];
+            $this->validateBrowserParamDeclarations($params, $path, $errors);
+            $declaredParams = is_array($params) ? array_keys($params) : [];
+
+            $rows = $browser[$rowsKey] ?? [];
+            if (!is_array($rows)) {
+                $errors[] = "{$path} {$rowsKey} must be a list of row declarations";
+                continue;
+            }
+
+            $referenced = [];
+            foreach ($rows as $index => $row) {
+                $rowPath = "{$path} {$rowsKey}[{$index}]";
+                if (!is_array($row)) {
+                    $errors[] = "{$rowPath} must be an array";
+                    continue;
+                }
+
+                $source = $row[BrowserFieldKey::SOURCE] ?? null;
+                $this->validateBrowserSourceDeclaration($source, "{$rowPath} source", $errors);
+                $referenced += $this->browserSourceIdentity($source);
+
+                $rowKey = $row[$rowKeyKey] ?? null;
+                if (is_array($rowKey)) {
+                    $this->validateBrowserRef($rowKey, "{$rowPath} {$rowKeyKey}", $declaredParams, [], $errors);
+                } elseif (!is_string($rowKey) || $rowKey === '') {
+                    $errors[] = "{$rowPath} must declare a non-empty {$rowKeyKey}";
+                }
+
+                foreach ([BrowserFieldKey::FIELDS, BrowserFieldKey::COMPUTED, BrowserFieldKey::TRIGGERS] as $listKey) {
+                    if (array_key_exists($listKey, $row) && !is_array($row[$listKey])) {
+                        $errors[] = "{$rowPath} {$listKey} must be an array";
+                    }
+                }
+
+                foreach ([BrowserFieldKey::WHERE, BrowserFieldKey::VIA] as $mapKey) {
+                    $map = $row[$mapKey] ?? [];
+                    if (!is_array($map)) {
+                        $errors[] = "{$rowPath} {$mapKey} must be an array";
+                        continue;
+                    }
+
+                    foreach ($map as $field => $value) {
+                        if (is_array($value)) {
+                            $refPath = "{$rowPath} {$mapKey}[{$field}]";
+                            $this->validateBrowserRef($value, $refPath, $declaredParams, [], $errors);
+                        }
+                    }
+                }
+            }
+
+            $declaredSources = $browser[$sourcesKey] ?? [];
+            if (!is_array($declaredSources)) {
+                $errors[] = "{$path} {$sourcesKey} must be a list of source declarations";
+                continue;
+            }
+
+            $listed = [];
+            foreach ($declaredSources as $index => $source) {
+                $this->validateBrowserSourceDeclaration($source, "{$path} {$sourcesKey}[{$index}]", $errors);
+                $listed += $this->browserSourceIdentity($source);
+            }
+
+            $missing = array_diff_key($referenced, $listed);
+            $unused = array_diff_key($listed, $referenced);
+            if ($missing !== [] || $unused !== []) {
+                $errors[] = "{$path} {$sourcesKey} must list exactly the sources {$rowsKey} reference"
+                    . ' (missing: ' . $this->browserSourceList($missing)
+                    . '; unused: ' . $this->browserSourceList($unused) . ')';
+            }
+        }
+    }
+
+    /**
+     * Validates one page-to-source binding registry against the params both sides declare.
+     *
+     * The binding is the only place the two halves of a browser param meet: the source names the
+     * params it needs, the page names the params it has, and the binding says which of the
+     * second fills which of the first. A name misspelled on either side reads as a param that is
+     * simply never filled, which the runtime answers with a null and an empty surface.
+     *
+     * A binding naming a key from TABLES rather than a browser source is skipped - a registered
+     * table definition is judged by its own registry, not by this one.
+     *
+     * @param array $pages Page registry
+     * @param array $browserSources Merged browser source registry
+     * @param array $bindings Page binding registry (tables, lists, or data)
+     * @param string $registry Registry constant name for error messages
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserBindings(
+        array $pages,
+        array $browserSources,
+        array $bindings,
+        string $registry,
+        array &$errors,
+    ): void {
+        foreach ($bindings as $page => $pageBindings) {
+            if (!is_string($page) || !is_array($pageBindings)) {
+                continue;
+            }
+
+            $pageClass = $pages[$page] ?? null;
+            $pageParams = [];
+            if (is_string($pageClass) && is_subclass_of($pageClass, AbstractPage::class)) {
+                /** @var class-string<AbstractPage> $pageClass */
+                $declared = $pageClass::BROWSER[BrowserConfigKey::PARAMS] ?? [];
+                $pageParams = is_array($declared) ? array_keys($declared) : [];
+            }
+
+            foreach ($pageBindings as $key => $config) {
+                $sourceClass = is_string($key) ? ($browserSources[$key] ?? null) : null;
+                if (!is_array($config) || !is_string($sourceClass) || !class_exists($sourceClass)) {
+                    continue;
+                }
+
+                $browser = defined("{$sourceClass}::BROWSER") ? constant("{$sourceClass}::BROWSER") : null;
+                if (!is_array($browser)) {
+                    continue;
+                }
+
+                $paramsKey = match (true) {
+                    defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::LIST)) => BrowserListConfigKey::PARAMS,
+                    defined("{$sourceClass}::" . strtoupper(BrowserSourceKind::DATA)) => BrowserDataConfigKey::PARAMS,
+                    default => BrowserTableConfigKey::PARAMS,
+                };
+                $sourceParams = $browser[$paramsKey] ?? [];
+                $sourceParams = is_array($sourceParams) ? $sourceParams : [];
+
+                $path = "{$registry}[{$page}][{$key}]";
+                $boundParams = $config[BrowserParamKey::PARAMS] ?? [];
+                if (!is_array($boundParams)) {
+                    $errors[] = "{$path} " . BrowserParamKey::PARAMS . ' must be a map of param references';
+                    continue;
+                }
+
+                foreach ($boundParams as $name => $ref) {
+                    $paramPath = "{$path} " . BrowserParamKey::PARAMS . "[{$name}]";
+                    if (!array_key_exists($name, $sourceParams)) {
+                        $errors[] = "{$paramPath} is not declared by {$sourceClass}::BROWSER "
+                            . BrowserParamKey::PARAMS;
+                        continue;
+                    }
+
+                    $this->validateBrowserRef($ref, $paramPath, [], $pageParams, $errors);
+                }
+
+                foreach ($sourceParams as $name => $declaration) {
+                    $required = is_array($declaration) ? ($declaration[BrowserParamKey::REQUIRED] ?? false) : false;
+                    if ($required === true && !array_key_exists($name, $boundParams)) {
+                        $errors[] = "{$path} does not fill required param {$name} of {$sourceClass}::BROWSER";
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Validates a param declaration map from a page or source BROWSER declaration.
+     *
+     * The type is required rather than defaulted even though the runtime reads an absent one as
+     * `string`: a param whose type is not written down is indistinguishable from one whose type
+     * was forgotten, and the forgotten one silently stops coercing an id to an int.
+     *
+     * @param mixed $params Declared param map
+     * @param string $path Topology path for error messages
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserParamDeclarations(mixed $params, string $path, array &$errors): void
+    {
+        if (!is_array($params)) {
+            $errors[] = "{$path} " . BrowserParamKey::PARAMS . ' must be a map of param declarations';
+            return;
+        }
+
+        $knownTypes = [BrowserParamType::STRING, BrowserParamType::POSITIVE_INT];
+        foreach ($params as $param => $declaration) {
+            $paramPath = "{$path} " . BrowserParamKey::PARAMS . "[{$param}]";
+            $type = is_array($declaration) ? ($declaration[BrowserParamKey::TYPE] ?? null) : null;
+            if (!in_array($type, $knownTypes, true)) {
+                $errors[] = "{$paramPath} must declare type " . implode(' or ', $knownTypes);
+            }
+
+            $required = is_array($declaration) ? ($declaration[BrowserParamKey::REQUIRED] ?? false) : false;
+            if (!is_bool($required)) {
+                $errors[] = "{$paramPath} " . BrowserParamKey::REQUIRED . ' must be a bool';
+            }
+        }
+    }
+
+    /**
+     * Validates one page guard declaration: a known type, and the fields that type needs.
+     *
+     * An `authenticated` guard is refused a source or a field rather than ignoring them, because
+     * the runtime reads neither: a guard written as authenticated-with-a-field looks like an
+     * access check to the reader and lets every signed-in user through.
+     *
+     * @param mixed $guard Declared guard entry
+     * @param string $path Topology path for error messages
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserGuard(mixed $guard, string $path, array &$errors): void
+    {
+        $knownTypes = [BrowserGuardType::DB_EXISTS, BrowserGuardType::ACCESS, BrowserGuardType::AUTHENTICATED];
+        $type = is_array($guard) ? ($guard[BrowserGuardKey::TYPE] ?? null) : null;
+        if (!in_array($type, $knownTypes, true)) {
+            $errors[] = "{$path} must declare a known type (" . implode(', ', $knownTypes) . ')';
+            return;
+        }
+
+        /** @var array<string, mixed> $guard */
+        if ($type === BrowserGuardType::AUTHENTICATED) {
+            if (array_key_exists(BrowserGuardKey::SOURCE, $guard) || array_key_exists(BrowserGuardKey::FIELD, $guard)) {
+                $errors[] = "{$path} of type " . BrowserGuardType::AUTHENTICATED . ' must declare neither '
+                    . BrowserGuardKey::SOURCE . ' nor ' . BrowserGuardKey::FIELD;
+            }
+
+            return;
+        }
+
+        $this->validateBrowserSourceDeclaration(
+            $guard[BrowserGuardKey::SOURCE] ?? null,
+            "{$path} " . BrowserGuardKey::SOURCE,
+            $errors,
+        );
+
+        if ($type === BrowserGuardType::ACCESS) {
+            $field = $guard[BrowserGuardKey::FIELD] ?? null;
+            if (!is_string($field) || $field === '') {
+                $errors[] = "{$path} of type " . BrowserGuardType::ACCESS . ' must declare a non-empty '
+                    . BrowserGuardKey::FIELD;
+            }
+
+            return;
+        }
+
+        $this->validateBrowserRef(
+            $guard[BrowserGuardKey::KEY] ?? null,
+            "{$path} " . BrowserGuardKey::KEY,
+            [],
+            [],
+            $errors,
+        );
+
+        $knownErrors = [BrowserSubscriptionError::NOT_FOUND, BrowserSubscriptionError::FORBIDDEN];
+        if (array_key_exists(BrowserGuardKey::ERROR, $guard)
+            && !in_array($guard[BrowserGuardKey::ERROR], $knownErrors, true)) {
+            $errors[] = "{$path} " . BrowserGuardKey::ERROR . ' must be one of ' . implode(', ', $knownErrors);
+        }
+    }
+
+    /**
+     * Validates one `{type, key}` source declaration, wherever it is declared.
+     *
+     * @param mixed $source Declared source entry
+     * @param string $path Topology path of the source declaration itself
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserSourceDeclaration(mixed $source, string $path, array &$errors): void
+    {
+        $key = is_array($source) ? ($source[BrowserSourceKey::KEY] ?? null) : null;
+        if (!is_string($key) || $key === '') {
+            $errors[] = "{$path} must declare " . BrowserSourceKey::TYPE . ' and ' . BrowserSourceKey::KEY;
+            return;
+        }
+
+        $knownTypes = [BrowserSourceType::DB, BrowserSourceType::RT];
+        if (!in_array($source[BrowserSourceKey::TYPE] ?? null, $knownTypes, true)) {
+            $errors[] = "{$path} must declare " . BrowserSourceKey::TYPE . ' ' . implode(' or ', $knownTypes);
+        }
+    }
+
+    /**
+     * Validates one reference declaration and the param name it points at.
+     *
+     * A `table_param` name is always judged: the params it can name belong to the source that
+     * owns the declaration, so an empty list there means the source declares none and the
+     * reference is broken. A `page_param` name is judged only where a page is in scope - a
+     * source row and a page guard are read without one - and an empty list means no page rather
+     * than a page declaring nothing.
+     *
+     * @param mixed $ref Declared reference
+     * @param string $path Topology path of the reference itself
+     * @param list<array-key> $declaredTableParams Param names declared by the owning source
+     * @param list<array-key> $declaredPageParams Param names declared by the owning page
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateBrowserRef(
+        mixed $ref,
+        string $path,
+        array $declaredTableParams,
+        array $declaredPageParams,
+        array &$errors,
+    ): void {
+        $knownTypes = [BrowserRefType::ACCEPT_KEY, BrowserRefType::PAGE_PARAM, BrowserRefType::TABLE_PARAM];
+        $type = is_array($ref) ? ($ref[BrowserRefKey::TYPE] ?? null) : null;
+        if (!in_array($type, $knownTypes, true)) {
+            $errors[] = "{$path} ref must declare a known type (" . implode(', ', $knownTypes) . ')';
+            return;
+        }
+
+        if ($type === BrowserRefType::ACCEPT_KEY) {
+            return;
+        }
+
+        /** @var array<string, mixed> $ref */
+        $name = $ref[BrowserRefKey::KEY] ?? null;
+        if (!is_string($name) || $name === '') {
+            $errors[] = "{$path} {$type} must declare a non-empty " . BrowserRefKey::KEY;
+            return;
+        }
+
+        $declared = $type === BrowserRefType::TABLE_PARAM ? $declaredTableParams : $declaredPageParams;
+        if ($type === BrowserRefType::PAGE_PARAM && $declared === []) {
+            return;
+        }
+
+        if (!in_array($name, $declared, true)) {
+            $errors[] = "{$path} {$type} {$name} is not declared in " . BrowserParamKey::PARAMS;
+        }
+    }
+
+    /**
+     * Returns a source declaration as a single-entry `type:key => declaration` set, or nothing
+     * when the declaration is too broken to name - the set form lets a source referenced by
+     * several rows collapse to one entry before the declared and referenced sets are compared.
+     *
+     * @param mixed $source Declared source entry
+     * @return array<string, array<string, mixed>> Identity set of this declaration
+     */
+    private function browserSourceIdentity(mixed $source): array
+    {
+        if (!is_array($source)) {
+            return [];
+        }
+
+        $type = $source[BrowserSourceKey::TYPE] ?? null;
+        $key = $source[BrowserSourceKey::KEY] ?? null;
+        if (!is_string($type) || !is_string($key) || $key === '') {
+            return [];
+        }
+
+        return ["{$type}:{$key}" => $source];
+    }
+
+    /**
+     * Names a set of source identities for an error message.
+     *
+     * @param array<string, array<string, mixed>> $sources Identity set to name
+     * @return string Comma-separated identities, or `none` when the set is empty
+     */
+    private function browserSourceList(array $sources): string
+    {
+        return $sources === [] ? 'none' : implode(', ', array_keys($sources));
     }
 
     /**

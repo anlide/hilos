@@ -16,6 +16,7 @@ use Hilos\Core\Agent\Hilos\GuardianRunStatus;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -40,6 +41,7 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
         BrowserConfigKey::PARAMS => [
             HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],

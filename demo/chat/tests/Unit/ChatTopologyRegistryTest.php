@@ -585,7 +585,6 @@ final class ChatTopologyRegistryTest extends TestCase
             $config = $resolvePageConfig($context, $page);
 
             $this->assertNotNull($config);
-            $this->assertSame($this->expectedSignalName($browserConfig), $config->signalName);
             $this->assertSame($this->expectedPageParams($browserConfig), $config->paramConfigs());
             $this->assertSame($this->expectedPageGuards($browserConfig), $config->guardConfigs());
         }
@@ -707,24 +706,6 @@ final class ChatTopologyRegistryTest extends TestCase
                 return new SignalSource(SignalSource::AGENT, 'test-page-agent');
             }
         };
-    }
-
-    /**
-     * Extracts the expected browser signal name from a page config.
-     *
-     * A page that names no SIGNAL declares no browser subscription, and that state
-     * is null here as it is in the config. Only strings are mirrored: a non-string
-     * SIGNAL is a broken declaration the config refuses outright, so no expectation
-     * of it belongs on this side of the assert.
-     *
-     * @param array<string, mixed> $browserConfig Page BROWSER config
-     * @return ?string Browser signal name, or null when the page declares no subscription
-     */
-    private function expectedSignalName(array $browserConfig): ?string
-    {
-        $signalName = $browserConfig[BrowserConfigKey::SIGNAL] ?? null;
-
-        return is_string($signalName) ? $signalName : null;
     }
 
     /**

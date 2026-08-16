@@ -12,6 +12,7 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
 
 /**
  * Browser table config for one guardian agent run status.
@@ -23,6 +24,7 @@ final class GuardianAgentStatusDetailBrowserTable
     public const array BROWSER = [
         BrowserTableConfigKey::PARAMS => [
             HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
                 BrowserParamKey::REQUIRED => true,
             ],
         ],

@@ -449,6 +449,24 @@ abstract class RtContext
     }
 
     /**
+     * Reports whether a name is a runtime source this context mounts - a represented collection
+     * or a declared item alias, the two things {@see self::__get()} can answer with.
+     *
+     * Its own predicate rather than one of the two that nearly fit: {@see self::__isset()}
+     * answers false for an item alias that merely does not resolve outside a subscription, which
+     * would read as a missing mount, and {@see self::getStateCollection()} does not see aliases
+     * at all. What is asked here is what the project mounted, not what the current execution
+     * context can reach.
+     *
+     * @param string $name Collection or item alias name
+     * @return bool True when the name is a represented collection or a declared item alias
+     */
+    public function hasSource(string $name): bool
+    {
+        return isset($this->_rtCollections[$name]) || array_key_exists($name, $this->_rtItems);
+    }
+
+    /**
      * Get runtime collection or item alias by name.
      *
      * @param string $name Collection or item alias name
