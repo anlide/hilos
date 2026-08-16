@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Exception\NonArrayPayloadException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataEnvelope;
+use Hilos\Socket\Worker\WorkerDTO;
 
 /**
  * Abstract base class for serializable DTOs.
@@ -61,12 +62,6 @@ abstract class BaseDTO
     /**
      * Restores a DTO instance from a JSON payload.
      *
-     * The two ways a string can fail to become a payload are refused apart, and the
-     * decoder's own error tells them from each other: `null` is a value JSON can
-     * carry, so reading it as "did not decode" would answer a valid literal with the
-     * wrong refusal and leave a body of the wrong type to fail at the parameter of
-     * {@see self::fromArray()} as a TypeError instead.
-     *
      * @param string $json JSON-encoded DTO payload
      * @return static Restored DTO instance
      * @throws InvalidJsonException When the string does not decode as JSON
@@ -76,6 +71,31 @@ abstract class BaseDTO
      */
     public static function fromJson(string $json): static
     {
+        return static::fromArray(static::decodePayload($json));
+    }
+
+    /**
+     * Decodes an arriving JSON string into the payload a DTO is built from.
+     *
+     * The two ways a string can fail to become a payload are refused apart, and the
+     * decoder's own error tells them from each other: `null` is a value JSON can
+     * carry, so reading it as "did not decode" would answer a valid literal with the
+     * wrong refusal and leave a body of the wrong type to fail at the parameter of
+     * {@see self::fromArray()} as a TypeError instead.
+     *
+     * It is separate from {@see self::fromJson()} for the reader that has the string
+     * but not yet the class — {@see WorkerDTO::factoryWorkerDTO()} decodes first and
+     * picks the DTO by the type it finds inside. Copying the two refusals there would
+     * leave the same rule written twice, and the copies would part company the first
+     * time one of them is corrected.
+     *
+     * @param string $json JSON-encoded payload
+     * @return array<string, mixed> Decoded payload
+     * @throws InvalidJsonException When the string does not decode as JSON
+     * @throws NonArrayPayloadException When the string decodes into something other than an array
+     */
+    protected static function decodePayload(string $json): array
+    {
         $data = json_decode($json, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new InvalidJsonException('Payload does not decode as JSON: ' . json_last_error_msg());
@@ -84,7 +104,7 @@ abstract class BaseDTO
             throw new NonArrayPayloadException('Payload decodes into ' . get_debug_type($data) . ', not an array');
         }
 
-        return static::fromArray($data);
+        return $data;
     }
 
     /**

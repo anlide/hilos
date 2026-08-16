@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
+use Hilos\Core\Exception\MalformedInput;
 use Throwable;
 
 /**
  * Exception when an agent signal has a payload object that does not match the signal contract.
+ *
+ * Carries {@see MalformedInput}: the payload arrived and refused to become the DTO the
+ * signal declares, which is the parsing failure of an agent frame and not a fault of the
+ * agent that received it.
  */
-class InvalidAgentSignalPayloadException extends AgentException
+class InvalidAgentSignalPayloadException extends AgentException implements MalformedInput
 {
     /**
      * Creates exception for an invalid agent signal payload.

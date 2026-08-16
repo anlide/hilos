@@ -8,10 +8,10 @@ use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
+use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
-use ReflectionClass;
 use RuntimeException;
 use Throwable;
 
@@ -39,12 +39,13 @@ final class AbstractServerTickGuardTest extends TestCase
     {
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-tick-guard-log');
         Logger::setLogFile($this->logFile);
+        ClientReadFailureLog::reset();
     }
 
     protected function tearDown(): void
     {
-        $reflection = new ReflectionClass(Logger::class);
-        $reflection->getProperty('logFile')->setValue(null, null);
+        Logger::resetLogFile();
+        ClientReadFailureLog::reset();
 
         if (is_file($this->logFile)) {
             unlink($this->logFile);
@@ -137,6 +138,29 @@ final class AbstractServerTickGuardTest extends TestCase
         $this->assertStringContainsString('Error in client tick for tick-guard-test', $logged);
         $this->assertStringContainsString(InvalidJsonException::class, $logged);
         $this->assertStringContainsString('AbstractServerTickGuardTest.php:', $logged);
+    }
+
+    /**
+     * A port under a stream of the same refusal writes the first few of them and then
+     * counts, so one misbehaving peer cannot push everything else out of the journal.
+     */
+    public function testAStreamOfTheSameRefusalStopsWritingAfterTheFirstFewLines(): void
+    {
+        $server = new AbstractServerTickGuardTestServer();
+        for ($seeded = 0; $seeded < ClientReadFailureLog::BURST_LINES + 2; $seeded++) {
+            $server->seedClient(new InvalidJsonException('Payload does not decode as JSON: Syntax error'));
+        }
+
+        $server->onTick();
+
+        $this->assertSame(
+            ClientReadFailureLog::BURST_LINES,
+            substr_count($this->logged(), 'Error in client tick for tick-guard-test'),
+        );
+
+        ClientReadFailureLog::flushClosedWindows(microtime(true) + ClientReadFailureLog::WINDOW_SECONDS);
+
+        $this->assertStringContainsString('Suppressed 2 more ' . InvalidJsonException::class, $this->logged());
     }
 
     public function testAClientThatReadsWithoutFailingIsKept(): void

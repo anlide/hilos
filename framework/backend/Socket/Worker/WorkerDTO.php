@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Core\Exception\MalformedInput;
+use Hilos\Core\Exception\NonArrayPayloadException;
 use Hilos\HilosException;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Socket\Worker\Exception\UnknownWorkerMessageTypeException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
@@ -60,21 +63,30 @@ abstract class WorkerDTO extends BaseDTO
      *
      * Parses JSON, determines message type, and creates appropriate DTO instance.
      *
+     * Every way a frame can fail here is a way the input could not be parsed, so each
+     * refusal is one that carries {@see MalformedInput}: the reader of the log asks the
+     * failure what it is and gets the same answer whether the string never decoded, held
+     * the wrong shape, named no type or named one this node does not know. The generic
+     * invalid-argument exception used to answer for all four and could not be marked —
+     * the same class reports a caller passing nonsense in five other places, where the
+     * fault is the code's and not the wire's.
+     *
      * @param string $json JSON string
      * @return WorkerDTO Worker DTO instance
-     * @throws InvalidArgumentException If JSON is invalid or message type is unknown
-     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws InvalidJsonException When the frame does not decode as JSON
+     * @throws NonArrayPayloadException When the frame decodes into something other than an array
+     * @throws InvalidFormatException When the frame names no message type
+     * @throws UnknownWorkerMessageTypeException When the frame names a type the registry does not know
      * @throws HilosException When an agent frame's inner signal payload refuses to be restored
      */
     public static function factoryWorkerDTO(string $json): WorkerDTO
     {
         Logger::debug('Parsing worker DTO from JSON: ' . $json);
-        $data = json_decode($json, true)
-            ?? throw new InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
+        $data = self::decodePayload($json);
 
         $type = $data[self::TYPE] ?? null;
         if (!is_string($type) || $type === '') {
-            throw new InvalidArgumentException('Message type is missing');
+            throw new InvalidFormatException('Message type is missing');
         }
 
         return match ($type) {
@@ -105,7 +117,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerProtectedModeProgressDTO::MESSAGE_TYPE => WorkerProtectedModeProgressDTO::fromArray($data),
             WorkerProtectedModePassDTO::MESSAGE_TYPE => WorkerProtectedModePassDTO::fromArray($data),
             WorkerProtectedModeRefreezeDTO::MESSAGE_TYPE => WorkerProtectedModeRefreezeDTO::fromArray($data),
-            default => throw new InvalidArgumentException("Unknown worker message type: {$type}"),
+            default => throw new UnknownWorkerMessageTypeException($type),
         };
     }
 }

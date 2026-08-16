@@ -12,6 +12,7 @@ use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
+use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -199,6 +200,7 @@ final class CodeStyleGuardTest extends TestCase
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
+            new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
             $root === self::PHASED_EMPTY_STRING_ROOT

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -163,8 +162,8 @@ class WorkerDaemonClient extends AbstractSocket
      * terminal LOST state, and already parsed messages stay in the queue.
      *
      * @throws SocketException When socket read fails or read buffer limits are exceeded
-     * @throws InvalidArgumentException When a complete message has invalid JSON or type
-     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws InvalidFormatException When a frame does not decode, names no known type,
+     *     or lacks a field its DTO needs
      * @throws HilosException When buffered wire input refuses to become a DTO
      */
     public function read(): void
@@ -234,8 +233,8 @@ class WorkerDaemonClient extends AbstractSocket
      * Extract complete JSON messages from the read buffer and enqueue DTOs.
      *
      * @throws SocketException When read buffer or JSON depth exceeds limits
-     * @throws InvalidArgumentException When message JSON or worker message type is invalid
-     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws InvalidFormatException When a frame does not decode, names no known type,
+     *     or lacks a field its DTO needs
      */
     private function processReadBuffer(): void
     {

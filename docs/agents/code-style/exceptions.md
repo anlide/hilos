@@ -16,6 +16,39 @@ error handling in Hilos PHP code.
 | `LogicException` | Framework or application invariant violations, not user-correctable input |
 | `HilosException` | Broad public contract when the caller only needs "Hilos failure" |
 
+### The `MalformedInput` marker
+
+`Hilos\Core\Exception\MalformedInput` is an empty interface an exception implements
+to say what the failure **is**: the input that arrived could not be parsed. A line
+that does not decode, a payload that decodes into the wrong shape, a frame whose
+opcode no reader knows, an HTTP request where a handshake was expected.
+
+The criterion is shape, not meaning. An input that parsed and was then refused by a
+domain rule — empty, too long, already taken, no such item — is a `ValidationException`
+without the marker. `InvalidFormatException` is the one child of that family which
+does carry it, because a value whose syntax is wrong never parsed in the first place.
+The marker also says nothing about blame: the format exceptions are reached both from
+the wire and from a payload assembled inside the master process, so "malformed" is not
+the same claim as "the client is at fault".
+
+Read paths ask for the marker instead of matching the class against a list they keep.
+`ClientReadFailureLog` is the one that decides the journal level with it: a refused
+input is the daily work of an open port and goes in as a warning, so the error level
+stays with failures that mean the node itself is broken.
+
+Most classes get the marker by inheritance — `InvalidFormatException`,
+`WebSocketException`, `MessageTooLongException` and `PeerTransportException` carry it
+for their children. Write `implements MalformedInput` only where no base already does.
+
+A new exception in a directory the node reads the wire in — `Core/Exception`,
+`Core/Agent/Exception`, `Core/Http/Exception`, `Socket/Exception`,
+`Socket/Exception/Base`, `Socket/WebSocket/Exception`, `Socket/Worker/Exception`,
+`Cluster/Exception` — must therefore do one of three things: carry the marker, extend
+a base that carries it, or be named with a reason in the exempt list of the
+`MALFORMED-INPUT-MARKER` rule. The rule also fails when one of the four bases above
+loses `implements MalformedInput` from its own declaration, which would unmark a whole
+branch at once.
+
 ### Page subscription exception vocabulary
 
 `PageSubscriptionException` has a deliberately complete set of HTTP-status

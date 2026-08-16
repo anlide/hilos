@@ -10,6 +10,7 @@ use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
 use Hilos\Tests\CodeStyle\Rule\LineLengthRule;
 use Hilos\Tests\CodeStyle\Rule\MagicRepeatRule;
+use Hilos\Tests\CodeStyle\Rule\MalformedInputMarkerRule;
 use Hilos\Tests\CodeStyle\Rule\PayloadSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\PhpDocFqnRule;
 use Hilos\Tests\CodeStyle\Rule\RandomSourceRule;
@@ -47,6 +48,10 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
+                'MALFORMED-INPUT-MARKER Bad/Cluster/Exception/UnmarkedRefusal.php:18 — UnmarkedRefusal is '
+                    . 'declared where input is parsed and carries no MalformedInput; implement it, extend a '
+                    . 'marked base, or name the class in the rule\'s exempt list with a reason '
+                    . '(see docs/agents/code-style/exceptions.md)',
                 'CODE-FQN Bad/CodeFqnSamples.php:12 — \RuntimeException is written out in code; import it '
                     . 'and use the short name (see docs/agents/code-style/qualified-names.md)',
                 'CODE-FQN Bad/CodeFqnSamples.php:20 — \Hilos\Tests\CodeStyle\SourceScanner is written out in '
@@ -207,6 +212,9 @@ final class RuleFixtureTest extends TestCase
                 'EMPTY-STRING-SENTINEL Bad/Socket/EmptySentinel.php:25 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
+                'MALFORMED-INPUT-MARKER Bad/Socket/WebSocket/WebSocketException.php:19 — WebSocketException '
+                    . 'is a base its children inherit the marker through, and its own declaration no longer '
+                    . 'implements MalformedInput (see docs/agents/code-style/exceptions.md)',
                 'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -309,6 +317,7 @@ final class RuleFixtureTest extends TestCase
             new RtStateReachRule(),
             new ErrorSuppressionRule(),
             new RandomSourceRule(),
+            new MalformedInputMarkerRule(),
             new SecretInQueryRule(),
             new MagicRepeatRule(),
             EmptyStringSentinelRule::forZone(self::ZONE_SEGMENTS),

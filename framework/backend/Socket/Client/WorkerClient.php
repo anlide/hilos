@@ -9,7 +9,6 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
@@ -150,8 +149,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Extract complete JSON messages from the read buffer and dispatch worker protocol handlers.
      *
      * @throws SocketException When read buffer or JSON depth exceeds limits
-     * @throws InvalidArgumentException When message JSON or worker message type is invalid
-     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws InvalidFormatException When a frame does not decode, names no known type,
+     *     or lacks a field its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      * @throws HilosException When buffered wire input refuses to become a DTO
      */
@@ -172,8 +171,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Process message from worker.
      *
      * @param string $message Complete JSON message payload
-     * @throws InvalidArgumentException When message JSON or worker message type is invalid
-     * @throws InvalidFormatException When a frame's payload is not the object its DTO needs
+     * @throws InvalidFormatException When a frame does not decode, names no known type,
+     *     or lacks a field its DTO needs
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     private function processMessage(string $message): void

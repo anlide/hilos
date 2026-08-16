@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
+use Hilos\Core\Exception\MalformedInput;
 use Throwable;
 
 /**
  * Exception when a routed CLI command has a payload that does not match the command contract.
+ *
+ * Carries {@see MalformedInput} for the same reason as its signal counterpart: the payload
+ * arrived and refused to become the DTO the command declares.
  */
-class InvalidCommandPayloadException extends AgentException
+class InvalidCommandPayloadException extends AgentException implements MalformedInput
 {
     /**
      * Creates exception for an invalid command payload.

@@ -111,6 +111,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
@@ -480,6 +481,10 @@ abstract class DaemonManager extends BaseManager implements
 
                 // Flush buffered analytics rows on schedule
                 Hilos::$ac?->tick();
+
+                // Close the windows the client-read limiter has been counting in, so a
+                // stream of refusals that stopped still reports how much it held back.
+                ClientReadFailureLog::flushClosedWindows($loopStartTime);
 
                 // Process signals
                 pcntl_signal_dispatch();
@@ -1074,15 +1079,16 @@ abstract class DaemonManager extends BaseManager implements
             $this->requestEntropyStop($exception);
             $this->discardClient($server, $client);
         } catch (Throwable $e) {
-            // Log exception and close client connection on error
-            $this->logException(
-                sprintf("Error in client read handler for %s: %s in %s:%d - %s",
-                    $server->getServerName(),
-                    get_class($e),
-                    basename($e->getFile()),
-                    $e->getLine(),
-                    $e->getMessage()
-                )
+            // Log exception and close client connection on error. The line goes through
+            // the shared writer rather than logException(), which would make an error of
+            // every failure: the same refusal reaching the other reader of this client
+            // (AbstractServer::onTick()) has always been told apart by what it is, and
+            // which of the two paths a connection is read by says nothing about that.
+            ClientReadFailureLog::write(
+                $server->getServerName(),
+                ClientReadFailureLog::READER_EVENT_LOOP,
+                $e,
+                microtime(true)
             );
 
             $this->discardClient($server, $client);
