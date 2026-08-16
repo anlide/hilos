@@ -29,6 +29,8 @@ import {
   BACKUP_STATUS_FIELD,
   BACKUP_RESTORE_OUTCOME_FIELD,
   BACKUP_KEEP_FIELD,
+  backupMigrationBehind,
+  backupMigrationNotes,
   backupProgressPercent,
   backupRowAnchors,
   createBackupProgressClock,
@@ -49,6 +51,7 @@ import {
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
+  isBackupMigrationRefused,
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
@@ -297,8 +300,21 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
    * @param row The backup row the button belongs to.
    */
   function restoreBlockedReason(row: HilosBackupRow): string | null {
-    if (!isBackupRestorable(row)) {
+    if (isBackupChecksumMismatch(row)) {
       return 'This archive does not match its recorded checksum'
+    }
+    // What makes the archive unusable forever comes before what the subsystem is
+    // doing right now: waiting for the current run would not make this one restorable.
+    if (isBackupMigrationRefused(row)) {
+      return (
+        row.restoreMigrationNotice ??
+        'This archive was taken on newer code; there is no downgrade path'
+      )
+    }
+    // The shared predicate has the last word on whether the archive may be replayed at
+    // all: a rule added there and not worded here must still disable the button.
+    if (!isBackupRestorable(row)) {
+      return 'This archive cannot be restored'
     }
 
     return subsystemBusy
@@ -479,6 +495,22 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 </button>
               ) : row.restorePhase ? (
                 <span className="badge text-bg-info">{row.restorePhase}</span>
+              ) : /* What happened to this archive outranks what could: the badge
+              speaks only where no restore of it has anything to report. */
+              isBackupMigrationRefused(row) ? (
+                <span
+                  className="badge text-bg-danger"
+                  data-id={`hilos-backup-migration-${row.id}`}
+                >
+                  incompatible
+                </span>
+              ) : backupMigrationBehind(row) !== null ? (
+                <span
+                  className="badge text-bg-warning"
+                  data-id={`hilos-backup-migration-${row.id}`}
+                >
+                  +{backupMigrationBehind(row)} migrations
+                </span>
               ) : (
                 <span className="text-body-secondary">—</span>
               )}
@@ -671,6 +703,16 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
             installation is <code>{restoreGate.targetEnv || 'unnamed'}</code>
           </p>
         ) : null}
+        {restoreRow && backupMigrationNotes(restoreRow).length > 0 ? (
+          <ul
+            className="mb-2 ps-3 text-body-secondary"
+            data-id="hilos-backup-migration-notes"
+          >
+            {backupMigrationNotes(restoreRow).map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        ) : null}
         <label className="form-label" htmlFor="hilos-backup-restore-id">
           Type the archive id to confirm
         </label>
@@ -721,6 +763,19 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
         >
           {cliRow ? formatRestoreCliCommand(cliRow) : ''}
         </pre>
+        {/* The same lines the button's title carries where there is a button: an
+        operator on production learns of an incompatible archive here, not from the
+        command refusing after they have walked to the terminal. */}
+        {cliRow && backupMigrationNotes(cliRow).length > 0 ? (
+          <ul
+            className="mt-2 mb-0 ps-3 text-body-secondary"
+            data-id="hilos-backup-migration-cli-notes"
+          >
+            {backupMigrationNotes(cliRow).map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        ) : null}
       </HilosModal>
 
       <HilosModal

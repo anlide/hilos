@@ -6,6 +6,7 @@ namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupShipState;
+use Hilos\Backup\RestoreMigrationDecision;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Runtime\View\Item\BackupHistory;
@@ -55,6 +56,9 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string restoreFinishedAt = 'restoreFinishedAt';
     public const string restoreFailureReason = 'restoreFailureReason';
     public const string restoreDatabaseTouched = 'restoreDatabaseTouched';
+    public const string restoreMigrationDecision = 'restoreMigrationDecision';
+    public const string restoreMigrationBehind = 'restoreMigrationBehind';
+    public const string restoreMigrationNotice = 'restoreMigrationNotice';
     public const string progressPhase = 'progressPhase';
     public const string progressPhaseStartedAt = 'progressPhaseStartedAt';
     public const string progressEstimatedSeconds = 'progressEstimatedSeconds';
@@ -83,6 +87,14 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param ?string $restoreFailureReason Why that restore failed; null when it succeeded or was never run
      * @param bool $restoreDatabaseTouched Whether the failed restore of this archive had begun replacing the
      *     database; false for a run that never started one
+     * @param ?string $restoreMigrationDecision What the migration gate allows for this archive
+     *     ({@see RestoreMigrationDecision} value); null on a row with no verdict to carry
+     * @param ?int $restoreMigrationBehind Migrations the furthest lagging connection will apply after the
+     *     import; null when nothing lags or nothing can be compared
+     * @param ?string $restoreMigrationNotice Operator-facing text about this archive's levels: on an
+     *     allowed archive one line per connection joined by newlines, on a refused one the gate's single
+     *     refusal sentence, which names the connections that are ahead itself; null when there is
+     *     nothing to say
      * @param ?string $progressPhase Phase the run in progress is in; null on a stored archive, which has no run
      * @param ?string $progressPhaseStartedAt ISO-8601 instant that phase began; null when there is no phase
      * @param ?int $progressEstimatedSeconds How long the run in progress is expected to take; null without history
@@ -111,6 +123,12 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $restoreFinishedAt = null,
         public ?string $restoreFailureReason = null,
         public bool $restoreDatabaseTouched = false,
+        // The migration verdict is a property of the archive, so it rides every stored row - but
+        // it is words and a number rather than the gaps themselves: a list would need a reader of
+        // its own on the frontend, and every row payload in the framework is flat.
+        public ?string $restoreMigrationDecision = null,
+        public ?int $restoreMigrationBehind = null,
+        public ?string $restoreMigrationNotice = null,
         // The three anchors a progress bar is drawn from, and only the in-progress row carries
         // them: the percentage and the time left are computed by the browser, which is why the
         // row ships the phase and its instants rather than a number that would be stale on
@@ -161,6 +179,9 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::restoreFinishedAt => $this->restoreFinishedAt,
             self::restoreFailureReason => $this->restoreFailureReason,
             self::restoreDatabaseTouched => $this->restoreDatabaseTouched,
+            self::restoreMigrationDecision => $this->restoreMigrationDecision,
+            self::restoreMigrationBehind => $this->restoreMigrationBehind,
+            self::restoreMigrationNotice => $this->restoreMigrationNotice,
             self::progressPhase => $this->progressPhase,
             self::progressPhaseStartedAt => $this->progressPhaseStartedAt,
             self::progressEstimatedSeconds => $this->progressEstimatedSeconds,
@@ -208,6 +229,9 @@ final class HilosBackupTableRow extends AbstractTableRow
             // A row that says nothing about a restore says nothing about its damage either, and
             // "not touched" is the only reading that does not invent reassurance.
             restoreDatabaseTouched: (bool)($data[self::restoreDatabaseTouched] ?? false),
+            restoreMigrationDecision: self::optionalString($data, self::restoreMigrationDecision),
+            restoreMigrationBehind: self::optionalInt($data, self::restoreMigrationBehind),
+            restoreMigrationNotice: self::optionalString($data, self::restoreMigrationNotice),
             progressPhase: self::optionalString($data, self::progressPhase),
             progressPhaseStartedAt: self::optionalString($data, self::progressPhaseStartedAt),
             progressEstimatedSeconds: self::optionalInt($data, self::progressEstimatedSeconds),

@@ -107,6 +107,26 @@ export interface HilosBackupRow {
    */
   readonly restoreDatabaseTouched: boolean
   /**
+   * What the migration gate allows for this archive (`allow` | `refuse`), or null
+   * on a row with no archive to judge. Decided on the server: the rules for
+   * comparing an archive's schema level with the code's live there, and a client
+   * that recomputed them would answer from a page that may predate a restart.
+   */
+  readonly restoreMigrationDecision: string | null
+  /**
+   * Migrations the furthest lagging connection will apply after the import, or
+   * null when nothing lags and when nothing can be compared.
+   */
+  readonly restoreMigrationBehind: number | null
+  /**
+   * Operator-facing text about this archive's levels, or null when there is nothing
+   * to say: one line per connection joined by newlines where the archive is allowed,
+   * and the gate's single refusal sentence where it is not — that one names the
+   * connections that are ahead inside itself. The same sentences the CLI preflight
+   * prints, so the two never word one verdict differently.
+   */
+  readonly restoreMigrationNotice: string | null
+  /**
    * Phase the run in progress is in, or null on a stored archive — a finished
    * backup has no run left to report on. Only the single in-progress row ever
    * carries the three progress anchors.
@@ -234,6 +254,19 @@ export const BACKUP_RESTORE_FAILURE_REASON_FIELD = 'restoreFailureReason'
 
 /** Row payload key of whether that restore had begun replacing the database. */
 export const BACKUP_RESTORE_DATABASE_TOUCHED_FIELD = 'restoreDatabaseTouched'
+
+/** Row payload key of what the migration gate allows for this archive. */
+export const BACKUP_RESTORE_MIGRATION_DECISION_FIELD =
+  'restoreMigrationDecision'
+
+/** Row payload key of how many migrations the restore will apply after the import. */
+export const BACKUP_RESTORE_MIGRATION_BEHIND_FIELD = 'restoreMigrationBehind'
+
+/** Row payload key of the per-connection lines explaining this archive's levels. */
+export const BACKUP_RESTORE_MIGRATION_NOTICE_FIELD = 'restoreMigrationNotice'
+
+/** Migration-gate decision that refuses the archive; the only value the views test for. */
+const BACKUP_MIGRATION_REFUSED = 'refuse'
 
 /** Row payload key of the phase the run in progress is in. */
 const BACKUP_PROGRESS_PHASE_FIELD = 'progressPhase'
@@ -440,6 +473,18 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     restoreDatabaseTouched: readBoolean(
       slot,
       BACKUP_RESTORE_DATABASE_TOUCHED_FIELD,
+    ),
+    restoreMigrationDecision: readStringOrNull(
+      slot,
+      BACKUP_RESTORE_MIGRATION_DECISION_FIELD,
+    ),
+    restoreMigrationBehind: readNumberOrNull(
+      slot,
+      BACKUP_RESTORE_MIGRATION_BEHIND_FIELD,
+    ),
+    restoreMigrationNotice: readStringOrNull(
+      slot,
+      BACKUP_RESTORE_MIGRATION_NOTICE_FIELD,
     ),
     progressPhase: readStringOrNull(slot, BACKUP_PROGRESS_PHASE_FIELD),
     progressPhaseStartedAt: readStringOrNull(
@@ -828,7 +873,45 @@ export function offersBackupRestore(row: HilosBackupRow): boolean {
  * agent is busy with right now.
  */
 export function isBackupRestorable(row: HilosBackupRow): boolean {
-  return row.finished === true && !isBackupChecksumMismatch(row)
+  return (
+    row.finished === true &&
+    !isBackupChecksumMismatch(row) &&
+    !isBackupMigrationRefused(row)
+  )
+}
+
+/**
+ * An archive taken on code newer than this installation's — refused forever, since
+ * there is no downgrade path. The badge that says so and the disabled button read
+ * the same predicate, so a row cannot claim one thing and offer the other.
+ */
+export function isBackupMigrationRefused(row: HilosBackupRow): boolean {
+  return row.restoreMigrationDecision === BACKUP_MIGRATION_REFUSED
+}
+
+/**
+ * How many migrations this archive's restore will apply afterwards, or null when
+ * there is no number to show — an archive level with the code, one taken ahead of
+ * it, and one whose level nobody can compare all show no count rather than a zero.
+ */
+export function backupMigrationBehind(row: HilosBackupRow): number | null {
+  return row.restoreMigrationBehind
+}
+
+/**
+ * The archive's migration text, split into the lines a view renders one under another.
+ *
+ * The wire carries it as one newline-joined string because every row payload in the
+ * framework is flat; splitting is this module's job so the three views cannot disagree
+ * about the separator. Blank lines are dropped — an empty line is the absence of a
+ * note, not a note that says nothing. A refusal arrives as one sentence rather than
+ * one line per connection: the gate words the connections that are ahead into it, and
+ * it uses `;` inside that sentence, so there is nothing here safe to split it on.
+ */
+export function backupMigrationNotes(row: HilosBackupRow): readonly string[] {
+  return (row.restoreMigrationNotice ?? '')
+    .split('\n')
+    .filter((line) => line !== '')
 }
 
 /**

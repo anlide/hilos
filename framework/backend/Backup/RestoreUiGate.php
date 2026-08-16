@@ -22,9 +22,10 @@ use Hilos\Runtime\View\Item\BackupHistory;
  *    environment, which is treated as production - has no restore button at all
  *    (owner decision, HIL-276), and the check is repeated here rather than trusted to the
  *    hidden button: a client is not the source of truth about where it runs.
- * 2. **The archive.** It must be in the index, it must have completed successfully, and it
- *    must not be known to differ from its digest. The engine would refuse a corrupt archive
- *    itself on its verify step, but that refusal costs a frozen node to reach.
+ * 2. **The archive.** It must be in the index, it must have completed successfully, it
+ *    must not be known to differ from its digest, and its recorded migration levels must be
+ *    replayable into this code ({@see RestoreMigrationGuard}). The engine would refuse a
+ *    corrupt archive itself on its verify step, but that refusal costs a frozen node to reach.
  * 3. **The subsystem.** One child, one run: a create or a restore already in flight means
  *    this one cannot start. The agent re-checks it too - between this answer and the signal
  *    it may have taken work on - and this check is what explains the refusal before the
@@ -46,6 +47,8 @@ final class RestoreUiGate
      * @param bool $busy Whether a backup or a restore is already running
      * @param ?RestoreEnvDecisionResult $envVerdict ENV matrix verdict for this pair; null when there is
      *     no pair to judge (no row, or no environment to restore into)
+     * @param ?RestoreMigrationDecisionResult $migrationVerdict Migration-index verdict for this archive;
+     *     null when there is no row to judge
      * @return RestoreUiDecisionResult Verdict, carrying the operator-facing reason where it refuses
      */
     public static function decide(
@@ -54,6 +57,7 @@ final class RestoreUiGate
         ?BackupHistory $row,
         bool $busy,
         ?RestoreEnvDecisionResult $envVerdict,
+        ?RestoreMigrationDecisionResult $migrationVerdict,
     ): RestoreUiDecisionResult {
         if ($targetEnv === null || $targetEnv === AppEnv::PROD) {
             return RestoreUiDecisionResult::refuse(self::ENV_REFUSAL);
@@ -66,6 +70,14 @@ final class RestoreUiGate
         }
         if (BackupChecksumState::fromRecord($row->sha256, $row->verifyOutcome) === BackupChecksumState::MISMATCH) {
             return RestoreUiDecisionResult::refuse('This archive does not match its recorded checksum');
+        }
+        // Read for its reason rather than its decision, the way the ENV matrix is read below:
+        // the migration guard writes the verdict and the words that explain it together.
+        $migrationRefusal = $migrationVerdict?->decision === RestoreMigrationDecision::REFUSE
+            ? $migrationVerdict->reason
+            : null;
+        if ($migrationRefusal !== null) {
+            return RestoreUiDecisionResult::refuse($migrationRefusal);
         }
         if ($busy) {
             return RestoreUiDecisionResult::refuse('The backup subsystem is busy; wait for the current run to end');

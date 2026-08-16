@@ -6,6 +6,9 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreEnvDecisionResult;
+use Hilos\Backup\RestoreMigrationDecision;
+use Hilos\Backup\RestoreMigrationDecisionResult;
+use Hilos\Backup\RestoreMigrationGap;
 use Hilos\Backup\RestoreUiGate;
 use Hilos\Constants\AppEnv;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
@@ -26,7 +29,14 @@ final class RestoreUiGateTest extends TestCase
 
     public function testProductionRefusesTheUiEntirely(): void
     {
-        $result = RestoreUiGate::decide(AppEnv::PROD, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::PROD,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('Restoring from the UI is disabled on this environment; use the CLI', $result->reason);
@@ -34,7 +44,14 @@ final class RestoreUiGateTest extends TestCase
 
     public function testAnInstallationThatCannotNameItsEnvironmentIsTreatedAsProduction(): void
     {
-        $result = RestoreUiGate::decide(null, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: null);
+        $result = RestoreUiGate::decide(
+            null,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: null,
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('Restoring from the UI is disabled on this environment; use the CLI', $result->reason);
@@ -44,14 +61,28 @@ final class RestoreUiGateTest extends TestCase
     {
         // On production the answer must not depend on the id: a surface that says "not found"
         // for one id and something else for another is a surface that answers questions.
-        $result = RestoreUiGate::decide(AppEnv::PROD, self::BACKUP_ID, null, busy: true, envVerdict: null);
+        $result = RestoreUiGate::decide(
+            AppEnv::PROD,
+            self::BACKUP_ID,
+            null,
+            busy: true,
+            envVerdict: null,
+            migrationVerdict: null,
+        );
 
         $this->assertSame('Restoring from the UI is disabled on this environment; use the CLI', $result->reason);
     }
 
     public function testAnArchiveThatIsNotIndexedIsRefusedByName(): void
     {
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, null, busy: false, envVerdict: null);
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            null,
+            busy: false,
+            envVerdict: null,
+            migrationVerdict: null,
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('Backup not found: 2026-08-15_10-30-00', $result->reason);
@@ -61,7 +92,14 @@ final class RestoreUiGateTest extends TestCase
     {
         $row = $this->storedBackup([StateBackupHistory::status => 'error']);
 
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $row, busy: false, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $row,
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('Only a successful backup can be restored', $result->reason);
@@ -74,7 +112,14 @@ final class RestoreUiGateTest extends TestCase
             StateBackupHistory::verifyOutcome => 'mismatch',
         ]);
 
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $row, busy: false, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $row,
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('This archive does not match its recorded checksum', $result->reason);
@@ -87,7 +132,14 @@ final class RestoreUiGateTest extends TestCase
             StateBackupHistory::verifyOutcome => 'ok',
         ]);
 
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $row, busy: false, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $row,
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertTrue($result->allowed);
     }
@@ -96,17 +148,112 @@ final class RestoreUiGateTest extends TestCase
     {
         // No digest is the shape of every archive written before checksums existed, and refusing
         // those would leave the whole accumulated history unrestorable from the page.
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertTrue($result->allowed);
     }
 
     public function testABusySubsystemRefusesTheRun(): void
     {
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $this->storedBackup(), busy: true, envVerdict: $this->allowed());
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: true,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('The backup subsystem is busy; wait for the current run to end', $result->reason);
+    }
+
+    public function testAnArchiveAheadOfThisCodeIsRefusedInTheGuardsOwnWords(): void
+    {
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationRefused(),
+        );
+
+        $this->assertFalse($result->allowed);
+        $this->assertSame(
+            'connection 0: archive at migration 44, code expects 40 (4 ahead); there is no downgrade path',
+            $result->reason,
+        );
+    }
+
+    public function testAnArchiveBehindThisCodeIsAllowedThrough(): void
+    {
+        // Behind is the ordinary case: the missing migrations are applied after the import, and
+        // saying so is the modal's job, not a refusal.
+        $verdict = new RestoreMigrationDecisionResult(
+            RestoreMigrationDecision::ALLOW,
+            codeIndex: 40,
+            gaps: [new RestoreMigrationGap(0, 32)],
+        );
+
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $verdict,
+        );
+
+        $this->assertTrue($result->allowed);
+        $this->assertNull($result->reason);
+    }
+
+    public function testACorruptArchiveIsNamedBeforeItsMigrationLevelIs(): void
+    {
+        // Both are properties of the archive, and the digest is the wider answer: an archive that
+        // does not match its hash is not worth discussing the schema of.
+        $row = $this->storedBackup([
+            StateBackupHistory::sha256 => 'deadbeef',
+            StateBackupHistory::verifyOutcome => 'mismatch',
+        ]);
+
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $row,
+            busy: false,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationRefused(),
+        );
+
+        $this->assertSame('This archive does not match its recorded checksum', $result->reason);
+    }
+
+    public function testAnIncompatibleArchiveIsNamedBeforeABusySubsystemIs(): void
+    {
+        // A property of the archive outranks a state of the subsystem: waiting for the current run
+        // to end would not make this archive restorable.
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: true,
+            envVerdict: $this->allowed(),
+            migrationVerdict: $this->migrationRefused(),
+        );
+
+        $this->assertSame(
+            'connection 0: archive at migration 44, code expects 40 (4 ahead); there is no downgrade path',
+            $result->reason,
+        );
     }
 
     public function testARefusingEnvMatrixIsRepeatedInItsOwnWords(): void
@@ -116,7 +263,14 @@ final class RestoreUiGateTest extends TestCase
             'a non-production archive must not overwrite production',
         );
 
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: $verdict);
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $verdict,
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertFalse($result->allowed);
         $this->assertSame('a non-production archive must not overwrite production', $result->reason);
@@ -130,7 +284,14 @@ final class RestoreUiGateTest extends TestCase
             'production archive must be anonymized before restoring into a non-production environment',
         );
 
-        $result = RestoreUiGate::decide(AppEnv::DEV, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: $verdict);
+        $result = RestoreUiGate::decide(
+            AppEnv::DEV,
+            self::BACKUP_ID,
+            $this->storedBackup(),
+            busy: false,
+            envVerdict: $verdict,
+            migrationVerdict: $this->migrationAllowed(),
+        );
 
         $this->assertTrue($result->allowed);
         $this->assertNull($result->reason);
@@ -139,7 +300,14 @@ final class RestoreUiGateTest extends TestCase
     public function testEveryNonProductionEnvironmentOffersTheRestore(): void
     {
         foreach ([AppEnv::STAGING, AppEnv::DEV, AppEnv::LOCAL, AppEnv::TEST] as $env) {
-            $result = RestoreUiGate::decide($env, self::BACKUP_ID, $this->storedBackup(), busy: false, envVerdict: $this->allowed());
+            $result = RestoreUiGate::decide(
+                $env,
+                self::BACKUP_ID,
+                $this->storedBackup(),
+                busy: false,
+                envVerdict: $this->allowed(),
+                migrationVerdict: $this->migrationAllowed(),
+            );
 
             $this->assertTrue($result->allowed, "Restore must be offered on {$env->value}");
         }
@@ -151,6 +319,27 @@ final class RestoreUiGateTest extends TestCase
     private function allowed(): RestoreEnvDecisionResult
     {
         return new RestoreEnvDecisionResult(RestoreEnvDecision::ALLOW);
+    }
+
+    /**
+     * @return RestoreMigrationDecisionResult Migration verdict of an archive at the code's own level
+     */
+    private function migrationAllowed(): RestoreMigrationDecisionResult
+    {
+        return new RestoreMigrationDecisionResult(RestoreMigrationDecision::ALLOW, codeIndex: 40);
+    }
+
+    /**
+     * @return RestoreMigrationDecisionResult Migration verdict of an archive ahead of this code
+     */
+    private function migrationRefused(): RestoreMigrationDecisionResult
+    {
+        return new RestoreMigrationDecisionResult(
+            RestoreMigrationDecision::REFUSE,
+            'connection 0: archive at migration 44, code expects 40 (4 ahead); there is no downgrade path',
+            40,
+            [new RestoreMigrationGap(0, 44)],
+        );
     }
 
     /**

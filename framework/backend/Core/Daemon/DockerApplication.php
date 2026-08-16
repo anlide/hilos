@@ -52,8 +52,8 @@ final class DockerApplication
                 // Connect the database first; migrations must run before Hilos accesses any table.
                 $databaseInit();
 
-                Migration::setMigrationListPath($bootstrapDir . '/../Database/Migration');
-                Migration::setMigrationName('Schema');
+                // The schema track is named by the prelude, which every process runs; only the
+                // routines are configured here, by the one entrypoint that applies them.
                 Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
 
                 // Run migrations once on startup (creates tables before Hilos accesses them).

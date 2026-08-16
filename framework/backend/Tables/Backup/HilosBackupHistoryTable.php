@@ -8,6 +8,8 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
 use Hilos\Backup\BackupShipState;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\RestoreMigrationDecision;
+use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\Ship\BackupShipTarget;
 use Hilos\Backup\Ship\BackupShipperFactory;
 use Hilos\Constants\EnvConstants;
@@ -59,6 +61,18 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
 
     /** Synthetic status of the in-progress row (a stored backup carries success/error). */
     private const string RUNNING_STATUS = 'running';
+
+    /** Migration level this code expects; meaningless until {@see $codeMigrationIndexResolved}. */
+    private ?int $codeMigrationIndex = null;
+
+    /**
+     * Whether the level above has been read off disk yet.
+     *
+     * A second flag and not a null check, because null is a real answer here - an installation
+     * that lists no migrations - and caching it as "not read yet" would scan the directory again
+     * for every row of every snapshot.
+     */
+    private bool $codeMigrationIndexResolved = false;
 
     /**
      * Builds a backup row mutation from a runtime source change.
@@ -230,6 +244,10 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         // that it had been restored.
         $restore = $this->restoreRuntimeView();
         $restored = $restore !== null && $restore->backupId === $id ? $restore : null;
+        // The same verdict the restore action re-derives, computed here from the levels the index
+        // row already carries, so the list answers "restorable?" without opening a single sidecar.
+        $migration = RestoreMigrationGuard::decide($history->connections, $this->codeMigrationIndex());
+        $refused = $migration->decision === RestoreMigrationDecision::REFUSE;
 
         return new HilosBackupTableRow(
             rowKey: $id,
@@ -257,6 +275,13 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             restoreFinishedAt: $restored?->finishedAt,
             restoreFailureReason: $restored?->failureReason,
             restoreDatabaseTouched: self::restoreDamagedDatabase($restored),
+            restoreMigrationDecision: $migration->decision->value,
+            restoreMigrationBehind: $migration->migrationsBehind(),
+            // A refusal explains itself; anything else is worded gap by gap, and an archive with
+            // nothing to say about its levels says nothing at all.
+            restoreMigrationNotice: $refused
+                ? $migration->reason
+                : (implode("\n", $migration->describeGaps()) ?: null),
         );
     }
 
@@ -405,5 +430,25 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         $restore = Hilos::$rt?->hilosRestoreRuntime;
 
         return $restore instanceof RestoreRuntime ? $restore : null;
+    }
+
+    /**
+     * Reads the migration level this code expects, once per table instance.
+     *
+     * The only disk read on the row-building path: {@see RestoreMigrationGuard::codeMigrationIndex()}
+     * scans the migration directory, and a snapshot asks for it once per row. Caching it here is
+     * safe because the answer is a property of the running code - the files are read by a process
+     * that would have to restart for them to change.
+     *
+     * @return ?int Migration level this code expects; null when it lists no migrations
+     */
+    private function codeMigrationIndex(): ?int
+    {
+        if (!$this->codeMigrationIndexResolved) {
+            $this->codeMigrationIndex = RestoreMigrationGuard::codeMigrationIndex();
+            $this->codeMigrationIndexResolved = true;
+        }
+
+        return $this->codeMigrationIndex;
     }
 }

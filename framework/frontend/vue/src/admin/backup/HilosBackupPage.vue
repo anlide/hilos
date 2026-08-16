@@ -26,6 +26,8 @@ import {
   BACKUP_SCOPE_FIELD,
   BACKUP_SIZE_BYTES_FIELD,
   BACKUP_STATUS_FIELD,
+  backupMigrationBehind,
+  backupMigrationNotes,
   backupProgressPercent,
   backupRowAnchors,
   createBackupProgressClock,
@@ -48,6 +50,7 @@ import {
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
+  isBackupMigrationRefused,
   isBackupRestorable,
   isBackupSubsystemBusy,
   offersBackupRestore,
@@ -170,8 +173,21 @@ const columns: HilosTableColumnOf<HilosBackupRow>[] = [
  * @param row The backup row the button belongs to.
  */
 function restoreBlockedReason(row: HilosBackupRow): string | null {
-  if (!isBackupRestorable(row)) {
+  if (isBackupChecksumMismatch(row)) {
     return 'This archive does not match its recorded checksum'
+  }
+  // What makes the archive unusable forever comes before what the subsystem is
+  // doing right now: waiting for the current run would not make this one restorable.
+  if (isBackupMigrationRefused(row)) {
+    return (
+      row.restoreMigrationNotice ??
+      'This archive was taken on newer code; there is no downgrade path'
+    )
+  }
+  // The shared predicate has the last word on whether the archive may be replayed at
+  // all: a rule added there and not worded here must still disable the button.
+  if (!isBackupRestorable(row)) {
+    return 'This archive cannot be restored'
   }
 
   return subsystemBusy.value
@@ -493,6 +509,20 @@ function openOutcome(row: HilosBackupRow): void {
           <span v-else-if="row.restorePhase" class="badge text-bg-info">{{
             row.restorePhase
           }}</span>
+          <!-- What happened to this archive outranks what could: the badge speaks
+          only where no restore of it has anything to report. -->
+          <span
+            v-else-if="isBackupMigrationRefused(row)"
+            class="badge text-bg-danger"
+            :data-id="`hilos-backup-migration-${row.id}`"
+            >incompatible</span
+          >
+          <span
+            v-else-if="backupMigrationBehind(row) !== null"
+            class="badge text-bg-warning"
+            :data-id="`hilos-backup-migration-${row.id}`"
+            >+{{ backupMigrationBehind(row) }} migrations</span
+          >
           <span v-else class="text-body-secondary">—</span>
         </td>
         <td class="text-center">
@@ -644,6 +674,15 @@ function openOutcome(row: HilosBackupRow): void {
         <code>{{ restoreRow.env || 'an unnamed environment' }}</code> → this
         installation is <code>{{ restoreGate.targetEnv || 'unnamed' }}</code>
       </p>
+      <ul
+        v-if="restoreRow && backupMigrationNotes(restoreRow).length > 0"
+        class="mb-2 ps-3 text-body-secondary"
+        data-id="hilos-backup-migration-notes"
+      >
+        <li v-for="note in backupMigrationNotes(restoreRow)" :key="note">
+          {{ note }}
+        </li>
+      </ul>
       <label class="form-label" for="hilos-backup-restore-id">
         Type the archive id to confirm
       </label>
@@ -691,6 +730,18 @@ function openOutcome(row: HilosBackupRow): void {
         data-id="hilos-backup-restore-cli-text"
         >{{ cliRow ? formatRestoreCliCommand(cliRow) : '' }}</pre
       >
+      <!-- The same lines the button's title carries where there is a button: an
+      operator on production learns of an incompatible archive here, not from the
+      command refusing after they have walked to the terminal. -->
+      <ul
+        v-if="cliRow && backupMigrationNotes(cliRow).length > 0"
+        class="mt-2 mb-0 ps-3 text-body-secondary"
+        data-id="hilos-backup-migration-cli-notes"
+      >
+        <li v-for="note in backupMigrationNotes(cliRow)" :key="note">
+          {{ note }}
+        </li>
+      </ul>
       <template #actions="{ requestClose }">
         <button
           type="button"

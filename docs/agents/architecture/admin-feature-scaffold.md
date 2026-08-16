@@ -340,10 +340,31 @@ says nothing about how an operator reaches the machine. Confirmation is typing t
 archive's id rather than pressing Yes: it is the one barrier muscle memory cannot
 pass, and the likely mistake here is restoring the wrong archive rather than clicking
 the wrong button. Everything the page checks lives in `RestoreUiGate` — environment,
-the archive's presence, status and checksum, whether the subsystem is busy, and the
-ENV matrix verdict — so the validation is testable without a page; the scope travels
-from the index row, never from the client, and `--force`, `--cold` and
-`--migration-index` have no UI at all.
+the archive's presence, status and checksum, its migration levels against this code,
+whether the subsystem is busy, and the ENV matrix verdict — so the validation is
+testable without a page; the scope travels from the index row, never from the client,
+and `--force`, `--cold` and `--migration-index` have no UI at all.
+
+The migration-index verdict is read before the click rather than after it (HIL-559):
+the row's Restore cell carries a red `incompatible` badge for an archive taken on code
+newer than this installation's — refused forever, there is no downgrade path — and an
+amber `+N migrations` for one taken behind it, which restores and then migrates
+forward. The badge speaks only where no restore of that archive has an outcome or a
+phase to report: an event outranks a property. Where the badge says "no", the button
+is disabled and carries the reason, the same way a checksum mismatch disables it, and
+the per-connection detail waits in the confirmation modal above the id field —
+a yes-or-no in the list, the sentences where the operator is already reading which
+archive they picked. The production surface shows them in the `How to restore` modal
+too, so nobody walks to a terminal to be refused there. The sentences are the CLI
+preflight's own, because they are computed in one place
+(`RestoreMigrationDecisionResult::describeGaps()`) and two presentations of one verdict
+have no right to word it differently. The verdict is not live and needs no signal: an
+archive's levels are written into its sidecar forever, and the level the code expects
+changes only with a restart — so it is computed while the table builds the row and
+travels with it, as three flat fields. Which is also why every process now names the
+schema migration track in `EntrypointPrelude`, not only the container entrypoint and
+the CLI: the worker that serves the page applies no migrations, and without a level of
+its own to compare against it called every archive unjudgeable.
 
 While a restore runs the page cannot report from the table: the node is frozen and
 the page's own agent is stopped, so no delta is produced by anyone. The agent instead
@@ -360,7 +381,10 @@ did not close — that the system stays shut until `protected-mode:open`, becaus
 that case no reload is coming to say so. Afterwards the outcome lives on the row of
 the archive that was replayed (`restorePhase`, `restoreOutcome`, `restoreFinishedAt`,
 `restoreFailureReason`, `restoreDatabaseTouched`), which is what an operator who
-reloads later reads instead of the frame.
+reloads later reads instead of the frame. Beside them every stored row carries its
+migration verdict (`restoreMigrationDecision`, `restoreMigrationBehind`,
+`restoreMigrationNotice`) — a property of the archive, not of a run, so it is on all
+of them rather than on the one that was restored.
 
 Both runs report progress the same way (HIL-277), and the runtime row carries three
 anchors rather than a number: the current phase, the instant it began, and how long

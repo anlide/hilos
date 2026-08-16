@@ -12,10 +12,14 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the restore migration-index gate.
  *
- * Only {@see RestoreMigrationGuard::decide()} is covered here: it is a pure function, and
- * keeping the disk read in its own method is what makes that possible. The companion
- * codeMigrationIndex() reads migration files and is exercised through the CLI and engine
- * suites, which have a fixture tree to read.
+ * Only {@see RestoreMigrationGuard::decide()} and the words its verdict carries are covered
+ * here: the decision is a pure function, and keeping the disk read in its own method is what
+ * makes that possible. The companion codeMigrationIndex() reads migration files and is
+ * exercised through the CLI and engine suites, which have a fixture tree to read.
+ *
+ * The wording is asserted literally rather than by fragment, because the CLI preflight and the
+ * backup page show the operator the same sentences and a drift between them would read as two
+ * different verdicts.
  */
 final class RestoreMigrationGuardTest extends TestCase
 {
@@ -102,5 +106,100 @@ final class RestoreMigrationGuardTest extends TestCase
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
         $this->assertSame([], $result->gaps);
+    }
+
+    public function testAnArchiveBehindTheCodeIsWordedWithTheMigrationsItWillApply(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], 40);
+
+        $this->assertSame(
+            [
+                'connection 0: archive at migration 32, code expects 40;'
+                . ' 8 migration(s) will be applied after the import',
+            ],
+            $result->describeGaps(),
+        );
+    }
+
+    public function testAnUnrecordedLevelIsWordedAsAMissingCheckRatherThanAProblem(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], 40);
+
+        $this->assertSame(
+            [
+                'connection 0: archive records no migration level (sidecar predates the field);'
+                . ' restoring without the compatibility check',
+            ],
+            $result->describeGaps(),
+        );
+    }
+
+    public function testAnInstallationWithNoMigrationsSaysSoRatherThanBlamingTheArchive(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], null);
+
+        $this->assertSame(
+            [
+                'connection 0: archive at migration 32, this installation lists no migrations;'
+                . ' restoring without the compatibility check',
+            ],
+            $result->describeGaps(),
+        );
+    }
+
+    public function testMatchingConnectionsAreWordedNotAtAll(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40);
+
+        $this->assertSame([], $result->describeGaps());
+    }
+
+    public function testTheReportedLagIsTheFurthestConnectionBehindNotTheirSum(): void
+    {
+        $result = RestoreMigrationGuard::decide(
+            [
+                new BackupConnectionMeta(0, 'primary', 32),
+                new BackupConnectionMeta(1, 'secondary', 36),
+            ],
+            40,
+        );
+
+        $this->assertSame(8, $result->migrationsBehind());
+    }
+
+    public function testConnectionsWithNothingToCompareDoNotCountAsLagging(): void
+    {
+        $result = RestoreMigrationGuard::decide(
+            [
+                new BackupConnectionMeta(0, 'primary', null),
+                new BackupConnectionMeta(1, 'secondary', 36),
+            ],
+            40,
+        );
+
+        $this->assertSame(4, $result->migrationsBehind(), 'The unrecorded connection is not a lag of its own');
+    }
+
+    public function testAnArchiveThatIsLevelWithTheCodeLagsByNothing(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40);
+
+        $this->assertNull($result->migrationsBehind());
+    }
+
+    public function testAnUncomparableArchiveLagsByNothingRatherThanByZero(): void
+    {
+        // Zero would read as "nothing to apply", which is a claim; null is the absence of one, and
+        // the row's badge shows a number only when there is one to show.
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], null);
+
+        $this->assertNull($result->migrationsBehind());
+    }
+
+    public function testARefusedArchiveReportsNoLagFromTheConnectionThatIsAhead(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40);
+
+        $this->assertNull($result->migrationsBehind(), 'An archive ahead of the code is not behind it');
     }
 }

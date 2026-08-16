@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Bootstrap;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
@@ -14,11 +15,11 @@ use Hilos\Hilos;
  *
  * Runs the invariant startup steps that precede any process-specific work: initialize
  * the environment accessor from the project root, apply the test-env override when the
- * Docker test stack requests it, then run the caller's persistence init. Because the
- * concrete facade determines the env/cluster catalogs (late static binding), the project
- * Hilos subclass is passed in rather than assumed. Reused by the daemon, worker and docker
- * spines; the CLI spine calls {@see initEnvironment()} alone, because it must build its
- * command manager between the env and the connect.
+ * Docker test stack requests it, name the schema migration track, then run the caller's
+ * persistence init. Because the concrete facade determines the env/cluster catalogs (late
+ * static binding), the project Hilos subclass is passed in rather than assumed. Reused by
+ * the daemon, worker and docker spines; the CLI spine calls {@see initEnvironment()} alone,
+ * because it must build its command manager between the env and the connect.
  */
 final class EntrypointPrelude
 {
@@ -37,6 +38,16 @@ final class EntrypointPrelude
     }
 
     /**
+     * Points the migration track at the project's schema directory alongside the env init.
+     *
+     * The level lives here rather than in the two entrypoints that apply migrations, because
+     * knowing which migrations exist is not the same as running them: the restore gate compares
+     * an archive's recorded level against the level this code expects, and it answers on the
+     * page-serving worker, which applies nothing. Where the level was configured only by the
+     * docker and CLI spines, that worker read "this installation lists no migrations" and every
+     * archive came back unjudgeable. Applying migrations stays where it was - the routines and
+     * seed paths are still set by the entrypoints that use them.
+     *
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param string $projectRoot Project root that holds .env (and tests/.env under the test stack)
      * @throws EnvInvalidValueException When the test env file is requested but missing
@@ -50,5 +61,8 @@ final class EntrypointPrelude
         if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
             $hilosClass::loadEnv($projectRoot . '/tests/.env');
         }
+
+        Migration::setMigrationListPath($projectRoot . '/backend/Database/Migration');
+        Migration::setMigrationName('Schema');
     }
 }

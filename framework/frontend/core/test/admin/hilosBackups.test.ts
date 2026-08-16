@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  backupMigrationBehind,
+  backupMigrationNotes,
   backupProgressPercent,
   backupRowAnchors,
   formatBackupChecksum,
@@ -14,6 +16,7 @@ import {
   hasRestoreOutcome,
   isBackupChecksumMismatch,
   isBackupShipFailed,
+  isBackupMigrationRefused,
   isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
@@ -43,6 +46,9 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     restoreFinishedAt: null,
     restoreFailureReason: null,
     restoreDatabaseTouched: false,
+    restoreMigrationDecision: null,
+    restoreMigrationBehind: null,
+    restoreMigrationNotice: null,
     progressPhase: null,
     progressPhaseStartedAt: null,
     progressEstimatedSeconds: null,
@@ -199,6 +205,30 @@ describe('resolveHilosBackupRow', () => {
     expect(resolved.restoreFinishedAt).toBe('2026-08-15T10:34:00+00:00')
     expect(resolved.restoreFailureReason).toBe('import failed')
     expect(resolved.restoreDatabaseTouched).toBe(true)
+  })
+
+  it('reads the migration verdict the backend judged this archive with', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        restoreMigrationDecision: 'refuse',
+        restoreMigrationBehind: null,
+        restoreMigrationNotice:
+          'connection 0: archive at migration 44, code expects 40 (4 ahead);' +
+          ' there is no downgrade path',
+      }),
+    )
+
+    expect(resolved.restoreMigrationDecision).toBe('refuse')
+    expect(resolved.restoreMigrationBehind).toBeNull()
+    expect(resolved.restoreMigrationNotice).toContain('no downgrade path')
+  })
+
+  it('reads an archive with nothing to say about its levels as saying nothing', () => {
+    const resolved = resolveHilosBackupRow(backupTableRow('b1', {}))
+
+    expect(resolved.restoreMigrationDecision).toBeNull()
+    expect(resolved.restoreMigrationBehind).toBeNull()
+    expect(resolved.restoreMigrationNotice).toBeNull()
   })
 
   it('reads the progress anchors of the run in progress from the slot', () => {
@@ -425,6 +455,14 @@ describe('isBackupRestorable', () => {
     ).toBe(false)
   })
 
+  it('is false for an archive the migration gate refuses', () => {
+    expect(
+      isBackupRestorable(
+        row({ finished: true, restoreMigrationDecision: 'refuse' }),
+      ),
+    ).toBe(false)
+  })
+
   it('is false for a failure and for the in-progress row', () => {
     expect(isBackupRestorable(row({ finished: null, status: 'error' }))).toBe(
       false,
@@ -432,6 +470,54 @@ describe('isBackupRestorable', () => {
     expect(
       isBackupRestorable(row({ finished: false, status: 'running' })),
     ).toBe(false)
+  })
+})
+
+describe('isBackupMigrationRefused', () => {
+  it('is true only for the verdict that refuses, never for an allowed one', () => {
+    expect(
+      isBackupMigrationRefused(row({ restoreMigrationDecision: 'refuse' })),
+    ).toBe(true)
+    expect(
+      isBackupMigrationRefused(row({ restoreMigrationDecision: 'allow' })),
+    ).toBe(false)
+    // A row from a build that judged nothing must not read as refused: it would take
+    // the button away from every archive on the list.
+    expect(isBackupMigrationRefused(row())).toBe(false)
+  })
+})
+
+describe('backupMigrationBehind', () => {
+  it('answers the count only where there is one to show', () => {
+    expect(backupMigrationBehind(row({ restoreMigrationBehind: 8 }))).toBe(8)
+    expect(backupMigrationBehind(row())).toBeNull()
+  })
+})
+
+describe('backupMigrationNotes', () => {
+  it('splits the newline-joined notice into one line per connection', () => {
+    const notes = backupMigrationNotes(
+      row({
+        restoreMigrationNotice:
+          'connection 0: archive at migration 32, code expects 40;' +
+          ' 8 migration(s) will be applied after the import\n' +
+          'connection 1: archive records no migration level' +
+          ' (sidecar predates the field); restoring without the compatibility check',
+      }),
+    )
+
+    // The gate's own refusal carries a semicolon inside one sentence, which is why the
+    // wire joins on a newline and this splits on one.
+    expect(notes).toHaveLength(2)
+    expect(notes[0]).toContain('8 migration(s) will be applied')
+    expect(notes[1]).toContain('sidecar predates the field')
+  })
+
+  it('is empty for an archive with nothing to say, so the block is not rendered', () => {
+    expect(backupMigrationNotes(row())).toEqual([])
+    expect(backupMigrationNotes(row({ restoreMigrationNotice: '' }))).toEqual(
+      [],
+    )
   })
 })
 

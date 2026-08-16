@@ -12,6 +12,7 @@ use Hilos\Backup\Agent\DTO\BackupSetKeepSignalData;
 use Hilos\Backup\BackupScope;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\RestoreEnvGuard;
+use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestoreUiGate;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
@@ -255,10 +256,12 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      *
      * Every check lives in {@see RestoreUiGate} rather than here, so the decision can be tested
      * without a page: the environment this installation runs in, the archive's presence, its
-     * status and checksum, whether the subsystem is busy, and the ENV matrix
-     * ({@see RestoreEnvGuard}) for this archive/target pair. The environment is re-checked on
-     * the action and not only on the button, because a client is not the source of truth about
-     * where it runs.
+     * status and checksum, its migration levels against this code ({@see RestoreMigrationGuard}),
+     * whether the subsystem is busy, and the ENV matrix ({@see RestoreEnvGuard}) for this
+     * archive/target pair. The environment is re-checked on the action and not only on the
+     * button, because a client is not the source of truth about where it runs - and neither is
+     * it about the migration levels, which the page it rendered from may have judged against
+     * code that has since been restarted.
      *
      * The scope travels from the index row, never from the client: it says how the archive was
      * captured, which is something only the record that produced it knows.
@@ -286,8 +289,19 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         $envVerdict = $row === null || $targetEnv === null
             ? null
             : RestoreEnvGuard::decide(AppEnv::fromString($row->env), $targetEnv, force: false);
+        // The levels ride in the index row, so the sidecar is not read from disk to answer a click.
+        $migrationVerdict = $row === null
+            ? null
+            : RestoreMigrationGuard::decide($row->connections, RestoreMigrationGuard::codeMigrationIndex());
 
-        $refusal = RestoreUiGate::decide($targetEnv, $dto->backupId, $row, $this->isBusy(), $envVerdict)->reason;
+        $refusal = RestoreUiGate::decide(
+            $targetEnv,
+            $dto->backupId,
+            $row,
+            $this->isBusy(),
+            $envVerdict,
+            $migrationVerdict,
+        )->reason;
         if ($refusal !== null) {
             throw new TableActionException($refusal);
         }

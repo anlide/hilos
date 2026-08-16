@@ -59,8 +59,8 @@ final class CliApplication
         try {
             EntrypointPrelude::initEnvironment($hilosClass, $projectRoot);
 
-            Migration::setMigrationListPath($bootstrapDir . '/../Database/Migration');
-            Migration::setMigrationName('Schema');
+            // The schema track is named by the prelude, which every process runs; the routines
+            // and seeds are configured here, by the entrypoint that applies them.
             Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
             Seed::setSeedPath($bootstrapDir . '/../Database/Migration/Seed');
 

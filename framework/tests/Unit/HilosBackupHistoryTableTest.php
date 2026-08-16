@@ -8,7 +8,9 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupShipState;
+use Hilos\Database\Migration;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
@@ -33,6 +35,30 @@ use RuntimeException;
  */
 final class HilosBackupHistoryTableTest extends TestCase
 {
+    /** Migration track the fixture files are written under. */
+    private const string MIGRATION_TRACK = 'main';
+
+    private string $migrationRoot = '';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The row's migration verdict is compared against the level this code lists, and the gate
+        // reads that off disk. Pointed at an empty tree by default: no migrations listed, which is
+        // what every case in this suite that says nothing about levels runs with.
+        $this->migrationRoot = sys_get_temp_dir() . '/hilos-backup-table-migrations-' . uniqid('', true);
+        Migration::setMigrationListPath($this->migrationRoot);
+        Migration::setMigrationName(self::MIGRATION_TRACK);
+    }
+
+    protected function tearDown(): void
+    {
+        // The path stays set on the static Migration for the rest of the process; removing the
+        // tree is what makes it harmless - an unreadable path lists no migrations.
+        $this->removeTree($this->migrationRoot);
+        parent::tearDown();
+    }
+
     public function testUnrelatedSourceIsIgnored(): void
     {
         $this->assertNull(
@@ -243,6 +269,9 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::restoreFinishedAt => null,
                         HilosBackupTableRow::restoreFailureReason => null,
                         HilosBackupTableRow::restoreDatabaseTouched => false,
+                        HilosBackupTableRow::restoreMigrationDecision => null,
+                        HilosBackupTableRow::restoreMigrationBehind => null,
+                        HilosBackupTableRow::restoreMigrationNotice => null,
                         HilosBackupTableRow::progressPhase => null,
                         HilosBackupTableRow::progressPhaseStartedAt => null,
                         HilosBackupTableRow::progressEstimatedSeconds => null,
@@ -629,6 +658,175 @@ final class HilosBackupHistoryTableTest extends TestCase
 
         $this->assertSame('success', $rows['b1']->restoreOutcome);
         $this->assertFalse($rows['b1']->restoreDatabaseTouched);
+    }
+
+    public function testAnArchiveAheadOfThisCodeIsMarkedIncompatibleAndSaysWhy(): void
+    {
+        $this->listCodeMigrations(1, 40);
+
+        $row = $this->rowOfArchiveAtLevel('b1', 44);
+
+        $this->assertSame('refuse', $row->restoreMigrationDecision);
+        $this->assertNull($row->restoreMigrationBehind, 'An archive ahead of the code is not behind it');
+        $this->assertSame(
+            'connection 0: archive at migration 44, code expects 40 (4 ahead); there is no downgrade path',
+            $row->restoreMigrationNotice,
+        );
+    }
+
+    public function testAnArchiveBehindThisCodeCarriesTheMigrationsItWillApply(): void
+    {
+        $this->listCodeMigrations(1, 40);
+
+        $row = $this->rowOfArchiveAtLevel('b1', 32);
+
+        $this->assertSame('allow', $row->restoreMigrationDecision);
+        $this->assertSame(8, $row->restoreMigrationBehind);
+        $this->assertSame(
+            'connection 0: archive at migration 32, code expects 40; 8 migration(s) will be applied after the import',
+            $row->restoreMigrationNotice,
+        );
+    }
+
+    public function testAnArchiveAtThisCodesLevelHasNothingToSay(): void
+    {
+        $this->listCodeMigrations(1, 40);
+
+        $row = $this->rowOfArchiveAtLevel('b1', 40);
+
+        $this->assertSame('allow', $row->restoreMigrationDecision);
+        $this->assertNull($row->restoreMigrationBehind);
+        $this->assertNull($row->restoreMigrationNotice, 'A matching archive shows no badge and opens no notice');
+    }
+
+    public function testEachConnectionGetsItsOwnLineInTheNotice(): void
+    {
+        $this->listCodeMigrations(1, 40);
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'b1',
+                BackupHistory::status => 'success',
+                BackupHistory::connections => [
+                    [
+                        BackupConnectionMeta::index => 0,
+                        BackupConnectionMeta::database => 'primary',
+                        BackupConnectionMeta::migrationIndex => 32,
+                    ],
+                    [
+                        BackupConnectionMeta::index => 1,
+                        BackupConnectionMeta::database => 'secondary',
+                        BackupConnectionMeta::migrationIndex => null,
+                    ],
+                ],
+            ]),
+        ));
+
+        $row = $this->storedRowOf($table, 'b1');
+
+        // Newline and not '; ': the semicolon already lives inside the refusal sentence, so
+        // splitting on it would cut a line in half.
+        $this->assertSame(
+            [
+                'connection 0: archive at migration 32, code expects 40;'
+                . ' 8 migration(s) will be applied after the import',
+                'connection 1: archive records no migration level (sidecar predates the field);'
+                . ' restoring without the compatibility check',
+            ],
+            explode("\n", (string)$row->restoreMigrationNotice),
+        );
+    }
+
+    public function testTheInProgressRowHasNoArchiveToJudge(): void
+    {
+        $table = $this->table(runtime: $this->runningRuntime());
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(StateBackupRuntime::RT_ITEM, StateBackupRuntime::ID, []),
+        );
+
+        $this->assertNull($mutation->row?->restoreMigrationDecision);
+        $this->assertNull($mutation->row?->restoreMigrationBehind);
+        $this->assertNull($mutation->row?->restoreMigrationNotice);
+    }
+
+    /**
+     * Builds the stored row of an archive whose single connection recorded one level.
+     *
+     * @param string $id Archive id
+     * @param ?int $migrationIndex Level the archive recorded; null when its sidecar predates the field
+     * @return HilosBackupTableRow Stored backup row
+     */
+    private function rowOfArchiveAtLevel(string $id, ?int $migrationIndex): HilosBackupTableRow
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => $id,
+                BackupHistory::status => 'success',
+                BackupHistory::connections => [
+                    [
+                        BackupConnectionMeta::index => 0,
+                        BackupConnectionMeta::database => 'primary',
+                        BackupConnectionMeta::migrationIndex => $migrationIndex,
+                    ],
+                ],
+            ]),
+        ));
+
+        return $this->storedRowOf($table, $id);
+    }
+
+    /**
+     * Pulls one stored archive's row out of the table the way a source change builds it.
+     *
+     * @param HilosBackupHistoryTable $table Table bound to the fixture index
+     * @param string $id Archive id
+     * @return HilosBackupTableRow Stored backup row
+     */
+    private function storedRowOf(HilosBackupHistoryTable $table, string $id): HilosBackupTableRow
+    {
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, $id, []),
+        );
+        $row = $mutation?->row;
+        $this->assertInstanceOf(HilosBackupTableRow::class, $row);
+
+        return $row;
+    }
+
+    /**
+     * Gives this code a migration level by writing the up-files the gate counts.
+     *
+     * @param int ...$indices Migration indices the code lists
+     */
+    private function listCodeMigrations(int ...$indices): void
+    {
+        $trackDir = $this->migrationRoot . '/' . self::MIGRATION_TRACK;
+        if (!is_dir($trackDir)) {
+            mkdir($trackDir, 0700, true);
+        }
+        foreach ($indices as $index) {
+            file_put_contents($trackDir . '/' . $index . '_up.sql', "-- fixture\n");
+        }
+    }
+
+    /**
+     * Recursively removes a fixture tree (best effort).
+     *
+     * @param string $path Directory path
+     */
+    private function removeTree(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        foreach (scandir($path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $child = $path . '/' . $entry;
+            is_dir($child) ? $this->removeTree($child) : unlink($child);
+        }
+        rmdir($path);
     }
 
     /**

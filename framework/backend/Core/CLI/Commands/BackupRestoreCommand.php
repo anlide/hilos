@@ -25,7 +25,6 @@ use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreEnvGuard;
 use Hilos\Backup\RestoreMigrationDecision;
-use Hilos\Backup\RestoreMigrationGap;
 use Hilos\Backup\RestoreMigrationGuard;
 use Hilos\Backup\RestoreNotifier;
 use Hilos\Backup\RestorePhase;
@@ -324,42 +323,13 @@ HELP;
             return false;
         }
 
-        foreach ($result->gaps as $gap) {
-            echo '  ' . self::describeGap($gap, $result->codeIndex) . "\n";
+        // The words live on the verdict, not here: the backup page shows the same lines, and
+        // two presentations of one verdict have no right to word it differently.
+        foreach ($result->describeGaps() as $line) {
+            echo '  ' . $line . "\n";
         }
 
         return true;
-    }
-
-    /**
-     * Words one migration gap for the operator.
-     *
-     * Only reached on an allowed run, so the archive is either behind the code or carries no
-     * comparable level; an archive ahead of the code was refused with the guard's own wording.
-     *
-     * @param RestoreMigrationGap $gap Connection whose level differs from the code's
-     * @param ?int $codeIndex Migration level this code expects; null when it lists no migrations
-     * @return string One operator-facing line
-     */
-    private static function describeGap(RestoreMigrationGap $gap, ?int $codeIndex): string
-    {
-        if ($gap->archiveIndex === null) {
-            return "connection {$gap->connectionIndex}: archive records no migration level"
-                . ' (sidecar predates the field); restoring without the compatibility check';
-        }
-        if ($codeIndex === null) {
-            return "connection {$gap->connectionIndex}: archive at migration {$gap->archiveIndex},"
-                . ' this installation lists no migrations; restoring without the compatibility check';
-        }
-
-        return sprintf(
-            'connection %d: archive at migration %d, code expects %d;'
-            . ' %d migration(s) will be applied after the import',
-            $gap->connectionIndex,
-            $gap->archiveIndex,
-            $codeIndex,
-            $codeIndex - $gap->archiveIndex,
-        );
     }
 
     /**
