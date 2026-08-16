@@ -24,7 +24,6 @@ import { ActionError } from '@hilos/core'
 import type { AuthFormState, AuthMode, AuthSubmitOutcome } from '@hilos/core'
 
 import { actions } from '../bootstrap/connection'
-import { runPasskeyLogin } from './passkeyCeremony'
 
 /** Backend action: email+password login (PHP `ChatSignalConstants::LOGIN`). */
 const LOGIN_ACTION = 'login'
@@ -109,11 +108,6 @@ export async function submitAuth(
       // link register too), and an address it cannot mail is a silent no-op rather
       // than a "no" — so the view shows a "check your email" acknowledgement.
       return dispatch(REQUEST_MAGIC_LINK_ACTION, { email: form.email })
-    case 'passkey':
-      // Username-first passkey login: the whole options → assertion → confirm
-      // round-trip runs in the ceremony driver (passkeyCeremony); success upgrades
-      // the session (HIL-161) and the auth gate closes the surface, so no next mode.
-      return runPasskeyLogin(form.email)
     case 'recovery_request':
     case 'recovery_confirm':
     case 'recovery_set':

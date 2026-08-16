@@ -11,6 +11,12 @@ export {
   identityFromFields,
   Identities,
 } from './Identity'
+export {
+  type PasskeyCredential,
+  PASSKEY_CREDENTIAL_TYPE,
+  passkeyCredentialFromFields,
+  PasskeyCredentials,
+} from './PasskeyCredential'
 export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
 export {
   type ModeratorPiece,

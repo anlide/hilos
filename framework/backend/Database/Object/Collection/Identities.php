@@ -466,11 +466,9 @@ final class Identities extends Objects
      *
      * The verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}, for
      * callers where the credential itself is the proof of identity rather than the
-     * email — passkey username-first login, whose WebAuthn assertion authenticates
-     * the account and only needs the email to scope allowCredentials. Because email
-     * confirmation is not wired for password registration, those accounts stay
-     * `verified = false`, so the verified-only resolver would strand every passkey
-     * login. Do NOT use this for email-proof flows (magic-link, OAuth email
+     * email. Because email confirmation is not wired for password registration,
+     * those accounts stay `verified = false`, so the verified-only resolver would
+     * strand every such caller. Do NOT use this for email-proof flows (magic-link, OAuth email
      * collision) — those must keep {@see findUserIdByVerifiedEmail()}. Only email
      * identifiers can match (`sms`/`oauth` identifiers are a phone / `provider:subject`
      * and never equal an email); no account resolves to null.

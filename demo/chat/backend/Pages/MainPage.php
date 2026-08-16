@@ -29,7 +29,6 @@ use Demo\Chat\Pages\DTO\Main\OAuthCallbackActionDTO;
 use Demo\Chat\Pages\DTO\Main\OAuthStartActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyDiscoverableLoginOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyLoginConfirmActionDTO;
-use Demo\Chat\Pages\DTO\Main\PasskeyLoginOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyRegisterConfirmActionDTO;
 use Demo\Chat\Pages\DTO\Main\PasskeyRegisterOptionsActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
@@ -58,6 +57,7 @@ use Hilos\Auth\Verification\VerificationService;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationVerifier;
 use Hilos\Auth\WebAuthn\Base64Url;
+use Hilos\Auth\WebAuthn\PasskeyDeviceName;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
@@ -126,7 +126,6 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
         ChatSignalConstants::PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
         ChatSignalConstants::PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
-        ChatSignalConstants::PASSKEY_LOGIN_OPTIONS => PasskeyLoginOptionsActionDTO::class,
         ChatSignalConstants::PASSKEY_LOGIN_CONFIRM => PasskeyLoginConfirmActionDTO::class,
         ChatSignalConstants::PASSKEY_DISCOVERABLE_LOGIN_OPTIONS => PasskeyDiscoverableLoginOptionsActionDTO::class,
     ];
@@ -465,14 +464,6 @@ final class MainPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, PasskeyRegisterConfirmActionDTO::class, $dto);
                 }
                 $this->handlePasskeyRegisterConfirm($dto);
-
-                break;
-
-            case ChatSignalConstants::PASSKEY_LOGIN_OPTIONS:
-                if (!$dto instanceof PasskeyLoginOptionsActionDTO) {
-                    throw new InvalidActionPayloadException($action, PasskeyLoginOptionsActionDTO::class, $dto);
-                }
-                $this->handlePasskeyLoginOptions($dto);
 
                 break;
 
@@ -1467,7 +1458,12 @@ final class MainPage extends AbstractPage
      * reason; a duplicate credential answers "already registered". No auto-login —
      * the user is already signed in.
      *
-     * @param PasskeyRegisterConfirmActionDTO $dto Parsed confirm payload (signed challenge, attestation object, client data, transports)
+     * The credential is labeled with the enrolling device, read off the client's
+     * User-Agent ({@see PasskeyDeviceName}) so the profile can list "Chrome on
+     * macOS" instead of a credential id (HIL-418). An unrecognized agent labels
+     * nothing — the row simply reads "Passkey".
+     *
+     * @param PasskeyRegisterConfirmActionDTO $dto Parsed confirm payload (signed challenge, attestation object, client data, transports, user agent)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing or anonymous
      * @throws ValidationException When the challenge, payload, or ceremony is invalid, or the passkey is already registered
      * @throws HilosException When WebAuthn env config, identity creation, or credential storage fails
@@ -1519,6 +1515,7 @@ final class MainPage extends AbstractPage
                 $transports,
                 $result->aaguid,
                 $this->passkeyUserHandle($config, $userId, Hilos::$db->passkeyCredentials->listByUser($userId)),
+                PasskeyDeviceName::fromUserAgent($dto->userAgent),
             );
         } catch (DuplicateValueException) {
             throw new ValidationException('This passkey is already registered');
@@ -1526,81 +1523,14 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Mints WebAuthn login options for a username-first passkey sign-in (HIL-284).
-     *
-     * The login-start entry, public (anonymous-reachable): the client names the
-     * account email; the email resolves the user's passkey credentials into
-     * allowCredentials regardless of whether the email is verified — the WebAuthn
-     * assertion is the proof, so a passkey account whose email was never confirmed
-     * still signs in. An unknown email — or a known account with no passkey —
-     * answers with a single fabricated allowCredentials entry so the response never
-     * discloses which case it is (anti-enumeration). The stateless challenge is
-     * bound to the session (no user, resolved on confirm) and, since
-     * `action_success` carries no payload, delivered on the PASSKEY_OPTIONS signal
-     * for navigator.credentials.get().
-     *
-     * @param PasskeyLoginOptionsActionDTO $dto Parsed options request payload (email)
-     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws RandomException When the platform CSPRNG cannot produce a challenge or dummy id
-     * @throws HilosException When WebAuthn env config or credential lookup fails
-     */
-    private function handlePasskeyLoginOptions(PasskeyLoginOptionsActionDTO $dto): void
-    {
-        if (Hilos::$rt->selfConnection === null) {
-            throw new ItemNotFoundForUpdateException('User session not found');
-        }
-        $connection = Hilos::$rt->selfConnection;
-
-        $config = WebAuthnConfig::fromEnv();
-        $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
-            WebAuthnChallengeSigner::PURPOSE_LOGIN,
-            $connection->sessionToken,
-            null,
-            $config->challengeTtlSeconds,
-        );
-
-        $email = strtolower($dto->email);
-        $userId = $email !== '' ? Hilos::$db->identities->findUserIdByEmail($email) : null;
-        $credentials = $userId !== null ? Hilos::$db->passkeyCredentials->listByUser($userId) : [];
-
-        $allowCredentials = $credentials === []
-            ? [$this->dummyCredentialDescriptor()]
-            : array_map(
-                fn(PasskeyCredential $credential): array => $this->credentialDescriptor($credential),
-                $credentials,
-            );
-
-        // WebAuthn PublicKeyCredentialRequestOptions wire shape (spec-defined keys,
-        // binary fields base64url); the client passkey wrapper translates it.
-        $publicKeyOptions = [
-            'challenge' => $challenge->challenge,
-            'rpId' => $config->rpId,
-            'allowCredentials' => $allowCredentials,
-            'userVerification' => $config->userVerification,
-            'timeout' => $config->timeoutMs,
-        ];
-
-        $this->sendToUser(
-            ChatSignalConstants::PASSKEY_OPTIONS,
-            $connection->acceptKey,
-            new PasskeyOptionsSignalData(
-                $connection->acceptKey,
-                WebAuthnChallengeSigner::PURPOSE_LOGIN,
-                $publicKeyOptions,
-                $challenge->token,
-            ),
-        );
-    }
-
-    /**
      * Mints usernameless (discoverable) WebAuthn login options (HIL-400).
      *
-     * The discoverable login-start entry, public (anonymous-reachable): unlike the
-     * username-first path ({@see self::handlePasskeyLoginOptions()}) it names no
-     * account, so it resolves no user and builds an EMPTY allowCredentials — the
-     * resident credential the OS picker returns identifies the account on confirm.
-     * An empty allowCredentials is identical for everyone, so there is nothing to
-     * enumerate and no dummy descriptor. The stateless challenge is bound to the
+     * The ONLY login-start entry since HIL-418 retired the username-first one,
+     * public (anonymous-reachable): it names no account, so it resolves no user
+     * and builds an EMPTY allowCredentials — the resident credential the OS picker
+     * returns identifies the account on confirm. An empty allowCredentials is
+     * identical for everyone, so there is nothing to enumerate and no dummy
+     * descriptor is minted anymore. The stateless challenge is bound to the
      * session (no user, resolved on confirm) and, since `action_success` carries no
      * payload, delivered on the PASSKEY_OPTIONS signal (ceremony LOGIN) for
      * navigator.credentials.get().
@@ -1662,8 +1592,8 @@ final class MainPage extends AbstractPage
      *
      * A discoverable-login assertion (HIL-400) additionally carries the WebAuthn
      * user handle; when present it is cross-checked against the credential owner as
-     * defense-in-depth (the credential id stays authoritative). The username-first
-     * path sends none, so the check is skipped when the handle is empty.
+     * defense-in-depth (the credential id stays authoritative). An authenticator
+     * that holds no handle sends an empty one, so the check is skipped when it is.
      *
      * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id,
      *     authenticator data, client data, signature, optional user handle)
@@ -1696,8 +1626,8 @@ final class MainPage extends AbstractPage
 
         // Discoverable login (HIL-400) carries the WebAuthn user handle; cross-check
         // it resolves to the asserted credential's owner (defense-in-depth — the
-        // credential id stays authoritative). The username-first path (HIL-284)
-        // sends no handle, so validate only when present.
+        // credential id stays authoritative). An authenticator holding no handle
+        // sends an empty one, so validate only when present.
         if ($dto->userHandle !== null) {
             $userHandle = Base64Url::decode($dto->userHandle);
             if ($userHandle === null) {
@@ -1787,21 +1717,6 @@ final class MainPage extends AbstractPage
             'type' => 'public-key',
             'id' => $credential->credentialId,
             'transports' => $transports === null || $transports === '' ? [] : explode(',', $transports),
-        ];
-    }
-
-    /**
-     * Builds one fabricated credential descriptor for the login anti-enumeration path.
-     *
-     * @return array{type: string, id: string, transports: list<string>} WebAuthn descriptor with a random id
-     * @throws RandomException When the platform CSPRNG cannot produce the dummy id
-     */
-    private function dummyCredentialDescriptor(): array
-    {
-        return [
-            'type' => 'public-key',
-            'id' => Base64Url::encode(random_bytes(32)),
-            'transports' => [],
         ];
     }
 

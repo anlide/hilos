@@ -39,6 +39,7 @@ final class PasskeyCredential extends Entity
     public const string user_handle = 'user_handle';
     public const string label = 'label';
     public const string last_used_at = 'last_used_at';
+    public const string created_at = 'created_at';
 
     public const string _table = 'hilos_passkey_credential';
     public const string _primary = self::id;
@@ -54,6 +55,7 @@ final class PasskeyCredential extends Entity
         self::user_handle,
         self::label,
         self::last_used_at,
+        self::created_at,
     ];
 
     public const array _types = [
@@ -68,6 +70,7 @@ final class PasskeyCredential extends Entity
         self::user_handle => PhpType::BINARY->value,
         self::label => PhpType::STRING->value,
         self::last_used_at => PhpType::DATETIME->value,
+        self::created_at => PhpType::DATETIME->value,
     ];
 
     public const array _indexes = [
@@ -87,4 +90,5 @@ final class PasskeyCredential extends Entity
     public string $user_handle;
     public ?string $label = null;
     public ?string $last_used_at = null;
+    public string $created_at;
 }

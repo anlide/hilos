@@ -19,10 +19,10 @@ use Hilos\Core\Exception\InvalidFormatException;
  * collapses to one generic message so nothing about the account leaks.
  *
  * The optional `userHandle` is the base64url WebAuthn user handle a discoverable
- * (usernameless) assertion carries (HIL-400) — the username-first path (HIL-284)
- * sends none, and an authenticator that holds none sends an empty one, so both
- * arrive as null. When present the handler cross-checks it against the credential
- * owner as defense-in-depth; the credential id stays authoritative.
+ * (usernameless) assertion carries (HIL-400); an authenticator that holds none
+ * sends an empty one, which arrives as null. When present the handler cross-checks
+ * it against the credential owner as defense-in-depth; the credential id stays
+ * authoritative.
  */
 final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
 {
@@ -34,7 +34,7 @@ final class PasskeyLoginConfirmActionDTO extends ChatActionPayloadDTO
      * @param string $authenticatorData base64url authenticatorData bytes
      * @param string $clientDataJson base64url clientDataJSON bytes
      * @param string $signature base64url ECDSA (DER) signature bytes
-     * @param ?string $userHandle base64url WebAuthn user handle from a discoverable assertion, or null for username-first (HIL-400)
+     * @param ?string $userHandle base64url WebAuthn user handle from a discoverable assertion, or null when the authenticator holds none (HIL-400)
      */
     public function __construct(
         public readonly string $signedChallenge,

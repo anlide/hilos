@@ -48,6 +48,7 @@ final class PasskeyCredentials extends DbCollection
      * @param ?string $transports Reported transports (e.g. 'internal,hybrid'), or null
      * @param ?string $aaguid Authenticator AAGUID, or null
      * @param string $userHandle WebAuthn user handle (binary), reused per user
+     * @param ?string $label Human name for the key — the device it was enrolled on, or null when unknown
      * @return ObjectPasskeyCredential The stored credential object
      * @throws EmptyValueException When credential id, public key or user handle is empty
      * @throws DuplicateValueException When a credential already exists for this credential id
@@ -62,6 +63,7 @@ final class PasskeyCredentials extends DbCollection
         ?string $transports,
         ?string $aaguid,
         string $userHandle,
+        ?string $label,
     ): ObjectPasskeyCredential {
         return $this->objectCollection->createFromRegistration(
             $identityId,
@@ -72,6 +74,7 @@ final class PasskeyCredentials extends DbCollection
             $transports,
             $aaguid,
             $userHandle,
+            $label,
         );
     }
 

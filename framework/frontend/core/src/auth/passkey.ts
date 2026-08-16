@@ -177,14 +177,17 @@ function decodeDescriptor(
  * the confirm action.
  *
  * @param options The register options in the backend wire shape.
+ * @param signal Aborts the ceremony and closes the device dialog (HIL-418).
  * @returns The base64url-encoded attestation response for `passkey_register_confirm`.
- * @throws DOMException When the user cancels, the ceremony times out, or the authenticator rejects it.
+ * @throws DOMException When the user cancels or aborts it, the ceremony times out, or the authenticator rejects it.
  * @throws Error When the browser returns no credential.
  */
 export async function createPasskey(
   options: PasskeyCreationOptions,
+  signal?: AbortSignal,
 ): Promise<PasskeyRegistrationResponse> {
   const credential = (await navigator.credentials.create({
+    signal,
     publicKey: {
       challenge: base64UrlDecode(options.challenge),
       rp: options.rp,
@@ -219,14 +222,17 @@ export async function createPasskey(
  * confirm action.
  *
  * @param options The login options in the backend wire shape.
+ * @param signal Aborts the ceremony and closes the OS picker (HIL-418).
  * @returns The base64url-encoded assertion response for `passkey_login_confirm`.
- * @throws DOMException When the user cancels, the ceremony times out, or no credential matches.
+ * @throws DOMException When the user cancels or aborts it, the ceremony times out, or no credential matches.
  * @throws Error When the browser returns no credential.
  */
 export async function getPasskey(
   options: PasskeyRequestOptions,
+  signal?: AbortSignal,
 ): Promise<PasskeyAssertionResponse> {
   const credential = (await navigator.credentials.get({
+    signal,
     publicKey: {
       challenge: base64UrlDecode(options.challenge),
       rpId: options.rpId,

@@ -22,7 +22,7 @@ import {
 
 import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'
-import { Identities } from '../../types'
+import { Identities, PasskeyCredentials } from '../../types'
 import { type IdentityItem } from './types/lists/IdentityItem'
 import { type PasswordSection } from './types/PasswordSection'
 import { type ProfileDetail } from './types/ProfileDetail'
@@ -41,6 +41,9 @@ const NAME_FIELD = 'name'
 // identity references (backend ProfileIdentitiesBrowserList).
 const PROFILE_IDENTITIES_LIST = 'profileIdentities'
 const IDENTITIES_SLOT = 'identities'
+// The second DB-source slot of the same list: the passkey credential sidecars of
+// the same owner, joined back to their identity row by `identityId` (HIL-418).
+const PASSKEY_CREDENTIALS_SLOT = 'passkeyCredentials'
 
 /** Read a page data slot as an inline record, or undefined. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
@@ -79,6 +82,8 @@ const profileIdentityItems = scopes.pageListSignal(PROFILE_IDENTITIES_LIST)
  * or oauth-link) appears live, an unlink removes its row, a verified flip lands
  * on the next subscription. `canUnlink` is false for the sole remaining identity
  * so the view can disable its unlink control (the server re-enforces the guard).
+ * A passkey row additionally carries the device it was enrolled on and when,
+ * joined in from the same anchor's credential slot (HIL-418).
  */
 export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
   computedSignal(() => {
@@ -88,9 +93,21 @@ export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
       return Array.isArray(slot) ? (slot as EntityRef[]) : []
     })
     const canUnlink = refs.length > 1
+    // A passkey's readable half lives in its credential sidecar, so the two are
+    // matched by the identity id the sidecar carries. Any other method resolves
+    // to nothing here and keeps both fields null.
+    const credentials = profileIdentityItems.get().flatMap((item) => {
+      const slot = item.slots[PASSKEY_CREDENTIALS_SLOT]
+
+      return Array.isArray(slot) ? (slot as EntityRef[]) : []
+    })
 
     return refs.map((identityRef) => {
       const identity = Identities.signal(identityRef).get()
+      const identityId = identity?.id ?? Number(identityRef.id)
+      const credential = credentials
+        .map((credentialRef) => PasskeyCredentials.signal(credentialRef).get())
+        .find((entry) => entry?.identityId === identityId)
 
       return {
         key: String(identity?.id ?? identityRef.id),
@@ -98,6 +115,8 @@ export const profileIdentities: ReadonlySignal<readonly IdentityItem[]> =
         provider: identity?.provider ?? null,
         identifier: identity?.identifier ?? '',
         verified: identity?.verified ?? false,
+        deviceName: credential?.label ?? null,
+        addedAt: credential?.createdAt ?? null,
         canUnlink,
       }
     })

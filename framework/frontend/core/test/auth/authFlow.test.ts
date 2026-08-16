@@ -5,7 +5,9 @@
 // channel-is-the-send code path, the resend gate, the second factor, the two
 // return points plus cancelMethod, the applyExternal converge, screenKey on all
 // thirteen screens, primaryAction, input preservation, and the
-// method-set-agnostic guarantee.
+// method-set-agnostic guarantee. HIL-418 adds the cancel that reaches into the
+// ceremony (the abort) and the intent-judged fate of an outcome that lands after
+// it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -15,6 +17,7 @@ import {
   screenKeyOf,
   visibleMethodIcons,
   DEFAULT_DETECT_DEBOUNCE_MS,
+  DEFAULT_EXTERNAL_CANCEL_GRACE_MS,
   MAGIC_LINK_FLOW_METHOD,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_GITHUB_FLOW_METHOD,
@@ -25,6 +28,7 @@ import {
   type AuthFlowOptions,
   type AuthFlowScreen,
   type AuthFlowState,
+  type AuthFlowSubmitOutcome,
   type CodeChannelDescriptor,
   type DetectionState,
   type IdentifierDetection,
@@ -795,18 +799,11 @@ describe('the two return points and cancelMethod', () => {
     expect(flow.form.get().identifier).toBe('reserved@b.com')
   })
 
-  it('cancelMethod abandons the parked ceremony and ignores its late outcome', async () => {
-    let release: (outcome: {
-      ok: boolean
-      next?: Partial<AuthFlowState>
-    }) => void = () => undefined
+  it('cancelMethod abandons the parked ceremony and returns to the field', async () => {
     const flow = setup({
-      onMethodAction: () =>
-        new Promise((resolve) => {
-          release = resolve
-        }),
+      onMethodAction: () => new Promise<AuthFlowSubmitOutcome>(() => undefined),
     })
-    const choice = flow.chooseMethod('passkey')
+    void flow.chooseMethod('passkey')
     expect(flow.flow.get()).toMatchObject({
       step: 'external',
       methodKey: 'passkey',
@@ -816,9 +813,21 @@ describe('the two return points and cancelMethod', () => {
       step: 'identifier',
       methodKey: null,
     })
-    release({ ok: true, next: { step: 'done' } })
-    await choice
-    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('cancelMethod aborts the ceremony ITSELF — the driver is told, not just forgotten', () => {
+    const aborted: string[] = []
+    const flow = setup({
+      onMethodAction: (key, _form, signal) => {
+        signal.addEventListener('abort', () => aborted.push(key))
+
+        return new Promise<AuthFlowSubmitOutcome>(() => undefined)
+      },
+    })
+    void flow.chooseMethod('passkey')
+    expect(aborted).toEqual([])
+    flow.cancelMethod()
+    expect(aborted).toEqual(['passkey'])
   })
 
   it('cancelMethod releases pending — the controls come back to life', async () => {
@@ -836,6 +845,102 @@ describe('the two return points and cancelMethod', () => {
     flow.setField('password', 'secret-1')
     await flow.submit()
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a canceled ceremony that settles anyway', () => {
+  /**
+   * Run the whole late-outcome sequence: park an icon ceremony, cancel it, wait
+   * out `afterMs`, then let the abandoned ceremony resolve.
+   *
+   * @param outcome What the abandoned ceremony finally resolves to.
+   * @param afterMs How long after the cancel it lands.
+   * @param registering Whether the flow is registering rather than signing in.
+   * @returns The settled machine.
+   */
+  async function lateOutcome(
+    outcome: AuthFlowSubmitOutcome,
+    afterMs: number,
+    registering = false,
+  ): Promise<ReturnType<typeof createAuthFlow>> {
+    let release: (value: AuthFlowSubmitOutcome) => void = () => undefined
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected(registering ? { identifier, status: 'none' } : { identifier }),
+      onMethodAction: () =>
+        new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          release = resolve
+        }),
+    })
+    if (registering) {
+      await typeAndDetect(flow, 'new@b.com')
+      expect(flow.flow.get().intent).toBe('register')
+    }
+    const choice = flow.chooseMethod('passkey')
+    flow.cancelMethod()
+    await vi.advanceTimersByTimeAsync(afterMs)
+    release(outcome)
+    await choice
+
+    return flow
+  }
+
+  it('a LOGIN success inside the window is applied — Cancel, then the finger lands', async () => {
+    const flow = await lateOutcome(
+      { ok: true, next: { step: 'done' } },
+      DEFAULT_EXTERNAL_CANCEL_GRACE_MS,
+    )
+    expect(flow.flow.get().step).toBe('done')
+  })
+
+  it('a LOGIN success past the window is not — that gesture belonged to another moment', async () => {
+    const flow = await lateOutcome(
+      { ok: true, next: { step: 'done' } },
+      DEFAULT_EXTERNAL_CANCEL_GRACE_MS + 1,
+    )
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('a REGISTER success is dropped however fresh — the refused account is not undoable', async () => {
+    const flow = await lateOutcome(
+      { ok: true, next: { step: 'done' } },
+      0,
+      true,
+    )
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('a reset ends the ceremony and outlasts its grace window', async () => {
+    const aborted: string[] = []
+    let release: (value: AuthFlowSubmitOutcome) => void = () => undefined
+    const flow = setup({
+      onMethodAction: (key, _form, signal) => {
+        signal.addEventListener('abort', () => aborted.push(key))
+
+        return new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          release = resolve
+        })
+      },
+    })
+    const choice = flow.chooseMethod('passkey')
+    flow.cancelMethod()
+    // A (re)mount is a stronger forget than a cancel: the device dialog closes
+    // and the freshly emptied flow takes nothing from the old ceremony.
+    flow.reset()
+    expect(aborted).toEqual(['passkey'])
+    release({ ok: true, next: { step: 'done' } })
+    await choice
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('a late FAILURE is noise under either intent — no error surfaces', async () => {
+    const failure: AuthFlowSubmitOutcome = { ok: false, message: 'Timed out' }
+    const signingIn = await lateOutcome(failure, 0)
+    expect(signingIn.flow.get().step).toBe('identifier')
+    expect(signingIn.error.get()).toBeNull()
+    const registering = await lateOutcome(failure, 0, true)
+    expect(registering.flow.get().step).toBe('identifier')
+    expect(registering.error.get()).toBeNull()
   })
 })
 

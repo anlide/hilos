@@ -59,6 +59,11 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::identities,
     ];
 
+    public const array DB_PASSKEY_CREDENTIALS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => ChatDbContext::passkeyCredentials,
+    ];
+
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => ChatRtContext::connections,

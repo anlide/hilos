@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages\DTO\Main;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Push\DTO\PushSubscribeActionDTO;
 
 /**
  * PasskeyRegisterConfirmActionDTO - DTO for submitting a WebAuthn registration (HIL-284).
@@ -16,6 +17,10 @@ use Hilos\Core\Exception\InvalidFormatException;
  * clientDataJSON returned by the authenticator, and the authenticator's reported
  * transports (stored to seed a credential's allowCredentials on later logins). The
  * binary fields stay base64url on the wire and are decoded by the handler.
+ *
+ * The `userAgent` is the enrolling device's, mirroring {@see PushSubscribeActionDTO}:
+ * it names the key in the profile (HIL-418) and nothing else — it authorizes
+ * nothing, so a client that sends none simply gets an unnamed key.
  */
 final class PasskeyRegisterConfirmActionDTO extends ChatActionPayloadDTO
 {
@@ -26,12 +31,14 @@ final class PasskeyRegisterConfirmActionDTO extends ChatActionPayloadDTO
      * @param string $attestationObject base64url CBOR attestation object
      * @param string $clientDataJson base64url clientDataJSON bytes
      * @param list<string> $transports Reported authenticator transports (e.g. ['internal', 'hybrid'])
+     * @param ?string $userAgent Enrolling device user agent, or null when the client sent none
      */
     public function __construct(
         public readonly string $signedChallenge,
         public readonly string $attestationObject,
         public readonly string $clientDataJson,
         public readonly array $transports,
+        public readonly ?string $userAgent,
     ) {
     }
 
@@ -62,18 +69,22 @@ final class PasskeyRegisterConfirmActionDTO extends ChatActionPayloadDTO
             }
         }
 
+        $userAgent = $data['userAgent'] ?? null;
+
         return new static(
             signedChallenge: self::requireString($data, 'signedChallenge'),
             attestationObject: self::requireString($data, 'attestationObject'),
             clientDataJson: self::requireString($data, 'clientDataJson'),
             transports: $transports,
+            userAgent: is_string($userAgent) && $userAgent !== '' ? $userAgent : null,
         );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array{signedChallenge: string, attestationObject: string, clientDataJson: string, transports: list<string>} Confirm payload
+     * @return array{signedChallenge: string, attestationObject: string, clientDataJson: string,
+     *     transports: list<string>, userAgent: ?string} Confirm payload
      */
     public function toArray(): array
     {
@@ -82,6 +93,7 @@ final class PasskeyRegisterConfirmActionDTO extends ChatActionPayloadDTO
             'attestationObject' => $this->attestationObject,
             'clientDataJson' => $this->clientDataJson,
             'transports' => $this->transports,
+            'userAgent' => $this->userAgent,
         ];
     }
 }

@@ -38,6 +38,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property string $userHandle
  * @property ?string $label
  * @property-read ?string $lastUsedAt
+ * @property string $createdAt
  */
 final class PasskeyCredential extends Object_
 {
@@ -53,6 +54,7 @@ final class PasskeyCredential extends Object_
     public const string userHandle = 'userHandle';
     public const string label = 'label';
     public const string lastUsedAt = 'lastUsedAt';
+    public const string createdAt = 'createdAt';
 
     /**
      * Returns the database collection key.
@@ -85,6 +87,7 @@ final class PasskeyCredential extends Object_
             self::userHandle => $this->entity->user_handle,
             self::label => $this->entity->label,
             self::lastUsedAt => $this->entity->last_used_at,
+            self::createdAt => $this->entity->created_at,
             default => parent::__get($property),
         };
     }
@@ -96,7 +99,7 @@ final class PasskeyCredential extends Object_
      * through {@see updateSignCount()} / {@see touchLastUsed()}, which write with a
      * targeted UPDATE and mirror the value on the loaded entity.
      *
-     * @param string $property Property name (identityId, userId, credentialId, publicKey, transports, aaguid, userHandle, label)
+     * @param string $property Property name (identityId, userId, credentialId, publicKey, transports, aaguid, userHandle, label, createdAt)
      * @param mixed $value Value to set
      * @throws DatabaseException When the property cannot be set on a PasskeyCredential
      */
@@ -111,6 +114,7 @@ final class PasskeyCredential extends Object_
             self::aaguid => $this->entity->aaguid = $value === null ? null : (string)$value,
             self::userHandle => $this->entity->user_handle = (string)$value,
             self::label => $this->entity->label = $value === null ? null : (string)$value,
+            self::createdAt => $this->entity->created_at = (string)$value,
             default => parent::__set($property, $value),
         };
     }

@@ -80,9 +80,6 @@ final class ChatSignalConstants
     /** @var string Client → server: submit a WebAuthn registration attestation to store a new passkey (authenticated, HIL-284) */
     public const string PASSKEY_REGISTER_CONFIRM = 'passkey_register_confirm';
 
-    /** @var string Client → server: request WebAuthn login options for an email (public, anonymous-reachable, HIL-284) */
-    public const string PASSKEY_LOGIN_OPTIONS = 'passkey_login_options';
-
     /** @var string Client → server: submit a WebAuthn login assertion to sign in (public, anonymous-reachable, HIL-284) */
     public const string PASSKEY_LOGIN_CONFIRM = 'passkey_login_confirm';
 

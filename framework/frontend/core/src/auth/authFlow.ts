@@ -339,15 +339,29 @@ export interface AuthFlowOptions {
    * Run an icon method's registered behavior — its OAuth redirect or WebAuthn
    * ceremony (HIL-418/419). The flow parks in `external` while it runs.
    *
+   * The signal is aborted by {@link AuthFlow.cancelMethod}, and a driver MUST
+   * pass it down to the browser call it awaits: cancelling has to END the
+   * ceremony, not merely orphan its outcome — a still-open device dialog that
+   * a late finger satisfies would raise a session the user just refused.
+   *
    * @param key The chosen method key.
    * @param form The current form values (e.g. a typed identifier a ceremony reuses).
+   * @param signal Aborted when the user cancels the parked external step.
    */
   onMethodAction: (
     key: string,
     form: AuthFlowForm,
+    signal: AbortSignal,
   ) => Promise<AuthFlowSubmitOutcome>
   /** Detection debounce in ms; defaults to {@link DEFAULT_DETECT_DEBOUNCE_MS}. */
   detectDebounceMs?: number
+  /**
+   * How long a canceled LOGIN ceremony's late success is still applied, in ms;
+   * defaults to {@link DEFAULT_EXTERNAL_CANCEL_GRACE_MS}. Only the number is a
+   * project's to choose — which intents accept a late outcome is the machine's
+   * rule, because it turns on the intent only the machine knows.
+   */
+  externalCancelGraceMs?: number
 }
 
 /** The reactive identifier-first flow a view binds and drives. */
@@ -434,9 +448,10 @@ export interface AuthFlow {
    */
   backToIdentifier(): void
   /**
-   * Cancel a parked external ceremony and return to the identifier field,
-   * releasing the pending guard (the abandoned ceremony may never settle). A
-   * late outcome from the canceled ceremony is ignored.
+   * Cancel a parked external ceremony and return to the identifier field:
+   * aborts the ceremony's signal and releases the pending guard (an abandoned
+   * ceremony may never settle). A late outcome that lands anyway is judged by
+   * intent — see {@link AuthFlowOptions.externalCancelGraceMs}.
    */
   cancelMethod(): void
   /**
@@ -457,6 +472,15 @@ export const PASSWORD_MIN_LENGTH = 8
 
 /** Default detection debounce: quiet enough to skip mid-word lookups. */
 export const DEFAULT_DETECT_DEBOUNCE_MS = 300
+
+/**
+ * Default window in which a canceled LOGIN ceremony's late success still counts.
+ * "Pressed Cancel and put the finger down anyway" is an ordinary sequence, and
+ * the worst it costs is a session the person can sign out of. A canceled
+ * REGISTER ceremony's late success is dropped whatever this is set to: it would
+ * create the very account the person just refused, and that is not undoable.
+ */
+export const DEFAULT_EXTERNAL_CANCEL_GRACE_MS = 30000
 
 /** The `password` method key — the shared-identifier-field method (HIL-416). */
 export const PASSWORD_METHOD_KEY = 'password'
@@ -803,14 +827,30 @@ export function screenKeyOf(flow: AuthFlowState): AuthFlowScreen {
 }
 
 /**
+ * One icon method's ceremony while it runs: the controller a cancel aborts, and
+ * what that cancel was — the moment and the intent it happened under, which is
+ * all the machine needs to judge an outcome that lands after it.
+ */
+interface CeremonyRun {
+  /** The method key that started it. */
+  readonly key: string
+  /** Aborted by a cancel and handed to the driver as its {@link AbortSignal}. */
+  readonly controller: AbortController
+  /** The cancel, once it happens; `null` while the ceremony is still wanted. */
+  canceled: { readonly at: number; readonly intent: AuthIntent } | null
+}
+
+/**
  * Create the identifier-first auth flow machine over the project's method and
  * channel registries and delegated transport callbacks.
  *
  * @param options The registries, the detect/submit/method-action dispatches,
- *   and the detection debounce.
+ *   the detection debounce and the late-outcome window.
  */
 export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const debounceMs = options.detectDebounceMs ?? DEFAULT_DETECT_DEBOUNCE_MS
+  const cancelGraceMs =
+    options.externalCancelGraceMs ?? DEFAULT_EXTERNAL_CANCEL_GRACE_MS
   const flow = createSignal<AuthFlowState>(INITIAL_FLOW)
   const form = createSignal<AuthFlowForm>(EMPTY_FORM)
   const detection = createSignal<DetectionState>(IDLE_DETECTION)
@@ -907,6 +947,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   // a slow onSubmit resolution would merge its `next` into whatever flow exists
   // by then, and its pending-clear would release a NEWER dispatch's guard.
   let dispatchSeq = 0
+  // The icon ceremony currently owning the external step, so a cancel can reach
+  // INTO it (abort its signal) instead of only forgetting it.
+  let ceremony: CeremonyRun | null = null
 
   function cancelDetect(): void {
     detectSeq += 1
@@ -1005,6 +1048,35 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         Date.now() + outcome.resendInSeconds * MS_PER_SECOND,
       )
     }
+  }
+
+  /**
+   * Judge a ceremony outcome that landed AFTER the user canceled it. Only a
+   * LOGIN success inside the grace window is still applied: it merely raises a
+   * session, which can be left. A REGISTER success is dropped unconditionally —
+   * it would create the account the person refused — and a late FAILURE is
+   * dropped under either intent, being an error about an abandoned operation.
+   *
+   * @param run The ceremony the outcome belongs to.
+   * @param outcome What it resolved to.
+   */
+  function applyLateOutcome(
+    run: CeremonyRun,
+    outcome: AuthFlowSubmitOutcome,
+  ): void {
+    const canceled = run.canceled
+    // Superseded rather than canceled (a reset, an identifier edit, a newer
+    // ceremony): nothing is late here, the outcome is simply orphaned.
+    if (canceled === null || ceremony !== run) {
+      return
+    }
+    if (!outcome.ok || canceled.intent !== 'login') {
+      return
+    }
+    if (Date.now() - canceled.at > cancelGraceMs) {
+      return
+    }
+    applyOutcome(outcome)
   }
 
   /**
@@ -1112,15 +1184,27 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       }
       error.set(null)
       // Park in `external` while the ceremony runs; on failure fall back to the
-      // identifier field so the user can retry another way. A canceled or
-      // superseded ceremony's late outcome is ignored (the generation and park
-      // guards).
+      // identifier field so the user can retry another way. A superseded
+      // ceremony's late outcome is ignored (the generation and park guards); a
+      // CANCELED one's is judged by intent ({@link applyLateOutcome}).
       flow.set({ ...flow.get(), step: 'external', methodKey: key })
       pending.set(true)
       const seq = ++dispatchSeq
+      const run: CeremonyRun = {
+        key,
+        controller: new AbortController(),
+        canceled: null,
+      }
+      ceremony = run
       try {
-        const outcome = await options.onMethodAction(key, form.get())
+        const outcome = await options.onMethodAction(
+          key,
+          form.get(),
+          run.controller.signal,
+        )
         if (seq !== dispatchSeq) {
+          applyLateOutcome(run, outcome)
+
           return
         }
         const state = flow.get()
@@ -1135,6 +1219,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
           flow.set({ ...state, step: 'identifier', methodKey: null })
         }
       } finally {
+        if (ceremony === run) {
+          ceremony = null
+        }
         if (seq === dispatchSeq) {
           pending.set(false)
         }
@@ -1199,6 +1286,13 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (state.step !== 'external') {
         return
       }
+      // Abort FIRST: cancelling has to end the ceremony itself, so the device
+      // dialog closes and a late finger cannot sign anything. Orphaning the
+      // outcome alone (what this used to do) left the OS prompt up.
+      if (ceremony !== null) {
+        ceremony.controller.abort()
+        ceremony.canceled = { at: Date.now(), intent: state.intent }
+      }
       // The abandoned ceremony may never settle (a closed OAuth popup), so the
       // cancel itself releases pending and orphans the ceremony's outcome —
       // otherwise every control would stay dead behind the pending guard.
@@ -1216,6 +1310,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     },
     reset(): void {
       cancelDetect()
+      // A (re)mount forgets everything, so a ceremony still running under the old
+      // surface is ENDED, not merely orphaned: leaving the controller alone would
+      // keep the device dialog up, and leaving `ceremony` set would let a canceled
+      // ceremony's late success land on the flow this call just emptied.
+      ceremony?.controller.abort()
+      ceremony = null
       dispatchSeq += 1
       flow.set(INITIAL_FLOW)
       form.set(EMPTY_FORM)

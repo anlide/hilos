@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredenti
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\Object\Objects;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * PasskeyCredentials object collection.
@@ -55,6 +56,7 @@ final class PasskeyCredentials extends Objects
      * @param ?string $transports Reported transports (e.g. 'internal,hybrid'), or null
      * @param ?string $aaguid Authenticator AAGUID, or null
      * @param string $userHandle WebAuthn user handle (binary), reused per user
+     * @param ?string $label Human name for the key — the device it was enrolled on, or null when unknown
      * @return ObjectPasskeyCredential The stored credential object
      * @throws EmptyValueException When credential id, public key or user handle is empty
      * @throws DuplicateValueException When a credential already exists for this credential id
@@ -70,6 +72,7 @@ final class PasskeyCredentials extends Objects
         ?string $transports,
         ?string $aaguid,
         string $userHandle,
+        ?string $label,
     ): ObjectPasskeyCredential {
         if ($credentialId === '' || $publicKeyPem === '' || $userHandle === '') {
             throw new EmptyValueException('Passkey credential id, public key and user handle are required');
@@ -87,6 +90,10 @@ final class PasskeyCredentials extends Objects
         $credential->transports = $transports;
         $credential->aaguid = $aaguid;
         $credential->userHandle = $userHandle;
+        $credential->label = $label;
+        // `created_at` is a mapped column, so the insert carries it and the SQL
+        // default never applies; stamped here like every other framework row.
+        $credential->createdAt = TimeHelper::getSqlDateTime();
         $credential->sync();
 
         $id = $credential->id;

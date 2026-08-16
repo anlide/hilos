@@ -18,7 +18,6 @@ import {
   createAuthSurface,
   MAGIC_LINK_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
-  PASSKEY_AUTH_METHOD,
   PASSKEY_DISCOVERABLE_AUTH_METHOD,
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
@@ -45,7 +44,6 @@ const methods: AuthMethodDescriptor[] = [
   PASSWORD_AUTH_METHOD,
   SMS_AUTH_METHOD,
   MAGIC_LINK_AUTH_METHOD,
-  PASSKEY_AUTH_METHOD,
   PASSKEY_DISCOVERABLE_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
 ]
@@ -95,7 +93,6 @@ const canRegister = surface.entries.includes('register')
 const canRecover = surface.entries.includes('recovery')
 const canSms = surface.entries.includes('sms')
 const canMagicLink = surface.entries.includes('magic_link')
-const canPasskey = surface.entries.includes('passkey')
 const isFormMode = computed(
   () => mode.value === 'login' || mode.value === 'register',
 )
@@ -130,8 +127,6 @@ const heading = computed(() => {
       return 'Sign in with your phone'
     case 'magic_link_request':
       return 'Email me a sign-in link'
-    case 'passkey':
-      return 'Sign in with a passkey'
     default:
       return 'Sign in'
   }
@@ -146,8 +141,6 @@ const submitLabel = computed(() => {
       return 'Send code'
     case 'magic_link_request':
       return 'Send link'
-    case 'passkey':
-      return 'Use passkey'
     default:
       return 'Sign in'
   }
@@ -512,47 +505,6 @@ onMounted(() => {
       </form>
     </template>
 
-    <!-- Passkey sign-in (HIL-284): username-first — enter an email, then the
-    WebAuthn assertion round-trip runs on submit (passkeyCeremony) and upgrades the
-    session. Registering a passkey lives in the signed-in profile, not here. -->
-    <form v-else-if="mode === 'passkey'" novalidate @submit.prevent="submit">
-      <div class="mb-3">
-        <label class="form-label" for="auth-passkey-email">Email</label>
-        <input
-          id="auth-passkey-email"
-          type="email"
-          class="form-control"
-          autocomplete="username webauthn"
-          data-autofocus
-          data-id="auth-passkey-email"
-          :value="form.email"
-          @input="update('email', $event)"
-        />
-        <div class="form-text">
-          We'll ask your device to confirm your passkey.
-        </div>
-      </div>
-
-      <div
-        v-if="error"
-        class="alert alert-danger py-2"
-        role="alert"
-        data-id="auth-error"
-      >
-        {{ error }}
-      </div>
-
-      <LoadingButton
-        type="submit"
-        class="btn-primary w-100"
-        :loading="pending"
-        :disabled="!submittable"
-        data-id="auth-submit"
-      >
-        {{ submitLabel }}
-      </LoadingButton>
-    </form>
-
     <!-- Recovery is reachable but its backend (HIL-365) is not landed yet. -->
     <div
       v-else
@@ -696,17 +648,6 @@ onMounted(() => {
         @click="surface.switchTo('magic_link_request')"
       >
         <i class="bi bi-envelope" aria-hidden="true" />
-      </button>
-      <button
-        v-if="mode === 'login' && canPasskey"
-        type="button"
-        class="btn btn-link flex-fill text-center fs-4"
-        aria-label="Use a passkey"
-        title="Use a passkey"
-        data-id="auth-to-passkey"
-        @click="surface.switchTo('passkey')"
-      >
-        <i class="bi bi-fingerprint" aria-hidden="true" />
       </button>
     </div>
   </section>

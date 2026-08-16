@@ -137,9 +137,14 @@ final class Identities extends DbCollection
      *
      * Verification-agnostic sibling of {@see findUserIdByVerifiedEmail()}: delegates
      * to the object collection's {@see ObjectIdentities::findUserIdByEmail()}
-     * primitive, for passkey username-first login where the WebAuthn assertion is
-     * the proof and the email only scopes allowCredentials. Not for email-proof
-     * flows (magic-link / OAuth) — those keep the verified resolver.
+     * primitive, for callers where a credential rather than the email is the proof
+     * of identity. Not for email-proof flows (magic-link / OAuth) — those keep the
+     * verified resolver.
+     *
+     * SCAFFOLD: no caller since HIL-418 retired the username-first passkey login,
+     * which resolved the account by email to scope allowCredentials. Kept because
+     * the distinction it draws is a property of the identity model, not of that
+     * one flow — the identifier lookup of HIL-414 asks the same question.
      *
      * @param string $email Lowercased account email
      * @return ?int Owning user id of any email identity, or null when none

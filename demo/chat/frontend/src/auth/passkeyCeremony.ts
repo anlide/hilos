@@ -41,9 +41,6 @@ const PASSKEY_REGISTER_OPTIONS_ACTION = 'passkey_register_options'
 /** Backend action: verify a register attestation (PHP `ChatSignalConstants::PASSKEY_REGISTER_CONFIRM`). */
 const PASSKEY_REGISTER_CONFIRM_ACTION = 'passkey_register_confirm'
 
-/** Backend action: mint login-ceremony options (PHP `ChatSignalConstants::PASSKEY_LOGIN_OPTIONS`). */
-const PASSKEY_LOGIN_OPTIONS_ACTION = 'passkey_login_options'
-
 /** Backend action: verify a login assertion (PHP `ChatSignalConstants::PASSKEY_LOGIN_CONFIRM`). */
 const PASSKEY_LOGIN_CONFIRM_ACTION = 'passkey_login_confirm'
 
@@ -64,18 +61,49 @@ const PASSKEY_FAILED_MESSAGE =
  * matches the ceremony discriminator to this request (single-flight). Rejects if
  * the action itself fails before any signal lands.
  *
+ * The abort has to reach THIS wait too, not only the browser call after it
+ * (HIL-418): the options round-trip is where a slow server leaves the ceremony
+ * parked longest, and a cancel that only unsubscribed would leave the caller
+ * awaiting a promise nothing will ever settle.
+ *
  * @param action The options action name.
  * @param payload The options action payload.
  * @param ceremony The ceremony discriminator the reply must carry.
+ * @param abort Aborted when the user cancels the ceremony, if the caller passes one.
  * @returns The parsed options signal payload.
  */
 function requestOptions(
   action: string,
   payload: Record<string, string>,
   ceremony: string,
+  abort?: AbortSignal,
 ): Promise<PasskeyOptionsSignalData> {
   return new Promise((resolve, reject) => {
+    if (abort?.aborted === true) {
+      reject(abort.reason as unknown)
+
+      return
+    }
     let settled = false
+
+    /** Close the wait once and drop both listeners; the first outcome wins. */
+    function claim(): boolean {
+      if (settled) {
+        return false
+      }
+      settled = true
+      unsubscribe()
+      abort?.removeEventListener('abort', onAbort)
+
+      return true
+    }
+
+    function onAbort(): void {
+      if (claim()) {
+        reject(abort?.reason as unknown)
+      }
+    }
+
     const unsubscribe = connection.on(
       'projectSignal',
       (signal: ProjectSignal) => {
@@ -88,57 +116,18 @@ function requestOptions(
         if (data.ceremony !== ceremony) {
           return
         }
-        settled = true
-        unsubscribe()
-        resolve(data)
+        if (claim()) {
+          resolve(data)
+        }
       },
     )
+    abort?.addEventListener('abort', onAbort)
     actions.dispatch(action, payload).done.catch((error: unknown) => {
-      if (settled) {
-        return
+      if (claim()) {
+        reject(error)
       }
-      settled = true
-      unsubscribe()
-      reject(error)
     })
   })
-}
-
-/**
- * Run the login ceremony for an email: request options, run the WebAuthn
- * assertion, and confirm it. Resolves `ok` on the confirm ack — the session
- * upgrade (HIL-161) then closes the surface through the auth gate, so no next
- * mode — and maps any failure to an inline message.
- *
- * @param email The account email to look up candidate passkeys for.
- */
-export async function runPasskeyLogin(
-  email: string,
-): Promise<AuthSubmitOutcome> {
-  if (!isPasskeySupported()) {
-    return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
-  }
-  try {
-    const options = await requestOptions(
-      PASSKEY_LOGIN_OPTIONS_ACTION,
-      { email },
-      PASSKEY_CEREMONY_LOGIN,
-    )
-    const assertion = await getPasskey(
-      options.publicKeyOptions as unknown as PasskeyRequestOptions,
-    )
-    await actions.dispatch(PASSKEY_LOGIN_CONFIRM_ACTION, {
-      signedChallenge: options.signedChallenge,
-      credentialId: assertion.credentialId,
-      authenticatorData: assertion.authenticatorData,
-      clientDataJson: assertion.clientDataJson,
-      signature: assertion.signature,
-    }).done
-
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, message: describePasskeyError(error) }
-  }
 }
 
 /**
@@ -149,8 +138,23 @@ export async function runPasskeyLogin(
  * none). Resolves `ok` on the confirm ack; the session upgrade (HIL-161) then
  * closes the surface through the auth gate, so no next mode. A cancelled picker
  * makes no server call (getPasskey rejects before confirm).
+ *
+ * Cancelling (HIL-418) reaches every stage: the options wait, the OS picker, and
+ * the confirm. A signature that races the abort and lands anyway is DROPPED —
+ * this is the one method whose ceremony the browser truly ends, so a session must
+ * never rise from a gesture the person just took back. The machine's late-outcome
+ * window is for the methods that cannot be stopped (an OAuth popup already
+ * redirected), not for this one.
+ *
+ * SCAFFOLD: nothing passes the signal yet — the Cancel that produces it is drawn
+ * with the external-step waiting screen in HIL-423. The ceremony takes it now so
+ * that view has only a button to add.
+ *
+ * @param abort Aborted when the user cancels the parked external step.
  */
-export async function runPasskeyDiscoverableLogin(): Promise<AuthSubmitOutcome> {
+export async function runPasskeyDiscoverableLogin(
+  abort?: AbortSignal,
+): Promise<AuthSubmitOutcome> {
   if (!isPasskeySupported()) {
     return { ok: false, message: PASSKEY_UNSUPPORTED_MESSAGE }
   }
@@ -159,10 +163,15 @@ export async function runPasskeyDiscoverableLogin(): Promise<AuthSubmitOutcome> 
       PASSKEY_DISCOVERABLE_LOGIN_OPTIONS_ACTION,
       {},
       PASSKEY_CEREMONY_LOGIN,
+      abort,
     )
     const assertion = await getPasskey(
       options.publicKeyOptions as unknown as PasskeyRequestOptions,
+      abort,
     )
+    // The authenticator can still answer between the abort and this line; the
+    // confirm is the point of no return, so it is the last place to check.
+    abort?.throwIfAborted()
     await actions.dispatch(PASSKEY_LOGIN_CONFIRM_ACTION, {
       signedChallenge: options.signedChallenge,
       credentialId: assertion.credentialId,
@@ -183,6 +192,10 @@ export async function runPasskeyDiscoverableLogin(): Promise<AuthSubmitOutcome> 
  * WebAuthn attestation, and confirm it. Resolves `ok` on the confirm ack (the
  * credential is stored); the credential list refresh is HIL-404. Register errors
  * are specific (a taken credential, a rejected attestation).
+ *
+ * The confirm carries this device's User-Agent, which is what names the key in
+ * the profile (HIL-418) — the same thing a push subscription sends, and for the
+ * same reason: a person recognizes their laptop, not a credential id.
  */
 export async function runPasskeyRegister(): Promise<AuthSubmitOutcome> {
   if (!isPasskeySupported()) {
@@ -202,6 +215,7 @@ export async function runPasskeyRegister(): Promise<AuthSubmitOutcome> {
       attestationObject: attestation.attestationObject,
       clientDataJson: attestation.clientDataJson,
       transports: attestation.transports,
+      userAgent: navigator.userAgent,
     }).done
 
     return { ok: true }
@@ -222,7 +236,7 @@ function describePasskeyError(error: unknown): string {
     return error.message
   }
   if (error instanceof DOMException) {
-    if (error.name === 'NotAllowedError') {
+    if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
       return 'The passkey request was cancelled or timed out.'
     }
     if (error.name === 'InvalidStateError') {

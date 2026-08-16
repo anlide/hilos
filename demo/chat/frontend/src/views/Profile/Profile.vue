@@ -46,12 +46,22 @@ import {
   profileDetail,
   profileIdentities,
 } from './profilePage'
+import { type IdentityItem } from './types/lists/IdentityItem'
 import { PASSWORD_MODE_ADDED } from '../../auth/passwordSignals'
 
 defineOptions({ name: 'ProfilePage' })
 
 const NAME_MIN = 2
 const NAME_MAX = 64
+
+// A passkey row reads by DEVICE, not by registry value (HIL-418): a person
+// recognizes their laptop, where the credential id means nothing to anyone. The
+// name comes from the credential sidecar; a key whose browser was unrecognized
+// keeps the generic title, which is still truer than an opaque string.
+const PASSKEY_IDENTITY_TYPE = 'passkey'
+const PASSKEY_FALLBACK_NAME = 'Passkey'
+// The `YYYY-MM-DD` head of an SQL datetime — the part that is a date.
+const SQL_DATE_LENGTH = 10
 
 // The profile is a signed-in-only surface. The backend AUTHENTICATED page guard
 // 401s an anonymous subscribe, and the framework auth-gate (HilosView) mounts the
@@ -78,6 +88,37 @@ const unlinkError = useSignal(unlinkIdentityError)
 // rejection clears it with an inline error. The provider drops off `providers`
 // (and its button vanishes) once the link lands and the identity list re-emits.
 const providers = useSignal(availableProviders)
+
+/**
+ * The heading of one login-method row: the passkey's device name, else the OAuth
+ * provider, else the method itself.
+ *
+ * @param identity The row being rendered.
+ */
+function identityTitle(identity: IdentityItem): string {
+  if (identity.type === PASSKEY_IDENTITY_TYPE) {
+    return identity.deviceName ?? PASSKEY_FALLBACK_NAME
+  }
+
+  return identity.provider ?? identity.type
+}
+
+/**
+ * The sub-line of a passkey row: what it is and when it was added.
+ *
+ * The date half of the SQL stamp is shown AS WRITTEN. The stamp carries no zone,
+ * so parsing it into a Date would silently read the server's clock as the
+ * browser's and could move the day by one — a guess dressed up as a locale.
+ *
+ * @param identity The passkey row being rendered.
+ */
+function passkeySubtitle(identity: IdentityItem): string {
+  if (identity.addedAt === null) {
+    return PASSKEY_FALLBACK_NAME
+  }
+
+  return `${PASSKEY_FALLBACK_NAME} · added ${identity.addedAt.slice(0, SQL_DATE_LENGTH)}`
+}
 const linkPendingKey = ref<string | null>(null)
 const linkError = ref<string | null>(null)
 
@@ -496,10 +537,24 @@ function mergeBoth(): void {
           data-id="profile-identity-item"
         >
           <span class="d-flex flex-column">
-            <span class="fw-semibold text-capitalize" data-id="identity-type">
-              {{ identity.provider ? identity.provider : identity.type }}
+            <span
+              class="fw-semibold"
+              :class="{
+                'text-capitalize': identity.type !== PASSKEY_IDENTITY_TYPE,
+              }"
+              data-id="identity-type"
+            >
+              {{ identityTitle(identity) }}
             </span>
             <span
+              v-if="identity.type === PASSKEY_IDENTITY_TYPE"
+              class="text-body-secondary small"
+              data-id="identity-passkey-added"
+            >
+              {{ passkeySubtitle(identity) }}
+            </span>
+            <span
+              v-else
               class="text-body-secondary small"
               data-id="identity-identifier"
             >

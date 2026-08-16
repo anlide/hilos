@@ -16,6 +16,13 @@ export interface IdentityItem {
   /** Whether this identity has been verified. */
   readonly verified: boolean
   /**
+   * The device a passkey was enrolled on ("Chrome on macOS"), null for every
+   * other method and for a passkey whose browser was not recognized (HIL-418).
+   */
+  readonly deviceName: string | null
+  /** When a passkey was registered, as an SQL datetime; null for every other method. */
+  readonly addedAt: string | null
+  /**
    * Whether this identity may be unlinked — false for the user's only login
    * method (a UX hint; the server re-enforces the last-identity guard).
    */
