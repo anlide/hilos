@@ -25,6 +25,12 @@ use Hilos\Hilos;
  * The four ages are one shared set applied to every scope's grid (each scope keeps its
  * own independent {@see BackupPruner} grid); the error count is separate, a plain count,
  * because error records carry no restore value and never enter the grids.
+ *
+ * The total byte ceiling is the one knob that is not about age at all: it bounds what the
+ * whole store may occupy, and rotation thins past the ladder to honour it
+ * ({@see BackupPruner::selectForCeiling()}). It is a second, orthogonal bound rather than a
+ * sixth tier, so the ladder keeps describing the shape of the history and the ceiling only
+ * says how much disk that history may cost.
  */
 final class BackupRetentionPolicy
 {
@@ -34,6 +40,7 @@ final class BackupRetentionPolicy
      * @param int $monthly Age in months from which only the newest backup of each month is kept
      * @param int $yearly Age in years from which only the newest backup of each year is kept
      * @param int $errorCount Newest error records kept
+     * @param int $maxTotalBytes Total byte ceiling for the store; 0 means no ceiling
      */
     public function __construct(
         public readonly int $daily,
@@ -41,13 +48,14 @@ final class BackupRetentionPolicy
         public readonly int $monthly,
         public readonly int $yearly,
         public readonly int $errorCount,
+        public readonly int $maxTotalBytes = 0,
     ) {
     }
 
     /**
      * Builds the policy from the backup retention env variables.
      *
-     * @return self Policy seeded from env (catalog defaults: 45 of each unit, error count 20)
+     * @return self Policy seeded from env (catalog defaults: 45 of each unit, error count 20, no ceiling)
      * @throws EnvInvalidValueException When a retention value is not a valid integer
      * @throws EnvKeyInvalidException When a retention key is invalid
      * @throws EnvNotInCatalogException When a retention key is not declared in the catalog
@@ -62,6 +70,7 @@ final class BackupRetentionPolicy
             Hilos::$env->int(EnvConstants::BACKUP_RETENTION_MONTHLY),
             Hilos::$env->int(EnvConstants::BACKUP_RETENTION_YEARLY),
             Hilos::$env->int(EnvConstants::BACKUP_ERROR_RETENTION_COUNT),
+            Hilos::$env->int(EnvConstants::BACKUP_MAX_TOTAL_BYTES),
         );
     }
 }

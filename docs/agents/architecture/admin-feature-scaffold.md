@@ -172,7 +172,10 @@ also registers those. Generate, in any order:
    (`BACKUP_RETENTION_DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` — each is the *age*,
    in its own unit, at which that granularity starts applying, so a backup younger
    than `BACKUP_RETENTION_DAILY` days is never thinned), and
-   `BACKUP_ERROR_RETENTION_COUNT`, and the free-space gate
+   `BACKUP_ERROR_RETENTION_COUNT`, and `BACKUP_MAX_TOTAL_BYTES` (the total byte
+   ceiling for the store, default 0 = unbounded, thinning oldest-first past the
+   ladder while never removing a pin, the newest backup of each scope, or an
+   archive that has not been shipped yet), and the free-space gate
    (`BACKUP_SPACE_MARGIN` — the multiplier on the estimated uncompressed peak,
    default 1.5; `BACKUP_MIN_FREE_BYTES` — an absolute free-space floor checked on
    every run, default 1 GiB; `BACKUP_REFUSE_WITHOUT_ESTIMATE` — whether to refuse a

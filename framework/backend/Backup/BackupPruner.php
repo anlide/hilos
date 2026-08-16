@@ -37,6 +37,12 @@ use Throwable;
  * timezone; neither is ever stored on a row or in a sidecar. A row whose timestamp cannot be
  * parsed is kept, so a malformed index row is never silently deleted.
  *
+ * Age is not the only bound. {@see selectForCeiling()} is a second, orthogonal pass over what the
+ * ladder kept: when the store occupies more than {@see BackupRetentionPolicy::$maxTotalBytes} it
+ * thins the oldest deletable rows until the store fits. The ladder stays the primary policy and
+ * describes the shape of the history; the ceiling only tops it up when the disk says so, and it
+ * is soft - it stops at the last deletable row rather than touching a protected one.
+ *
  * {@see deleteStored()} is the shared physical-delete path (archive + sidecar) reused by manual
  * delete (HIL-333); the agent owns removing the matching runtime index row.
  */
@@ -56,6 +62,13 @@ final class BackupPruner
 
     /** Band marker for backups too young to thin: every row in it is kept. */
     private const string BAND_KEEP_ALL = 'keep-all';
+
+    /**
+     * Timezone the ceiling pass orders rows in. Unlike the ladder, which needs the deployment's
+     * own timezone to know where a day or a month begins, the ceiling only asks which row is
+     * older - an absolute question no timezone can answer differently.
+     */
+    private const string CEILING_TIMEZONE = 'UTC';
 
     /**
      * Plans one rotation pass: returns the index rows whose stored files should be deleted.
@@ -155,6 +168,155 @@ final class BackupPruner
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::ARCHIVE_EXTENSION);
         // warning-suppressed: an absent sidecar is legitimate here, no-op
         @unlink($scopeDir . '/' . $base . BackupHistoryScanner::SIDECAR_EXTENSION);
+    }
+
+    /**
+     * Sums what the given index rows occupy.
+     *
+     * Occupancy is measured from the index, never from the filesystem: rotation deletes only
+     * what it wrote, so a stray file in the backup directory is not its business, and the number
+     * stays a pure read of rows the caller already snapshotted.
+     *
+     * @param list<BackupHistory> $rows Index rows to measure
+     * @return int Sum of the rows' archive sizes in bytes
+     */
+    public function occupiedBytes(array $rows): int
+    {
+        $total = 0;
+        foreach ($rows as $row) {
+            $total += $row->sizeBytes;
+        }
+
+        return $total;
+    }
+
+    /**
+     * Plans the ceiling pass: returns the rows to delete so the store fits its byte ceiling.
+     *
+     * Pure, like {@see selectForDeletion()} - no I/O and no clock read. It runs over the ladder's
+     * SURVIVORS, thinning further than age alone would, oldest first, and stops the moment the
+     * store fits: never a row further, because everything it deletes is history an operator could
+     * otherwise have restored from.
+     *
+     * A row is a candidate only when deleting it is both safe and useful. It must be a successful
+     * backup (an error row carries no archive, so removing one frees nothing), unpinned, dated by
+     * a timestamp that parses, of a scope that resolves (an unrecognized one has no archive path
+     * to unlink, so it frees nothing either), and not the newest successful backup of its own
+     * scope - a ceiling smaller than one archive must not thin the store down to zero restore
+     * points. When shipping is configured, an archive whose last copy attempt did not succeed is
+     * also spared: it is still the only copy there is.
+     *
+     * The ceiling is soft by construction: when the candidates run out the return is simply
+     * everything deletable, and the caller is the one that reports the remaining overflow. Nothing
+     * protected is ever taken to reach the number.
+     *
+     * @param list<BackupHistory> $rows Rows the ladder kept
+     * @param int $ceilingBytes Total byte ceiling; zero or less means no ceiling
+     * @param bool $shippingConfigured Whether a shipping destination is configured
+     * @return list<BackupHistory> Rows to prune, oldest first (empty when the store already fits)
+     */
+    public function selectForCeiling(array $rows, int $ceilingBytes, bool $shippingConfigured): array
+    {
+        $occupied = $this->occupiedBytes($rows);
+        if ($ceilingBytes <= 0 || $occupied <= $ceilingBytes) {
+            return [];
+        }
+
+        $times = $this->indexTimes($rows, new DateTimeZone(self::CEILING_TIMEZONE));
+        $newest = $this->newestPerScope($rows, $times);
+
+        $candidates = [];
+        foreach ($rows as $row) {
+            if ($this->isCeilingCandidate($row, $times, $newest, $shippingConfigured)) {
+                $candidates[] = $row;
+            }
+        }
+        usort(
+            $candidates,
+            static fn(BackupHistory $a, BackupHistory $b): int => [$times[$a->getId()], $a->getId()]
+                <=> [$times[$b->getId()], $b->getId()],
+        );
+
+        $doomed = [];
+        foreach ($candidates as $row) {
+            if ($occupied <= $ceilingBytes) {
+                break;
+            }
+
+            $doomed[] = $row;
+            $occupied -= $row->sizeBytes;
+        }
+
+        return $doomed;
+    }
+
+    /**
+     * Collects the ids of the newest successful backup of each scope, which the ceiling spares.
+     *
+     * Rows whose scope or timestamp cannot be read take part in neither role: they protect
+     * nothing and, by {@see isCeilingCandidate()}, are never deleted either.
+     *
+     * @param list<BackupHistory> $rows Rows the ceiling plans over
+     * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
+     * @return array<string, true> Protected backup ids
+     */
+    private function newestPerScope(array $rows, array $times): array
+    {
+        /** @var array<string, BackupHistory> $newest */
+        $newest = [];
+        foreach ($rows as $row) {
+            $id = $row->getId();
+            $scope = BackupScope::fromString($row->scope);
+            if ($scope === null || !isset($times[$id])) {
+                continue;
+            }
+
+            if (BackupStatus::fromString($row->status) !== BackupStatus::SUCCESS) {
+                continue;
+            }
+
+            if (!isset($newest[$scope->value]) || $times[$id] > $times[$newest[$scope->value]->getId()]) {
+                $newest[$scope->value] = $row;
+            }
+        }
+
+        $protected = [];
+        foreach ($newest as $row) {
+            $protected[$row->getId()] = true;
+        }
+
+        return $protected;
+    }
+
+    /**
+     * Reports whether one row may be deleted to bring the store under its ceiling.
+     *
+     * @param BackupHistory $row Row being considered
+     * @param array<string, DateTimeImmutable> $times Parsed timestamps keyed by backup id
+     * @param array<string, true> $newest Ids of the newest successful backup of each scope
+     * @param bool $shippingConfigured Whether a shipping destination is configured
+     * @return bool True when the row is deletable for the ceiling
+     */
+    private function isCeilingCandidate(
+        BackupHistory $row,
+        array $times,
+        array $newest,
+        bool $shippingConfigured,
+    ): bool {
+        $id = $row->getId();
+        if ($row->keep || !isset($times[$id]) || isset($newest[$id])) {
+            return false;
+        }
+
+        if (BackupStatus::fromString($row->status) !== BackupStatus::SUCCESS) {
+            return false;
+        }
+
+        if (BackupScope::fromString($row->scope) === null) {
+            return false;
+        }
+
+        return !$shippingConfigured || BackupShipOutcome::fromString($row->shipOutcome) === BackupShipOutcome::OK;
     }
 
     /**

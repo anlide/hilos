@@ -10,19 +10,24 @@ use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupPruner;
 use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for the pure rotation planner {@see BackupPruner::selectForDeletion()}.
+ * Unit tests for the pure rotation planners {@see BackupPruner::selectForDeletion()} and
+ * {@see BackupPruner::selectForCeiling()}.
  *
- * The planner never reads the clock or the filesystem, so every case is a fixed set of index
+ * Neither planner reads the clock or the filesystem, so every case is a fixed set of index
  * rows plus a policy, a timezone, and the instant ages are measured from, asserting exactly
- * which backups the pass would delete. Every fixture is dated relative to {@see NOW} with the
- * default policy in mind: the daily age lands on 2026-06-04, the weekly on 2025-09-07, the
- * monthly on 2022-10-19, and the yearly on 1981-07-19.
+ * which backups the pass would delete. Every ladder fixture is dated relative to {@see NOW}
+ * with the default policy in mind: the daily age lands on 2026-06-04, the weekly on 2025-09-07,
+ * the monthly on 2022-10-19, and the yearly on 1981-07-19.
+ *
+ * The ceiling cases are read differently: they carry byte sizes and no clock at all, because the
+ * pass runs over whatever the ladder already kept and only asks which rows are oldest.
  */
 final class BackupPrunerTest extends TestCase
 {
@@ -190,6 +195,195 @@ final class BackupPrunerTest extends TestCase
         $this->assertDoomed([], $rows, $this->policy());
     }
 
+    public function testCeilingOfZeroNeverDeletesAnything(): void
+    {
+        $rows = [
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // Zero is the default and it means "no ceiling", not "keep nothing".
+        $this->assertCeilingDoomed([], $rows, 0);
+    }
+
+    public function testStoreWithinTheCeilingIsLeftAlone(): void
+    {
+        $rows = [
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // Exactly at the ceiling is inside it: the pass cuts to the number, never below it.
+        $this->assertCeilingDoomed([], $rows, 200);
+    }
+
+    public function testDeletesTheOldestRowsUntilTheStoreFitsAndNoFurther(): void
+    {
+        $rows = [
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('mid', '2026-07-05T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // 300 stored against a 250 ceiling: one deletion is enough, and 'mid' - a candidate the
+        // pass had in hand - stays, because recent history is what an operator restores from.
+        $this->assertCeilingDoomed(['old'], $rows, 250);
+        $this->assertCeilingDoomed(['old', 'mid'], $rows, 150);
+    }
+
+    public function testNeverDeletesAPinnedRowEvenWhenItIsTheOldest(): void
+    {
+        $rows = [
+            $this->row('pinned', '2026-06-01T10:00:00+00:00', BackupScope::FULL, keep: true, sizeBytes: 100),
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        $this->assertCeilingDoomed(['old'], $rows, 250);
+    }
+
+    public function testKeepsTheNewestSuccessfulBackupOfEveryScope(): void
+    {
+        $rows = [
+            $this->row('full-old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('full-new', '2026-07-02T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('seed-old', '2026-07-03T10:00:00+00:00', BackupScope::SCHEMA_SEED, sizeBytes: 100),
+            $this->row('seed-new', '2026-07-04T10:00:00+00:00', BackupScope::SCHEMA_SEED, sizeBytes: 100),
+            $this->row('schema-old', '2026-07-05T10:00:00+00:00', BackupScope::SCHEMA_ONLY, sizeBytes: 100),
+            $this->row('schema-new', '2026-07-06T10:00:00+00:00', BackupScope::SCHEMA_ONLY, sizeBytes: 100),
+        ];
+
+        // A ceiling below one archive must not thin the store down to zero restore points, so
+        // each scope's newest survives however far over the store is.
+        $this->assertCeilingDoomed(['full-old', 'seed-old', 'schema-old'], $rows, 1);
+    }
+
+    public function testErrorRowsAreNeverCeilingCandidates(): void
+    {
+        $rows = [
+            $this->row('e', '2026-06-01T10:00:00+00:00', BackupScope::FULL, BackupStatus::ERROR, sizeBytes: 900),
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // The error row is the oldest and by far the largest, but it carries no archive: deleting
+        // it would free nothing, so the ceiling takes the one real candidate and stops short.
+        $this->assertCeilingDoomed(['old'], $rows, 500);
+    }
+
+    public function testRowsWithAnUnparsableTimestampAreNeverCeilingCandidates(): void
+    {
+        $rows = [
+            $this->row('bad', '', BackupScope::FULL, sizeBytes: 100),
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // Same caution the ladder applies: a row that cannot be placed in time is never removed.
+        $this->assertCeilingDoomed(['old'], $rows, 250);
+    }
+
+    public function testSparesArchivesThatHaveNotLeftTheMachineWhenShippingIsConfigured(): void
+    {
+        // 'never' and 'failed' are both older than 'shipped', so without the guard they would be
+        // the first to go - and each is still the only copy of its backup that exists.
+        $this->assertCeilingDoomed(['shipped'], $this->shippingRows(), 350, shippingConfigured: true);
+    }
+
+    public function testTakesAnUnshippedArchiveWhenShippingIsNotConfigured(): void
+    {
+        // Same fixture, no destination to ship to: 'never shipped' means nothing here, so the
+        // ceiling falls back to plain age and the oldest row goes.
+        $this->assertCeilingDoomed(['never'], $this->shippingRows(), 350);
+    }
+
+    public function testAnUnreachableCeilingDeletesEveryCandidateAndStops(): void
+    {
+        $rows = [
+            $this->row('pinned', '2026-06-01T10:00:00+00:00', BackupScope::FULL, keep: true, sizeBytes: 100),
+            $this->row('old', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('mid', '2026-07-05T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('new', '2026-07-10T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+        ];
+
+        // The ceiling is soft: it hands back everything it may delete and leaves the remaining
+        // overflow to the caller to report, rather than reaching the number by force.
+        $this->assertCeilingDoomed(['old', 'mid'], $rows, 1);
+    }
+
+    public function testOccupiedBytesSumsTheIndexRows(): void
+    {
+        $rows = [
+            $this->row('a', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row('e', '2026-07-02T10:00:00+00:00', BackupScope::FULL, BackupStatus::ERROR, sizeBytes: 0),
+            $this->row('b', '2026-07-03T10:00:00+00:00', BackupScope::SCHEMA_ONLY, sizeBytes: 25),
+        ];
+
+        $pruner = new BackupPruner();
+
+        $this->assertSame(0, $pruner->occupiedBytes([]));
+        $this->assertSame(125, $pruner->occupiedBytes($rows));
+    }
+
+    /**
+     * Builds the fixture both shipping cases read: two archives that never reached a receiver
+     * and one that did, all older than the scope's newest backup.
+     *
+     * @return list<BackupHistory> Index rows totalling 400 bytes
+     */
+    private function shippingRows(): array
+    {
+        return [
+            $this->row('never', '2026-07-01T10:00:00+00:00', BackupScope::FULL, sizeBytes: 100),
+            $this->row(
+                'failed',
+                '2026-07-02T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 100,
+                shipOutcome: BackupShipOutcome::FAILED,
+            ),
+            $this->row(
+                'shipped',
+                '2026-07-03T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 100,
+                shipOutcome: BackupShipOutcome::OK,
+            ),
+            $this->row(
+                'anchor',
+                '2026-07-10T10:00:00+00:00',
+                BackupScope::FULL,
+                sizeBytes: 100,
+                shipOutcome: BackupShipOutcome::OK,
+            ),
+        ];
+    }
+
+    /**
+     * Asserts the ceiling pass would prune exactly the given ids, in that order.
+     *
+     * The order is part of the contract - oldest first - so it is asserted rather than sorted
+     * away: a pass walking its candidates the other way round would eat the newest history.
+     *
+     * @param list<string> $expected Backup ids expected to be pruned, oldest first
+     * @param list<BackupHistory> $rows Rows the ladder kept
+     * @param int $ceilingBytes Total byte ceiling under test
+     * @param bool $shippingConfigured Whether a shipping destination is configured
+     */
+    private function assertCeilingDoomed(
+        array $expected,
+        array $rows,
+        int $ceilingBytes,
+        bool $shippingConfigured = false,
+    ): void {
+        $doomed = new BackupPruner()->selectForCeiling($rows, $ceilingBytes, $shippingConfigured);
+
+        $this->assertSame(
+            $expected,
+            array_map(static fn(BackupHistory $row): string => $row->getId(), $doomed),
+        );
+    }
+
     /**
      * Asserts the planner would prune exactly the given ids.
      *
@@ -221,6 +415,7 @@ final class BackupPrunerTest extends TestCase
      * @param int $monthly Age in months from which a month collapses to its newest backup
      * @param int $yearly Age in years from which a year collapses to its newest backup
      * @param int $errorCount Error records kept
+     * @param int $maxTotalBytes Total byte ceiling for the store; 0 means no ceiling
      * @return BackupRetentionPolicy Policy for a test case
      */
     private function policy(
@@ -229,8 +424,9 @@ final class BackupPrunerTest extends TestCase
         int $monthly = 45,
         int $yearly = 45,
         int $errorCount = 20,
+        int $maxTotalBytes = 0,
     ): BackupRetentionPolicy {
-        return new BackupRetentionPolicy($daily, $weekly, $monthly, $yearly, $errorCount);
+        return new BackupRetentionPolicy($daily, $weekly, $monthly, $yearly, $errorCount, $maxTotalBytes);
     }
 
     /**
@@ -241,6 +437,8 @@ final class BackupPrunerTest extends TestCase
      * @param BackupScope $scope Backup scope
      * @param BackupStatus $status Terminal status
      * @param bool $keep Retention pin
+     * @param int $sizeBytes Archive size in bytes, which is what the ceiling measures
+     * @param ?BackupShipOutcome $shipOutcome Outcome of the last copy off the machine; null means never attempted
      * @return BackupHistory Index row
      */
     private function row(
@@ -249,18 +447,26 @@ final class BackupPrunerTest extends TestCase
         BackupScope $scope,
         BackupStatus $status = BackupStatus::SUCCESS,
         bool $keep = false,
+        int $sizeBytes = 0,
+        ?BackupShipOutcome $shipOutcome = null,
     ): BackupHistory {
-        $state = StateBackupHistory::fromMetadata(new BackupMetadata(
+        $metadata = new BackupMetadata(
             $id,
             $createdAt,
             'test',
             $scope,
             [],
-            0,
+            $sizeBytes,
             0,
             $keep,
             $status,
-        ));
+        );
+        if ($shipOutcome !== null) {
+            // Only a successful copy stamps an instant, so a failed row carries the outcome alone.
+            $shippedAt = $shipOutcome === BackupShipOutcome::OK ? $createdAt : null;
+            $metadata = $metadata->withShipping($shippedAt, $shipOutcome, null);
+        }
+        $state = StateBackupHistory::fromMetadata($metadata);
 
         return new BackupHistory($state);
     }

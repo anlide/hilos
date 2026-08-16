@@ -409,6 +409,15 @@ enum EnvConstants
     case BACKUP_ERROR_RETENTION_COUNT;
 
     /**
+     * Total byte ceiling for the backup store, chosen from the size of the disk the backups
+     * live on. Default 0 - no ceiling, and rotation is the age ladder alone. Above it rotation
+     * thins further than the ladder would, oldest first, until the store fits again; it never
+     * removes a pin, the newest backup of each scope, or an archive that has not been shipped
+     * yet, so the ceiling is soft and an overflow it cannot reach is logged rather than forced.
+     */
+    case BACKUP_MAX_TOTAL_BYTES;
+
+    /**
      * Multiplier the space guard applies to the estimated uncompressed peak before comparing
      * it to free space, so a run is refused with headroom rather than at the exact edge.
      * Float, default 1.5.

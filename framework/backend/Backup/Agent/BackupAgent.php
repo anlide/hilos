@@ -2869,12 +2869,21 @@ final class BackupAgent extends AbstractAgent
     /**
      * Applies the retention policy to the runtime index: deletes pruned backups and their rows.
      *
-     * Runs against the just-rebuilt index (files=truth, RT=index): {@see BackupPruner} plans the
-     * keep-set, then each pruned backup's archive and sidecar are deleted and its index row is
-     * dropped, so the runtime index stays the mirror of storage. Any failure is logged and
-     * swallowed - rotation must never take down the daemon loop.
+     * Runs against the just-rebuilt index (files=truth, RT=index) in two steps. First the age
+     * ladder ({@see BackupPruner::selectForDeletion()}) plans its keep-set; then the byte ceiling
+     * ({@see BackupPruner::selectForCeiling()}) plans over what the ladder kept, so a store that
+     * outgrew its disk is thinned even when the ladder wanted to keep everything - which is
+     * exactly the case the ceiling exists for. Both steps delete through the same path: the
+     * archive and sidecar go, then the index row, so the runtime index stays the mirror of
+     * storage. Any failure is logged and swallowed - rotation must never take down the daemon loop.
      *
-     * @return int Number of backups pruned this pass (0 when nothing was rotated or on failure)
+     * The ceiling is soft: when everything deletable is gone and the store is still over, the pass
+     * says so in the agent log and stops. It never takes a pin or a scope's last backup to reach
+     * the number; the overflow is met by the free-space gate refusing the next run, which an
+     * operator can read on an error row.
+     *
+     * @return int Number of backups pruned this pass, both steps counted (0 when nothing was
+     *     rotated or on failure)
      */
     private function pruneHistory(): int
     {
@@ -2884,36 +2893,76 @@ final class BackupAgent extends AbstractAgent
         }
 
         try {
+            $policy = BackupRetentionPolicy::fromEnv();
             $pruner = new BackupPruner();
+            $rows = $this->indexRows();
+            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+
             $doomed = $pruner->selectForDeletion(
-                $this->indexRows(),
-                BackupRetentionPolicy::fromEnv(),
+                $rows,
+                $policy,
                 new DateTimeZone(date_default_timezone_get()),
                 new DateTimeImmutable(),
             );
-            if ($doomed === []) {
-                return 0;
-            }
-
-            $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
             $pruned = [];
             foreach ($doomed as $row) {
                 $pruner->deleteStored($row, $root);
                 $histories->actions->forget($row->getId());
-                $pruned[] = $row->getId();
+                $pruned[$row->getId()] = true;
+            }
+            if ($pruned !== []) {
+                $this->logAgentInfo(sprintf(
+                    'Backup rotation pruned %d entries: %s',
+                    count($pruned),
+                    implode(', ', array_keys($pruned)),
+                ));
             }
 
-            // Same reason as the manual delete: rotation is mirrored, which is also why `keep`
-            // needs no remote meaning - it protects from rotation, and rotation travels.
-            $this->markMirrorDirty();
-
-            $this->logAgentInfo(sprintf(
-                'Backup rotation pruned %d entries: %s',
-                count($pruned),
-                implode(', ', $pruned),
+            $survivors = array_values(array_filter(
+                $rows,
+                static fn(BackupHistory $row): bool => !isset($pruned[$row->getId()]),
             ));
+            // A destination that is configured but unparsable reads as "not configured" here, and
+            // honestly so: there is nowhere to ship to. The shipper itself is not asked - it logs.
+            $overflow = $pruner->selectForCeiling(
+                $survivors,
+                $policy->maxTotalBytes,
+                BackupShipTarget::fromEnv() !== null,
+            );
+            $freed = $pruner->occupiedBytes($overflow);
+            $stored = $pruner->occupiedBytes($survivors) - $freed;
+            $evicted = [];
+            foreach ($overflow as $row) {
+                $pruner->deleteStored($row, $root);
+                $histories->actions->forget($row->getId());
+                $evicted[$row->getId()] = true;
+            }
+            if ($evicted !== []) {
+                $this->logAgentInfo(sprintf(
+                    'Backup ceiling pruned %d entries (freed %d bytes, store %d of %d)',
+                    count($evicted),
+                    $freed,
+                    $stored,
+                    $policy->maxTotalBytes,
+                ));
+            }
+            if ($policy->maxTotalBytes > 0 && $stored > $policy->maxTotalBytes) {
+                $this->logAgentError(sprintf(
+                    'Backup store still exceeds the ceiling: %d bytes stored, ceiling %d, nothing '
+                    . 'further is deletable (pins and the newest backup of each scope are kept)',
+                    $stored,
+                    $policy->maxTotalBytes,
+                ));
+            }
 
-            return count($doomed);
+            if ($pruned !== [] || $evicted !== []) {
+                // Same reason as the manual delete: rotation is mirrored, which is also why `keep`
+                // needs no remote meaning - it protects from rotation, and rotation travels. The
+                // ceiling rides the same wire, so what it thins here it thins on the receiver too.
+                $this->markMirrorDirty();
+            }
+
+            return count($pruned) + count($evicted);
         } catch (Throwable $e) {
             $this->logAgentError('Backup rotation failed: ' . $e->getMessage());
 

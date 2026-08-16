@@ -69,6 +69,7 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             EnvConstants::BACKUP_RETENTION_MONTHLY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_RETENTION_YEARLY->name => self::intEntry(45, emptyIsMissing: true),
             EnvConstants::BACKUP_ERROR_RETENTION_COUNT->name => self::intEntry(20, emptyIsMissing: true),
+            EnvConstants::BACKUP_MAX_TOTAL_BYTES->name => self::intEntry(0, emptyIsMissing: true),
             EnvConstants::BACKUP_SPACE_MARGIN->name => self::floatEntry(1.5, emptyIsMissing: true),
             EnvConstants::BACKUP_MIN_FREE_BYTES->name => self::intEntry(1073741824, emptyIsMissing: true),
             EnvConstants::BACKUP_REFUSE_WITHOUT_ESTIMATE->name => self::boolEntry(false, emptyIsMissing: true),
