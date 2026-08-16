@@ -111,3 +111,10 @@ home.hilos {
 		file_server
 	}
 }
+
+# --- host-local routes ------------------------------------------------------
+# Extra site blocks a particular host wants in front of services that live
+# outside this repository. The directory is mounted into the container (see the
+# caddy service in docker-compose.yml); an empty glob is a no-op, so a clean
+# checkout serves exactly the lane defined above.
+import /etc/caddy/conf.d/*.caddyfile

@@ -130,6 +130,10 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/site:/srv/preview:ro
+      # Site blocks for services that live outside this repository. Points at the
+      # empty in-repo directory by default; a host that has such services sets
+      # HILOS_CADDY_EXTRA in framework/docker/.env to its own directory.
+      - ${HILOS_CADDY_EXTRA:-./caddy/conf.d}:/etc/caddy/conf.d:ro
       - hilos-preview-caddy-data:/data
       - hilos-preview-caddy-config:/config
     restart: unless-stopped
