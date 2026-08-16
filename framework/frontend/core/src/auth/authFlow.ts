@@ -448,10 +448,13 @@ export interface AuthFlow {
    */
   backToIdentifier(): void
   /**
-   * Cancel a parked external ceremony and return to the identifier field:
-   * aborts the ceremony's signal and releases the pending guard (an abandoned
-   * ceremony may never settle). A late outcome that lands anyway is judged by
-   * intent — see {@link AuthFlowOptions.externalCancelGraceMs}.
+   * Cancel a running ceremony and return to the identifier field: aborts the
+   * ceremony's signal and releases the pending guard (an abandoned ceremony may
+   * never settle). It reaches wherever one runs — the `external` park a sign-in
+   * waits on and the terms screen a registration sends from — and an `external`
+   * step left without a ceremony (a reload, a converge) still returns to the
+   * field. A late outcome that lands anyway is judged by intent — see
+   * {@link AuthFlowOptions.externalCancelGraceMs}.
    */
   cancelMethod(): void
   /**
@@ -1083,19 +1086,25 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
    * Run one guarded dispatch: clear the error, hold pending, apply the outcome.
    * A dispatch orphaned by a newer generation (an identifier edit, a reset, a
    * canceled ceremony) applies nothing and releases nothing.
+   *
+   * The applied outcome is returned for the caller that has a move of its own to
+   * make on top of it (consent parking a started ceremony); `undefined` says the
+   * dispatch was orphaned, so that move must not happen either.
    */
   async function dispatch(
     run: () => Promise<AuthFlowSubmitOutcome>,
-  ): Promise<void> {
+  ): Promise<AuthFlowSubmitOutcome | undefined> {
     error.set(null)
     pending.set(true)
     const seq = ++dispatchSeq
     try {
       const outcome = await run()
       if (seq !== dispatchSeq) {
-        return
+        return undefined
       }
       applyOutcome(outcome)
+
+      return outcome
     } finally {
       if (seq === dispatchSeq) {
         pending.set(false)
@@ -1166,6 +1175,44 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
         return
       }
+      const methodKey = state.methodKey
+      if (state.step === 'consent' && methodKey !== null) {
+        // A method chosen BEFORE the terms starts here, not where it was picked
+        // (HIL-417): accepting the terms is what sends the magic link. Parking in
+        // `external` is the same move `chooseMethod` makes for a login, so the
+        // check_inbox screen is derived the one way; a refusal leaves the person
+        // on the terms screen with the reason, nothing having been sent.
+        //
+        // It is a ceremony like the one a login starts, so it is registered as
+        // one (HIL-418): a reset has to END what it started, not merely orphan
+        // the outcome, and a register outcome landing after that is dropped by
+        // dispatch's generation guard — the same verdict {@link applyLateOutcome}
+        // reaches for a register.
+        const run: CeremonyRun = {
+          key: methodKey,
+          controller: new AbortController(),
+          canceled: null,
+        }
+        ceremony = run
+        try {
+          const outcome = await dispatch(() =>
+            options.onMethodAction(
+              methodKey,
+              form.get(),
+              run.controller.signal,
+            ),
+          )
+          if (outcome !== undefined && outcome.ok) {
+            flow.set({ ...flow.get(), step: 'external' })
+          }
+        } finally {
+          if (ceremony === run) {
+            ceremony = null
+          }
+        }
+
+        return
+      }
       await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
     },
     async resend(): Promise<void> {
@@ -1183,11 +1230,21 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         return
       }
       error.set(null)
+      const chosenFrom = flow.get()
+      if (chosenFrom.intent === 'register') {
+        // Registration dispatches NOTHING before the terms screen submits — the
+        // method choice is stored and the flow hops to consent locally, exactly
+        // as a channel choice does (HIL-417); consent's submit is the send. An
+        // account cannot be made by a click that never showed the terms.
+        flow.set({ ...chosenFrom, step: 'consent', methodKey: key })
+
+        return
+      }
       // Park in `external` while the ceremony runs; on failure fall back to the
       // identifier field so the user can retry another way. A superseded
       // ceremony's late outcome is ignored (the generation and park guards); a
       // CANCELED one's is judged by intent ({@link applyLateOutcome}).
-      flow.set({ ...flow.get(), step: 'external', methodKey: key })
+      flow.set({ ...chosenFrom, step: 'external', methodKey: key })
       pending.set(true)
       const seq = ++dispatchSeq
       const run: CeremonyRun = {
@@ -1283,7 +1340,16 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     },
     cancelMethod(): void {
       const state = flow.get()
-      if (state.step !== 'external') {
+      // A cancel reaches every screen that WAITS on a ceremony, not just the
+      // external park: a registration sends from the terms screen (HIL-417), and
+      // a send nobody can take back would leave the rule "a canceled REGISTER
+      // applies no late success" (HIL-418) without a single path to reach it. An
+      // `external` step with no ceremony left (a reload, a converge landing)
+      // still returns to the field, exactly as it did when the step alone
+      // decided; a ceremony merely ORPHANED elsewhere (an identifier edit) stays
+      // orphaned rather than becoming a cancel whose late success would apply.
+      const sending = state.step === 'consent' && ceremony !== null
+      if (state.step !== 'external' && !sending) {
         return
       }
       // Abort FIRST: cancelling has to end the ceremony itself, so the device

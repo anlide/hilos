@@ -13,6 +13,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
@@ -68,19 +69,61 @@ final class RegistrationReservationService
     }
 
     /**
-     * Reserves an identifier for a registration and sends its one confirmation code.
+     * Holds an identifier for a registration, sending nothing.
+     *
+     * The hold on its own, split out of {@see reserve()} because the magic link
+     * (HIL-417) reserves an address whose letter is a LINK, not a registration
+     * code: it holds the address and then issues its own challenge, so a
+     * `register_confirm` code sent from in here would be a second letter about a
+     * registration nobody started.
      *
      * Idempotent per identifier, deliberately: a hold that already exists is left
-     * exactly as it is and NO code is sent, because the sessions submitting that
-     * address converge on the code that is already in the inbox (a second letter
-     * would also void the first code and strand whoever is typing it). That is also
-     * why losing the insert race is not an error here - the winner's hold and code
-     * stand, and the loser is on the same converged path.
+     * exactly as it is, because the sessions submitting that address converge on it
+     * rather than each minting their own. That is also why losing the insert race is
+     * not an error - the winner's hold stands and the loser is on the same converged
+     * path. Both of those answer null, which is how a caller tells the hold it made
+     * from the one it joined, and the difference matters: only a fresh hold is owed
+     * a letter.
      *
      * The credential belongs to whoever reserved FIRST and is never overwritten by
      * a later submit; the account is created with it. That is a deliberate,
      * owner-accepted property of this design, not an oversight: TTL and the send
      * limiters (HIL-420/421) are what bound it.
+     *
+     * @param string $type Reserving method (see IdentityType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param ?string $plainSecret Plaintext credential the account will get, or null for a method that carries none
+     * @return ?ObjectRegistrationReservation Hold this call created, or null when one already stood
+     * @throws EmptyValueException When identifier is empty
+     * @throws DatabaseException When a reservation query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws EnvException When the reservation TTL key is missing, outside the catalog, or
+     *   not an int
+     */
+    public function hold(string $type, string $identifier, ?string $plainSecret): ?ObjectRegistrationReservation
+    {
+        if ($identifier === '') {
+            throw new EmptyValueException('Reservation identifier is required');
+        }
+
+        $collection = $this->collection();
+        if ($collection->findActive($identifier) !== null) {
+            return null;
+        }
+
+        try {
+            return $collection->createReservation($type, $identifier, $plainSecret, $this->ttlSeconds());
+        } catch (DuplicateValueException) {
+            return null;
+        }
+    }
+
+    /**
+     * Reserves an identifier for a registration and sends its one confirmation code.
+     *
+     * The password-registration entry point: {@see hold()} plus the one code that
+     * proves the address. Nothing is sent when the hold was already there, because
+     * a second letter would void the first code and strand whoever is typing it.
      *
      * @param string $type Reserving method (see IdentityType)
      * @param string $identifier Normalized identifier (lowercased email)
@@ -96,18 +139,7 @@ final class RegistrationReservationService
      */
     public function reserve(string $type, string $identifier, ?string $plainSecret): void
     {
-        if ($identifier === '') {
-            throw new EmptyValueException('Reservation identifier is required');
-        }
-
-        $collection = $this->collection();
-        if ($collection->findActive($identifier) !== null) {
-            return;
-        }
-
-        try {
-            $collection->createReservation($type, $identifier, $plainSecret, $this->ttlSeconds());
-        } catch (DuplicateValueException) {
+        if ($this->hold($type, $identifier, $plainSecret) === null) {
             return;
         }
 
@@ -135,6 +167,28 @@ final class RegistrationReservationService
     }
 
     /**
+     * Drops a hold that has nothing left to land (HIL-417).
+     *
+     * The counterpart of {@see confirmInto()} for the registration that ended as a
+     * sign-in: a magic link clicked on an address that gained an account while the
+     * letter travelled signs that account in, and the hold it leaves behind holds an
+     * address nobody is registering any more. The sweeper would collect it eventually,
+     * but only after the TTL - and until then a second registration on that address is
+     * refused for no reason a person could see.
+     *
+     * A free identifier is a no-op; there is no hold to drop.
+     *
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @throws DatabaseException When the reservation delete query fails
+     * @throws LogicException When the reservations object collection is unavailable
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function release(string $identifier): void
+    {
+        $this->collection()->consume($identifier);
+    }
+
+    /**
      * Verifies a submitted confirmation code against the reservation's challenge.
      *
      * Thin by design: the challenge, its attempt ceiling and its single use live in
@@ -156,16 +210,52 @@ final class RegistrationReservationService
     /**
      * Lands a confirmed reservation into a user: verified identity, hold released.
      *
-     * The one operation that turns a proven address into an account's credential.
-     * The identity is created from the hash the reservation has carried since the
-     * submit - moved, never re-hashed and never handed to the caller - and it is
-     * created VERIFIED: the code that got here is the proof of ownership that the
-     * old "register now, confirm later" flag used to wait for.
+     * The one operation that turns a proven address into an account's credential,
+     * and it lands the hold BY ITS TYPE (HIL-417): a password reservation moves the
+     * hash it has carried since the submit into a password identity, a magic-link
+     * one creates the secret-less identity that method signs in with. Either way the
+     * identity is created VERIFIED - whatever came back, code or link, is the proof
+     * of ownership that the old "register now, confirm later" flag used to wait for.
+     *
+     * One entrance and a branch, rather than a landing per method, because what
+     * differs between them is a single line - which identity to write - while
+     * everything around it (the proof already given, the hold to release, the user
+     * minted just before) is the same registration.
      *
      * Takes the reservation the caller already loaded rather than re-reading it, so
      * the row cannot be swept between the two reads; the caller is expected to mint
-     * the user only after {@see verifyCode()} answered true, so a wrong code never
+     * the user only after the code or token was accepted, so a wrong one never
      * leaves a user behind.
+     *
+     * @param ObjectRegistrationReservation $reservation Reservation whose proof was just accepted
+     * @param int $userId Freshly minted user the identity belongs to
+     * @throws LogicException When a password reservation carries no credential to move, or the
+     *   reservation type has no landing
+     * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
+     * @throws EmptyValueException When the reservation holds an empty identifier
+     * @throws DatabaseException When an identity or reservation query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function confirmInto(ObjectRegistrationReservation $reservation, int $userId): void
+    {
+        $identifier = $reservation->identifier;
+
+        match ($reservation->type) {
+            IdentityType::PASSWORD => $this->landPassword($reservation, $userId),
+            IdentityType::MAGIC_LINK => $this->identities()->createMagicLinkIdentity($userId, $identifier),
+            default => throw new LogicException("Reservation for {$identifier} has no landing for its type"),
+        };
+
+        $this->collection()->consume($identifier);
+    }
+
+    /**
+     * Lands a password reservation: the carried hash becomes a verified identity.
+     *
+     * The credential is moved, never re-hashed and never handed to the caller. A
+     * password reservation with no hash is a contradiction - the submit that created
+     * it is the only thing that could have written one - so it is refused rather than
+     * landed into an account nobody could ever sign into.
      *
      * @param ObjectRegistrationReservation $reservation Reservation whose code was just confirmed
      * @param int $userId Freshly minted user the identity belongs to
@@ -174,7 +264,7 @@ final class RegistrationReservationService
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
      */
-    public function confirmInto(ObjectRegistrationReservation $reservation, int $userId): void
+    private function landPassword(ObjectRegistrationReservation $reservation, int $userId): void
     {
         $identifier = $reservation->identifier;
         $secretHash = $reservation->readSecretHash();
@@ -184,8 +274,6 @@ final class RegistrationReservationService
 
         $identity = $this->identities()->createPasswordIdentityWithHash($userId, $identifier, $secretHash);
         $identity->markVerified();
-
-        $this->collection()->consume($identifier);
     }
 
     /**

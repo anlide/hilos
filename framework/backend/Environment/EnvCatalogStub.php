@@ -222,6 +222,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_VERIFICATION_SEND_WINDOW_SEC->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::HILOS_VERIFICATION_SEND_CAP->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 5, emptyIsMissing: true),
             EnvConstants::HILOS_VERIFICATION_SEND_CAP_SMS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3, emptyIsMissing: true),
+            EnvConstants::HILOS_MAGIC_LINK_URL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'http://localhost:5173/auth/magic',
+                emptyIsMissing: true,
+            ),
             EnvConstants::HILOS_AUTH_THROTTLE_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, true, emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_WINDOW->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60, emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_MAX_SESSION->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10, emptyIsMissing: true),

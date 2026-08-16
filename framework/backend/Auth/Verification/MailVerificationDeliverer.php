@@ -26,9 +26,10 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
  * design ban on logging auth secrets in production is why the log stub stops being default.
  *
  * Only the email verification types are delivered here; a type with no email template (the
- * SMS types) is a silent no-op, since email is not its channel. Magic-link sign-in forwards
- * the raw token as the link param — assembling the full clickable URL (which needs the app's
- * base URL) is the sign-in flow's job, not this framework deliverer's.
+ * SMS types) is a silent no-op, since email is not its channel. Magic-link sign-in arrives
+ * already assembled: {@see VerificationService::issue()} builds the clickable URL from the
+ * project's return address before it hands anything to a deliverer, so what lands in the
+ * link param is the address the recipient clicks (HIL-417).
  */
 final class MailVerificationDeliverer implements VerificationDeliverer
 {
@@ -37,7 +38,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
      *
      * @param string $identifier Normalized target email the code was issued for
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or magic-link token) to deliver
+     * @param string $code Plaintext code (or assembled magic-link URL) to deliver
      * @throws EnvException When the mail worker count is unreadable while sharding the address
      * @throws ValidationException When the code was issued for a blank address
      * @throws InvalidArgumentException When the mail send signal cannot be named or queued
@@ -82,7 +83,7 @@ final class MailVerificationDeliverer implements VerificationDeliverer
      * secret is placed under the matching param key.
      *
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or magic-link token)
+     * @param string $code Plaintext code (or assembled magic-link URL)
      * @return array<string, string> Single-entry render params for the resolved template
      */
     private function paramsFor(string $type, string $code): array

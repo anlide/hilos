@@ -36,7 +36,7 @@ final class NotificationVerificationDeliverer implements VerificationDeliverer
      *
      * @param string $identifier Normalized target the code was issued for
      * @param string $type Verification type (see VerificationType)
-     * @param string $code Plaintext code (or magic-link token) to deliver
+     * @param string $code Plaintext code (or assembled magic-link URL) to deliver
      * @throws EnvException When the target deliverer cannot shard the address
      */
     public function deliver(string $identifier, string $type, string $code): void

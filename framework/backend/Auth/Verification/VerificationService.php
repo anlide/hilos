@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Auth\MagicLink\MagicLinkUrl;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -60,8 +61,8 @@ class VerificationService
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws DatabaseException When a verification query fails
      * @throws LogicException When the verifications object collection is unavailable
-     * @throws EnvException When a send-gate or challenge env key is missing, outside the
-     *   catalog, or of the wrong type
+     * @throws EnvException When a send-gate, challenge or magic-link env key is missing,
+     *   outside the catalog, or of the wrong type
      * @throws ValidationException When the code was issued for a target the transport refuses
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      */
@@ -91,7 +92,7 @@ class VerificationService
         $code = $this->generateSecret($type);
         $collection->createChallenge($type, $identifier, $userId, $code, $this->ttlSeconds());
 
-        $this->createDeliverer()->deliver($identifier, $type, $code);
+        $this->createDeliverer()->deliver($identifier, $type, $this->deliverableFor($type, $identifier, $code));
 
         return VerificationSendOutcome::sent($cooldownSeconds);
     }
@@ -359,6 +360,36 @@ class VerificationService
     protected function createDeliverer(): VerificationDeliverer
     {
         return new NotificationVerificationDeliverer();
+    }
+
+    /**
+     * What the deliverer is handed for a type: a clickable URL for the magic link,
+     * the bare code for everything else (HIL-417).
+     *
+     * The link is assembled here, one level above the transport, because there are
+     * two deliverers and both owe the recipient the same address - a URL built inside
+     * the mail deliverer would leave the dev-stub log with a token nobody can click.
+     * What is STORED does not change: the challenge still carries the hash of the bare
+     * token, so verification is unaffected by how the token travelled.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @param string $secret Freshly minted token or code
+     * @return string Value to deliver: the magic-link URL, or the secret unchanged
+     * @throws EnvException When the magic-link return address is missing, outside the
+     *   catalog, or not a string
+     */
+    private function deliverableFor(string $type, string $identifier, string $secret): string
+    {
+        if ($type !== VerificationType::MAGIC_LINK) {
+            return $secret;
+        }
+
+        return MagicLinkUrl::build(
+            Hilos::$env->string(EnvConstants::HILOS_MAGIC_LINK_URL),
+            $identifier,
+            $secret,
+        );
     }
 
     /**

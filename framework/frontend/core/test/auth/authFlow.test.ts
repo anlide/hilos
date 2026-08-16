@@ -629,6 +629,89 @@ describe('registration: consent is a local step before anything is created', () 
       expect.anything(),
     )
   })
+
+  it('a registering envelope hops to consent — nothing is sent', async () => {
+    const onMethodAction = vi.fn(async () => ({ ok: true }))
+    const flow = setup({
+      onMethodAction,
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    expect(flow.flow.get().intent).toBe('register')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    expect(flow.flow.get()).toMatchObject({
+      step: 'consent',
+      methodKey: MAGIC_LINK_METHOD_KEY,
+    })
+    expect(flow.screenKey.get()).toBe('terms')
+    expect(onMethodAction).not.toHaveBeenCalled()
+  })
+
+  it("consent's submit is the send for the chosen method", async () => {
+    const onMethodAction = vi.fn(async () => ({
+      ok: true,
+      resendInSeconds: 60,
+    }))
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const flow = setup({
+      onMethodAction,
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(onMethodAction).toHaveBeenCalledWith(
+      MAGIC_LINK_METHOD_KEY,
+      expect.objectContaining({ consentAccepted: true }),
+      expect.any(AbortSignal),
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(flow.flow.get().step).toBe('external')
+    expect(flow.screenKey.get()).toBe('check_inbox')
+    expect(flow.resendAvailableAt.get()).toBe(
+      Date.now() + 60 * MS_PER_SECOND_MIRROR,
+    )
+  })
+
+  it('a refused send keeps the terms screen and says why', async () => {
+    const flow = setup({
+      onMethodAction: async () => ({
+        ok: false,
+        code: 'send_cap_reached',
+        message: 'Too many codes',
+      }),
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('consent')
+    expect(flow.error.get()).toEqual({
+      message: 'Too many codes',
+      code: 'send_cap_reached',
+    })
+  })
+
+  it('a signing-in envelope still sends at once', async () => {
+    const onMethodAction = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ onMethodAction })
+    await typeAndDetect(flow, 'a@b.com')
+    expect(flow.flow.get().intent).toBe('login')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    expect(onMethodAction).toHaveBeenCalledWith(
+      MAGIC_LINK_METHOD_KEY,
+      expect.anything(),
+      expect.any(AbortSignal),
+    )
+    expect(flow.flow.get().step).toBe('external')
+    expect(flow.screenKey.get()).toBe('check_inbox')
+  })
 })
 
 describe('code channels: choosing the channel IS the send', () => {
@@ -830,6 +913,45 @@ describe('the two return points and cancelMethod', () => {
     expect(aborted).toEqual(['passkey'])
   })
 
+  it('cancelMethod reaches the send a registration starts from the terms screen', async () => {
+    const aborted: string[] = []
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+      onMethodAction: (key, _form, signal) => {
+        signal.addEventListener('abort', () => aborted.push(key))
+
+        return new Promise<AuthFlowSubmitOutcome>(() => undefined)
+      },
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    flow.setField('consentAccepted', true)
+    void flow.submit()
+    expect(aborted).toEqual([])
+    flow.cancelMethod()
+    expect(aborted).toEqual([MAGIC_LINK_METHOD_KEY])
+    expect(flow.flow.get()).toMatchObject({
+      step: 'identifier',
+      methodKey: null,
+    })
+    expect(flow.pending.get()).toBe(false)
+  })
+
+  it('cancelMethod on the terms screen with nothing sent yet does nothing — that is Back', async () => {
+    const flow = setup({
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
+    flow.cancelMethod()
+    expect(flow.flow.get()).toMatchObject({
+      step: 'consent',
+      methodKey: MAGIC_LINK_METHOD_KEY,
+    })
+  })
+
   it('cancelMethod releases pending — the controls come back to life', async () => {
     const onSubmit = vi.fn(async () => ({ ok: true }))
     const flow = setup({
@@ -876,11 +998,18 @@ describe('a canceled ceremony that settles anyway', () => {
       await typeAndDetect(flow, 'new@b.com')
       expect(flow.flow.get().intent).toBe('register')
     }
-    const choice = flow.chooseMethod('passkey')
+    // A registration's ceremony starts where the terms are ACCEPTED, not where
+    // the method is picked (HIL-417): the choice only hops to consent, and it
+    // has to be awaited first — it settles without a dispatch of its own.
+    let ceremony = flow.chooseMethod('passkey')
+    if (registering) {
+      await ceremony
+      ceremony = flow.submit()
+    }
     flow.cancelMethod()
     await vi.advanceTimersByTimeAsync(afterMs)
     release(outcome)
-    await choice
+    await ceremony
 
     return flow
   }

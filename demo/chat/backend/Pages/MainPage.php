@@ -45,6 +45,7 @@ use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\MagicLink\MagicLinkService;
 use Hilos\Auth\OAuth\DTO\OAuthAuthorizeSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
@@ -63,7 +64,6 @@ use Hilos\Auth\WebAuthn\Exception\WebAuthnChallengeException;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
@@ -256,6 +256,14 @@ final class MainPage extends AbstractPage
     private const string RESERVATION_EXPIRED_MESSAGE = 'That registration expired, please start again';
 
     /**
+     * Message for a sign-in link that no longer opens anything - expired, already
+     * clicked, or mangled in the mail client. Distinct from
+     * {@see self::INVALID_CODE_MESSAGE} because nothing was typed: it rides an outcome
+     * whose code lets the return screen offer a fresh link instead of a form.
+     */
+    private const string MAGIC_LINK_INVALID_MESSAGE = 'This sign-in link is invalid or expired';
+
+    /**
      * Message for a recovery whose code is no longer live - never issued, expired, or
      * spent while the person was still typing. Distinct from
      * {@see self::INVALID_CODE_MESSAGE} for the same reason the registration one is: it
@@ -394,9 +402,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof ConfirmMagicLinkActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmMagicLinkActionDTO::class, $dto);
                 }
-                $this->handleConfirmMagicLink($dto);
-
-                break;
+                return $this->handleConfirmMagicLink($dto);
 
             case ChatSignalConstants::REQUEST_REGISTER_CONFIRM:
                 if (!$dto instanceof RequestRegisterConfirmActionDTO) {
@@ -1052,76 +1058,127 @@ final class MainPage extends AbstractPage
      * account from a verified email identity (any type) through
      * {@see Identities::findUserIdByVerifiedEmail()} and issues (throttled inside
      * the service) a token bound to that user — no user or identity is ever
-     * created here. An unknown or unverified email is a silent no-op; either way
-     * the response is the same generic success, so this never discloses whether
-     * the address has an account. The token is delivered as a clickable URL by the
-     * deliverer seam (dev-stub logs it), which the /auth/magic route relays back.
+     * created here. A free address is HELD by a reservation for the life of the
+     * link (HIL-417), so nobody else can take it while the letter is in flight;
+     * an address that already has an account is not, there being nothing left to
+     * reserve. The token is delivered as a clickable URL assembled by the framework
+     * ({@see VerificationService::issue()}), which the /auth/magic route relays back.
      *
-     * It is the last blind flow, so the send gate's verdict is deliberately NOT
-     * passed on (HIL-421): the answer is always the nominal cooldown from the
-     * configuration and never the cap code, whether the address is unknown, known,
-     * or over the cap. Any difference in the number or the code would turn this
-     * into the existence oracle the silent no-op exists to avoid - and the honest
-     * remaining cooldown is the worst of them, being smaller for an address that
-     * was mailed recently.
+     * The answer is HONEST now, like every other send on this surface (HIL-421 sent
+     * it blind; the owner reversed that with this leaf): the real remaining cooldown,
+     * and the cap refused out loud. What made the blindness worth its price was that
+     * the letter went only to a known address, so the number leaked whether one
+     * existed. It goes to both now, and the number says only "this address was mailed
+     * recently". Silence, meanwhile, had a price of its own: the resend button
+     * answered "sent" over a send the cap had refused.
      *
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
-     * @return AuthFlowOutcome The nominal cooldown, identically in every case
-     * @throws HilosException When identity lookup or token issuing fails
+     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
+     * @throws EmptyValueException When the submitted address is empty
+     * @throws HilosException When identity lookup, the hold, or token issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a token
      */
     private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): AuthFlowOutcome
     {
-        $email = strtolower($dto->email);
-        $userId = $email !== ''
-            ? Hilos::$db->identities->findUserIdByVerifiedEmail($email)
-            : null;
-        if ($userId !== null) {
-            new VerificationService()->issue(VerificationType::MAGIC_LINK, $email, $userId);
+        $outcome = new MagicLinkService()->send(strtolower($dto->email));
+
+        if ($outcome->capReached) {
+            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
         }
 
-        return AuthFlowOutcome::sent(Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC));
+        return AuthFlowOutcome::sent($outcome->resendInSeconds);
     }
 
     /**
-     * Verifies a magic-link token and signs the resolved user into the session.
+     * Opens a clicked sign-in link: signs the address in, registering it if needed.
      *
-     * Login-only (HIL-283): the token was minted for a user resolved at request
-     * time, so {@see VerificationService::verify()} returns that user id on a
-     * match. A missing/expired/wrong/exhausted token — and an empty email — fail
-     * with the same generic message (no enumeration). On success the token is
-     * single-use consumed inside the service and the live anonymous session (the
-     * one that opened the /auth/magic route) is upgraded to that user through
-     * {@see ChatAgent::authenticateSession()}; no user or identity is created.
+     * The other half of the one link that does both (HIL-417). The token proves the
+     * ADDRESS and nothing else - it was issued with no owning user, deliberately -
+     * so who this click signs in is decided HERE, from the state the address is in
+     * at the moment of the click rather than at the moment of the send. That is what
+     * makes the letter survive the gap: an account may appear on the address while it
+     * travels (an OAuth sign-up over the live hold), and a link sent to a stranger
+     * still ends in a sign-in rather than a dead end.
+     *
+     * Four answers, in this order. A token that does not open anything is answered
+     * first and under a code of its own, so the return screen offers a new link
+     * instead of accusing a typo nobody made. Then the address: an account owns it,
+     * and this session becomes that account - the hold it may still carry is dropped,
+     * since nobody is registering an address that already resolved. No account and a
+     * live hold is the registration finishing: a user, the identity the hold's type
+     * says (a magic-link one, secret-less), the "registered in chat" event, and a
+     * signed-in session. No account and no hold is a link that outlived its hold, and
+     * the surface rolls back to the address field to start again.
+     *
+     * Only THIS session is signed in, whichever branch runs (Design p.4): the link
+     * proves the address to whoever opened it, and that is the browser holding this
+     * connection. A tab left waiting on another device stays on its check-inbox screen.
      *
      * @param ConfirmMagicLinkActionDTO $dto Parsed confirm payload (email, token)
+     * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws ValidationException When the email or token is invalid
-     * @throws HilosException When verification or session promotion fails
+     * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When verification, the account, identity, event, or session write fails
      */
-    private function handleConfirmMagicLink(ConfirmMagicLinkActionDTO $dto): void
+    private function handleConfirmMagicLink(ConfirmMagicLinkActionDTO $dto): AuthFlowOutcome
     {
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $connection = Hilos::$rt->selfConnection;
 
         $email = strtolower($dto->email);
-        $userId = $email !== ''
-            ? new VerificationService()->verify(VerificationType::MAGIC_LINK, $email, $dto->token)
-            : null;
-        if ($userId === null) {
-            throw new ValidationException(self::INVALID_CODE_MESSAGE);
+        if (!new MagicLinkService()->verifyToken($email, $dto->token)) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_MAGIC_LINK_INVALID,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                self::MAGIC_LINK_INVALID_MESSAGE,
+            );
         }
 
+        $reservations = new RegistrationReservationService();
+
+        $userId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
+        if ($userId !== null) {
+            $reservations->release($email);
+
+            // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
+            // Following a link is the whole of what this ending asks for, so "you are in" is
+            // all there is to say about it.
+            $this->agent->markSessionAck($connection->sessionToken, SessionAck::SIGNED_IN);
+            $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
+
+            return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
+        }
+
+        $reservation = $reservations->findActive($email);
+        if ($reservation === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::REGISTER,
+                self::RESERVATION_EXPIRED_MESSAGE,
+            );
+        }
+
+        $user = Hilos::$db->users->actions->createWithName($this->displayNameFromEmail($email));
+        $userId = (int)$user->id;
+
+        $reservations->confirmInto($reservation, $userId);
+
+        // Announce the new member in the chat event stream, exactly as the code path
+        // does: the link is the other way into the same registration.
+        Hilos::$db->events->actions->addUserRegistered($userId);
+
         // Before the sign-in, so the identity and the news arrive in one frame (HIL-422).
-        // Following a link is the whole of what this flow asks for, so "you are in" is
-        // all there is to say about it.
-        $this->agent->markSessionAck(Hilos::$rt->selfConnection->sessionToken, SessionAck::SIGNED_IN);
-        $this->agent->authenticateSession(
-            Hilos::$rt->selfConnection->sessionToken,
-            $userId,
-            Hilos::$rt->selfConnection->acceptKey,
-        );
+        // This ending is a registration, exactly as the code path's is, so it earns the
+        // same mark rather than the plain "you are in" the other branch leaves.
+        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
+        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
     }
 
     /**

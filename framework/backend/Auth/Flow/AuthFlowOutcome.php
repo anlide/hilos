@@ -36,6 +36,14 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** The registration hold on the identifier ran out: the surface rolls back to the identifier step. */
     public const string CODE_RESERVATION_EXPIRED = 'reservation_expired';
 
+    /**
+     * The clicked sign-in link is not good any more - wrong, expired, or already
+     * used (HIL-417). Its own code rather than the generic refusal, because the
+     * return screen owes this person a new link rather than a sign-in form: nobody
+     * mistyped anything, the link simply outlived its moment.
+     */
+    public const string CODE_MAGIC_LINK_INVALID = 'magic_link_invalid';
+
     /** Too many codes went to this address inside the window: the surface stays put and says so. */
     public const string CODE_SEND_CAP_REACHED = 'send_cap_reached';
 

@@ -271,6 +271,16 @@ enum EnvConstants
      */
     case HILOS_VERIFICATION_SEND_CAP_SMS;
 
+    /**
+     * Absolute address of the screen a magic link comes back to (HIL-417). The
+     * issued token and the address it was issued for are appended to it as query
+     * params, and the result is what the letter carries - so a relative path
+     * would not survive the mail client. The framework knows no base URL of its
+     * own, which is why this is the project's to set, symmetric with the OAuth
+     * redirect URI.
+     */
+    case HILOS_MAGIC_LINK_URL;
+
     // ── Auth throttle (anti-abuse on expensive auth actions) ─────────────────
 
     /**
