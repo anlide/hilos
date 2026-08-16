@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Session;
 
+use Hilos\Auth\Detection\IdentifierDetection;
+use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
 use Hilos\Auth\Throttle\ThrottleGate;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -86,6 +91,116 @@ trait HilosSessionHost
      * @return HandshakeResponseSignalData Handshake response for the session
      */
     abstract protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData;
+
+    /**
+     * Builds the handshake response a socket is actually sent (HIL-486).
+     *
+     * The framework half of the project's {@see handshakeResponseFor()} hook: the
+     * project answers who the session is, this stamps on what the project has no way
+     * to know — the server clock the browser measures its own offset against. Every
+     * send path goes through here rather than through the hook, so no project can
+     * ship a response without it: the field is framework-owned and identical
+     * everywhere, while the sites that send one are five and two of them sit in the
+     * project's own agent.
+     *
+     * @param ?Session $session Session to describe, or null for an anonymous response
+     * @return HandshakeResponseSignalData Handshake response carrying the session context
+     */
+    final protected function handshakeResponse(?Session $session): HandshakeResponseSignalData
+    {
+        return $this->handshakeResponseFor($session)
+            ->withSessionContext(TimeHelper::nowMs(), $this->pendingRegistrationFor($session));
+    }
+
+    /**
+     * Describes the registration a session started and has not finished (HIL-486).
+     *
+     * The step the surface comes back to, served from the server rather than kept in
+     * the tab: a reload, a second tab and another device all ask the same question at
+     * their handshake and get the same answer. A wait whose hold is gone answers null
+     * - the row is stale memory of a registration that completed or ran out, and the
+     * person belongs on the identifier field, not on a code screen for a code that
+     * can no longer be confirmed.
+     *
+     * The channel is asked for a number only: a code sent to an address goes by mail
+     * whatever else is registered, and naming a channel there would be inventing a
+     * choice nobody made.
+     *
+     * @param ?Session $session Session to describe, or null for an anonymous response
+     * @return ?array{identifier: string, kind: string, channel: ?string, expiresAt: int} Step, or null when there is none
+     * @throws HilosException When a wait, reservation or verification query fails
+     */
+    private function pendingRegistrationFor(?Session $session): ?array
+    {
+        if ($session === null) {
+            return null;
+        }
+
+        $identifier = Hilos::$db?->registrationWaits->findBySession($session->token)?->identifier;
+        if ($identifier === null) {
+            return null;
+        }
+
+        $reservation = new RegistrationReservationService()->findActive($identifier);
+        if ($reservation === null) {
+            return null;
+        }
+
+        try {
+            $kind = IdentifierDetector::kindOf($identifier);
+        } catch (InvalidFormatException $e) {
+            // A wait is only ever written for an identifier this same classifier
+            // accepted, so a row that no longer classifies is corrupt rather than
+            // unusual. The session is told it has no step - which is the truthful
+            // answer about a registration nobody can finish - and the row is named in
+            // the log rather than taken out on the handshake, which every socket of
+            // every session depends on.
+            $this->logAgentWarning('Registration wait carries an unusable identifier: ' . $e->getMessage());
+
+            return null;
+        }
+
+        return [
+            HandshakeResponseSignalData::identifier => $identifier,
+            HandshakeResponseSignalData::kind => $kind,
+            HandshakeResponseSignalData::channel => $kind === IdentifierDetection::KIND_PHONE
+                ? new VerificationService()->activeChannel(VerificationType::SMS_LOGIN, $identifier)
+                : null,
+            HandshakeResponseSignalData::expiresAt => TimeHelper::sqlToMs($reservation->expiresAt),
+        ];
+    }
+
+    /**
+     * Parks a connection on the registration its session left unfinished (HIL-486).
+     *
+     * The runtime waiter list stops being state of its own and becomes a projection
+     * of the durable wait: a socket that opens into a session with a wait joins the
+     * converge broadcast without having submitted anything itself. That is what makes
+     * a second tab react as though the code had been typed in it - which the flow
+     * requires, and which no amount of per-connection memory could give it, because
+     * the connection asking is new.
+     *
+     * Called by the project's handshake handler, which is the only place holding both
+     * the accept key and the moment: the response builder above is also used for
+     * broadcasts to sockets that are already parked or deliberately are not.
+     *
+     * @param string $acceptKey Accept key of the connection that just handshook
+     * @param ?Session $session Session the connection resolved to, or null when it has none
+     * @throws HilosException When the wait lookup or the runtime write fails
+     */
+    final protected function parkRegistrationWait(string $acceptKey, ?Session $session): void
+    {
+        if ($session === null) {
+            return;
+        }
+
+        $identifier = Hilos::$db?->registrationWaits->findBySession($session->token)?->identifier;
+        if ($identifier === null) {
+            return;
+        }
+
+        Hilos::$rt?->hilosRegistrationWaiters->actions->park($acceptKey, $identifier, $session->token);
+    }
 
     /**
      * Returns the accept keys of the live connections belonging to a session token.
@@ -299,7 +414,7 @@ trait HilosSessionHost
         }
         Hilos::$ac?->identifyBrowserSessionUser($liveToken, $userId);
 
-        $response = $this->handshakeResponseFor($session);
+        $response = $this->handshakeResponse($session);
         $signalName = $this->handshakeResponseSignalName();
 
         if ($rotated === null) {
@@ -438,7 +553,7 @@ trait HilosSessionHost
         $session->actions->unbindUser();
         $this->afterDeauthenticate($userId);
 
-        $response = new HandshakeResponseSignalData();
+        $response = $this->handshakeResponse(null);
         $signalName = $this->handshakeResponseSignalName();
         foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
             $this->bindConnectionUser($acceptKey, null);
@@ -555,7 +670,7 @@ trait HilosSessionHost
             return;
         }
 
-        $response = $this->handshakeResponseFor($session)->withPendingAck($ack);
+        $response = $this->handshakeResponse($session)->withPendingAck($ack);
         $signalName = $this->handshakeResponseSignalName();
         foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
             $this->markConnectionAck($acceptKey, $ack);

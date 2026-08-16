@@ -102,12 +102,15 @@ export {
   sessionImpersonating,
   sessionImpersonatedByName,
   sessionPendingAck,
+  sessionPendingRegistration,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
   SESSION_SIGNAL_SCHEMAS,
+  type PendingRegistration,
   type SessionScopeOptions,
 } from './session/sessionScope.js'
+export { applyServerTime, offsetMs, toLocal } from './session/serverClock.js'
 export {
   bindNotificationsScope,
   createHilosNotificationStore,

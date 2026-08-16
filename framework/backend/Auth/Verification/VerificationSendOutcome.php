@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
+use Hilos\Constants\TimeConstants;
+use Hilos\Utils\Helpers\TimeHelper;
+
 /**
  * VerificationSendOutcome - what {@see VerificationService::issue()} answers a send site (HIL-421).
  *
@@ -66,5 +69,21 @@ final class VerificationSendOutcome
     public static function capReached(): self
     {
         return new self(false, true, 0);
+    }
+
+    /**
+     * The server moment the next send unblocks, in epoch milliseconds (HIL-486).
+     *
+     * The seconds are what the cooldown is measured in, and a moment is what the
+     * browser can be told: a countdown handed over as a duration is wrong the
+     * instant the tab is reloaded, because nobody wrote down when it started. The
+     * conversion lives here, next to the seconds, so every surface that answers a
+     * send converts it the same way rather than each remembering to add "now".
+     *
+     * @return int Milliseconds since the Unix epoch when a send is allowed again
+     */
+    public function resendAt(): int
+    {
+        return TimeHelper::nowMs() + $this->resendInSeconds * TimeConstants::MS_PER_SECOND;
     }
 }

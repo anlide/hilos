@@ -36,6 +36,8 @@
 // Not exported from the barrel (src/index.ts): the clean names collide with the
 // still-present authSurface until HIL-423 removes it and re-exports this module.
 
+import { toLocal } from '../session/serverClock.js'
+import { type PendingRegistration } from '../session/sessionScope.js'
 import {
   computedSignal,
   createSignal,
@@ -250,7 +252,7 @@ export interface AuthFlowError {
  * surface inline (auth deliberately shows the backend reason). On success
  * `next` is a PARTIAL flow state merged over the current one — the backend
  * decides where the flow goes; omit it when a session upgrade closes the
- * surface. `resendInSeconds` arms the resend gate ({@link AuthFlow.resend}).
+ * surface. `resendAt` arms the resend gate ({@link AuthFlow.resend}).
  */
 export interface AuthFlowSubmitOutcome {
   /** Whether the dispatch succeeded. */
@@ -261,8 +263,19 @@ export interface AuthFlowSubmitOutcome {
   readonly code?: string
   /** A partial next flow state to merge on success; omit to stay put. */
   readonly next?: Partial<AuthFlowState>
-  /** Seconds until a code re-send is allowed again, when one was just sent. */
-  readonly resendInSeconds?: number
+  /**
+   * The SERVER moment a code re-send is allowed again, in epoch ms, when one was
+   * just sent. A moment rather than a duration because a duration is spent by a
+   * reload: nobody wrote down when the counting started (HIL-486).
+   */
+  readonly resendAt?: number
+  /**
+   * The SERVER moment the code or link the submit left on screen stops being
+   * good, in epoch ms. Of the same nature as {@link resendAt} and absent for the
+   * same reason — a submit that left nothing waiting has no moment to name
+   * (HIL-486).
+   */
+  readonly expiresAt?: number
 }
 
 /**
@@ -387,11 +400,34 @@ export interface AuthFlow {
   /** The derived semantic key of the active screen's heading. */
   readonly screenKey: ReadonlySignal<AuthFlowScreen>
   /**
-   * The epoch-ms moment a code re-send unblocks (from the backend's
-   * `resendInSeconds`), or `null` when un-armed. The view draws the countdown;
-   * the machine enforces the gate in {@link resend}.
+   * The LOCAL epoch-ms moment a code re-send unblocks — the backend's `resendAt`
+   * put on this browser's scale — or `null` when un-armed. The view draws the
+   * countdown; the machine enforces the gate in {@link resend}.
    */
   readonly resendAvailableAt: ReadonlySignal<number | null>
+  /**
+   * The LOCAL epoch-ms moment the code on screen stops being good, or `null`
+   * when nothing is counting down. Of the same nature as
+   * {@link resendAvailableAt} and drawn the same way; the machine does not act
+   * on it, because what a code is worth is the server's answer and the screen
+   * reaching zero is only what the person sees.
+   */
+  readonly expiresAt: ReadonlySignal<number | null>
+  /**
+   * Restore the step a session left unfinished, as the handshake reports it
+   * (HIL-486). Parks the flow on the code screen under the register intent with
+   * the identifier back in the form, so a reload, a second tab and another
+   * device all come back to the screen they left.
+   *
+   * A `null` pending registration does NOTHING, deliberately: a reconnect that
+   * lands while somebody is halfway through typing an identifier must not wipe
+   * what they are doing. A step is only ever taken AWAY by the server saying so
+   * (the converge signal), never by a handshake that had nothing to say.
+   *
+   * @param pending The unfinished registration, or `null` when the session has
+   *   none.
+   */
+  resume(pending: PendingRegistration | null): void
   /**
    * Update one form field, typed by the field's name (the boolean flags take a
    * boolean, not a string). Editing `identifier` restarts the flow, clears the
@@ -412,7 +448,7 @@ export interface AuthFlow {
   /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
-   * `resendInSeconds`. A no-op while pending.
+   * `resendAt`. A no-op while pending.
    */
   resend(): Promise<void>
   /**
@@ -506,9 +542,6 @@ const PHONE_MAX_DIGITS = 15
 
 /** Cosmetic phone separators stripped before counting digits. */
 const PHONE_SEPARATORS = /[\s\-().]/g
-
-/** Milliseconds in one second — converts `resendInSeconds` to an epoch gate. */
-const MS_PER_SECOND = 1000
 
 /** The starting flow state — the single identifier field, no intent decided yet. */
 const INITIAL_FLOW: AuthFlowState = {
@@ -889,6 +922,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
   const pending = createSignal(false)
   const error = createSignal<AuthFlowError | null>(null)
   const resendAvailableAt = createSignal<number | null>(null)
+  const expiresAt = createSignal<number | null>(null)
   const submittable = computedSignal(() =>
     isFlowSubmittable(flow.get(), form.get(), detection.get()),
   )
@@ -1075,10 +1109,11 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     if (outcome.next !== undefined) {
       flow.set({ ...flow.get(), ...outcome.next })
     }
-    if (outcome.resendInSeconds !== undefined) {
-      resendAvailableAt.set(
-        Date.now() + outcome.resendInSeconds * MS_PER_SECOND,
-      )
+    if (outcome.resendAt !== undefined) {
+      resendAvailableAt.set(toLocal(outcome.resendAt))
+    }
+    if (outcome.expiresAt !== undefined) {
+      expiresAt.set(toLocal(outcome.expiresAt))
     }
   }
 
@@ -1160,6 +1195,22 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     primaryAction,
     screenKey,
     resendAvailableAt,
+    expiresAt,
+    resume(pending: PendingRegistration | null): void {
+      if (pending === null) {
+        return
+      }
+      flow.set({
+        ...flow.get(),
+        step: 'code',
+        intent: 'register',
+        methodKey: null,
+        identifierKind: pending.kind,
+        channelKey: pending.channel,
+      })
+      form.set({ ...form.get(), identifier: pending.identifier })
+      expiresAt.set(pending.expiresAt)
+    },
     setField<F extends AuthFlowField>(field: F, value: AuthFlowForm[F]): void {
       if (field === 'identifier') {
         const identifier = value as string
@@ -1185,6 +1236,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         form.set({ ...EMPTY_FORM, identifier })
         error.set(null)
         resendAvailableAt.set(null)
+        expiresAt.set(null)
         scheduleDetect(identifier, kind)
 
         return
@@ -1299,7 +1351,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         }
         // One outcome application for ceremonies and submits alike — a
         // hand-rolled copy here already diverged once (it dropped the
-        // resendInSeconds a magic-link send replies with).
+        // resendAt a magic-link send replies with).
         applyOutcome(outcome)
         if (!outcome.ok) {
           flow.set({ ...state, step: 'identifier', methodKey: null })
@@ -1342,6 +1394,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     startRecovery(): void {
       error.set(null)
       resendAvailableAt.set(null)
+      expiresAt.set(null)
       // The recovery challenge starts clean: a code or new password lingering
       // from another challenge must not pre-fill it as already-submittable
       // (input preservation protects the identifier and password, not a
@@ -1358,6 +1411,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
     backToIdentifier(): void {
       error.set(null)
       resendAvailableAt.set(null)
+      expiresAt.set(null)
       // Back to the single field with everything typed preserved — the form is
       // NOT cleared (only an identifier edit clears it).
       flow.set({
@@ -1418,6 +1472,7 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       pending.set(false)
       error.set(null)
       resendAvailableAt.set(null)
+      expiresAt.set(null)
     },
   }
 }

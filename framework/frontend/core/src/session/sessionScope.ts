@@ -13,6 +13,7 @@ import { readString } from '../state/fieldReaders.js'
 import { ingest } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
+import { applyServerTime, toLocal } from './serverClock.js'
 
 /**
  * The session-scope response the backend sends after the handshake, carrying the
@@ -27,6 +28,38 @@ const DEFAULT_CURRENT_USER_NAME_FIELD = 'name'
 const DEFAULT_CURRENT_USER_ADMIN_FIELD = 'admin'
 const DEFAULT_IMPERSONATED_BY_SLOT = 'impersonatedBy'
 const DEFAULT_PENDING_ACK_SLOT = 'pendingAck'
+
+/**
+ * Plain session-scope key carrying the server's own "now" in epoch milliseconds
+ * (HIL-486). Fixed rather than an option: the field is framework-owned and the
+ * backend writes it on every handshake, so nothing is left for a project to name.
+ */
+const SERVER_TIME_MS_KEY = 'serverTimeMs'
+
+/**
+ * Plain session-scope key carrying the registration this session left
+ * unfinished, or null when it has none (HIL-486). Fixed for the same reason as
+ * the clock beside it: the backend writes it on every handshake.
+ */
+const PENDING_REGISTRATION_KEY = 'pendingRegistration'
+
+/**
+ * The registration a session started and has not finished, as the handshake
+ * reports it (HIL-486). `channel` names the code channel a phone code went over
+ * and is null for a mail flow, which has no choice to name; `expiresAt` arrives
+ * as a SERVER moment and is handed on in local ms, like every other moment the
+ * backend sends.
+ */
+export interface PendingRegistration {
+  /** The identifier the code went to, shown on the screen it is restored to. */
+  readonly identifier: string
+  /** What that identifier is — the classification the backend made of it. */
+  readonly kind: 'email' | 'phone'
+  /** The code channel it went over, or `null` for a mail flow. */
+  readonly channel: string | null
+  /** The LOCAL epoch-ms moment the code stops being good. */
+  readonly expiresAt: number
+}
 
 /**
  * A registration whose confirmation just landed the person inside. Byte-equal to
@@ -98,6 +131,14 @@ export function bindSessionScope(
       // admin shares the current-user entity type so it dedupes against the same
       // user delivered elsewhere; a null slot clears it (no longer impersonated).
       const payload = signal.data as ScopePayloadWire
+      // The clock is measured BEFORE anything is published (HIL-486): the values
+      // going in are what a countdown reads, and a subscriber that woke on them
+      // while the offset still belonged to the previous handshake would draw the
+      // old clock's answer.
+      const serverTimeMs = payload.data?.[SERVER_TIME_MS_KEY]
+      if (typeof serverTimeMs === 'number') {
+        applyServerTime(serverTimeMs)
+      }
       // The plain section goes in FIRST, and the two-step is the mechanism rather
       // than a detail (HIL-422). `ingest` publishes entity slots before plain data
       // and subscribers run synchronously, so a subscriber of `currentUser` would
@@ -248,6 +289,54 @@ export function sessionPendingAck(
 
     return typeof ack === 'string' && ack !== '' ? ack : null
   })
+}
+
+/**
+ * The registration this session left unfinished, or null when it has none
+ * (HIL-486). The step a reloaded tab, a second tab and another device all come
+ * back to: it is answered by the server on every handshake, so nothing about it
+ * is remembered in the tab.
+ *
+ * The moment is converted to the local scale on the way out, so a view compares
+ * it with `Date.now()` and never with the server's clock.
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionPendingRegistration(
+  scopes: ScopeManager,
+): ReadonlySignal<PendingRegistration | null> {
+  const slot = scopes.session.data.signal(PENDING_REGISTRATION_KEY)
+
+  return computedSignal(() => readPendingRegistration(slot.get()))
+}
+
+/**
+ * Read the unfinished-registration node the handshake delivered, or null when
+ * there is none — and equally when what arrived is not one: a half-written node
+ * would restore a code screen naming no address or counting down to nothing,
+ * which is worse than the identifier field this falls back to.
+ *
+ * @param value The raw session-scope slot.
+ */
+function readPendingRegistration(value: unknown): PendingRegistration | null {
+  if (value === null || typeof value !== 'object') {
+    return null
+  }
+  const node = value as Record<string, unknown>
+  const identifier = node['identifier']
+  const kind = node['kind']
+  const channel = node['channel'] ?? null
+  const expiresAt = node['expiresAt']
+  if (
+    typeof identifier !== 'string' ||
+    (kind !== 'email' && kind !== 'phone') ||
+    (channel !== null && typeof channel !== 'string') ||
+    typeof expiresAt !== 'number'
+  ) {
+    return null
+  }
+
+  return { identifier, kind, channel, expiresAt: toLocal(expiresAt) }
 }
 
 /**

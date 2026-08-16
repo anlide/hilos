@@ -69,6 +69,16 @@ final class ChatSignalConstants
     /** @var string Client → server: submit the confirmation code that creates the reserved account (public, anonymous-reachable, HIL-415) */
     public const string CONFIRM_REGISTER = 'confirm_register';
 
+    /**
+     * @var string Client → server: "not that address?" on a code screen (public, anonymous-reachable, HIL-486)
+     *
+     * Ends the registration this SESSION was waiting on, in every tab of it at once.
+     * It frees no address: the hold belongs to the identifier and other sessions may
+     * still be waiting on the same one, so a person walking away from a code screen
+     * cannot cancel somebody else's registration.
+     */
+    public const string ABANDON_REGISTRATION = 'abandon_registration';
+
     /** @var string Client → server: begin an OAuth login by minting the provider authorize URL (public, anonymous-reachable) */
     public const string OAUTH_START = 'oauth_start';
 

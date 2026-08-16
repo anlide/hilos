@@ -13,6 +13,7 @@ use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
+use Hilos\Database\Object\Collection\RegistrationWaits as ObjectRegistrationWaits;
 use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
@@ -25,12 +26,14 @@ use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
 use Hilos\Database\View\Collection\PasskeyCredentials as DbCollectionPasskeyCredentials;
 use Hilos\Database\View\Collection\PushSubscriptions as DbCollectionPushSubscriptions;
 use Hilos\Database\View\Collection\RegistrationReservations as DbCollectionRegistrationReservations;
+use Hilos\Database\View\Collection\RegistrationWaits as DbCollectionRegistrationWaits;
 use Hilos\Database\View\Collection\Sessions as DbCollectionSessions;
 use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifications;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\PushSubscriptionsActions;
+use Hilos\Database\Actions\Collection\RegistrationWaitsActions;
 use Hilos\Database\Actions\Collection\SessionsActions;
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Item\NotificationActions;
@@ -49,6 +52,7 @@ use Hilos\Database\Actions\Item\SettingActions;
  * @property-read DbCollectionIdentities $identities
  * @property-read DbCollectionUserVerifications $verifications
  * @property-read DbCollectionRegistrationReservations $registrationReservations
+ * @property-read DbCollectionRegistrationWaits $registrationWaits
  * @property-read DbCollectionPasskeyCredentials $passkeyCredentials
  * @property-read DbCollectionSessions $sessions
  * @property-read DbCollectionNotifications $notifications
@@ -67,6 +71,8 @@ abstract class HilosDbContext extends DbContext
     public const string verification = 'verification';
     public const string registrationReservations = 'registrationReservations';
     public const string registrationReservation = 'registrationReservation';
+    public const string registrationWaits = 'registrationWaits';
+    public const string registrationWait = 'registrationWait';
     public const string passkeyCredentials = 'passkeyCredentials';
     public const string passkeyCredential = 'passkeyCredential';
     public const string sessions = 'sessions';
@@ -112,6 +118,9 @@ abstract class HilosDbContext extends DbContext
 
         $this->_objectCollections[self::registrationReservations] = ObjectRegistrationReservations::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::registrationReservations, DbCollectionRegistrationReservations::class);
+
+        $this->_objectCollections[self::registrationWaits] = ObjectRegistrationWaits::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::registrationWaits, DbCollectionRegistrationWaits::class, RegistrationWaitsActions::class);
 
         $this->_objectCollections[self::passkeyCredentials] = ObjectPasskeyCredentials::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->setRepresent(self::passkeyCredentials, DbCollectionPasskeyCredentials::class);

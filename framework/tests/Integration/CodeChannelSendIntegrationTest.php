@@ -8,6 +8,7 @@ use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -45,9 +46,19 @@ use Random\RandomException;
 final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 {
     /** @var list<string> Framework tables this case needs */
-    private const array TABLES = ['hilos_user_verification'];
+    private const array TABLES = [
+        'hilos_user_verification',
+        'hilos_identity',
+        'hilos_registration_reservation',
+        'hilos_registration_wait',
+    ];
 
     private const string ACCEPT_KEY = 'code-channel-test-accept-key';
+
+    private const string SESSION_TOKEN = 'code-channel-test-session-token';
+
+    /** Owner of the identity the "number already has an account" case plants. */
+    private const int EXISTING_USER_ID = 4242;
 
     private const int TTL_SECONDS = 900;
 
@@ -206,6 +217,84 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
+     * A code to a free number holds it and leaves the asking session waiting on it.
+     *
+     * @throws HilosException When a reservation, wait or verification query fails
+     */
+    public function testAFreeNumberIsHeldAndTheAskingSessionIsRemembered(): void
+    {
+        $phone = $this->uniquePhone();
+
+        $this->request(new CodeChannelTestAgent(new CodeChannelTestChannel('free', reachable: true)), $phone, 'free');
+
+        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertNotNull(
+            new RegistrationReservationService()->findActive($phone),
+            'A number nobody owns must be held while its code travels',
+        );
+        self::assertSame($phone, $this->waitOf(self::SESSION_TOKEN), 'The session must be left waiting on the number');
+    }
+
+    /**
+     * A number that already has an account is a sign-in: nothing is held, nothing is waited on.
+     *
+     * @throws HilosException When an identity, reservation or wait query fails
+     */
+    public function testANumberWithAnAccountIsNeitherHeldNorRemembered(): void
+    {
+        $phone = $this->uniquePhone();
+        Hilos::$db?->identities->createSmsIdentity(self::EXISTING_USER_ID, $phone);
+
+        $this->request(new CodeChannelTestAgent(new CodeChannelTestChannel('known', reachable: true)), $phone, 'known');
+
+        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertNull(
+            new RegistrationReservationService()->findActive($phone),
+            'There is nothing left to reserve about a number somebody already owns',
+        );
+        self::assertNull($this->waitOf(self::SESSION_TOKEN), 'A sign-in leaves no unfinished registration behind');
+    }
+
+    /**
+     * A second session that joins a live code is remembered too, though it sent nothing.
+     *
+     * The cooldown arm is what a racing session gets, and it is the arm that puts it on
+     * the code screen of the hold it joined - so the memory has to be written there as
+     * well, or a reload would strand it on an empty form (HIL-486, Flow p.15).
+     *
+     * @throws HilosException When a reservation, wait or verification query fails
+     */
+    public function testASessionJoiningAHeldSendIsRememberedToo(): void
+    {
+        putenv(EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC->name . '=600');
+
+        $phone = $this->uniquePhone();
+        $channel = new CodeChannelTestChannel('joined', reachable: true);
+        $second = 'code-channel-test-second-session';
+
+        $this->request(new CodeChannelTestAgent($channel), $phone, 'joined');
+        self::assertSame(AuthCodeResultSignalData::REASON_CODE_SENT, $this->takeResultReason());
+
+        $this->request(new CodeChannelTestAgent($channel), $phone, 'joined', $second);
+
+        self::assertSame(AuthCodeResultSignalData::REASON_RATE_LIMITED, $this->takeResultReason());
+        self::assertSame($phone, $this->waitOf($second), 'The joining session waits on the same number');
+        self::assertSame($phone, $this->waitOf(self::SESSION_TOKEN), 'The first session keeps waiting on it');
+    }
+
+    /**
+     * Reads what a session is waiting on, straight from the durable memory.
+     *
+     * @param string $sessionToken Session token to ask about
+     * @return ?string Identifier the session is waiting on, or null when it waits on nothing
+     * @throws HilosException When the wait lookup fails
+     */
+    private function waitOf(string $sessionToken): ?string
+    {
+        return Hilos::$db?->registrationWaits->findBySession($sessionToken)?->identifier;
+    }
+
+    /**
      * Hands one request to an agent and pumps it until it settles.
      *
      * @param CodeChannelTestAgent $agent Agent under test, carrying its one channel
@@ -213,11 +302,16 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $channel Channel name the request names
      * @throws HilosException When the agent's intake or tick raises
      */
-    private function request(CodeChannelTestAgent $agent, string $phone, string $channel): void
-    {
+    private function request(
+        CodeChannelTestAgent $agent,
+        string $phone,
+        string $channel,
+        string $sessionToken = self::SESSION_TOKEN,
+    ): void {
         $agent->onSignalAgent(
             new AgentSignalData(new AuthCodeSendSignalData(
                 self::ACCEPT_KEY,
+                $sessionToken,
                 $phone,
                 $channel,
                 VerificationType::SMS_LOGIN,
@@ -278,8 +372,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 /**
  * A framework database context with nothing but the framework's own collections.
  *
- * The code path is framework-owned and reads one framework table, so the smallest
- * honest context for it is {@see HilosDbContext} with no project collections.
+ * The code path is framework-owned and every table it touches - the challenge, the
+ * identity it asks about, the hold and the wait it writes - is a framework one, so the
+ * smallest honest context for it is {@see HilosDbContext} with no project collections.
  */
 final class CodeChannelTestDbContext extends HilosDbContext
 {

@@ -33,13 +33,13 @@ export const AUTH_CODE_REASON_CHANNEL_UNAVAILABLE = 'code_channel_unavailable'
 
 /**
  * `reason` marking a send the cooldown held back (PHP `REASON_RATE_LIMITED`).
- * `resendInSeconds` says how much of it is left.
+ * `resendAt` says when it opens.
  */
 export const AUTH_CODE_REASON_RATE_LIMITED = 'code_rate_limited'
 
 /**
  * `reason` marking a send the per-window cap refused (PHP `REASON_CAP_REACHED`).
- * It carries no seconds: waiting a little changes nothing this window.
+ * It carries no moment: waiting a little changes nothing this window.
  */
 export const AUTH_CODE_REASON_CAP_REACHED = 'code_cap_reached'
 
@@ -51,9 +51,12 @@ export const AUTH_CODE_REASON_SEND_FAILED = 'code_send_failed'
 
 /**
  * The code-request outcome payload: the channel the request named and a stable,
- * non-sensitive reason code. `resendInSeconds` is filled on the arms where waiting
- * is the answer — a fresh send's cooldown, or what is left of one — and null where
- * waiting changes nothing. The wire also carries the targeting `acceptKey`, kept
+ * non-sensitive reason code. `resendAt` is filled on the arms where waiting is the
+ * answer — the SERVER moment a fresh send's cooldown runs out, or the one already
+ * running does — and null where waiting changes nothing. `expiresAt` is the SERVER
+ * moment the code now in play dies, which the code screen counts down; it is the
+ * EARLIER code's moment on the rate-limited arm, since that is the one the person
+ * is being asked for. The wire also carries the targeting `acceptKey`, kept
  * here for validation fidelity though the reaction ignores it (WS_USER already
  * targets this connection).
  */
@@ -61,7 +64,8 @@ export const authCodeResultSignalSchema = z.object({
   acceptKey: z.string(),
   channel: z.string(),
   reason: z.string(),
-  resendInSeconds: z.number().nullable().default(null),
+  resendAt: z.number().nullable().default(null),
+  expiresAt: z.number().nullable().default(null),
 })
 
 /** Typed code-request outcome payload (the schema's output). */

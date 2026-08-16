@@ -14,6 +14,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Constants\PasswordPolicy;
+use Demo\Chat\Pages\DTO\Main\AbandonRegistrationActionDTO;
 use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Pages\DTO\Main\CompletePasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
@@ -123,6 +124,7 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
         ChatSignalConstants::CONFIRM_REGISTER => ConfirmRegisterActionDTO::class,
+        ChatSignalConstants::ABANDON_REGISTRATION => AbandonRegistrationActionDTO::class,
         ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
         ChatSignalConstants::OAUTH_START => OAuthStartActionDTO::class,
@@ -401,9 +403,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof ConfirmPhoneCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, ConfirmPhoneCodeActionDTO::class, $dto);
                 }
-                $this->handleConfirmPhoneCode($dto);
-
-                break;
+                return $this->handleConfirmPhoneCode($dto);
 
             case ChatSignalConstants::REQUEST_MAGIC_LINK:
                 if (!$dto instanceof RequestMagicLinkActionDTO) {
@@ -430,6 +430,13 @@ final class MainPage extends AbstractPage
                 }
 
                 return $this->handleConfirmRegister($dto);
+
+            case ChatSignalConstants::ABANDON_REGISTRATION:
+                if (!$dto instanceof AbandonRegistrationActionDTO) {
+                    throw new InvalidActionPayloadException($action, AbandonRegistrationActionDTO::class, $dto);
+                }
+
+                return $this->handleAbandonRegistration();
 
             case ChatSignalConstants::FILE_UPLOAD_INIT:
                 if (!$dto instanceof FileUploadInitActionDTO) {
@@ -656,7 +663,7 @@ final class MainPage extends AbstractPage
      * code comes back to {@see handleConfirmRegister()}. What the surface is told back is
      * where to go next, not whether a row was written:
      * - the address is free, or already held by an earlier submit of the same address:
-     *   the code step, with the seconds until a re-send is allowed. The second case sends
+     *   the code step, with the moment a re-send is allowed. The second case sends
      *   NO second letter - all the sessions registering that address converge on the one
      *   code that is already in the inbox;
      * - the address belongs to an account: not an error the person has to read and
@@ -705,11 +712,15 @@ final class MainPage extends AbstractPage
         new RegistrationReservationService()->reserve(IdentityType::PASSWORD, $email, $dto->password);
 
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
+        Hilos::$db->registrationWaits->actions->hold($connection->sessionToken, $email);
+
+        $verifications = new VerificationService();
 
         return AuthFlowOutcome::moveTo(
             AuthFlowStep::CODE,
             AuthFlowIntent::REGISTER,
-            new VerificationService()->resendAllowedInSeconds(VerificationType::REGISTER_CONFIRM, $email),
+            $verifications->resendAllowedAt(VerificationType::REGISTER_CONFIRM, $email),
+            $verifications->activeExpiresAt(VerificationType::REGISTER_CONFIRM, $email),
         );
     }
 
@@ -787,7 +798,7 @@ final class MainPage extends AbstractPage
      * it. Nothing is disclosed by that which the lookup in front of the form does
      * not already answer.
      *
-     * It answers the send gate's verdict (HIL-421): the seconds until the button
+     * It answers the send gate's verdict (HIL-421): the moment the button
      * comes back, or a refusal when too many codes already went to this address.
      * The surface moves nowhere either way - the person is on the screen the code
      * belongs to.
@@ -800,7 +811,7 @@ final class MainPage extends AbstractPage
      * refused - no code went out for that session to wait on.
      *
      * @param RequestPasswordResetActionDTO $dto Parsed request payload (email)
-     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
+     * @return AuthFlowOutcome Moments the resend gate opens and the code dies, or the cap refusal
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When no account at the address has a password
      * @throws HilosException When identity lookup, code issuing, or the runtime write fails
@@ -825,7 +836,10 @@ final class MainPage extends AbstractPage
 
         Hilos::$rt->hilosRecoveryWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
 
-        return AuthFlowOutcome::sent($outcome->resendInSeconds);
+        return AuthFlowOutcome::sent(
+            $outcome->resendAt(),
+            new VerificationService()->activeExpiresAt(VerificationType::PASSWORD_RESET, $email),
+        );
     }
 
     /**
@@ -1027,11 +1041,14 @@ final class MainPage extends AbstractPage
 
         // The accept key is taken from the live connection and never from the client: it
         // is the only address the outcome has, since the person asking has no account to
-        // fan out to (the shape the OAuth callback established, HIL-281).
+        // fan out to (the shape the OAuth callback established, HIL-281). The session
+        // rides along for the memory the agent writes when a code really goes out
+        // (HIL-486): that one outlives the socket, which is the point of it.
         $this->agent->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_CODE_SEND,
             new AuthCodeSendSignalData(
                 Hilos::$rt->selfConnection->acceptKey,
+                Hilos::$rt->selfConnection->sessionToken,
                 $phone,
                 $channel->name(),
                 VerificationType::SMS_LOGIN,
@@ -1040,27 +1057,41 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Verifies an SMS login code and signs the phone in, creating the user if new.
+     * Verifies a phone login code and signs the number in, registering it if new.
      *
      * Single login+register flow (HIL-280): a missing/expired/wrong code — and a
      * malformed phone — fail with the same generic message (no enumeration). On a
-     * valid code the code is single-use consumed inside the service, then the `sms`
-     * identity is find-or-created: an existing one resolves its user, a new phone
-     * mints a user (display name = the E.164 number), a verified `sms` identity,
-     * and the "registered in chat" event. The live anonymous session is then
-     * upgraded to that user through {@see ChatAgent::authenticateSession()}.
+     * valid code the code is single-use consumed inside the service, and what happens
+     * next is decided by the state the NUMBER is in, exactly as the magic link decides
+     * it by the state of the address (HIL-417): an `sms` identity resolves its user and
+     * this is a sign-in; no identity means the code was proving a registration, and a
+     * registration needs the hold that was put on the number when the code went out
+     * (HIL-486).
+     *
+     * A missing hold is answered as such rather than as a bad code: the number was
+     * free when the person asked and is not held now, so either the wait ran out or
+     * somebody else took it — and "invalid code" would read as a typo they did not
+     * make. The hold landing into the account is what makes the registration
+     * single-use: the same code cannot register a second one.
+     *
+     * The converge is the last step, and it reaches every OTHER session waiting on
+     * this number — a second tab, another device — because the registration they were
+     * all waiting on has just happened, and only one of them typed the code.
      *
      * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
+     * @return AuthFlowOutcome Where the surface goes next
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the phone or code is invalid
      * @throws EmptyValueException When the display name the new account is created with is empty
-     * @throws HilosException When verification, user/identity creation, or session promotion fails
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     * @throws HilosException When verification, the account, identity, event, or session write fails
      */
-    private function handleConfirmPhoneCode(ConfirmPhoneCodeActionDTO $dto): void
+    private function handleConfirmPhoneCode(ConfirmPhoneCodeActionDTO $dto): AuthFlowOutcome
     {
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $connection = Hilos::$rt->selfConnection;
 
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null
@@ -1070,19 +1101,40 @@ final class MainPage extends AbstractPage
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::SMS, $phone);
         if ($identity !== null && $identity->userId !== null) {
-            $userId = $identity->userId;
-        } else {
-            $user = Hilos::$db->users->actions->createWithName($phone);
-            $userId = (int)$user->id;
-            Hilos::$db->identities->createSmsIdentity($userId, $phone);
-            Hilos::$db->events->actions->addUserRegistered($userId);
+            $this->agent->authenticateSession($connection->sessionToken, $identity->userId, $connection->acceptKey);
+
+            return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
         }
 
-        $this->agent->authenticateSession(
-            Hilos::$rt->selfConnection->sessionToken,
-            $userId,
-            Hilos::$rt->selfConnection->acceptKey,
-        );
+        $reservations = new RegistrationReservationService();
+        $reservation = $reservations->findActive($phone);
+        if ($reservation === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_RESERVATION_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::REGISTER,
+                self::RESERVATION_EXPIRED_MESSAGE,
+            );
+        }
+
+        $user = Hilos::$db->users->actions->createWithName($phone);
+        $userId = (int)$user->id;
+
+        $reservations->confirmInto($reservation, $userId);
+
+        // Announce the new member exactly as the two email registrations do: the number
+        // is the third way into the same registration.
+        Hilos::$db->events->actions->addUserRegistered($userId);
+
+        // Before the sign-in: the surface closes on the session coming up, so the mark has
+        // to be on the sockets by the time that frame goes out (HIL-422).
+        $this->agent->markSessionAck($connection->sessionToken, SessionAck::REGISTERED);
+        $this->agent->authenticateSession($connection->sessionToken, $userId, $connection->acceptKey);
+
+        Hilos::$rt->hilosRegistrationWaiters->actions->release($connection->acceptKey);
+        $this->agent->convergeRegistration($phone, $userId, $connection->acceptKey);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
     }
 
     /**
@@ -1107,20 +1159,27 @@ final class MainPage extends AbstractPage
      * answered "sent" over a send the cap had refused.
      *
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
-     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
+     * @return AuthFlowOutcome Moments the resend gate opens and the link dies, or the cap refusal
      * @throws EmptyValueException When the submitted address is empty
      * @throws HilosException When identity lookup, the hold, or token issuing fails
      * @throws RandomException When the platform CSPRNG cannot produce a token
      */
     private function handleRequestMagicLink(RequestMagicLinkActionDTO $dto): AuthFlowOutcome
     {
-        $outcome = new MagicLinkService()->send(strtolower($dto->email));
+        $email = strtolower($dto->email);
+        $outcome = new MagicLinkService()->send($email);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
         }
 
-        return AuthFlowOutcome::sent($outcome->resendInSeconds);
+        // Answered for a stranger exactly as for a member: the link is issued on both
+        // sides of that question, so this moment says how long the letter is good for
+        // and nothing about whose inbox it went to (HIL-486).
+        return AuthFlowOutcome::sent(
+            $outcome->resendAt(),
+            new VerificationService()->activeExpiresAt(VerificationType::MAGIC_LINK, $email),
+        );
     }
 
     /**
@@ -1267,12 +1326,18 @@ final class MainPage extends AbstractPage
         // resend leaves the person ON the code screen, so the converge still has to
         // reach them when somebody else redeems the address.
         Hilos::$rt->hilosRegistrationWaiters->actions->park($connection->acceptKey, $email, $connection->sessionToken);
+        Hilos::$db->registrationWaits->actions->hold($connection->sessionToken, $email);
 
         if ($outcome->capReached) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
         }
 
-        return AuthFlowOutcome::moveTo(AuthFlowStep::CODE, AuthFlowIntent::REGISTER, $outcome->resendInSeconds);
+        return AuthFlowOutcome::moveTo(
+            AuthFlowStep::CODE,
+            AuthFlowIntent::REGISTER,
+            $outcome->resendAt(),
+            new VerificationService()->activeExpiresAt(VerificationType::REGISTER_CONFIRM, $email),
+        );
     }
 
     /**
@@ -1361,6 +1426,36 @@ final class MainPage extends AbstractPage
         $this->agent->convergeRegistration($email, $userId, $connection->acceptKey);
 
         return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::REGISTER);
+    }
+
+    /**
+     * Ends the registration this session was waiting on ("not that address?").
+     *
+     * The way back from a code screen (HIL-486). It forgets the wait - the durable
+     * memory and the parked sockets alike - so this session's tabs go to the
+     * identifier field together, and a reconnect is answered with no step at all.
+     *
+     * It deliberately does NOT free the identifier: the hold belongs to the address,
+     * other sessions may be waiting on the very same one, and a person who walked
+     * away from their own screen has said nothing about theirs (HIL-415 keeps the
+     * hold as the server's truth about an address). The hold runs out on its own,
+     * and the sweep tells whoever is still waiting.
+     *
+     * @return AuthFlowOutcome The identifier step, under the register intent
+     * @throws ItemNotFoundForUpdateException When the acting connection has no session
+     * @throws HilosException When the wait release or the runtime write fails
+     */
+    private function handleAbandonRegistration(): AuthFlowOutcome
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $connection = Hilos::$rt->selfConnection;
+
+        Hilos::$db->registrationWaits->actions->releaseBySession($connection->sessionToken);
+        $this->agent->abandonRegistration($connection->sessionToken, $connection->acceptKey);
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::IDENTIFIER, AuthFlowIntent::REGISTER);
     }
 
     /**

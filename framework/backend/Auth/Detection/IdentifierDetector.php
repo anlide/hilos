@@ -53,6 +53,35 @@ final class IdentifierDetector
     }
 
     /**
+     * Classifies a submitted identifier as an address or a number.
+     *
+     * An address is decided first: it is the only one of the two whose shape is
+     * unambiguous, and no valid address survives the phone normalizer anyway.
+     *
+     * Static and public because the question outlives the lookup that first asked
+     * it (HIL-486): the handshake tells a returning tab what KIND of identifier its
+     * unfinished registration is on, and the only honest answer is the one this
+     * surface gave when the identifier was typed. A second copy of these two lines
+     * elsewhere would be a second opinion about the same string.
+     *
+     * @param string $identifier Identifier as submitted
+     * @return string Classification (see IdentifierDetection::KIND_*)
+     * @throws InvalidFormatException When the identifier is neither
+     */
+    public static function kindOf(string $identifier): string
+    {
+        $trimmed = trim($identifier);
+        if (filter_var($trimmed, FILTER_VALIDATE_EMAIL) !== false) {
+            return IdentifierDetection::KIND_EMAIL;
+        }
+        if (PhoneNumber::normalize($trimmed) !== null) {
+            return IdentifierDetection::KIND_PHONE;
+        }
+
+        throw new InvalidFormatException('Enter an email address or a phone number');
+    }
+
+    /**
      * Looks an identifier up and reports what the surface should offer for it.
      *
      * @param string $identifier Identifier as submitted; echoed back verbatim
@@ -63,7 +92,7 @@ final class IdentifierDetector
      */
     public function detect(string $identifier): IdentifierDetection
     {
-        $kind = $this->classify($identifier);
+        $kind = self::kindOf($identifier);
         $normalized = $this->normalize($identifier, $kind);
 
         $userId = $this->findAccountId($kind, $normalized);
@@ -79,33 +108,10 @@ final class IdentifierDetector
     }
 
     /**
-     * Classifies a submitted identifier as an address or a number.
-     *
-     * An address is decided first: it is the only one of the two whose shape is
-     * unambiguous, and no valid address survives the phone normalizer anyway.
-     *
-     * @param string $identifier Identifier as submitted
-     * @return string Classification (see IdentifierDetection::KIND_*)
-     * @throws InvalidFormatException When the identifier is neither
-     */
-    private function classify(string $identifier): string
-    {
-        $trimmed = trim($identifier);
-        if (filter_var($trimmed, FILTER_VALIDATE_EMAIL) !== false) {
-            return IdentifierDetection::KIND_EMAIL;
-        }
-        if (PhoneNumber::normalize($trimmed) !== null) {
-            return IdentifierDetection::KIND_PHONE;
-        }
-
-        throw new InvalidFormatException('Enter an email address or a phone number');
-    }
-
-    /**
      * Reduces a classified identifier to the form the identity layer stores.
      *
      * @param string $identifier Identifier as submitted
-     * @param string $kind Classification from {@see self::classify()}
+     * @param string $kind Classification from {@see self::kindOf()}
      * @return string Lowercased address, or an E.164 number
      * @throws InvalidFormatException When a number that classified stops normalizing
      */

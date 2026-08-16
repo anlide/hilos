@@ -24,13 +24,17 @@ import {
   SMS_AUTH_METHOD,
   SMS_CODE_CHANNEL,
   TELEGRAM_CODE_CHANNEL,
+  toLocal,
   type AuthField,
   type AuthMethodDescriptor,
+  type AuthMode,
+  type AuthSubmitOutcome,
   type CodeChannelDescriptor,
 } from '@hilos/core'
 import { LoadingButton, useSignal } from '@hilos/vue'
 
 import {
+  abandonRegistration,
   requestPhoneCode,
   resendRegisterCode,
   submitAuth,
@@ -42,8 +46,18 @@ import {
   startOAuthLogin,
 } from './oauthLogin'
 import { runPasskeyDiscoverableLogin } from './passkeyCeremony'
+import { pendingRegistration } from '../bootstrap/session'
 
 defineOptions({ name: 'AuthSurface' })
+
+/** How often the expiry countdown redraws — one second, the smallest unit it shows. */
+const COUNTDOWN_TICK_MS = 1000
+
+/** Milliseconds in a second, for reading a remaining span as a clock. */
+const MS_PER_SECOND = 1000
+
+/** Seconds in a minute, for the same. */
+const SECONDS_PER_MINUTE = 60
 
 // The project declares its ORDERED enabled method registry here — the thin
 // extension point. Only email+password ships now; an OAuth or passkey descriptor
@@ -104,11 +118,15 @@ const surface = createAuthSurface({
   methods,
   onSubmit: async (submitMode, submitForm) => {
     if (submitMode !== 'sms_request') {
-      return submitAuth(submitMode, submitForm)
+      const outcome = await submitAuth(submitMode, submitForm)
+      armExpiry(outcome)
+
+      return outcome
     }
 
     const outcome = await requestPhoneCode(submitForm.phone, chosenChannel.value)
     deliveredChannel.value = outcome.channel
+    armExpiry(outcome)
 
     return outcome
   },
@@ -132,11 +150,18 @@ const channelIcons: Record<string, string> = {
   [TELEGRAM_CODE_CHANNEL.key]: 'bi bi-telegram',
 }
 
-/** The label of the channel a delivered code went over, for the code screen. */
-const chosenChannelLabel = computed(
+/**
+ * The label of the channel a delivered code went over, for the code screen.
+ *
+ * Off the DELIVERED channel and not the clicked one, which is the same distinction
+ * `deliveredChannel` is declared for: a code can fall back to another channel, and a
+ * screen resumed after a reload (HIL-486) had no click at all — the channel comes
+ * back with the step, from the server.
+ */
+const deliveredChannelLabel = computed(
   () =>
-    codeChannels.find((channel) => channel.key === chosenChannel.value)?.label ??
-    chosenChannel.value,
+    codeChannels.find((channel) => channel.key === deliveredChannel.value)
+      ?.label ?? deliveredChannel.value,
 )
 
 // The redirect methods (OAuth): rendered on the login surface as external
@@ -173,6 +198,7 @@ const resendError = ref<string | null>(null)
 // replay itself is the global watcher's job (oauthLogin), not this component's.
 const linkPrompt = ref(false)
 
+const resumable = useSignal(pendingRegistration)
 const mode = useSignal(surface.mode)
 const form = useSignal(surface.form)
 const pending = useSignal(surface.pending)
@@ -201,6 +227,118 @@ watch(mode, () => {
   discoverableError.value = null
   resendError.value = null
 })
+
+// The LOCAL moment the code or link this screen is waiting on stops being good
+// (HIL-486), or null while nothing is waiting. It always arrives from the server —
+// off the submit that sent something, or off the handshake for a registration this
+// session started elsewhere — because a duration measured in the tab is spent by a
+// reload, which is exactly the moment this screen has to be honest about.
+const expiresAt = ref<number | null>(null)
+
+// The clock the countdown is read against. A ticking ref rather than Date.now()
+// inside the computed: a computed only recomputes when something it read changes,
+// so a bare Date.now() would freeze the number at whatever it was when the screen
+// opened and the code would "expire" without the display ever moving.
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  clock = setInterval(() => {
+    now.value = Date.now()
+  }, COUNTDOWN_TICK_MS)
+})
+onUnmounted(() => {
+  if (clock !== null) {
+    clearInterval(clock)
+    clock = null
+  }
+})
+
+// The three screens that wait on something sent: the two code screens and the
+// "check your inbox" acknowledgement. The countdown is gated on being one of them
+// rather than on the moment alone, so a spent expiry left over from an abandoned
+// screen cannot disable the identifier field somebody came back to.
+const waiting = computed(
+  () =>
+    mode.value === 'register_confirm' ||
+    mode.value === 'sms_confirm' ||
+    (mode.value === 'magic_link_request' && magicSent.value),
+)
+
+/** What the screen is waiting on, for the one sentence that names it. */
+const waitingSubject = computed(() =>
+  mode.value === 'magic_link_request' ? 'link' : 'code',
+)
+
+const remainingMs = computed(() =>
+  expiresAt.value === null || !waiting.value
+    ? null
+    : expiresAt.value - now.value,
+)
+
+// Zero does NOT roll the step back: the truth about a freed identifier is the
+// server's (the sweep broadcasts it), so reaching zero blocks the input and offers
+// a way out, and nothing more.
+const expired = computed(
+  () => remainingMs.value !== null && remainingMs.value <= 0,
+)
+
+/** The remaining life as `m:ss`, or null when nothing is counting down. */
+const expiresIn = computed(() => {
+  const remaining = remainingMs.value
+  if (remaining === null || remaining <= 0) {
+    return null
+  }
+  const seconds = Math.ceil(remaining / MS_PER_SECOND)
+
+  return (
+    Math.floor(seconds / SECONDS_PER_MINUTE) +
+    ':' +
+    String(seconds % SECONDS_PER_MINUTE).padStart(2, '0')
+  )
+})
+
+/**
+ * The identifier step each waiting screen goes back to. The magic-link screen is
+ * absent on purpose: its acknowledgement and its form are one mode, so clearing
+ * the acknowledgement IS the way back.
+ */
+const IDENTIFIER_MODE_OF: Partial<Record<AuthMode, AuthMode>> = {
+  register_confirm: 'register',
+  sms_confirm: 'sms_request',
+}
+
+/**
+ * Start the countdown of what a submit just left waiting.
+ *
+ * Silence leaves the current countdown alone rather than clearing it: a mistyped
+ * code is answered by an outcome with no moment in it, and the screen it lands on
+ * is still counting down the very code being retyped.
+ *
+ * @param outcome The outcome the submit resolved to.
+ */
+function armExpiry(outcome: AuthSubmitOutcome): void {
+  if (outcome.expiresAt !== undefined) {
+    expiresAt.value = toLocal(outcome.expiresAt)
+  }
+}
+
+/**
+ * Give up what this screen is waiting on and go back to the identifier field.
+ *
+ * The "not that address?" way out (HIL-486). The session's memory of the step is
+ * dropped on the server — so no tab of it, and no later reload, comes back to this
+ * screen — while the hold on the identifier itself is left alone, which is what
+ * stops one session from freeing an address another one is registering.
+ */
+function restart(): void {
+  void abandonRegistration()
+  expiresAt.value = null
+  magicSent.value = false
+  const back = IDENTIFIER_MODE_OF[mode.value]
+  if (back !== undefined) {
+    surface.switchTo(back)
+  }
+}
 
 const heading = computed(() => {
   switch (mode.value) {
@@ -292,7 +430,12 @@ async function resendCode(): Promise<void> {
   resendPending.value = false
   if (!outcome.ok) {
     resendError.value = outcome.message ?? null
+
+    return
   }
+  // A fresh letter is a fresh life for the code, and a re-send the cooldown
+  // swallowed answers the life the code already on its way has left.
+  armExpiry(outcome)
 }
 
 /** The data-id slug for a method's redirect button, e.g. `auth-oauth-github`. */
@@ -340,6 +483,7 @@ async function continueWithDiscoverablePasskey(): Promise<void> {
 // "finish linking" prompt so the user re-authenticates the existing account.
 onMounted(() => {
   surface.reset()
+  expiresAt.value = null
   resendPending.value = false
   resendError.value = null
   oauthPending.value = null
@@ -351,12 +495,71 @@ onMounted(() => {
   if (pendingLink !== null) {
     surface.setField('email', pendingLink.email)
   }
+  resumePendingRegistration()
 })
+
+/**
+ * Come back to the code screen of a registration this SESSION started and never
+ * finished (HIL-486). The step is read from the session scope, where the
+ * handshake put it — not from anything this tab remembers — so a reload, a
+ * second tab and another device all resume the same screen, and closing the tab
+ * loses nothing.
+ */
+function resumePendingRegistration(): void {
+  const resumed = resumable.value
+  if (resumed === null) {
+    return
+  }
+  // Already on this browser's scale (the session scope converts every moment it
+  // hands out), so it is compared with Date.now() and never with the server's.
+  expiresAt.value = resumed.expiresAt
+  if (resumed.kind === 'phone') {
+    surface.switchTo('sms_confirm')
+    surface.setField('phone', resumed.identifier)
+    deliveredChannel.value = resumed.channel ?? primaryChannel.key
+
+    return
+  }
+  surface.switchTo('register_confirm')
+  surface.setField('email', resumed.identifier)
+}
 </script>
 
 <template>
   <section data-id="auth-surface" class="mx-auto" style="max-width: 24rem">
     <h1 class="h4 mb-3" data-id="auth-heading">{{ heading }}</h1>
+
+    <!-- What the waiting screens are waiting on (HIL-486). One region serves all
+    three of them because the system has one code screen and one thing being waited
+    on at a time. Reaching zero blocks the input and offers the way back to the
+    identifier field — it does NOT roll the step back on its own: whether the
+    identifier is free again is the server's to say, and it says so by broadcasting
+    it when the sweep gets there. -->
+    <div
+      v-if="expiresIn !== null"
+      class="form-text mb-3"
+      data-id="auth-expires-in"
+    >
+      <i class="bi bi-clock me-1" aria-hidden="true" />
+      Your {{ waitingSubject }} expires in {{ expiresIn }}.
+    </div>
+
+    <div
+      v-else-if="expired"
+      class="alert alert-warning py-2"
+      role="status"
+      data-id="auth-expired"
+    >
+      <div>That {{ waitingSubject }} has expired.</div>
+      <button
+        type="button"
+        class="btn btn-link p-0"
+        data-id="auth-restart"
+        @click="restart()"
+      >
+        Start again
+      </button>
+    </div>
 
     <!-- OAuth email-collision re-auth prompt (HIL-282): the provider email already
     has an account, so ask the user to sign in with an existing method to finish
@@ -439,8 +642,9 @@ onMounted(() => {
     <!-- Registration confirmation code (HIL-415): the register submit only held
     the address and mailed one code — this step is what creates the account, so a
     valid code signs the session in exactly as login does. Modelled on the SMS
-    code step above it; the countdown, the done screen and the "wrong address?"
-    way out are HIL-423. -->
+    code step above it; the expiry countdown and the way back to the address field
+    are the shared region under the heading (HIL-486), and the done screen and the
+    cooldown before a re-send is offered at all are HIL-423. -->
     <form
       v-else-if="mode === 'register_confirm'"
       novalidate
@@ -456,6 +660,7 @@ onMounted(() => {
           autocomplete="one-time-code"
           data-autofocus
           data-id="auth-register-code"
+          :disabled="expired"
           :value="form.code"
           @input="update('code', $event)"
         />
@@ -484,16 +689,19 @@ onMounted(() => {
         type="submit"
         class="btn-primary w-100"
         :loading="pending"
-        :disabled="!submittable"
+        :disabled="!submittable || expired"
         data-id="auth-submit"
       >
         {{ submitLabel }}
       </LoadingButton>
 
+      <!-- Offered only while the code is alive: past zero the hold on the address
+      is gone too, so another letter would be sent for a registration that no longer
+      exists. Starting again is what is on offer there. -->
       <button
         type="button"
         class="btn btn-link w-100"
-        :disabled="resendPending"
+        :disabled="resendPending || expired"
         data-id="auth-resend"
         @click="resendCode()"
       >
@@ -529,11 +737,12 @@ onMounted(() => {
           autocomplete="one-time-code"
           data-autofocus
           data-id="auth-sms-code"
+          :disabled="expired"
           :value="form.code"
           @input="update('code', $event)"
         />
         <div class="form-text" data-id="auth-sms-sent-via">
-          Sent to {{ form.phone }} via {{ chosenChannelLabel }}.
+          Sent to {{ form.phone }} via {{ deliveredChannelLabel }}.
         </div>
       </div>
 
@@ -550,7 +759,7 @@ onMounted(() => {
         type="submit"
         class="btn-primary w-100"
         :loading="pending && chosenChannel === primaryChannel.key"
-        :disabled="!submittable"
+        :disabled="!submittable || expired"
         data-id="auth-submit"
       >
         {{ submitLabel }}

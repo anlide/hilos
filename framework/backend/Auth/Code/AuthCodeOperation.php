@@ -45,8 +45,25 @@ final class AuthCodeOperation
      */
     public ?string $code = null;
 
-    /** Cooldown of the fresh issue in seconds, reported on every arm after the mint. */
-    public ?int $resendInSeconds = null;
+    /** Server moment the fresh issue's cooldown runs out, in epoch ms, reported on every arm after the mint. */
+    public ?int $resendAt = null;
+
+    /**
+     * Server moment the code this op left live stops working, in epoch ms, or null while
+     * none is live. Read off the challenge rather than off the mint, so the arm that
+     * merely reused an earlier code reports that code's remaining life (HIL-486).
+     */
+    public ?int $expiresAt = null;
+
+    /**
+     * Whether this code stands for a REGISTRATION - nobody owns the identifier yet.
+     *
+     * Decided once, at the probe's settle, and read again when the code has gone out:
+     * a registration is what the identifier hold and the durable wait are about, and
+     * asking the question twice could answer it differently, since an account can
+     * appear on the number in between (HIL-486).
+     */
+    public bool $registration = false;
 
     /**
      * @param AuthCodeSendSignalData $request Handed-off request that started this op

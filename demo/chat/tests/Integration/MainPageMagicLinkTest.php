@@ -22,6 +22,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Database\Context\HilosDbContext;
@@ -40,6 +41,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for the magic link that both signs in and registers (HIL-417):
@@ -57,6 +59,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class MainPageMagicLinkTest extends IntegrationTestCase
 {
+    /** How far a moment answered by the backend may sit from the one this case computes, in ms. */
+    private const int MOMENT_DELTA_MS = 1000;
+
     private const string TEST_AGENT_ID = 'test-agent';
     private const string TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
     private const string WRONG_TOKEN = 'ffffffffffffffffffffffffffffffff';
@@ -115,6 +120,49 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             $this->assertTrue($outcome->ok);
             $this->assertSame(0, $this->reservationRowCount($email));
             $this->assertNotNull($this->activeChallenge(VerificationType::MAGIC_LINK, $email));
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * The countdown a link's screen draws says the same thing about both addresses.
+     *
+     * The one property that matters about this moment (HIL-486): the send screen is
+     * worded to reveal nothing about whether an account exists, and a countdown that
+     * appeared for a stranger and not for a member - or ran differently for them -
+     * would undo that wording with a number. The challenge is issued on both sides of
+     * the question, so the answer is the challenge's own life either way.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testTheLinkLifetimeIsAnsweredAlikeToAStrangerAndAMember(): void
+    {
+        $agent = $this->bootAgent();
+        $stranger = $this->uniqueEmail();
+        $member = $this->uniqueEmail();
+        $this->seedPasswordlessAccount($member);
+        $this->openSession($agent, 'lifetime-ak');
+
+        try {
+            $ttl = Hilos::$env->int(EnvConstants::HILOS_VERIFICATION_TTL_SEC);
+            $expected = TimeHelper::nowMs() + $ttl * TimeConstants::MS_PER_SECOND;
+
+            $toStranger = $this->requestLink($agent, 'lifetime-ak', $stranger);
+            $toMember = $this->requestLink($agent, 'lifetime-ak', $member);
+
+            $this->assertEqualsWithDelta(
+                $expected,
+                (int)$toStranger->expiresAt,
+                self::MOMENT_DELTA_MS,
+                'A stranger is told how long the letter is good for',
+            );
+            $this->assertEqualsWithDelta(
+                $expected,
+                (int)$toMember->expiresAt,
+                self::MOMENT_DELTA_MS,
+                'And a member is told exactly the same',
+            );
         } finally {
             $this->cleanUp();
         }
@@ -301,11 +349,16 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         $this->openSession($agent, 'gate-ak');
 
         try {
-            $this->assertSame($cooldown, $this->requestLink($agent, 'gate-ak', $email)->resendInSeconds);
+            $this->assertEqualsWithDelta(
+                TimeHelper::nowMs() + $cooldown * TimeConstants::MS_PER_SECOND,
+                (int)$this->requestLink($agent, 'gate-ak', $email)->resendAt,
+                self::MOMENT_DELTA_MS,
+                'A fresh send answers the moment the whole cooldown runs out',
+            );
 
             $held = $this->requestLink($agent, 'gate-ak', $email);
             $this->assertTrue($held->ok, 'A repeat inside the cooldown is not an error');
-            $this->assertGreaterThan(0, $held->resendInSeconds, 'It answers the seconds still to wait');
+            $this->assertGreaterThan(TimeHelper::nowMs(), (int)$held->resendAt, 'It answers the moment still to wait for');
             $this->assertSame(1, $this->sendRowCount($email), 'And nothing is mailed for it');
 
             for ($sent = 1; $sent < $cap; $sent++) {

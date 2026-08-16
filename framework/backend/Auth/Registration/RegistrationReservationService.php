@@ -212,10 +212,11 @@ final class RegistrationReservationService
      *
      * The one operation that turns a proven address into an account's credential,
      * and it lands the hold BY ITS TYPE (HIL-417): a password reservation moves the
-     * hash it has carried since the submit into a password identity, a magic-link
-     * one creates the secret-less identity that method signs in with. Either way the
-     * identity is created VERIFIED - whatever came back, code or link, is the proof
-     * of ownership that the old "register now, confirm later" flag used to wait for.
+     * hash it has carried since the submit into a password identity, a magic-link one
+     * creates the secret-less identity that method signs in with, an sms one the phone
+     * identity a returned code proved (HIL-486). Either way the identity is created
+     * VERIFIED - whatever came back, code or link, is the proof of ownership that the
+     * old "register now, confirm later" flag used to wait for.
      *
      * One entrance and a branch, rather than a landing per method, because what
      * differs between them is a single line - which identity to write - while
@@ -243,6 +244,7 @@ final class RegistrationReservationService
         match ($reservation->type) {
             IdentityType::PASSWORD => $this->landPassword($reservation, $userId),
             IdentityType::MAGIC_LINK => $this->identities()->createMagicLinkIdentity($userId, $identifier),
+            IdentityType::SMS => $this->identities()->createSmsIdentity($userId, $identifier),
             default => throw new LogicException("Reservation for {$identifier} has no landing for its type"),
         };
 

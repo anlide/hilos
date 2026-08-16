@@ -34,8 +34,8 @@ import {
   type IdentifierDetection,
 } from '../../src/auth/authFlow.js'
 
-/** Mirror of the machine's seconds→ms factor, asserted through observed gates. */
-const MS_PER_SECOND_MIRROR = 1000
+/** One second in ms — the scale a backend `resendAt` moment is built in here. */
+const SECOND_MS = 1000
 
 const EMPTY_FORM: AuthFlowForm = {
   identifier: '',
@@ -578,7 +578,7 @@ describe('registration: consent is a local step before anything is created', () 
     const onSubmit = vi.fn(async () => ({
       ok: true,
       next: { step: 'code' as const },
-      resendInSeconds: 30,
+      resendAt: Date.now() + 30 * SECOND_MS,
     }))
     const flow = setup({
       onSubmit,
@@ -651,7 +651,7 @@ describe('registration: consent is a local step before anything is created', () 
   it("consent's submit is the send for the chosen method", async () => {
     const onMethodAction = vi.fn(async () => ({
       ok: true,
-      resendInSeconds: 60,
+      resendAt: Date.now() + 60 * SECOND_MS,
     }))
     const onSubmit = vi.fn(async () => ({ ok: true }))
     const flow = setup({
@@ -672,9 +672,7 @@ describe('registration: consent is a local step before anything is created', () 
     expect(onSubmit).not.toHaveBeenCalled()
     expect(flow.flow.get().step).toBe('external')
     expect(flow.screenKey.get()).toBe('check_inbox')
-    expect(flow.resendAvailableAt.get()).toBe(
-      Date.now() + 60 * MS_PER_SECOND_MIRROR,
-    )
+    expect(flow.resendAvailableAt.get()).toBe(Date.now() + 60 * SECOND_MS)
   })
 
   it('a refused send keeps the terms screen and says why', async () => {
@@ -735,7 +733,7 @@ describe('code channels: choosing the channel IS the send', () => {
     const onSubmit = vi.fn(async () => ({
       ok: true,
       next: { step: 'code' as const },
-      resendInSeconds: 60,
+      resendAt: Date.now() + 60 * SECOND_MS,
     }))
     const flow = await phoneFlow(onSubmit)
     await flow.chooseChannel('sms')
@@ -760,13 +758,13 @@ describe('code channels: choosing the channel IS the send', () => {
     const onSubmit = vi.fn(async () => ({
       ok: true,
       next: { step: 'code' as const },
-      resendInSeconds: 30,
+      resendAt: Date.now() + 30 * SECOND_MS,
     }))
     const flow = await phoneFlow(onSubmit)
     await flow.chooseChannel('sms')
     await flow.chooseChannel('telegram')
     expect(onSubmit).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(31 * MS_PER_SECOND_MIRROR)
+    await vi.advanceTimersByTimeAsync(31 * SECOND_MS)
     await flow.chooseChannel('telegram')
     expect(onSubmit).toHaveBeenCalledTimes(2)
   })
@@ -777,7 +775,7 @@ describe('resend gate', () => {
     const onSubmit = vi.fn(async () => ({
       ok: true,
       next: { step: 'code' as const },
-      resendInSeconds: 30,
+      resendAt: Date.now() + 30 * SECOND_MS,
     }))
     const flow = setup({
       onSubmit,
@@ -791,12 +789,10 @@ describe('resend gate', () => {
     })
     await typeAndDetect(flow, '+79991234567')
     await flow.chooseChannel('sms')
-    expect(flow.resendAvailableAt.get()).toBe(
-      Date.now() + 30 * MS_PER_SECOND_MIRROR,
-    )
+    expect(flow.resendAvailableAt.get()).toBe(Date.now() + 30 * SECOND_MS)
     await flow.resend()
     expect(onSubmit).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(31 * MS_PER_SECOND_MIRROR)
+    await vi.advanceTimersByTimeAsync(31 * SECOND_MS)
     await flow.resend()
     expect(onSubmit).toHaveBeenCalledTimes(2)
     expect(onSubmit).toHaveBeenLastCalledWith(
@@ -811,14 +807,12 @@ describe('resend gate', () => {
       onMethodAction: async () => ({
         ok: true,
         next: { step: 'external' as const },
-        resendInSeconds: 60,
+        resendAt: Date.now() + 60 * SECOND_MS,
       }),
     })
     await typeAndDetect(flow, 'a@b.com')
     await flow.chooseMethod(MAGIC_LINK_METHOD_KEY)
-    expect(flow.resendAvailableAt.get()).toBe(
-      Date.now() + 60 * MS_PER_SECOND_MIRROR,
-    )
+    expect(flow.resendAvailableAt.get()).toBe(Date.now() + 60 * SECOND_MS)
   })
 })
 
@@ -1292,5 +1286,97 @@ describe('reset', () => {
     expect(flow.detection.get()).toEqual({ status: 'idle', result: null })
     expect(flow.error.get()).toBeNull()
     expect(flow.resendAvailableAt.get()).toBeNull()
+  })
+})
+
+describe('resuming an unfinished registration', () => {
+  it('parks on the code screen with the identifier and the expiry back', () => {
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    expect(flow.flow.get()).toMatchObject({
+      step: 'code',
+      intent: 'register',
+      identifierKind: 'email',
+      channelKey: null,
+    })
+    expect(flow.form.get().identifier).toBe('ada@b.com')
+    expect(flow.expiresAt.get()).toBe(Date.now() + 10 * SECOND_MS)
+    expect(flow.screenKey.get()).toBe('confirm_identifier')
+  })
+
+  it('names the channel a phone code went over', () => {
+    const flow = setup()
+    flow.resume({
+      identifier: '+79991234567',
+      kind: 'phone',
+      channel: 'telegram',
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    expect(flow.flow.get()).toMatchObject({
+      identifierKind: 'phone',
+      channelKey: 'telegram',
+    })
+  })
+
+  it('does nothing when the session has no unfinished registration', async () => {
+    // A reconnect lands while somebody is typing: a handshake with nothing to
+    // say must not take away what they are doing.
+    const flow = setup()
+    await typeAndDetect(flow, 'a@b.com')
+    flow.setField('password', 'secret-1')
+    flow.resume(null)
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.form.get().password).toBe('secret-1')
+    expect(flow.expiresAt.get()).toBeNull()
+  })
+
+  it('drops the countdown when the identifier is edited', () => {
+    const flow = setup()
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    flow.setField('identifier', 'other@b.com')
+    expect(flow.expiresAt.get()).toBeNull()
+  })
+
+  it('starts the countdown off a submit that just sent something', async () => {
+    // The other half of the same fact: a resume is how a RETURNING tab learns the
+    // moment, and this is how the tab that asked for the code learns it.
+    const flow = setup({
+      onSubmit: async () => ({
+        ok: true,
+        next: { step: 'code' as const },
+        expiresAt: Date.now() + 10 * SECOND_MS,
+      }),
+    })
+    await typeAndDetect(flow, 'a@b.com')
+    await flow.submit()
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.expiresAt.get()).toBe(Date.now() + 10 * SECOND_MS)
+  })
+
+  it('leaves a running countdown alone when an outcome names no moment', async () => {
+    // A mistyped code is answered without one, and the screen it lands on is still
+    // counting down the very code being retyped.
+    const flow = setup({
+      onSubmit: async () => ({ ok: false, message: 'Wrong code' }),
+    })
+    flow.resume({
+      identifier: 'ada@b.com',
+      kind: 'email',
+      channel: null,
+      expiresAt: Date.now() + 10 * SECOND_MS,
+    })
+    flow.setField('code', '000000')
+    await flow.submit()
+    expect(flow.expiresAt.get()).toBe(Date.now() + 10 * SECOND_MS)
   })
 })

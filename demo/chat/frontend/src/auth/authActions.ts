@@ -62,6 +62,9 @@ const REQUEST_MAGIC_LINK_ACTION = 'request_magic_link'
 /** Backend action: submit an email magic-link token (PHP `ChatSignalConstants::CONFIRM_MAGIC_LINK`). */
 const CONFIRM_MAGIC_LINK_ACTION = 'confirm_magic_link'
 
+/** Backend action: give up the registration this session started (PHP `ChatSignalConstants::ABANDON_REGISTRATION`). */
+const ABANDON_REGISTRATION_ACTION = 'abandon_registration'
+
 /**
  * How long a code request waits for its outcome signal before giving up. Comfortably
  * past the agent's own whole-operation deadline (15s), so this fires only when the
@@ -166,6 +169,23 @@ export function resendRegisterCode(email: string): Promise<AuthSubmitOutcome> {
 }
 
 /**
+ * Give up the registration this session started — the "not that address?" way out
+ * (HIL-486).
+ *
+ * It drops the session's own memory of the unfinished step and takes every tab of
+ * this session back to the identifier field; the hold on the address itself is left
+ * alone, so a stranger's session cannot free an address somebody else is registering.
+ *
+ * Fire-and-forget by design: the surface has already gone back to the identifier
+ * step by the time the ack lands, and a failure to forget something is nothing the
+ * person can act on. What matters is that the server hears it, so the next handshake
+ * does not put them back on the code screen.
+ */
+export function abandonRegistration(): Promise<AuthSubmitOutcome> {
+  return dispatch(ABANDON_REGISTRATION_ACTION, {})
+}
+
+/**
  * Ask the backend to send a login code to a phone over one channel, and resolve
  * only once it says what became of it (HIL-492).
  *
@@ -223,7 +243,11 @@ export function requestPhoneCode(
         // The channel is taken from the OUTCOME, never from the click: naming the
         // clicked one would put "via Telegram" on a screen holding an SMS code the
         // moment a second press changed the choice mid-request.
-        settle({ ...describeCodeOutcome(data.reason), channel: data.channel })
+        settle({
+          ...describeCodeOutcome(data.reason),
+          channel: data.channel,
+          expiresAt: data.expiresAt ?? undefined,
+        })
       },
     )
 
@@ -326,10 +350,38 @@ async function dispatch(
   try {
     const result = await actions.dispatch(action, payload).done
 
-    return readFlowRefusal(result.reply) ?? { ok: true, next }
+    return (
+      readFlowRefusal(result.reply) ?? {
+        ok: true,
+        next,
+        expiresAt: readExpiresAt(result.reply),
+      }
+    )
   } catch (error) {
     return { ok: false, message: describeAuthError(error) }
   }
+}
+
+/**
+ * Read the moment a successful reply says its code or link dies, or undefined
+ * when it says nothing about one (HIL-486).
+ *
+ * Read defensively for the same reason the refusal above is: the reply is
+ * `unknown` here, and a submit that left nothing waiting — a sign-in, a confirmed
+ * code — legitimately carries no moment. Undefined leaves whatever countdown is
+ * already on screen alone, which is what a submit that changed nothing about it
+ * should do.
+ *
+ * @param reply The domain reply the action ack carried.
+ */
+function readExpiresAt(reply: unknown): number | undefined {
+  if (typeof reply !== 'object' || reply === null) {
+    return undefined
+  }
+
+  const { expiresAt } = reply as { expiresAt?: unknown }
+
+  return typeof expiresAt === 'number' ? expiresAt : undefined
 }
 
 /**

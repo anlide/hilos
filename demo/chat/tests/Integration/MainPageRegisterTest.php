@@ -11,6 +11,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Constants\PasswordPolicy;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\Main\AbandonRegistrationActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
@@ -42,6 +43,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Integration tests for reserve-on-submit registration (HIL-415): the submit holds
@@ -86,7 +88,18 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertSame(AuthFlowIntent::REGISTER, $outcome->intent);
 
             $this->assertNotNull($this->reservations()->findActive($email), 'The address must be held');
-            $this->assertNotNull($this->activeChallenge($email), 'One code must be issued');
+            $challenge = $this->activeChallenge($email);
+            $this->assertNotNull($challenge, 'One code must be issued');
+
+            // The moment the code screen counts down (HIL-486). Read off the challenge
+            // and not off "now plus the setting": the two agree here, and the day a
+            // resend reuses a live code they will not - the screen owes the life of the
+            // code it is asking for.
+            $this->assertSame(
+                TimeHelper::sqlToMs((string)$challenge->expiresAt),
+                $outcome->expiresAt,
+                'The submit answers when the code it issued stops working',
+            );
 
             $this->assertNull(
                 Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email),
@@ -539,7 +552,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
 
             $this->assertTrue($outcome->ok);
             $this->assertSame(AuthFlowStep::CODE, $outcome->step);
-            $this->assertGreaterThan(0, (int)$outcome->resendInSeconds, 'The countdown must be reported');
+            $this->assertGreaterThan(TimeHelper::nowMs(), (int)$outcome->resendAt, 'The countdown must be reported');
             $this->assertSame($challengeId, $this->activeChallenge($email)?->id, 'No second code inside the cooldown');
             $this->assertSame(
                 $expiresAt,
@@ -573,7 +586,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $outcome = $this->resend($agent, 'resend-dead-ak', $email);
 
             $this->assertTrue($outcome->ok);
-            $this->assertGreaterThan(0, (int)$outcome->resendInSeconds, 'The countdown must be reported');
+            $this->assertGreaterThan(TimeHelper::nowMs(), (int)$outcome->resendAt, 'The countdown must be reported');
             $this->assertNull($this->activeChallenge($email), 'A dead challenge must not buy a fresh send');
             $this->assertSame(1, $this->sendRowCount($email), 'No second code was minted');
         } finally {
@@ -618,7 +631,7 @@ final class MainPageRegisterTest extends IntegrationTestCase
             $this->assertFalse($outcome->ok);
             $this->assertSame(AuthFlowOutcome::CODE_SEND_CAP_REACHED, $outcome->code);
             $this->assertNull($outcome->step, 'A cap refusal leaves the surface on the code screen');
-            $this->assertNull($outcome->resendInSeconds, 'A cap refusal promises no countdown');
+            $this->assertNull($outcome->resendAt, 'A cap refusal promises no countdown');
             $this->assertSame($cap, $this->sendRowCount($email), 'Nothing is minted past the cap');
         } finally {
             $this->cleanUp();
@@ -676,6 +689,88 @@ final class MainPageRegisterTest extends IntegrationTestCase
         } finally {
             $this->cleanUp();
         }
+    }
+
+    /**
+     * A session that starts a second registration stops waiting on the first (HIL-486).
+     *
+     * One session runs one flow at a time, so the durable memory holds one row per
+     * session and the newer address re-points it. Two rows would leave the handshake
+     * choosing which step to hand back, which is a choice nobody could make correctly.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testASecondRegistrationRepointsTheSessionsWait(): void
+    {
+        $agent = $this->bootAgent();
+        $first = $this->uniqueEmail();
+        $second = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'repoint-wait-ak');
+
+        try {
+            $this->register($agent, 'repoint-wait-ak', $first);
+            $this->assertSame($first, $this->waitOf($token));
+
+            $this->register($agent, 'repoint-wait-ak', $second);
+
+            $this->assertSame($second, $this->waitOf($token), 'The session waits on its newest address only');
+            $this->assertNotNull(
+                $this->reservations()->findActive($first),
+                'Walking away from an address does not free it for the sessions still on it',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * "Not that address?" forgets the wait and leaves the hold on the address alone.
+     *
+     * The asymmetry is the rule (HIL-415, Flow p.7): the wait belongs to this session
+     * and this session may drop it, while the hold belongs to the address and other
+     * sessions may still be waiting on the very same one.
+     *
+     * @throws HilosException When setup or the request handling fails
+     */
+    public function testAbandonForgetsTheWaitAndKeepsTheHold(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $token = $this->openSession($agent, 'abandon-ak');
+
+        try {
+            $this->register($agent, 'abandon-ak', $email);
+            $this->assertSame($email, $this->waitOf($token));
+
+            ExecutionContext::setCurrentAcceptKey('abandon-ak');
+            $reply = new MainPage($agent)->onAction(
+                'abandon-ak',
+                ChatSignalConstants::ABANDON_REGISTRATION,
+                new AbandonRegistrationActionDTO(),
+            );
+
+            $this->assertInstanceOf(AuthFlowOutcome::class, $reply);
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $reply->step);
+            $this->assertNull($this->waitOf($token), 'The session stops waiting on the address it walked away from');
+            $this->assertNotNull(
+                $this->reservations()->findActive($email),
+                'The address stays held: a stranger walking away must not free it',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * Reads what one session is waiting on, straight from the durable memory.
+     *
+     * @param string $sessionToken Session token to ask about
+     * @return ?string Identifier the session is waiting on, or null when it waits on nothing
+     * @throws HilosException When the wait lookup fails
+     */
+    private function waitOf(string $sessionToken): ?string
+    {
+        return Hilos::$db->registrationWaits->findBySession($sessionToken)?->identifier;
     }
 
     /**

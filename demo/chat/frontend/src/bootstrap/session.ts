@@ -7,6 +7,7 @@ import {
   ScopeManager,
   sessionImpersonatedByName,
   sessionImpersonating,
+  sessionPendingRegistration,
   sessionUserId,
   sessionUserIsAdmin,
   sessionUserName,
@@ -29,3 +30,11 @@ export const impersonating = sessionImpersonating(scopes)
 
 /** The impersonating admin's display name; empty unless impersonated. */
 export const impersonatedByName = sessionImpersonatedByName(scopes)
+
+/**
+ * The registration this session started and has not finished, or null when it
+ * has none (HIL-486). Answered by the server on every handshake, so the auth
+ * surface comes back to the code screen after a reload, in a second tab, and on
+ * another device — and nothing about it is kept in this tab.
+ */
+export const pendingRegistration = sessionPendingRegistration(scopes)

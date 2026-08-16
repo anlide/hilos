@@ -16,6 +16,9 @@ import {
   bindSessionScope,
   sessionUserName,
   SESSION_SIGNAL_SCHEMAS,
+  applyServerTime,
+  offsetMs,
+  toLocal,
   bootHilos,
   createAuthGate,
   createAuthSurface,
@@ -39,6 +42,9 @@ it('exports the @hilos/core public surface', () => {
   expect(bindSessionScope).toBeTypeOf('function')
   expect(sessionUserName).toBeTypeOf('function')
   expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
+  expect(applyServerTime).toBeTypeOf('function')
+  expect(offsetMs).toBeTypeOf('function')
+  expect(toLocal).toBeTypeOf('function')
   expect(bootHilos).toBeTypeOf('function')
   expect(createAuthGate).toBeTypeOf('function')
   expect(createAuthSurface).toBeTypeOf('function')

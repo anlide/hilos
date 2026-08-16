@@ -26,9 +26,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * does not exist.
  *
  * {@see reason} is a stable, non-sensitive code; why a transport failed stays in the
- * agent log. {@see resendInSeconds} is filled on the arms where waiting is the
- * answer - a fresh send's cooldown, or what is left of one - and null where waiting
- * changes nothing.
+ * agent log. {@see resendAt} is filled on the arms where waiting is the answer -
+ * the moment a fresh send's cooldown runs out, or the one already running does -
+ * and null where waiting changes nothing. {@see expiresAt} is the other half of the
+ * same question (HIL-486): the code screen counts down the life of the code it is
+ * about to ask for, and only the arms that leave a live code carry it.
  */
 final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
@@ -41,10 +43,10 @@ final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterf
      */
     public const string REASON_CHANNEL_UNAVAILABLE = 'code_channel_unavailable';
 
-    /** The cooldown between sends has not run out: {@see resendInSeconds} says how long is left. */
+    /** The cooldown between sends has not run out: {@see resendAt} says when it opens. */
     public const string REASON_RATE_LIMITED = 'code_rate_limited';
 
-    /** The per-window cap refused the send: waiting a little changes nothing, so no seconds ride along. */
+    /** The per-window cap refused the send: waiting a little changes nothing, so no moment rides along. */
     public const string REASON_CAP_REACHED = 'code_cap_reached';
 
     /** A code was minted but the transport refused it: the surface offers a resend. */
@@ -54,13 +56,15 @@ final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterf
      * @param string $acceptKey Requesting connection accept key the signal targets
      * @param string $channel Code channel the request named
      * @param string $reason Stable, non-sensitive outcome code (see self::REASON_*)
-     * @param ?int $resendInSeconds Seconds until a send is allowed again, or null when waiting is not the answer
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null when waiting is not the answer
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null when no code is live
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $channel,
         public readonly string $reason,
-        public readonly ?int $resendInSeconds = null,
+        public readonly ?int $resendAt = null,
+        public readonly ?int $expiresAt = null,
     ) {
     }
 
@@ -81,7 +85,8 @@ final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterf
             'acceptKey' => $this->acceptKey,
             'channel' => $this->channel,
             'reason' => $this->reason,
-            'resendInSeconds' => $this->resendInSeconds,
+            'resendAt' => $this->resendAt,
+            'expiresAt' => $this->expiresAt,
         ];
     }
 
@@ -102,7 +107,8 @@ final class AuthCodeResultSignalData extends BaseDTO implements SignalDataInterf
             acceptKey: self::requireString($data, 'acceptKey'),
             channel: self::requireString($data, 'channel'),
             reason: self::requireString($data, 'reason'),
-            resendInSeconds: self::optionalInt($data, 'resendInSeconds'),
+            resendAt: self::optionalInt($data, 'resendAt'),
+            expiresAt: self::optionalInt($data, 'expiresAt'),
         );
     }
 }

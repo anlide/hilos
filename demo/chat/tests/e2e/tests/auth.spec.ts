@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator } from '@playwright/test'
 
 import { mailsTo, readRegisterCode } from '../helpers/mail'
 import {
@@ -40,6 +40,9 @@ import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 // of the file transport's artifact (helpers/mail.ts), the same shape as the hleb
 // reference reading its catcher. Reservation expiry is not exercised here: the
 // hold lasts 15 minutes, so its rollback stays an integration test.
+
+/** Seconds in a minute, for reading the `m:ss` countdown as a number. */
+const SECONDS_PER_MINUTE = 60
 
 test('registers through the gated profile surface, auto-logs-in, and resumes it in place', async ({
   page,
@@ -237,15 +240,16 @@ test('converges a second waiting tab onto the registration the first one confirm
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await submitRegistration(page, email)
 
-  // Tab B submits the SAME address from the composer's gate: the hold is already
-  // there, so it joins the code step instead of being refused, and no second
-  // letter goes out — both are waiting on the one code in the inbox.
+  // Tab B opens the same session's surface and is ALREADY on the code screen,
+  // naming the address it never typed (HIL-486): the unfinished step lives on the
+  // server, so it is answered to every tab of the session. Nothing is submitted
+  // here, so no second letter goes out either — both wait on the one in the inbox.
   const second = await context.newPage()
   await gotoPage(second, '/')
   await expect(second.getByTestId('conn-state')).toHaveText('connected')
   await second.getByTestId('message-signin').click()
-  await submitRegistration(second, email)
   await expect(second.getByTestId('auth-register-code')).toBeVisible()
+  await expect(second.getByTestId('auth-surface')).toContainText(email)
   expect(await mailsTo(email)).toHaveLength(1)
 
   // Tab A confirms. Tab B is not merely moved along: it really enters, resolving
@@ -370,3 +374,89 @@ test('leaves a number that is not on Telegram free to sign in by SMS', async ({
 
   await expect(page.getByTestId('self-user')).toHaveText(phone)
 })
+
+test('comes back to the phone code screen after a reload, and finishes there', async ({
+  page,
+}) => {
+  const phone = uniquePhone()
+
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await page.getByTestId('auth-to-sms').click()
+  await typeInto(page.getByTestId('auth-phone'), phone)
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  const code = await waitForSmsCode(phone)
+
+  // The tab keeps nothing across a reload, so the step it comes back to is the one
+  // the SERVER remembers: the code went out, so the session is still waiting on this
+  // number and is given its screen back rather than an empty phone field (HIL-486).
+  await page.reload()
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  await expect(page.getByTestId('auth-phone')).toHaveCount(0)
+
+  // Down to the channel: which one carried the code is part of what is remembered,
+  // because the screen has to name it and the click that chose it is gone.
+  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via SMS')
+  await expect(page.getByTestId('auth-expires-in')).toContainText(/\d+:\d{2}/)
+
+  // And it is the same registration: the code texted before the reload is the one
+  // this screen still accepts, and accepting it makes the account.
+  await typeInto(page.getByTestId('auth-sms-code'), code)
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+})
+
+test('counts the code down and comes back to it, still counting, after a reload', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/profile')
+  await submitRegistration(page, email)
+  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+
+  // The screen says how long the code it is asking for is still good for, and the
+  // number moves on its own - a caption that never changed would satisfy every
+  // other assertion here (HIL-486).
+  const countdown = page.getByTestId('auth-expires-in')
+  await expect(countdown).toContainText(/\d+:\d{2}/)
+  const started = await remainingSeconds(countdown)
+  await expect.poll(async () => remainingSeconds(countdown)).toBeLessThan(started)
+  const beforeReload = await remainingSeconds(countdown)
+
+  // The whole reason the moment comes from the server instead of from a duration
+  // this tab started counting: a reload has no memory of when the counting began.
+  // Coming back to a FULL countdown would be the same defect as coming back to the
+  // address field, so what is asserted is that it kept SHRINKING across the reload.
+  await page.reload()
+  await expect(page.getByTestId('auth-register-code')).toBeVisible()
+  await expect
+    .poll(async () => remainingSeconds(countdown))
+    .toBeLessThan(beforeReload)
+
+  // And it is the same registration: the code mailed before the reload is the one
+  // this screen still accepts.
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+})
+
+/**
+ * Read the countdown as seconds, so two readings can be compared as numbers.
+ *
+ * A line that is not there yet - or says something else - answers a value no
+ * countdown can hold, so a poll waiting for the number to shrink goes on waiting
+ * instead of passing on the absence of one.
+ *
+ * @param countdown The locator of the countdown line.
+ * @returns Seconds it says are left, or an unreachably large number while it says nothing readable.
+ */
+async function remainingSeconds(countdown: Locator): Promise<number> {
+  const parts = /(\d+):(\d{2})/.exec((await countdown.textContent()) ?? '')
+
+  return parts === null
+    ? Number.MAX_SAFE_INTEGER
+    : Number(parts[1]) * SECONDS_PER_MINUTE + Number(parts[2])
+}

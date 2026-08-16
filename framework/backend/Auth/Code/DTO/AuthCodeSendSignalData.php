@@ -23,6 +23,13 @@ use Hilos\Core\Router\SignalDataInterface;
  * A connection that is gone by the time the outcome is ready simply has nowhere to
  * receive it, which is the correct end for a browser that left.
  *
+ * {@see sessionToken} is the OTHER address, and it outlives the first (HIL-486): a
+ * code that really goes out is remembered against the session, so a browser that
+ * reloads - or a second tab, or a second device - is given its code screen back at
+ * the handshake. The session is carried rather than looked up from the accept key,
+ * because the moment the memory is written is minutes after the ask and the socket
+ * that asked may already be gone - which is precisely the case the memory exists for.
+ *
  * No code and no secret ever rides this payload: it is the REQUEST for a code, minted
  * later and inside the agent.
  */
@@ -30,12 +37,14 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
 {
     /**
      * @param string $acceptKey Requesting connection's accept key, the address the result goes back to
+     * @param string $sessionToken Requesting connection's session token, the address a sent code is remembered against
      * @param string $identifier Normalized identifier the code goes to (E.164 phone)
      * @param string $channel Code channel name the person chose (see CodeChannel::name())
      * @param string $type Verification type the code is minted for (see VerificationType)
      */
     public function __construct(
         public readonly string $acceptKey,
+        public readonly string $sessionToken,
         public readonly string $identifier,
         public readonly string $channel,
         public readonly string $type,
@@ -49,6 +58,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
     {
         return [
             'acceptKey' => $this->acceptKey,
+            'sessionToken' => $this->sessionToken,
             'identifier' => $this->identifier,
             'channel' => $this->channel,
             'type' => $this->type,
@@ -69,6 +79,7 @@ final class AuthCodeSendSignalData extends BaseDTO implements SignalDataInterfac
     {
         return new static(
             acceptKey: self::requireString($data, 'acceptKey'),
+            sessionToken: self::requireString($data, 'sessionToken'),
             identifier: self::requireString($data, 'identifier'),
             channel: self::requireString($data, 'channel'),
             type: self::requireString($data, 'type'),

@@ -597,10 +597,11 @@ final class ChatAgent extends AbstractAgent
             Hilos::$rt->userStates->actions->ensure($userId);
         }
 
+        $this->parkRegistrationWait($data->acceptKey, $session);
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
-            $this->handshakeResponseFor($session),
+            $this->handshakeResponse($session),
         );
     }
 
@@ -672,7 +673,7 @@ final class ChatAgent extends AbstractAgent
             $this->sendToUser(
                 $signalName,
                 $connection->acceptKey,
-                $this->handshakeResponseFor($session)->withPendingAck($connection->pendingAck),
+                $this->handshakeResponse($session)->withPendingAck($connection->pendingAck),
             );
         }
     }
@@ -981,6 +982,11 @@ final class ChatAgent extends AbstractAgent
      * confirming connection is skipped entirely - its caller signed it in on the ordinary
      * path and answered it with the action reply.
      *
+     * The durable waits are dropped HERE, and only after the waiting sockets have been
+     * read off them (HIL-486): they are half of who is waiting, so a caller that cleared
+     * them first would converge to whoever happened to be parked in the runtime list and
+     * silently miss the rest.
+     *
      * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
      * @param int $userId User the confirmation created
      * @param string $initiatorAcceptKey Accept key of the connection that submitted the code
@@ -989,7 +995,10 @@ final class ChatAgent extends AbstractAgent
      */
     public function convergeRegistration(string $identifier, int $userId, string $initiatorAcceptKey): void
     {
-        foreach ($this->parkedAcceptKeys($identifier) as $acceptKey => $sessionToken) {
+        $parked = $this->parkedAcceptKeys($identifier);
+        Hilos::$db->registrationWaits->actions->releaseByIdentifier($identifier);
+
+        foreach ($parked as $acceptKey => $sessionToken) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
             if ($acceptKey === $initiatorAcceptKey) {
                 continue;
@@ -1014,6 +1023,51 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
+     * Ends one session's wait on a registration, in every tab of it (HIL-486).
+     *
+     * The runtime half of "not that address?": the durable memory is dropped by the
+     * page that took the action, and this drops the sockets parked on it and tells
+     * the other tabs of the same session to go back to the identifier field. The
+     * initiator is skipped because its own action reply already moves it - a second
+     * order for the same move would race the first.
+     *
+     * Only sockets of THIS session are touched. Another session waiting on the same
+     * identifier is still waiting on it, and the hold nobody released still stands.
+     *
+     * @param string $sessionToken Session cookie token walking away from its registration
+     * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
+     * @throws HilosException On runtime failure
+     */
+    public function abandonRegistration(string $sessionToken, string $initiatorAcceptKey): void
+    {
+        // Collect first: releasing a waiter mutates the collection a foreach would walk.
+        $parked = [];
+        foreach (Hilos::$rt->hilosRegistrationWaiters as $waiter) {
+            if ($waiter->sessionToken === $sessionToken) {
+                $parked[$waiter->acceptKey] = $waiter->identifier;
+            }
+        }
+
+        foreach ($parked as $acceptKey => $identifier) {
+            Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            $this->sendToUser(
+                ChatSignalConstants::AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData(
+                    $acceptKey,
+                    $identifier,
+                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowIntent::REGISTER,
+                ),
+            );
+        }
+    }
+
+    /**
      * Rolls every session parked on an expired identifier back to the identifier step (HIL-415).
      *
      * What an expired hold owes the people waiting on it. The step goes BACK rather than
@@ -1026,7 +1080,15 @@ final class ChatAgent extends AbstractAgent
      */
     private function rollBackRegistrationWaiters(string $identifier): void
     {
-        foreach ($this->parkedAcceptKeys($identifier) as $acceptKey => $sessionToken) {
+        // Read before the durable rows go, since they are half of who is waiting.
+        $parked = $this->parkedAcceptKeys($identifier);
+
+        // The durable memory goes next, still ahead of the first signal: the hold is
+        // gone, so a tab reconnecting a second later must be told the identifier step by
+        // the handshake, not parked again on a code screen this very sweep is closing.
+        Hilos::$db->registrationWaits->actions->releaseByIdentifier($identifier);
+
+        foreach (array_keys($parked) as $acceptKey) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);
 
             $this->sendToUser(
@@ -1075,11 +1137,18 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Reads the connections parked on one identifier before any of them is released.
+     * Reads the connections waiting on one identifier before any of them is released.
      *
      * The list is materialized first on purpose: releasing a waiter mutates the collection
      * a foreach over it would be walking, and the session token has to be read while the
      * row is still there.
+     *
+     * TWO sources, because the runtime list is a projection and not the truth (HIL-486):
+     * a socket is parked when its session handshakes, so the socket that ASKED for the
+     * code is not in it - it has not handshaken since. The durable waits close that gap;
+     * they name the sessions, and every live socket of such a session is waiting whether
+     * or not it was ever parked. Sessions with no live socket contribute nothing and cost
+     * nothing: their tabs are told at the handshake, by the step the response carries.
      *
      * @param string $identifier Normalized identifier being converged
      * @return array<string, string> Session token by waiting connection accept key
@@ -1090,6 +1159,12 @@ final class ChatAgent extends AbstractAgent
         $parked = [];
         foreach (Hilos::$rt->hilosRegistrationWaiters->forIdentifier($identifier) as $waiter) {
             $parked[$waiter->acceptKey] = $waiter->sessionToken;
+        }
+
+        foreach (Hilos::$db->registrationWaits->sessionTokensFor($identifier) as $sessionToken) {
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $parked[$acceptKey] = $sessionToken;
+            }
         }
 
         return $parked;

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Verification;
 
 use Hilos\Auth\Verification\VerificationSendOutcome;
+use Hilos\Constants\TimeConstants;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,6 +19,9 @@ use PHPUnit\Framework\TestCase;
 final class VerificationSendOutcomeTest extends TestCase
 {
     private const int COOLDOWN_SECONDS = 60;
+
+    /** How far the computed moment may sit from the one this case expects, in ms. */
+    private const int MOMENT_DELTA_MS = 1000;
 
     public function testSentReportsADeliveredCodeWithItsCooldown(): void
     {
@@ -43,5 +48,29 @@ final class VerificationSendOutcomeTest extends TestCase
         self::assertFalse($outcome->sent);
         self::assertTrue($outcome->capReached);
         self::assertSame(0, $outcome->resendInSeconds);
+    }
+
+    public function testResendAtTurnsTheCooldownIntoAServerMoment(): void
+    {
+        // What the browser is told (HIL-486): a duration cannot survive a reload,
+        // because nothing on the page recorded when the counting began.
+        $outcome = VerificationSendOutcome::sent(self::COOLDOWN_SECONDS);
+
+        self::assertEqualsWithDelta(
+            TimeHelper::nowMs() + self::COOLDOWN_SECONDS * TimeConstants::MS_PER_SECOND,
+            $outcome->resendAt(),
+            self::MOMENT_DELTA_MS,
+        );
+    }
+
+    public function testResendAtOfACapRefusalIsNowRatherThanAPromise(): void
+    {
+        // A cap carries no seconds, so its moment is simply the present one: the
+        // surface never draws it, because the refusal answers with no moment at all.
+        self::assertEqualsWithDelta(
+            TimeHelper::nowMs(),
+            VerificationSendOutcome::capReached()->resendAt(),
+            self::MOMENT_DELTA_MS,
+        );
     }
 }

@@ -6,6 +6,7 @@ namespace Hilos\Auth\Verification;
 
 use Hilos\Auth\MagicLink\MagicLinkUrl;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -17,6 +18,7 @@ use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
 
 /**
@@ -174,6 +176,33 @@ class VerificationService
     }
 
     /**
+     * When the live challenge of a (type, identifier) stops being good (HIL-486).
+     *
+     * What a waiting screen counts down: the code or link the person is holding dies
+     * at a moment, and only the challenge itself knows which one - a send that the
+     * cooldown swallowed left the PREVIOUS code in play, and telling the screen "a
+     * full lifetime from now" would have it count down to a code that died sooner.
+     *
+     * Answered in milliseconds because it is going to a browser, which is told every
+     * moment on the same scale (Flow p.7); the row keeps SQL datetimes, and this is
+     * the one place that conversion belongs for this fact.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email, E.164 phone)
+     * @return ?int Epoch milliseconds the live challenge expires at, or null when nothing is live
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    public function activeExpiresAt(string $type, string $identifier): ?int
+    {
+        $expiresAt = $this->collection()->findActive($type, $identifier, $this->maxAttempts())?->expiresAt;
+
+        return $expiresAt === null ? null : TimeHelper::sqlToMs($expiresAt);
+    }
+
+    /**
      * How long the cooldown still blocks a re-send for a (type, identifier).
      *
      * The public read of the rule {@see issue()} applies silently, opened by the
@@ -206,6 +235,30 @@ class VerificationService
         }
 
         return max(0, $stats->lastIssuedAt + $this->resendCooldownSeconds() - time());
+    }
+
+    /**
+     * The moment the cooldown lets a re-send through, in epoch milliseconds (HIL-486).
+     *
+     * The browser-facing form of {@see resendAllowedInSeconds()}, and the reason it
+     * exists rather than each caller adding "now" itself: a duration handed to a tab
+     * is wrong the instant that tab is reloaded, because nobody wrote down when the
+     * counting started. The sibling conversion for a send that just happened lives on
+     * {@see VerificationSendOutcome::resendAt()}; this one answers the sites that ask
+     * about a cooldown they did not just start.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (lowercased email)
+     * @return int Epoch milliseconds a re-send is allowed at (now, when nothing blocks one)
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When a send-gate env key is missing, outside the catalog, or
+     *   not an int
+     */
+    public function resendAllowedAt(string $type, string $identifier): int
+    {
+        return TimeHelper::nowMs()
+            + $this->resendAllowedInSeconds($type, $identifier) * TimeConstants::MS_PER_SECOND;
     }
 
     /**

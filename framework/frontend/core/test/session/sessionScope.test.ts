@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   bindSessionScope,
   sessionUserName,
@@ -10,9 +10,16 @@ import {
   SESSION_ACK_REGISTERED,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
+import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { subscribeSignal } from '../../src/state/signal.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
+
+/** A browser clock parked at a known moment, so the measured drift is a chosen number. */
+const LOCAL_NOW = 1_700_000_000_000
+
+/** How far ahead of this browser the handshake claims the server is, in ms. */
+const SERVER_DRIFT_MS = 45_000
 
 /** A connection double replaying handshake-response project signals. */
 function fakeConnection() {
@@ -200,5 +207,31 @@ describe('sessionScope', () => {
     })
 
     expect(seen).toStrictEqual([SESSION_ACK_REGISTERED])
+  })
+
+  it('measures the server clock from the handshake, before the scope is published', () => {
+    // The offset has to be in place by the time a subscriber wakes: the values
+    // that wake it are the ones a countdown is drawn from.
+    vi.useFakeTimers()
+    vi.setSystemTime(LOCAL_NOW)
+    try {
+      const connection = fakeConnection()
+      const scopes = new ScopeManager()
+      bindSessionScope(connection as unknown as HilosConnection, scopes)
+      const userId = sessionUserId(scopes)
+      const seen: number[] = []
+      subscribeSignal(userId, () => seen.push(offsetMs()))
+
+      connection.emitHandshakeResponse({
+        entities: { currentUser: { id: 1, name: 'Ada' } },
+        data: { pendingAck: null, serverTimeMs: LOCAL_NOW + SERVER_DRIFT_MS },
+      })
+
+      expect(offsetMs()).toBe(SERVER_DRIFT_MS)
+      expect(seen).toStrictEqual([SERVER_DRIFT_MS])
+    } finally {
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
   })
 })

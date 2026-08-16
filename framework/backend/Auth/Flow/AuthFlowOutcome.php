@@ -71,8 +71,23 @@ final class AuthFlowOutcome extends ActionReplyDTO
     /** Wire key for the intent inside {@see self::FIELD_NEXT}. */
     private const string FIELD_INTENT = 'intent';
 
-    /** Wire key for the resend gate in seconds. */
-    private const string FIELD_RESEND_IN_SECONDS = 'resendInSeconds';
+    /** Wire key for the moment the resend gate opens. */
+    private const string FIELD_RESEND_AT = 'resendAt';
+
+    /**
+     * Wire key for the moment the code or link now in play stops working (HIL-486).
+     *
+     * What the waiting screen counts down. It describes the LIVE challenge and not
+     * the send that just happened, which is why a send the cooldown swallowed still
+     * answers one: the person is looking at a code that is still good, and the
+     * screen owes them its real remaining life rather than a fresh full one.
+     *
+     * It says nothing about whether an account exists, deliberately. Every flow that
+     * reaches a waiting screen issues a challenge on both sides of that question, so
+     * a countdown that appeared for a stranger and not for a member would turn the
+     * magic-link screen's carefully generic sentence into an oracle.
+     */
+    private const string FIELD_EXPIRES_AT = 'expiresAt';
 
     /**
      * @param bool $ok Whether the submit succeeded
@@ -80,7 +95,8 @@ final class AuthFlowOutcome extends ActionReplyDTO
      * @param ?string $intent Intent the surface moves to, or null to keep the current one
      * @param ?string $code Semantic error code on failure, or null
      * @param ?string $message Backend-authored inline message on failure, or null
-     * @param ?int $resendInSeconds Seconds until a code re-send is allowed, or null when nothing was sent
+     * @param ?int $resendAt Server moment a code re-send is allowed, in epoch ms, or null when nothing was sent
+     * @param ?int $expiresAt Server moment the code or link in play dies, in epoch ms, or null when none is
      */
     private function __construct(
         public readonly bool $ok,
@@ -88,7 +104,8 @@ final class AuthFlowOutcome extends ActionReplyDTO
         public readonly ?string $intent,
         public readonly ?string $code,
         public readonly ?string $message,
-        public readonly ?int $resendInSeconds,
+        public readonly ?int $resendAt,
+        public readonly ?int $expiresAt,
     ) {
     }
 
@@ -97,12 +114,17 @@ final class AuthFlowOutcome extends ActionReplyDTO
      *
      * @param string $step Step the surface moves to (see AuthFlowStep)
      * @param string $intent Intent the surface moves under (see AuthFlowIntent)
-     * @param ?int $resendInSeconds Seconds until a re-send is allowed, or null when no code is in play
+     * @param ?int $resendAt Server moment a re-send is allowed, in epoch ms, or null when no code is in play
+     * @param ?int $expiresAt Server moment the code in play dies, in epoch ms, or null when none is
      * @return static Success outcome
      */
-    public static function moveTo(string $step, string $intent, ?int $resendInSeconds = null): static
-    {
-        return new static(true, $step, $intent, null, null, $resendInSeconds);
+    public static function moveTo(
+        string $step,
+        string $intent,
+        ?int $resendAt = null,
+        ?int $expiresAt = null,
+    ): static {
+        return new static(true, $step, $intent, null, null, $resendAt, $expiresAt);
     }
 
     /**
@@ -111,15 +133,16 @@ final class AuthFlowOutcome extends ActionReplyDTO
      * The shape of the resend actions (HIL-421): the person is already on the screen
      * the code belongs to, so there is nothing to move to - the only news is when the
      * button comes back. A send held back by the cooldown answers this too, with the
-     * seconds that are left, because a repeat pressed too soon is a countdown and not
+     * moment that gate opens, because a repeat pressed too soon is a countdown and not
      * an error.
      *
-     * @param int $resendInSeconds Seconds until a re-send is allowed
+     * @param int $resendAt Server moment a re-send is allowed, in epoch ms
+     * @param ?int $expiresAt Server moment the code or link in play dies, in epoch ms, or null when none is
      * @return static Success outcome carrying only the resend gate
      */
-    public static function sent(int $resendInSeconds): static
+    public static function sent(int $resendAt, ?int $expiresAt = null): static
     {
-        return new static(true, null, null, null, null, $resendInSeconds);
+        return new static(true, null, null, null, null, $resendAt, $expiresAt);
     }
 
     /**
@@ -136,7 +159,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
      */
     public static function rejectTo(string $code, string $step, string $intent, ?string $message = null): static
     {
-        return new static(false, $step, $intent, $code, $message, null);
+        return new static(false, $step, $intent, $code, $message, null, null);
     }
 
     /**
@@ -144,8 +167,8 @@ final class AuthFlowOutcome extends ActionReplyDTO
      *
      * The sibling of {@see rejectTo()} for a refusal with no better place to be: the
      * send cap (HIL-421) leaves the person exactly where they are, holding a sentence
-     * instead of a countdown. It carries no seconds on purpose - the core arms its
-     * gate off `resendInSeconds` and would otherwise show a dead timer for a button
+     * instead of a countdown. It carries no moment on purpose - the core arms its
+     * gate off `resendAt` and would otherwise show a dead timer for a button
      * that is not coming back this window.
      *
      * @param string $code Semantic error code (see self::CODE_*)
@@ -154,7 +177,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
      */
     public static function refuse(string $code, string $message): static
     {
-        return new static(false, null, null, $code, $message, null);
+        return new static(false, null, null, $code, $message, null, null);
     }
 
     /**
@@ -179,8 +202,11 @@ final class AuthFlowOutcome extends ActionReplyDTO
         if ($this->message !== null) {
             $data[self::FIELD_MESSAGE] = $this->message;
         }
-        if ($this->resendInSeconds !== null) {
-            $data[self::FIELD_RESEND_IN_SECONDS] = $this->resendInSeconds;
+        if ($this->resendAt !== null) {
+            $data[self::FIELD_RESEND_AT] = $this->resendAt;
+        }
+        if ($this->expiresAt !== null) {
+            $data[self::FIELD_EXPIRES_AT] = $this->expiresAt;
         }
 
         return $data;
@@ -201,7 +227,8 @@ final class AuthFlowOutcome extends ActionReplyDTO
             self::optionalString($next, self::FIELD_INTENT),
             self::optionalString($data, self::FIELD_CODE),
             self::optionalString($data, self::FIELD_MESSAGE),
-            self::optionalInt($data, self::FIELD_RESEND_IN_SECONDS),
+            self::optionalInt($data, self::FIELD_RESEND_AT),
+            self::optionalInt($data, self::FIELD_EXPIRES_AT),
         );
     }
 }

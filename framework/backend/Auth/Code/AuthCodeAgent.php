@@ -12,6 +12,8 @@ use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
+use Hilos\Auth\MagicLink\MagicLinkService;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Verification\VerificationIssuedCode;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
@@ -19,8 +21,14 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Verification\VerificationType;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
 use Throwable;
@@ -53,6 +61,14 @@ use Throwable;
  * {@see VerificationService}, delivers through a {@see CodeChannel} the project
  * registered, and signals an accept key. Whoever the code belongs to is decided later,
  * on the confirm action, by the project.
+ *
+ * Two framework auth tables it does write, and both for the same reason - only this
+ * process knows what became of the send (HIL-486). A number nobody owns is HELD before
+ * the mint, so a second person cannot register it while the code travels; and a code
+ * that really went out is REMEMBERED against the asking session, so a reload lands back
+ * on the code screen instead of an empty form. Neither can be done by the page action:
+ * it returned the moment it handed the request over, long before there was a probe
+ * verdict, a code, or a delivery.
  *
  * A monopolistic singleton ({@see AuthCodeAgentDaemon}). Ops live only in its memory,
  * so a restart loses in-flight requests - correct for this operation: a code request is
@@ -221,6 +237,11 @@ class AuthCodeAgent extends AbstractAgent
      * @throws AsyncHttpException When a stage request cannot start, times out, or answers malformed
      * @throws SocketException When an underlying socket operation fails
      * @throws InvalidArgumentException When an outcome signal cannot be named or queued
+     * @throws EmptyValueException When the identifier the request names is empty
+     * @throws DatabaseException When an identity, reservation or verification query fails
+     * @throws LogicException When an object collection the hold or the mint needs is unavailable
+     * @throws EnvException When a reservation or verification env key is missing, outside the
+     *   catalog, or of the wrong type
      */
     private function advance(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -247,6 +268,11 @@ class AuthCodeAgent extends AbstractAgent
      * @throws AsyncHttpException When the probe cannot start, times out, or answers malformed
      * @throws SocketException When an underlying socket operation fails
      * @throws InvalidArgumentException When an outcome signal cannot be named or queued
+     * @throws EmptyValueException When the identifier the request names is empty
+     * @throws DatabaseException When an identity, reservation or verification query fails
+     * @throws LogicException When an object collection the hold or the mint needs is unavailable
+     * @throws EnvException When a reservation or verification env key is missing, outside the
+     *   catalog, or of the wrong type
      */
     private function advanceProbe(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -280,6 +306,8 @@ class AuthCodeAgent extends AbstractAgent
      * The mint is here rather than at intake precisely because it must not happen for a
      * channel that cannot deliver: a refused probe leaves no challenge row and spends no
      * cooldown, so the person can pick another channel and still get their first code.
+     * The hold on the identifier keeps that company for the same reason - an unreachable
+     * channel reserves nothing either (HIL-486).
      *
      * @param int $id Op id in the pool
      * @param AuthCodeOperation $operation Operation whose probe settled
@@ -288,6 +316,11 @@ class AuthCodeAgent extends AbstractAgent
      * @throws AsyncHttpException When the send cannot start
      * @throws SocketException When an underlying socket operation fails
      * @throws InvalidArgumentException When an outcome signal cannot be named or queued
+     * @throws EmptyValueException When the identifier the request names is empty
+     * @throws DatabaseException When an identity, reservation or verification query fails
+     * @throws LogicException When an object collection the hold or the mint needs is unavailable
+     * @throws EnvException When a reservation or verification env key is missing, outside the
+     *   catalog, or of the wrong type
      */
     private function settleProbe(int $id, AuthCodeOperation $operation, CodeChannelProbe $probe, float $nowMs): void
     {
@@ -299,6 +332,8 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
+        $this->holdIdentifier($operation);
+
         $issued = $this->issue($operation);
         if ($issued->code === null) {
             $this->reportRefusedIssue($id, $operation, $issued);
@@ -308,10 +343,49 @@ class AuthCodeAgent extends AbstractAgent
 
         $operation->probeToken = $probe->token;
         $operation->code = $issued->code;
-        $operation->resendInSeconds = $issued->outcome->resendInSeconds;
+        $operation->resendAt = $issued->outcome->resendAt();
+        $operation->expiresAt = $this->liveExpiresAt($operation);
         $operation->stage = AuthCodeOperation::STAGE_SEND;
 
         $this->advanceSend($id, $operation, $nowMs);
+    }
+
+    /**
+     * Holds a free identifier for the registration this code is about to start (HIL-486).
+     *
+     * The shape {@see MagicLinkService::send()} established, one layer down: an
+     * identifier nobody owns is reserved before its code is minted, so a second person
+     * cannot take it while this one reads the message, and the confirm has something to
+     * check the code against. An identifier that already resolves to an account holds
+     * nothing - there is nothing left to reserve - and the same lookup answers the
+     * other question this operation needs later: whether a registration is what is
+     * waiting on this code.
+     *
+     * Only a LOGIN code reserves. A code that adds a number to an account somebody is
+     * already signed into ({@see VerificationType::SMS_ADD}) proves possession and
+     * starts no registration, so a hold there would strand a number nobody is
+     * registering behind a wait nobody can finish.
+     *
+     * A hold that already stands is left alone by the service, and that is the racing
+     * second session: its code is refused by the send gate as a cooldown, which puts it
+     * on the code screen of the hold it joined rather than sending a second message.
+     *
+     * @param AuthCodeOperation $operation Operation whose identifier is being held
+     * @throws EmptyValueException When the identifier the request names is empty
+     * @throws DatabaseException When an identity or reservation query fails
+     * @throws LogicException When the identities or reservations object collection is unavailable
+     * @throws EnvException When the reservation TTL key is missing, outside the catalog, or not an int
+     */
+    private function holdIdentifier(AuthCodeOperation $operation): void
+    {
+        $identifier = $operation->request->identifier;
+        if ($operation->request->type !== VerificationType::SMS_LOGIN
+            || Hilos::$db?->identities->findByIdentity(IdentityType::SMS, $identifier) !== null) {
+            return;
+        }
+
+        $operation->registration = true;
+        new RegistrationReservationService()->hold(IdentityType::SMS, $identifier, null);
     }
 
     /**
@@ -335,11 +409,16 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
+        // A cooldown refusal still opens the code screen - the code it held back is the
+        // one already on its way - so that screen is owed the life of THAT code, which
+        // is shorter than a fresh one by however long ago it went out (HIL-486).
+        $operation->expiresAt = $this->liveExpiresAt($operation);
+
         $this->finish(
             $id,
             $operation,
             AuthCodeResultSignalData::REASON_RATE_LIMITED,
-            $issued->outcome->resendInSeconds,
+            $issued->outcome->resendAt(),
         );
     }
 
@@ -373,12 +452,12 @@ class AuthCodeAgent extends AbstractAgent
         $send = $operation->channel->readSend($response);
         if (!$send->delivered) {
             $this->logAgentWarning($this->describe($operation) . ' send refused: ' . ($send->detail ?? 'no detail'));
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendInSeconds);
+            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
 
             return;
         }
 
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendInSeconds);
+        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendAt);
     }
 
     /**
@@ -412,12 +491,12 @@ class AuthCodeAgent extends AbstractAgent
             $operation->channel->handoff($operation->request->identifier, $operation->request->type, $code);
         } catch (Throwable $e) {
             $this->logAgentWarning($this->describe($operation) . ' handoff refused the code: ' . $e->getMessage());
-            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendInSeconds);
+            $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
 
             return;
         }
 
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendInSeconds);
+        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_CODE_SENT, $operation->resendAt);
     }
 
     /**
@@ -436,6 +515,29 @@ class AuthCodeAgent extends AbstractAgent
             $operation->request->identifier,
             null,
             $operation->channel->name(),
+        );
+    }
+
+    /**
+     * When the code this operation left live stops being good (HIL-486).
+     *
+     * Read from the challenge rather than computed from the mint, because the arm
+     * that needs it most did not mint anything: a send the cooldown held back leaves
+     * an EARLIER code in play, and the screen that is about to ask for it counts down
+     * that one's remaining life.
+     *
+     * @param AuthCodeOperation $operation Operation whose target is asked about
+     * @return ?int Epoch milliseconds the live code expires at, or null when none is live
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    private function liveExpiresAt(AuthCodeOperation $operation): ?int
+    {
+        return new VerificationService()->activeExpiresAt(
+            $operation->request->type,
+            $operation->request->identifier,
         );
     }
 
@@ -502,18 +604,59 @@ class AuthCodeAgent extends AbstractAgent
     /**
      * Reports an outcome to the requesting connection and drops the operation.
      *
+     * The durable memory of the wait is written here, before the answer goes out and
+     * on exactly the arms the surface opens its code screen on (HIL-486): a code that
+     * went out, and a send the cooldown held back because an earlier one already did.
+     * The refusals write nothing - there is no code to come back to.
+     *
      * @param int $id Op id in the pool
      * @param AuthCodeOperation $operation Operation being finished
      * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
-     * @param ?int $resendInSeconds Seconds until a send is allowed again, or null when waiting is not the answer
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null when waiting is not the answer
      * @throws InvalidArgumentException When the outcome signal cannot be named or queued
      */
-    private function finish(int $id, AuthCodeOperation $operation, string $reason, ?int $resendInSeconds = null): void
+    private function finish(int $id, AuthCodeOperation $operation, string $reason, ?int $resendAt = null): void
     {
         $operation->closeClient();
         unset($this->operations[$id]);
 
-        $this->report($operation->request, $reason, $resendInSeconds);
+        if ($reason === AuthCodeResultSignalData::REASON_CODE_SENT
+            || $reason === AuthCodeResultSignalData::REASON_RATE_LIMITED) {
+            $this->rememberWait($operation);
+        }
+
+        $this->report($operation->request, $reason, $resendAt, $operation->expiresAt);
+    }
+
+    /**
+     * Remembers, against the asking session, that it is waiting on a code (HIL-486).
+     *
+     * The durable half of the unfinished-registration memory: the runtime waiter list
+     * is a projection of these rows, so a browser that reloads is parked again at its
+     * handshake and given back the code screen it was on. Only a REGISTRATION is
+     * remembered - a code sent to a number that already has an account signs somebody
+     * in, and there is no half-finished registration to come back to.
+     *
+     * A failure to write is logged and swallowed, alone in this class: the code did go
+     * out, the person is owed that answer, and turning a delivered code into "send
+     * failed" over a memory row would be a worse lie than losing the row.
+     *
+     * @param AuthCodeOperation $operation Operation whose code left a session waiting
+     */
+    private function rememberWait(AuthCodeOperation $operation): void
+    {
+        if (!$operation->registration) {
+            return;
+        }
+
+        try {
+            Hilos::$db?->registrationWaits->actions->hold(
+                $operation->request->sessionToken,
+                $operation->request->identifier,
+            );
+        } catch (Throwable $e) {
+            $this->logAgentWarning($this->describe($operation) . ' left no wait behind: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -530,23 +673,39 @@ class AuthCodeAgent extends AbstractAgent
     private function fail(int $id, AuthCodeOperation $operation, string $detail): void
     {
         $this->logAgentWarning($this->describe($operation) . ' failed: ' . $detail);
-        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendInSeconds);
+        $this->finish($id, $operation, AuthCodeResultSignalData::REASON_SEND_FAILED, $operation->resendAt);
     }
 
     /**
      * Queues the outcome signal to the requesting connection's accept key.
      *
+     * It answers a REQUEST rather than an operation, because one arm has no operation
+     * to answer from: a channel the registry does not carry is refused at intake, where
+     * nothing has been adopted yet. Every other caller reads both moments off the
+     * operation it is finishing, so the two facts still travel together.
+     *
      * @param AuthCodeSendSignalData $request Request being answered
      * @param string $reason Stable outcome reason (see AuthCodeResultSignalData REASON_*)
-     * @param ?int $resendInSeconds Seconds until a send is allowed again, or null
+     * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
+     * @param ?int $expiresAt Server moment the live code dies, in epoch ms, or null when none is live
      * @throws InvalidArgumentException When the outcome signal cannot be named or queued
      */
-    private function report(AuthCodeSendSignalData $request, string $reason, ?int $resendInSeconds = null): void
-    {
+    private function report(
+        AuthCodeSendSignalData $request,
+        string $reason,
+        ?int $resendAt = null,
+        ?int $expiresAt = null,
+    ): void {
         $this->sendToUser(
             HilosSignalConstants::HILOS_AUTH_CODE_RESULT,
             $request->acceptKey,
-            new AuthCodeResultSignalData($request->acceptKey, $request->channel, $reason, $resendInSeconds),
+            new AuthCodeResultSignalData(
+                $request->acceptKey,
+                $request->channel,
+                $reason,
+                $resendAt,
+                $expiresAt,
+            ),
         );
     }
 

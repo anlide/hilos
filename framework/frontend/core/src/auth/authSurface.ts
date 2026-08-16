@@ -115,6 +115,14 @@ export interface AuthSubmitOutcome {
   readonly message?: string
   /** The mode to advance to on success (recovery stepping); omit to stay. */
   readonly next?: AuthMode
+  /**
+   * The SERVER moment the code or link this submit left waiting stops being
+   * good, in epoch ms; omit when the submit left nothing waiting (HIL-486). The
+   * machine does not act on it — what a code is worth is the server's answer,
+   * and a screen reaching zero is only what the person sees — so it passes
+   * through to the view, which draws the countdown.
+   */
+  readonly expiresAt?: number
 }
 
 /** Wiring for {@link createAuthSurface}. */
