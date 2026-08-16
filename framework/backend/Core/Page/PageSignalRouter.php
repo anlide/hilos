@@ -13,6 +13,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
@@ -53,6 +54,17 @@ use Throwable;
  */
 class PageSignalRouter
 {
+    /**
+     * Milliseconds a frame waits for its connection's identity before it is judged anyway.
+     *
+     * A ceiling, not an expected wait: the measured window between the handshake answer and
+     * the first frame judged without it was 49 ms (HIL-582), and the sweep that empties the
+     * queue runs every worker tick, 10 ms apart. What the ceiling buys is the guarantee that
+     * nothing here can make a connection worse off than it was before the queue existed —
+     * an identity that never arrives costs half a second and then today's verdict.
+     */
+    private const int IDENTITY_WAIT_TIMEOUT_MS = 500;
+
     /** Signal-to-page route config for non-action routed signals. */
     private SignalRouteConfig $signalRoutes;
 
@@ -69,6 +81,16 @@ class PageSignalRouter
 
     /** @var int Serial that makes each parked action's request key unique in this router */
     private int $deferredSequence = 0;
+
+    /**
+     * @var array<string, list<PendingFrame>> Frames held per connection until its identity lands, by accept key
+     *
+     * Per connection and strictly FIFO: while one frame of a connection waits, every later
+     * frame of the same connection queues behind it even if the identity has since arrived.
+     * Otherwise an action would overtake the subscribe it belongs to, and one race would
+     * only have been traded for another.
+     */
+    private array $pendingFrames = [];
 
     /**
      * Creates page signal router with factory and action routes.
@@ -92,12 +114,35 @@ class PageSignalRouter
      * Catches PageSubscriptionException and sends structured error signal while
      * preserving the subscription. Catches any other exception as internal error.
      *
+     * A subscription that arrives before this worker learns who sent it is parked
+     * rather than judged ({@see self::parkUntilIdentified}), because the gate below
+     * would read an unfinished answer as "a guest" and answer 401 to somebody who is
+     * signed in. A parked frame resumes into the identical steps, so nothing here
+     * distinguishes it.
+     *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
     public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
+    {
+        if ($this->parkUntilIdentified(PendingFrameKind::PageSubscribe, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runPageSubscribeFrame($data, $source, $name);
+    }
+
+    /**
+     * Judges and dispatches one page subscribe frame, parked or not.
+     *
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @param string $name Signal name (page name fallback)
+     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     */
+    private function runPageSubscribeFrame(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
         $page = $data->page ?? $name;
         if ($page === '') {
@@ -252,6 +297,13 @@ class PageSignalRouter
      * be scoped to the rows it shows), then has the browser context build and reply
      * the table_window snapshot for that descriptor.
      *
+     * The quietest of the three identity-judged doors, and so the one parked with the
+     * strictest condition ({@see self::parkUntilIdentified}): the window delivery
+     * re-checks the page guards, and those guards judge by the params of the page
+     * subscription, so this frame waits for its subscription as well as for the
+     * identity. A refusal here answers nothing at all to the client, which is why it
+     * now leaves a log line instead of only an absence.
+     *
      * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
      * @param string $source Signal source
      * @param string $name Signal name (page name)
@@ -264,6 +316,24 @@ class PageSignalRouter
             return;
         }
 
+        if ($this->parkUntilIdentified(PendingFrameKind::TableViewport, $data, $source, $name)) {
+            return;
+        }
+
+        $this->runTableViewportFrame($data, $source, $name);
+    }
+
+    /**
+     * Stores one viewport descriptor and replies its window, parked or not.
+     *
+     * @param WebSocketTableViewportSignalDTO $data Viewport signal (acceptKey, tableKey, filter, sort, offset, limit)
+     * @param string $source Signal source
+     * @param string $name Signal name (page name)
+     * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
+     * @throws InvalidArgumentException When the table-window signal cannot be named
+     */
+    private function runTableViewportFrame(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
+    {
         $viewport = new TableViewportSubscription(
             tableKey: $data->tableKey,
             filter: $data->filter,
@@ -272,7 +342,15 @@ class PageSignalRouter
             limit: $data->limit,
         );
         Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
-        Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport);
+        if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport) === false) {
+            // The client asked for this window and gets no answer of any kind - not an
+            // error frame, not an empty one. Without this line the refusal exists
+            // nowhere, and a page silently missing its table looks the same as a page
+            // whose table is genuinely empty.
+            Logger::info(
+                "Table window refused: page={$name}, table={$data->tableKey}, acceptKey={$data->acceptKey}",
+            );
+        }
     }
 
     /**
@@ -300,11 +378,33 @@ class PageSignalRouter
      * throttle agent answers ({@see self::deferForThrottleVerdict()}). A parked action
      * resumes into the identical steps, so nothing below distinguishes it.
      *
+     * Ahead of even that comes the identity wait ({@see self::parkUntilIdentified}):
+     * an action from a connection this worker has not been told about yet is held
+     * before anything reads it. It has to be the outer of the two waits, because a
+     * throttle key is minted per session — keying one on an identity that has not
+     * arrived would count a signed-in person's attempts against the anonymous bucket.
+     *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      * @throws InvalidArgumentException When the action-error signal cannot be named
      */
     public function dispatchAction(WebSocketActionSignalDTO $data, string $source): void
+    {
+        if ($this->parkUntilIdentified(PendingFrameKind::Action, $data, $source, $data->action)) {
+            return;
+        }
+
+        $this->runActionFrame($data, $source);
+    }
+
+    /**
+     * Routes and runs one action frame, parked or not.
+     *
+     * @param WebSocketActionSignalDTO $data Signal data
+     * @param string $source Signal source
+     * @throws InvalidArgumentException When the action-error signal cannot be named
+     */
+    private function runActionFrame(WebSocketActionSignalDTO $data, string $source): void
     {
         $page = $this->actionRoutes->getPageForAction($data->action);
 
@@ -569,6 +669,222 @@ class PageSignalRouter
                 $this->runAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId);
             } catch (Throwable $e) {
                 $this->failAction($entry->page, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $e);
+            }
+        });
+    }
+
+    /**
+     * Holds a frame back when this worker does not yet know who is behind its connection.
+     *
+     * The identity is written by the agent that owns the WebSocket lifecycle, in its own
+     * worker, and read here through the project browser context, so between the two lies
+     * the RT sync. A frame that lands inside that window used to be judged against an
+     * absent answer and refused 401 ({@see ConnectionIdentity} on why the answer has three
+     * states and not two). It is queued instead, and swept back out by
+     * {@see self::releasePendingFrames()} as soon as the answer arrives.
+     *
+     * A connection with a queue keeps queueing: the readiness of a later frame is not even
+     * asked about while an earlier one waits, or an action would run before the subscribe
+     * it belongs to. A project that resolves identity synchronously - or does not resolve
+     * it at all, which is the framework default - never reaches the queue.
+     *
+     * @param PendingFrameKind $kind Which door the frame arrived at
+     * @param WebSocketPageSubscribeSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data Frame as it arrived
+     * @param string $source Signal source the frame was dispatched with
+     * @param string $name Signal name the frame was dispatched with
+     * @return bool True when the frame has been parked and must not run now
+     */
+    private function parkUntilIdentified(
+        PendingFrameKind $kind,
+        WebSocketPageSubscribeSignalDTO|WebSocketActionSignalDTO|WebSocketTableViewportSignalDTO $data,
+        string $source,
+        string $name,
+    ): bool {
+        $acceptKey = $data->acceptKey;
+        if ($acceptKey === '') {
+            return false;
+        }
+
+        if (($this->pendingFrames[$acceptKey] ?? []) === [] && $this->frameIsReady($kind, $acceptKey, $name)) {
+            return false;
+        }
+
+        $this->pendingFrames[$acceptKey][] = new PendingFrame(
+            acceptKey: $acceptKey,
+            kind: $kind,
+            data: $data,
+            source: $source,
+            name: $name,
+            deadline: microtime(true) + self::IDENTITY_WAIT_TIMEOUT_MS / 1000,
+        );
+
+        return true;
+    }
+
+    /**
+     * Whether everything one frame is judged against has reached this worker.
+     *
+     * Every door waits for the connection's identity. The viewport door waits for one
+     * thing more - the page subscription the frame is addressed to - because the window
+     * delivery re-checks the page guards, and those guards read the subscription's params:
+     * judged without it they judge an empty param set, which is a different question from
+     * the one the client asked.
+     *
+     * @param PendingFrameKind $kind Door the frame arrived at
+     * @param string $acceptKey Accept key of the connection that sent it
+     * @param string $name Signal name the frame was dispatched with (page name for the viewport door)
+     * @return bool Whether the frame may be judged now
+     */
+    private function frameIsReady(PendingFrameKind $kind, string $acceptKey, string $name): bool
+    {
+        if (Hilos::$browser?->connectionIdentity($acceptKey)->pending === true) {
+            return false;
+        }
+
+        return $kind !== PendingFrameKind::TableViewport || $this->subscribedToPage($acceptKey, $name);
+    }
+
+    /**
+     * Whether this connection's page subscription is the one a frame is addressed to.
+     *
+     * @param string $acceptKey Accept key of the connection that sent the frame
+     * @param string $page Page the frame is addressed to
+     * @return bool Whether the subscription mirror already holds that page for this connection
+     */
+    private function subscribedToPage(string $acceptKey, string $page): bool
+    {
+        $subscribed = Hilos::$sr?->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? null;
+
+        return $subscribed === $page;
+    }
+
+    /**
+     * Names what a frame was still waiting for when its deadline ran out.
+     *
+     * Only ever asked on the timeout path, where the answer is the whole diagnosis: an
+     * identity that never crossed the RT sync and a subscription that never arrived are
+     * different failures with different owners, and the frame itself cannot tell them
+     * apart. Both can be outstanding at once, which is why they are reported together
+     * rather than as the first one found.
+     *
+     * @param PendingFrameKind $kind Door the frame arrived at
+     * @param string $acceptKey Accept key of the connection that sent it
+     * @param string $name Signal name the frame was dispatched with (page name for the viewport door)
+     * @return string Unmet conditions, comma-separated
+     */
+    private function unmetWait(PendingFrameKind $kind, string $acceptKey, string $name): string
+    {
+        $unmet = [];
+        if (Hilos::$browser?->connectionIdentity($acceptKey)->pending === true) {
+            $unmet[] = 'identity';
+        }
+        if ($kind === PendingFrameKind::TableViewport && !$this->subscribedToPage($acceptKey, $name)) {
+            $unmet[] = 'subscription';
+        }
+
+        // Everything it waited for has arrived, and the frame is late for another
+        // reason entirely: a tick that did not run, or a queue held up ahead of it.
+        return $unmet === [] ? 'nothing (the queue itself was late)' : implode(',', $unmet);
+    }
+
+    /**
+     * Runs every parked frame whose wait is over, in the order each connection sent them.
+     *
+     * Called once per worker tick, so a frame is delayed by the RT sync plus at most one
+     * 10 ms loop and never by a wait on the stack - this worker serves every other
+     * connection while these sit here. A frame whose deadline passed runs anyway, judged
+     * exactly as it would have been before this queue existed: an identity that never
+     * arrives is this server's failure, and answering the client late with today's verdict
+     * is the one behavior guaranteed to be no worse than before.
+     *
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     */
+    public function releasePendingFrames(): void
+    {
+        if ($this->pendingFrames === []) {
+            return;
+        }
+
+        $now = microtime(true);
+        foreach (array_keys($this->pendingFrames) as $acceptKey) {
+            while (($frame = $this->pendingFrames[$acceptKey][0] ?? null) !== null) {
+                $expired = $frame->deadline <= $now;
+                if (!$expired && !$this->frameIsReady($frame->kind, $acceptKey, $frame->name)) {
+                    break;
+                }
+
+                // Off the queue BEFORE it runs: the dispatch it resumes into asks this same
+                // queue whether to park, and a frame still standing in it would park itself
+                // again, forever.
+                array_shift($this->pendingFrames[$acceptKey]);
+                if ($expired) {
+                    // What the frame was waiting for is named rather than assumed: a
+                    // viewport frame also waits for its page subscription, and a line
+                    // that always blamed the identity would send the one reader this
+                    // log exists for after the wrong thing.
+                    Logger::error(
+                        "Frame wait timed out, judging it anyway: "
+                            . "frame={$frame->kind->value}, name={$frame->name}, acceptKey={$acceptKey}, "
+                            . 'waitedFor=' . $this->unmetWait($frame->kind, $acceptKey, $frame->name),
+                    );
+                }
+                $this->runPendingFrame($frame);
+            }
+
+            if (($this->pendingFrames[$acceptKey] ?? null) === []) {
+                unset($this->pendingFrames[$acceptKey]);
+            }
+        }
+    }
+
+    /**
+     * Throws away everything a closed connection was waiting to have judged.
+     *
+     * Nobody is left to answer: the frames would sit until their deadline and then be
+     * dispatched into a socket that is gone, spending the worker's tick on delivering
+     * refusals and windows to nobody.
+     *
+     * @param string $acceptKey Accept key of the closed connection
+     */
+    public function dropPendingFrames(string $acceptKey): void
+    {
+        unset($this->pendingFrames[$acceptKey]);
+    }
+
+    /**
+     * Finishes one parked frame's dispatch, into the very steps it was stopped before.
+     *
+     * The connection is stamped back onto the execution frame first, for the reason it is
+     * in {@see self::resumeDeferredAction()}: the sweep runs on the worker tick and not on
+     * the frame's own signal, so without this the resumed handler's writes would belong to
+     * nobody and the client's own deltas would not apply at once.
+     *
+     * Whatever a resumed frame raises stops here. The straight-through path answers its own
+     * failures and lets the rest reach the signal dispatcher; this path has no dispatcher
+     * above it, only the worker tick shared by every agent and every other connection.
+     *
+     * @param PendingFrame $frame Frame that was waiting
+     * @throws FramePopOrderException When the execution frame is unwound out of order
+     */
+    private function runPendingFrame(PendingFrame $frame): void
+    {
+        ExecutionContext::withAcceptKey($frame->acceptKey, function () use ($frame): void {
+            $data = $frame->data;
+
+            try {
+                if ($data instanceof WebSocketPageSubscribeSignalDTO) {
+                    $this->runPageSubscribeFrame($data, $frame->source, $frame->name);
+                } elseif ($data instanceof WebSocketActionSignalDTO) {
+                    $this->runActionFrame($data, $frame->source);
+                } else {
+                    $this->runTableViewportFrame($data, $frame->source, $frame->name);
+                }
+            } catch (Throwable $e) {
+                Logger::error(
+                    "Parked frame failed after the wait: frame={$frame->kind->value}, "
+                        . "name={$frame->name}, acceptKey={$frame->acceptKey}, "
+                        . 'exception=' . $e::class . ', message=' . $e->getMessage(),
+                );
             }
         });
     }

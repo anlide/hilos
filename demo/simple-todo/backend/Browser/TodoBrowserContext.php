@@ -6,6 +6,7 @@ namespace Demo\SimpleTodo\Browser;
 
 use Demo\SimpleTodo\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Throwable;
 
@@ -27,7 +28,7 @@ final class TodoBrowserContext extends BrowserContext
      * user row's admin flag, the same flag the admin:grant command writes. Runs in
      * whatever worker serves the gated page (the framework admin surface is served
      * by the hilos index agent), so the read stays as defensive as
-     * {@see self::resolveCurrentUserId()} below: a missing row or any storage
+     * {@see self::resolveConnectionIdentity()} below: a missing row or any storage
      * failure denies rather than opening the admin surface.
      *
      * @param int $userId Authenticated durable user id
@@ -82,20 +83,35 @@ final class TodoBrowserContext extends BrowserContext
     }
 
     /**
-     * Resolves the durable user id behind an accept key from the demo's runtime
-     * connection registry, where the handshake records the acceptKey -> user
-     * mapping. Lets the page access gate identify the subscriber; an unregistered
-     * accept key (a browser before any handshake) resolves to null and is denied.
+     * Resolves who is behind an accept key from the demo's runtime connection
+     * registry, where the handshake records the acceptKey -> user mapping. Lets the
+     * page access gate identify the subscriber.
+     *
+     * A registry row is written for every connection the handshake sees, so no row
+     * means the row has not crossed the RT sync into this worker yet rather than
+     * "nobody is there" - the frame waits instead of being refused as anonymous
+     * (HIL-599). An absent registry is the opposite case and answers a settled nobody,
+     * as does a storage failure: where the answer can never arrive there is nothing to
+     * wait for, and access must close rather than hang.
      *
      * @param string $acceptKey Subscriber accept key
-     * @return ?int Durable user id, or null when no connection is registered
+     * @return ConnectionIdentity User behind the connection, or the pending state
      */
-    protected function resolveCurrentUserId(string $acceptKey): ?int
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
         try {
-            return Hilos::$rt?->connections[$acceptKey]?->userId;
+            $connections = Hilos::$rt?->connections;
+            if ($connections === null) {
+                return ConnectionIdentity::resolved(null);
+            }
+
+            $connection = $connections[$acceptKey];
+
+            return $connection === null
+                ? ConnectionIdentity::pending()
+                : ConnectionIdentity::resolved($connection->userId);
         } catch (Throwable) {
-            return null;
+            return ConnectionIdentity::resolved(null);
         }
     }
 

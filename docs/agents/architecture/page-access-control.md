@@ -98,13 +98,14 @@ Guard keys (`BrowserGuardKey`): `TYPE`, `SOURCE`, `KEY` (DB_EXISTS route param),
 `DB_EXISTS` checks a resource by a route param and needs no identity. `ACCESS`
 must know *which user* is behind the WebSocket accept key — and that mapping is
 project-owned state (RT `connections`) the framework cannot see. One protected
-hook bridges it. The framework default denies:
+hook bridges it, and it answers **three** states rather than two: this user, no
+user at all, or not known yet. The framework default is a settled "nobody":
 
 ```php
 // BrowserContext — no acceptKey→user map exists at framework level
-protected function resolveCurrentUserId(string $acceptKey): ?int
+protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
 {
-    return null;
+    return ConnectionIdentity::resolved(null);
 }
 ```
 
@@ -112,19 +113,40 @@ The project overrides it on its `BrowserContext` to read its own RT identity:
 
 ```php
 // ChatBrowserContext
-protected function resolveCurrentUserId(string $acceptKey): ?int
+protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
 {
     try {
-        return Hilos::$rt?->connections[$acceptKey]?->userId;
+        $connection = Hilos::$rt?->connections[$acceptKey];
+
+        return $connection === null
+            ? ConnectionIdentity::pending()
+            : ConnectionIdentity::resolved($connection->userId);
     } catch (Throwable) {
-        return null;
+        return ConnectionIdentity::resolved(null);
     }
 }
 ```
 
-`null` → the connection is treated as unauthenticated for the guard → 403. The
-admin-flag read itself is not new code: the `ACCESS` guard reuses the guard
-source mechanism (`SOURCE` = users, the resolved id, `FIELD` = admin).
+`userId === null` on a settled answer → the connection is treated as
+unauthenticated for the guard → 403. The admin-flag read itself is not new code:
+the `ACCESS` guard reuses the guard source mechanism (`SOURCE` = users, the
+resolved id, `FIELD` = admin).
+
+**Why the third state exists (HIL-599).** The connection is identified by the
+agent that owns its WebSocket, in *that* agent's worker, while the guards run in
+whatever worker serves the page — with the RT sync in between. A frame arriving
+inside that window used to read as a guest and be answered 401, so a signed-in
+person reconnecting saw "sign in". A missing row now means *pending*, and
+`PageSignalRouter` parks the frame — page subscribe, action, table viewport
+alike — in a per-connection FIFO queue instead of judging it, sweeping the queue
+on the worker tick once the row lands. After 500 ms of waiting the frame is
+judged exactly as it would have been without the queue, so nothing here can make
+a connection worse off than before. A storage failure stays a settled "nobody"
+on purpose: a broken registry must close access, not suspend it.
+
+`resolveCurrentUserId()` is `final` — it is now the flattened reading of this
+seam (`->userId`), not an override point, so a project has one identity source
+and not two that can disagree.
 
 The **page access level** uses a second seam next to it: `isAdmin(int $userId):
 bool`, framework default `false` (deny). The project answers it from its own

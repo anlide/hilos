@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -144,14 +145,14 @@ final class ActionAuthGuardTestBrowser extends BrowserContext
     }
 
     /**
-     * Returns the injected acting user id, standing in for the connection registry.
+     * Returns the injected user id as a settled identity, standing in for the connection registry.
      *
      * @param string $acceptKey Acting connection accept key (unused in the fixture)
-     * @return ?int Injected user id
+     * @return ConnectionIdentity Settled identity carrying the injected user id
      */
-    protected function resolveCurrentUserId(string $acceptKey): ?int
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
-        return $this->userId;
+        return ConnectionIdentity::resolved($this->userId);
     }
 }
 

@@ -40,7 +40,7 @@ the recipe before generating code.
    thin page → topology + SDK view mount.
 5. The admin surface is closed by default: every framework admin page inherits
    the `ADMIN` access level from `AbstractHilosPage`. Wire the project identity
-   seams — `resolveCurrentUserId()` and `isAdmin()` on the project
+   seams — `resolveConnectionIdentity()` and `isAdmin()` on the project
    `BrowserContext` — or the mounted feature denies everyone
    (`docs/agents/architecture/page-access-control.md`).
 6. Pass every DB-entity / RT-item change through the contract gate before writing.

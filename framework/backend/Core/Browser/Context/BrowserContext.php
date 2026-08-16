@@ -228,21 +228,32 @@ abstract class BrowserContext
      * scoped to them. Any viewport table is served here — a self-snapshot table
      * (settings) or a source-fanned one (the Hilos users table) alike.
      *
+     * The answer is the verdict on one delivery, not a success flag: a window that does
+     * not arrive is a normal outcome here — a guard-failed subscription is kept alive
+     * and served nothing until the guard passes. It is answered rather than swallowed
+     * because the caller is owed something to log ({@see PageSignalRouter::dispatchTableViewport}):
+     * refusing a client's own viewport frame in silence left no trace anywhere on the
+     * server, which is why this door's share of the identity race was found by accident
+     * twice and never by its own log line. Mirrors
+     * {@see PageSignalRouter::dispatchPageUpdateSubscription}, which answers the same
+     * shape of question for the update door.
+     *
      * @param string $page Page the table belongs to
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param TableViewportSubscription $viewport Window descriptor; its delivered row-id set is updated
+     * @return bool Whether the window was delivered to the connection
      * @throws TableRowKeyMissingException When a windowed row is a placeholder and carries no key
      * @throws InvalidArgumentException When the table-window signal cannot be named
      */
-    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): void
+    public function sendTableWindow(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
     {
         if (Hilos::$sr === null) {
-            return;
+            return false;
         }
 
         $table = Hilos::$table?->get($viewport->tableKey);
         if (!$table instanceof ViewportTable) {
-            return;
+            return false;
         }
 
         // Re-check the page guards before serving the window: a guard-failed
@@ -260,13 +271,13 @@ abstract class BrowserContext
             if ($pageConfig !== null) {
                 $pageParams = Hilos::$sr->getPageSubscriptions()[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
                 if (!$this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams)) {
-                    return;
+                    return false;
                 }
             }
         } catch (PageInternalErrorException $e) {
             Logger::error("Browser window skipped a broken declaration: page={$page}, error={$e->getMessage()}");
 
-            return;
+            return false;
         }
 
         try {
@@ -280,7 +291,7 @@ abstract class BrowserContext
                 . "page={$page}, error={$e->getMessage()}",
             );
 
-            return;
+            return false;
         }
 
         $rows = [];
@@ -312,6 +323,8 @@ abstract class BrowserContext
                 targetAcceptKey: $acceptKey,
             ),
         );
+
+        return true;
     }
 
     /**
@@ -2134,19 +2147,54 @@ abstract class BrowserContext
      * Resolves the durable user id behind a connection's accept key, or null when
      * the connection has no user (a guest, or before any project identity).
      *
-     * The framework has no acceptKey -> user mapping — that identity is
-     * project-owned (the project's runtime connection registry). A project that
-     * uses the ACCESS guard overrides this to read its own mapping (e.g. its
-     * runtime connections collection by accept key). The framework default denies,
-     * so a project that has not wired identity closes a guarded page to everyone
-     * rather than leaking it.
+     * Reads the project seam ({@see self::resolveConnectionIdentity}) and flattens
+     * its three states back to the two the guards judge by, answering null both for
+     * a guest and for an identity still on its way. Flattening is safe on both paths
+     * that reach a guard, for two different reasons: a client's own frame is judged
+     * only after the dispatcher has held it ({@see PageSignalRouter::releasePendingFrames}),
+     * so "not yet known" there means the deadline passed and today's verdict applies;
+     * the reactive fan-out re-checks the same guards on every delivery and never went
+     * through a frame at all, and a delivery it skips resumes on the next fan-out the
+     * moment the guard passes — the live-promotion model.
+     *
+     * Sealed on purpose: a project answers the three-state seam instead, so there is
+     * one connection→user source and not two that can disagree. `final` and not
+     * `private` because the failure modes differ — an override attempt has to fail at
+     * class load, where it is read as the instruction it is, rather than compile into
+     * a second method this class never calls.
      *
      * @param string $acceptKey Subscriber accept key
      * @return ?int Durable user id, or null when none is resolvable
      */
-    protected function resolveCurrentUserId(string $acceptKey): ?int
+    final protected function resolveCurrentUserId(string $acceptKey): ?int
     {
-        return null;
+        return $this->resolveConnectionIdentity($acceptKey)->userId;
+    }
+
+    /**
+     * Resolves who is behind a connection, or says the answer has not arrived yet.
+     *
+     * The framework has no acceptKey -> user mapping — that identity is
+     * project-owned (the project's runtime connection registry), written by the
+     * agent that owns the WebSocket lifecycle in ITS worker and read here in
+     * whatever worker serves the page. A project that uses the ACCESS guard or any
+     * non-PUBLIC page level overrides this to read its own mapping: no row for this
+     * accept key means the handshake write has not crossed the RT sync yet, so the
+     * answer is {@see ConnectionIdentity::pending()}; a row means
+     * {@see ConnectionIdentity::resolved()} with whatever user it names, including
+     * null for a guest.
+     *
+     * The framework default is a settled "nobody", so a project that has not wired
+     * identity behaves exactly as before and never parks a frame: guarded pages
+     * close to everyone rather than leaking, and nothing waits for an answer that
+     * would never come.
+     *
+     * @param string $acceptKey Subscriber accept key
+     * @return ConnectionIdentity Who is behind the connection, or the pending state
+     */
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        return ConnectionIdentity::resolved(null);
     }
 
     /**
@@ -2164,6 +2212,22 @@ abstract class BrowserContext
     public function resolveActionUserId(string $acceptKey): ?int
     {
         return $this->resolveCurrentUserId($acceptKey);
+    }
+
+    /**
+     * Public seam over {@see self::resolveConnectionIdentity} for the frame dispatcher.
+     *
+     * Symmetric to the {@see self::resolveActionUserId} / {@see self::resolveCurrentUserId}
+     * pair: the guards ask the flattened question, and
+     * {@see PageSignalRouter::dispatchPageSubscribe} and its siblings ask this one —
+     * whether there is an answer at all — to decide between judging a frame and parking it.
+     *
+     * @param string $acceptKey Acting connection accept key
+     * @return ConnectionIdentity Who is behind the connection, or the pending state
+     */
+    public function connectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        return $this->resolveConnectionIdentity($acceptKey);
     }
 
     /**

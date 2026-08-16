@@ -61,12 +61,13 @@ final class BrowserContextTableWindowTest extends TestCase
         Hilos::$table->configure();
 
         $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 1, limit: 1);
-        new TableWindowUnitBrowserContext()->sendTableWindow(
+        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
             $viewport,
         );
 
+        $this->assertTrue($delivered);
         $signal = Hilos::$sr->getNextQueuedSignal();
 
         $this->assertNotNull($signal);
@@ -132,12 +133,15 @@ final class BrowserContextTableWindowTest extends TestCase
             ),
         );
 
-        new TableWindowGuardUnitBrowserContext()->sendTableWindow(
+        $delivered = new TableWindowGuardUnitBrowserContext()->sendTableWindow(
             TableWindowGuardUnitBrowserContext::PAGE,
             'ak-1',
             new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, offset: 0, limit: 10),
         );
 
+        // The refusal is answered as well as silent on the wire: this is what the
+        // dispatcher turns into the log line the door never used to leave (HIL-599).
+        $this->assertFalse($delivered);
         $this->assertNull(
             Hilos::$sr->getNextQueuedSignal(),
             'a guard-failed subscription must receive no table window',

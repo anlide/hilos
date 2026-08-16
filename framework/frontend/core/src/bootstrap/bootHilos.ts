@@ -99,6 +99,11 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // its own, so a subscribe that overtook it was judged against a connection
   // nobody had heard of yet and refused as anonymous. The route still resolves
   // now — only the frame waits.
+  // TODO(HIL-599): the server now holds a frame from a connection it has not been
+  // told about yet and judges it once the identity lands, so this hold is a second
+  // lock rather than the only one. It stays until the server side has been in the
+  // wild long enough to trust alone - revisit after 2027-12-28, and only on the
+  // owner's word, as a leaf of its own.
   config.connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
       pages.releaseOnSession()

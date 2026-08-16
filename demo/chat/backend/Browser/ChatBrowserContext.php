@@ -7,6 +7,7 @@ namespace Demo\Chat\Browser;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Throwable;
 
@@ -68,21 +69,34 @@ final class ChatBrowserContext extends BrowserContext
     }
 
     /**
-     * Resolves the durable user id behind an accept key from the chat runtime
-     * connection registry, where the handshake records the acceptKey -> user
-     * mapping. Lets the ACCESS browser guard identify the subscriber; an
-     * unregistered accept key (a guest before any handshake) resolves to null and
-     * is denied.
+     * Resolves who is behind an accept key from the chat runtime connection registry,
+     * where the handshake records the acceptKey -> user mapping. Lets the ACCESS
+     * browser guard and the page access gate identify the subscriber.
+     *
+     * A registry row is written for every connection the handshake sees, guest or
+     * not, so no row means the row has not crossed the RT sync into this worker yet
+     * rather than "nobody is there" - the frame waits instead of being refused as
+     * anonymous (HIL-599). A storage failure is the one case that answers a settled
+     * nobody: a registry that cannot be read must close access, not suspend it.
      *
      * @param string $acceptKey Subscriber accept key
-     * @return ?int Durable user id, or null when no connection is registered
+     * @return ConnectionIdentity User behind the connection, or the pending state
      */
-    protected function resolveCurrentUserId(string $acceptKey): ?int
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
         try {
-            return Hilos::$rt?->connections[$acceptKey]?->userId;
+            $connections = Hilos::$rt?->connections;
+            if ($connections === null) {
+                return ConnectionIdentity::resolved(null);
+            }
+
+            $connection = $connections[$acceptKey];
+
+            return $connection === null
+                ? ConnectionIdentity::pending()
+                : ConnectionIdentity::resolved($connection->userId);
         } catch (Throwable) {
-            return null;
+            return ConnectionIdentity::resolved(null);
         }
     }
 
@@ -91,7 +105,7 @@ final class ChatBrowserContext extends BrowserContext
      * user row's admin flag — the same flag the admin ACCESS guard and the
      * setAdmin grant flow use. Runs in whatever worker serves the gated page
      * (the framework admin surface is served by the hilos index agent), so the
-     * read stays as defensive as resolveCurrentUserId above: a missing row or
+     * read stays as defensive as resolveConnectionIdentity above: a missing row or
      * any storage failure denies rather than opening the admin surface.
      *
      * @param int $userId Authenticated durable user id

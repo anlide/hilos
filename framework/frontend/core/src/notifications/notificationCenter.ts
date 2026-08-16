@@ -268,6 +268,11 @@ export function bindNotificationsScope(
   // server-side membership).
   let joinedFor: number | null = null
   // Whether the current socket's handshake has answered — see the note above.
+  // TODO(HIL-599): the server now holds a frame from a connection it has not been
+  // told about yet and judges it once the identity lands, so this hold is a second
+  // lock rather than the only one. It stays until the server side has been in the
+  // wild long enough to trust alone - revisit after 2027-12-28, and only on the
+  // owner's word, as a leaf of its own.
   let sessionAnswered = false
 
   function maybeJoin(): void {

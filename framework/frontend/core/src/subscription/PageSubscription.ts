@@ -61,6 +61,11 @@ export class PageSubscription {
    * its own handshake answers, however long the visitor has been signed in. Since
    * HIL-582 that case is routine rather than exotic — every login reconnects to
    * trade its rotation ticket for the new cookie.
+   *
+   * TODO(HIL-599): the server now holds such a frame and judges it once the
+   * identity lands, so this hold is a second lock rather than the only one. It
+   * stays until the server side has been in the wild long enough to trust alone -
+   * revisit after 2027-12-28, and only on the owner's word, as a leaf of its own.
    */
   private sessionAnswered = false
 

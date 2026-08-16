@@ -10,6 +10,7 @@ use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageRouteParams;
@@ -74,15 +75,14 @@ final class AuthenticatedGuardTestBrowserContext extends BrowserContext
     }
 
     /**
-     * Returns the injected current user id, standing in for the project's
-     * acceptKey -> user mapping.
+     * Returns the injected user id as a settled identity, standing in for the project's acceptKey -> user mapping.
      *
      * @param string $acceptKey Subscriber accept key (unused in the fixture)
-     * @return ?int Injected current user id
+     * @return ConnectionIdentity Settled identity carrying the injected user id
      */
-    protected function resolveCurrentUserId(string $acceptKey): ?int
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
     {
-        return $this->currentUserId;
+        return ConnectionIdentity::resolved($this->currentUserId);
     }
 
     /**

@@ -28,6 +28,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use PHPUnit\Framework\TestCase;
 use Throwable;
@@ -66,6 +67,14 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         try {
             $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
             $router = new PageSignalRouter($factory, new ActionRouteConfig());
+
+            // The subscription comes first here for the same reason it does on the wire:
+            // a window is judged by the params of the page subscription it belongs to, so
+            // a viewport frame that arrives without one waits for it (HIL-599).
+            HilosFacade::$sr->subscribeToPage(
+                PageSignalRouterTestPage::PAGE,
+                new WebSocketPageSubscribeSignalDTO('ak', PageSignalRouterTestPage::PAGE, []),
+            );
 
             $router->dispatchTableViewport(
                 new WebSocketTableViewportSignalDTO(

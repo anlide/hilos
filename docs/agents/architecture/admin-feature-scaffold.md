@@ -24,7 +24,7 @@ the engine.
 inherits the `ADMIN` access level from `AbstractHilosPage` (HIL-441), and
 openness is an explicit declaration on the page class. The activation needs no
 per-page guard for that, but the project must wire identity —
-`resolveCurrentUserId()` and `isAdmin()` on its `BrowserContext` — or the
+`resolveConnectionIdentity()` and `isAdmin()` on its `BrowserContext` — or the
 mounted feature denies everyone. See
 [page-access-control.md](page-access-control.md).
 

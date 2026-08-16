@@ -28,6 +28,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
@@ -198,6 +199,7 @@ abstract class WorkerManager extends BaseManager
      * @throws InvalidArgumentException When a message read from the daemon carries invalid JSON or type
      * @throws InvalidFormatException When a daemon frame's payload is not the object its DTO needs
      * @throws TableRowKeyMissingException When a windowed table row is a placeholder and carries no key
+     * @throws FramePopOrderException When a frame resumed on the tick leaves the execution stack imbalanced
      * @throws HilosException When a frame read from the daemon refuses to become a DTO
      */
     public function run(): void
@@ -277,7 +279,7 @@ abstract class WorkerManager extends BaseManager
                 foreach ($this->agentManager->getAgents() as $agentId => $agent) {
                     $this->setCurrentAgentId($agent->getId());
                     $agent->onTick();
-                    $this->releaseExpiredDeferredActions($agentId);
+                    $this->releaseDeferredWork($agentId);
 
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
@@ -1098,6 +1100,10 @@ abstract class WorkerManager extends BaseManager
                     $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source);
                     if ($signalData->acceptKey !== '') {
                         Hilos::$sr?->unsubscribeFromAll($signalData->acceptKey);
+                        // Anything this connection was waiting to have judged dies with it:
+                        // held frames would otherwise sit out their deadline and then be
+                        // dispatched at a socket nobody is listening on.
+                        ($this->pageSignalRouters[$agentId] ?? null)?->dropPendingFrames($signalData->acceptKey);
                     }
                     $agent->onSignalConnectionClose($signalData, $source, $name);
                 } else {
@@ -1550,18 +1556,26 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Runs the actions one agent's page router parked and never got a throttle verdict for.
+     * Sweeps everything one agent's page router is holding until something else happens.
+     *
+     * Two pools, one visit: actions that never got their throttle verdict, and frames
+     * waiting to learn who is behind their connection. Both are emptied on the tick because
+     * both wait on an answer from another process, and this worker must keep serving every
+     * other connection while they wait.
      *
      * Only a router that already exists is asked. A router is built the first time its agent
      * routes something, so building one here - on every tick, for every agent - would stand
-     * up a page factory for agents that route nothing at all, to sweep a pool that cannot
-     * have anything in it.
+     * up a page factory for agents that route nothing at all, to sweep pools that cannot
+     * have anything in them.
      *
      * @param string $agentId Agent whose page router to sweep
+     * @throws FramePopOrderException When a resumed frame leaves the execution stack imbalanced
      */
-    private function releaseExpiredDeferredActions(string $agentId): void
+    private function releaseDeferredWork(string $agentId): void
     {
-        ($this->pageSignalRouters[$agentId] ?? null)?->releaseExpiredDeferredActions();
+        $router = $this->pageSignalRouters[$agentId] ?? null;
+        $router?->releaseExpiredDeferredActions();
+        $router?->releasePendingFrames();
     }
 
     /**
