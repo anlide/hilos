@@ -11,6 +11,7 @@ use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 
 /**
@@ -35,6 +36,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws InvalidArgumentException When the page-response signal cannot be named
+     * @throws HilosException Whatever else the concrete page's payload build or typed hook raises
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {

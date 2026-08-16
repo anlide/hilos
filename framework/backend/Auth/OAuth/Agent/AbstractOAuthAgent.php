@@ -25,6 +25,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Socket\SocketException;
@@ -176,6 +177,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      *
      * @param OAuthPendingLogin $op The pending op being completed
      * @param OAuthUserInfo $info Resolved provider subject, and email/name when the provider gave them
+     * @throws HilosException Whatever the project's completion raises, reported to the client as a generic failure
      */
     abstract protected function completeOAuthLogin(OAuthPendingLogin $op, OAuthUserInfo $info): void;
 

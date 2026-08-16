@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\HilosException;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Cluster\Placement\ResourceProfile;
@@ -279,6 +280,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * when a follower is later promoted, so it must stay idempotent.
      *
      * @throws InvalidArgumentException When the initial-agents signal cannot be named
+     * @throws HilosException Whatever the project's own cluster-singleton start raises
      */
     public function onBecameSingletonHost(): void
     {
@@ -420,6 +422,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * failure that belongs to one client.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function onTick(): void
     {
@@ -879,6 +882,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @param ?string $agentIndex Agent index (optional)
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     protected function startAgent(string $agentType, ?string $agentIndex = null): void
     {
@@ -1113,6 +1117,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @throws AgentNotFoundException If agent does not exist after startAgent() call
      * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
      * @throws WorkerClientNotFoundException If worker client is not found for agent
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
     {
@@ -1188,6 +1193,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @throws AgentNotFoundException If agent does not exist after startAgent() call
      * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
      * @throws WorkerClientNotFoundException If worker client is not found for agent
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
     {
@@ -1417,6 +1423,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @param ?string $agentIndex Agent index (optional)
      * @return list<string> Required capability tags; empty when the agent runs anywhere
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array
     {
@@ -1434,6 +1441,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @param ?string $agentIndex Agent index (optional)
      * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile
     {
@@ -1453,6 +1461,7 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
      * @throws NoSuitableWorkerException If no suitable worker is available to host it
      * @throws AgentNotLinkedToWorkerException If the agent did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function executePlacement(string $agentType, ?string $agentIndex): int
     {

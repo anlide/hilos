@@ -28,6 +28,7 @@ use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
 use LogicException;
+use Random\RandomException;
 use Throwable;
 
 /**
@@ -191,6 +192,7 @@ abstract class AbstractPage
      * @param PageRouteParams $params Route params from page subscription
      * @throws PageSubscriptionException When browser snapshot rejects the subscription
      * @throws InvalidArgumentException When the page-response signal cannot be named
+     * @throws HilosException Whatever else the concrete page's payload build raises
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
@@ -215,6 +217,8 @@ abstract class AbstractPage
      *
      * @param PageRouteParams $params Route params from page subscription
      * @return ?PagePayload Page scope payload, or null when the page carries none
+     * @throws PageSubscriptionException When the override refuses the subscription on its own terms
+     * @throws HilosException Whatever else the override's read of domain state raises
      */
     protected function buildPagePayload(PageRouteParams $params): ?PagePayload
     {
@@ -231,6 +235,7 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Merged route params for the subscription
+     * @throws HilosException Whatever the concrete page's refresh raises
      */
     public function onUpdateSubscription(string $acceptKey, PageRouteParams $params): void
     {
@@ -243,6 +248,7 @@ abstract class AbstractPage
      * is needed.
      *
      * @param string $acceptKey WebSocket accept key
+     * @throws HilosException Whatever the concrete page's cleanup raises
      */
     public function onUnsubscribe(string $acceptKey): void
     {
@@ -261,6 +267,7 @@ abstract class AbstractPage
      * @throws AgentUnknownActionException When the page does not support the action
      * @throws HilosException Whatever the concrete page's action handler raises
      * @throws LogicException When a concrete page finds its own collection unavailable
+     * @throws RandomException When a concrete page's handler cannot draw from the CSPRNG
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -395,6 +402,7 @@ abstract class AbstractPage
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete page's binary-frame handler raises
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -409,6 +417,7 @@ abstract class AbstractPage
      * @param AgentSignalData $data Wrapped signal payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete page's agent-signal workflow raises
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -423,6 +432,7 @@ abstract class AbstractPage
      * @param SignalDataInterface $data Cron payload
      * @param string $source Signal source
      * @param string $name Cron job name
+     * @throws HilosException Whatever the concrete page's scheduled workflow raises
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {

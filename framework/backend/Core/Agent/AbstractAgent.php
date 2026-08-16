@@ -593,6 +593,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's system-signal handler raises
      */
     public function onSignalSystem(SignalDataInterface $data, string $source, string $name): void
     {
@@ -607,6 +608,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's handshake handler raises, a payload that fails validation among them
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -621,6 +623,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketCloseSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's connection-close handler raises
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
@@ -635,6 +638,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-subscribe handler raises
      */
     public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -649,6 +653,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-unsubscribe handler raises
      */
     public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -663,6 +668,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-update-subscription handler raises
      */
     public function onSignalPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -677,6 +683,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-subscribe handler raises
      */
     public function onSignalGroupSubscribe(WebSocketGroupSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -691,6 +698,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-unsubscribe handler raises
      */
     public function onSignalGroupUnsubscribe(WebSocketGroupUnsubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -705,6 +713,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-update-subscription handler raises
      */
     public function onSignalGroupUpdateSubscription(WebSocketGroupUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -719,6 +728,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's action handler raises
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void
     {
@@ -736,6 +746,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $acceptKey Acting connection accept key
      * @param string $action Owned action name from AGENT_ACTIONS
      * @param ActionPayloadDTO $dto Parsed action payload
+     * @throws HilosException Whatever the concrete agent's owned-action handler raises
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -750,6 +761,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketFrameBinarySignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's binary-frame handler raises
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -815,6 +827,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param DbSyncCreatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's DB-create handler raises
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -829,6 +842,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param DbSyncUpdatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's DB-update handler raises
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -843,6 +857,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param DbSyncDeletedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's DB-delete handler raises
      */
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
@@ -857,6 +872,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param RtSyncCreatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's RT-create handler raises
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -871,6 +887,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param RtSyncUpdatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's RT-update handler raises
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -885,6 +902,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param RtSyncDeletedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's RT-delete handler raises
      */
     public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {

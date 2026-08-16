@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\BotAgentStatus as RuntimeBotAgentStatus;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\HilosException;
 
 /**
  * Bot - Db item with high-level abstraction and lazy loading.
@@ -45,6 +46,7 @@ final class Bot extends DbItem
      * @return int|string|bool|RuntimeBotAgentStatus|BotActions|null Property value, linked runtime status, or actions
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): int|string|bool|RuntimeBotAgentStatus|BotActions|null
     {

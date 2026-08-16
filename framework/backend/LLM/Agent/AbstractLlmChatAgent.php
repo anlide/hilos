@@ -8,6 +8,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\Exception\LLMConfigurationException;
@@ -60,6 +61,8 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      *
      * Called only when the client is idle. Implementations own prompt/options
      * assembly (from {@see self::$profile}) and their own pending-flag lifecycle.
+     *
+     * @throws HilosException Whatever the concrete agent's request assembly raises
      */
     abstract protected function startRequest(): void;
 
@@ -67,6 +70,7 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      * Handles one completed result string (parse and dispatch/apply).
      *
      * @param string $text Model output consumed from the client
+     * @throws HilosException Whatever the concrete agent's result handling raises
      */
     abstract protected function handleResult(string $text): void;
 
@@ -95,6 +99,8 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
 
     /**
      * Advances the client, drains a ready result, and pumps pending work.
+     *
+     * @throws HilosException Whatever the concrete agent's result handling or request assembly raises
      */
     public function onTick(): void
     {
@@ -126,6 +132,8 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
 
     /**
      * Starts the next request when the client is idle and work is pending.
+     *
+     * @throws HilosException Whatever the concrete agent's request assembly raises
      */
     protected function pumpPending(): void
     {

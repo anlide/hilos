@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Item;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\HilosException;
 
 /**
  * Notification Db item - read-facing wrapper around ObjectNotification.
@@ -35,6 +36,7 @@ final class Notification extends DbItem
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): mixed
     {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -50,6 +51,7 @@ final class RecoveryWaitersActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the concrete state's read of the diff raises
      */
     public function park(string $acceptKey, string $identifier, string $sessionToken): void
     {
@@ -95,6 +97,7 @@ final class RecoveryWaitersActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the concrete state's read of the diff raises
      */
     public function acceptCodeForSession(string $sessionToken, string $identifier): void
     {

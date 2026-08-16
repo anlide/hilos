@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Collection;
 
 use ArrayAccess;
 use Countable;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionCloneException;
@@ -315,6 +316,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * @return TActions Actions instance when name is "actions"
      * @throws RtCollectionActionsClassException When actions class is missing or invalid
      * @throws RtCollectionPropertyNotFoundException When property does not exist
+     * @throws HilosException Whatever the child's own case raises before it reaches here
      */
     public function __get(string $name): mixed
     {

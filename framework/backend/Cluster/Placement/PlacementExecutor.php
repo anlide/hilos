@@ -7,6 +7,7 @@ namespace Hilos\Cluster\Placement;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\HilosException;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
@@ -30,6 +31,7 @@ interface PlacementExecutor
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @return list<string> Required capability tags; empty when the agent runs anywhere
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function requiredCapabilities(string $agentType, ?string $agentIndex): array;
 
@@ -41,6 +43,7 @@ interface PlacementExecutor
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @return ResourceProfile Resource demand; empty when the agent has no numeric preference
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile;
 
@@ -53,6 +56,7 @@ interface PlacementExecutor
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws NoSuitableWorkerException When no suitable worker is available to host it
      * @throws AgentNotLinkedToWorkerException When the agent did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function executePlacement(string $agentType, ?string $agentIndex): int;
 

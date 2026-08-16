@@ -9,6 +9,7 @@ use Demo\SimplePoll\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\HilosException;
 
 /**
  * User - Db item with high-level abstraction and lazy loading.
@@ -39,6 +40,7 @@ final class User extends DbItem
      * @return bool|int|string|UserActions|null Property value or item actions
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): bool|int|string|UserActions|null
     {

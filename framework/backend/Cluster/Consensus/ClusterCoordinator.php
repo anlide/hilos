@@ -12,6 +12,7 @@ use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Constants\TimeConstants;
+use Hilos\HilosException;
 
 /**
  * Self-written raft-like consensus for the master set: leader election and
@@ -132,6 +133,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * clock. Non-blocking: the only outbound work is queuing frames on the mesh.
      *
      * @param float $now Current microtime, injected by the caller
+     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
      */
     public function tick(float $now): void
     {
@@ -187,6 +189,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
      * is counted, and reaching a majority of the master set makes this node leader.
      *
      * @param PeerVoteReplyDTO $frame Incoming vote-reply frame
+     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
      */
     public function onVoteReply(PeerVoteReplyDTO $frame): void
     {

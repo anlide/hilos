@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -82,6 +83,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the project's read of its own connection fields raises
      */
     public function repointSessionToken(string $acceptKey, string $newToken): void
     {
@@ -115,6 +117,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the project's read of its own connection fields raises
      */
     public function markAck(string $acceptKey, ?string $ack): void
     {

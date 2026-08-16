@@ -244,6 +244,7 @@ final class PeerServer extends AbstractServer implements
      * before it recomputes deadlines, quorum, and leadership.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
      */
     public function onTick(): void
     {
@@ -776,6 +777,7 @@ final class PeerServer extends AbstractServer implements
      * Routes a received vote-reply to the consensus coordinator, if one runs.
      *
      * @param PeerVoteReplyDTO $frame Received vote-reply frame
+     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
      */
     public function onVoteReply(PeerVoteReplyDTO $frame): void
     {

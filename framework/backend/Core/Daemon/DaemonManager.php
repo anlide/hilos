@@ -292,6 +292,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<ServerInterface> Servers to register, in bind order
+     * @throws HilosException Whatever the daemon's read of env raises while building its servers
      */
     protected function createServers(DaemonContext $context): iterable
     {
@@ -321,6 +322,7 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param DaemonContext $context Resolved path context
      * @return iterable<DaemonModule> Modules to consider, checked via isActive() before register()
+     * @throws HilosException Whatever the daemon's read of env raises while listing its modules
      */
     protected function modules(DaemonContext $context): iterable
     {
@@ -2296,6 +2298,7 @@ abstract class DaemonManager extends BaseManager implements
      * loop, so it must stay non-blocking.
      *
      * @param int $term Election term in which leadership was won
+     * @throws HilosException Whatever the project's own leadership duties raise
      */
     public function onBecameLeader(int $term): void
     {

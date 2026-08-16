@@ -17,6 +17,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
 
@@ -182,6 +183,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
      * @throws NoSuitableWorkerException When a local placement has no worker to host it
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function placeAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
     {
@@ -217,6 +219,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
      * @throws NoSuitableWorkerException When a local placement has no worker to host it
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
     {

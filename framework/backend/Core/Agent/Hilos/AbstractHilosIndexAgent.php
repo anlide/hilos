@@ -208,6 +208,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * @param int $userId Target user id, already validated as positive
      * @param bool $admin New admin flag
      * @throws NotImplementedException When the project has not wired the grant
+     * @throws HilosException Whatever the project's grant implementation raises, an unknown user among it
      */
     protected function applyAdminGrant(int $userId, bool $admin): void
     {

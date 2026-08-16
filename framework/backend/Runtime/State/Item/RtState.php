@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
@@ -167,6 +168,7 @@ abstract class RtState
      *
      * @param array<string, mixed> $row Full state data (keys match toArray() output)
      * @return static State instance
+     * @throws HilosException Whatever the concrete state's read of the row raises
      */
     abstract public static function fromRow(array $row): static;
 
@@ -176,6 +178,7 @@ abstract class RtState
      * Override in child classes to support updates. Default no-op.
      *
      * @param array<string, mixed> $diff Changed fields => values
+     * @throws HilosException Whatever the concrete state's read of the diff raises
      */
     public function applyDiff(array $diff): void
     {

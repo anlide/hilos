@@ -11,6 +11,7 @@ use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Fs\FsFile;
+use Hilos\HilosException;
 
 /**
  * EventAttachment - Db item for published chat attachment metadata.
@@ -37,6 +38,7 @@ final class EventAttachment extends DbItem
      * @return mixed Property value, related item, or published file handle
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): mixed
     {

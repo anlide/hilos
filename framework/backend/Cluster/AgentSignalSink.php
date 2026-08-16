@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\HilosException;
 
 /**
  * Local port the peer transport uses to hand a cross-node signal to an agent on this node.
@@ -36,6 +37,7 @@ interface AgentSignalSink
      * @throws AgentNotFoundException When the agent does not exist after a start attempt
      * @throws AgentNotLinkedToWorkerException When the agent is not linked to a worker
      * @throws WorkerClientNotFoundException When the worker client for the agent is missing
+     * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void;
 }

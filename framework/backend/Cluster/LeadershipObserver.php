@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\HilosException;
 
 /**
  * Seam that receives cluster leadership and quorum transitions as they happen.
@@ -21,6 +22,7 @@ interface LeadershipObserver
 {
     /**
      * @param int $term Election term in which leadership was won
+     * @throws HilosException Whatever the project's own leadership duties raise
      */
     public function onBecameLeader(int $term): void;
 

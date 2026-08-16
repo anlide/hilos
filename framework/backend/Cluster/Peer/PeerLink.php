@@ -42,6 +42,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\Client\AbstractClient;
@@ -177,6 +178,7 @@ final class PeerLink extends AbstractClient
      * @throws InvalidArgumentException When the re-hydrate signal cannot be named
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws HilosException Whatever the project's own leadership duties raise when this node wins a term
      */
     protected function processReadBuffer(): void
     {

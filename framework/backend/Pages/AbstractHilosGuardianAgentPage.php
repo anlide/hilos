@@ -14,6 +14,7 @@ use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\HilosException;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 
 /**
@@ -42,6 +43,7 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
      * @throws InvalidPageRouteParamException Reserved for future typed constraints on the id
      * @throws PageSubscriptionException When browser snapshot rejects the subscription
      * @throws InvalidArgumentException When the page-response signal cannot be named
+     * @throws HilosException Whatever else the concrete page's payload build raises
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {

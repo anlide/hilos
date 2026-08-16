@@ -80,6 +80,7 @@ interface ServerInterface
      * failure that belongs to a single client instead of leaving the loop with it.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws HilosException Whatever the concrete server's own tick raises
      */
     public function onTick(): void;
 

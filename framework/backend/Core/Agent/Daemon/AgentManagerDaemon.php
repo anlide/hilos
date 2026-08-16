@@ -19,6 +19,7 @@ use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
@@ -89,6 +90,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentDaemonInterface Agent daemon instance
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     abstract protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface;
 
@@ -246,6 +248,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentDaemonInterface Transient agent daemon instance
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     public function instantiateAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
@@ -261,6 +264,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param bool $isMonopolistic True if worker is monopolistic
      * @return AgentDaemonInterface Created or existing agent daemon instance
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     public function createAndAddAgent(string $agentType, ?string $agentIndex, int $workerIndex, bool $isMonopolistic): AgentDaemonInterface
     {

@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Item;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\HilosException;
 
 /**
  * Setting Db item - read-only wrapper around ObjectSetting.
@@ -26,6 +27,7 @@ final class Setting extends DbItem
      * @return mixed Property value (id, key, type, or value)
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): mixed
     {

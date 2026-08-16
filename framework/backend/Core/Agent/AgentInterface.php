@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\HilosException;
@@ -110,6 +109,7 @@ interface AgentInterface
      * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's system-signal handler raises
      */
     public function onSignalSystem(SignalDataInterface $data, string $source, string $name): void;
 
@@ -119,7 +119,7 @@ interface AgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @throws ValidationException When the handshake payload fails validation
+     * @throws HilosException Whatever the concrete agent's handshake handler raises, a payload that fails validation among them
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void;
 
@@ -129,6 +129,7 @@ interface AgentInterface
      * @param WebSocketCloseSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's connection-close handler raises
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void;
 
@@ -138,6 +139,7 @@ interface AgentInterface
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-subscribe handler raises
      */
     public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void;
 
@@ -147,6 +149,7 @@ interface AgentInterface
      * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-unsubscribe handler raises
      */
     public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void;
 
@@ -156,6 +159,7 @@ interface AgentInterface
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's page-update-subscription handler raises
      */
     public function onSignalPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void;
 
@@ -165,6 +169,7 @@ interface AgentInterface
      * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-subscribe handler raises
      */
     public function onSignalGroupSubscribe(WebSocketGroupSubscribeSignalDTO $data, string $source, string $name): void;
 
@@ -174,6 +179,7 @@ interface AgentInterface
      * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-unsubscribe handler raises
      */
     public function onSignalGroupUnsubscribe(WebSocketGroupUnsubscribeSignalDTO $data, string $source, string $name): void;
 
@@ -183,6 +189,7 @@ interface AgentInterface
      * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's group-update-subscription handler raises
      */
     public function onSignalGroupUpdateSubscription(WebSocketGroupUpdateSubscriptionSignalDTO $data, string $source, string $name): void;
 
@@ -192,6 +199,7 @@ interface AgentInterface
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's action handler raises
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void;
 
@@ -201,6 +209,7 @@ interface AgentInterface
      * @param WebSocketFrameBinarySignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws HilosException Whatever the concrete agent's binary-frame handler raises
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void;
 

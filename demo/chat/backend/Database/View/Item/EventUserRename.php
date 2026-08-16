@@ -10,6 +10,7 @@ use Demo\Chat\Hilos;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\HilosException;
 
 /**
  * EventUserRename - Db item for user rename event details.
@@ -38,6 +39,7 @@ final class EventUserRename extends DbItem
      * @return mixed Property value or related item
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): mixed
     {

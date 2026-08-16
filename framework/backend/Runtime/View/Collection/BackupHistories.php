@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Collection;
 
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
@@ -78,6 +79,7 @@ final class BackupHistories extends RtCollection
      * @return BackupHistoriesActions Actions instance
      * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
      * @throws RtCollectionActionsClassException When actions class is missing or invalid
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): BackupHistoriesActions
     {

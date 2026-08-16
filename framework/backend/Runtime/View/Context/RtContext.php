@@ -9,6 +9,7 @@ use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
@@ -153,6 +154,8 @@ abstract class RtContext
      * Configure state collections and runtime view representations.
      *
      * Called from facade init() after createRuntime().
+     *
+     * @throws HilosException Whatever the project's wiring of its collections raises
      */
     abstract public function configure(): void;
 

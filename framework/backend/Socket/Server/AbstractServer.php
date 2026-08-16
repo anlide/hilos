@@ -257,6 +257,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Should be called regularly in main loop.
      *
      * @throws RandomException When the secure random source refuses a handshake secret
+     * @throws HilosException Whatever the concrete server's own tick raises
      */
     public function onTick(): void
     {

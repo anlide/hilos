@@ -8,6 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\HilosException;
 
 /**
  * Identity Db item - read-only wrapper around ObjectIdentity.
@@ -29,6 +30,7 @@ final class Identity extends DbItem
      * @return mixed Property value
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): mixed
     {

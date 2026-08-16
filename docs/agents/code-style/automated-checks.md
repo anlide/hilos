@@ -186,14 +186,16 @@ contracts were declared. Every one of them is paid, and none owns a baseline
 record.
 
 What the demos owe is what the last phase turned up, and it is frozen rather than
-paid: 233 lines in 86 files — 165 in 53 for `demo/chat`, 28 in 14 each for
-`demo/simple-poll` and `demo/simple-todo`, 12 in 5 for `demo/cluster`. Freezing
+paid: 127 lines in 51 files — 107 in 39 for `demo/chat`, 9 in 5 each for
+`demo/simple-poll` and `demo/simple-todo`, 2 in 2 for `demo/cluster`. Freezing
 is what stops the debt growing, since a new unpropagated `@throws` fails the
-guard on the spot, and the records name HIL-449 as the leaf that pays it. 124 of
-those lines are the implementation-widens-a-declaration form, which is owed by
-the framework's own declarations rather than by the demos: they go out together
-as those declarations widen, not file by file. `scripts/` came under the rule
-owing nothing at all.
+guard on the spot, and the records name HIL-449 as the leaf that pays it. What
+is left is the demos' own form, a call inside the showcase that does not
+propagate. The other half of the frozen debt was the
+implementation-widens-a-declaration form, owed by the framework's own silent
+declarations rather than by the demos, and it went out at once when those
+declarations were widened rather than file by file. `scripts/` came under the
+rule owing nothing at all.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

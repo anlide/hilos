@@ -8,6 +8,7 @@ use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\Session as ObjectSession;
+use Hilos\HilosException;
 
 /**
  * Session - Db item with high-level abstraction and lazy loading.
@@ -35,6 +36,7 @@ final class Session extends DbItem
      * @return int|string|SessionActions|null Property value or actions
      * @throws ActionsClassException When the actions class for the session collection is not configured
      * @throws PropertyNotFoundException When the property is not exposed by the session item
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): int|string|SessionActions|null
     {

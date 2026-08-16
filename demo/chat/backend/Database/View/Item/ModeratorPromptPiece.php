@@ -9,6 +9,7 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\HilosException;
 
 /**
  * ModeratorPromptPiece - Db item with high-level abstraction and lazy loading.
@@ -30,6 +31,7 @@ final class ModeratorPromptPiece extends DbItem
      * @return int|string|bool|ModeratorPromptPieceActions|null Property value or actions
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the inherited getter raises
      */
     public function __get(string $name): int|string|bool|ModeratorPromptPieceActions|null
     {

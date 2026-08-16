@@ -39,6 +39,7 @@ abstract class WebSocketServer extends AbstractServer
      *
      * @param resource $socket Client socket
      * @return WebSocketClientInterface Client instance
+     * @throws HilosException Whatever the project's client build raises, its read of env among it
      */
     abstract protected function onCreateClient($socket): WebSocketClientInterface;
 

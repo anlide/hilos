@@ -12,6 +12,7 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\HilosException;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Throwable;
@@ -60,6 +61,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * @param int $userId User id to project into a row
      * @return ?AbstractHilosUserTableRow Current row, or null when the user no longer exists
+     * @throws HilosException Whatever the project's row builder raises
      */
     abstract protected function rowForUserId(int $userId): ?AbstractHilosUserTableRow;
 
@@ -68,6 +70,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * @param SourceChange $change Presence source change
      * @return int Affected user id, or 0 when it cannot be resolved
+     * @throws HilosException Whatever the project's presence resolution raises
      */
     abstract protected function resolveUserIdForPresence(SourceChange $change): int;
 

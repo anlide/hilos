@@ -23,6 +23,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\HilosException;
 use Iterator;
 
 /**
@@ -695,6 +696,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If actions class is not set or invalid
      * @throws ObjectCollectionNullException If object collection is null (manual collection)
+     * @throws HilosException Whatever the child's own case raises before it reaches here
      */
     public function __get(string $name)
     {

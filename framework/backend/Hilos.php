@@ -298,6 +298,7 @@ abstract class Hilos
      *
      * @param string $displayName Display name for the seeded user
      * @return ?int Created user id, or null when the project does not support fixture users
+     * @throws HilosException Whatever the project's seeding of the user row raises
      */
     public static function createFixtureUser(string $displayName): ?int
     {

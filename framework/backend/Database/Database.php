@@ -11,6 +11,7 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Database\ResultSet\ResultSet;
 use Hilos\Database\ResultSet\ResultSetCollection;
+use Hilos\HilosException;
 use mysqli;
 use mysqli_result;
 use mysqli_sql_exception;
@@ -80,6 +81,8 @@ class Database
      *     Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
      * }
      * ```
+     *
+     * @throws HilosException Whatever the project's configure, connect and schema build raise
      */
     public static function initialize(): void
     {

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\HilosException;
+
 /**
  * Inheritable runtime row for one WebSocket connection — the presence stage (HIL-361, HIL-509).
  *
@@ -94,6 +96,7 @@ abstract class HilosConnection extends RtState
 
     /**
      * @param array<string, mixed> $diff Partial update; keys are the row field constants
+     * @throws HilosException Whatever the project's read of its own fields raises
      */
     final public function applyDiff(array $diff): void
     {
@@ -113,6 +116,7 @@ abstract class HilosConnection extends RtState
      * Hydrates the project's own fields from a serialized runtime row.
      *
      * @param array<string, mixed> $row Serialized runtime row
+     * @throws HilosException Whatever the project's read of its own fields raises
      */
     abstract protected function hydrateOwn(array $row): void;
 
@@ -127,6 +131,7 @@ abstract class HilosConnection extends RtState
      * Applies the project's own mutable fields from an inbound RT diff.
      *
      * @param array<string, mixed> $diff Partial update
+     * @throws HilosException Whatever the project's read of its own fields raises
      */
     abstract protected function applyOwnDiff(array $diff): void;
 

@@ -14,6 +14,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * Base class for Db items (read-only wrappers around Object instances).
@@ -185,6 +186,7 @@ abstract class DbItem
      * @return mixed Property value (actions instance, object reference, or child-specific value)
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws HilosException Whatever the child's own case raises before it reaches here
      */
     public function __get(string $name)
     {

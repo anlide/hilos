@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\HilosException;
 
 /**
  * AgentManager - Base class for managing agents in worker processes.
@@ -28,6 +29,7 @@ abstract class AgentManager
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Agent instance
      * @throws AgentCreationFailedException If agent cannot be created
+     * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     abstract protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
 
@@ -115,6 +117,7 @@ abstract class AgentManager
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Created or existing agent instance
      * @throws AgentCreationFailedException If agent cannot be created
+     * @throws HilosException Whatever the project's factory raises, a missing agent index among it
      */
     public function createAndAddAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
