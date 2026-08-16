@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Runtime;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Utils\Logger;
 
@@ -30,8 +32,12 @@ final class RtSyncApplicator
      * `handleDaemonMessage()` catches only its two agent exceptions, so an
      * escaping refusal would take the worker down over one broken row.
      *
+     * The write itself is marked as applied-remote, so the announcement the collection makes
+     * repairs the local views and stops there instead of being sent back where it came from.
+     *
      * @param RtSyncCreatedSignalData $data Full created state payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public static function applyCreated(RtSyncCreatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
@@ -64,7 +70,9 @@ final class RtSyncApplicator
             return;
         }
 
-        $stateCollection->add($state);
+        SourceChangeBus::whileApplyingRemote(static function () use ($stateCollection, $state): void {
+            $stateCollection->add($state);
+        });
     }
 
     /**
@@ -114,8 +122,12 @@ final class RtSyncApplicator
     /**
      * Applies RT_SYNC_DELETED payload by removing state from its collection.
      *
+     * Applied-remote for the same reason as {@see self::applyCreated()}: the removal repairs the
+     * local views without being announced back to the process that sent it.
+     *
      * @param RtSyncDeletedSignalData $data Deleted state identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public static function applyDeleted(RtSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
@@ -129,7 +141,9 @@ final class RtSyncApplicator
         }
 
         if ($stateCollection->has($data->stateId)) {
-            $stateCollection->remove($data->stateId);
+            SourceChangeBus::whileApplyingRemote(static function () use ($stateCollection, $data): void {
+                $stateCollection->remove($data->stateId);
+            });
         }
     }
 

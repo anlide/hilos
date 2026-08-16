@@ -112,6 +112,22 @@ abstract class DbContext
     }
 
     /**
+     * Get DB item view collection by name.
+     *
+     * The registry of views has no way in from outside otherwise: {@see self::__get()} loads the
+     * collection from the database when it is missing, and {@see self::getObjectCollection()}
+     * hands out the store rather than the view. What a subscriber repairing a view cache needs
+     * is the view already mounted under that name, and nothing else.
+     *
+     * @param string $name Collection name (e.g. users, events)
+     * @return ?DbCollection DB item view collection, or null when no view is mounted under that name
+     */
+    public function getDbItemCollection(string $name): ?DbCollection
+    {
+        return $this->_dbItemCollections[$name] ?? null;
+    }
+
+    /**
      * Re-reads one collection from the database and drops its cached DbItems.
      *
      * Used by DB_SYNC_CLEARED apply to follow a remote deleteAll() truncate. The

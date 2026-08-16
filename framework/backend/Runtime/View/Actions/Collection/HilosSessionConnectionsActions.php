@@ -47,7 +47,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtActionsStateClassException When the mounted collection names a non-session state class
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function register(string $acceptKey, ?int $userId, ?string $sessionToken = null): HilosConnection
     {

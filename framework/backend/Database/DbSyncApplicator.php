@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database;
 
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -25,8 +26,12 @@ use Hilos\Utils\Logger;
 final class DbSyncApplicator
 {
     /**
+     * The write is marked as applied-remote, so the announcement the mirror makes repairs the
+     * local views and stops there instead of being handed back to whoever sent it.
+     *
      * @param DbSyncCreatedSignalData $data Full created row payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
      */
     public static function applyCreated(DbSyncCreatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
@@ -56,7 +61,9 @@ final class DbSyncApplicator
 
         $entity = $entityClass::fromRow($data->row);
         $object = $objectClass::fromEntity($entity);
-        $collection[$data->idString] = $object;
+        SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data, $object): void {
+            $collection[$data->idString] = $object;
+        });
     }
 
     /**
@@ -85,8 +92,12 @@ final class DbSyncApplicator
     }
 
     /**
+     * Applied-remote for the same reason as {@see self::applyCreated()}: the removal repairs the
+     * local views without being announced back to the process that sent it.
+     *
      * @param DbSyncDeletedSignalData $data Deleted row identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @throws HilosException Whatever a subscriber to the mirror's announcement raises
      */
     public static function applyDeleted(DbSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
@@ -100,7 +111,9 @@ final class DbSyncApplicator
         }
 
         if (isset($collection[$data->idString])) {
-            unset($collection[$data->idString]);
+            SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data): void {
+                unset($collection[$data->idString]);
+            });
         }
     }
 

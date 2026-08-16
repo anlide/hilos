@@ -123,11 +123,10 @@ final class RecoveryWaitersActions extends RtActions
      * neither with an error.
      *
      * @param string $acceptKey Accept key of the connection to release
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function release(string $acceptKey): void
     {

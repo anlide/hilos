@@ -26,6 +26,9 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\Topology\AgentActionRouteRegistry;
@@ -737,6 +740,12 @@ abstract class Hilos
     /**
      * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.
      *
+     * Also subscribes the framework to its own collection-change announcements, from scratch on
+     * every call. The registration is one for all process roles - what a subscriber does with a
+     * fact depends on the fact, not on who is running - and the order it is written in is the
+     * order the subscribers are called: the view is repaired before the outgoing sync collects
+     * its payload, so nothing reads a collection that still holds a row it lost.
+     *
      * @throws InvalidTopologyException When project topology constants are inconsistent
      * @throws IncompleteFeatureActivationException When a declared feature is not fully activated
      * @throws FeatureRuntimeOverwrittenException When the project re-mounts runtime state a feature owns
@@ -783,6 +792,7 @@ abstract class Hilos
                 static::$rt->mountFeatureRuntime($definitions);
                 static::$rt->configure();
                 static::$rt->assertFeatureRuntimeIntact();
+                static::$rt->bindStateCollectionNames();
             }
         }
 
@@ -800,6 +810,10 @@ abstract class Hilos
             static::$fs = static::createFs();
             static::$fs?->configure();
         }
+
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
 
         static::validateTopologyReferences();
     }

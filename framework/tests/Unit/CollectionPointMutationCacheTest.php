@@ -5,15 +5,27 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Database\Context\DbContext;
+use Hilos\Database\Exception\CollectionNotFoundException;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\View\Collection\DirectUnsetException;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Collection\RtCollectionDirectUnsetException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -29,25 +41,42 @@ use PHPUnit\Framework\TestCase;
  * What is pinned here is that the point mutations drop exactly the one key they touched,
  * and that they drop it without resetting the iterator - the walk that drove the mutation
  * has to outlive it, which a full cache reset would not allow.
+ *
+ * Since HIL-603 the drop is no longer done by the actions that mutate: the collection announces
+ * the change and a subscriber repairs the view, addressing it through the context by name. So
+ * the fixtures are mounted the way a real context mounts them, and the framework subscribers are
+ * registered as facade init() registers them. What is asserted is unchanged - the same reads
+ * before and after the same mutations - which is the point: the mechanism moved, the contract
+ * did not.
  */
 final class CollectionPointMutationCacheTest extends TestCase
 {
-    private const string COLLECTION = 'unit-point-mutation-cache';
-
     private const string AGENT_ID = 'unit-point-mutation-host';
 
     private ?SignalRouter $previousSignalRouter = null;
 
+    private ?RtContext $previousRuntime = null;
+
+    private ?DbContext $previousDb = null;
+
     protected function setUp(): void
     {
         $this->previousSignalRouter = Hilos::$sr;
+        $this->previousRuntime = Hilos::$rt;
+        $this->previousDb = Hilos::$db;
         Hilos::$sr = new SignalRouter();
-        RtTruthSourceRegistry::register(self::COLLECTION, true, self::AGENT_ID);
+        SourceChangeBus::reset();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        SourceChangeBus::subscribe(new OutboundRtSyncSubscriber());
+        RtTruthSourceRegistry::register(PointMutationRtContext::COLLECTION, true, self::AGENT_ID);
     }
 
     protected function tearDown(): void
     {
-        RtTruthSourceRegistry::unregister(self::COLLECTION, self::AGENT_ID);
+        RtTruthSourceRegistry::unregister(PointMutationRtContext::COLLECTION, self::AGENT_ID);
+        SourceChangeBus::reset();
+        Hilos::$rt = $this->previousRuntime;
+        Hilos::$db = $this->previousDb;
         Hilos::$sr = $this->previousSignalRouter;
 
         parent::tearDown();
@@ -115,6 +144,41 @@ final class CollectionPointMutationCacheTest extends TestCase
         unset($collection[1]);
     }
 
+    /**
+     * The database half of the same contract. Its point mutations used to drop the wrapper from
+     * inside the collection actions, which left the road through the sync applicator uncovered;
+     * now the mirror announces and the same subscriber repairs both roads.
+     *
+     * @throws HilosException When the fixture object cannot be built or stored
+     */
+    public function testAReusedDbKeyAnswersWithTheObjectItNowHolds(): void
+    {
+        $objects = $this->mountedDb();
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
+        $view = $this->dbView();
+        $this->assertSame('first', $view['1']?->mark());
+
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'second'));
+
+        $this->assertSame('second', $view['1']?->mark());
+    }
+
+    /**
+     * @throws HilosException When the fixture object cannot be built or stored
+     */
+    public function testARemovedDbKeyStopsAnsweringReads(): void
+    {
+        $objects = $this->mountedDb();
+        $objects['1'] = PointMutationObject::fromEntity(PointMutationEntity::withId(1, 'first'));
+        $view = $this->dbView();
+        // The read is the point: it puts a wrapper for '1' into the cache the removal must clear.
+        $this->assertNotNull($view['1']);
+
+        unset($objects['1']);
+
+        $this->assertNull($view['1']);
+    }
+
     public function testANullOffsetUnsetStaysSilentOnBothCollections(): void
     {
         $collection = $this->mounted();
@@ -127,21 +191,91 @@ final class CollectionPointMutationCacheTest extends TestCase
     }
 
     /**
-     * Builds the collection the way the runtime context mounts it.
+     * Mounts the object collection through a DB context, the way a project context mounts it.
      *
-     * @return PointMutationRtCollection Collection bound to a fresh state collection
+     * @return PointMutationObjects Mounted object collection, the mirror these cases mutate
+     */
+    private function mountedDb(): PointMutationObjects
+    {
+        $objects = PointMutationObjects::initEmpty();
+        $view = PointMutationDbCollection::init();
+        $view->setObjectCollection($objects);
+        Hilos::$db = PointMutationDbContext::create($objects, $view);
+
+        return $objects;
+    }
+
+    /**
+     * Hands back the view mounted by the last {@see self::mountedDb()} call.
+     *
+     * @return PointMutationDbCollection Mounted DB view collection
+     * @throws HilosException When no DB context is mounted
+     */
+    private function dbView(): PointMutationDbCollection
+    {
+        $view = Hilos::$db?->getDbItemCollection(PointMutationDbContext::COLLECTION);
+
+        return $view instanceof PointMutationDbCollection
+            ? $view
+            : throw new CollectionNotFoundException('Point-mutation fixture DB collection is not mounted');
+    }
+
+    /**
+     * Mounts the collection through a runtime context and hands back its view.
+     *
+     * Through a context rather than by hand, because the subscriber that repairs the cache finds
+     * the view by asking the context for the name the fact carries. A collection assembled
+     * outside one is reachable by nobody and would report a cache that is never repaired.
+     *
+     * @return PointMutationRtCollection Mounted view of a fresh state collection
+     * @throws HilosException When the fixture context cannot represent its own collection
      */
     private function mounted(): PointMutationRtCollection
     {
-        // The state collection goes through a variable because setStateCollection() binds a
-        // reference, exactly as the runtime context does when it represents a collection.
-        $states = PointMutationRtStates::init();
-        $collection = PointMutationRtCollection::init();
-        $collection->setStateCollection($states);
-        $collection->setCollectionName(self::COLLECTION);
-        $collection->setActionsClass(PointMutationRtActions::class);
+        $context = new PointMutationRtContext();
+        $context->configure();
+        $context->bindStateCollectionNames();
+        Hilos::$rt = $context;
 
-        return $collection;
+        return $context->collection();
+    }
+}
+
+/**
+ * Runtime context mounting the one collection these cases mutate.
+ */
+final class PointMutationRtContext extends RtContext
+{
+    public const string COLLECTION = 'unit-point-mutation-cache';
+
+    /**
+     * Registers the state collection and its view, as a project context does.
+     *
+     * @throws StateCollectionNotFoundException When the state collection was not registered first
+     */
+    public function configure(): void
+    {
+        $this->_stateCollections[self::COLLECTION] = PointMutationRtStates::init();
+        $this->setRepresent(
+            self::COLLECTION,
+            PointMutationRtCollection::class,
+            PointMutationRtActions::class,
+        );
+    }
+
+    /**
+     * Hands back the mounted view without going through the magic getter.
+     *
+     * @return PointMutationRtCollection Mounted view collection
+     * @throws RtCollectionNotFoundException When configure() has not run
+     */
+    public function collection(): PointMutationRtCollection
+    {
+        $collection = $this->getRtCollection(self::COLLECTION);
+
+        return $collection instanceof PointMutationRtCollection
+            ? $collection
+            : throw new RtCollectionNotFoundException('Point-mutation fixture collection is not mounted');
     }
 }
 
@@ -257,8 +391,106 @@ final class PointMutationRtActions extends RtActions
 }
 
 /**
- * Minimal DB collection used for the direct-unset contract.
+ * Minimal DB collection used for the direct-unset contract and the mirror cache cases.
  */
 final class PointMutationDbCollection extends DbCollection
 {
+    protected function createDbItem(Object_ &$object): DbItem
+    {
+        return new PointMutationDbItem($object);
+    }
+}
+
+/**
+ * DB context mounting the one mirror these cases mutate.
+ */
+final class PointMutationDbContext extends DbContext
+{
+    public const string COLLECTION = 'unit-point-mutation-db';
+
+    /**
+     * @param PointMutationObjects $objects Mirror to mount
+     * @param PointMutationDbCollection $view View of the mirror to mount
+     * @return self Mounted context
+     */
+    public static function create(PointMutationObjects $objects, PointMutationDbCollection $view): self
+    {
+        $context = new self();
+        $context->_objectCollections[self::COLLECTION] = $objects;
+        $context->_dbItemCollections[self::COLLECTION] = $view;
+
+        return $context;
+    }
+
+    public function configure(): void
+    {
+    }
+}
+
+/**
+ * Minimal single-column entity carrying a mark that tells two rows of one key apart.
+ */
+final class PointMutationEntity extends Entity
+{
+    public const string _table = 'point_mutation_test';
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'mark'];
+    public const array _types = ['id' => 'integer', 'mark' => 'string'];
+
+    public ?int $id = null;
+
+    public string $mark = '';
+
+    /**
+     * @param int $id Primary key
+     * @param string $mark Value telling this row apart from another one of the same key
+     * @return self Built entity
+     */
+    public static function withId(int $id, string $mark): self
+    {
+        $entity = new self();
+        $entity->id = $id;
+        $entity->mark = $mark;
+
+        return $entity;
+    }
+}
+
+/**
+ * Minimal object fixture wrapping the point-mutation entity.
+ */
+final class PointMutationObject extends Object_
+{
+    public const string ENTITY_CLASS = PointMutationEntity::class;
+
+    /**
+     * @return string Mark of the wrapped entity
+     */
+    public function getMark(): string
+    {
+        return $this->entity->mark;
+    }
+}
+
+/**
+ * Minimal object collection fixture, named so its mutations can be announced.
+ */
+final class PointMutationObjects extends Objects
+{
+    public const string OBJECT_CLASS = PointMutationObject::class;
+    public const string COLLECTION_KEY = PointMutationDbContext::COLLECTION;
+}
+
+/**
+ * Minimal DB view item reporting the mark of the object it wraps.
+ */
+final class PointMutationDbItem extends DbItem
+{
+    /**
+     * @return string Mark of the wrapped object
+     */
+    public function mark(): string
+    {
+        return $this->_object->getMark();
+    }
 }

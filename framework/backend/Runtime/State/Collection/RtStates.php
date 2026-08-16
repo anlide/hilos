@@ -4,9 +4,14 @@ namespace Hilos\Runtime\State\Collection;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Context\RtContext;
 use Iterator;
 use OutOfBoundsException;
 
@@ -37,6 +42,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     /** @var int backup iterator position for nested iteration */
     private int $backupIndex = 0;
+
+    /** @var ?string Name this collection is mounted under, or null while it is not mounted */
+    private ?string $collectionName = null;
 
     /**
      * Protected constructor - use static factory methods.
@@ -86,23 +94,75 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Add state to collection.
+     * Tells this collection the name it is mounted under.
+     *
+     * Called by {@see RtContext::bindStateCollectionNames()} once the registry is complete. The
+     * database side has carried its own collection key since always; on this side only the view
+     * knew the name, and a store that cannot name itself cannot announce its own changes.
+     *
+     * @param string $name Name this collection is mounted under
+     */
+    public function setCollectionName(string $name): void
+    {
+        $this->collectionName = $name;
+    }
+
+    /**
+     * Returns the name this collection is mounted under.
+     *
+     * @return ?string Mounted name, or null while this collection is not mounted
+     */
+    public function getCollectionName(): ?string
+    {
+        return $this->collectionName;
+    }
+
+    /**
+     * Add state to collection and announce the new membership.
+     *
+     * A state already standing under that id is replaced, and the announcement says created for
+     * that too: what every dependent view has to hear is that the id now holds a different row.
      *
      * @param T $state State instance to add
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function add(RtState $state): void
     {
         $this->states[$state->getId()] = $state;
+        if ($this->collectionName === null) {
+            return;
+        }
+        SourceChangeBus::publish(SourceChange::rtCreated(
+            $this->collectionName,
+            $state->getId(),
+            $state->toArray(),
+            ExecutionContext::currentAcceptKey(),
+        ));
     }
 
     /**
-     * Remove state from collection by ID.
+     * Remove state from collection by ID and announce the lost membership.
+     *
+     * The row is read before the removal, so the announcement carries what the id held rather
+     * than nothing; an id holding nothing is still announced, because the callers this replaces
+     * broadcast that removal too and a receiver that has the row must lose it.
      *
      * @param string $id State ID
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function remove(string $id): void
     {
+        $previous = $this->states[$id] ?? null;
         unset($this->states[$id]);
+        if ($this->collectionName === null) {
+            return;
+        }
+        SourceChangeBus::publish(SourceChange::rtDeleted(
+            $this->collectionName,
+            $id,
+            $previous?->toArray() ?? [],
+            ExecutionContext::currentAcceptKey(),
+        ));
     }
 
     /**
@@ -135,6 +195,10 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     /**
      * Clear all states from collection.
+     *
+     * Announces nothing, unlike the point mutations. A whole-collection wipe already travels its
+     * own road end to end - the caller broadcasts a delete per row and empties the view cache in
+     * one go - and routing it through per-row announcements would change what goes over the wire.
      */
     public function clear(): void
     {
@@ -236,27 +300,36 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Set state at offset.
      *
-     * @param mixed $offset State ID or null (uses value ID when null)
+     * Routed through {@see self::add()} so that membership has exactly one announcement point,
+     * which also means the state is stored under its own id and the offset is not consulted.
+     * Storing a row under a key it does not answer to was never usable anyway: every read path
+     * here addresses a state by {@see RtState::getId()}.
+     *
+     * @param mixed $offset Ignored, the state is stored under its own ID
      * @param T $value RtState instance to set
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if ($value instanceof RtState) {
-            $this->states[$offset ?? $value->getId()] = $value;
+            $this->add($value);
         }
     }
 
     /**
      * Remove state at offset.
      *
+     * Routed through {@see self::remove()} for the same single announcement point.
+     *
      * @param mixed $offset State ID to remove, or null for no-op
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function offsetUnset(mixed $offset): void
     {
         if ($offset === null) {
             return;
         }
-        unset($this->states[$offset]);
+        $this->remove((string)$offset);
     }
 
     // ==================== Countable ====================

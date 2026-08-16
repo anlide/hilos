@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
-use Hilos\Constants\SignalConstants;
-use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
-use Hilos\Hilos;
 use Hilos\Database\Actions\Item\DbActions;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
@@ -110,33 +107,24 @@ abstract class RtActions
     }
 
     /**
-     * Delete the current runtime item and broadcast the previous row.
+     * Delete the current runtime item.
+     *
+     * Dropping the key from the store is the whole of it now: the collection announces the lost
+     * membership, and the subscribers to that announcement drop the cached wrapper and broadcast
+     * the previous row. The wholesale cache clear this used to do is gone with them - it ended
+     * any walk that drove the removal at its first step, and only one key ever needed dropping.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When item is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     protected function remove(): void
     {
         $this->ensureCanWrite();
 
-        $collection = $this->getRtCollection();
-        $collectionName = $collection->getCollectionName()
-            ?? throw new RtActionsCollectionNameNullException(
-                'Cannot remove runtime item: collection name is null'
-            );
-
-        $stateId = $this->state->getId();
-        $row = $this->state->toArray();
-        $collection->getStateCollection()->remove($stateId);
-        $collection->clearCache();
-
-        Hilos::$sr?->queueRtSyncSignal(
-            SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
-        );
+        $this->getRtCollection()->getStateCollection()->remove($this->state->getId());
     }
 
     /**

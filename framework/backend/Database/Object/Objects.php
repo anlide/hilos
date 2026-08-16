@@ -5,6 +5,8 @@ namespace Hilos\Database\Object;
 use ArrayAccess;
 use Countable;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSortWhitelist;
@@ -414,10 +416,16 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Set object at offset.
+     * Set object at offset and announce the new membership of the mirror.
      *
-     * @param mixed $offset Array key (int or string)
+     * Announced from here rather than from the roads that lead here, so that every road is
+     * covered: what a dependent view has to hear is that this key now holds a different object.
+     * Reading the collection out of the database does not come through this method - it writes
+     * straight into the store - which is what keeps a load from announcing rows as new.
+     *
+     * @param mixed $offset Array key (int or string), or null to append under the next one
      * @param T $value Object instance to set
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function offsetSet($offset, $value): void
     {
@@ -430,9 +438,20 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         }
         if ($offset === null) {
             $this->objects[] = $value;
+            $offset = array_key_last($this->objects);
         } else {
             $this->objects[$offset] = $value;
         }
+        $collectionKey = $this->getCollectionKey();
+        if ($collectionKey === '') {
+            return;
+        }
+        SourceChangeBus::publish(SourceChange::dbCreated(
+            $collectionKey,
+            (string)$offset,
+            $value->toArray(),
+            ExecutionContext::currentAcceptKey(),
+        ));
     }
 
     /**
@@ -450,16 +469,33 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Unset object at offset.
+     * Unset object at offset and announce the lost membership of the mirror.
+     *
+     * The object is read out before the key is dropped, so the announcement carries what the key
+     * held. A key holding nothing is not announced: nothing left the mirror, and the store is
+     * read directly rather than through {@see self::offsetGet()} so that dropping an absent key
+     * cannot fetch it from the database first.
      *
      * @param mixed $offset Array key to unset, or null for no-op
+     * @throws HilosException Whatever a subscriber to the announcement raises
      */
     public function offsetUnset($offset): void
     {
         if ($offset === null) {
             return;
         }
+        $previous = $this->objects[$offset] ?? null;
         unset($this->objects[$offset]);
+        $collectionKey = $this->getCollectionKey();
+        if ($previous === null || $collectionKey === '') {
+            return;
+        }
+        SourceChangeBus::publish(SourceChange::dbDeleted(
+            $collectionKey,
+            (string)$offset,
+            $previous->toArray(),
+            ExecutionContext::currentAcceptKey(),
+        ));
     }
 
     /**

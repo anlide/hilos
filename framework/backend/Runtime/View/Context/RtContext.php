@@ -449,6 +449,39 @@ abstract class RtContext
     }
 
     /**
+     * Get runtime view collection by name.
+     *
+     * The registry of views has no way in from outside otherwise: {@see self::__get()} raises on
+     * a name it does not know, which is right for application code reading a source it believes
+     * in and wrong for a subscriber asking whether a view exists at all.
+     *
+     * @param string $name Collection name
+     * @return ?RtCollection Runtime view collection, or null when no view is mounted under that name
+     */
+    public function getRtCollection(string $name): ?RtCollection
+    {
+        return $this->_rtCollections[$name] ?? null;
+    }
+
+    /**
+     * Tells every mounted state collection the name it is mounted under.
+     *
+     * Called from facade init() after {@see self::configure()}, because there is no single point
+     * of registration to hang it on: the framework mounts its own through
+     * {@see self::mountFeatureCollection()}, while a project writes into
+     * {@see self::$_stateCollections} directly. A walk over the finished registry catches both.
+     *
+     * The name is what lets a store announce its own membership changes; a store that never
+     * learns it stays silent, which is what an unmounted collection should be.
+     */
+    final public function bindStateCollectionNames(): void
+    {
+        foreach ($this->_stateCollections as $name => $stateCollection) {
+            $stateCollection->setCollectionName($name);
+        }
+    }
+
+    /**
      * Reports whether a name is a runtime source this context mounts - a represented collection
      * or a declared item alias, the two things {@see self::__get()} can answer with.
      *

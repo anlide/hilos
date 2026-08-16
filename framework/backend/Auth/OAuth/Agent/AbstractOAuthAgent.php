@@ -112,6 +112,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * @param string $source Signal source (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not the pending-login handoff
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -135,6 +136,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * Pumps every in-flight exchange one step and starts any freshly delivered op.
      *
      * @throws InvalidArgumentException When the failed-login result signal cannot be named or queued
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function onTick(): void
     {

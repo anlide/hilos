@@ -832,6 +832,7 @@ abstract class WorkerManager extends BaseManager
      * are notified last.
      *
      * @param WorkerRtSyncMessageInterface $data Worker-level RT sync message (create, update or delete)
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     private function handleRtSyncMessage(WorkerRtSyncMessageInterface $data): void
     {

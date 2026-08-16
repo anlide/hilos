@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Runtime;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Utils\Logger;
 
@@ -56,8 +58,14 @@ final class RtSnapshot
      * that costs is honest and worth naming — the collection is then a replacement missing a
      * row, which is why the refusal is logged rather than counted.
      *
+     * The rows are written as applied-remote, for the reason
+     * {@see RtSyncApplicator::applyCreated()} marks its own write that way: this is the owner's
+     * copy of the collection, and announcing it as local would send every row of a hand-over
+     * straight back into the mesh.
+     *
      * @param string $collectionKey RT collection to replace
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public static function replace(string $collectionKey, array $rows): void
     {
@@ -76,16 +84,20 @@ final class RtSnapshot
         $stateCollection->clear();
 
         /** @var class-string<RtState> $stateClass */
-        foreach ($rows as $stateId => $row) {
-            try {
-                $stateCollection->add($stateClass::fromRow($row));
-            } catch (InvalidFormatException $e) {
-                Logger::warning(
-                    'RT snapshot row refused for collection ' . $collectionKey
-                    . ' id ' . $stateId . ': ' . $e->getMessage(),
-                );
-            }
-        }
+        SourceChangeBus::whileApplyingRemote(
+            static function () use ($collectionKey, $rows, $stateClass, $stateCollection): void {
+                foreach ($rows as $stateId => $row) {
+                    try {
+                        $stateCollection->add($stateClass::fromRow($row));
+                    } catch (InvalidFormatException $e) {
+                        Logger::warning(
+                            'RT snapshot row refused for collection ' . $collectionKey
+                            . ' id ' . $stateId . ': ' . $e->getMessage(),
+                        );
+                    }
+                }
+            },
+        );
     }
 
     /**

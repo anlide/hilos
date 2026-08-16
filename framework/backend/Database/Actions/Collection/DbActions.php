@@ -67,14 +67,6 @@ abstract class DbActions
     private $clearCacheCallback = null;
 
     /**
-     * Callback for dropping one cached DbItem after a point mutation.
-     * Set by DbCollection via setForgetCachedItemCallback().
-     *
-     * @var callable(int|string): void|null
-     */
-    private $forgetCachedItemCallback = null;
-
-    /**
      * Creates DbActions with DbCollection instance.
      *
      * @param DbCollection<T, TObjectCollection> $collection DbCollection instance
@@ -124,17 +116,6 @@ abstract class DbActions
     }
 
     /**
-     * Set callback for dropping one cached DbItem.
-     * Called by DbCollection when Actions is created.
-     *
-     * @param callable(int|string): void $callback Callback to forget one cached item
-     */
-    public function setForgetCachedItemCallback(callable $callback): void
-    {
-        $this->forgetCachedItemCallback = $callback;
-    }
-
-    /**
      * Create DbItem from Object using callback
      *
      * @param Object_ $object Object instance
@@ -163,23 +144,6 @@ abstract class DbActions
             throw new CallbackNotSetException("clearCacheCallback is not set. DbCollection must call setClearCacheCallback() when creating Actions.");
         }
         ($this->clearCacheCallback)();
-    }
-
-    /**
-     * Drop the cached DbItem of one key via callback.
-     * Used after point mutations on the underlying ObjectCollection, so DbCollection
-     * doesn't return a wrapper around an object that key no longer holds.
-     *
-     * @param int|string $key Primary key ID whose cached item is dropped
-     * @throws CallbackNotSetException If callback is not set
-     */
-    protected function forgetCachedItem(int|string $key): void
-    {
-        if ($this->forgetCachedItemCallback === null) {
-            throw new CallbackNotSetException('forgetCachedItemCallback is not set.'
-                . ' DbCollection must call setForgetCachedItemCallback() when creating Actions.');
-        }
-        ($this->forgetCachedItemCallback)($key);
     }
 
     /**
@@ -293,8 +257,10 @@ abstract class DbActions
      * Adds object to the global ObjectCollection storage
      * Checks for duplicate IDs and throws exception if object already exists
      *
+     * The view cache is not touched here: the mirror announces its own new membership, and a
+     * subscriber to that announcement drops the one wrapper the key no longer answers with.
+     *
      * @param Object_ $object Object instance to add
-     * @throws CallbackNotSetException If the forget-cached-item callback is not set
      * @throws ObjectGetIdStringNotImplementedException When the object primary key is null
      * @throws DuplicateIdException If object with same ID already exists and the DB was not replaced
      * @throws TableNameUndeterminedException If table name cannot be determined
@@ -313,14 +279,12 @@ abstract class DbActions
             // collision into a clean insert instead of a DuplicateIdException.
             if (Hilos::$db?->reHydrateIfDbChanged() === true) {
                 $this->objectCollection[$idString] = $object;
-                $this->forgetCachedItem($idString);
                 return;
             }
             $table = $this->getTableName();
             throw new DuplicateIdException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
         }
         $this->objectCollection[$idString] = $object;
-        $this->forgetCachedItem($idString);
     }
 
     /**

@@ -6,7 +6,6 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
@@ -46,9 +45,6 @@ abstract class RtActions
 
     /** @var ?callable(): void Callback to clear collection cache */
     private $clearCacheCallback = null;
-
-    /** @var ?callable(string): void Callback to drop one cached item by state ID */
-    private $forgetCachedItemCallback = null;
 
     /**
      * Creates RtActions instance for the given collection.
@@ -96,16 +92,6 @@ abstract class RtActions
     }
 
     /**
-     * Sets callback to drop one cached item after a point mutation (called by RtCollection).
-     *
-     * @param callable(string): void $callback Forget cached item callback
-     */
-    public function setForgetCachedItemCallback(callable $callback): void
-    {
-        $this->forgetCachedItemCallback = $callback;
-    }
-
-    /**
      * Creates RtItem from RtState via registered callback.
      *
      * @param RtState $state State instance (reference)
@@ -136,23 +122,6 @@ abstract class RtActions
             );
         }
         ($this->clearCacheCallback)();
-    }
-
-    /**
-     * Drops the cached RtItem of one state ID via registered callback.
-     *
-     * @param string $key State ID whose cached item is dropped
-     * @throws RtActionsCallbackNotSetException When forgetCachedItemCallback is not set
-     */
-    protected function forgetCachedItem(string $key): void
-    {
-        if ($this->forgetCachedItemCallback === null) {
-            throw new RtActionsCallbackNotSetException(
-                "forgetCachedItemCallback is not set."
-                . " RtCollection must call setForgetCachedItemCallback() when creating Actions."
-            );
-        }
-        ($this->forgetCachedItemCallback)($key);
     }
 
     /**
@@ -209,21 +178,22 @@ abstract class RtActions
     }
 
     /**
-     * Adds state to collection and queues RT sync created signal.
+     * Adds state to collection.
+     *
+     * The view cache and the outgoing sync are not touched here: the collection announces the
+     * new membership itself, and the subscribers to that announcement do both. This road is only
+     * one of the ways a row reaches the store, and it used to be the only one that remembered.
      *
      * @param RtState $state State instance to add
-     * @throws RtActionsCallbackNotSetException When forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     protected function addStateToCollection(RtState $state): void
     {
         $this->ensureCanWriteState($state->getId());
         $this->getStateCollection()->add($state);
-        $this->forgetCachedItem($state->getId());
-        $this->queueRtSyncCreated($state->getId(), $state->toArray());
     }
 
     /**
@@ -247,23 +217,21 @@ abstract class RtActions
     }
 
     /**
-     * Removes state from collection by ID and queues RT sync deleted signal.
+     * Removes state from collection by ID.
+     *
+     * The previous row no longer has to be read here to be broadcast: the collection reads it
+     * before dropping the key and puts it into its own announcement.
      *
      * @param string $id State ID to remove
-     * @throws RtActionsCallbackNotSetException When forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     protected function removeStateFromCollection(string $id): void
     {
         $this->ensureCanWriteState($id);
-        $state = $this->getStateCollection()->get($id);
-        $row = $state?->toArray() ?? [];
         $this->getStateCollection()->remove($id);
-        $this->forgetCachedItem($id);
-        $this->queueRtSyncDeleted($id, $row);
     }
 
     /**
@@ -290,24 +258,6 @@ abstract class RtActions
     }
 
     /**
-     * Queues RT sync created signal for broadcasting.
-     *
-     * @param string $stateId State ID
-     * @param array<string, mixed> $row Full state data
-     */
-    private function queueRtSyncCreated(string $stateId, array $row): void
-    {
-        $collectionName = $this->getCollectionName();
-        if ($collectionName === null) {
-            return;
-        }
-        Hilos::$sr?->queueRtSyncSignal(
-            SignalConstants::RT_SYNC_CREATED,
-            new RtSyncCreatedSignalData($collectionName, $stateId, $row, ExecutionContext::currentAcceptKey()),
-        );
-    }
-
-    /**
      * Queues RT sync updated signal for broadcasting.
      *
      * @param string $stateId State ID
@@ -328,8 +278,14 @@ abstract class RtActions
     /**
      * Queues RT sync deleted signal for broadcasting.
      *
+     * Kept for the whole-collection wipe alone. A point removal is announced by the collection
+     * itself and sent by a subscriber to that announcement; a wipe is deliberately not announced
+     * row by row, because it travels its own road end to end and routing it through per-row
+     * announcements would change what goes over the wire.
+     *
      * @param string $stateId State ID
      * @param array<string, mixed> $row Previous runtime row data
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     private function queueRtSyncDeleted(string $stateId, array $row): void
     {

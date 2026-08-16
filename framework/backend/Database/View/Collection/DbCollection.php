@@ -228,9 +228,6 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             $this->_actions->setClearCacheCallback(function (): void {
                 $this->clearCache();
             });
-            $this->_actions->setForgetCachedItemCallback(function (int|string $key): void {
-                $this->forgetCachedItem($key);
-            });
         }
         return $this->_actions;
     }

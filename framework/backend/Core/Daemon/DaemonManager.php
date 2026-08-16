@@ -1648,6 +1648,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being replaced
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function applyRemoteRtSnapshot(string $originNodeId, string $collectionKey, array $rows): void
     {

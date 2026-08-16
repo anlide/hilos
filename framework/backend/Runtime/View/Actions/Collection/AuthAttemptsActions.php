@@ -6,7 +6,7 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\CliCommands;
-use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -43,11 +43,10 @@ final class AuthAttemptsActions extends RtActions
      * @param string $scope Throttle scope, one of {@see ThrottleScope}
      * @param string $identity Client IP or sha256 of the session token
      * @param string $action Throttled action name
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function open(string $scope, string $identity, string $action): void
     {

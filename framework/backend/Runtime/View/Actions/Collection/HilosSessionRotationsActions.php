@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\TimeConstants;
-use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -37,11 +36,10 @@ final class HilosSessionRotationsActions extends RtActions
      * @param string $sessionToken Session token the bearer receives on its next handshake
      * @param list<string> $acceptKeysToDrop Accept keys of the session's other connections
      * @param float $expiresAtMs Unix milliseconds after which the ticket is refused
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function register(
         string $ticket,
@@ -65,11 +63,10 @@ final class HilosSessionRotationsActions extends RtActions
      * both end with the row gone and neither with an error.
      *
      * @param string $ticket One-time ticket to burn
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function forget(string $ticket): void
     {
@@ -91,11 +88,10 @@ final class HilosSessionRotationsActions extends RtActions
      * refused on the handshake, so this reclaims memory rather than closing a hole.
      *
      * @return int Number of rotations dropped
-     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever a subscriber to the collection's announcement raises
      */
     public function forgetExpired(): int
     {
