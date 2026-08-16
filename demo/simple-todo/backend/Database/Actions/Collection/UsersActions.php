@@ -8,9 +8,6 @@ use Demo\SimpleTodo\Database\Object\Collection\Users as ObjectUsers;
 use Demo\SimpleTodo\Database\Object\Item\User as ObjectUser;
 use Demo\SimpleTodo\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\SimpleTodo\Database\View\Item\User;
-use Hilos\Auth\Session\SessionToken;
-use Hilos\Core\Exception\DuplicateValueException;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -26,27 +23,22 @@ use Hilos\Utils\Helpers\TimeHelper;
 final class UsersActions extends DbActions
 {
     /**
-     * Registers a new user with the given session token.
+     * Registers a fresh guest user.
      *
-     * @param string $sessionToken Session token (32 lowercase hex characters)
-     * @return User Registered user
-     * @throws InvalidFormatException If the token is not a 32-character lowercase hex string
-     * @throws DuplicateValueException If user with session token already exists
+     * Takes no token since HIL-407: the session is the framework's row now, and
+     * binding it to the user this mints is the caller's next step. A guest is
+     * therefore identified by nothing but its id until that bind happens, which
+     * is why nothing here can collide and no duplicate check is left.
+     *
+     * @return User Registered guest
      * @throws HilosException On database error
      */
-    public function register(string $sessionToken): User
+    public function registerGuest(): User
     {
         $this->ensureCanWrite();
 
-        SessionToken::ensureValid($sessionToken);
-
-        if ($this->objectCollection->findBySession($sessionToken) !== null) {
-            throw new DuplicateValueException("User with session token already exists");
-        }
-
         $user = ObjectUser::create();
         $user->name = 'User' . RandomHelper::integer(1000, 9999);
-        $user->sessionToken = $sessionToken;
         $user->lastActivity = TimeHelper::getSqlDateTime();
         $user->sync();
 

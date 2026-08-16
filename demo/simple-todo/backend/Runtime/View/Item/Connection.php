@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Demo\SimpleTodo\Runtime\View\Item;
 
 use Demo\SimpleTodo\Runtime\State\Item\Connection as StateConnection;
-use Hilos\Runtime\View\Item\HilosConnection;
+use Hilos\Runtime\View\Item\HilosSessionConnection;
 
 /**
  * Read-only runtime item for one connection state row.
  *
- * Nothing of this demo's own: the row is the framework presence stage whole, so
- * the base {@see HilosConnection} exposes every field and the per-connection
- * write actions. The class exists because a runtime collection is seen through a
- * concrete item, not because there is anything left to say here.
+ * Nothing of this demo's own: the row is the framework session stage whole, so
+ * the base {@see HilosSessionConnection} exposes every field and the
+ * per-connection write actions. The class exists because a runtime collection is
+ * seen through a concrete item, not because there is anything left to say here.
  *
- * @extends HilosConnection<StateConnection>
+ * @extends HilosSessionConnection<StateConnection>
  */
-final class Connection extends HilosConnection
+final class Connection extends HilosSessionConnection
 {
 }

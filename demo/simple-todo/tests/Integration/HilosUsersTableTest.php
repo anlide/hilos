@@ -12,7 +12,6 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\HilosException;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for the simple-todo Hilos users table — the merge of DB
@@ -43,7 +42,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testRowFromUserMergesProfileAndOfflinePresence(): void
     {
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->registerGuest();
         $row = new HilosUsersTable()->rowFromUser(Hilos::$db->users[$user->id]);
 
         $this->assertSame((int) $user->id, $row->id);
@@ -61,7 +60,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testRowFromUserReflectsOnlinePresence(): void
     {
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->registerGuest();
         $userId = (int) $user->id;
         Hilos::$rt->connections->actions->register('todo-ak-a', $userId);
         Hilos::$rt->connections->actions->register('todo-ak-b', $userId);
@@ -79,7 +78,7 @@ final class HilosUsersTableTest extends IntegrationTestCase
      */
     public function testPresenceChangeBuildsUserRowUpdate(): void
     {
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->registerGuest();
         $userId = (int) $user->id;
         Hilos::$rt->connections->actions->register('todo-ak-a', $userId);
 

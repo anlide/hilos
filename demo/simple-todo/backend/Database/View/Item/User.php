@@ -27,7 +27,6 @@ use Hilos\HilosException;
  * @property-read string $name User name
  * @property-read bool $admin Whether the user is a panel admin operator
  * @property-read bool $block Whether the user is blocked from acting
- * @property-read ?string $sessionToken User session token (32 lowercase hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read UserActions $actions Actions for write operations on this user
  */
@@ -49,7 +48,6 @@ final class User extends DbItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::admin => $this->_object->admin,
             ObjectUser::block => $this->_object->block,
-            ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
             default => parent::__get($name),
         };
