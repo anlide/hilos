@@ -177,6 +177,14 @@ export {
   type AuthMode,
   type AuthSubmitOutcome,
 } from './auth/authSurface.js'
+// Only the code-channel names are exported from authFlow for now (HIL-492): they are
+// free, while the rest of the module still collides with the authSurface names above.
+// The full authFlow export lands with HIL-423, which retires the older surface.
+export {
+  SMS_CODE_CHANNEL,
+  TELEGRAM_CODE_CHANNEL,
+  type CodeChannelDescriptor,
+} from './auth/authFlow.js'
 export {
   createPasskey,
   getPasskey,

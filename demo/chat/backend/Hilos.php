@@ -45,6 +45,7 @@ use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\SessionGroup;
+use Demo\Chat\Auth\ChatCodeChannelRegistry;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
@@ -131,6 +132,8 @@ use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Demo\Chat\Users\ChatAdminAudience;
+use Hilos\Auth\Code\AuthCodeAgent;
+use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
@@ -199,6 +202,8 @@ final class Hilos extends HilosFacade
 
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ChatDeliveryChannelRegistry::class;
 
+    protected const string CODE_CHANNEL_REGISTRY = ChatCodeChannelRegistry::class;
+
     protected const string ADMIN_AUDIENCE = ChatAdminAudience::class;
 
     protected const array FEATURES = [
@@ -209,6 +214,7 @@ final class Hilos extends HilosFacade
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH_THROTTLE,
+        HilosFeature::CODE_CHANNELS,
     ];
 
     public const array PAGES = [
@@ -363,6 +369,11 @@ final class Hilos extends HilosFacade
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
+            AgentRegistryKey::PER_NODE => true,
+        ],
+        AuthCodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AuthCodeAgent::class,
+            AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
             AgentRegistryKey::PER_NODE => true,
         ],
     ];

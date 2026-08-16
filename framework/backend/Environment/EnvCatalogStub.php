@@ -295,6 +295,18 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::MAIL_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::MAIL_MAX_CONCURRENT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 4, emptyIsMissing: true),
             EnvConstants::MAIL_FILE_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::TELEGRAM_GATEWAY_ENDPOINT_URL->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                'https://gatewayapi.telegram.org',
+                emptyIsMissing: true,
+            ),
+            EnvConstants::TELEGRAM_GATEWAY_SENDER_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::TELEGRAM_GATEWAY_TIMEOUT_MS->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                5000,
+                emptyIsMissing: true,
+            ),
             EnvConstants::SMS_PROVIDER->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_ENDPOINT_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_FROM->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),

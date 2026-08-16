@@ -44,11 +44,18 @@ final class ChatSignalConstants
     /** @var string Client → server: save the new password of an accepted recovery (public, anonymous-reachable, HIL-416) */
     public const string COMPLETE_PASSWORD_RESET = 'complete_password_reset';
 
-    /** @var string Client → server: request an SMS one-time login code for a phone (public, anonymous-reachable) */
-    public const string REQUEST_SMS_CODE = 'request_sms_code';
+    /**
+     * @var string Client → server: send a one-time login code to a phone over a chosen channel
+     *             (public, anonymous-reachable, HIL-492)
+     *
+     * Named after the identifier and not the transport since the code stopped being an
+     * SMS by definition: the payload names the channel, and SMS is one entry of a
+     * registry the project composes.
+     */
+    public const string REQUEST_PHONE_CODE = 'request_phone_code';
 
-    /** @var string Client → server: submit an SMS one-time login code for a phone (public, anonymous-reachable) */
-    public const string CONFIRM_SMS_CODE = 'confirm_sms_code';
+    /** @var string Client → server: submit a one-time login code for a phone (public, anonymous-reachable) */
+    public const string CONFIRM_PHONE_CODE = 'confirm_phone_code';
 
     /** @var string Client → server: request an email magic-link sign-in token (public, anonymous-reachable) */
     public const string REQUEST_MAGIC_LINK = 'request_magic_link';

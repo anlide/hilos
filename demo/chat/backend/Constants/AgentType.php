@@ -61,4 +61,7 @@ final class AgentType
 
     /** @var string Hilos anti-abuse throttle agent type (per node: the counters are node-local) */
     public const string HILOS_AUTH_THROTTLE = HilosAgentType::HILOS_AUTH_THROTTLE;
+
+    /** @var string Hilos phone one-time-code agent type (per node: the op pool is process memory) */
+    public const string HILOS_AUTH_CODE = HilosAgentType::HILOS_AUTH_CODE;
 }

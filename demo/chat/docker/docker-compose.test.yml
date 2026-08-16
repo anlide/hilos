@@ -62,6 +62,27 @@ services:
     networks:
       - hilos-chat-test-network
 
+  # The stand's Telegram Gateway (HIL-492): the daemon points the code channel's
+  # transport here, so a Telegram login is a real HTTP exchange whose result the
+  # Playwright runner reads back over the mock's test routes - the messenger
+  # analogue of Mailpit above, since a messenger has no inbox a spec can open.
+  # Built from the framework so all three demos can adopt it unchanged. No host
+  # ports: nothing outside the stack talks to it.
+  telegram-mock-test:
+    build:
+      context: ../../../framework/docker/mock-telegram
+    container_name: chat-telegram-mock-test
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1:18000/test/messages?phone_number=health\") === false ? 1 : 0);'"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+    networks:
+      - hilos-chat-test-network
+
   chat-test:
     build: .
     env_file:
@@ -83,7 +104,7 @@ services:
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
-      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-10}
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-11}
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -117,11 +138,20 @@ services:
       # The directory sits under the repo bind mount (..:/app), so the Playwright
       # runner sees the same files at /hilos/demo/chat/data/sms.
       - SMS_FILE_DIR=/app/data/sms
+      # Telegram Gateway (HIL-492): the stand's own mock, which is the only reason
+      # the endpoint is configurable at all. The token is what makes the channel
+      # configured - the mock refuses a call that carries no bearer, so a daemon
+      # that forgot its credentials fails here rather than in production.
+      - TELEGRAM_GATEWAY_ENDPOINT_URL=http://telegram-mock-test:18000
+      - TELEGRAM_GATEWAY_TOKEN=stand-gateway-token
+      - TELEGRAM_GATEWAY_SENDER_USERNAME=HilosChat
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       mysql-test:
         condition: service_healthy
       mailpit-test:
+        condition: service_healthy
+      telegram-mock-test:
         condition: service_healthy
     ports:
       - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8095}:8090"
@@ -225,6 +255,9 @@ services:
       # The daemon's SMS_FILE_DIR as the runner sees it through the repo mount:
       # the stub provider's .txt artifacts are how a spec reads a login code back.
       SMS_ARTIFACT_DIR: /hilos/demo/chat/data/sms
+      # The mock Gateway's test routes: how a spec reads a Telegram code back and
+      # declares a number absent from Telegram (HIL-492).
+      TELEGRAM_MOCK_URL: http://telegram-mock-test:18000
     profiles:
       - e2e
     networks:

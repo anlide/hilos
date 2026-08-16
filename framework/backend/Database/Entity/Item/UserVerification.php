@@ -24,6 +24,12 @@ use Hilos\Database\PhpType;
  * ({@see ObjectUserVerification::verifyCode()}), so the
  * hash never crosses the object, view, frontend, or cross-worker sync boundary.
  *
+ * The `channel` column (HIL-492) is the second dimension of a challenge beside its
+ * type: which code channel a phone code was explicitly delivered over. Null means
+ * the challenge was delivered by its type's own rule — every email type, and the
+ * profile add-phone flow — so the column stays empty for every flow that never
+ * offered a choice, and a resend reads it to repeat the channel that was chosen.
+ *
  * @object-exclude code_hash
  *
  * @method static EntityUserVerifications get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
@@ -35,6 +41,7 @@ final class UserVerification extends Entity
     public const string user_id = 'user_id';
     public const string type = 'type';
     public const string identifier = 'identifier';
+    public const string channel = 'channel';
     /** DB-only code hash (see @object-exclude); referenced by the verify query, never ORM-mapped. */
     public const string code_hash = 'code_hash';
     public const string attempts = 'attempts';
@@ -49,6 +56,7 @@ final class UserVerification extends Entity
         self::user_id,
         self::type,
         self::identifier,
+        self::channel,
         self::attempts,
         self::created_at,
         self::expires_at,
@@ -60,6 +68,7 @@ final class UserVerification extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::type => PhpType::STRING->value,
         self::identifier => PhpType::STRING->value,
+        self::channel => PhpType::STRING->value,
         self::attempts => PhpType::INTEGER->value,
         self::created_at => PhpType::DATETIME->value,
         self::expires_at => PhpType::DATETIME->value,
@@ -75,6 +84,7 @@ final class UserVerification extends Entity
     public ?int $user_id = null;
     public string $type;
     public string $identifier;
+    public ?string $channel = null;
     public int $attempts = 0;
     public string $created_at;
     public string $expires_at;

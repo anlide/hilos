@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\Code\DTO\AuthCodeResultSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
@@ -322,6 +324,33 @@ final class HilosSignalConstants
      * runtime collection. The single agent owns the in-flight-login pool it drains.
      */
     public const string HILOS_OAUTH_PENDING = 'hilos_oauth_pending';
+
+    // ── Hilos code channels: worker → code agent, code agent → guest browser ──
+    /**
+     * Page action requesting a phone code → the code agent: send one code over one channel.
+     *
+     * Requesting a code became asynchronous for every channel (HIL-492), because
+     * deciding whether a channel can reach a number is a network round-trip on some
+     * of them, and a page action may not wait on the network. The action validates
+     * only what costs nothing (a well-formed number, a channel that exists and serves
+     * this kind of identifier), hands the rest over this signal and acks; the agent
+     * probes, mints and delivers across ticks. Carried by
+     * {@see AuthCodeSendSignalData}; a singleton route, since the code agent is
+     * monopolistic.
+     */
+    public const string HILOS_AUTH_CODE_SEND = 'hilos_auth_code_send';
+
+    /**
+     * Code agent → the requesting connection: what became of the code request.
+     *
+     * Every outcome travels here, success included, which is what parts this from the
+     * usual action ack: the person asking is a guest with no account and no session to
+     * fan out to, so the accept key of their live socket is the only address there is
+     * (the shape {@see HILOS_OAUTH_RESULT} established). The code screen opens on THIS
+     * signal rather than on the click, so the channel it names is the channel the code
+     * actually went over. Carried by {@see AuthCodeResultSignalData}.
+     */
+    public const string HILOS_AUTH_CODE_RESULT = 'hilos_auth_code_result';
 
     // ── Hilos auth throttle: worker ⇄ throttle agent (agent signals) ─────────
     /**

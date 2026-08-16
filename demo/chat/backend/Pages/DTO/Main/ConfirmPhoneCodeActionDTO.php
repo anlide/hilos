@@ -9,16 +9,21 @@ use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /**
- * ConfirmSmsCodeActionDTO - DTO for submitting an SMS one-time login code (HIL-280).
+ * ConfirmPhoneCodeActionDTO - DTO for submitting a phone one-time login code (HIL-280).
  *
  * Public (anonymous-reachable) submit that carries the phone and the delivered
  * code. The phone is trimmed here and normalized to E.164 by the handler; the
  * code is trimmed so surrounding whitespace never fails an otherwise valid code.
+ *
+ * It carries no channel, and that is not an omission (HIL-492): a code is verified
+ * against the challenge for a (type, identifier), and which channel carried it there
+ * changes nothing about whether the digits match. Asking the client to name it again
+ * would only invite a mismatch that has no meaning.
  */
-final class ConfirmSmsCodeActionDTO extends ChatActionPayloadDTO
+final class ConfirmPhoneCodeActionDTO extends ChatActionPayloadDTO
 {
     /**
-     * Creates an SMS-code confirmation DTO.
+     * Creates a phone-code confirmation DTO.
      *
      * @param string $phone Submitted phone number (trimmed)
      * @param string $code Submitted verification code (trimmed)
@@ -36,7 +41,7 @@ final class ConfirmSmsCodeActionDTO extends ChatActionPayloadDTO
      */
     public function getAction(): string
     {
-        return ChatSignalConstants::CONFIRM_SMS_CODE;
+        return ChatSignalConstants::CONFIRM_PHONE_CODE;
     }
 
     /**

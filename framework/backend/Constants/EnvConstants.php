@@ -649,6 +649,31 @@ enum EnvConstants
     /** @var string Directory the stub provider writes .txt artifacts to; empty writes none. */
     case SMS_FILE_DIR;
 
+    // ── Telegram Gateway: one-time codes to a phone number (HIL-492) ─────────
+
+    /**
+     * @var string Telegram Gateway access token. Empty leaves the telegram code channel
+     * unconfigured, and a project that registered it then reports every number unreachable
+     * rather than failing - so a missing token costs the messenger, never the SMS beside it.
+     * Env-only secret.
+     */
+    case TELEGRAM_GATEWAY_TOKEN;
+
+    /**
+     * @var string Telegram Gateway base URL. Default https://gatewayapi.telegram.org; the test
+     * stand points it at its own mock, which is the only reason it is configurable at all.
+     */
+    case TELEGRAM_GATEWAY_ENDPOINT_URL;
+
+    /**
+     * @var string Sender username shown on the delivered code message; empty lets the Gateway
+     * pick. Not a secret - the recipient reads it.
+     */
+    case TELEGRAM_GATEWAY_SENDER_USERNAME;
+
+    /** @var string Per-request timeout in milliseconds for the Gateway calls. Default 5000. */
+    case TELEGRAM_GATEWAY_TIMEOUT_MS;
+
     // ── Web push (HIL-199) ───────────────────────────────────────────────────
 
     /**

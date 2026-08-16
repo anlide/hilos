@@ -42,12 +42,10 @@ class VerificationService
     /**
      * Issues a fresh verification code for a (type, identifier), then delivers it.
      *
-     * The one send gate of the framework (HIL-421), and it holds two rules, not
-     * one: a cooldown between consecutive sends, and a cap on sends per window.
-     * The cooldown alone let a patient script send forever, one code per cooldown;
-     * the cap alone let a burst through. Both count the ISSUE, so a challenge the
-     * target already threw away and a transport that failed afterwards cannot buy
-     * another send.
+     * It passes the one send gate of the framework ({@see refuseBySendGate()}, HIL-421),
+     * which holds two rules, not one: a cooldown between consecutive sends, and a cap
+     * on sends per window. The cooldown alone let a patient script send forever, one
+     * code per cooldown; the cap alone let a burst through.
      *
      * Refused either way, nothing is minted and nothing is delivered - the answer
      * says which rule refused, and the caller decides how loudly to say so. Only a
@@ -74,17 +72,10 @@ class VerificationService
 
         $collection = $this->collection();
         $cooldownSeconds = $this->resendCooldownSeconds();
-        $stats = $collection->sendStats($type, $identifier, $this->sendWindowSeconds());
 
-        if ($stats->lastIssuedAt !== null) {
-            $heldForSeconds = $stats->lastIssuedAt + $cooldownSeconds - time();
-            if ($heldForSeconds > 0) {
-                return VerificationSendOutcome::heldByCooldown($heldForSeconds);
-            }
-        }
-
-        if ($stats->sentInWindow >= $this->sendCapFor($type)) {
-            return VerificationSendOutcome::capReached();
+        $refusal = $this->refuseBySendGate($collection, $type, $identifier, $cooldownSeconds);
+        if ($refusal !== null) {
+            return $refusal;
         }
 
         $collection->voidActive($type, $identifier, $this->maxAttempts());
@@ -95,6 +86,91 @@ class VerificationService
         $this->createDeliverer()->deliver($identifier, $type, $this->deliverableFor($type, $identifier, $code));
 
         return VerificationSendOutcome::sent($cooldownSeconds);
+    }
+
+    /**
+     * Issues a code for a (type, identifier) over a named channel WITHOUT delivering it (HIL-492).
+     *
+     * The half of {@see issue()} a code channel needs. Delivery there is one step and
+     * belongs to the service; here it is two - the channel has already proven the
+     * target reachable over the network and will send the code itself, over a
+     * transport this service knows nothing about - so the mint has to hand the code
+     * back instead of consuming it. Everything the send gate protects is unchanged:
+     * the same cooldown and the same per-window cap, counted on the same
+     * (type, identifier) key.
+     *
+     * The key deliberately excludes the channel. Counting per channel would let a
+     * stranger walk the registry and buy one code per channel from a single number's
+     * budget, so the limit is on the target - which is what costs money and what a
+     * person's phone actually receives - and picking a different channel is not a way
+     * around it.
+     *
+     * The channel is recorded on the challenge rather than merely obeyed, because a
+     * resend has to repeat the channel the person chose and the click that chose it is
+     * long gone by then.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (E.164 phone for the code channels)
+     * @param ?int $userId Owning user id when known at issue time, else null
+     * @param string $channel Code channel the caller will deliver over (see CodeChannel::name())
+     * @return VerificationIssuedCode The gate's verdict, and the plaintext code when one was minted
+     * @throws EmptyValueException When identifier or channel is empty
+     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When a send-gate or challenge env key is missing, outside the catalog,
+     *   or of the wrong type
+     * @throws InvalidArgumentException When a verification query is given an invalid order direction
+     */
+    public function issueForChannel(
+        string $type,
+        string $identifier,
+        ?int $userId,
+        string $channel,
+    ): VerificationIssuedCode {
+        if ($identifier === '') {
+            throw new EmptyValueException('Verification identifier is required');
+        }
+        if ($channel === '') {
+            throw new EmptyValueException('Verification channel is required');
+        }
+
+        $collection = $this->collection();
+        $cooldownSeconds = $this->resendCooldownSeconds();
+
+        $refusal = $this->refuseBySendGate($collection, $type, $identifier, $cooldownSeconds);
+        if ($refusal !== null) {
+            return VerificationIssuedCode::refused($refusal);
+        }
+
+        $collection->voidActive($type, $identifier, $this->maxAttempts());
+
+        $code = $this->generateCode();
+        $collection->createChallenge($type, $identifier, $userId, $code, $this->ttlSeconds(), $channel);
+
+        return VerificationIssuedCode::minted(VerificationSendOutcome::sent($cooldownSeconds), $code);
+    }
+
+    /**
+     * The channel the live challenge of a (type, identifier) was delivered over (HIL-492).
+     *
+     * What a resend reads to repeat the channel the person chose: the click that chose
+     * it belongs to a screen ago, and asking again on the code screen would be asking
+     * the same question twice. Null when nothing is live, or when the live challenge
+     * carries no channel - every flow that never offered a choice mints one that way,
+     * and a caller reads that as "the type's own rule", not as an error.
+     *
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier (E.164 phone for the code channels)
+     * @return ?string Channel name of the live challenge, or null when there is none to repeat
+     * @throws DatabaseException When a verification query fails
+     * @throws LogicException When the verifications object collection is unavailable
+     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
+     *   or not an int
+     */
+    public function activeChannel(string $type, string $identifier): ?string
+    {
+        return $this->collection()->findActive($type, $identifier, $this->maxAttempts())?->channel;
     }
 
     /**
@@ -302,6 +378,49 @@ class VerificationService
         $challenge->consume();
 
         return true;
+    }
+
+    /**
+     * The send gate itself: answers the refusal that stops a send, or null to let it through.
+     *
+     * Extracted so the two issue paths cannot drift (HIL-492): {@see issue()} delivers
+     * the code itself and {@see issueForChannel()} hands it to a channel, but "may this
+     * target be sent to right now" is one rule and has to stay one piece of code -
+     * otherwise a change to the cooldown or the cap would tighten one door and leave
+     * the other open, which is a hole that looks like working software.
+     *
+     * Both rules count the ISSUE, not the delivery, so a challenge the target already
+     * threw away and a transport that failed afterwards cannot buy another send.
+     *
+     * @param ObjectUserVerifications $collection Verifications persistence primitives
+     * @param string $type Verification type (see VerificationType)
+     * @param string $identifier Normalized identifier
+     * @param int $cooldownSeconds Configured minimum seconds between issues for one target
+     * @return ?VerificationSendOutcome Refusal that stops the send, or null when it may proceed
+     * @throws DatabaseException When a verification query fails
+     * @throws EnvException When a send-gate env key is missing, outside the catalog, or not an int
+     * @throws InvalidArgumentException When a verification query is given an invalid order direction
+     */
+    private function refuseBySendGate(
+        ObjectUserVerifications $collection,
+        string $type,
+        string $identifier,
+        int $cooldownSeconds,
+    ): ?VerificationSendOutcome {
+        $stats = $collection->sendStats($type, $identifier, $this->sendWindowSeconds());
+
+        if ($stats->lastIssuedAt !== null) {
+            $heldForSeconds = $stats->lastIssuedAt + $cooldownSeconds - time();
+            if ($heldForSeconds > 0) {
+                return VerificationSendOutcome::heldByCooldown($heldForSeconds);
+            }
+        }
+
+        if ($stats->sentInWindow >= $this->sendCapFor($type)) {
+            return VerificationSendOutcome::capReached();
+        }
+
+        return null;
     }
 
     /**

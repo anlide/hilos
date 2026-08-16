@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 
 import { mailsTo, readRegisterCode } from '../helpers/mail'
 import {
+  clickSubmit,
   login,
   logout,
   nameFromEmail,
@@ -9,9 +10,12 @@ import {
   register,
   submitRegistration,
   submitRegistrationCode,
+  typeInto,
   uniqueEmail,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { uniquePhone, waitForSmsCode } from '../helpers/sms'
+import { setTelegramReachable, waitForTelegramCode } from '../helpers/telegram'
 
 // Auth e2e umbrella (HIL-167): the email+password sign-in flow end to end through
 // the live daemon and built frontend. It covers the surfaces that landed with the
@@ -291,4 +295,78 @@ test('sends nothing for a resend pressed inside the cooldown', async ({
   await submitRegistrationCode(page, code)
   await expect(page.getByTestId('profile-name')).toBeVisible()
   expect(await mailsTo(email)).toHaveLength(1)
+})
+
+// Code channels (HIL-492). Delivery of a login code became a registry, so what is
+// exercised here is what a registry is FOR: the same number reaches its account
+// through whichever channel can carry it, and a channel that cannot costs the person
+// nothing on the way to one that can.
+//
+// The Telegram leg goes through the stand's mock Gateway (helpers/telegram.ts) rather
+// than around it: the daemon builds a real request, posts it, and the mock refuses one
+// that carries no bearer token — so a transport quietly removed would fail here.
+//
+// Not covered, and deliberately: a project whose registry has no Telegram at all draws
+// no icon row. That is a different build of the demo, not a state a spec can arrange,
+// and the channel list is unit-tested instead (CodeChannelRegistryTest).
+
+test('signs in with the code delivered over Telegram', async ({ page }) => {
+  // No global reset: every state the mock holds is keyed by number, and the number
+  // is unique per test, so these specs are isolated without reaching into a store
+  // the other workers share.
+  const phone = uniquePhone()
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('message-signin').click()
+  await page.getByTestId('auth-to-sms').click()
+  await typeInto(page.getByTestId('auth-phone'), phone)
+
+  // Choosing the channel IS sending the code: there is no separate send button
+  // behind the icon.
+  await clickSubmit(page.getByTestId('auth-code-channel-telegram'))
+
+  // The code screen opens on the agent's outcome signal, not on the click, and it
+  // names the channel the code actually went over.
+  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via Telegram')
+
+  await typeInto(
+    page.getByTestId('auth-sms-code'),
+    await waitForTelegramCode(phone),
+  )
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  await expect(page.getByTestId('self-user')).toHaveText(phone)
+})
+
+test('leaves a number that is not on Telegram free to sign in by SMS', async ({
+  page,
+}) => {
+  const phone = uniquePhone()
+  await setTelegramReachable(phone, false)
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await page.getByTestId('message-signin').click()
+  await page.getByTestId('auth-to-sms').click()
+  await typeInto(page.getByTestId('auth-phone'), phone)
+  await clickSubmit(page.getByTestId('auth-code-channel-telegram'))
+
+  // The refusal says so and dims the channel, and the code screen never opens:
+  // nothing was minted, so there is no code to enter.
+  await expect(page.getByTestId('auth-error')).toBeVisible()
+  await expect(page.getByTestId('auth-code-channel-telegram')).toBeDisabled()
+  await expect(page.getByTestId('auth-sms-code')).toBeHidden()
+
+  // The whole point of probing before minting: SMS still has this number's first
+  // code to give, because the refused channel spent no cooldown.
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await expect(page.getByTestId('auth-sms-code')).toBeVisible()
+  await expect(page.getByTestId('auth-sms-sent-via')).toContainText('via SMS')
+
+  await typeInto(page.getByTestId('auth-sms-code'), await waitForSmsCode(phone))
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  await expect(page.getByTestId('self-user')).toHaveText(phone)
 })

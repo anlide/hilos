@@ -47,7 +47,7 @@ export function nameFromEmail(email: string): string {
  * @param field The input locator.
  * @param value The value to type.
  */
-async function typeInto(field: Locator, value: string): Promise<void> {
+export async function typeInto(field: Locator, value: string): Promise<void> {
   await field.fill('')
   await field.pressSequentially(value, { delay: 10 })
 }
@@ -59,7 +59,7 @@ async function typeInto(field: Locator, value: string): Promise<void> {
  *
  * @param button The submit-button locator.
  */
-async function clickSubmit(button: Locator): Promise<void> {
+export async function clickSubmit(button: Locator): Promise<void> {
   await button.scrollIntoViewIfNeeded()
   await expect(button).toBeVisible()
   await expect(button).toBeEnabled()
@@ -225,7 +225,7 @@ const EMAIL_ADD_SUBJECT = 'Confirm your email address'
  * — the way the product actually offers:
  *
  *   1. sign in by SMS with a fresh number, which mints a user with no password and
- *      no email at all (MainPage::handleConfirmSmsCode creates the user if new);
+ *      no email at all (MainPage::handleConfirmPhoneCode creates the user if new);
  *   2. walk that user through the profile's add-password wizard, which mails a
  *      code to a chosen address and, on the confirm, writes a password identity
  *      on it and marks it verified (ProfilePage::handleConfirmAddPassword).
@@ -250,9 +250,10 @@ export async function signUpWithVerifiedEmail(
   await typeInto(page.getByTestId('auth-phone'), phone)
   await clickSubmit(page.getByTestId('auth-submit'))
 
-  // The surface advances to the code step on the request's own reply, so the code
-  // field appearing is what says the code has been issued — and only then is
-  // there an artifact to read.
+  // The request is asynchronous for every channel (HIL-492): its ack means only
+  // "accepted", and the surface advances when the code agent signals that a code
+  // really went out. So the code field appearing is what says the code has been
+  // issued — and only then is there an artifact to read.
   await expect(page.getByTestId('auth-sms-code')).toBeVisible()
   await typeInto(page.getByTestId('auth-sms-code'), await waitForSmsCode(phone))
   await clickSubmit(page.getByTestId('auth-submit'))

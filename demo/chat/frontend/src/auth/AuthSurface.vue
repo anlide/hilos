@@ -13,7 +13,7 @@ correlation and surface the backend reason inline; recovery detail is deferred t
 HIL-365, so its entry renders a reachable placeholder. Bootstrap classes only, no
 CSS of its own (styling-rules.md). -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   createAuthSurface,
   MAGIC_LINK_AUTH_METHOD,
@@ -22,12 +22,20 @@ import {
   PASSWORD_AUTH_METHOD,
   PASSWORD_MIN_LENGTH,
   SMS_AUTH_METHOD,
+  SMS_CODE_CHANNEL,
+  TELEGRAM_CODE_CHANNEL,
   type AuthField,
   type AuthMethodDescriptor,
+  type CodeChannelDescriptor,
 } from '@hilos/core'
 import { LoadingButton, useSignal } from '@hilos/vue'
 
-import { resendRegisterCode, submitAuth } from './authActions'
+import {
+  requestPhoneCode,
+  resendRegisterCode,
+  submitAuth,
+  subscribeCodeChannelUnavailable,
+} from './authActions'
 import {
   describeOAuthError,
   peekOAuthLink,
@@ -47,7 +55,89 @@ const methods: AuthMethodDescriptor[] = [
   PASSKEY_DISCOVERABLE_AUTH_METHOD,
   OAUTH_GITHUB_AUTH_METHOD,
 ]
-const surface = createAuthSurface({ methods, onSubmit: submitAuth })
+// The project declares its ORDERED code channels the same way it declares methods
+// (HIL-492): SMS is the primary and draws the button, the rest draw the icon row
+// under it. Adding a channel here and in the backend registry is the whole change —
+// nothing below reads a channel by name.
+const codeChannels: CodeChannelDescriptor[] = [
+  SMS_CODE_CHANNEL,
+  TELEGRAM_CODE_CHANNEL,
+]
+const primaryChannel =
+  codeChannels.find((channel) => channel.primary) ?? codeChannels[0]
+const secondaryChannels = codeChannels.filter(
+  (channel) => channel.key !== primaryChannel.key,
+)
+
+// Which channel the running phone-code request is going over. The primary button
+// and each icon are the same submit with a different value here, which is why only
+// this ref — and not a second code path — separates them.
+const chosenChannel = ref(primaryChannel.key)
+
+// The channel the DELIVERED code went over, taken from the outcome rather than from
+// the click: the code screen names it, and a click is only a request while the
+// outcome is the fact.
+const deliveredChannel = ref(primaryChannel.key)
+
+// Channels that answered "cannot reach this number" (HIL-492). Client state, not
+// stored anywhere: it is true of a number and not of an account, so it is cleared
+// the moment the number changes.
+const unavailableChannels = ref(new Set<string>())
+
+// Bootstrap: the icon of a channel that already said no stays dimmed until the
+// person edits the number, so a second click cannot repeat a request that is known
+// to fail.
+let stopWatchingChannels: (() => void) | null = null
+onMounted(() => {
+  stopWatchingChannels = subscribeCodeChannelUnavailable((channel) => {
+    unavailableChannels.value = new Set(unavailableChannels.value).add(channel)
+  })
+})
+onUnmounted(() => {
+  stopWatchingChannels?.()
+  stopWatchingChannels = null
+})
+
+// The phone-code request is the one submit that names a channel, so it bypasses
+// the generic action map — everything else is unchanged.
+const surface = createAuthSurface({
+  methods,
+  onSubmit: async (submitMode, submitForm) => {
+    if (submitMode !== 'sms_request') {
+      return submitAuth(submitMode, submitForm)
+    }
+
+    const outcome = await requestPhoneCode(submitForm.phone, chosenChannel.value)
+    deliveredChannel.value = outcome.channel
+
+    return outcome
+  },
+})
+
+/**
+ * Send the code over one channel: remember which, then run the ordinary submit.
+ *
+ * @param channel The channel key the person picked.
+ */
+function sendCodeOver(channel: string): void {
+  chosenChannel.value = channel
+  void surface.submit()
+}
+
+// Bootstrap icons per channel key. The view owns this and the core contract does
+// not carry it: an icon is a property of the surface's design language, and a
+// channel the framework knows about must not be able to prescribe one.
+const channelIcons: Record<string, string> = {
+  [SMS_CODE_CHANNEL.key]: 'bi bi-chat-dots',
+  [TELEGRAM_CODE_CHANNEL.key]: 'bi bi-telegram',
+}
+
+/** The label of the channel a delivered code went over, for the code screen. */
+const chosenChannelLabel = computed(
+  () =>
+    codeChannels.find((channel) => channel.key === chosenChannel.value)?.label ??
+    chosenChannel.value,
+)
 
 // The redirect methods (OAuth): rendered on the login surface as external
 // "Continue with …" buttons, not as machine modes — the surface owns no OAuth
@@ -154,11 +244,22 @@ const submitLabel = computed(() => {
  */
 function update(field: AuthField, event: Event): void {
   surface.setField(field, (event.target as HTMLInputElement).value)
+  if (field === 'phone') {
+    // A dimmed channel is dimmed about a NUMBER, not about the person: editing the
+    // number makes every channel worth asking again.
+    unavailableChannels.value = new Set()
+  }
 }
 
 function submit(): void {
   if (!submittable.value || pending.value) {
     return
+  }
+  if (mode.value === 'sms_request') {
+    // Submitting the FORM is the primary channel — the button under the field —
+    // while an icon is its own entry point and sets itself. Without this, a primary
+    // send after a failed icon would silently repeat the icon's channel (HIL-492).
+    chosenChannel.value = primaryChannel.key
   }
   void surface.submit()
 }
@@ -431,7 +532,9 @@ onMounted(() => {
           :value="form.code"
           @input="update('code', $event)"
         />
-        <div class="form-text">Sent to {{ form.phone }}.</div>
+        <div class="form-text" data-id="auth-sms-sent-via">
+          Sent to {{ form.phone }} via {{ chosenChannelLabel }}.
+        </div>
       </div>
 
       <div
@@ -446,12 +549,46 @@ onMounted(() => {
       <LoadingButton
         type="submit"
         class="btn-primary w-100"
-        :loading="pending"
+        :loading="pending && chosenChannel === primaryChannel.key"
         :disabled="!submittable"
         data-id="auth-submit"
       >
         {{ submitLabel }}
       </LoadingButton>
+
+      <!-- The other configured channels (HIL-492), drawn from the registry rather
+      than named here: choosing one IS sending the code, so each icon is the same
+      submit with a different channel. A channel that answered "cannot reach this
+      number" is disabled until the number changes. -->
+      <template v-if="mode === 'sms_request' && secondaryChannels.length > 0">
+        <div class="d-flex align-items-center gap-2 my-3">
+          <hr class="flex-grow-1 my-0" />
+          <span class="small text-body-secondary">or send it to</span>
+          <hr class="flex-grow-1 my-0" />
+        </div>
+        <div class="d-flex justify-content-center gap-2">
+          <LoadingButton
+            v-for="channel in secondaryChannels"
+            :key="channel.key"
+            type="button"
+            class="btn-outline-secondary"
+            :loading="pending && chosenChannel === channel.key"
+            :disabled="
+              !submittable || pending || unavailableChannels.has(channel.key)
+            "
+            :aria-label="`Send the code via ${channel.label}`"
+            :title="
+              unavailableChannels.has(channel.key)
+                ? `${channel.label} cannot reach this number`
+                : channel.label
+            "
+            :data-id="`auth-code-channel-${channel.key}`"
+            @click="sendCodeOver(channel.key)"
+          >
+            <i :class="channelIcons[channel.key]" aria-hidden="true" />
+          </LoadingButton>
+        </div>
+      </template>
     </form>
 
     <!-- Email magic-link sign-in (HIL-283): request a passwordless link for an

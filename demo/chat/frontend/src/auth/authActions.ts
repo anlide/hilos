@@ -20,10 +20,23 @@
 // ack — a taken address is a move to sign-in, not a transport error — so a reply
 // saying `ok: false` has to be read off a resolved dispatch, or the surface would
 // step to the code screen for an address it never reserved.
-import { ActionError } from '@hilos/core'
-import type { AuthFormState, AuthMode, AuthSubmitOutcome } from '@hilos/core'
+import { ActionError, SMS_CODE_CHANNEL } from '@hilos/core'
+import type {
+  AuthFormState,
+  AuthMode,
+  AuthSubmitOutcome,
+  ProjectSignal,
+} from '@hilos/core'
 
-import { actions } from '../bootstrap/connection'
+import { actions, connection } from '../bootstrap/connection'
+import {
+  AUTH_CODE_REASON_CAP_REACHED,
+  AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
+  AUTH_CODE_REASON_RATE_LIMITED,
+  AUTH_CODE_REASON_SENT,
+  AUTH_CODE_RESULT_SIGNAL,
+  authCodeResultSignalSchema,
+} from './authCodeSignals'
 
 /** Backend action: email+password login (PHP `ChatSignalConstants::LOGIN`). */
 const LOGIN_ACTION = 'login'
@@ -37,17 +50,36 @@ const CONFIRM_REGISTER_ACTION = 'confirm_register'
 /** Backend action: re-send a pending registration's code (PHP `ChatSignalConstants::REQUEST_REGISTER_CONFIRM`). */
 const REQUEST_REGISTER_CONFIRM_ACTION = 'request_register_confirm'
 
-/** Backend action: request an SMS login code (PHP `ChatSignalConstants::REQUEST_SMS_CODE`). */
-const REQUEST_SMS_CODE_ACTION = 'request_sms_code'
+/** Backend action: send a phone login code over a channel (PHP `ChatSignalConstants::REQUEST_PHONE_CODE`). */
+const REQUEST_PHONE_CODE_ACTION = 'request_phone_code'
 
-/** Backend action: submit an SMS login code (PHP `ChatSignalConstants::CONFIRM_SMS_CODE`). */
-const CONFIRM_SMS_CODE_ACTION = 'confirm_sms_code'
+/** Backend action: submit a phone login code (PHP `ChatSignalConstants::CONFIRM_PHONE_CODE`). */
+const CONFIRM_PHONE_CODE_ACTION = 'confirm_phone_code'
 
 /** Backend action: request an email magic-link (PHP `ChatSignalConstants::REQUEST_MAGIC_LINK`). */
 const REQUEST_MAGIC_LINK_ACTION = 'request_magic_link'
 
 /** Backend action: submit an email magic-link token (PHP `ChatSignalConstants::CONFIRM_MAGIC_LINK`). */
 const CONFIRM_MAGIC_LINK_ACTION = 'confirm_magic_link'
+
+/**
+ * How long a code request waits for its outcome signal before giving up. Comfortably
+ * past the agent's own whole-operation deadline (15s), so this fires only when the
+ * outcome is never coming — not when the messenger is merely slow.
+ */
+const CODE_OUTCOME_TIMEOUT_MS = 20000
+
+/**
+ * A code request's outcome, and the channel it is ABOUT.
+ *
+ * The channel rides along because the surface has to name it, and the only
+ * trustworthy source is the outcome itself — the click that started the request may
+ * not be the click the person made last.
+ */
+export interface PhoneCodeOutcome extends AuthSubmitOutcome {
+  /** The channel the outcome reports, which is the one the code went over. */
+  readonly channel: string
+}
 
 /**
  * Dispatch the active mode's submit and resolve the surface outcome. Login and
@@ -87,17 +119,17 @@ export async function submitAuth(
         code: form.code,
       })
     case 'sms_request':
-      // Success advances to the code step; the backend always answers generically
-      // (a well-formed number issues a code whether or not it has an account).
-      return dispatch(
-        REQUEST_SMS_CODE_ACTION,
-        { phone: form.phone },
-        'sms_confirm',
-      )
+      // Asynchronous for every channel (HIL-492): the ack only means "accepted",
+      // so the advance waits for the outcome signal that says a code really went
+      // out - and over which channel. The primary channel is what this step's
+      // single button sends over; the icon row that offers the rest is HIL-423.
+      return requestPhoneCode(form.phone, SMS_CODE_CHANNEL.key)
     case 'sms_confirm':
       // Success upgrades the session (find-or-create by phone) and the auth gate
-      // closes the surface off the current-user signal, so no next mode.
-      return dispatch(CONFIRM_SMS_CODE_ACTION, {
+      // closes the surface off the current-user signal, so no next mode. No
+      // channel rides along: a code is verified against the challenge for the
+      // number, and which channel carried it there changes nothing.
+      return dispatch(CONFIRM_PHONE_CODE_ACTION, {
         phone: form.phone,
         code: form.code,
       })
@@ -131,6 +163,147 @@ export async function submitAuth(
  */
 export function resendRegisterCode(email: string): Promise<AuthSubmitOutcome> {
   return dispatch(REQUEST_REGISTER_CONFIRM_ACTION, { email })
+}
+
+/**
+ * Ask the backend to send a login code to a phone over one channel, and resolve
+ * only once it says what became of it (HIL-492).
+ *
+ * The one submit on this surface whose outcome does NOT ride its own ack. Deciding
+ * whether a channel can reach a number is a network round-trip for a messenger, so
+ * the page action validates what costs nothing, hands the rest to the code agent
+ * and acks "accepted"; the real answer lands later on
+ * {@link AUTH_CODE_RESULT_SIGNAL}. Advancing on the ack would open a code screen
+ * before any code existed — and, once channels can fail, a screen naming a message
+ * that was never sent.
+ *
+ * Ordering is why the subscription is registered BEFORE the dispatch: the outcome
+ * can arrive while the ack is still in flight, and a listener attached afterwards
+ * would miss it and leave the surface waiting forever.
+ *
+ * A dispatch that fails outright (the channel was refused up front, the connection
+ * dropped) rejects and is shown inline; no signal is coming for it.
+ *
+ * It also gives up on its own after {@link CODE_OUTCOME_TIMEOUT_MS}. Waiting on a
+ * signal forever is not patience but a dead surface: a reconnect gives the socket a
+ * new accept key and an agent restart drops its in-flight ops, so in both cases the
+ * outcome is addressed to somebody who no longer exists and nothing will ever
+ * arrive. Without the deadline the promise never settles, `pending` never clears,
+ * and every later press is a silent no-op — the exact opposite of the recovery the
+ * flow is designed around, which is the person pressing the button again.
+ *
+ * @param phone The number the code is asked for.
+ * @param channel The code channel key to send over (see `CodeChannelDescriptor`).
+ */
+export function requestPhoneCode(
+  phone: string,
+  channel: string,
+): Promise<PhoneCodeOutcome> {
+  return new Promise<PhoneCodeOutcome>((resolve) => {
+    let settled = false
+    const settle = (outcome: PhoneCodeOutcome): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimeout(deadline)
+      unsubscribe()
+      resolve(outcome)
+    }
+
+    const unsubscribe = connection.on(
+      'projectSignal',
+      (signal: ProjectSignal) => {
+        if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
+          return
+        }
+        const data = signal.data as ReturnType<
+          typeof authCodeResultSignalSchema.parse
+        >
+        // The channel is taken from the OUTCOME, never from the click: naming the
+        // clicked one would put "via Telegram" on a screen holding an SMS code the
+        // moment a second press changed the choice mid-request.
+        settle({ ...describeCodeOutcome(data.reason), channel: data.channel })
+      },
+    )
+
+    const deadline = setTimeout(() => {
+      settle({
+        ok: false,
+        message: 'The code did not go out in time. Please try again.',
+        channel,
+      })
+    }, CODE_OUTCOME_TIMEOUT_MS)
+
+    actions
+      .dispatch(REQUEST_PHONE_CODE_ACTION, { phone, channel })
+      .done.catch((error: unknown) => {
+        settle({ ok: false, message: describeAuthError(error), channel })
+      })
+  })
+}
+
+/**
+ * Watch for a channel reporting that it cannot reach the number being typed.
+ *
+ * A view concern, and deliberately not folded into {@link requestPhoneCode}'s
+ * outcome: the surface dims the channel that failed and leaves the rest offered, so
+ * what it needs is the channel KEY, while the submit machine only needs "did the
+ * step advance". Two readers of one signal, each taking the part it acts on.
+ *
+ * Nothing is dimmed permanently — the caller clears its own dimmed set when the
+ * number changes, since a different number is a different question.
+ *
+ * @param handler Called with the channel key that reported itself unavailable.
+ * @returns Unsubscribe for the registered signal handler.
+ */
+export function subscribeCodeChannelUnavailable(
+  handler: (channel: string) => void,
+): () => void {
+  return connection.on('projectSignal', (signal: ProjectSignal) => {
+    if (signal.type !== AUTH_CODE_RESULT_SIGNAL) {
+      return
+    }
+    const data = signal.data as ReturnType<typeof authCodeResultSignalSchema.parse>
+    if (data.reason === AUTH_CODE_REASON_CHANNEL_UNAVAILABLE) {
+      handler(data.channel)
+    }
+  })
+}
+
+/**
+ * Turn a code-request outcome reason into what the surface does about it.
+ *
+ * TWO arms advance to the code screen, not one. A fresh send obviously does — and
+ * so does a send the cooldown held back, because that refusal means a code went to
+ * this number moments ago and is still live: stranding the person on the phone step
+ * would hide the very code they are waiting to type. This is the behavior the
+ * synchronous flow had (a held send answered `sent` with the remaining seconds),
+ * kept deliberately.
+ *
+ * The genuine refusals stay on the phone step with a sentence, since that is where
+ * the person can act — pick another channel, fix the number, or wait out the
+ * window. The wording is the client's: the backend deliberately sends a stable
+ * reason code and no prose, so no provider or network detail reaches a guest.
+ *
+ * @param reason The stable reason code the outcome signal carried.
+ */
+function describeCodeOutcome(reason: string): AuthSubmitOutcome {
+  switch (reason) {
+    case AUTH_CODE_REASON_SENT:
+    case AUTH_CODE_REASON_RATE_LIMITED:
+      return { ok: true, next: 'sms_confirm' }
+    case AUTH_CODE_REASON_CHANNEL_UNAVAILABLE:
+      return { ok: false, message: 'That number cannot be reached this way.' }
+    case AUTH_CODE_REASON_CAP_REACHED:
+      return {
+        ok: false,
+        message:
+          'Too many codes have been sent to this number. Please try again later.',
+      }
+    default:
+      return { ok: false, message: 'Could not send the code. Please try again.' }
+  }
 }
 
 /**

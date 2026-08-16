@@ -591,6 +591,35 @@ export const MAGIC_LINK_FLOW_METHOD: AuthFlowMethodDescriptor = {
 }
 
 /**
+ * The SMS code channel — the one every project has, and the default a phone
+ * code goes over (HIL-492). Primary because SMS reaches a number with no prior
+ * relationship, which is exactly what a stranger signing in has; a messenger
+ * cannot promise that, so promoting one would default most people to a channel
+ * that cannot reach them.
+ *
+ * The backend half is `SmsCodeChannel`; the two agree on key, label and
+ * identifier kinds, and nothing else about a channel crosses to the browser.
+ */
+export const SMS_CODE_CHANNEL: CodeChannelDescriptor = {
+  key: 'sms',
+  label: 'SMS',
+  identifierKinds: ['phone'],
+  primary: true,
+}
+
+/**
+ * The Telegram code channel (HIL-492), delivered through the Telegram Gateway.
+ * Not primary: a number is on Telegram only if its owner put it there, so it is
+ * offered beside SMS rather than in front of it — the surface dims it when the
+ * backend reports the number unreachable.
+ */
+export const TELEGRAM_CODE_CHANNEL: CodeChannelDescriptor = {
+  key: 'telegram',
+  label: 'Telegram',
+  identifierKinds: ['phone'],
+}
+
+/**
  * Classify an identifier as email, phone, or unknown — a pure core function so
  * the views never re-implement it. An `@` reads as an email; an otherwise
  * all-digit value (with cosmetic separators) reads as a phone; anything else is

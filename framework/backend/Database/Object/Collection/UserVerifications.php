@@ -138,11 +138,19 @@ final class UserVerifications extends Objects
      * this is the one place that knows a challenge is being issued. It is what
      * {@see sendStats()} counts, and expiry is derived from the same instant.
      *
+     * The channel defaults to null, which is what every flow that never offered a
+     * choice mints (HIL-492): null reads as "delivered by the type's own rule", so
+     * an email confirmation and a profile add-phone code carry no channel and are
+     * unaffected. Only the phone-login path, where the person picked a channel,
+     * names one - and it is written at the mint because that is the only moment the
+     * choice exists; nothing later may rewrite which channel a code went out over.
+     *
      * @param string $type Verification type (see VerificationType)
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?int $userId Owning user id, or null when unknown at issue time
      * @param string $plainCode Plaintext code to hash and store
      * @param int $ttlSeconds Seconds until the challenge expires
+     * @param ?string $channel Code channel the challenge is delivered over, or null for the type's own rule
      * @return ObjectUserVerification The created challenge object
      * @throws EmptyValueException When identifier or code is empty
      * @throws DatabaseException If the insert or code hash write query fails
@@ -153,6 +161,7 @@ final class UserVerifications extends Objects
         ?int $userId,
         string $plainCode,
         int $ttlSeconds,
+        ?string $channel = null,
     ): ObjectUserVerification {
         if ($identifier === '' || $plainCode === '') {
             throw new EmptyValueException('Verification identifier and code are required');
@@ -163,6 +172,7 @@ final class UserVerifications extends Objects
         $verification->userId = $userId;
         $verification->type = $type;
         $verification->identifier = $identifier;
+        $verification->channel = $channel;
         $verification->createdAt = date('Y-m-d H:i:s', $now);
         $verification->expiresAt = date('Y-m-d H:i:s', $now + $ttlSeconds);
         $verification->sync();

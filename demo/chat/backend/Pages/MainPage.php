@@ -19,7 +19,7 @@ use Demo\Chat\Pages\DTO\Main\CompletePasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\ConfirmRegisterActionDTO;
-use Demo\Chat\Pages\DTO\Main\ConfirmSmsCodeActionDTO;
+use Demo\Chat\Pages\DTO\Main\ConfirmPhoneCodeActionDTO;
 use Demo\Chat\Pages\DTO\Main\DetectIdentifierActionDTO;
 use Demo\Chat\Pages\DTO\Main\FileUploadInitActionDTO;
 use Demo\Chat\Pages\DTO\Main\LinkOAuthAfterReauthActionDTO;
@@ -35,12 +35,14 @@ use Demo\Chat\Pages\DTO\Main\RegisterActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestMagicLinkActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestPasswordResetActionDTO;
 use Demo\Chat\Pages\DTO\Main\RequestRegisterConfirmActionDTO;
-use Demo\Chat\Pages\DTO\Main\RequestSmsCodeActionDTO;
+use Demo\Chat\Pages\DTO\Main\RequestPhoneCodeActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\PasskeyOptionsSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Auth\Code\AuthCodeAgent;
+use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -73,6 +75,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -114,8 +117,8 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::REQUEST_PASSWORD_RESET => RequestPasswordResetActionDTO::class,
         ChatSignalConstants::CONFIRM_PASSWORD_RESET => ConfirmPasswordResetActionDTO::class,
         ChatSignalConstants::COMPLETE_PASSWORD_RESET => CompletePasswordResetActionDTO::class,
-        ChatSignalConstants::REQUEST_SMS_CODE => RequestSmsCodeActionDTO::class,
-        ChatSignalConstants::CONFIRM_SMS_CODE => ConfirmSmsCodeActionDTO::class,
+        ChatSignalConstants::REQUEST_PHONE_CODE => RequestPhoneCodeActionDTO::class,
+        ChatSignalConstants::CONFIRM_PHONE_CODE => ConfirmPhoneCodeActionDTO::class,
         ChatSignalConstants::REQUEST_MAGIC_LINK => RequestMagicLinkActionDTO::class,
         ChatSignalConstants::CONFIRM_MAGIC_LINK => ConfirmMagicLinkActionDTO::class,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM => RequestRegisterConfirmActionDTO::class,
@@ -166,8 +169,8 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::REQUEST_PASSWORD_RESET,
         ChatSignalConstants::CONFIRM_PASSWORD_RESET,
         ChatSignalConstants::COMPLETE_PASSWORD_RESET,
-        ChatSignalConstants::REQUEST_SMS_CODE,
-        ChatSignalConstants::CONFIRM_SMS_CODE,
+        ChatSignalConstants::REQUEST_PHONE_CODE,
+        ChatSignalConstants::CONFIRM_PHONE_CODE,
         ChatSignalConstants::REQUEST_MAGIC_LINK,
         ChatSignalConstants::CONFIRM_MAGIC_LINK,
         ChatSignalConstants::REQUEST_REGISTER_CONFIRM,
@@ -287,6 +290,14 @@ final class MainPage extends AbstractPage
     private const string INVALID_PHONE_MESSAGE = 'Enter a valid phone number';
 
     /**
+     * Failure message for a code channel this project does not offer for a phone
+     * (HIL-492). Reaching it means the payload named a channel the surface never
+     * drew, so it is a malformed request rather than something a person did - and,
+     * like the phone format above, it discloses nothing about any account.
+     */
+    private const string UNKNOWN_CHANNEL_MESSAGE = 'That code channel is not available';
+
+    /**
      * Generic failure message for an OAuth account link (HIL-282). A bad, expired,
      * foreign-owned, or already-linked token all answer the same way so the wire
      * discloses nothing about the matched account beyond the collision it implies.
@@ -378,17 +389,19 @@ final class MainPage extends AbstractPage
                 }
                 return $this->handleCompletePasswordReset($dto);
 
-            case ChatSignalConstants::REQUEST_SMS_CODE:
-                if (!$dto instanceof RequestSmsCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, RequestSmsCodeActionDTO::class, $dto);
+            case ChatSignalConstants::REQUEST_PHONE_CODE:
+                if (!$dto instanceof RequestPhoneCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, RequestPhoneCodeActionDTO::class, $dto);
                 }
-                return $this->handleRequestSmsCode($dto);
+                $this->handleRequestPhoneCode($dto);
 
-            case ChatSignalConstants::CONFIRM_SMS_CODE:
-                if (!$dto instanceof ConfirmSmsCodeActionDTO) {
-                    throw new InvalidActionPayloadException($action, ConfirmSmsCodeActionDTO::class, $dto);
+                break;
+
+            case ChatSignalConstants::CONFIRM_PHONE_CODE:
+                if (!$dto instanceof ConfirmPhoneCodeActionDTO) {
+                    throw new InvalidActionPayloadException($action, ConfirmPhoneCodeActionDTO::class, $dto);
                 }
-                $this->handleConfirmSmsCode($dto);
+                $this->handleConfirmPhoneCode($dto);
 
                 break;
 
@@ -970,39 +983,60 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Issues an SMS one-time login code for a phone, always answering generically.
+     * Hands a phone one-time-code request to the code agent, answering only "accepted".
      *
-     * The additive phone-login entry (HIL-280): a malformed number is rejected as
-     * a format error (no account is disclosed by that), but a well-formed number
-     * always issues (throttled inside the service) whether or not it already has
-     * an `sms` identity — the account is find-or-created on confirm, so issuing
-     * unconditionally reveals nothing about who has an account. The code is issued
-     * with a null owning user because the phone user may not exist yet.
+     * The additive phone-login entry (HIL-280), turned asynchronous for every channel
+     * (HIL-492). What stays here is exactly what costs nothing: the number has to be a
+     * number, the channel has to be one this project registered, and it has to serve
+     * phone identifiers at all. Those are the answers a crafted payload deserves
+     * immediately, and none of them touches the network.
      *
-     * It answers the send gate's verdict (HIL-421), on the SMS numbers: a message
-     * costs money, so the cap that refuses here is the lower of the two. The
-     * refusal says nothing about the number it refused for, exactly as the send
-     * itself says nothing about who owns it.
+     * Everything that can block moves to {@see AuthCodeAgent} - asking a messenger
+     * whether it can reach the number is a round-trip, and a page worker may not wait
+     * on one. So the outcome does NOT ride this ack: the auto-sent `action_success`
+     * means "accepted, working", and the code screen opens later on the agent's result
+     * signal, which is also what names the channel the code really went over.
      *
-     * @param RequestSmsCodeActionDTO $dto Parsed request payload (phone)
-     * @return AuthFlowOutcome Seconds until a re-send, or the cap refusal
-     * @throws ValidationException When the phone number is malformed
-     * @throws HilosException When code issuing fails
-     * @throws RandomException When the platform CSPRNG cannot produce a code
+     * A well-formed request is handed over whether or not the number has an `sms`
+     * identity - the account is find-or-created on confirm, so accepting
+     * unconditionally reveals nothing about who has one. The send gate (HIL-421)
+     * answers inside the agent, on the same (type, identifier) key as before.
+     *
+     * @param RequestPhoneCodeActionDTO $dto Parsed request payload (phone, channel)
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the phone number is malformed or the channel cannot serve it
+     * @throws InvalidArgumentException When the code-request signal cannot be named or queued
      */
-    private function handleRequestSmsCode(RequestSmsCodeActionDTO $dto): AuthFlowOutcome
+    private function handleRequestPhoneCode(RequestPhoneCodeActionDTO $dto): void
     {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null) {
             throw new ValidationException(self::INVALID_PHONE_MESSAGE);
         }
 
-        $outcome = new VerificationService()->issue(VerificationType::SMS_LOGIN, $phone, null);
-        if ($outcome->capReached) {
-            return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_SEND_CAP_REACHED, self::SEND_CAP_MESSAGE);
+        $channel = Hilos::codeChannelRegistryClass()::get($dto->channel);
+        if ($channel === null
+            || !in_array(IdentifierDetection::KIND_PHONE, $channel->identifierKinds(), true)
+            || !$channel->supportsType(VerificationType::SMS_LOGIN)) {
+            throw new ValidationException(self::UNKNOWN_CHANNEL_MESSAGE);
         }
 
-        return AuthFlowOutcome::sent($outcome->resendInSeconds);
+        // The accept key is taken from the live connection and never from the client: it
+        // is the only address the outcome has, since the person asking has no account to
+        // fan out to (the shape the OAuth callback established, HIL-281).
+        $this->agent->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_CODE_SEND,
+            new AuthCodeSendSignalData(
+                Hilos::$rt->selfConnection->acceptKey,
+                $phone,
+                $channel->name(),
+                VerificationType::SMS_LOGIN,
+            ),
+        );
     }
 
     /**
@@ -1016,13 +1050,13 @@ final class MainPage extends AbstractPage
      * and the "registered in chat" event. The live anonymous session is then
      * upgraded to that user through {@see ChatAgent::authenticateSession()}.
      *
-     * @param ConfirmSmsCodeActionDTO $dto Parsed confirm payload (phone, code)
+     * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the phone or code is invalid
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws HilosException When verification, user/identity creation, or session promotion fails
      */
-    private function handleConfirmSmsCode(ConfirmSmsCodeActionDTO $dto): void
+    private function handleConfirmPhoneCode(ConfirmPhoneCodeActionDTO $dto): void
     {
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');

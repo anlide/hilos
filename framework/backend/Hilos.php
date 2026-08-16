@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos;
 
+use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -104,6 +105,22 @@ abstract class Hilos
      * @var class-string<DeliveryChannelRegistry>
      */
     protected const string NOTIFICATION_CHANNEL_REGISTRY = DeliveryChannelRegistry::class;
+
+    /**
+     * Code-channel registry class (HIL-492).
+     *
+     * The channels a one-time login code may be sent over. The framework default is
+     * the empty base, so a project that points this nowhere offers no phone codes at
+     * all; a project points it at its own subclass and the auth surface draws whatever
+     * it registered, in registry order.
+     *
+     * Deliberately separate from {@see NOTIFICATION_CHANNEL_REGISTRY}: a notification
+     * channel addresses a recipient by user id and honors their stored preferences,
+     * while a login code goes to a stranger addressed by the number they just typed.
+     *
+     * @var class-string<CodeChannelRegistry>
+     */
+    protected const string CODE_CHANNEL_REGISTRY = CodeChannelRegistry::class;
 
     /**
      * Notification-type registry class (HIL-485).
@@ -327,6 +344,16 @@ abstract class Hilos
     public static function notificationChannelRegistryClass(): string
     {
         return static::appClass()::NOTIFICATION_CHANNEL_REGISTRY;
+    }
+
+    /**
+     * Returns the project's code-channel registry class (HIL-492).
+     *
+     * @return class-string<CodeChannelRegistry> Code-channel registry class
+     */
+    public static function codeChannelRegistryClass(): string
+    {
+        return static::appClass()::CODE_CHANNEL_REGISTRY;
     }
 
     /**

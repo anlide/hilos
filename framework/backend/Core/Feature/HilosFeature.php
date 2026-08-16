@@ -52,4 +52,7 @@ enum HilosFeature: string
 
     /** Anti-abuse throttling of expensive auth actions: window counters, durable blocks and their agent. */
     case AUTH_THROTTLE = 'auth_throttle';
+
+    /** Delivery of one-time login codes over a registry of channels (SMS, messengers) and its agent. */
+    case CODE_CHANNELS = 'code_channels';
 }

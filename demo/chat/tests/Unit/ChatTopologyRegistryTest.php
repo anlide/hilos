@@ -23,6 +23,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleSuccessSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
@@ -167,8 +168,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::REQUEST_PASSWORD_RESET => PageConstants::MAIN,
             ChatSignalConstants::CONFIRM_PASSWORD_RESET => PageConstants::MAIN,
             ChatSignalConstants::COMPLETE_PASSWORD_RESET => PageConstants::MAIN,
-            ChatSignalConstants::REQUEST_SMS_CODE => PageConstants::MAIN,
-            ChatSignalConstants::CONFIRM_SMS_CODE => PageConstants::MAIN,
+            ChatSignalConstants::REQUEST_PHONE_CODE => PageConstants::MAIN,
+            ChatSignalConstants::CONFIRM_PHONE_CODE => PageConstants::MAIN,
             ChatSignalConstants::REQUEST_MAGIC_LINK => PageConstants::MAIN,
             ChatSignalConstants::CONFIRM_MAGIC_LINK => PageConstants::MAIN,
             ChatSignalConstants::REQUEST_REGISTER_CONFIRM => PageConstants::MAIN,
@@ -232,8 +233,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::REQUEST_PASSWORD_RESET => AgentType::CHAT,
             ChatSignalConstants::CONFIRM_PASSWORD_RESET => AgentType::CHAT,
             ChatSignalConstants::COMPLETE_PASSWORD_RESET => AgentType::CHAT,
-            ChatSignalConstants::REQUEST_SMS_CODE => AgentType::CHAT,
-            ChatSignalConstants::CONFIRM_SMS_CODE => AgentType::CHAT,
+            ChatSignalConstants::REQUEST_PHONE_CODE => AgentType::CHAT,
+            ChatSignalConstants::CONFIRM_PHONE_CODE => AgentType::CHAT,
             ChatSignalConstants::REQUEST_MAGIC_LINK => AgentType::CHAT,
             ChatSignalConstants::CONFIRM_MAGIC_LINK => AgentType::CHAT,
             ChatSignalConstants::REQUEST_REGISTER_CONFIRM => AgentType::CHAT,
@@ -329,6 +330,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PUSH_DELIVER => AgentType::HILOS_PUSH,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
+            HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -413,6 +415,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_PUSH_DELIVER => NotificationDeliverSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }
