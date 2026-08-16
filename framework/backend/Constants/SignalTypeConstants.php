@@ -119,6 +119,9 @@ final class SignalTypeConstants
     /** @var string Protected-mode verify request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_VERIFY = 'protected_mode_verify';
 
+    /** @var string Protected-mode progress mark (worker -> own daemon, drained worker-locally) */
+    public const string PROTECTED_MODE_PROGRESS = 'protected_mode_progress';
+
     /** @var string Protected-mode pass request signal type (worker -> own daemon, drained worker-locally) */
     public const string PROTECTED_MODE_PASS = 'protected_mode_pass';
 

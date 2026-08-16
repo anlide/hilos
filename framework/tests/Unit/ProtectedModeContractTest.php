@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeReadySignalData;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
@@ -46,6 +47,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorNodeId => 'node-a',
             ProtectedModeRuntime::startedAt => 1_700_000_000,
             ProtectedModeRuntime::activatedAt => 1_700_000_005,
+            ProtectedModeRuntime::progressAt => null,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedAcceptKeys => [],
         ];
@@ -68,6 +70,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::initiatorNodeId => 'node-a',
             ProtectedModeRuntime::startedAt => 1_700_000_000,
             ProtectedModeRuntime::activatedAt => 1_700_000_005,
+            ProtectedModeRuntime::progressAt => 1_700_000_030,
             ProtectedModeRuntime::passHashes => ['hash-a', 'hash-b'],
             ProtectedModeRuntime::admittedAcceptKeys => ['accept-verifier'],
         ];
@@ -332,5 +335,76 @@ final class ProtectedModeContractTest extends TestCase
         $restored = ProtectedModeDisableSignalData::fromArray($data->toArray());
 
         $this->assertNull($restored->initiatorAgentIndex);
+    }
+
+    public function testProgressSignalDataCarriesTheReportingAgentIdentity(): void
+    {
+        $data = new ProtectedModeProgressSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 2,
+        );
+
+        $restored = ProtectedModeProgressSignalData::fromArray($data->toArray());
+
+        $this->assertSame('backup', $restored->initiatorAgentType);
+        $this->assertSame(2, $restored->initiatorAgentIndex);
+    }
+
+    public function testProgressSignalDataKeepsNullAgentIndex(): void
+    {
+        $data = new ProtectedModeProgressSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+        );
+
+        $restored = ProtectedModeProgressSignalData::fromArray($data->toArray());
+
+        $this->assertNull($restored->initiatorAgentIndex);
+    }
+
+    public function testProgressSignalDataCarriesNoTimestamp(): void
+    {
+        // The mark travels as a bare fact and the master stamps its own clock, so a node whose
+        // clock is wrong cannot push another node's silence threshold around. Asserted on the
+        // payload keys, because the whole guarantee is that there is nowhere to put one.
+        $payload = new ProtectedModeProgressSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: null,
+        )->toArray();
+
+        $this->assertSame(
+            [
+                ProtectedModeProgressSignalData::initiatorAgentType,
+                ProtectedModeProgressSignalData::initiatorAgentIndex,
+            ],
+            array_keys($payload),
+        );
+    }
+
+    public function testTheProgressMarkRoundTripsThroughTheRow(): void
+    {
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::progressAt => 1_700_000_030,
+        ]);
+
+        $this->assertSame(1_700_000_030, $runtime->progressAt);
+        $this->assertSame(1_700_000_030, $runtime->toArray()[ProtectedModeRuntime::progressAt]);
+
+        $runtime->applyDiff([ProtectedModeRuntime::progressAt => 1_700_000_090]);
+
+        $this->assertSame(1_700_000_090, $runtime->progressAt);
+    }
+
+    public function testARowThatPredatesTheProgressMarkReadsItAsNull(): void
+    {
+        // Null is the watchdog's "nothing has been reported yet", which it reads back to the
+        // activation time - so a row minted by an older node must land there rather than on 0,
+        // which would be an operation last seen in 1970 and instantly overdue.
+        $runtime = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+        ]);
+
+        $this->assertNull($runtime->progressAt);
     }
 }

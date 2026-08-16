@@ -52,6 +52,7 @@ final class ProtectedModeRuntime extends RtState
     public const string initiatorNodeId = 'initiatorNodeId';
     public const string startedAt = 'startedAt';
     public const string activatedAt = 'activatedAt';
+    public const string progressAt = 'progressAt';
     public const string passHashes = 'passHashes';
     public const string admittedAcceptKeys = 'admittedAcceptKeys';
 
@@ -78,6 +79,17 @@ final class ProtectedModeRuntime extends RtState
 
     /** Epoch seconds when the mode reached active, or null before it does. */
     public ?int $activatedAt = null;
+
+    /**
+     * Epoch seconds of the last progress mark the operation behind the freeze left, or null.
+     *
+     * What tells a long operation from a hung one: the initiator stamps it whenever its own work
+     * moved, so a watchdog reading a stale value knows nothing is happening rather than merely
+     * that time has passed. The value is written by the master that owns this row and is never
+     * carried on the wire - the mark travels as a bare fact, so a node with a skewed clock cannot
+     * push the arithmetic that reads it around.
+     */
+    public ?int $progressAt = null;
 
     /**
      * SHA-256 of every pass minted for the verification in flight; empty on every other phase.
@@ -124,6 +136,7 @@ final class ProtectedModeRuntime extends RtState
         $instance->initiatorNodeId = self::stringOrNull($row[self::initiatorNodeId] ?? null);
         $instance->startedAt = self::intOrNull($row[self::startedAt] ?? null);
         $instance->activatedAt = self::intOrNull($row[self::activatedAt] ?? null);
+        $instance->progressAt = self::intOrNull($row[self::progressAt] ?? null);
         $instance->passHashes = self::stringList($row[self::passHashes] ?? null);
         $instance->admittedAcceptKeys = self::stringList($row[self::admittedAcceptKeys] ?? null);
         $instance->markRtSyncBaseline();
@@ -164,6 +177,9 @@ final class ProtectedModeRuntime extends RtState
         }
         if (array_key_exists(self::activatedAt, $diff)) {
             $this->activatedAt = self::intOrNull($diff[self::activatedAt]);
+        }
+        if (array_key_exists(self::progressAt, $diff)) {
+            $this->progressAt = self::intOrNull($diff[self::progressAt]);
         }
         if (array_key_exists(self::passHashes, $diff)) {
             $this->passHashes = self::stringList($diff[self::passHashes]);
@@ -247,6 +263,7 @@ final class ProtectedModeRuntime extends RtState
             self::initiatorNodeId => $this->initiatorNodeId,
             self::startedAt => $this->startedAt,
             self::activatedAt => $this->activatedAt,
+            self::progressAt => $this->progressAt,
             self::passHashes => $this->passHashes,
             self::admittedAcceptKeys => $this->admittedAcceptKeys,
         ];

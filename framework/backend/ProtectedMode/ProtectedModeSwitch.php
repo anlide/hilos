@@ -8,6 +8,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -65,6 +66,27 @@ interface ProtectedModeSwitch
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function requestVerify(ProtectedModeVerifySignalData $data): void;
+
+    /**
+     * Reports that the operation the freeze protects has moved.
+     *
+     * The proof of life a stuck-freeze watchdog reads, and the one request here that changes no
+     * phase and answers nobody: it stamps {@see ProtectedModeRuntime::$progressAt} and stops. The
+     * moment is taken by the master that owns the row rather than from this payload, so the mark
+     * travels as a bare fact and a node with a skewed clock cannot push another node's silence
+     * threshold around.
+     *
+     * Unlike every other request here it is not fail-closed on a phase: a mark that arrives under
+     * no freeze, or one phase later than the sender thought, is dropped or written harmlessly.
+     * The cost of a lost mark is a false alarm on an honest long operation, which is a message;
+     * the cost of a refused freeze is a system nobody can get back.
+     *
+     * @param ProtectedModeProgressSignalData $data Identity of the agent reporting the progress
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestProgress(ProtectedModeProgressSignalData $data): void;
 
     /**
      * Asks to record one more pass for the verification window in flight.

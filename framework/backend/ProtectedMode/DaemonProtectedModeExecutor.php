@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Fs\Exception\FileMoveException;
+use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -11,6 +15,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
+use JsonException;
 
 /**
  * Daemon-master implementation of {@see ProtectedModeExecutor}: applies the freeze transitions the
@@ -37,9 +42,21 @@ use Hilos\Utils\Logger;
  * `deactivating` push nothing: the surface is already up and must stay up. The two verification
  * frames say `active: true` as well, and differ only in whether the surface may offer a code
  * field - the stub has to stay up for everyone who holds no pass.
+ *
+ * Every phase this class writes is also left on disk through {@see ProtectedModeFreezeStore}, and
+ * the lift removes it: the row is memory only, so a daemon restarted under a freeze would otherwise
+ * come back open over a database its restore never finished (HIL-482).
  */
 final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
 {
+    /**
+     * @param ProtectedModeFreezeStore $store Where the freeze is left for a daemon that restarts under it
+     */
+    public function __construct(
+        private readonly ProtectedModeFreezeStore $store = new ProtectedModeFreezeStore(),
+    ) {
+    }
+
     /**
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key let through when the leader freezes itself; null on a follower
@@ -54,6 +71,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         }
 
         $view->actions->enterActivating($freeze, $initiatorAcceptKey);
+        $this->persistFreeze($view);
 
         // Stop this node's own agents so no application work runs against the destructive
         // operation, leaving the initiator agent running to carry it out (HIL-267 slice 7a).
@@ -83,7 +101,13 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
      */
     public function enterActive(): void
     {
-        $this->runtimeView()?->actions->enterActive();
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->enterActive();
+        $this->persistFreeze($view);
     }
 
     /**
@@ -101,6 +125,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // every agent start while the phase is not inactive, and learns to allow them on verifying.
         // Resuming first would be refused start by start and hand the verifier an empty system.
         $view->actions->enterVerifying();
+        $this->persistFreeze($view);
 
         Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
 
@@ -149,6 +174,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // agent-start gate is closed on active, so a stop ordered under it cannot race a restart.
         // The write also voids every pass, which is what the operator asked for.
         $view->actions->enterActive();
+        $this->persistFreeze($view);
 
         $copy = ProtectedModeStubCopy::forOperation($view->operation);
         Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeState(
@@ -169,7 +195,13 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
      */
     public function enterDeactivating(): void
     {
-        $this->runtimeView()?->actions->enterDeactivating();
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->enterDeactivating();
+        $this->persistFreeze($view);
     }
 
     /**
@@ -184,6 +216,11 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         }
 
         $view->actions->enterInactive();
+
+        // Removed only once the row itself says inactive, and never before: a daemon that dies
+        // between the two comes back holding a freeze that was already lifting, which the operator
+        // lifts again in one command. The other order would open the node on a crash mid-lift.
+        $this->forgetPersistedFreeze();
 
         // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
         // freeze has lifted; the freezer replays exactly the set it stopped on this node.
@@ -214,6 +251,52 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             $view->initiatorAgentType,
             $view->initiatorAgentIndex === null ? null : (string)$view->initiatorAgentIndex,
         );
+    }
+
+    /**
+     * Leaves the row this node just wrote where a restarting daemon finds it.
+     *
+     * Written after the row and not before it, so what lands on disk is the phase that actually
+     * took effect. The gap between the two writes is a fraction of a millisecond, while the outage
+     * this file answers - a daemon killed during a restore - lasts minutes, so the direction of the
+     * risk is the cheap one.
+     *
+     * A failure here is logged and the transition carries on. The freeze is already in the row and
+     * already in force; what is lost is the ability to survive a restart, and taking the whole
+     * transition down over it would abort a destructive operation that was going fine on a node
+     * whose log directory has a problem.
+     *
+     * @param ProtectedModeRuntime $view Runtime singleton carrying the row just written
+     */
+    private function persistFreeze(ProtectedModeRuntime $view): void
+    {
+        try {
+            $this->store->save($view->toArray());
+        } catch (EnvException|FileMoveException|FileWriteException|JsonException $e) {
+            Logger::error(
+                'Protected mode: the freeze could not be left on disk, a restart would reopen this '
+                . "node: {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Removes the freeze left on disk, so a restart brings back an open node.
+     *
+     * Failure is logged rather than raised, as in {@see persistFreeze()} - and it errs the other
+     * way: a file that outlives its freeze makes the next startup restore a freeze nobody is under,
+     * which the watchdog reports at once and one operator command clears.
+     */
+    private function forgetPersistedFreeze(): void
+    {
+        try {
+            $this->store->forget();
+        } catch (EnvException|FileDeleteException $e) {
+            Logger::error(
+                'Protected mode: the lifted freeze could not be removed from disk, a restart would '
+                . "bring it back: {$e->getMessage()}",
+            );
+        }
     }
 
     /**

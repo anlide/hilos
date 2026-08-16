@@ -114,6 +114,20 @@ interface ProtectedModeCoordinator
     public function onVerify(string $fromNodeId): void;
 
     /**
+     * Handles a progress mark from the node that initiated the freeze.
+     *
+     * Arrives on the leader only, and travels in that one direction: the mark is read by the
+     * watchdog, which runs on the leader, so no follower has any use for it. The frame carries
+     * nothing but its sender - what the leader records is its own clock reading, so a node whose
+     * clock is wrong cannot decide how long another node's freeze may stay silent.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onProgress(string $fromNodeId): void;
+
+    /**
      * Handles one minted pass, either asked for by the initiator or fanned out by the leader.
      *
      * Carries the hash only, and the admission it later earns is deliberately not fanned: an

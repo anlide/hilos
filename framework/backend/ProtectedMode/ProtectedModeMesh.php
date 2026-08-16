@@ -91,6 +91,16 @@ interface ProtectedModeMesh
     public function broadcastVerify(): void;
 
     /**
+     * Forwards this initiator node's progress mark to the leader.
+     *
+     * The one freeze frame with no broadcast beside it: the mark exists to be read by the
+     * watchdog, and the watchdog runs on the leader alone.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendProgress(string $leaderNodeId): void;
+
+    /**
      * Forwards this initiator node's minted pass to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader

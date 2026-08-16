@@ -61,6 +61,22 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 30,
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                30,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_PROTECTED_MODE_SILENCE_TIMEOUT->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                600,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_PROTECTED_MODE_ALERT_INTERVAL->name => self::entry(
+                EnvCatalogConstants::TYPE_INTEGER,
+                900,
+                emptyIsMissing: true,
+            ),
+            EnvConstants::HILOS_PROTECTED_MODE_ALERT_EMAILS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::DB_SECONDARY_PORT->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
                 DatabaseConnectionDefaults::PORT,

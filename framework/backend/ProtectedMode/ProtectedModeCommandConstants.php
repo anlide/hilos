@@ -77,6 +77,15 @@ final class ProtectedModeCommandConstants
     /** @var string Snapshot key: epoch seconds the freeze reached active at, or null */
     public const string FIELD_ACTIVATED_AT = 'activatedAt';
 
+    /**
+     * @var string Snapshot key: epoch seconds of the last progress mark behind the freeze, or null
+     *
+     * Published where the pass hashes deliberately are not: the mark is a timestamp and opens
+     * nothing, while what a reader learns from it - whether the operation behind the freeze is
+     * still moving - is exactly what the inspector exists to answer.
+     */
+    public const string FIELD_PROGRESS_AT = 'progressAt';
+
     /** @var string Snapshot key: agent ids this node stopped for the freeze, empty outside one */
     public const string FIELD_STOPPED_AGENTS = 'stoppedAgents';
 

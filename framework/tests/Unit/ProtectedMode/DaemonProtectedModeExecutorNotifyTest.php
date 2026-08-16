@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\EnvConstants;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -32,8 +34,23 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
 
     private RecordingClientNotifier $notifier;
 
+    /** Daemon log directory the executor leaves the freeze file in (HIL-482) */
+    private string $logDirectory = '';
+
+    private ?EnvAccessor $previousEnv = null;
+
     protected function setUp(): void
     {
+        // Every phase this executor writes is also left on disk, so these cases need a directory
+        // for it: without one each transition would log a failure of the freeze store, which has
+        // nothing to do with the frames asserted here.
+        $this->logDirectory = (string)tempnam(sys_get_temp_dir(), 'hilos-executor-notify');
+        unlink($this->logDirectory);
+        mkdir($this->logDirectory);
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        putenv(EnvConstants::DAEMON_LOG_FILE->name . '=' . $this->logDirectory . '/daemon.log');
+
         $this->executor = new DaemonProtectedModeExecutor();
         $this->notifier = new RecordingClientNotifier();
 
@@ -49,6 +66,13 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         Hilos::$rt = null;
         Hilos::$cluster = null;
+
+        foreach ((array)glob($this->logDirectory . '/*') as $leftover) {
+            unlink((string)$leftover);
+        }
+        rmdir($this->logDirectory);
+        putenv(EnvConstants::DAEMON_LOG_FILE->name);
+        Hilos::$env = $this->previousEnv;
 
         parent::tearDown();
     }

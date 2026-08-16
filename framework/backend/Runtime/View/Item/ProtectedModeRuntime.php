@@ -28,6 +28,7 @@ use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
  * @property-read ?string $initiatorNodeId Node hosting the initiator agent; null when inactive
  * @property-read ?int $startedAt Epoch seconds the freeze began; null when inactive
  * @property-read ?int $activatedAt Epoch seconds the freeze reached active; null before it does
+ * @property-read ?int $progressAt Epoch seconds of the last progress mark behind the freeze; null when none
  * @property-read list<string> $passHashes Hashes of the passes minted for the verification; empty otherwise
  * @property-read list<string> $admittedAcceptKeys Accept keys let in by a pass; empty otherwise
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
@@ -59,6 +60,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::initiatorNodeId => $this->_state->initiatorNodeId,
             StateProtectedModeRuntime::startedAt => $this->_state->startedAt,
             StateProtectedModeRuntime::activatedAt => $this->_state->activatedAt,
+            StateProtectedModeRuntime::progressAt => $this->_state->progressAt,
             StateProtectedModeRuntime::passHashes => $this->_state->passHashes,
             StateProtectedModeRuntime::admittedAcceptKeys => $this->_state->admittedAcceptKeys,
             RtItem::actions => $this->getItemActions(),

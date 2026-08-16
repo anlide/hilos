@@ -22,6 +22,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
@@ -289,6 +290,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerDbReHydratedDTO => $this->onDbReHydrated($frame),
             $frame instanceof PeerProtectedModeLiftDTO => $this->onProtectedModeLift($frame),
             $frame instanceof PeerProtectedModeVerifyDTO => $this->onProtectedModeVerify($frame),
+            $frame instanceof PeerProtectedModeProgressDTO => $this->onProtectedModeProgress($frame),
             $frame instanceof PeerProtectedModePassDTO => $this->onProtectedModePass($frame),
             $frame instanceof PeerProtectedModeRefreezeDTO => $this->onProtectedModeRefreeze($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
@@ -619,6 +621,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode verify');
         $this->server->onProtectedModeVerifyReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received protected-mode progress frame to the server for the leader to stamp.
+     *
+     * @param PeerProtectedModeProgressDTO $frame Incoming protected-mode progress frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeProgress(PeerProtectedModeProgressDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode progress');
+        $this->server->onProtectedModeProgressReceived($this, $frame);
     }
 
     /**

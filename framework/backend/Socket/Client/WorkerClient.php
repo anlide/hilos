@@ -31,6 +31,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
@@ -203,6 +204,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeProgressDTO => $this->handleProtectedModeProgressMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModePassDTO => $this->handleProtectedModePassMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeRefreezeDTO => $this->handleProtectedModeRefreezeMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
@@ -437,6 +439,21 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private function handleProtectedModeVerifyMessage(WorkerProtectedModeVerifyDTO $dto): void
     {
         Hilos::$cluster?->protectedMode()?->requestVerify($dto->data);
+    }
+
+    /**
+     * Handle a protected-mode progress mark from an initiator worker.
+     *
+     * The one frame of the set that asks for nothing: it stamps the freeze row so a watchdog can
+     * tell an operation that is legitimately long from one that hung. Routed and authorized
+     * exactly like the requests around it, and dropped just as quietly when this node holds no
+     * freeze - a mark under no freeze is a report to nobody, not an error.
+     *
+     * @param WorkerProtectedModeProgressDTO $dto DTO with the identity of the agent reporting the progress
+     */
+    private function handleProtectedModeProgressMessage(WorkerProtectedModeProgressDTO $dto): void
+    {
+        Hilos::$cluster?->protectedMode()?->requestProgress($dto->data);
     }
 
     /**

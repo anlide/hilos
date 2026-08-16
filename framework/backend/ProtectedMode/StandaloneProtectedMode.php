@@ -8,6 +8,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
@@ -130,6 +131,38 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         }
 
         $this->executor->enterVerifying();
+    }
+
+    /**
+     * Stamps the freeze row with the moment the initiator's operation last moved.
+     *
+     * Two things separate it from every other request here. It writes no phase, so there is no
+     * wrong phase to refuse from: a restore marks its acceptance before the freeze exists and its
+     * outcome after the freeze has lifted, and both are honest reports about work that did move.
+     * And a mark arriving under no freeze at all is dropped without a word - it is a report to
+     * nobody rather than an anomaly, and this frame repeats for every line the operation prints,
+     * so a log line per stray mark would bury the ones that mean something.
+     *
+     * What is still refused loudly is the case that means something: another agent stamping the
+     * freeze this one is holding. That is the same authorization the release is given, and for the
+     * same reason - on a single node the recorded agent identity is all that tells the initiator
+     * from anyone else, and a stranger able to refresh the mark could keep a hung operation
+     * looking alive for as long as it liked.
+     *
+     * @param ProtectedModeProgressSignalData $data Identity of the agent reporting the progress
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestProgress(ProtectedModeProgressSignalData $data): void
+    {
+        if ($this->activeFreeze === null) {
+            return;
+        }
+        if (!$this->initiatorMayDrive($data->initiatorAgentType, $data->initiatorAgentIndex, 'progress')) {
+            return;
+        }
+
+        $this->runtimeView()?->actions->markProgress();
     }
 
     /**

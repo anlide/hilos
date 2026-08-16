@@ -38,6 +38,7 @@ use Hilos\HilosException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
@@ -408,6 +409,41 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_VERIFY),
             signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_VERIFY),
             signalData: new ProtectedModeVerifySignalData(
+                initiatorAgentType: $this->getType(),
+                initiatorAgentIndex: $index === null ? null : (int)$index,
+            ),
+        );
+    }
+
+    /**
+     * Report that the operation this agent froze the node for has moved.
+     *
+     * The proof of life a stuck-freeze watchdog reads, and the obligation belongs to whoever
+     * froze the node: what has to be shown is that the WORK advanced, which no framework-written
+     * "the agent still ticks" mark could ever assert - an initiator that spawns a child and waits
+     * for it goes on ticking whether or not that child is doing anything at all. Call it from the
+     * places where something of the operation's own genuinely happened: a new phase, a line of
+     * output from the child, a batch that landed.
+     *
+     * Marking is cheap and skipping it is not: too many marks cost one row write each, while an
+     * operation that never marks raises a false alarm on an honest long run. The alarm is only a
+     * message, so that is the direction the error is allowed to lean.
+     *
+     * Same path and same authorization as the requests around it - a worker-drained
+     * {@see SignalTypeConstants::PROTECTED_MODE_PROGRESS} signal reaching this node's daemon and
+     * {@see ProtectedModeSwitch::requestProgress()} - and it moves no phase: an agent that reports
+     * progress under no freeze at all is simply telling nobody.
+     *
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    protected function reportProtectedModeProgress(): void
+    {
+        $index = $this->getIndex();
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::PROTECTED_MODE_PROGRESS),
+            signalName: new SignalName(SignalTypeConstants::PROTECTED_MODE_PROGRESS),
+            signalData: new ProtectedModeProgressSignalData(
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
             ),

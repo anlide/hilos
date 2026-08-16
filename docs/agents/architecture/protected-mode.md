@@ -195,11 +195,97 @@ ready would run the operation over live nodes.
   the leader hand ready to the initiator and run the operation across a node that
   is still serving its clients. The cost is a leader stuck in `activating`; that
   is the accepted half of the trade — data over availability — and a stalled mode
-  has its own owner (watchdog, HIL-482).
+  is reported by the watchdog below.
 
 The two guards are the same check in different contexts — one-tick single-node
 entry against a leader round that commits followers — so they are written twice
 on purpose and are not merged into a shared helper.
+
+## A Freeze That Stops Moving Is Reported, Never Lifted (HIL-482)
+
+`ProtectedModeWatchdog` watches the freeze and tells a person about it. **It
+never lifts one**, in any phase and under any name. A watchdog cannot tell "the
+initiator hung" from "the initiator is in the middle of the import", and opening
+a node onto a half-written database is the single failure this whole subsystem
+exists to prevent — so a timeout that thawed would reintroduce by the back door
+what the operator ladder (HIL-481) removed on purpose. Not even the safe-looking
+case is excepted: a leader stuck in `activating` handed out no ready and
+destroyed nothing, and it is still only reported. One rule, no phase-by-phase
+branching, because the person reading the alert at 3am has to be able to predict
+what the system did without them.
+
+It runs **on the master**, ticked from the main loop under the same leader gate
+the cron check uses, and there is no choice about that: during a freeze every
+agent but the initiator is stopped, so a watchdog agent would either be stopped
+with them or be the process it is watching. The master's own constraints hold
+unweakened — it reads memory, writes nothing (not the row, not the database) and
+makes no blocking call.
+
+| Verdict | What it means |
+|---|---|
+| `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
+| `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick |
+| `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`; the alert names the nodes that never confirmed |
+| `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` |
+
+**The progress mark is written by the operation, not by the framework.** What
+proves life is that the *work* moved, not that a process is up: a restore spawns
+a child and waits for it, so a framework-written "the agent still ticks" mark
+would keep a permanently hung restore invisible forever. The initiator calls
+`AbstractAgent::reportProtectedModeProgress()` when something of its own advanced
+— a new restore phase, output read from the child — and that refreshes
+`progressAt` on the freeze row, stamped by the master that owns the row and never
+carried on the wire, so a skewed clock elsewhere cannot move the arithmetic.
+This is also the answer to "fast restore versus long migration": an operation
+that is still running says so, so its *length* stops being a parameter and no
+per-operation timeouts exist. An initiator that marks no progress raises a false
+alarm on an honest long operation — the accepted direction of the error, because
+the alarm is a message and not an action.
+
+**The alarm is a condition, not an event.** First mail on detection, a reminder
+every `HILOS_PROTECTED_MODE_ALERT_INTERVAL` while the phase is not inactive, and
+an all-clear when it reaches inactive — but only if an alarm was raised. Mail
+goes to `HILOS_PROTECTED_MODE_ALERT_EMAILS`, an env address list rather than
+`AdminAudience`, and rides the raw-send path (`Hilos::$mail->send()`) rather than
+a notification: the alarm fires precisely when the database may be unreadable,
+and a `NotificationDraft` is persisted before it is delivered. The consequence is
+load-bearing and narrow: the `hilos_mail` pool is exempt from the freeze on both
+sides (`protectedModeRefusesStart()` lets it start, `stopAgentsForProtectedMode()`
+leaves it running), because otherwise the only channel out of a stuck node is
+dead exactly when it is needed. **The log line comes first and always** — it is
+the one report that cannot fail, and a delivery failure never changes the
+watchdog's own state.
+
+### The Freeze Survives A Restart And A Leader Change
+
+Both belong to the same sentence as the rule above: with nothing lifting a freeze
+automatically, the human path out has to actually work.
+
+- **Restart.** The row lives in RT, which is memory only, so a daemon restarted
+  mid-restore would come back open. Each node's master therefore writes its own
+  row to `protected-mode.state.json` beside `DAEMON_LOG_FILE` on every phase
+  change (`ProtectedModeFreezeStore`, published through a temp file so a crash
+  cannot leave a torn one) and removes it when the phase reaches inactive.
+  `DaemonManager::boot()` reads it after registering the truth source and before
+  any server binds, so the first handshake after the restart is already locked
+  out. **A file that is there and cannot be read or parsed refuses the startup**
+  with the reason named — reading a damaged freeze as "no freeze" opens the node
+  on the strength of a parse failure. A missing file is the ordinary startup.
+  Every accept key is dropped on restore, the initiator's own included: each was
+  minted on a 101 that died with the daemon.
+- **Leader change.** `ClusterProtectedMode::onBecameLeader()` rebuilds the
+  leader-side freeze from the row this node carries. Without it `onDisable()`
+  from a live and healthy initiator is dropped (`leadsFreezeFor()` on
+  `activeFreeze === null`) and nothing can unfreeze the cluster at all. Who had
+  already quiesced cannot be inherited — that list died with the leader — so an
+  unfinished round starts over with every follower outstanding and usually does
+  not close, which the watchdog reports as overdue. Every threshold is counted
+  from the moment the watchdog first saw the freeze, never from the clocks on the
+  row, or a promotion in the middle of a healthy hour-long restore would report
+  it stuck in the same second.
+
+What the watchdog never does: lift, move a phase, touch `passHashes` or the node
+list, restart the initiator. Everything past the alert is a person's to decide.
 
 ## The "Not In Production" Gate Lives In The Command
 
@@ -270,8 +356,10 @@ Refuse loudly and before any trace of entry, as above.
 - `composer run test:framework:unit` — covers the entry guards
   (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`), the unconditional
   mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
-  (`ProtectedModeSnapshotTest`) and the agent driver
-  (`ProtectedModeTestDriverTest`).
+  (`ProtectedModeSnapshotTest`), the agent driver
+  (`ProtectedModeTestDriverTest`), the four verdicts and the alarm's repetition
+  (`ProtectedModeWatchdogTest`, `ProtectedModeAlertMailTest`) and the freeze left
+  on disk (`ProtectedModeFreezeStoreTest`).
 - `composer run test:framework:integration` — covers the carry-over across a real
   database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`).
 - `demo/chat` e2e `protected-mode.spec.ts` — drives the mode from a browser:

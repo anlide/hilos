@@ -8,6 +8,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
@@ -395,6 +396,66 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['sendDisable', 'node-z']], $this->mesh->calls);
     }
 
+    public function testLeaderStampsAProgressMarkFromTheNodeThatOwnsTheFreeze(): void
+    {
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $before = time();
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-b'));
+
+        $stamped = Hilos::$rt?->hilosProtectedModeRuntime?->progressAt;
+        $this->assertNotNull($stamped);
+        $this->assertGreaterThanOrEqual($before, $stamped);
+        // The mark moves no phase and is never fanned onward: only the leader reads it.
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testLeaderDropsAProgressMarkFromANodeThatDoesNotOwnTheFreeze(): void
+    {
+        // Same authorization the release is given: a node that did not ask for the freeze could
+        // otherwise keep a hung operation looking alive on the leader's row indefinitely.
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-c'));
+
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
+    }
+
+    public function testAProgressMarkForAFreezeThisNodeDoesNotLeadIsDropped(): void
+    {
+        // The ordinary tail of an operation whose last marks outlived its freeze; run without the
+        // truth source on purpose, because reaching the row here would throw.
+        $this->coordinator->onProgress('node-b');
+
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
+    }
+
+    public function testInitiatorFollowerSendsItsProgressMarkToTheLeader(): void
+    {
+        $this->mesh->leader = 'node-z';
+
+        $this->coordinator->requestProgress($this->progressData());
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([['sendProgress', 'node-z']], $this->mesh->calls);
+    }
+
+    public function testInitiatorDropsItsProgressMarkWhenNoLeaderIsKnown(): void
+    {
+        $this->coordinator->requestProgress($this->progressData());
+
+        $this->assertSame([], $this->mesh->calls);
+    }
+
     public function testLeaderDropsEnableThatNamesNoInitiatorNode(): void
     {
         // A payload with no node id is what a single-node installation sends; a leader cannot
@@ -451,6 +512,103 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->mesh->calls);
     }
 
+    public function testAPromotedLeaderCanLiftTheFreezeItsNodeIsAlreadyUnder(): void
+    {
+        // The whole point of the rebuild: leader-side state dies with the leader, so a blank
+        // successor drops the disable of a live and healthy initiator and NOTHING can unfreeze the
+        // cluster - while the watchdog, by design, never lifts one either.
+        $this->mesh->followers = ['node-b'];
+        $this->settleTheFreezeOnTheRuntimeRow();
+
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onDisable('node-b');
+
+        $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
+        $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
+    }
+
+    public function testAPromotedLeaderStillIgnoresADisableFromANonInitiatorNode(): void
+    {
+        // The identity is rebuilt from the row, not assumed: an inherited freeze is authorized the
+        // same way one this leader ordered itself is.
+        $this->mesh->followers = ['node-b'];
+        $this->settleTheFreezeOnTheRuntimeRow();
+
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onDisable('node-c');
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAPromotedLeaderStartsAnUnfinishedRoundOverWithEveryFollowerOutstanding(): void
+    {
+        // Who had already quiesced lived in the dead leader's memory, so the successor claims no
+        // knowledge of it. The round usually will not close from here - a follower already frozen
+        // drops the repeat - and that is what the watchdog reports as overdue, naming these nodes.
+        $this->mesh->followers = ['node-b', 'node-c'];
+        $this->withDaemonTruthSource(function (): void {
+            Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterActivating(
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
+                null,
+            );
+        });
+
+        $this->coordinator->onBecameLeader();
+
+        $this->assertSame(['node-b', 'node-c'], $this->coordinator->pendingNodeIds());
+    }
+
+    public function testAPromotedLeaderHandsOutNoSecondReadyForAFreezeAlreadyEstablished(): void
+    {
+        // A row past activating means the round closed and the initiator has been told to run. A
+        // successor that re-collected there would signal ready a second time, in the middle of the
+        // operation the first one started.
+        $this->mesh->followers = ['node-b'];
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onBecameLeader();
+
+        $this->coordinator->onQuiesced('node-b');
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+    }
+
+    public function testAPromotedLeaderStopsBeingItsOwnFreezesFollower(): void
+    {
+        // It was frozen by the leader that is gone, and it leads that freeze now. Left standing, the
+        // follower-side marker would outlive the lift - only a lift from the same leader clears it,
+        // and a leader sends itself none - and the next freeze would find this node "already
+        // frozen" and leave it serving clients through somebody else's restore.
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onDisable('node-b');
+        $this->coordinator->onLostLeadership();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-c'));
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['sendQuiesced', 'node-y']], $this->mesh->calls);
+    }
+
+    public function testAnIdleNodeBecomingLeaderInheritsNothing(): void
+    {
+        // The ordinary promotion, and the case the rebuild must not disturb: an inactive row means
+        // there is no freeze to lead, so a stray disable is still dropped.
+        $this->mesh->followers = ['node-b'];
+
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onDisable('node-b');
+
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
     /**
      * Settles the freeze on the runtime row, standing in for the real executor's write.
      *
@@ -467,10 +625,25 @@ final class ClusterProtectedModeTest extends TestCase
             $this->fail('The protected mode runtime row is not mounted.');
         }
 
-        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
-        try {
+        $this->withDaemonTruthSource(static function () use ($view): void {
             $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null);
             $view->actions->enterActive();
+        });
+    }
+
+    /**
+     * Runs a write with the daemon registered as the runtime truth source, and drops it after.
+     *
+     * The row refuses a write from anyone else, and the registration is process-wide, so it is
+     * held for exactly the length of the write rather than for the length of the test.
+     *
+     * @param callable(): void $write Write to run as the truth source
+     */
+    private function withDaemonTruthSource(callable $write): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        try {
+            $write();
         } finally {
             RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         }
@@ -490,6 +663,14 @@ final class ClusterProtectedModeTest extends TestCase
     private function enableData(): ProtectedModeEnableSignalData
     {
         return $this->enableDataFrom('node-b');
+    }
+
+    private function progressData(): ProtectedModeProgressSignalData
+    {
+        return new ProtectedModeProgressSignalData(
+            initiatorAgentType: 'backup',
+            initiatorAgentIndex: 0,
+        );
     }
 
     private function disableData(): ProtectedModeDisableSignalData
@@ -586,6 +767,11 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     public function sendVerify(string $leaderNodeId): void
     {
         $this->calls[] = ['sendVerify', $leaderNodeId];
+    }
+
+    public function sendProgress(string $leaderNodeId): void
+    {
+        $this->calls[] = ['sendProgress', $leaderNodeId];
     }
 
     public function broadcastVerify(): void

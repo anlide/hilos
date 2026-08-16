@@ -24,6 +24,7 @@ use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Hilos;
+use Hilos\Mail\HilosMailer;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
@@ -67,12 +68,18 @@ class SignalRouter
      *
      * An agent signal is the same signal whichever of our processes queued it: its route is
      * picked by signal name from the declared registry, so the source only tells one of our
-     * own processes from another, and both the worker and an agent are ours. Cron and binary
-     * frames keep a single source each, because there the source really does pick the
-     * transport the signal may arrive over.
+     * own processes from another, and the master is ours as much as a worker or an agent is.
+     * The master is named here because it does queue agent signals of its own - the alert
+     * about a node frozen with nothing happening behind it (HIL-482) is raised on the master,
+     * with no database and no agent of its own behind it. Today that particular message would
+     * pass without this entry, because the raw-send intake stamps every message it takes with
+     * one source of its own ({@see HilosMailer::send()}) whoever called it; the row says what
+     * is true of the master rather than leaning on where one caller's stamp comes from. Cron
+     * and binary frames keep a single source each, because there the source really does pick
+     * the transport the signal may arrive over.
      */
     private const array ALLOWED_SIGNAL_SOURCES = [
-        SignalTypeConstants::AGENT_SIGNAL => [SignalSource::AGENT, SignalSource::WORKER],
+        SignalTypeConstants::AGENT_SIGNAL => [SignalSource::AGENT, SignalSource::WORKER, SignalSource::DAEMON],
         SignalTypeConstants::CRON => [SignalSource::DAEMON],
         SignalTypeConstants::FRAME_BINARY => [SignalSource::WEBSOCKET],
     ];

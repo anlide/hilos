@@ -111,6 +111,9 @@ final class WorkerConstants
     /** @var string Protected-mode verify request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_VERIFY = 'worker_protected_mode_verify';
 
+    /** @var string Protected-mode progress mark (initiator worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_PROGRESS = 'worker_protected_mode_progress';
+
     /** @var string Protected-mode pass request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_PASS = 'worker_protected_mode_pass';
 

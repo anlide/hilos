@@ -923,7 +923,7 @@ final class BackupAgent extends AbstractAgent
         $this->pendingRestoreInitiator = $initiator;
         $this->pendingRestoreInitiatorIdentities = $this->captureInitiatorIdentities($initiatorUserId);
         $this->restoreView()?->actions->markRunning($id, $scope, $this->restoreEstimate($id, $scope));
-        $this->notifyRestoreProgress();
+        $this->reportRestoreProgress();
         if ($initiator === null) {
             // Empty accept key: the initiator is a CLI, not a browser connection, so the freeze
             // has no connection to keep alive on its behalf.
@@ -965,18 +965,28 @@ final class BackupAgent extends AbstractAgent
     }
 
     /**
-     * Sends the restore's current runtime row to the connection that asked for the run.
+     * Reports that the restore moved, to both parties that are waiting to hear it.
      *
-     * The node is frozen while a restore runs: the page's own agent is stopped, so its table
-     * produces no deltas, and this addressed frame is the only thing moving on the initiator's
-     * screen. It carries the snapshot the CLI monitor is answered with, so the two views of one
-     * run cannot disagree, and it is sent at the four points where the row itself changes.
+     * Called at every point where the restore's runtime row changes, and it tells two different
+     * audiences one fact:
      *
-     * An unattended run (CLI, schedule) has no initiator and quietly sends nothing, exactly as
-     * {@see sendFailureNotice()} does - its progress is read from the row instead.
+     * - the freeze's progress mark, so the watchdog watching this node can tell an operation that
+     *   is legitimately long from one that hung (HIL-482). Sent first and unconditionally, because
+     *   the run that most needs a watchdog is the unattended one the branch below returns on;
+     * - the connection that asked for the run. The node is frozen while a restore runs: the page's
+     *   own agent is stopped, so its table produces no deltas, and this addressed frame is the
+     *   only thing moving on the initiator's screen. It carries the snapshot the CLI monitor is
+     *   answered with, so the two views of one run cannot disagree.
+     *
+     * An unattended run (CLI, schedule) has no initiator and quietly sends nothing there, exactly
+     * as {@see sendFailureNotice()} does - its progress is read from the row instead.
+     *
+     * @throws InvalidArgumentException When the progress mark cannot be named
      */
-    private function notifyRestoreProgress(): void
+    private function reportRestoreProgress(): void
     {
+        $this->reportProtectedModeProgress();
+
         $initiator = $this->pendingRestoreInitiator;
         if ($initiator === null) {
             return;
@@ -1245,7 +1255,7 @@ final class BackupAgent extends AbstractAgent
         // A child too old to announce anything therefore reports the truth up to this point
         // rather than standing in PENDING for the whole run.
         $this->restoreView()?->actions->markPhase(RestorePhase::VERIFYING);
-        $this->notifyRestoreProgress();
+        $this->reportRestoreProgress();
 
         try {
             $this->childProcess = new Process(
@@ -1527,6 +1537,7 @@ final class BackupAgent extends AbstractAgent
      * The timeout budget was captured at spawn from the kind's own env key, so one poll
      * serves both kinds; only the finish routes by {@see BackupRunKind}.
      *
+     * @throws InvalidArgumentException When the progress mark cannot be named
      * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
      */
@@ -1907,7 +1918,16 @@ final class BackupAgent extends AbstractAgent
      * already on the row is dropped too, because the row's instant is what a progress bar measures
      * from and re-stamping it would walk the bar backwards inside its own phase.
      *
+     * A restore child that wrote anything at all also refreshes the freeze's progress mark, which
+     * is a separate question from what it wrote: the mark answers "is the operation behind this
+     * freeze still moving", and output on the pipe says yes whether or not it names a phase. The
+     * mark is therefore taken from the chunk rather than from the parsed phases - most of what a
+     * restore prints is its own chatter, and a child stuck importing one enormous table would
+     * announce no phase for an hour while plainly working. Marking as often as the pipe delivers
+     * costs a row write on a node that is serving nobody, which is what a freeze means.
+     *
      * @param string $chunk Whatever the child wrote to stdout since the last tick
+     * @throws InvalidArgumentException When the progress mark cannot be named
      * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
      */
@@ -1915,6 +1935,11 @@ final class BackupAgent extends AbstractAgent
     {
         $read = BackupProgressMarker::read($this->childProgressTail . $chunk);
         $this->childProgressTail = $read->tail;
+
+        if ($chunk !== '' && $this->runKind === BackupRunKind::RESTORE) {
+            $this->reportProtectedModeProgress();
+        }
+
         if ($read->phases === []) {
             return;
         }
@@ -1948,6 +1973,7 @@ final class BackupAgent extends AbstractAgent
      * (HIL-276).
      *
      * @param list<string> $values Phase values the child announced, in order
+     * @throws InvalidArgumentException When the progress mark cannot be named
      * @throws RtActionsCollectionNameNullException When the row's collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent is not the row's truth source
      */
@@ -1965,7 +1991,7 @@ final class BackupAgent extends AbstractAgent
             }
 
             $view->actions->markPhase($phase);
-            $this->notifyRestoreProgress();
+            $this->reportRestoreProgress();
         }
     }
 
@@ -2164,7 +2190,7 @@ final class BackupAgent extends AbstractAgent
         $view = $this->restoreView();
         $view?->actions->markDatabaseTouched($databaseTouched);
         $view?->actions->markRehydrating();
-        $this->notifyRestoreProgress();
+        $this->reportRestoreProgress();
 
         // The child slot is released here rather than in completeRestore(): its process is over,
         // and a poller that found it again would finalize the same run twice. Everything else the
@@ -2247,7 +2273,7 @@ final class BackupAgent extends AbstractAgent
         // The terminal frame goes out before the run is forgotten: it is the last thing the
         // initiator hears, and on a barrier that did not close it is the only thing that will
         // ever say so - the node stays frozen, so no reload follows to show the row instead.
-        $this->notifyRestoreProgress();
+        $this->reportRestoreProgress();
 
         $this->announceRestoreOutcome($id, $complete, $problems);
 

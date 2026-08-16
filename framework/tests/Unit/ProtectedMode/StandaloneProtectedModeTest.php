@@ -8,6 +8,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
@@ -197,6 +198,64 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
     }
 
+    public function testTheInitiatorStampsTheProgressMarkOnTheRow(): void
+    {
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+        $this->executor->calls = [];
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
+
+        $before = time();
+        $this->withDaemonTruthSource(fn() => $this->mode->requestProgress($this->progressData(
+            self::INITIATOR_TYPE,
+            self::INITIATOR_INDEX,
+        )));
+
+        $stamped = Hilos::$rt?->hilosProtectedModeRuntime?->progressAt;
+        $this->assertNotNull($stamped);
+        $this->assertGreaterThanOrEqual($before, $stamped);
+        // The mark moves nothing: it is the one request that reports rather than asks.
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testProgressFromAnotherAgentIsDropped(): void
+    {
+        // An agent that did not freeze the node could otherwise keep a hung operation looking
+        // alive for as long as it liked, which is the one thing the mark exists to expose.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+
+        $this->withDaemonTruthSource(fn() => $this->mode->requestProgress($this->progressData('chat', null)));
+
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
+    }
+
+    public function testProgressUnderNoFreezeIsDroppedWithoutWriting(): void
+    {
+        // A restore marks its acceptance before the freeze exists and its outcome after the
+        // freeze has lifted; both are honest reports with nowhere to land, and neither is an
+        // error. Run without the truth source on purpose: reaching the row here would throw.
+        $this->mode->requestProgress($this->progressData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
+        $this->assertSame([], $this->executor->calls);
+    }
+
+    public function testOpeningTheVerificationWindowCountsAsProgress(): void
+    {
+        // Otherwise the window would be reported stuck the moment it opened, for the silence of
+        // the operation that just ended. It gets a full threshold of its own instead.
+        $this->mode->requestEnable($this->enableData());
+        $this->recordInitiatorOnTheRuntimeRow(self::INITIATOR_TYPE, self::INITIATOR_INDEX);
+
+        $before = time();
+        $this->enterVerifyingOnTheRuntimeRow();
+
+        $stamped = Hilos::$rt?->hilosProtectedModeRuntime?->progressAt;
+        $this->assertNotNull($stamped);
+        $this->assertGreaterThanOrEqual($before, $stamped);
+    }
+
     public function testTheInitiatorClosesTheWindowBackToAFullFreeze(): void
     {
         $this->mode->requestEnable($this->enableData());
@@ -318,6 +377,19 @@ final class StandaloneProtectedModeTest extends TestCase
             initiatorAgentType: $agentType,
             initiatorAgentIndex: $agentIndex,
             initiatorNodeId: null,
+        );
+    }
+
+    /**
+     * @param string $agentType Agent type reporting the progress
+     * @param ?int $agentIndex Agent index reporting the progress
+     * @return ProtectedModeProgressSignalData Progress mark of that agent
+     */
+    private function progressData(string $agentType, ?int $agentIndex): ProtectedModeProgressSignalData
+    {
+        return new ProtectedModeProgressSignalData(
+            initiatorAgentType: $agentType,
+            initiatorAgentIndex: $agentIndex,
         );
     }
 

@@ -10,6 +10,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
@@ -45,8 +46,10 @@ use Hilos\Utils\Logger;
  * {@see StandaloneProtectedMode} instead; the three interfaces here mark which half of this class
  * each caller uses - the request path ({@see ProtectedModeSwitch}) is shared with that standalone
  * sibling, the leadership hooks ({@see ProtectedModeLeadership}) and the peer frames
- * ({@see ProtectedModeCoordinator}) exist only in a cluster. Watchdog policy for a stalled
- * initiator or follower (timeouts, escalation) is HIL-266, not here.
+ * ({@see ProtectedModeCoordinator}) exist only in a cluster. A freeze that stops moving - a round
+ * that never closes, an initiator that goes quiet or disappears - is not judged here: the leader's
+ * master watches for that and tells a person ({@see ProtectedModeWatchdog}), and no code path in
+ * this class ever lifts a freeze on a timeout.
  *
  * Entering is fail-closed on both sides, the same way {@see StandaloneProtectedMode} enters: a node
  * whose process carries no runtime state refuses the freeze loudly - the leader before it records
@@ -54,7 +57,11 @@ use Hilos\Utils\Logger;
  * for ready before it destroys anything, so a refusal leaves it waiting safely, while a node that
  * confirmed a freeze it never entered would run the operation over live clients.
  */
-final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedModeSwitch, ProtectedModeLeadership
+final class ClusterProtectedMode implements
+    ProtectedModeCoordinator,
+    ProtectedModeSwitch,
+    ProtectedModeLeadership,
+    ProtectedModeQuiesceRoster
 {
     /** @var string Id of the node this coordinator runs on, for log context */
     private string $selfNodeId;
@@ -96,14 +103,45 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     }
 
     /**
-     * Marks this node the leader; it now owns the freeze orchestration.
+     * Marks this node the leader; it now owns the freeze orchestration, including one it inherits.
      *
-     * A fresh leader inherits no freeze — a freeze mid-flight across a leader change is watchdog
-     * territory (HIL-266), so the leader-side state starts clean.
+     * A promotion in the middle of a freeze rebuilds the leader-side state from the freeze row this
+     * node already carries, and that is not a refinement: leader-side state kept in memory dies with
+     * the leader, and a blank successor drops {@see onDisable()} from a live and healthy initiator
+     * ({@see leadsFreezeFor()} on `activeFreeze === null`) - so nothing at all could unfreeze the
+     * cluster. With the watchdog never lifting a freeze by itself (HIL-482), this path is not an
+     * extra: it is the only way out.
+     *
+     * What the successor cannot inherit is who had already quiesced - that list lived in the dead
+     * leader's memory - so an unfinished round starts over with every follower outstanding. It will
+     * usually not close: a follower already frozen drops the repeat instead of reporting again. That
+     * is the honest end of it, and it is reported rather than papered over - the watchdog names the
+     * round overdue and the operator ends the freeze by the ladder. The deadline it is measured
+     * against starts at this promotion, because {@see ProtectedModeWatchdog} counts every threshold
+     * from the moment it first saw the freeze, never from the clocks on the row.
      */
     public function onBecameLeader(): void
     {
         $this->isLeader = true;
+        $this->adoptStandingFreeze();
+    }
+
+    /**
+     * Names the nodes this leader is still waiting on for the freeze it is driving.
+     *
+     * The watchdog's one question that the freeze row cannot answer: a round that never closed is
+     * only actionable once the operator knows which node to go and look at. A node that leads
+     * nothing answers empty, which reads correctly as "nobody is outstanding here".
+     *
+     * @return list<string> Node ids that have not reported quiesced, empty when none are
+     */
+    public function pendingNodeIds(): array
+    {
+        if (!$this->isLeader) {
+            return [];
+        }
+
+        return array_keys($this->pendingNodes);
     }
 
     /**
@@ -123,8 +161,8 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
      *
      * When this node is itself the leader the request is handled locally through {@see onEnable()};
      * otherwise it rides the peer channel to whichever node currently holds leadership. A request
-     * raised while no leader is known is dropped — driving a stalled hand-off is watchdog territory
-     * (HIL-266), not this path.
+     * raised while no leader is known is dropped: this path does not queue or retry, and a node
+     * that ends up frozen with nobody driving it is reported by {@see ProtectedModeWatchdog}.
      *
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -210,6 +248,40 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
         }
 
         $this->mesh->sendVerify($leaderNodeId);
+    }
+
+    /**
+     * Entry point on the initiator's own node: routes a progress mark to the leader.
+     *
+     * The mark belongs on the leader's row and nowhere else, because the leader is the only node
+     * that runs the watchdog reading it - so unlike the pass, which every node needs in order to
+     * admit a verifier that lands on it, this frame is never fanned out to the followers.
+     *
+     * A mark raised while no leader is known is dropped silently, where its siblings log: this
+     * frame repeats for every line the operation prints, and a warning apiece would drown the
+     * channel to report a condition the watchdog states better anyway - a freeze that nobody
+     * leads is a freeze whose row stops being refreshed, which is precisely what gets reported.
+     *
+     * @param ProtectedModeProgressSignalData $data Identity of the agent reporting the progress,
+     *                                              unused here for the same reason the disable
+     *                                              payload is: a cluster authorizes by node id
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function requestProgress(ProtectedModeProgressSignalData $data): void
+    {
+        if ($this->isLeader) {
+            $this->onProgress($this->selfNodeId);
+            return;
+        }
+
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            return;
+        }
+
+        $this->mesh->sendProgress($leaderNodeId);
     }
 
     /**
@@ -468,6 +540,39 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
     }
 
     /**
+     * Stamps this leader's freeze row with a progress mark the initiator's node reported.
+     *
+     * The freeze survives a leader change with its clock, not with its history: whoever leads
+     * reads the row it already carries, so a mark landing here is what keeps that row from
+     * looking silent while the operation behind it is fine.
+     *
+     * Authorized exactly as {@see onDisable()} authorizes the release - only the node that asked
+     * for the freeze may say anything about it - with one difference in what is said out loud. A
+     * mark for a freeze this node is not leading is dropped without a log, because it is the
+     * ordinary tail of an operation whose last marks outlived its freeze, and this frame arrives
+     * once per line of the operation's output. A mark from a node that does NOT own a freeze that
+     * IS being led is logged: that one is a stranger refreshing somebody else's row, and it could
+     * keep a hung operation looking alive indefinitely.
+     *
+     * @param string $fromNodeId Node id the frame came from
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onProgress(string $fromNodeId): void
+    {
+        if (!$this->isLeader || $this->activeFreeze === null) {
+            return;
+        }
+        if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
+            Logger::warning("Protected mode: dropping progress from '{$fromNodeId}'"
+                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+            return;
+        }
+
+        $this->runtimeView()?->actions->markProgress();
+    }
+
+    /**
      * @param string $fromNodeId Node id the frame came from
      * @param string $passHash SHA-256 of the minted pass
      */
@@ -656,6 +761,59 @@ final class ClusterProtectedMode implements ProtectedModeCoordinator, ProtectedM
         }
 
         $this->mesh->sendReady($initiatorNodeId);
+    }
+
+    /**
+     * Takes over the freeze this node is already under, as its leader rather than as its follower.
+     *
+     * Read off the freeze row, which every node keeps a copy of, because that is the only record of
+     * the freeze that outlived the leader that ordered it. A row that names no operation or no
+     * initiator agent cannot be led - there would be nobody to authorize the disable against - so it
+     * is reported and left alone; the watchdog reports the same freeze as stuck, and the operator
+     * ends it.
+     *
+     * The follower-side marker is dropped in the same movement: this node was frozen by the leader
+     * that is gone, and it leads that freeze now. Left standing, it would outlive the lift - only a
+     * lift from the same leader clears it ({@see onLift()}), and a leader does not send itself one -
+     * and the next freeze that ordered this node to quiesce would be refused as "already frozen",
+     * leaving it serving clients through somebody else's restore.
+     */
+    private function adoptStandingFreeze(): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null || $view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return;
+        }
+
+        $operation = $view->operation;
+        $initiatorAgentType = $view->initiatorAgentType;
+        if ($operation === null || $initiatorAgentType === null) {
+            Logger::error(
+                "Protected mode: node '{$this->selfNodeId}' became leader under a freeze on phase "
+                . "'{$view->phase}' that names no operation or initiator, and cannot lead it"
+            );
+            return;
+        }
+
+        $this->activeFreeze = new ProtectedModeQuiesceData(
+            $operation,
+            $initiatorAgentType,
+            $view->initiatorAgentIndex,
+            $view->initiatorNodeId,
+        );
+        // A row past activating means the round closed under the previous leader: the freeze is
+        // established and the initiator has been told so. Re-collecting there would hand out a
+        // second ready in the middle of the operation the first one started.
+        $this->active = $view->phase !== StateProtectedModeRuntime::PHASE_ACTIVATING;
+        $this->pendingNodes = $this->active
+            ? []
+            : array_fill_keys($this->mesh->followerMasterNodeIds(), true);
+        $this->freezingLeaderId = null;
+
+        Logger::warning(
+            "Protected mode: node '{$this->selfNodeId}' became leader under a standing freeze for "
+            . "'{$operation}' on phase '{$view->phase}'; it now leads it"
+        );
     }
 
     /**

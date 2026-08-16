@@ -59,6 +59,9 @@ final class ProtectedModeSnapshotTest extends TestCase
         $this->assertSame('node-a', $snapshot[ProtectedModeCommandConstants::FIELD_INITIATOR_NODE_ID]);
         $this->assertSame(1000, $snapshot[ProtectedModeCommandConstants::FIELD_STARTED_AT]);
         $this->assertSame(1005, $snapshot[ProtectedModeCommandConstants::FIELD_ACTIVATED_AT]);
+        // Published beside the two clocks it is read against: what the inspector is really asked
+        // is whether the operation behind the freeze is still moving, and only this answers it.
+        $this->assertSame(1042, $snapshot[ProtectedModeCommandConstants::FIELD_PROGRESS_AT]);
     }
 
     /**
@@ -183,6 +186,7 @@ final class ProtectedModeSnapshotTest extends TestCase
             StateProtectedModeRuntime::initiatorNodeId => 'node-a',
             StateProtectedModeRuntime::startedAt => 1000,
             StateProtectedModeRuntime::activatedAt => 1005,
+            StateProtectedModeRuntime::progressAt => 1042,
         ]));
     }
 

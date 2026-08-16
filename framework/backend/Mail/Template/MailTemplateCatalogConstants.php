@@ -38,4 +38,16 @@ final class MailTemplateCatalogConstants
 
     /** Template key: a durable notification delivered by email. */
     public const string NOTIFICATION_GENERIC = 'notification.generic';
+
+    /**
+     * Template key: a node frozen for maintenance with nothing happening behind it (HIL-482).
+     *
+     * Rendered and delivered with no database in the path at all - the alarm fires precisely when
+     * the database may be half-written or unreadable, so its recipients come from the environment
+     * and the message rides the raw-send intake rather than a persisted notification.
+     */
+    public const string PROTECTED_MODE_STUCK = 'protected-mode.stuck';
+
+    /** Template key: the freeze an alert was raised about has been lifted (HIL-482). */
+    public const string PROTECTED_MODE_CLEARED = 'protected-mode.cleared';
 }

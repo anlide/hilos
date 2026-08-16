@@ -84,6 +84,8 @@ final class MailTemplateRegistryTest extends TestCase
                 MailTemplateCatalogConstants::AUTH_MAGIC_LINK,
                 MailTemplateCatalogConstants::AUTH_EMAIL_ADD,
                 MailTemplateCatalogConstants::NOTIFICATION_GENERIC,
+                MailTemplateCatalogConstants::PROTECTED_MODE_STUCK,
+                MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED,
             ],
             array_keys($catalog),
         );

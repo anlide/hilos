@@ -27,6 +27,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
@@ -1098,6 +1099,25 @@ final class PeerServer extends AbstractServer implements
     }
 
     /**
+     * Routes a received protected-mode progress frame to the local handler.
+     *
+     * One direction only, so there is no half to decide between: the mark travels from the node
+     * running the operation to the leader that watches over it.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerProtectedModeProgressDTO $frame Received protected-mode progress frame
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function onProtectedModeProgressReceived(PeerLink $link, PeerProtectedModeProgressDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onProgress($from);
+        }
+    }
+
+    /**
      * Routes a received protected-mode pass frame to the local handler.
      *
      * @param PeerLink $link Link the frame arrived on
@@ -1248,6 +1268,18 @@ final class PeerServer extends AbstractServer implements
     public function broadcastVerify(): void
     {
         $this->broadcastToMasters(new PeerProtectedModeVerifyDTO());
+    }
+
+    /**
+     * Forwards this initiator node's progress mark to the leader over the peer channel.
+     *
+     * No broadcast twin, unlike the verification frames: only the leader reads the mark.
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     */
+    public function sendProgress(string $leaderNodeId): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeProgressDTO());
     }
 
     /**

@@ -20,6 +20,7 @@ use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\ProtectedMode\ProtectedModeAgentStopSink;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
@@ -82,6 +83,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private ?RtNodeSourceMap $rtNodeSourceMap = null;
 
     /**
+     * @var ?ProtectedModeAgentStopSink Who to tell that an agent stopped, or null when nobody asked.
+     *
+     * Registered by {@see DaemonManager} at start and left null everywhere else, exactly like the
+     * relays the cluster context holds: an agent stop is this class's own event, and one watcher of
+     * the freeze wants to hear it the moment it happens rather than at the next look at the roster.
+     */
+    private ?ProtectedModeAgentStopSink $agentStopSink = null;
+
+    /**
      * Create agent daemon instance (factory method)
      *
      * Must be implemented in child classes to create specific agent daemon types.
@@ -105,6 +115,20 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             return null;
         }
         return $agentIndex !== null ? $agentType . AgentConstants::ID_SEPARATOR . $agentIndex : $agentType;
+    }
+
+    /**
+     * Registers who is told that an agent on this node stopped.
+     *
+     * One sink and not a list, mirroring the relays the cluster context registers: the fact has
+     * exactly one watcher in the framework, and a registry for it would be machinery in front of
+     * a single call.
+     *
+     * @param ProtectedModeAgentStopSink $sink Who to tell when an agent stops
+     */
+    public function registerAgentStopSink(ProtectedModeAgentStopSink $sink): void
+    {
+        $this->agentStopSink = $sink;
     }
 
     /**
@@ -320,6 +344,11 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $workerIndex = $this->getAgentWorkerInfo($dto->agentId)?->workerIndex ?? 'unknown';
         $this->getAgent($dto->agentId)?->onStop();
         $this->removeAgent($dto->agentId);
+
+        // Told after the removal, so a sink that looks at the roster finds it already gone. The
+        // one sink there is watches a freeze whose initiator may legally start again, which is
+        // why this fact has to travel as an event and not as something re-read later (HIL-482).
+        $this->agentStopSink?->onAgentStopped($dto->agentId);
 
         Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
     }

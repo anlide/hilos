@@ -12,6 +12,7 @@ use Hilos\ProtectedMode\ProtectedModeReadyRelay;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -1001,6 +1002,15 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             return false;
         }
 
+        if ($agentType === HilosAgentType::HILOS_MAIL) {
+            // The one pool the freeze lets through, and it is load-bearing: the alert about a node
+            // frozen with nothing happening behind it goes out over this pool, so a freeze that
+            // stopped it would kill the only channel out of the node exactly when it is needed
+            // (HIL-482). Narrow and justified - raw send touches no database, the payload travels
+            // whole inside the signal.
+            return false;
+        }
+
         if ($freeze->initiatorAgentType === null) {
             return true;
         }
@@ -1320,6 +1330,13 @@ abstract class WorkerServer extends AbstractServer implements PlacementExecutor,
             }
 
             $parsed = $this->parseAgentId($agentId);
+            if ($parsed->type === HilosAgentType::HILOS_MAIL) {
+                // Left running for the same reason the start gate lets it back up: it carries the
+                // alert about this very freeze, and a stopped mail pool would make a stuck node
+                // silent as well as unreachable (HIL-482).
+                continue;
+            }
+
             $this->protectedModeStoppedAgents[] = $parsed;
             $this->stopAgent($parsed->type, $parsed->index);
         }

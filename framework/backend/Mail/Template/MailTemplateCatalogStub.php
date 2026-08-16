@@ -42,6 +42,12 @@ final class MailTemplateCatalogStub implements CatalogProviderInterface
             MailTemplateCatalogConstants::NOTIFICATION_GENERIC => [
                 MailTemplateCatalogConstants::TEMPLATE_CLASS => GenericNotificationMailTemplate::class,
             ],
+            MailTemplateCatalogConstants::PROTECTED_MODE_STUCK => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeStuckMailTemplate::class,
+            ],
+            MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED => [
+                MailTemplateCatalogConstants::TEMPLATE_CLASS => ProtectedModeClearedMailTemplate::class,
+            ],
         ];
     }
 }

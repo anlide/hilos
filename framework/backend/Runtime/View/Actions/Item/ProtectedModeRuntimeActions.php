@@ -24,6 +24,43 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime as ViewProtectedModeRuntime;
 final class ProtectedModeRuntimeActions extends RtActions
 {
     /**
+     * Puts back the freeze this node went down under, read off the disk it was left on.
+     *
+     * The one write that establishes a freeze without a transition deciding it: the row is memory
+     * only, so without this a restart under a freeze comes back open and serves clients over a
+     * database whose restore never finished. It runs during startup, before any server binds, so
+     * the first handshake after the restart is already locked out.
+     *
+     * **Everything a connection was recognized by is dropped rather than carried.** The passes and
+     * the keys they admitted belong to browsers that died with the daemon, and so does the
+     * initiator's own key: an accept key is minted on the 101 and cannot outlive the process that
+     * minted it. What is left behind instead is a row that locks out everybody - the honest state
+     * of a node whose operation is gone - and the operator lifts it by the ladder
+     * ({@see enterInactive()}) once they have looked at the data.
+     *
+     * @param StateProtectedModeRuntime $row Freeze row as it was left on disk
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function restoreFromDisk(StateProtectedModeRuntime $row): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->phase = $row->phase;
+        $this->state->operation = $row->operation;
+        $this->state->initiatorAcceptKey = null;
+        $this->state->initiatorAgentType = $row->initiatorAgentType;
+        $this->state->initiatorAgentIndex = $row->initiatorAgentIndex;
+        $this->state->initiatorNodeId = $row->initiatorNodeId;
+        $this->state->startedAt = $row->startedAt;
+        $this->state->activatedAt = $row->activatedAt;
+        $this->state->progressAt = $row->progressAt;
+        $this->state->passHashes = [];
+        $this->state->admittedAcceptKeys = [];
+        $this->sync();
+    }
+
+    /**
      * Records the freeze this node is entering and the identity allowed through it.
      *
      * The initiator's accept key is recorded only on the node that froze itself with it;
@@ -53,6 +90,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->initiatorNodeId = $freeze->initiatorNodeId;
         $this->state->startedAt = time();
         $this->state->activatedAt = null;
+        $this->state->progressAt = null;
         $this->state->passHashes = [];
         $this->state->admittedAcceptKeys = [];
         $this->sync();
@@ -87,6 +125,12 @@ final class ProtectedModeRuntimeActions extends RtActions
      * The operation and the whole initiator identity stay on the row - the initiator still
      * drives, and it is the only one that may end this phase in either direction.
      *
+     * Reaching the window is itself progress, so it is stamped as one: the operation that just
+     * finished may well have been silent for longer than the watchdog's threshold, and without
+     * this stamp the window would be reported stuck the moment it opened, for the silence of the
+     * step before it. What it is instead given is a full threshold of its own - a window nobody
+     * ever ends is a real condition, and it has to be reported on its own account.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -95,6 +139,26 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
+        $this->state->progressAt = time();
+        $this->sync();
+    }
+
+    /**
+     * Stamps the row with the moment the operation behind the freeze last moved.
+     *
+     * The one write on this class that changes no phase: it records life, not a transition. The
+     * value is taken here, on the master that owns the row, and never from the request that asked
+     * for it - a mark carried on the wire would let a node with a skewed clock decide how long
+     * another node's freeze may stay silent.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function markProgress(): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->progressAt = time();
         $this->sync();
     }
 
@@ -173,6 +237,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->initiatorNodeId = null;
         $this->state->startedAt = null;
         $this->state->activatedAt = null;
+        $this->state->progressAt = null;
         $this->state->passHashes = [];
         $this->state->admittedAcceptKeys = [];
         $this->sync();

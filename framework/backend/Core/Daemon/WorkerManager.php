@@ -84,6 +84,7 @@ use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
@@ -95,6 +96,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\Socket\Worker\WorkerDaemonClient;
@@ -1828,6 +1830,14 @@ abstract class WorkerManager extends BaseManager
                     $this->daemonClient->send(new WorkerProtectedModeVerifyDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode verify carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+            if ($signalType === SignalTypeConstants::PROTECTED_MODE_PROGRESS) {
+                if ($signal->data instanceof ProtectedModeProgressSignalData) {
+                    $this->daemonClient->send(new WorkerProtectedModeProgressDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - protected-mode progress carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

@@ -63,12 +63,17 @@ use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\ReHydrateRound;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeReadyRelay;
+use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\RtBaseException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -152,6 +157,9 @@ abstract class DaemonManager extends BaseManager implements
      */
     private const float DB_REHYDRATE_TIMEOUT_FALLBACK_SECONDS = 30.0;
 
+    /** @var string What a restored freeze whose row names no operation is called in the startup line */
+    private const string UNNAMED_FROZEN_OPERATION = '(unnamed)';
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -200,6 +208,16 @@ abstract class DaemonManager extends BaseManager implements
     protected ?float $readinessTimeout = null;
 
     /**
+     * @var ProtectedModeWatchdog Watcher over a freeze that stops moving (HIL-482).
+     *
+     * Built with the manager rather than when a freeze begins, because one of the things it has to
+     * notice - the initiator agent stopping - is an event it can only catch by being there when it
+     * happens. It costs nothing while no node is frozen: a tick over an inactive row returns at its
+     * first branch.
+     */
+    private ProtectedModeWatchdog $protectedModeWatchdog;
+
+    /**
      * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
@@ -210,6 +228,11 @@ abstract class DaemonManager extends BaseManager implements
     {
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManagerDaemon = $this->createAgentManagerDaemon();
+        $this->protectedModeWatchdog = new ProtectedModeWatchdog();
+        // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
+        // initiator's type start again under the freeze it left behind, so a later look at the
+        // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
+        $this->agentManagerDaemon->registerAgentStopSink($this->protectedModeWatchdog);
     }
 
     /**
@@ -256,8 +279,11 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param DaemonContext $context Resolved path context passed to every hook
      * @throws BackupScheduleException When the project backup schedule is malformed
-     * @throws EnvException When a backup env value cannot be read
+     * @throws EnvException When a backup env value or the daemon log path cannot be read
      * @throws HilosException When a daemon module fails its activation check or its registration
+     * @throws ProtectedModeFreezeUnreadableException When a freeze was left on disk and cannot be read
+     * @throws RtActionsCollectionNameNullException When the freeze row has no collection name to sync under
+     * @throws RtTruthSourceWriteNotAllowedException When this master may not write the freeze row it restores
      */
     public function boot(DaemonContext $context): void
     {
@@ -281,6 +307,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->registerBackupCronRules();
         $this->registerProtectedModeTruthSource();
         $this->registerSessionRotationTruthSource();
+        $this->restoreProtectedModeFreeze();
     }
 
     /**
@@ -438,6 +465,11 @@ abstract class DaemonManager extends BaseManager implements
 
                     // Check cron jobs (not more than once per minute)
                     $this->checkCronJobs();
+
+                    // Notice a freeze that has stopped moving and tell a person about it. Under
+                    // the leader gate for the same reason cron is: one stuck freeze must not
+                    // produce one alert per node. It never lifts anything (HIL-482).
+                    $this->protectedModeWatchdog->tick(time());
                 }
 
                 // Dispatch accumulated signals
@@ -702,6 +734,7 @@ abstract class DaemonManager extends BaseManager implements
                 ProtectedModeCommandConstants::FIELD_INITIATOR_NODE_ID => null,
                 ProtectedModeCommandConstants::FIELD_STARTED_AT => null,
                 ProtectedModeCommandConstants::FIELD_ACTIVATED_AT => null,
+                ProtectedModeCommandConstants::FIELD_PROGRESS_AT => null,
                 ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
                 ProtectedModeCommandConstants::FIELD_AGENT_START_GATE_CLOSED => false,
                 ProtectedModeCommandConstants::FIELD_PASS_COUNT => 0,
@@ -717,6 +750,7 @@ abstract class DaemonManager extends BaseManager implements
             ProtectedModeCommandConstants::FIELD_INITIATOR_NODE_ID => $freeze->initiatorNodeId,
             ProtectedModeCommandConstants::FIELD_STARTED_AT => $freeze->startedAt,
             ProtectedModeCommandConstants::FIELD_ACTIVATED_AT => $freeze->activatedAt,
+            ProtectedModeCommandConstants::FIELD_PROGRESS_AT => $freeze->progressAt,
             ProtectedModeCommandConstants::FIELD_STOPPED_AGENTS => $stopped,
             // The same verdict the agent-start gate reaches, and deliberately derived from the
             // phase the way the gate derives it: every non-inactive phase holds the gate shut,
@@ -2516,6 +2550,51 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+    }
+
+    /**
+     * Puts back the freeze this node went down under, before a single socket is bound.
+     *
+     * Runtime state is memory only, so without this a daemon restarted in the middle of a restore
+     * comes back open and serves clients over a half-written database - the one failure protected
+     * mode exists to prevent, reached by the mundane route of a restart. The read happens here, at
+     * the end of composition and before {@see run()} starts any server, so the first handshake after
+     * the restart is already locked out. It has to run after
+     * {@see registerProtectedModeTruthSource()}: the write it makes is refused until this master is
+     * the row's registered writer.
+     *
+     * The node comes back frozen with nothing running behind it, which is exactly what
+     * {@see ProtectedModeWatchdog} reports on its first tick - so the operator hears about it
+     * through the one channel that already exists, and the way out stays the operator ladder.
+     *
+     * A file that cannot be read refuses the startup rather than degrading to "no freeze": it is
+     * there because this node was frozen, and guessing the other way opens it.
+     *
+     * @throws EnvException When the daemon log path the freeze is stored beside cannot be read
+     * @throws ProtectedModeFreezeUnreadableException When a freeze was left on disk and cannot be read
+     * @throws RtActionsCollectionNameNullException When the freeze row has no collection name to sync under
+     * @throws RtTruthSourceWriteNotAllowedException When this master may not write the freeze row
+     */
+    private function restoreProtectedModeFreeze(): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            return;
+        }
+
+        $row = new ProtectedModeFreezeStore()->load();
+        if ($row === null || $row->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return;
+        }
+
+        $view->actions->restoreFromDisk($row);
+        $this->protectedModeWatchdog->markRestoredFromDisk();
+
+        Logger::warning(
+            "Protected mode: this node came up still frozen for '"
+            . ($row->operation ?? self::UNNAMED_FROZEN_OPERATION)
+            . "' on phase '{$row->phase}'; the operation behind it did not survive the restart",
+        );
     }
 
     /**

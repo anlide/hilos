@@ -88,6 +88,38 @@ enum EnvConstants
      */
     case HILOS_DB_REHYDRATE_TIMEOUT;
 
+    /**
+     * Seconds a quiesce round may stay open before the freeze it belongs to is reported as stuck
+     * (HIL-482). The round is a handful of peer frames over an established mesh, so this measures
+     * a node that is not answering rather than one that is busy: seconds, not minutes. Nothing is
+     * lifted when it elapses - the leader only tells a person. Default 30.
+     */
+    case HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT;
+
+    /**
+     * Seconds a freeze may go without a sign of life before it is reported as stuck (HIL-482).
+     * What proves life is that the WORK moved: the operation behind the freeze stamps the row when
+     * something of its own advanced, so the LENGTH of that operation is not a parameter here and a
+     * long restore never needs a longer value. What this measures is silence. Default 600.
+     */
+    case HILOS_PROTECTED_MODE_SILENCE_TIMEOUT;
+
+    /**
+     * Seconds between one alert about a stuck freeze and the next reminder (HIL-482). A stuck
+     * freeze is a condition and not an event: the operator who was asleep, or whose mail bounced,
+     * is the normal case, so the alert repeats while the node stays frozen. Default 900.
+     */
+    case HILOS_PROTECTED_MODE_ALERT_INTERVAL;
+
+    /**
+     * Comma-separated addresses the stuck-freeze alert is sent to (HIL-482). Addresses and not
+     * users on purpose: the alarm fires precisely when the database may be half-written or
+     * unreadable, and the master may not read it in any case. An empty list is legal and means
+     * the watchdog logs and sends nothing - refusing to start over unconfigured mail would take
+     * down nodes that will never need the watchdog at all. Default empty.
+     */
+    case HILOS_PROTECTED_MODE_ALERT_EMAILS;
+
     /** @var string Daemon log file path */
     case DAEMON_LOG_FILE;
 

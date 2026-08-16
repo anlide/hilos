@@ -47,3 +47,10 @@ Thumbs.db
 
 # Test-suite runner output: per-step logs and the rc ledger of a full run
 /var/
+
+# Protected-mode freeze left beside the daemon log (HIL-482): a node writes it while
+# it is frozen and removes it when the freeze lifts, so only a run interrupted mid-freeze
+# leaves one in a demo's data/logs. Ignored by name rather than per demo — nothing in the
+# repository is ever meant to carry this file.
+protected-mode.state.json
+protected-mode.state.json.tmp
