@@ -7,6 +7,8 @@ namespace Demo\SimplePoll\Tests\Integration;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\Notification;
+use Hilos\Database\Entity\Item\RegistrationWait;
+use Hilos\Database\Entity\Item\Session;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\EntitySchemaAxis;
@@ -42,6 +44,8 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     private const array FRAMEWORK_ENTITIES = [
         Setting::class,
         Notification::class,
+        Session::class,
+        RegistrationWait::class,
     ];
 
     /**

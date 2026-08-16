@@ -7,11 +7,11 @@ namespace Demo\SimplePoll\Agents\Hilos;
 use Demo\SimplePoll\Constants\PollSignalConstants;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Hilos;
-use Demo\SimplePoll\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 
 /**
  * DemoHilosAgent - Concrete Hilos index agent for the simple-poll demo.
@@ -60,6 +60,10 @@ final class DemoHilosAgent extends AbstractHilosIndexAgent
 
         $user->actions->setAdmin($admin);
 
+        // The framework response DTO since HIL-408. Its session-context fields stay
+        // unstamped here: this agent does not host sessions, and both fields say the
+        // honest thing unstamped - the frontend keeps its clock offset when the
+        // server time is absent, and this demo marks no acks to be cleared.
         $response = new HandshakeResponseSignalData(
             selfId: $userId,
             selfName: $user->name,

@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Runtime\State\Item;
 
 use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
-use Hilos\Runtime\State\Item\HilosConnection;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Stands on the framework {@see HilosConnection} base — the presence stage,
- * because this demo carries no browser sessions and therefore no session token.
- * The base owns the accept key, the owning user id, and the whole
- * create/hydrate/serialize/diff template; this demo adds no fields of its own,
- * so all four of its hooks are empty. Connection rows are created on handshake
- * and removed on close.
+ * Stands on the framework {@see HilosSessionConnection} base — the session stage
+ * since HIL-408, because this demo now carries browser sessions and every socket
+ * belongs to one. The base owns the accept key, the owning user id, the session
+ * token, and the whole create/hydrate/serialize/diff template; this demo adds no
+ * fields of its own, so all four of its hooks are empty. Connection rows are
+ * created on handshake and removed on close.
  */
-final class Connection extends HilosConnection
+final class Connection extends HilosSessionConnection
 {
     /**
      * Runtime collection key for connection rows.

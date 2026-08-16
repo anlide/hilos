@@ -30,26 +30,6 @@ final class Users extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
 
     /**
-     * Finds user by session token.
-     *
-     * @param string $sessionToken User session token (empty string returns null)
-     * @return ?User User Db item or null if not found
-     * @throws LogicException When the collection class constants are not configured
-     * @throws InvalidArgumentException When the loaded object type does not match the collection
-     * @throws DatabaseException When the session lookup or lazy user load fails
-     */
-    public function findBySession(string $sessionToken): ?User
-    {
-        $objectUser = $this->objectCollection->findBySession($sessionToken);
-
-        if ($objectUser?->id === null) {
-            return null;
-        }
-
-        return $this->getItemForKey($objectUser->id);
-    }
-
-    /**
      * Lists every user, loading the collection in full first.
      *
      * The collection is lazy by key ({@see PollDbContext::configure()}), so plain

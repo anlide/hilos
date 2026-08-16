@@ -15,7 +15,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for the Hilos user-detail page rename action.
@@ -50,7 +49,7 @@ final class UserPageActionTest extends IntegrationTestCase
      */
     public function testUpdateActionRenamesUser(): void
     {
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->registerGuest();
         $userId = (int) $user->id;
         $originalName = (string) $user->name;
 

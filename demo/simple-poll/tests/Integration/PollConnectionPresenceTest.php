@@ -24,6 +24,12 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
+    /** Session token of the first seeded socket; two sockets of one user sit on two sessions. */
+    private const string SESSION_TOKEN_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    /** Session token of the second seeded socket. */
+    private const string SESSION_TOKEN_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,7 +50,7 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
      */
     public function testRegisterTracksConnectionForUser(): void
     {
-        Hilos::$rt->connections->actions->register('poll-ak-1', 7);
+        Hilos::$rt->connections->actions->register('poll-ak-1', 7, self::SESSION_TOKEN_A);
 
         $connection = Hilos::$rt->connections['poll-ak-1'];
         $this->assertNotNull($connection);
@@ -59,8 +65,8 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
      */
     public function testSummaryForUserReflectsActiveSessions(): void
     {
-        Hilos::$rt->connections->actions->register('poll-ak-1', 7);
-        Hilos::$rt->connections->actions->register('poll-ak-2', 7);
+        Hilos::$rt->connections->actions->register('poll-ak-1', 7, self::SESSION_TOKEN_A);
+        Hilos::$rt->connections->actions->register('poll-ak-2', 7, self::SESSION_TOKEN_B);
 
         $online = Hilos::$rt->connections->summaryForUser(7);
         $this->assertSame(2, $online->onlineSessionCount);
@@ -78,7 +84,7 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
      */
     public function testUnregisterRemovesConnection(): void
     {
-        Hilos::$rt->connections->actions->register('poll-ak-1', 7);
+        Hilos::$rt->connections->actions->register('poll-ak-1', 7, self::SESSION_TOKEN_A);
         Hilos::$rt->connections['poll-ak-1']?->actions->unregister();
 
         $this->assertNull(Hilos::$rt->connections['poll-ak-1']);
@@ -92,7 +98,7 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
      */
     public function testAgentConnectionCloseUnregisters(): void
     {
-        Hilos::$rt->connections->actions->register('poll-ak-1', 7);
+        Hilos::$rt->connections->actions->register('poll-ak-1', 7, self::SESSION_TOKEN_A);
 
         new PollAgent()->onSignalConnectionClose(new WebSocketCloseSignalDTO('poll-ak-1'), '', '');
 
@@ -100,7 +106,13 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * The handshake registers a runtime connection for the resolved user.
+     * The handshake registers a runtime connection carrying the session and its user.
+     *
+     * The user is not seeded any more (HIL-408): a new cookie resolves to a fresh
+     * session, and registering the guest behind it is what the handshake does. So
+     * the identity is read back off the session the handshake left, and the row is
+     * checked to carry the token too - that is what makes it a socket of a session
+     * rather than a socket of a user.
      *
      * @throws HilosException On runtime or database error
      */
@@ -110,7 +122,6 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
         Hilos::$sr = new SignalRouter();
         try {
             $token = RandomHelper::hex(16);
-            $user = Hilos::$db->users->actions->register($token);
 
             new PollAgent()->onSignalHandshake(
                 new WebSocketHandshakeSignalDTO(
@@ -127,7 +138,12 @@ final class PollConnectionPresenceTest extends IntegrationTestCase
 
             $connection = Hilos::$rt->connections['poll-ak-handshake'];
             $this->assertNotNull($connection);
-            $this->assertSame((int)$user->id, $connection->userId);
+            $this->assertSame($token, $connection->sessionToken);
+
+            $session = Hilos::$db->sessions->findByToken($token);
+            $this->assertNotNull($session);
+            $this->assertNotNull($session->userId);
+            $this->assertSame($session->userId, $connection->userId);
         } finally {
             Hilos::$sr = $previousRouter;
         }

@@ -10,20 +10,21 @@ use Demo\SimplePoll\Runtime\View\Item\Connection;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
-use Hilos\Runtime\View\Collection\HilosConnections;
+use Hilos\Runtime\View\Collection\HilosSessionConnections;
 
 /**
  * Connections - read-only wrapper around the connections runtime state.
  *
- * Stands on the framework {@see HilosConnections} base — the presence stage —
- * which carries the user-scoped reads and the presence source the framework
- * users table merges over its rows. This demo adds nothing but the types: which
+ * Stands on the framework {@see HilosSessionConnections} base — the session
+ * stage — which carries the user-scoped reads, the presence source the framework
+ * users table merges over its rows, and the token-scoped read the session seam
+ * finds a session's live sockets by. This demo adds nothing but the types: which
  * item its rows are seen as, and which actions write them.
  *
- * @extends HilosConnections<Connection, ConnectionsActions>
+ * @extends HilosSessionConnections<Connection, ConnectionsActions>
  * @property-read ConnectionsActions $actions Actions for write operations
  */
-final class Connections extends HilosConnections
+final class Connections extends HilosSessionConnections
 {
     /**
      * @param RtState $state StateConnection instance (passed by reference)

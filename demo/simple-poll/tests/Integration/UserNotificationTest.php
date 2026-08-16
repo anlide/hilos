@@ -21,6 +21,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
+use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -63,9 +64,9 @@ final class UserNotificationTest extends IntegrationTestCase
 
     public function testARegisteringVisitorNotifiesTheAdministrators(): void
     {
-        $admin = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $admin = Hilos::$db->users->actions->registerGuest();
         $admin->actions->setAdmin(true);
-        $bystander = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $bystander = Hilos::$db->users->actions->registerGuest();
 
         $newcomer = $this->handshake(RandomHelper::hex(16));
         $notification = $this->onlyNotificationFor($admin->id);
@@ -86,10 +87,9 @@ final class UserNotificationTest extends IntegrationTestCase
 
     public function testAReturningVisitorNotifiesNobody(): void
     {
-        $admin = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $admin = Hilos::$db->users->actions->registerGuest();
         $admin->actions->setAdmin(true);
-        $sessionToken = RandomHelper::hex(16);
-        Hilos::$db->users->actions->register($sessionToken);
+        $sessionToken = $this->sessionOfReturningVisitor();
 
         $this->handshake($sessionToken);
 
@@ -98,7 +98,7 @@ final class UserNotificationTest extends IntegrationTestCase
 
     public function testARenamedUserIsToldWhoTheyAreNow(): void
     {
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+        $user = Hilos::$db->users->actions->registerGuest();
         $userId = (int)$user->id;
         $oldName = $user->name;
 
@@ -118,6 +118,27 @@ final class UserNotificationTest extends IntegrationTestCase
             ['oldName' => $oldName, 'newName' => 'Renamed by admin', 'actorUserId' => null],
             $notification->decodedData(),
         );
+    }
+
+    /**
+     * Seeds the session a visitor comes back with: one already bound to a user.
+     *
+     * That is what "returning" means since HIL-408 - not a user row carrying a
+     * token, but a session row carrying a user. The handshake driven on this token
+     * therefore finds an identity and registers nobody.
+     *
+     * @return string Session token of the seeded returning visitor
+     * @throws HilosException On database failure while seeding
+     */
+    private function sessionOfReturningVisitor(): string
+    {
+        $sessionToken = RandomHelper::hex(16);
+        $returning = Hilos::$db->users->actions->registerGuest();
+
+        Hilos::$db->sessions->actions->createAnonymous($sessionToken);
+        Hilos::$db->sessions->findByToken($sessionToken)?->actions->bindUser((int)$returning->id);
+
+        return $sessionToken;
     }
 
     /**
@@ -141,7 +162,13 @@ final class UserNotificationTest extends IntegrationTestCase
             '',
         );
 
-        $user = Hilos::$db->users->findBySession($sessionToken);
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        self::assertNotNull($session);
+
+        $userId = $session->userId;
+        self::assertNotNull($userId, 'The handshake left the session without a user');
+
+        $user = Hilos::$db->users[$userId] ?? null;
         self::assertNotNull($user);
 
         return $user;

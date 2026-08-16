@@ -222,9 +222,9 @@ final class SessionCarrierIntegrationTest extends HilosSessionIntegrationTestCas
      */
     public function testAProjectWithoutSessionConnectionsCarriesNothing(): void
     {
-        // simple-poll and simple-todo stand on the presence stage and have no sessions to speak
-        // of; the mechanism is expected to stay silent there rather than report a broken
-        // activation, and their rows do not even carry a token it could photograph.
+        // A project whose runtime mounts no session-stage connection collection at all: the
+        // mechanism is expected to stay silent there rather than report a broken activation,
+        // since there are no rows carrying a token it could photograph.
         $rt = new SessionCarrierNoConnectionsRtContext();
         $rt->configure();
         Hilos::$rt = $rt;

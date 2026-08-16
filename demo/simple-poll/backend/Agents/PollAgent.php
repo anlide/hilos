@@ -10,26 +10,36 @@ use Demo\SimplePoll\Constants\PollSignalConstants;
 use Demo\SimplePoll\Database\PollDbContext;
 use Demo\SimplePoll\Hilos;
 use Demo\SimplePoll\Runtime\View\Context\PollRtContext;
-use Demo\SimplePoll\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Auth\Session\Exception\SessionTokenExhaustedException;
+use Hilos\Auth\Session\HilosSessionHost;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\View\Item\Session;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Random\RandomException;
 
 /**
  * Monopolistic poll worker that owns the main page subscription and the
  * WebSocket lifecycle signals.
  *
- * Session identity is durable: the handshake maps each session token cookie to
- * a user row, registering it on first connect and reusing it on reconnect, and
- * tracks the live socket as a runtime connection for presence.
+ * Session identity is the framework's since HIL-408: the cookie resolves to a
+ * `hilos_session` row through {@see HilosSessionHost}, and the socket is tracked
+ * as a runtime connection of that session for presence. This demo carries NO
+ * anonymous sessions — the framework keeps them as a capability for an end
+ * project, but a session that reaches this agent without a user gets one
+ * registered and bound on the spot, which is the whole of that decision in code.
  */
 final class PollAgent extends AbstractAgent
 {
+    use HilosSessionHost;
+
     public const string AGENT_TYPE = AgentType::POLL;
 
     /**
@@ -43,15 +53,36 @@ final class PollAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the session token cookie, finds or registers the durable
-     * user, tracks the socket as a runtime connection, and replies with the
-     * current-user entity fragment in the session-scope payload form.
+     * Resolves the session token cookie to its session row, makes sure that
+     * session carries a user, tracks the socket as a runtime connection of the
+     * session, and replies with the current-user entity fragment in the
+     * session-scope payload form.
+     *
+     * A session that arrives anonymous — a new cookie, or one whose authenticated
+     * session outlived its expiry and was downgraded by
+     * {@see HilosSessionHost::resolveHandshakeSession()} — has a guest registered
+     * for it and bound through {@see HilosSessionHost::authenticateSession()}. That
+     * is the demo's one project-side step, and the reason the anonymous state never
+     * reaches an RT row or the wire: it exists only between those two calls.
+     *
+     * The bind passes no initiating connection, so no token rotation happens. That
+     * is right rather than convenient: rotation defends a LOGIN against a cookie
+     * someone planted, and this demo has no login to defend.
+     *
+     * The connection is registered AFTER the bind, so the row is born carrying the
+     * real user and presence never flickers through an anonymous frame.
+     *
+     * Passing no initiator also settles what this handler can raise: minting is
+     * reached only through the rotation, so the token-mint failures the bind seam
+     * declares ({@see RandomException}, {@see SessionTokenExhaustedException})
+     * cannot arise here.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws InvalidFormatException When the session token is not a 32-character lowercase hex string
-     * @throws HilosException On database or runtime failure while resolving the user or registering the connection
+     * @throws DuplicateValueException When a concurrent create already claimed a new token
+     * @throws HilosException On database or runtime failure while resolving the session or registering the connection
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -62,24 +93,100 @@ final class PollAgent extends AbstractAgent
         $sessionToken = $data->sessionToken;
         SessionToken::ensureValid($sessionToken);
 
-        $user = Hilos::$db->users->findBySession($sessionToken);
-        if ($user === null) {
-            $user = Hilos::$db->users->actions->register($sessionToken);
-            $this->notifyAdminsOfNewUser((int)$user->id, $user->name);
-        }
-        $userId = (int)$user->id;
+        $session = $this->resolveHandshakeSession($sessionToken);
 
-        Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
+        $userId = $session->userId;
+        if ($userId === null) {
+            $user = Hilos::$db->users->actions->registerGuest();
+            $userId = (int)$user->id;
+            $this->notifyAdminsOfNewUser($userId, $user->name);
+            $this->authenticateSession($sessionToken, $userId, null);
+        }
+
+        Hilos::$rt->connections->actions->register($data->acceptKey, $userId, $sessionToken);
 
         $this->sendToUser(
             PollSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
-            new HandshakeResponseSignalData(
-                selfId: $userId,
-                selfName: $user->name,
-                selfAdmin: $user->admin,
-            ),
+            $this->handshakeResponse($session),
         );
+    }
+
+    /**
+     * Builds the handshake response describing a session's current identity — the
+     * {@see HilosSessionHost} hook, reading the display name from this demo's own
+     * user table.
+     *
+     * The impersonator slots stay null: this demo has no impersonation, so the
+     * only identity a session can carry is its own. A session or user that is
+     * missing yields the anonymous response, which clears the frontend current
+     * user. In practice the handshake never sends one — every session that
+     * reaches the wire here has been bound to a user — but a hook that answered
+     * anything else for a missing row would be inventing an identity.
+     *
+     * @param ?Session $session Session to describe, or null for an anonymous response
+     * @return HandshakeResponseSignalData Handshake response for the session
+     * @throws HilosException When the user lookup fails
+     */
+    protected function handshakeResponseFor(?Session $session): HandshakeResponseSignalData
+    {
+        $userId = $session?->userId;
+        if ($userId === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            return new HandshakeResponseSignalData();
+        }
+
+        return new HandshakeResponseSignalData(
+            selfId: (int)$user->id,
+            selfName: $user->name,
+            selfAdmin: $user->admin,
+        );
+    }
+
+    /**
+     * Re-points one live connection's bound user through its runtime actions —
+     * the {@see HilosSessionHost} hook. A missing connection is a no-op.
+     *
+     * @param string $acceptKey Connection accept key to re-point
+     * @param ?int $userId User id to bind the connection to, or null for anonymous
+     * @throws HilosException On runtime failure
+     */
+    protected function bindConnectionUser(string $acceptKey, ?int $userId): void
+    {
+        Hilos::$rt->connections[$acceptKey]?->actions->bindUser($userId);
+    }
+
+    /**
+     * Writes one live connection's pending success ack — the {@see HilosSessionHost}
+     * hook. A missing connection is a no-op, handled inside the collection action.
+     *
+     * Nothing in this demo finishes an auth flow, so nothing marks an ack today.
+     * The hook is implemented rather than left to throw because the seam owns when
+     * it is called, and a demo that answered an error there would break the
+     * framework's own paths the day one is added.
+     *
+     * @param string $acceptKey Connection accept key to mark
+     * @param ?string $ack Ack the connection owes, or null to clear it
+     * @throws HilosException On runtime failure
+     */
+    protected function markConnectionAck(string $acceptKey, ?string $ack): void
+    {
+        Hilos::$rt->connections->actions->markAck($acceptKey, $ack);
+    }
+
+    /**
+     * Returns the poll handshake-response signal name the {@see HilosSessionHost}
+     * seam emits under; the frontend routes on this project constant.
+     *
+     * @return string Poll handshake-response signal name
+     */
+    protected function handshakeResponseSignalName(): string
+    {
+        return PollSignalConstants::HANDSHAKE_RESPONSE;
     }
 
     /**

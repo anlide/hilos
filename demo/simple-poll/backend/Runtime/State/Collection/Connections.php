@@ -5,20 +5,21 @@ declare(strict_types=1);
 namespace Demo\SimplePoll\Runtime\State\Collection;
 
 use Demo\SimplePoll\Runtime\State\Item\Connection;
-use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use OutOfBoundsException;
 
 /**
  * Connections - the single source of truth for active WebSocket connections.
  *
- * Stands on the framework {@see HilosConnections} base — the presence stage,
- * matching the stage of the row itself — which provides the user-scoped lookups
- * (findAuthenticated / findByUser). RtCollection wrappers provide read-only
- * access.
+ * Stands on the framework {@see HilosSessionConnections} base — the session
+ * stage, matching the stage of the row itself — which provides the user-scoped
+ * lookups (findAuthenticated / findByUser) and the token-scoped one that turns a
+ * set of live sockets into the sockets of one browser session. RtCollection
+ * wrappers provide read-only access.
  *
- * @extends HilosConnections<Connection>
+ * @extends HilosSessionConnections<Connection>
  */
-final class Connections extends HilosConnections
+final class Connections extends HilosSessionConnections
 {
     public const string STATE_CLASS = Connection::class;
 
