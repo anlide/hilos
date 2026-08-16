@@ -1156,8 +1156,11 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
-                    $this->mergePageSubscriptionParamsOnUpdate($signalData);
+                    // Only an accepted update settles into the mirrors: a set the guards
+                    // refused would otherwise judge the next fan-out for this connection.
+                    if ($this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name)) {
+                        $this->mergePageSubscriptionParamsOnUpdate($signalData);
+                    }
                 } else {
                     Logger::error("onSignalPageUpdateSubscription - invalid signal data type: " . get_class($signalData));
                 }

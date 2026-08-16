@@ -39,7 +39,7 @@ final class BrowserContextAuthenticatedGuardTest extends TestCase
         $context = new AuthenticatedGuardTestBrowserContext(null);
 
         $this->expectException(PageUnauthorizedException::class);
-        $context->subscribeSnapshot(
+        $context->assertSubscriptionAccess(
             AuthenticatedGuardTestBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -51,9 +51,9 @@ final class BrowserContextAuthenticatedGuardTest extends TestCase
         Hilos::$sr = new SignalRouter();
         $context = new AuthenticatedGuardTestBrowserContext(5);
 
-        // The guard passes, so subscribeSnapshot runs to completion without
-        // throwing; the page has no table bindings, so it queues nothing.
-        $context->subscribeSnapshot(
+        // The guard passes, so the judge returns without throwing; judging a
+        // subscription sends nothing, whichever way it goes.
+        $context->assertSubscriptionAccess(
             AuthenticatedGuardTestBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),

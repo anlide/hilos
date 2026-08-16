@@ -37,9 +37,13 @@ mandatory — silence would open the profile to guests.
 `PageAccessGate` is the single carrier of the rule and is enforced at:
 
 - **subscribe** — `PageSignalRouter::dispatchPageSubscribe`, *before*
-  `onSubscribe`, so no page payload leaves ahead of the check. The denial is a
-  `PageSubscriptionException`, so the subscription stays alive for
+  `onSubscribe`, so the page builds no payload for a session that will be
+  refused. The freeze, the route params and the page's own browser guards follow
+  in the same breath, through `BrowserContext::assertSubscriptionAccess()`. The
+  denial is a `PageSubscriptionException`, so the subscription stays alive for
   live-promotion (sign-in / admin grant resumes delivery without re-subscribe).
+  The update path (`dispatchPageUpdateSubscription`) is judged the same way, on
+  the params the update would leave the subscription holding.
 - **every delivery** — `BrowserContext::assertPageGuards`, after the
   protected-mode lockdown and before the browser guards, which starves a denied
   kept-alive subscription of fan-out and table windows. This second point is
@@ -155,8 +159,12 @@ A guard checked only at subscribe leaks: reactive and viewport updates would
 still reach a rejected subscription. Guards are re-checked on every path that
 delivers page data:
 
-- **initial snapshot** — `subscribeSnapshot` asserts the guards (throws → error
-  signal).
+- **subscription request** — `PageSignalRouter` asserts the guards through
+  `assertSubscriptionAccess()` before the page builds anything (throws → error
+  signal). It runs on the request and not inside the snapshot, so it also covers
+  a page that declares no browser config and one that declares guards but names
+  no browser signal — both of which the snapshot returned early on, leaving the
+  freeze to the client's own placeholder.
 - **reactive fan-out** — `emitBrowserSignals` calls the non-throwing
   `pageGuardsAllow()` per accept key (memoized for the pass) before delivering.
 - **viewport** — `sendTableWindow` runs the same check before sending a window.

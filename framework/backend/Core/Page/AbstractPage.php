@@ -230,8 +230,10 @@ abstract class AbstractPage
      *
      * Called when a client updates params of an existing page subscription.
      * Default is a no-op; override in child classes when partial-state refresh
-     * is needed. Route params arrive as a merged snapshot for the
-     * subscription after applying the update payload.
+     * is needed. Route params arrive as the merged snapshot the subscription
+     * would carry — the params it already held with the update payload applied
+     * over them — and the access level, the freeze and the page's browser guards
+     * have already passed on exactly that set.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Merged route params for the subscription

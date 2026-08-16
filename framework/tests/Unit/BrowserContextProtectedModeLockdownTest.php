@@ -43,7 +43,7 @@ final class BrowserContextProtectedModeLockdownTest extends TestCase
         $context = new ProtectedModeLockdownTestBrowserContext();
 
         try {
-            $context->subscribeSnapshot(
+            $context->assertSubscriptionAccess(
                 ProtectedModeLockdownTestBrowserContext::PAGE,
                 'ak-other',
                 new PageRouteParams([]),
@@ -62,9 +62,9 @@ final class BrowserContextProtectedModeLockdownTest extends TestCase
         $this->seed(ProtectedModeRuntime::PHASE_ACTIVE, 'ak-initiator');
         $context = new ProtectedModeLockdownTestBrowserContext();
 
-        // The initiator holds the recorded key, so the lockdown lets it through; the
-        // guard-less page then queues nothing.
-        $context->subscribeSnapshot(
+        // The initiator holds the recorded key, so the lockdown lets it through;
+        // judging a subscription sends nothing, whichever way it goes.
+        $context->assertSubscriptionAccess(
             ProtectedModeLockdownTestBrowserContext::PAGE,
             'ak-initiator',
             new PageRouteParams([]),
@@ -79,7 +79,7 @@ final class BrowserContextProtectedModeLockdownTest extends TestCase
         $this->seed(ProtectedModeRuntime::PHASE_INACTIVE, null);
         $context = new ProtectedModeLockdownTestBrowserContext();
 
-        $context->subscribeSnapshot(
+        $context->assertSubscriptionAccess(
             ProtectedModeLockdownTestBrowserContext::PAGE,
             'ak-other',
             new PageRouteParams([]),
@@ -94,7 +94,7 @@ final class BrowserContextProtectedModeLockdownTest extends TestCase
         Hilos::$rt = null;
         $context = new ProtectedModeLockdownTestBrowserContext();
 
-        $context->subscribeSnapshot(
+        $context->assertSubscriptionAccess(
             ProtectedModeLockdownTestBrowserContext::PAGE,
             'ak-other',
             new PageRouteParams([]),

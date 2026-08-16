@@ -23,6 +23,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -83,22 +84,22 @@ final class BotPage extends AbstractPage
 
     /**
      * Builds the bot detail page payload: the requested bot's profile as a
-     * page-scope entity the frontend resolves by reference. Returns null when
-     * the bot is absent, leaving the browser DB_EXISTS guard to reject the
-     * subscription with a structured error.
+     * page-scope entity the frontend resolves by reference. The row is read
+     * strictly, because the DB_EXISTS guard has already refused a subscription
+     * naming a bot that is not there: an absent row here means the guard did not
+     * run, and a quiet empty page would hide that.
      *
      * @param PageRouteParams $params Route params for the page subscription
-     * @return ?PagePayload Bot profile entity payload, or null when the bot is absent
+     * @return ?PagePayload Bot profile entity payload
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
+     * @throws PageInternalErrorException When the guarded bot row is absent all the same
      */
     protected function buildPagePayload(PageRouteParams $params): ?PagePayload
     {
         $botId = BotPageSubscribeParams::fromPageRouteParams($params)->botId;
-        if (!isset(Hilos::$db->bots[$botId])) {
-            return null;
-        }
-        $bot = Hilos::$db->bots[$botId];
+        $bot = Hilos::$db->bots[$botId]
+            ?? throw new PageInternalErrorException("Bot #{$botId} passed the guard and is not in the database");
 
         return new PagePayload(entities: [
             self::ENTITY_SLOT => [

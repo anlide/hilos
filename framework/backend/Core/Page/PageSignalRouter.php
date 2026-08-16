@@ -10,6 +10,7 @@ use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -110,13 +111,17 @@ class PageSignalRouter
         }
 
         try {
-            // The access level gates BEFORE onSubscribe: AbstractPage::onSubscribe
-            // sends the page payload ahead of the browser guards, so a later check
-            // would leak the payload to a denied session. The denial lands in the
-            // PageSubscriptionException catch below, keeping the subscription alive
+            // The whole verdict is reached BEFORE onSubscribe — the declared access
+            // level, then the freeze, the route params and the page's browser guards.
+            // onSubscribe is where a page reads domain state and runs its own side
+            // effects, so a session that will be refused must not reach it at all: the
+            // work would be done for an answer that never ships. The denial lands in
+            // the PageSubscriptionException catch below, keeping the subscription alive
             // for live-promotion after sign-in or an admin grant.
+            $params = new PageRouteParams($data->params);
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
-            $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
+            Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
+            $pageInstance->onSubscribe($data->acceptKey, $params);
         } catch (PageSubscriptionException $e) {
             // The subscription is intentionally KEPT alive, not torn down. A guard
             // failure is a transient state, not a dead end: if the missing resource
@@ -146,34 +151,44 @@ class PageSignalRouter
     /**
      * Dispatch page update subscription signal to page handler
      *
-     * Mirrors {@see self::dispatchPageSubscribe} error handling: a
-     * PageSubscriptionException from onUpdateSubscription (e.g. re-validating the
-     * merged route params) becomes a structured subscription error signal, and
+     * Judged like a fresh subscribe — access level, freeze, params, browser guards —
+     * but on the MERGED param set, because the frame is allowed to carry only what it
+     * changes. Mirrors {@see self::dispatchPageSubscribe} error handling: a
+     * PageSubscriptionException becomes a structured subscription error signal, and
      * any other exception becomes a generic internal error. The subscription is
-     * preserved either way.
+     * preserved either way, with its previous params.
+     *
+     * The answer is what tells the caller whether to apply the update to the
+     * subscription mirrors: a refused set must not settle anywhere, or the next
+     * fan-out would be judged by params this connection was denied.
      *
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
+     * @return bool Whether the update was accepted and may be applied to the subscription
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
-    public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
+    public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): bool
     {
         $page = $name;
         if ($page === '') {
-            return;
+            return false;
         }
 
         $pageInstance = $this->resolvePage($page);
         if ($pageInstance === null) {
-            return;
+            return false;
         }
 
         try {
-            $pageInstance->onUpdateSubscription($data->acceptKey, new PageRouteParams($data->params));
+            $params = new PageRouteParams($this->mergedSubscriptionParams($data));
+            PageAccessGate::assert($pageInstance::class, $data->acceptKey);
+            Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
+            $pageInstance->onUpdateSubscription($data->acceptKey, $params);
         } catch (PageSubscriptionException $e) {
             Logger::info("Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             $this->sendSubscriptionError($pageInstance, $page, $data->acceptKey, $e->httpCode, $e->errorCode, $e->getMessage());
+            return false;
         } catch (Throwable $e) {
             Logger::error("Unexpected page update subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
@@ -184,7 +199,28 @@ class PageSignalRouter
                 'internal_error',
                 'Internal error during subscription update',
             );
+            return false;
         }
+
+        return true;
+    }
+
+    /**
+     * Merges an update payload over the params the subscription already carries.
+     *
+     * The client sends only the params it changes, so the guards have to judge the set
+     * the subscription would end up with: judging the sent fragment alone would refuse
+     * an update over a required param the subscription already holds. Reads the same
+     * worker-local subscription mirror the browser delivery paths read.
+     *
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Update payload (acceptKey, page, params to merge)
+     * @return array<string, string> Params the subscription would carry once this update applies
+     */
+    private function mergedSubscriptionParams(WebSocketPageUpdateSubscriptionSignalDTO $data): array
+    {
+        $current = Hilos::$sr?->getPageSubscriptions()[$data->acceptKey][SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+
+        return array_merge($current, $data->params);
     }
 
     /**

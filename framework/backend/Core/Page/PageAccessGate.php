@@ -12,12 +12,14 @@ use Hilos\Hilos;
 /**
  * Enforces a page's declared ACCESS_LEVEL for one connection.
  *
- * The single carrier of the page access rule, called from both enforcement
- * points: {@see PageSignalRouter::dispatchPageSubscribe} (before onSubscribe,
- * so no page payload leaves before the check) and
+ * The single carrier of the page access rule, called from every enforcement
+ * point: {@see PageSignalRouter::dispatchPageSubscribe} (before onSubscribe, so
+ * the page builds no payload for a session that will be refused),
+ * {@see PageSignalRouter::dispatchPageUpdateSubscription} (so a subscription
+ * cannot be re-pointed by a connection the level denies) and
  * {@see BrowserContext::assertPageGuards} (so the reactive fan-out and the
  * table window re-check the level on every delivery to a subscription kept
- * alive after a denial — the live-promotion model). One carrier keeps the two
+ * alive after a denial — the live-promotion model). One carrier keeps the
  * points from drifting apart.
  *
  * Identity resolves through the project browser context

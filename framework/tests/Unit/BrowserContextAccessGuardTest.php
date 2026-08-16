@@ -48,7 +48,7 @@ final class BrowserContextAccessGuardTest extends TestCase
         $context = new AccessGuardTestBrowserContext(null);
 
         $this->expectException(PageUnauthorizedException::class);
-        $context->subscribeSnapshot(
+        $context->assertSubscriptionAccess(
             AccessGuardTestBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -61,7 +61,7 @@ final class BrowserContextAccessGuardTest extends TestCase
         $context = new AccessGuardTestBrowserContext(5);
 
         $this->expectException(PageForbiddenException::class);
-        $context->subscribeSnapshot(
+        $context->assertSubscriptionAccess(
             AccessGuardTestBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),
@@ -73,9 +73,9 @@ final class BrowserContextAccessGuardTest extends TestCase
         $this->seed();
         $context = new AccessGuardTestBrowserContext(7);
 
-        // The guard passes, so subscribeSnapshot runs to completion without
-        // throwing; the page has no table bindings, so it queues nothing.
-        $context->subscribeSnapshot(
+        // The guard passes, so the judge returns without throwing; judging a
+        // subscription sends nothing, whichever way it goes.
+        $context->assertSubscriptionAccess(
             AccessGuardTestBrowserContext::PAGE,
             'ak-1',
             new PageRouteParams([]),

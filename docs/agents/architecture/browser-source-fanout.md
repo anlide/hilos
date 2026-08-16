@@ -68,7 +68,10 @@ Prefer leaving that default in place. Override `onSubscribe()` when the page
 needs route-param validation, domain checks, or specialized subscribe behavior
 (for example a custom snapshot that is not browser-table shaped). After
 validation, call `parent::onSubscribe()` so `subscribeSnapshot()` still owns
-page-shaped payloads.
+page-shaped payloads. The access checks no longer ride on that call:
+`PageSignalRouter` reaches the whole verdict — level, freeze, declared params,
+declared guards — before `onSubscribe()` runs, so an override that forgets
+`parent::` loses its snapshot, not its guards.
 
 As a convention, avoid overriding `onSubscribe()` only to send an empty
 subscription ack via `sendToUser()` with blank `SignalData` or

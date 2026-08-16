@@ -23,6 +23,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -81,22 +82,22 @@ final class UserPage extends AbstractPage
 
     /**
      * Builds the user detail page payload: the requested user's profile as a
-     * page-scope entity the frontend resolves by reference. Returns null when
-     * the user is absent, leaving the browser DB_EXISTS guard to reject the
-     * subscription with a structured error.
+     * page-scope entity the frontend resolves by reference. The row is read
+     * strictly, because the DB_EXISTS guard has already refused a subscription
+     * naming a user that is not there: an absent row here means the guard did not
+     * run, and a quiet empty page would hide that.
      *
      * @param PageRouteParams $params Route params for the user detail subscription
-     * @return ?PagePayload User profile entity payload, or null when the user is absent
+     * @return ?PagePayload User profile entity payload
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
+     * @throws PageInternalErrorException When the guarded user row is absent all the same
      */
     protected function buildPagePayload(PageRouteParams $params): ?PagePayload
     {
         $userId = UserPageSubscribeParams::fromPageRouteParams($params)->userId;
-        if (!isset(Hilos::$db->users[$userId])) {
-            return null;
-        }
-        $user = Hilos::$db->users[$userId];
+        $user = Hilos::$db->users[$userId]
+            ?? throw new PageInternalErrorException("User #{$userId} passed the guard and is not in the database");
 
         return new PagePayload(entities: [
             self::ENTITY_SLOT => [

@@ -113,15 +113,50 @@ abstract class BrowserContext
     }
 
     /**
-     * Sends a full browser snapshot for one page subscription.
+     * Judges one page subscription request before the page builds anything.
      *
-     * The snapshot uses the same page/table browser config as incremental
-     * source-change delivery, addressed directly to the subscribing accept key.
+     * The subscription path's entry into the guard core, called by
+     * {@see PageSignalRouter::dispatchPageSubscribe} ahead of onSubscribe so a session
+     * the guards refuse costs no payload build and no page side effect. The freeze is
+     * read first, then the params and the guards the page declared.
+     *
+     * A page with no browser config declares neither, and passes on the freeze alone —
+     * which is the point of judging here rather than inside the snapshot: the snapshot
+     * has nothing to send for such a page and used to leave it unjudged entirely.
      *
      * @param string $page Page name from the subscription request
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param PageRouteParams $params Route params for this page subscription
-     * @throws PageSubscriptionException When browser params or guards reject the subscription
+     * @throws PageServiceUnavailableException When the protected-mode freeze locks this connection out
+     * @throws PageSubscriptionException When a param or a guard rejects the subscription, or a declaration is malformed
+     */
+    public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        if ($this->protectedModeLocksOut($acceptKey)) {
+            throw new PageServiceUnavailableException();
+        }
+
+        $pageConfig = $this->pageConfig($page);
+        if ($pageConfig === null) {
+            return;
+        }
+
+        $this->validateParams($pageConfig->paramConfigs(), $params);
+        $this->assertGuardConfigs($pageConfig, $acceptKey, $params->toArray());
+    }
+
+    /**
+     * Sends a full browser snapshot for one page subscription.
+     *
+     * The snapshot uses the same page/table browser config as incremental
+     * source-change delivery, addressed directly to the subscribing accept key.
+     * It judges nothing: the params and the guards are settled before the page is
+     * asked for anything, by {@see self::assertSubscriptionAccess}.
+     *
+     * @param string $page Page name from the subscription request
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Route params for this page subscription
+     * @throws PageInternalErrorException When a page or source declaration is malformed
      * @throws InvalidArgumentException When the page-response signal cannot be named
      */
     public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
@@ -139,9 +174,7 @@ abstract class BrowserContext
             return;
         }
 
-        $this->validateParams($pageConfig->paramConfigs(), $params);
         $pageParams = $params->toArray();
-        $this->assertPageGuards($page, $pageConfig, $acceptKey, $pageParams);
 
         $tables = [];
         foreach ($this->pageBindings($page) as $pageBinding) {
@@ -1945,14 +1978,7 @@ abstract class BrowserContext
             PageAccessGate::assert($pageClass, $acceptKey);
         }
 
-        foreach ($pageConfig->guardConfigs() as $guard) {
-            match ($guard[BrowserGuardKey::TYPE] ?? null) {
-                BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
-                BrowserGuardType::ACCESS => $this->assertAccessGuard($guard, $acceptKey),
-                BrowserGuardType::AUTHENTICATED => $this->assertAuthenticatedGuard($acceptKey),
-                default => throw new PageInternalErrorException('Unsupported browser guard type'),
-            };
-        }
+        $this->assertGuardConfigs($pageConfig, $acceptKey, $pageParams);
     }
 
     /**
@@ -1981,6 +2007,32 @@ abstract class BrowserContext
         }
 
         return true;
+    }
+
+    /**
+     * Runs the browser guards a page declared, in declaration order.
+     *
+     * The one loop both entries share: the subscription request
+     * ({@see self::assertSubscriptionAccess}) and the delivery paths
+     * ({@see self::assertPageGuards}) judge a page's guards by the same code, so the
+     * two cannot drift into judging it differently.
+     *
+     * @param BrowserPageConfig $pageConfig Browser page config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @throws PageSubscriptionException When a guard rejects the subscription
+     * @throws PageInternalErrorException When a guard declares an unsupported type
+     */
+    private function assertGuardConfigs(BrowserPageConfig $pageConfig, string $acceptKey, array $pageParams): void
+    {
+        foreach ($pageConfig->guardConfigs() as $guard) {
+            match ($guard[BrowserGuardKey::TYPE] ?? null) {
+                BrowserGuardType::DB_EXISTS => $this->assertDbExistsGuard($guard, $acceptKey, $pageParams),
+                BrowserGuardType::ACCESS => $this->assertAccessGuard($guard, $acceptKey),
+                BrowserGuardType::AUTHENTICATED => $this->assertAuthenticatedGuard($acceptKey),
+                default => throw new PageInternalErrorException('Unsupported browser guard type'),
+            };
+        }
     }
 
     /**
