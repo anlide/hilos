@@ -226,8 +226,7 @@ final class EventsActions extends DbActions
         Hilos::$db->eventMessages->actions->deleteAll();
         Hilos::$db->eventUserRegistrations->actions->deleteAll();
         Hilos::$db->eventUserRenames->actions->deleteAll();
-        $this->objectCollection->deleteAll();
 
-        $this->clearCollectionCache();
+        $this->deleteAllObjects();
     }
 }

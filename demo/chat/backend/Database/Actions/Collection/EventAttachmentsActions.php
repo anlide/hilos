@@ -68,10 +68,7 @@ final class EventAttachmentsActions extends DbActions
     public function deleteAll(): void
     {
         TruthSourceRegistry::checkCanWrite(ChatDbContext::eventAttachments);
-        $this->ensureCanWrite();
 
-        $this->objectCollection->deleteAll();
-
-        $this->clearCollectionCache();
+        $this->deleteAllObjects();
     }
 }

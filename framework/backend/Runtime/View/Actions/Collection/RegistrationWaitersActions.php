@@ -42,6 +42,7 @@ final class RegistrationWaitersActions extends RtActions
      * @param string $acceptKey Accept key of the waiting connection
      * @param string $identifier Normalized identifier being confirmed (lowercased email)
      * @param string $sessionToken Session token to sign in on confirmation
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -74,7 +75,7 @@ final class RegistrationWaitersActions extends RtActions
      * and neither with an error.
      *
      * @param string $acceptKey Accept key of the connection to release
-     * @throws RtActionsCallbackNotSetException When the collection's clear-cache callback is not configured
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -89,10 +90,5 @@ final class RegistrationWaitersActions extends RtActions
         }
 
         $this->removeStateFromCollection($acceptKey);
-
-        // The state is gone but the view still holds an item under that key, and a
-        // released waiter that keeps answering reads as still waiting. Callers walk a
-        // list they collected before releasing, so resetting the cache here is safe.
-        $this->clearCollectionCache();
     }
 }

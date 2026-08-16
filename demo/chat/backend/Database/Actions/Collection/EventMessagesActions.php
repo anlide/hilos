@@ -112,10 +112,7 @@ final class EventMessagesActions extends DbActions
     public function deleteAll(): void
     {
         TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
-        $this->ensureCanWrite();
 
-        $this->objectCollection->deleteAll();
-
-        $this->clearCollectionCache();
+        $this->deleteAllObjects();
     }
 }

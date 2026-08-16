@@ -64,10 +64,7 @@ final class EventUserRegistrationsActions extends DbActions
     public function deleteAll(): void
     {
         TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRegistrations);
-        $this->ensureCanWrite();
 
-        $this->objectCollection->deleteAll();
-
-        $this->clearCollectionCache();
+        $this->deleteAllObjects();
     }
 }

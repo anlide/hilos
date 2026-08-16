@@ -45,12 +45,13 @@ final class DbReHydrateOnResetTest extends TestCase
 
         $dbCollection = ReHydrateDbCollection::init();
         $dbCollection->setObjectCollection($objectCollection);
+        $dbCollection->setActionsClass(ReHydrateDbActions::class);
 
         $context = ReHydrateDbContext::create('gen-a', 'events', $objectCollection, $dbCollection);
         $context->refreshDbGeneration();
         Hilos::$db = $context;
 
-        $actions = new ReHydrateDbActions($dbCollection);
+        $actions = $dbCollection->actions;
         $freshObject = ReHydrateObject::fromEntity(ReHydrateEntity::withId(1));
 
         // The db-reset dropped and recreated the schema: the generation marker changed.
@@ -68,12 +69,13 @@ final class DbReHydrateOnResetTest extends TestCase
 
         $dbCollection = ReHydrateDbCollection::init();
         $dbCollection->setObjectCollection($objectCollection);
+        $dbCollection->setActionsClass(ReHydrateDbActions::class);
 
         $context = ReHydrateDbContext::create('gen-a', 'events', $objectCollection, $dbCollection);
         $context->refreshDbGeneration();
         Hilos::$db = $context;
 
-        $actions = new ReHydrateDbActions($dbCollection);
+        $actions = $dbCollection->actions;
         $duplicateObject = ReHydrateObject::fromEntity(ReHydrateEntity::withId(1));
 
         // No db-reset: the generation is unchanged, so the collision is a genuine duplicate.

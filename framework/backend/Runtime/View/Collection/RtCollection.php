@@ -11,6 +11,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionCloneException;
 use Hilos\Runtime\Exception\Collection\RtCollectionDirectSetException;
+use Hilos\Runtime\Exception\Collection\RtCollectionDirectUnsetException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -186,6 +187,10 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
             $this->_actions->setClearCacheCallback(function (): void {
                 $this->clearCache();
             });
+
+            $this->_actions->setForgetCachedItemCallback(function (string $key): void {
+                $this->forgetCachedItem($key);
+            });
         }
 
         return $this->_actions;
@@ -310,6 +315,24 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
+     * Drops the cached RtItem of one key, so the next read rebuilds it from the state.
+     *
+     * The iterator position is deliberately left alone, unlike {@see clearCache()}, which
+     * would end a walk in progress at its first step. That buys survival, NOT safety: the
+     * cursor is a numeric index into this cache, so dropping a key at or before it shifts
+     * every later key down and the walk skips a row. Mutating from inside a walk therefore
+     * still means collecting the keys first and mutating afterwards.
+     *
+     * A key with nothing cached under it is a silent no-op.
+     *
+     * @param string $key State ID whose cached item is dropped
+     */
+    public function forgetCachedItem(string $key): void
+    {
+        unset($this->items[$key]);
+    }
+
+    /**
      * Magic getter for actions property.
      *
      * @param string $name Property name (actions only)
@@ -388,15 +411,14 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Remove item at offset.
      *
      * @param mixed $offset State ID to remove, or null for no-op
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionDirectUnsetException Always for a real key, direct unset not allowed
      */
     public function offsetUnset(mixed $offset): void
     {
         if ($offset === null) {
             return;
         }
-        unset($this->items[(string)$offset]);
-        $this->getStateCollection()->remove((string)$offset);
+        throw new RtCollectionDirectUnsetException();
     }
 
     /**

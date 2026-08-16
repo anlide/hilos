@@ -336,8 +336,15 @@ final class SessionAuthenticationTest extends IntegrationTestCase
     private function reset(): void
     {
         Hilos::$rt->connections->actions->clear();
+
+        // Collect first: forgetting a rotation mutates the collection the loop walks.
+        $tickets = [];
         foreach (Hilos::$rt->hilosSessionRotations as $rotation) {
-            Hilos::$rt->hilosSessionRotations->actions->forget($rotation->ticket);
+            $tickets[] = $rotation->ticket;
+        }
+
+        foreach ($tickets as $ticket) {
+            Hilos::$rt->hilosSessionRotations->actions->forget($ticket);
         }
     }
 

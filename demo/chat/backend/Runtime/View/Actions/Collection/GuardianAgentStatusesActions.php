@@ -29,7 +29,7 @@ final class GuardianAgentStatusesActions extends RtActions
      * Seed statuses from the guardian agent's current map.
      *
      * @param array<string, string> $statuses Status map keyed by guardian agent id
-     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCallbackNotSetException When an item factory or forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source

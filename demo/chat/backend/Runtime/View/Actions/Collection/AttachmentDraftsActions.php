@@ -79,6 +79,7 @@ final class AttachmentDraftsActions extends RtActions
      * @param bool $deleteFiles When true, delete quarantine files as well
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -100,6 +101,7 @@ final class AttachmentDraftsActions extends RtActions
      * @param string $acceptKey WebSocket connection id
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -114,6 +116,7 @@ final class AttachmentDraftsActions extends RtActions
      * @param bool $deleteFiles When true, delete quarantine files as well
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -132,6 +135,7 @@ final class AttachmentDraftsActions extends RtActions
      *
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -147,6 +151,7 @@ final class AttachmentDraftsActions extends RtActions
      * @param bool $deleteFiles When true, delete quarantine files as well
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -178,6 +183,7 @@ final class AttachmentDraftsActions extends RtActions
      *
      * @return list<string> Connection ids whose draft list changed
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -207,6 +213,7 @@ final class AttachmentDraftsActions extends RtActions
      * @param Connection $connection Connection whose drafts should be published
      * @return ?PublishedAttachmentInputs Published attachment metadata, or null on missing draft file
      * @throws FsException When a quarantine file cannot be moved
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -245,6 +252,7 @@ final class AttachmentDraftsActions extends RtActions
      * Remove every draft and optionally delete all corresponding quarantine files.
      *
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -261,6 +269,7 @@ final class AttachmentDraftsActions extends RtActions
      * Remove every draft and delete all corresponding quarantine files.
      *
      * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCallbackNotSetException When the collection's forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */

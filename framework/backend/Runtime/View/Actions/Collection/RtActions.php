@@ -47,6 +47,9 @@ abstract class RtActions
     /** @var ?callable(): void Callback to clear collection cache */
     private $clearCacheCallback = null;
 
+    /** @var ?callable(string): void Callback to drop one cached item by state ID */
+    private $forgetCachedItemCallback = null;
+
     /**
      * Creates RtActions instance for the given collection.
      *
@@ -93,6 +96,16 @@ abstract class RtActions
     }
 
     /**
+     * Sets callback to drop one cached item after a point mutation (called by RtCollection).
+     *
+     * @param callable(string): void $callback Forget cached item callback
+     */
+    public function setForgetCachedItemCallback(callable $callback): void
+    {
+        $this->forgetCachedItemCallback = $callback;
+    }
+
+    /**
      * Creates RtItem from RtState via registered callback.
      *
      * @param RtState $state State instance (reference)
@@ -123,6 +136,23 @@ abstract class RtActions
             );
         }
         ($this->clearCacheCallback)();
+    }
+
+    /**
+     * Drops the cached RtItem of one state ID via registered callback.
+     *
+     * @param string $key State ID whose cached item is dropped
+     * @throws RtActionsCallbackNotSetException When forgetCachedItemCallback is not set
+     */
+    protected function forgetCachedItem(string $key): void
+    {
+        if ($this->forgetCachedItemCallback === null) {
+            throw new RtActionsCallbackNotSetException(
+                "forgetCachedItemCallback is not set."
+                . " RtCollection must call setForgetCachedItemCallback() when creating Actions."
+            );
+        }
+        ($this->forgetCachedItemCallback)($key);
     }
 
     /**
@@ -182,6 +212,7 @@ abstract class RtActions
      * Adds state to collection and queues RT sync created signal.
      *
      * @param RtState $state State instance to add
+     * @throws RtActionsCallbackNotSetException When forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -191,6 +222,7 @@ abstract class RtActions
     {
         $this->ensureCanWriteState($state->getId());
         $this->getStateCollection()->add($state);
+        $this->forgetCachedItem($state->getId());
         $this->queueRtSyncCreated($state->getId(), $state->toArray());
     }
 
@@ -218,6 +250,7 @@ abstract class RtActions
      * Removes state from collection by ID and queues RT sync deleted signal.
      *
      * @param string $id State ID to remove
+     * @throws RtActionsCallbackNotSetException When forget-cached-item callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -229,6 +262,7 @@ abstract class RtActions
         $state = $this->getStateCollection()->get($id);
         $row = $state?->toArray() ?? [];
         $this->getStateCollection()->remove($id);
+        $this->forgetCachedItem($id);
         $this->queueRtSyncDeleted($id, $row);
     }
 

@@ -14,6 +14,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\CloneException;
 use Hilos\Database\Exception\View\Collection\DirectSetException;
+use Hilos\Database\Exception\View\Collection\DirectUnsetException;
 use Hilos\Database\Exception\View\Collection\PropertyNotFoundException;
 use Hilos\Database\Exception\View\Collection\UnserializeException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -226,6 +227,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             });
             $this->_actions->setClearCacheCallback(function (): void {
                 $this->clearCache();
+            });
+            $this->_actions->setForgetCachedItemCallback(function (int|string $key): void {
+                $this->forgetCachedItem($key);
             });
         }
         return $this->_actions;
@@ -673,19 +677,14 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Remove item at offset (ArrayAccess).
      *
      * @param mixed $offset Primary key ID to remove, or null for no-op
+     * @throws DirectUnsetException Always for a real key, direct unset not allowed
      */
     public function offsetUnset(mixed $offset): void
     {
         if ($offset === null) {
             return;
         }
-        unset($this->items[$offset]);
-        if (!$this->isManual) {
-            $objectCollection = $this->getObjectCollection();
-            if ($objectCollection !== null) {
-                unset($objectCollection[$offset]);
-            }
-        }
+        throw new DirectUnsetException();
     }
 
     /**
@@ -814,5 +813,24 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         $this->items = [];
         $this->position = 0;
         $this->savedPosition = 0;
+    }
+
+    /**
+     * Drop the cached DbItem of one key, so the next read rebuilds it from the object.
+     *
+     * The iterator position is deliberately left alone, unlike {@see clearCache()}, which
+     * would end a walk in progress at its first step. That buys survival, NOT safety: the
+     * cursor - and the one {@see backupIndex()} parks for a nested walk - is a numeric
+     * index into this cache, so dropping a key at or before it shifts every later key down
+     * and the walk skips a row. Mutating from inside a walk therefore still means
+     * collecting the keys first and mutating afterwards.
+     *
+     * A key with nothing cached under it is a silent no-op.
+     *
+     * @param int|string $key Primary key ID whose cached item is dropped
+     */
+    public function forgetCachedItem(int|string $key): void
+    {
+        unset($this->items[$key]);
     }
 }
