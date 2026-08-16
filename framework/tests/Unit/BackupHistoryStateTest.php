@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Runtime\State\Collection\BackupHistories;
@@ -166,6 +167,52 @@ final class BackupHistoryStateTest extends TestCase
         $this->assertNull($legacy->sha256);
         $this->assertNull($legacy->verifiedAt);
         $this->assertNull($legacy->verifyOutcome);
+    }
+
+    public function testShippingFieldsTransferFromMetadataRoundTripAndUpdateViaDiff(): void
+    {
+        $history = BackupHistory::fromMetadata(new BackupMetadata(
+            id: 'ship-1',
+            createdAt: '2026-08-16T09:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 2,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            shippedAt: '2026-08-16T10:00:00+00:00',
+            shipOutcome: BackupShipOutcome::OK,
+        ));
+        $this->assertSame('2026-08-16T10:00:00+00:00', $history->shippedAt);
+        // The runtime row keeps the outcome as its stored value, like scope and status do.
+        $this->assertSame('ok', $history->shipOutcome);
+        $this->assertNull($history->shipError);
+
+        $restored = BackupHistory::fromRow($history->toArray());
+        $this->assertSame($history->shippedAt, $restored->shippedAt);
+        $this->assertSame('ok', $restored->shipOutcome);
+
+        // The transfer runs in the agent's worker; without the diff every other worker would keep
+        // showing a copy that succeeded hours ago as still pending.
+        $history->applyDiff([
+            BackupHistory::shippedAt => null,
+            BackupHistory::shipOutcome => 'failed',
+            BackupHistory::shipError => 'ssh: connect timed out',
+        ]);
+        $this->assertNull($history->shippedAt);
+        $this->assertSame('failed', $history->shipOutcome);
+        $this->assertSame('ssh: connect timed out', $history->shipError);
+
+        // A row written before shipping existed carries none of the three, and does not throw.
+        $legacy = BackupHistory::fromRow([
+            BackupHistory::id => 'legacy',
+            BackupHistory::createdAt => '2026-08-01T00:00:00+00:00',
+            BackupHistory::status => 'success',
+        ]);
+        $this->assertNull($legacy->shippedAt);
+        $this->assertNull($legacy->shipOutcome);
+        $this->assertNull($legacy->shipError);
     }
 
     public function testHistoriesCollectionLookup(): void

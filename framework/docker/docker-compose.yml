@@ -12,7 +12,7 @@
 #   agent-host          dev-only unified agent host (code guardian), port 9309
 #   preview             in-tailnet preview lane: dnsmasq split-DNS + Caddy proxy
 #   frontend            Node CLI runner for the frontend SDK
-#   test                MySQL + CLI runner for framework PHPUnit
+#   test                MySQL + CLI runner + backup receiver for framework PHPUnit
 #
 # Usage examples (from repo root):
 #   docker compose -f framework/docker/docker-compose.yml --profile ollama up -d
@@ -171,9 +171,10 @@ services:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
     profiles: [frontend]
 
-  # --- Framework test stack: MySQL + CLI runner (PHPUnit) --------------------
+  # --- Framework test stack: MySQL + CLI runner + receiver (PHPUnit) ---------
   # Isolated from demo test stacks by host port (33062). hilos-cli-test has no
-  # depends_on so unit tests run without DB; integration tests need the DB up.
+  # depends_on so unit tests run without DB; integration tests need the DB and the
+  # backup receiver up, which `composer run test:framework:up` is for.
   mysql-framework-test:
     image: mariadb:11.4
     container_name: hilos-mysql-framework-test
@@ -200,6 +201,34 @@ services:
       - hilos-framework-test-network
     profiles: [test]
 
+  # Backup receiver: the far side of a shipping run (BACKUP_SHIP_TARGET). No host
+  # ports — only the CLI runner talks to it, over the stack's own network, and the
+  # stand keeps its promise of not reaching outside. The key pair and the
+  # known_hosts line it pins are generated on start into ship-keys, which is why
+  # hilos-cli-test mounts the same volume.
+  sshd-framework-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-sshd
+    container_name: hilos-sshd-framework-test
+    environment:
+      TZ: UTC
+    volumes:
+      - ship-keys:/ship-keys
+    healthcheck:
+      # Both halves matter: the marker says the credentials are published, the
+      # keyscan says sshd is already answering on the port. Pinned to the one key
+      # type known_hosts carries, or every probe would also offer the types the
+      # entrypoint did not publish and fill the log with its own rejections.
+      test: ["CMD-SHELL", "test -f /ship-keys/ready && ssh-keyscan -t ed25519 -T 2 localhost >/dev/null 2>&1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - hilos-framework-test-network
+    profiles: [test]
+
   hilos-cli-test:
     build:
       context: .
@@ -208,6 +237,7 @@ services:
     volumes:
       - ../..:/hilos
       - composer-cache:/root/.composer/cache
+      - ship-keys:/ship-keys
     working_dir: /hilos
     environment:
       APP_ENV: test
@@ -234,6 +264,13 @@ volumes:
     name: hilos-preview-caddy-config
   mysql-framework-test-data:
     name: hilos-framework-mysql-test-data
+  # Credentials the backup receiver publishes for the CLI runner to ship with.
+  # Rewritten on every start of sshd-framework-test, so it holds nothing worth
+  # keeping and nothing worth protecting beyond the life of the stand. Pinned by
+  # name for the same reason the MySQL data volume is: `test:framework:down-volumes`
+  # names it, and a project-prefixed name would leave it behind after a rename.
+  ship-keys:
+    name: hilos-framework-ship-keys
   composer-cache:
 
 networks:

@@ -8,6 +8,10 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Backup\BackupShipState;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
+use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -208,6 +212,9 @@ final class HilosBackupHistoryTableTest extends TestCase
             failureReason: null,
             checksumState: BackupChecksumState::VERIFIED,
             verifiedAt: '2026-08-02T06:00:00+00:00',
+            shipState: BackupShipState::SHIPPED,
+            shippedAt: '2026-08-16T06:00:00+00:00',
+            shipError: null,
         );
 
         $this->assertSame(
@@ -227,6 +234,9 @@ final class HilosBackupHistoryTableTest extends TestCase
                         HilosBackupTableRow::failureReason => null,
                         HilosBackupTableRow::checksumState => 'verified',
                         HilosBackupTableRow::verifiedAt => '2026-08-02T06:00:00+00:00',
+                        HilosBackupTableRow::shipState => 'shipped',
+                        HilosBackupTableRow::shippedAt => '2026-08-16T06:00:00+00:00',
+                        HilosBackupTableRow::shipError => null,
                         // An archive nobody restored says so in every restore field.
                         HilosBackupTableRow::restorePhase => null,
                         HilosBackupTableRow::restoreOutcome => null,
@@ -288,6 +298,9 @@ final class HilosBackupHistoryTableTest extends TestCase
             failureReason: null,
             checksumState: BackupChecksumState::VERIFIED,
             verifiedAt: '2026-08-02T06:00:00+00:00',
+            shipState: BackupShipState::SHIPPED,
+            shippedAt: '2026-08-16T06:00:00+00:00',
+            shipError: null,
         );
 
         // The frontend normalizer ingests any slot payload bearing an `id` as an entity
@@ -329,6 +342,112 @@ final class HilosBackupHistoryTableTest extends TestCase
 
             $this->assertSame($expected, $mutation->row?->checksumState, "row {$id}");
         }
+    }
+
+    public function testWithNoDestinationEveryRowSaysItShipsNowhere(): void
+    {
+        // The column must never read "pending" on an installation that copies nothing: a copy
+        // that is never coming would look like one that is merely late, forever.
+        foreach (['never' => [], 'stamped' => [
+            BackupHistory::shippedAt => '2026-08-16T06:00:00+00:00',
+            BackupHistory::shipOutcome => 'ok',
+        ]] as $id => $extra) {
+            $table = $this->table(histories: $this->historiesWith(
+                BackupHistory::fromRow([
+                    BackupHistory::id => $id,
+                    BackupHistory::status => 'success',
+                    ...$extra,
+                ]),
+            ));
+
+            $mutation = $table->buildMutationForSourceEvent(
+                SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, $id, []),
+            );
+
+            $this->assertSame(BackupShipState::NONE, $mutation->row?->shipState, "row {$id}");
+        }
+    }
+
+    public function testADestinationNothingCanShipToReadsTheSameAsNoDestination(): void
+    {
+        // An ssh destination with no pinned receiver parses perfectly and ships nothing: the
+        // factory refuses to build a driver for it, so the agent never attempts a copy. Asking
+        // only whether the value parsed would leave every row saying "pending" forever - the very
+        // thing the column exists to prevent - so the table asks both questions the agent asks.
+        $previous = Hilos::$env;
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+        putenv('BACKUP_SHIP_TARGET=ssh://backup@receiver.example/srv/backups');
+
+        try {
+            $this->assertSame(BackupShipState::NONE, $this->shipStateOfAnUnshippedRow());
+
+            putenv('BACKUP_SHIP_SSH_KNOWN_HOSTS=/etc/hilos/known_hosts');
+            $this->assertSame(BackupShipState::PENDING, $this->shipStateOfAnUnshippedRow());
+        } finally {
+            putenv('BACKUP_SHIP_TARGET');
+            putenv('BACKUP_SHIP_SSH_KNOWN_HOSTS');
+            Hilos::$env = $previous;
+        }
+    }
+
+    public function testARunThatLeftNoArchiveIsNotWaitingForACopy(): void
+    {
+        // A failed run published nothing to send, and the planner only ever picks up a successful
+        // row - so "pending" here would promise a transfer that is queued nowhere and never comes.
+        // It is the same reading the Checksum column already gives that row.
+        $previous = Hilos::$env;
+        Hilos::$env = new EnvAccessor(EnvCatalogStub::class);
+        putenv('BACKUP_SHIP_TARGET=ssh://backup@receiver.example/srv/backups');
+        putenv('BACKUP_SHIP_SSH_KNOWN_HOSTS=/etc/hilos/known_hosts');
+
+        try {
+            $this->assertSame(BackupShipState::PENDING, $this->shipStateOfAnUnshippedRow());
+            $this->assertSame(BackupShipState::NONE, $this->shipStateOfAnUnshippedRow('error'));
+        } finally {
+            putenv('BACKUP_SHIP_TARGET');
+            putenv('BACKUP_SHIP_SSH_KNOWN_HOSTS');
+            Hilos::$env = $previous;
+        }
+    }
+
+    /**
+     * @param string $status Terminal status of the run that made the backup
+     * @return ?BackupShipState Copy state a never-shipped row of that status is built with
+     */
+    private function shipStateOfAnUnshippedRow(string $status = 'success'): ?BackupShipState
+    {
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'owed',
+                BackupHistory::status => $status,
+            ]),
+        ));
+
+        return $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'owed', []),
+        )->row?->shipState;
+    }
+
+    public function testAShippedRowCarriesItsInstantAndAFailedOneItsError(): void
+    {
+        // The two travel whatever the configured destination is: the state answers "should the
+        // operator worry", these answer "when" and "why", and the row is where both are read.
+        $table = $this->table(histories: $this->historiesWith(
+            BackupHistory::fromRow([
+                BackupHistory::id => 'b1',
+                BackupHistory::status => 'success',
+                BackupHistory::shippedAt => '2026-08-16T06:00:00+00:00',
+                BackupHistory::shipOutcome => 'failed',
+                BackupHistory::shipError => 'ssh: connect timed out',
+            ]),
+        ));
+
+        $mutation = $table->buildMutationForSourceEvent(
+            SourceChange::rtUpdated(BackupHistory::RT_COLLECTION, 'b1', []),
+        );
+
+        $this->assertSame('2026-08-16T06:00:00+00:00', $mutation->row?->shippedAt);
+        $this->assertSame('ssh: connect timed out', $mutation->row?->shipError);
     }
 
     public function testAVerifiedRowCarriesWhenItWasChecked(): void

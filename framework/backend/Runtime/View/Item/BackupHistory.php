@@ -36,6 +36,9 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  * @property-read ?string $verifyOutcome Outcome value of that verification; null means never verified
  * @property-read ?string $restoredAt ISO-8601 instant this archive was last restored from; null means never
  * @property-read int $restoreDurationSeconds How long that restore took; 0 means never restored
+ * @property-read ?string $shippedAt ISO-8601 instant of the last copy off this machine; null means never
+ * @property-read ?string $shipOutcome Outcome value of that copy; null means never attempted
+ * @property-read ?string $shipError Why the last copy attempt failed; null when none has
  * @property-read BackupHistoryActions $actions Write operations for this index row
  */
 final class BackupHistory extends RtItem
@@ -73,6 +76,9 @@ final class BackupHistory extends RtItem
             StateBackupHistory::verifyOutcome => $this->_state->verifyOutcome,
             StateBackupHistory::restoredAt => $this->_state->restoredAt,
             StateBackupHistory::restoreDurationSeconds => $this->_state->restoreDurationSeconds,
+            StateBackupHistory::shippedAt => $this->_state->shippedAt,
+            StateBackupHistory::shipOutcome => $this->_state->shipOutcome,
+            StateBackupHistory::shipError => $this->_state->shipError,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

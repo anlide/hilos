@@ -6,7 +6,10 @@ namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Backup\BackupShipState;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\Ship\BackupShipTarget;
+use Hilos\Backup\Ship\BackupShipperFactory;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
@@ -241,6 +244,14 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             failureReason: $history->failureReason,
             checksumState: BackupChecksumState::fromRecord($history->sha256, $history->verifyOutcome),
             verifiedAt: $history->verifiedAt,
+            shipState: BackupShipState::fromRecord(
+                $this->shippingConfigured(),
+                $history->status,
+                $history->shippedAt,
+                $history->shipOutcome,
+            ),
+            shippedAt: $history->shippedAt,
+            shipError: $history->shipError,
             restorePhase: $restored?->phase,
             restoreOutcome: $restored?->outcome,
             restoreFinishedAt: $restored?->finishedAt,
@@ -300,10 +311,38 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
             // A running backup has no archive yet, so it has nothing to checksum.
             checksumState: BackupChecksumState::NONE,
             verifiedAt: null,
+            // Nor anything to copy: shipping starts from a published archive, so the run in
+            // flight is not owed a copy and must not read as one that is late.
+            shipState: BackupShipState::NONE,
+            shippedAt: null,
+            shipError: null,
             progressPhase: $runtime->phase,
             progressPhaseStartedAt: $runtime->phaseStartedAt,
             progressEstimatedSeconds: $runtime->estimatedSeconds,
         );
+    }
+
+    /**
+     * Whether this installation copies backups off the machine at all.
+     *
+     * Asked per build rather than stored, and answered by the same two questions the agent asks
+     * before it ships anything - does the destination parse, and is there a driver that serves
+     * it. A value nothing can ship to is the same to a reader as no value at all, and asking only
+     * the first question would leave every row saying "pending" for a copy that is never coming:
+     * an ssh destination without a pinned receiver parses perfectly and ships nothing
+     * ({@see BackupShipperFactory::fromTarget()}).
+     *
+     * @return bool True when a usable destination is configured
+     */
+    private function shippingConfigured(): bool
+    {
+        try {
+            $target = BackupShipTarget::fromEnv();
+
+            return $target !== null && BackupShipperFactory::fromTarget($target) !== null;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**

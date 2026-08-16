@@ -76,6 +76,19 @@ export interface HilosBackupRow {
    */
   readonly verifiedAt: string | null
   /**
+   * Whether a copy of this backup exists off the machine it was taken on, and how
+   * the last attempt at one went. `none` when this installation ships nowhere at
+   * all, which is the state a row must read in rather than a copy pending forever.
+   */
+  readonly shipState: HilosBackupShipState
+  /**
+   * ISO-8601 instant of the last successful copy, or null when the archive has
+   * never left the machine.
+   */
+  readonly shippedAt: string | null
+  /** Why the last copy attempt failed, or null when none has. */
+  readonly shipError: string | null
+  /**
    * Phase of the restore of THIS archive, or null when it was never restored. Only
    * one row in the list ever carries these: the restore runtime row is a singleton
    * about the last run, and the backend decorates only the archive it names.
@@ -119,6 +132,13 @@ export type HilosBackupChecksumState =
   | 'present'
   | 'verified'
   | 'mismatch'
+
+/**
+ * The off-machine copy state of a stored backup, mirroring the backend
+ * BackupShipState: no destination configured at all, a copy still owed, a copy that
+ * landed, and one whose last attempt failed.
+ */
+export type HilosBackupShipState = 'none' | 'pending' | 'shipped' | 'failed'
 
 // Wire keys: the framework backup table and its single inline `backup` slot (the
 // merged runtime fields) and the create / delete / set-keep action names. A
@@ -184,6 +204,18 @@ export const BACKUP_CHECKSUM_STATE_FIELD = 'checksumState'
 
 /** Row payload key of the last verification instant. */
 export const BACKUP_VERIFIED_AT_FIELD = 'verifiedAt'
+
+/**
+ * Row payload key of the off-machine copy state. Exported because it is also the
+ * table column key the three views declare, so the wire name has one owner.
+ */
+export const BACKUP_SHIP_STATE_FIELD = 'shipState'
+
+/** Row payload key of the last successful copy instant. */
+export const BACKUP_SHIPPED_AT_FIELD = 'shippedAt'
+
+/** Row payload key of the reason the last copy attempt failed. */
+export const BACKUP_SHIP_ERROR_FIELD = 'shipError'
 
 /** Row payload key of the phase of the restore of this archive. */
 export const BACKUP_RESTORE_PHASE_FIELD = 'restorePhase'
@@ -346,6 +378,20 @@ function toVerifiedAt(value: unknown): string | null {
 }
 
 /**
+ * Narrow a raw `shipState` slot value to the view-model field. Anything the frontend
+ * does not recognize — a legacy payload without the key, a value from a newer
+ * backend — reads as `none`, so an unreadable row says "this installation ships
+ * nowhere" rather than showing a copy that will never arrive.
+ *
+ * @param value The raw `shipState` value from a payload slot.
+ */
+function toShipState(value: unknown): HilosBackupShipState {
+  return value === 'pending' || value === 'shipped' || value === 'failed'
+    ? value
+    : 'none'
+}
+
+/**
  * Narrow a raw optional-text slot value to the view-model field: a non-empty string,
  * or null for anything else. The restore fields are all of this shape — every row but
  * the restored one omits them, and an empty string is the same "nothing happened here".
@@ -382,6 +428,9 @@ export function resolveHilosBackupRow(row: TableRow): HilosBackupRow {
     failureReason: toFailureReason(slot[BACKUP_FAILURE_REASON_FIELD]),
     checksumState: toChecksumState(slot[BACKUP_CHECKSUM_STATE_FIELD]),
     verifiedAt: toVerifiedAt(slot[BACKUP_VERIFIED_AT_FIELD]),
+    shipState: toShipState(slot[BACKUP_SHIP_STATE_FIELD]),
+    shippedAt: toTextOrNull(slot[BACKUP_SHIPPED_AT_FIELD]),
+    shipError: toTextOrNull(slot[BACKUP_SHIP_ERROR_FIELD]),
     restorePhase: toTextOrNull(slot[BACKUP_RESTORE_PHASE_FIELD]),
     restoreOutcome: toTextOrNull(slot[BACKUP_RESTORE_OUTCOME_FIELD]),
     restoreFinishedAt: toTextOrNull(slot[BACKUP_RESTORE_FINISHED_AT_FIELD]),
@@ -467,6 +516,31 @@ export function formatBackupChecksum(row: HilosBackupRow): string {
       return row.verifiedAt === null ? '✓' : `✓ ${row.verifiedAt.slice(0, 10)}`
     case 'present':
       return 'present'
+    default:
+      return '—'
+  }
+}
+
+/**
+ * The copy cell: a dash when the installation ships nowhere, the date a copy landed,
+ * a waiting marker while one is owed, and a loud FAILED when the last attempt did
+ * not make it. Shared by the three views so the column cannot drift between them.
+ *
+ * Only the date part of the instant is shown, for the reason the checksum cell shows
+ * only a date: the column is a compact one, and the hour a copy left is not what the
+ * operator scans for. What went wrong is on the row as `shipError`, not here — a
+ * column wide enough for an rsync error is a column that pushes the list sideways.
+ *
+ * @param row The backup row to format.
+ */
+export function formatBackupShipping(row: HilosBackupRow): string {
+  switch (row.shipState) {
+    case 'failed':
+      return 'FAILED'
+    case 'shipped':
+      return row.shippedAt === null ? '✓' : `✓ ${row.shippedAt.slice(0, 10)}`
+    case 'pending':
+      return 'pending'
     default:
       return '—'
   }
@@ -698,6 +772,15 @@ export function backupRowAnchors(row: HilosBackupRow): HilosProgressAnchors {
  */
 export function isBackupChecksumMismatch(row: HilosBackupRow): boolean {
   return row.checksumState === 'mismatch'
+}
+
+/**
+ * A stored archive whose last copy off the machine did not make it — the only copy
+ * state the views render in red. The single source the three share, for the reason
+ * the checksum one is shared: an alarming state must not end up quiet in one view.
+ */
+export function isBackupShipFailed(row: HilosBackupRow): boolean {
+  return row.shipState === 'failed'
 }
 
 /** The single in-progress backup (renders the live progress row; not actionable). */

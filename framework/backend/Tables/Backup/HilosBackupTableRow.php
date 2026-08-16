@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tables\Backup;
 
 use Hilos\Backup\BackupChecksumState;
+use Hilos\Backup\BackupShipState;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Runtime\View\Item\BackupHistory;
@@ -46,6 +47,9 @@ final class HilosBackupTableRow extends AbstractTableRow
     public const string failureReason = 'failureReason';
     public const string checksumState = 'checksumState';
     public const string verifiedAt = 'verifiedAt';
+    public const string shipState = 'shipState';
+    public const string shippedAt = 'shippedAt';
+    public const string shipError = 'shipError';
     public const string restorePhase = 'restorePhase';
     public const string restoreOutcome = 'restoreOutcome';
     public const string restoreFinishedAt = 'restoreFinishedAt';
@@ -69,6 +73,10 @@ final class HilosBackupTableRow extends AbstractTableRow
      * @param BackupChecksumState $checksumState Whether the backup carries a digest and how it last verified;
      *     the digest itself never reaches the browser
      * @param ?string $verifiedAt ISO-8601 instant of the last verification; null means never verified
+     * @param BackupShipState $shipState Whether a copy of this backup exists off the machine, and how the
+     *     last attempt at one went; `none` when this installation ships nowhere
+     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never copied
+     * @param ?string $shipError Why the last copy attempt failed; null when none has
      * @param ?string $restorePhase Phase value of the restore of THIS archive; null when it was never restored
      * @param ?string $restoreOutcome Terminal status value of that restore; null while it runs or was never run
      * @param ?string $restoreFinishedAt ISO-8601 instant that restore ended; null while it runs or was never run
@@ -92,6 +100,9 @@ final class HilosBackupTableRow extends AbstractTableRow
         public ?string $failureReason,
         public BackupChecksumState $checksumState,
         public ?string $verifiedAt,
+        public BackupShipState $shipState,
+        public ?string $shippedAt,
+        public ?string $shipError,
         // The restore of an archive is a property of the run, not of the archive, and only one
         // archive is ever the restored one - so every other row says "no restore" by omission
         // rather than by five nulls written out at each of its construction sites.
@@ -142,6 +153,9 @@ final class HilosBackupTableRow extends AbstractTableRow
             self::failureReason => $this->failureReason,
             self::checksumState => $this->checksumState->value,
             self::verifiedAt => $this->verifiedAt,
+            self::shipState => $this->shipState->value,
+            self::shippedAt => $this->shippedAt,
+            self::shipError => $this->shipError,
             self::restorePhase => $this->restorePhase,
             self::restoreOutcome => $this->restoreOutcome,
             self::restoreFinishedAt => $this->restoreFinishedAt,
@@ -179,6 +193,14 @@ final class HilosBackupTableRow extends AbstractTableRow
                 isset($data[self::checksumState]) ? (string) $data[self::checksumState] : null,
             ) ?? BackupChecksumState::NONE,
             verifiedAt: self::optionalString($data, self::verifiedAt),
+            // An unknown or absent state reads back as "ships nowhere", for the reason the
+            // checksum one reads back as "no digest": a row that cannot say a copy is owed must
+            // not show the operator a copy that is pending forever.
+            shipState: BackupShipState::fromString(
+                isset($data[self::shipState]) ? (string) $data[self::shipState] : null,
+            ) ?? BackupShipState::NONE,
+            shippedAt: self::optionalString($data, self::shippedAt),
+            shipError: self::optionalString($data, self::shipError),
             restorePhase: self::optionalString($data, self::restorePhase),
             restoreOutcome: self::optionalString($data, self::restoreOutcome),
             restoreFinishedAt: self::optionalString($data, self::restoreFinishedAt),

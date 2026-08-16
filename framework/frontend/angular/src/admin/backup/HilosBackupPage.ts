@@ -31,6 +31,7 @@ import {
   BACKUP_SCOPE_FIELD,
   BACKUP_SIZE_BYTES_FIELD,
   BACKUP_CHECKSUM_STATE_FIELD,
+  BACKUP_SHIP_STATE_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
   BACKUP_STATUS_FIELD,
   BACKUP_RESTORE_OUTCOME_FIELD,
@@ -44,12 +45,14 @@ import {
   createHilosRestoreProgress,
   formatBackupDuration,
   formatBackupChecksum,
+  formatBackupShipping,
   formatBackupProgressLabel,
   formatBackupSize,
   formatRestoreCliCommand,
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
+  isBackupShipFailed,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -83,6 +86,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     headerClass: 'text-end',
   },
   { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
+  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy' },
   {
     key: BACKUP_DURATION_SECONDS_FIELD,
     label: 'Duration',
@@ -203,6 +207,11 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
           <td class="text-end">{{ formatSize(row) }}</td>
           <td class="text-nowrap">
             <span [class]="checksumClass(row)">{{ formatChecksum(row) }}</span>
+          </td>
+          <td class="text-nowrap">
+            <span [class]="shippingClass(row)" [title]="row.shipError ?? ''">{{
+              formatShipping(row)
+            }}</span>
           </td>
           <td class="text-end">{{ formatDuration(row) }}</td>
           <td style="min-width: 10rem">
@@ -856,5 +865,15 @@ export class HilosBackupPage {
   /** Red only for an archive that did not match its recorded checksum. */
   protected checksumClass(row: HilosBackupRow): string {
     return isBackupChecksumMismatch(row) ? 'text-danger fw-semibold' : ''
+  }
+
+  /** The copy cell text, shared with the other view layers. */
+  protected formatShipping(row: HilosBackupRow): string {
+    return formatBackupShipping(row)
+  }
+
+  /** Red only for an archive whose last copy off the machine did not make it. */
+  protected shippingClass(row: HilosBackupRow): string {
+    return isBackupShipFailed(row) ? 'text-danger fw-semibold' : ''
   }
 }

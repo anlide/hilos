@@ -347,6 +347,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::ADMIN_GRANT => AgentType::HILOS_INDEX,
             CliCommands::ADMIN_REVOKE => AgentType::HILOS_INDEX,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
+            BackupConstants::SHIP_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RUN_SCHEDULE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::REFRESH_HISTORY_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::RESTORE_REQUEST_COMMAND => AgentType::HILOS_BACKUP,

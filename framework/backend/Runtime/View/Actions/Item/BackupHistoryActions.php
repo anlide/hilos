@@ -79,6 +79,30 @@ final class BackupHistoryActions extends RtActions
     }
 
     /**
+     * Records the outcome of a copy off this machine, syncing the three fields to readers.
+     *
+     * The index half of what {@see BackupCreator::recordShipping()} writes into the sidecar: files
+     * are the truth, and this keeps the Copy column of every other worker's table from waiting for
+     * the next scan to learn that a transfer finished or failed.
+     *
+     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
+     * @param ?string $shipOutcome Outcome value of the attempt; null when never attempted
+     * @param ?string $shipError Why the attempt failed; null on success
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function recordShipping(?string $shippedAt, ?string $shipOutcome, ?string $shipError): void
+    {
+        $this->ensureCanWrite();
+
+        $this->applyDiffWithSync([
+            StateBackupHistory::shippedAt => $shippedAt,
+            StateBackupHistory::shipOutcome => $shipOutcome,
+            StateBackupHistory::shipError => $shipError,
+        ]);
+    }
+
+    /**
      * Drops the row from the index and broadcasts the removal.
      *
      * The stored files are deleted by the backup engine; this is the index half, called

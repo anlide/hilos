@@ -10,6 +10,7 @@ use DateTimeInterface;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Exception\BackupDumpFailedException;
 use Hilos\Backup\Exception\BackupException;
+use Hilos\Backup\Ship\BackupShipperInterface;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Database\Database;
@@ -82,10 +83,20 @@ final class BackupCreator
 
     private const string METADATA_FILENAME = 'metadata.json';
 
+    /**
+     * Prefix every unpublished artifact of this engine carries, work directories included.
+     *
+     * Public because it is read from outside the store as well: a mirror re-stating a scope
+     * directory has to leave these behind ({@see BackupShipperInterface::mirrorCommand()}), and a
+     * second spelling of the prefix over there is one waiting to drift away from this one.
+     */
+    public const string TEMP_PREFIX = '.tmp-';
+
     /** Temp-name discriminators for in-place sidecar rewrites; they keep concurrent rewrites apart. */
     private const string TEMP_KIND_KEEP = 'keep';
     private const string TEMP_KIND_VERIFY = 'verify';
     private const string TEMP_KIND_RESTORE = 'restore';
+    private const string TEMP_KIND_SHIP = 'ship';
 
     /** Longest failure reason kept in an error sidecar; a killed dump's stderr can be a wall of text. */
     private const int FAILURE_REASON_LIMIT = 2000;
@@ -140,7 +151,7 @@ final class BackupCreator
         $this->ensureDirectory($scopeDir);
 
         $base = self::archiveBaseName($id, Hilos::$env->string(EnvConstants::APP_ENV), $scope);
-        $tmpStem = $scopeDir . '/.tmp-' . $base . '-' . getmypid();
+        $tmpStem = $scopeDir . '/' . self::TEMP_PREFIX . $base . '-' . getmypid();
         $workDir = $tmpStem . '.work';
         $tmpArchive = $tmpStem . self::ARCHIVE_EXTENSION;
         $tmpSidecar = $tmpStem . self::SIDECAR_EXTENSION;
@@ -308,7 +319,7 @@ final class BackupCreator
             BackupStatus::ERROR,
             failureReason: $this->capFailureReason($failureReason),
         );
-        $tmpSidecar = $scopeDir . '/.tmp-err-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
+        $tmpSidecar = $scopeDir . '/' . self::TEMP_PREFIX . 'err-' . $base . '-' . getmypid() . self::SIDECAR_EXTENSION;
         $this->writeJson($tmpSidecar, $metadata->toArray());
         $this->publish($tmpSidecar, $scopeDir . '/' . $base . self::SIDECAR_EXTENSION);
     }
@@ -402,6 +413,48 @@ final class BackupCreator
     }
 
     /**
+     * Records the outcome of a copy off this machine in the stored sidecar, atomically (HIL-431).
+     *
+     * Written the same way {@see recordVerification()} writes its stamp, over the file that is the
+     * source of truth (files=truth); the caller updates the runtime index row beside it. The error
+     * is capped by the same {@see capFailureReason()} the failure path uses, because it carries a
+     * killed transfer's stderr and lands in the same bounded place.
+     *
+     * Only the LOCAL sidecar is stamped, and deliberately so: the copy leaves before the stamp
+     * exists, so the sidecar sitting on the receiver never claims to have been shipped. What is
+     * over there is a snapshot of the moment it was taken.
+     *
+     * @param BackupHistory $row Index row identifying the backup (its id, env, and scope)
+     * @param string $root Backup storage root
+     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
+     * @param ?BackupShipOutcome $outcome What the attempt concluded
+     * @param ?string $error Why the attempt failed; null on success
+     * @return ?string The error as it was actually stored, so the index half records the same
+     *     text this file does rather than an uncapped copy of it
+     * @throws BackupException When the scope, root, or stored sidecar is invalid or missing
+     * @throws BackupDumpFailedException When the rewritten sidecar cannot be published
+     */
+    public function recordShipping(
+        BackupHistory $row,
+        string $root,
+        ?string $shippedAt,
+        ?BackupShipOutcome $outcome,
+        ?string $error,
+    ): ?string {
+        $sidecarPath = $this->storedSidecarPath($row->getId(), $row->env, $row->scope, $root);
+        $metadata = $this->readSidecar($sidecarPath);
+        $stored = $this->capFailureReason($error);
+
+        $this->republishSidecar(
+            $sidecarPath,
+            self::TEMP_KIND_SHIP,
+            $metadata->withShipping($shippedAt, $outcome, $stored),
+        );
+
+        return $stored;
+    }
+
+    /**
      * Records that this archive was restored, in the stored sidecar, atomically.
      *
      * The archive is where a restore's history lives, because a restore has none of its own: its
@@ -480,7 +533,7 @@ final class BackupCreator
      */
     private function republishSidecar(string $sidecarPath, string $tempKind, BackupMetadata $metadata): void
     {
-        $tmpSidecar = dirname($sidecarPath) . '/.tmp-' . $tempKind . '-'
+        $tmpSidecar = dirname($sidecarPath) . '/' . self::TEMP_PREFIX . $tempKind . '-'
             . basename($sidecarPath, self::SIDECAR_EXTENSION) . '-' . getmypid() . self::SIDECAR_EXTENSION;
         $this->writeJson($tmpSidecar, $metadata->toArray());
         $this->publish($tmpSidecar, $sidecarPath);
@@ -961,7 +1014,7 @@ final class BackupCreator
      */
     private function sweepPartialTemp(string $scopeDir, string $base): void
     {
-        foreach (glob($scopeDir . '/.tmp-' . $base . '-*') ?: [] as $path) {
+        foreach (glob($scopeDir . '/' . self::TEMP_PREFIX . $base . '-*') ?: [] as $path) {
             // warning-suppressed: sweeping leftovers of a dead child, an undeletable one stays behind
             is_dir($path) ? $this->removeDirectory($path) : @unlink($path);
         }

@@ -11,6 +11,9 @@ FROM php:8.4-cli
 # - git, zip, unzip: required for Composer installations
 # - default-mysql-client: provides mysqldump, which the backup child command
 #   (`backup:run`) shells out to; without it every backup fails at the dump step
+# - rsync, openssh-client: what the backup agent spawns to copy an archive off
+#   this machine (BACKUP_SHIP_TARGET); without them a configured destination
+#   fails per transfer instead of at deployment
 # -----------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
@@ -19,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     unzip \
     default-mysql-client \
+    rsync \
+    openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------

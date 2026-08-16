@@ -192,16 +192,36 @@ also registers those. Generate, in any order:
    working default in the catalog rather than leaving it to the deployment (the
    chat demo computes `demo/chat/data/backup`, keeping the env value an override),
    or the feature activates into a state where nothing can ever be written.
-   TODO (HIL-431): `BACKUP_DIR` is a local directory, so every archive lives on the
-   same host and disk as the application it protects — and, in a cluster, on
-   whichever node currently holds the monopoly agent. Copying an archive off the
-   machine is not implemented; a deployment that needs to survive losing the box
-   must arrange that outside the framework for now.
+   `BACKUP_DIR` is a local directory, so every archive lives on the same host and
+   disk as the application it protects — and, in a cluster, on whichever node
+   currently holds the monopoly agent. Shipping is what takes a copy off that
+   machine, and it activates through four more values: `BACKUP_SHIP_TARGET` — the
+   destination, `ssh://<user>@<host>[:<port>]/<abs-path>` or `file:///<abs-path>`
+   (a mounted network share is served by the second, so it needs no scheme of its
+   own); `BACKUP_SHIP_SSH_KEY` and `BACKUP_SHIP_SSH_KNOWN_HOSTS` — the private key
+   and the file the receiver's host key is pinned against, both read by the ssh
+   scheme only, and the ssh scheme refuses to ship without the second (shipping is
+   unattended, so there is nobody to answer a first-connection prompt, and the
+   payload is an unencrypted dump of the whole database); `BACKUP_SHIP_TIMEOUT` —
+   seconds before the agent kills a hung transfer, default 3600, beside
+   `BACKUP_TIMEOUT` and `BACKUP_RESTORE_TIMEOUT`. **No target = no shipping**: an
+   empty or unparseable destination leaves the subsystem behaving exactly as it
+   does without one, and the admin list says so in its Copy column. The
+   destination root itself has to exist on the receiving side — rsync creates the
+   per-scope directory under it and nothing above that. The copy leaves
+   *after* the run, in the agent's own second process slot, so a broken link never
+   turns a valid archive into an error row; the destination is a mirror, so both
+   deletion paths — rotation and the row's delete action — take the remote pair
+   away too.
 4. A `mysqldump` binary on `PATH` in the runtime image that hosts the agent — the
    `backup:run` child shells out to it — and the `mysql` client beside it, which
    the `backup:restore-run` child replays dumps through (Debian:
    `default-mysql-client` provides both). Missing, it is not a config error but a
-   failed run: the child exits non-zero and the run is recorded as an error.
+   failed run: the child exits non-zero and the run is recorded as an error. A
+   deployment that configures shipping needs `rsync` on `PATH` as well, and
+   `openssh-client` beside it for the ssh scheme (Debian: the two packages of those
+   names) — the transfer is a spawned child exactly as the dump is, and a missing
+   binary is likewise a failed transfer rather than a refused start.
 5. Register the framework `BackupAgent` + `BackupAgentDaemon` in the project
    `AGENTS` under `BackupAgent::AGENT_TYPE` — it is monopolistic, so it claims a
    monopolistic worker slot ([../../new-project/README.md](../../new-project/README.md),

@@ -10,6 +10,7 @@ use Hilos\Core\CLI\Commands\AdminGrantCommand;
 use Hilos\Core\CLI\Commands\AdminRevokeCommand;
 use Hilos\Core\CLI\Commands\BackupTestAgeCommand;
 use Hilos\Core\CLI\Commands\BackupTestPruneCommand;
+use Hilos\Core\CLI\Commands\BackupTestShipCommand;
 use Hilos\Core\CLI\Commands\BackupTestRunScheduleCommand;
 use Hilos\Core\CLI\Commands\BackupRestoreCommand;
 use Hilos\Core\CLI\Commands\BackupVerifyCommand;
@@ -116,6 +117,7 @@ class CliManager
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();
         $this->commands[CliCommands::BACKUP_TEST_AGE] = new BackupTestAgeCommand();
         $this->commands[CliCommands::BACKUP_TEST_PRUNE] = new BackupTestPruneCommand();
+        $this->commands[CliCommands::BACKUP_TEST_SHIP] = new BackupTestShipCommand();
         $this->commands[CliCommands::BACKUP_TEST_RUN_SCHEDULE] = new BackupTestRunScheduleCommand();
         $this->commands[CliCommands::CONNECTION_TEST_DROP] = new ConnectionTestDropCommand();
         $this->commands[CliCommands::PROTECTED_MODE_TEST_INSPECT] = new ProtectedModeTestInspectCommand();

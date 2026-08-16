@@ -9,6 +9,7 @@ use DateTimeInterface;
 use Hilos\Backup\BackupCreator;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\Exception\BackupException;
@@ -326,6 +327,80 @@ final class BackupCreatorTest extends TestCase
             $this->makeRoot(),
             BackupVerifyOutcome::OK,
             '2026-08-02T06:00:00+00:00',
+        );
+    }
+
+    public function testRecordShippingStampsTheSidecarAndLeavesEverythingElseAlone(): void
+    {
+        $root = $this->makeRoot();
+        $original = new BackupMetadata(
+            id: 'bk-ship',
+            createdAt: '2026-08-16T03:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 12,
+            keep: true,
+            status: BackupStatus::SUCCESS,
+            sha256: str_repeat('ab', 32),
+        );
+        $this->writeSidecar($root, $original);
+
+        $stored = new BackupCreator()->recordShipping(
+            $this->rowFor($original),
+            $root,
+            '2026-08-16T06:00:00+00:00',
+            BackupShipOutcome::OK,
+            null,
+        );
+
+        $this->assertNull($stored);
+        $reloaded = $this->readSidecar($root, $original);
+        $this->assertSame('2026-08-16T06:00:00+00:00', $reloaded->shippedAt);
+        $this->assertSame(BackupShipOutcome::OK, $reloaded->shipOutcome);
+        $this->assertNull($reloaded->shipError);
+        // The shipping stamp is the only change: the digest, the pin, and the size stay put.
+        $this->assertSame($original->sha256, $reloaded->sha256);
+        $this->assertTrue($reloaded->keep);
+        $this->assertSame(4096, $reloaded->sizeBytes);
+    }
+
+    public function testRecordShippingCapsTheErrorAndHandsBackWhatItStored(): void
+    {
+        // The error carries a killed transfer's stderr, which can be a wall of text. The caller
+        // records the returned value on the index row, so both halves say the same thing.
+        $root = $this->makeRoot();
+        $original = $this->metadata();
+        $this->writeSidecar($root, $original);
+
+        $stored = new BackupCreator()->recordShipping(
+            $this->rowFor($original),
+            $root,
+            null,
+            BackupShipOutcome::FAILED,
+            str_repeat('x', 5000),
+        );
+
+        $reloaded = $this->readSidecar($root, $original);
+        $this->assertNotNull($stored);
+        $this->assertSame($stored, $reloaded->shipError);
+        $this->assertLessThan(5000, mb_strlen($stored));
+        $this->assertStringEndsWith('…', $stored);
+        $this->assertNull($reloaded->shippedAt);
+        $this->assertSame(BackupShipOutcome::FAILED, $reloaded->shipOutcome);
+    }
+
+    public function testRecordShippingThrowsWhenTheSidecarIsMissing(): void
+    {
+        $this->expectException(BackupException::class);
+
+        new BackupCreator()->recordShipping(
+            $this->rowFor($this->metadata()),
+            $this->makeRoot(),
+            null,
+            BackupShipOutcome::FAILED,
+            'unreachable',
         );
     }
 

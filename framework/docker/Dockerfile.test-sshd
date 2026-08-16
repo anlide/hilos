@@ -1,0 +1,38 @@
+# Backup receiver for the framework test stand: the far side of a shipping run.
+#
+# The shipping seam copies archives with rsync over ssh to another machine, and
+# the only honest proof of that is another machine — so the stand grows one, the
+# way the chat stand grew a mail interceptor rather than mocking SMTP.
+#
+# Used only via docker compose, only under the `test` profile.
+FROM debian:bookworm-slim
+
+# openssh-client is here for ssh-keygen (host and client keys) and ssh-keyscan,
+# which the compose healthcheck asks whether sshd is answering yet.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-server \
+    openssh-client \
+    rsync \
+ && rm -rf /var/lib/apt/lists/*
+
+# An unprivileged owner for the destination tree: a receiver that logs the sender
+# in as root would prove the transfer works under rights no deployment gives it.
+# Not named `backup`, which Debian's base passwd already holds as a system account
+# with no home and no shell.
+RUN useradd --create-home --shell /bin/sh shipper
+
+# Keys only, no passwords: the stand has no interactive login to protect, and a
+# password-authenticating sshd on a test network is worth less than the line it
+# takes to disable it.
+RUN printf '%s\n' \
+    'PasswordAuthentication no' \
+    'PermitRootLogin no' \
+    'PubkeyAuthentication yes' \
+    > /etc/ssh/sshd_config.d/hilos-test.conf
+
+COPY docker-entrypoint-test-sshd.sh /usr/local/bin/docker-entrypoint-test-sshd.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-test-sshd.sh
+
+EXPOSE 22
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-test-sshd.sh"]

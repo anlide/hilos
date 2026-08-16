@@ -4,6 +4,7 @@ import {
   backupProgressPercent,
   backupRowAnchors,
   formatBackupChecksum,
+  formatBackupShipping,
   formatBackupDuration,
   formatBackupEta,
   formatBackupProgressLabel,
@@ -12,6 +13,7 @@ import {
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
+  isBackupShipFailed,
   isBackupRestorable,
   resolveHilosBackupRow,
   type HilosBackupRow,
@@ -33,6 +35,9 @@ function row(overrides: Partial<HilosBackupRow> = {}): HilosBackupRow {
     failureReason: null,
     checksumState: 'none',
     verifiedAt: null,
+    shipState: 'none',
+    shippedAt: null,
+    shipError: null,
     restorePhase: null,
     restoreOutcome: null,
     restoreFinishedAt: null,
@@ -106,6 +111,34 @@ describe('resolveHilosBackupRow', () => {
 
     expect(resolved.checksumState).toBe('verified')
     expect(resolved.verifiedAt).toBe('2026-08-02T06:07:08+00:00')
+  })
+
+  it('reads the copy state, its instant and its error from the slot', () => {
+    const resolved = resolveHilosBackupRow(
+      backupTableRow('b1', {
+        shipState: 'failed',
+        shippedAt: '2026-08-15T06:07:08+00:00',
+        shipError: 'ssh: connect timed out',
+      }),
+    )
+
+    expect(resolved.shipState).toBe('failed')
+    expect(resolved.shippedAt).toBe('2026-08-15T06:07:08+00:00')
+    expect(resolved.shipError).toBe('ssh: connect timed out')
+  })
+
+  it('reads an unknown or absent copy state as none', () => {
+    // Same reasoning as the checksum state: a row that cannot say a copy is owed must
+    // not show the operator one that is pending forever.
+    expect(resolveHilosBackupRow(backupTableRow('b1', {})).shipState).toBe(
+      'none',
+    )
+    expect(
+      resolveHilosBackupRow(backupTableRow('b1', { shipState: 'sent' }))
+        .shipState,
+    ).toBe('none')
+    expect(resolveHilosBackupRow(backupTableRow('b1', {})).shippedAt).toBeNull()
+    expect(resolveHilosBackupRow(backupTableRow('b1', {})).shipError).toBeNull()
   })
 
   it('reads an unknown or absent checksum state as none', () => {
@@ -480,6 +513,43 @@ describe('isBackupChecksumMismatch', () => {
       false,
     )
     expect(isBackupChecksumMismatch(row({ checksumState: 'none' }))).toBe(false)
+  })
+})
+
+describe('formatBackupShipping', () => {
+  it('shows a dash when the installation ships nowhere', () => {
+    expect(formatBackupShipping(row({ shipState: 'none' }))).toBe('—')
+  })
+
+  it('shows a waiting marker while a copy is owed', () => {
+    expect(formatBackupShipping(row({ shipState: 'pending' }))).toBe('pending')
+  })
+
+  it('shows the date a copy landed', () => {
+    expect(
+      formatBackupShipping(
+        row({ shipState: 'shipped', shippedAt: '2026-08-16T06:07:08+00:00' }),
+      ),
+    ).toBe('✓ 2026-08-16')
+  })
+
+  it('shows a bare tick for a copy that landed without an instant', () => {
+    expect(
+      formatBackupShipping(row({ shipState: 'shipped', shippedAt: null })),
+    ).toBe('✓')
+  })
+
+  it('shouts when the last attempt did not make it', () => {
+    expect(formatBackupShipping(row({ shipState: 'failed' }))).toBe('FAILED')
+  })
+})
+
+describe('isBackupShipFailed', () => {
+  it('is true only for a copy that did not make it', () => {
+    expect(isBackupShipFailed(row({ shipState: 'failed' }))).toBe(true)
+    expect(isBackupShipFailed(row({ shipState: 'shipped' }))).toBe(false)
+    expect(isBackupShipFailed(row({ shipState: 'pending' }))).toBe(false)
+    expect(isBackupShipFailed(row({ shipState: 'none' }))).toBe(false)
   })
 })
 

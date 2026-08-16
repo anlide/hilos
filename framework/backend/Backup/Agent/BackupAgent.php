@@ -26,10 +26,18 @@ use Hilos\Backup\BackupRetentionPolicy;
 use Hilos\Backup\BackupScanResult;
 use Hilos\Backup\BackupSchedule;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupSpaceDecision;
 use Hilos\Backup\BackupSpaceGuard;
 use Hilos\Backup\BackupSpacePolicy;
 use Hilos\Backup\BackupStatus;
+use Hilos\Backup\Ship\BackupShipCommand;
+use Hilos\Backup\Ship\BackupShipPlan;
+use Hilos\Backup\Ship\BackupShipPlanner;
+use Hilos\Backup\Ship\BackupShipStep;
+use Hilos\Backup\Ship\BackupShipTarget;
+use Hilos\Backup\Ship\BackupShipperFactory;
+use Hilos\Backup\Ship\BackupShipperInterface;
 use Hilos\Backup\Exception\BackupScheduleException;
 use Hilos\Backup\RestoreEnvDecision;
 use Hilos\Backup\RestoreNotifier;
@@ -137,6 +145,7 @@ final class BackupAgent extends AbstractAgent
      */
     public const array AGENT_COMMANDS = [
         BackupConstants::PRUNE_COMMAND,
+        BackupConstants::SHIP_COMMAND,
         BackupConstants::RUN_SCHEDULE_COMMAND,
         BackupConstants::REFRESH_HISTORY_COMMAND,
         BackupConstants::RESTORE_REQUEST_COMMAND,
@@ -154,6 +163,13 @@ final class BackupAgent extends AbstractAgent
 
     /** Protected-mode operation name a restore freeze is requested under. */
     private const string RESTORE_OPERATION = 'restore';
+
+    /**
+     * How long the test-only synchronous shipping pass sleeps between polls of its transfer.
+     *
+     * Only that pass blocks; the production path polls once per tick and never sleeps at all.
+     */
+    private const int SHIP_POLL_MICROSECONDS = 20_000;
 
     /**
      * Seconds an accepted restore may wait for its freeze before the wait is expired.
@@ -174,6 +190,40 @@ final class BackupAgent extends AbstractAgent
 
     /** The in-flight backup child, or null when idle (the single-flight lock). */
     private ?Process $childProcess = null;
+
+    /**
+     * The in-flight transfer child, or null when nothing is being copied off the machine.
+     *
+     * Its own slot, separate from {@see childProcess}: a slow link must not delay the next backup,
+     * and a transfer must not occupy the lock a restore needs. The two never contend for anything
+     * but the tick that polls them both.
+     */
+    private ?Process $shipProcess = null;
+
+    /** What that transfer is doing, or null when none is in flight. */
+    private ?BackupShipPlan $shipPlan = null;
+
+    /** Instant (microtime) the in-flight transfer was spawned; 0.0 when none is. */
+    private float $shipStartedAt = 0.0;
+
+    /**
+     * @var array<string, float> When the last transfer of each backup id - and of each mirror
+     *     scope, under {@see BackupShipPlanner::MIRROR_ATTEMPT_PREFIX} - was SPAWNED. Held in
+     *     memory rather than stored: it throttles retries, and after a restart the first pass may
+     *     as well try everything again.
+     */
+    private array $shipAttemptAt = [];
+
+    /**
+     * Whether something was deleted locally since the receiver was last brought in line.
+     *
+     * The remote is a mirror, so both deletion paths raise this through {@see markMirrorDirty()};
+     * the mirror pass itself lowers it once every scope has been re-stated since.
+     */
+    private bool $mirrorDirty = false;
+
+    /** Whether an unusable shipping destination has already been reported; it is a standing state. */
+    private bool $shipTargetReported = false;
 
     /**
      * The part of the child's last stdout chunk that had no line break yet.
@@ -330,6 +380,11 @@ final class BackupAgent extends AbstractAgent
      * The operator command follows it for the same reason: a restore that ends on this very tick
      * asks for the verification window, and answering afterwards reports the row it produced.
      *
+     * Shipping is polled after the run and inside a catch-all, because it is the one thing here
+     * that reaches off the machine: a receiver that is down, gone, or answering nonsense must cost
+     * a log line and nothing else. It is also why it runs after the create poll rather than before
+     * - a backup that just finished is a candidate this same tick.
+     *
      * @throws ProcessException When the running child cannot be polled, read or terminated
      * @throws EnvException When a backup env value is missing or cannot be read as its type
      * @throws HilosException Whatever finishing a restore that ended on this tick raises
@@ -338,6 +393,13 @@ final class BackupAgent extends AbstractAgent
     public function onTick(): void
     {
         $this->pollRunningBackup();
+
+        try {
+            $this->pollShipping();
+        } catch (Throwable $e) {
+            $this->logAgentError('Backup shipping pass failed: ' . $e->getMessage());
+        }
+
         $this->expireStaleRehydrate();
         $this->tickProtectedModeOperator();
         $this->checkSchedule();
@@ -365,6 +427,11 @@ final class BackupAgent extends AbstractAgent
     {
         if ($this->childProcess !== null) {
             $this->childProcess->halt();
+        }
+        // A killed transfer loses nothing: the local archive is untouched, the sidecar still says
+        // the copy has not landed, and the next pass starts it over.
+        if ($this->shipProcess !== null) {
+            $this->shipProcess->halt();
         }
         if ($this->restoreEngaged()) {
             // The pending create slot is dropped first: the finalizer drains it into
@@ -456,6 +523,11 @@ final class BackupAgent extends AbstractAgent
         }
 
         switch ($data->command) {
+            case BackupConstants::SHIP_COMMAND:
+                $this->handleShipCommand($data);
+
+                return;
+
             case BackupConstants::PRUNE_COMMAND:
                 $this->handlePruneCommand($data);
 
@@ -504,6 +576,145 @@ final class BackupAgent extends AbstractAgent
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             BackupConstants::FIELD_PRUNED_COUNT => $prunedCount,
         ]));
+    }
+
+    /**
+     * Runs a whole shipping pass to completion right here and replies with what it moved.
+     *
+     * Test-only, and the one place shipping is synchronous. The pass exists so an integration run
+     * can assert that an archive really landed on a receiver without waiting for ticks; blocking
+     * the agent for the length of it is acceptable exactly because no production path calls it.
+     *
+     * The pass keeps its OWN attempt map rather than the agent's: the retry interval is there to
+     * pace a failing link across ticks, and applying it here would make a second forced pass in
+     * the same agent's life silently do nothing.
+     *
+     * @param CommandRequestDTO $data Command request (no payload fields consumed)
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws InvalidArgumentException When the reply to the command cannot be named
+     */
+    private function handleShipCommand(CommandRequestDTO $data): void
+    {
+        $shipped = 0;
+        $failed = 0;
+        $mirrorFailed = false;
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        $shipper = $this->shipper();
+
+        if ($shipper !== null && $root !== '') {
+            $planner = new BackupShipPlanner();
+            $attempts = [];
+            $now = microtime(true);
+
+            while (true) {
+                $plan = $planner->plan($this->indexRows(), $root, $attempts, $this->mirrorDirty, $now);
+                if ($plan === null) {
+                    break;
+                }
+
+                $attempts[self::shipAttemptKey($plan)] = $now;
+                $error = $this->shipStepNow($shipper, $planner, $plan);
+
+                if ($plan->step === BackupShipStep::MIRROR) {
+                    $mirrorFailed = $mirrorFailed || $error !== null;
+
+                    continue;
+                }
+                if ($error === null) {
+                    $shipped++;
+                } else {
+                    $failed++;
+                }
+            }
+
+            // A mirror that did not go through leaves the deletion owed, so the flag stays up for
+            // the ticking agent to carry: clearing it here would drop the deletion on the floor
+            // because a test-only pass happened to run while the receiver was down.
+            if (!$mirrorFailed) {
+                $this->mirrorDirty = false;
+            }
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            BackupConstants::FIELD_SHIPPED_COUNT => $shipped,
+            BackupConstants::FIELD_SHIP_FAILED_COUNT => $failed,
+        ]));
+    }
+
+    /**
+     * Runs one planned transfer to completion, its sidecar half included, and records the outcome.
+     *
+     * @param BackupShipperInterface $shipper Driver for the configured destination
+     * @param BackupShipPlanner $planner Planner the sidecar half is derived from
+     * @param BackupShipPlan $plan Transfer to run
+     * @return ?string Failure detail, or null when the backup reached the destination whole
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     */
+    private function shipStepNow(
+        BackupShipperInterface $shipper,
+        BackupShipPlanner $planner,
+        BackupShipPlan $plan,
+    ): ?string {
+        $timeout = (float)Hilos::$env->int(EnvConstants::BACKUP_SHIP_TIMEOUT);
+        $command = $plan->step === BackupShipStep::MIRROR
+            ? $shipper->mirrorCommand($plan->localPath, $plan->scope)
+            : $shipper->pushCommand($plan->localPath, $plan->scope);
+
+        $error = $this->runToCompletion($command, $timeout);
+
+        if ($plan->step === BackupShipStep::MIRROR) {
+            if ($error !== null) {
+                $this->logAgentWarning("Backup mirror of scope {$plan->scope} failed: {$error}");
+            }
+
+            return $error;
+        }
+
+        if ($error === null && $plan->step === BackupShipStep::PUSH_ARCHIVE) {
+            $sidecar = $planner->sidecarStep($plan);
+            $error = $this->runToCompletion($shipper->pushCommand($sidecar->localPath, $sidecar->scope), $timeout);
+        }
+
+        $this->recordShipOutcome($plan, $error === null, $error);
+
+        return $error;
+    }
+
+    /**
+     * Spawns one transfer and blocks until it exits, is killed, or overruns its timeout.
+     *
+     * @param BackupShipCommand $command Transfer to spawn
+     * @param float $timeoutSeconds Seconds after which the transfer is killed
+     * @return ?string Failure detail, or null when it exited cleanly
+     */
+    private function runToCompletion(BackupShipCommand $command, float $timeoutSeconds): ?string
+    {
+        try {
+            $process = new Process($command->binary, $command->args);
+        } catch (Throwable $e) {
+            return 'failed to spawn ' . $command->binary . ': ' . $e->getMessage();
+        }
+
+        $startedAt = microtime(true);
+
+        try {
+            while (true) {
+                $process->tick();
+                if ($process->getStatus()[Process::STATUS_RUNNING] !== true) {
+                    return $this->exitError($process);
+                }
+                if (microtime(true) - $startedAt >= $timeoutSeconds) {
+                    $process->stop();
+                    $process->halt();
+
+                    return "timed out after {$timeoutSeconds}s";
+                }
+
+                usleep(self::SHIP_POLL_MICROSECONDS);
+            }
+        } catch (Throwable $e) {
+            return 'transfer could not be polled: ' . $e->getMessage();
+        }
     }
 
     /**
@@ -928,6 +1139,9 @@ final class BackupAgent extends AbstractAgent
                 $data->initiatorAcceptKey,
                 fn () => $histories->actions->forget($id),
             );
+            // The receiver is a mirror: what left here has to leave there too. Raised after the
+            // local delete succeeded, so a failure above never schedules a remote one.
+            $this->markMirrorDirty();
             $this->logAgentInfo("Backup deleted: {$id}");
         } catch (Throwable $e) {
             $this->logAgentError("Failed to delete backup {$id}: " . $e->getMessage());
@@ -1346,6 +1560,339 @@ final class BackupAgent extends AbstractAgent
         } else {
             $this->finishChild(false, 'child exited with code ' . ($exitCode ?? 'unknown'), $exitCode);
         }
+    }
+
+    /**
+     * Drives the off-machine copy: ticks a transfer in flight, or starts the next one.
+     *
+     * One transfer at a time and never more, so a narrow link is used for the newest restore point
+     * rather than shared between everything at once.
+     *
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ProcessException When the transfer child cannot be polled, read or terminated
+     */
+    private function pollShipping(): void
+    {
+        if ($this->shipProcess !== null) {
+            $this->tickShipping();
+
+            return;
+        }
+
+        $this->startNextShipStep();
+    }
+
+    /**
+     * Polls the transfer in flight and finishes it when it exits or overruns its timeout.
+     *
+     * @throws EnvException When the transfer timeout cannot be read
+     * @throws ProcessException When the transfer child cannot be polled, read or terminated
+     */
+    private function tickShipping(): void
+    {
+        if ($this->shipProcess === null) {
+            return;
+        }
+
+        $this->shipProcess->tick();
+
+        if ($this->shipProcess->getStatus()[Process::STATUS_RUNNING] === true) {
+            $timeout = (float)Hilos::$env->int(EnvConstants::BACKUP_SHIP_TIMEOUT);
+            if (microtime(true) - $this->shipStartedAt >= $timeout) {
+                $this->shipProcess->stop();
+                $this->shipProcess->halt();
+                $this->finishShipStep("timed out after {$timeout}s");
+            }
+
+            return;
+        }
+
+        $this->finishShipStep($this->exitError($this->shipProcess));
+    }
+
+    /**
+     * How a finished transfer child failed, read off its exit code and stderr.
+     *
+     * @param Process $process Transfer child that has stopped running
+     * @return ?string Failure detail, or null when it exited cleanly
+     * @throws ProcessException When the child's streams cannot be read
+     */
+    private function exitError(Process $process): ?string
+    {
+        $exitCode = $process->getExitCode();
+        if ($exitCode === 0) {
+            return null;
+        }
+
+        $stdErr = trim($process->getStdErr());
+        if ($stdErr === '') {
+            return 'transfer exited with code ' . ($exitCode ?? 'unknown');
+        }
+
+        return $stdErr;
+    }
+
+    /**
+     * Closes out the transfer that just ended, recording what it means for the backup.
+     *
+     * A finished archive step spawns its sidecar step straight away rather than going back to the
+     * planner: the pair is one publish, and leaving the gap open for a tick would let a rotation
+     * or a restart strand an archive on the receiver with no sidecar beside it.
+     *
+     * @param ?string $error Failure detail, or null when the transfer succeeded
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ProcessException When the follow-up transfer child cannot be started
+     */
+    private function finishShipStep(?string $error): void
+    {
+        $plan = $this->shipPlan;
+        $this->shipProcess = null;
+        $this->shipPlan = null;
+        $this->shipStartedAt = 0.0;
+
+        if ($plan === null) {
+            return;
+        }
+
+        // The attempt was stamped when this transfer was spawned, not here: rsync builds its file
+        // list at the start, so a delete that lands mid-transfer is NOT in the pass now ending,
+        // and a stamp written now would claim otherwise and swallow it.
+        if ($plan->step === BackupShipStep::MIRROR) {
+            if ($error !== null) {
+                // Never fatal, by design: an unreachable receiver must not stop rotation from
+                // freeing the disk it protects.
+                $this->logAgentWarning("Backup mirror of scope {$plan->scope} failed: {$error}");
+            }
+
+            return;
+        }
+
+        if ($error !== null) {
+            $this->recordShipOutcome($plan, false, $error);
+
+            return;
+        }
+
+        if ($plan->step === BackupShipStep::PUSH_ARCHIVE) {
+            $shipper = $this->shipper();
+            if ($shipper !== null) {
+                $this->spawnShipStep($shipper, new BackupShipPlanner()->sidecarStep($plan));
+            }
+
+            return;
+        }
+
+        $this->recordShipOutcome($plan, true, null);
+    }
+
+    /**
+     * Records that something was deleted locally and owes the receiver a mirror pass.
+     *
+     * Clearing the mirror marks is the half that is easy to leave out and impossible to notice:
+     * a scope carrying its mark is one the planner reads as already re-stated, and a delete
+     * landing after that pass would be told "this scope was just mirrored" - true, and about a
+     * directory that still held the file. Dropping the marks says instead that every scope is
+     * owed a fresh look, which is what a delete means, and the pass still ends by itself once
+     * each has had one.
+     */
+    private function markMirrorDirty(): void
+    {
+        $this->mirrorDirty = true;
+
+        foreach (array_keys($this->shipAttemptAt) as $key) {
+            if (str_starts_with($key, BackupShipPlanner::MIRROR_ATTEMPT_PREFIX)) {
+                unset($this->shipAttemptAt[$key]);
+            }
+        }
+    }
+
+    /**
+     * Asks the planner for the next transfer and spawns it, or ends the mirror pass.
+     *
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws ProcessException When the transfer child cannot be started
+     */
+    private function startNextShipStep(): void
+    {
+        $root = Hilos::$env->string(EnvConstants::BACKUP_DIR);
+        if ($root === '') {
+            return;
+        }
+
+        $shipper = $this->shipper();
+        if ($shipper === null) {
+            return;
+        }
+
+        $plan = new BackupShipPlanner()->plan(
+            $this->indexRows(),
+            $root,
+            $this->shipAttemptAt,
+            $this->mirrorDirty,
+            microtime(true),
+        );
+
+        if ($plan === null) {
+            // Nothing to push and every scope re-stated since the last delete: the receiver is
+            // in line, and the next local delete is what raises the flag again.
+            $this->mirrorDirty = false;
+
+            return;
+        }
+
+        $this->spawnShipStep($shipper, $plan);
+    }
+
+    /**
+     * Spawns one transfer and takes the slot.
+     *
+     * @param BackupShipperInterface $shipper Driver for the configured destination
+     * @param BackupShipPlan $plan Transfer to run
+     * @throws EnvException When a backup env value is missing or cannot be read as its type
+     */
+    private function spawnShipStep(BackupShipperInterface $shipper, BackupShipPlan $plan): void
+    {
+        $command = $plan->step === BackupShipStep::MIRROR
+            ? $shipper->mirrorCommand($plan->localPath, $plan->scope)
+            : $shipper->pushCommand($plan->localPath, $plan->scope);
+
+        // Stamped before the spawn, so the mark names when this transfer started looking at the
+        // store rather than when it stopped. A transfer that failed after running for a while is
+        // owed an immediate retry; one that failed instantly is what the interval paces.
+        $this->shipAttemptAt[self::shipAttemptKey($plan)] = microtime(true);
+
+        try {
+            // cwd stays null: rsync is given absolute paths on both sides.
+            $this->shipProcess = new Process($command->binary, $command->args);
+        } catch (Throwable $e) {
+            $this->shipProcess = null;
+            $this->recordShipOutcome($plan, false, 'failed to spawn ' . $command->binary . ': ' . $e->getMessage());
+
+            return;
+        }
+
+        $this->shipPlan = $plan;
+        $this->shipStartedAt = microtime(true);
+    }
+
+    /**
+     * Writes the outcome of a backup's copy into its sidecar and its index row.
+     *
+     * Both halves get the SAME error text - the sidecar caps it, and the capped value is what the
+     * index row records - so the Copy column and the file never disagree over what went wrong.
+     * A mirror step records nothing: it is about a directory, not a backup.
+     *
+     * @param BackupShipPlan $plan Transfer whose outcome is being recorded
+     * @param bool $succeeded Whether the copy reached the destination
+     * @param ?string $error Failure detail, or null on success
+     * @throws EnvException When the storage root cannot be read
+     */
+    private function recordShipOutcome(BackupShipPlan $plan, bool $succeeded, ?string $error): void
+    {
+        $histories = $this->historiesView();
+        if ($histories === null || $plan->backupId === null) {
+            return;
+        }
+
+        $row = $histories[$plan->backupId];
+        if ($row === null) {
+            return;
+        }
+
+        // A failed attempt keeps whatever instant an earlier success left: the column reads the
+        // failure, and the record still says when this backup was last actually copied.
+        $shippedAt = $succeeded
+            ? new DateTimeImmutable()->format(DateTimeInterface::ATOM)
+            : $row->shippedAt;
+        $outcome = $succeeded ? BackupShipOutcome::OK : BackupShipOutcome::FAILED;
+
+        try {
+            $stored = new BackupCreator()->recordShipping(
+                $row,
+                Hilos::$env->string(EnvConstants::BACKUP_DIR),
+                $shippedAt,
+                $outcome,
+                $error,
+            );
+            $row->actions->recordShipping($shippedAt, $outcome->value, $stored);
+        } catch (Throwable $e) {
+            $this->logAgentError("Failed to record shipping of backup {$plan->backupId}: " . $e->getMessage());
+
+            return;
+        }
+
+        if ($succeeded) {
+            $this->logAgentInfo("Backup shipped: {$plan->backupId}");
+
+            return;
+        }
+
+        $this->logAgentWarning("Backup {$plan->backupId} could not be shipped: " . ($stored ?? 'no detail'));
+    }
+
+    /**
+     * The driver for the configured destination, or null when this installation ships nowhere.
+     *
+     * An unusable destination is reported once and then treated as "off": it is a standing
+     * configuration state, and a line per tick would bury the agent log it is written to.
+     *
+     * @return ?BackupShipperInterface Driver, or null when shipping is off or unusable
+     * @throws EnvException When a shipping env value is missing or cannot be read as its type
+     */
+    private function shipper(): ?BackupShipperInterface
+    {
+        $target = BackupShipTarget::fromEnv();
+        if ($target === null) {
+            $this->reportUnusableShipTarget(
+                'is set but is not a destination this framework can parse '
+                . '(expected ssh://<user>@<host>[:<port>]/<path> or file:///<path>)',
+            );
+
+            return null;
+        }
+
+        $shipper = BackupShipperFactory::fromTarget($target);
+        if ($shipper === null) {
+            $this->reportUnusableShipTarget(
+                "names scheme '{$target->scheme}', which no driver serves "
+                . '(an ssh destination also needs ' . EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS->name . ')',
+            );
+
+            return null;
+        }
+
+        return $shipper;
+    }
+
+    /**
+     * Says once that a configured destination cannot be used, staying silent when there is none.
+     *
+     * @param string $detail What is wrong with the value, as a phrase following the key name
+     * @throws EnvException When the destination value cannot be read
+     */
+    private function reportUnusableShipTarget(string $detail): void
+    {
+        if ($this->shipTargetReported) {
+            return;
+        }
+        // An empty destination is the documented "shipping off" state, not a misconfiguration.
+        if (Hilos::$env->string(EnvConstants::BACKUP_SHIP_TARGET) === '') {
+            return;
+        }
+
+        $this->shipTargetReported = true;
+        $this->logAgentError(EnvConstants::BACKUP_SHIP_TARGET->name . ' ' . $detail . '; backups stay on this machine');
+    }
+
+    /**
+     * The key one transfer throttles its retries under.
+     *
+     * @param BackupShipPlan $plan Transfer to key
+     * @return string Backup id, or the prefixed scope of a mirror pass
+     */
+    private static function shipAttemptKey(BackupShipPlan $plan): string
+    {
+        return $plan->backupId ?? BackupShipPlanner::MIRROR_ATTEMPT_PREFIX . $plan->scope;
     }
 
     /**
@@ -2329,6 +2876,10 @@ final class BackupAgent extends AbstractAgent
                 $histories->actions->forget($row->getId());
                 $pruned[] = $row->getId();
             }
+
+            // Same reason as the manual delete: rotation is mirrored, which is also why `keep`
+            // needs no remote meaning - it protects from rotation, and rotation travels.
+            $this->markMirrorDirty();
 
             $this->logAgentInfo(sprintf(
                 'Backup rotation pruned %d entries: %s',

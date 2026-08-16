@@ -7,6 +7,7 @@ namespace Hilos\Runtime\State\Item;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Runtime\State\Collection\BackupHistories;
@@ -41,6 +42,9 @@ final class BackupHistory extends RtState
     public const string verifyOutcome = 'verifyOutcome';
     public const string restoredAt = 'restoredAt';
     public const string restoreDurationSeconds = 'restoreDurationSeconds';
+    public const string shippedAt = 'shippedAt';
+    public const string shipOutcome = 'shipOutcome';
+    public const string shipError = 'shipError';
 
     /** Backup id (also the archive/sidecar base name). */
     private(set) string $id = '';
@@ -98,6 +102,15 @@ final class BackupHistory extends RtState
      */
     public int $restoreDurationSeconds = 0;
 
+    /** ISO-8601 instant this backup was last copied off the machine; null means never. */
+    public ?string $shippedAt = null;
+
+    /** Outcome value of that copy ({@see BackupShipOutcome}); null if never attempted. */
+    public ?string $shipOutcome = null;
+
+    /** Why the last copy attempt failed; null when none has. */
+    public ?string $shipError = null;
+
     /**
      * Builds a history row from a scanned sidecar's metadata.
      *
@@ -123,6 +136,9 @@ final class BackupHistory extends RtState
         $instance->verifyOutcome = $metadata->verifyOutcome?->value;
         $instance->restoredAt = $metadata->restoredAt;
         $instance->restoreDurationSeconds = $metadata->restoreDurationSeconds;
+        $instance->shippedAt = $metadata->shippedAt;
+        $instance->shipOutcome = $metadata->shipOutcome?->value;
+        $instance->shipError = $metadata->shipError;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -157,6 +173,9 @@ final class BackupHistory extends RtState
         $instance->verifyOutcome = isset($row[self::verifyOutcome]) ? (string)$row[self::verifyOutcome] : null;
         $instance->restoredAt = isset($row[self::restoredAt]) ? (string)$row[self::restoredAt] : null;
         $instance->restoreDurationSeconds = (int)($row[self::restoreDurationSeconds] ?? 0);
+        $instance->shippedAt = isset($row[self::shippedAt]) ? (string)$row[self::shippedAt] : null;
+        $instance->shipOutcome = isset($row[self::shipOutcome]) ? (string)$row[self::shipOutcome] : null;
+        $instance->shipError = isset($row[self::shipError]) ? (string)$row[self::shipError] : null;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -223,6 +242,15 @@ final class BackupHistory extends RtState
         if (array_key_exists(self::restoreDurationSeconds, $diff)) {
             $this->restoreDurationSeconds = (int)$diff[self::restoreDurationSeconds];
         }
+        if (array_key_exists(self::shippedAt, $diff)) {
+            $this->shippedAt = $diff[self::shippedAt] === null ? null : (string)$diff[self::shippedAt];
+        }
+        if (array_key_exists(self::shipOutcome, $diff)) {
+            $this->shipOutcome = $diff[self::shipOutcome] === null ? null : (string)$diff[self::shipOutcome];
+        }
+        if (array_key_exists(self::shipError, $diff)) {
+            $this->shipError = $diff[self::shipError] === null ? null : (string)$diff[self::shipError];
+        }
     }
 
     /**
@@ -266,6 +294,9 @@ final class BackupHistory extends RtState
             self::verifyOutcome => $this->verifyOutcome,
             self::restoredAt => $this->restoredAt,
             self::restoreDurationSeconds => $this->restoreDurationSeconds,
+            self::shippedAt => $this->shippedAt,
+            self::shipOutcome => $this->shipOutcome,
+            self::shipError => $this->shipError,
         ];
     }
 

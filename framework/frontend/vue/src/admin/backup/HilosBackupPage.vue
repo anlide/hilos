@@ -17,6 +17,7 @@ it by passing its HilosBackupsContext. Bootstrap classes only (styling-rules.md)
 <script setup lang="ts">
 import {
   BACKUP_CHECKSUM_STATE_FIELD,
+  BACKUP_SHIP_STATE_FIELD,
   BACKUP_CREATED_AT_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
   BACKUP_ENV_FIELD,
@@ -33,6 +34,7 @@ import {
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupChecksum,
+  formatBackupShipping,
   formatBackupDuration,
   formatBackupProgressLabel,
   formatBackupSize,
@@ -42,6 +44,7 @@ import {
   HILOS_BACKUP_SCOPES,
   HilosPages,
   isBackupChecksumMismatch,
+  isBackupShipFailed,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -146,6 +149,7 @@ const columns: HilosTableColumnOf<HilosBackupRow>[] = [
     headerClass: 'text-end',
   },
   { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
+  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy' },
   {
     key: BACKUP_DURATION_SECONDS_FIELD,
     label: 'Duration',
@@ -424,6 +428,15 @@ function openOutcome(row: HilosBackupRow): void {
                 : undefined
             "
             >{{ formatBackupChecksum(row) }}</span
+          >
+        </td>
+        <td class="text-nowrap">
+          <span
+            :class="
+              isBackupShipFailed(row) ? 'text-danger fw-semibold' : undefined
+            "
+            :title="row.shipError ?? undefined"
+            >{{ formatBackupShipping(row) }}</span
           >
         </td>
         <td class="text-end">{{ formatBackupDuration(row) }}</td>

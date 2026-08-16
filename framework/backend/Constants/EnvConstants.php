@@ -397,6 +397,38 @@ enum EnvConstants
      */
     case BACKUP_REFUSE_WITHOUT_ESTIMATE;
 
+    /**
+     * Where successful backups are copied to, so an archive does not only exist on the machine
+     * that made it. Two schemes: `ssh://<user>@<host>[:<port>]/<absolute-path>` copies over
+     * rsync/ssh, `file:///<absolute-path>` mirrors into a local directory (which also covers a
+     * mounted network share). Empty - the default - means backups are not copied anywhere and
+     * the subsystem behaves exactly as it did before shipping existed. Absence of a value, not
+     * a third mode.
+     */
+    case BACKUP_SHIP_TARGET;
+
+    /**
+     * Absolute path to the private key file the `ssh` scheme authenticates with. Default empty;
+     * unused by the `file` scheme.
+     */
+    case BACKUP_SHIP_SSH_KEY;
+
+    /**
+     * Absolute path to the `known_hosts` file the `ssh` scheme pins the receiver against. Default
+     * empty, and an empty value turns the `ssh` scheme OFF rather than relaxing the check: host-key
+     * checking stays strict, because the alternative is shipping an unencrypted copy of the whole
+     * database to whoever answers on that address.
+     */
+    case BACKUP_SHIP_SSH_KNOWN_HOSTS;
+
+    /**
+     * Seconds after which the agent kills a hung transfer, modelled on {@see BACKUP_TIMEOUT} and
+     * {@see BACKUP_RESTORE_TIMEOUT}. Default 3600 (60 min) - a copy crosses a link the local run
+     * never touches, so it gets the wider of the two. Killing it is not a data loss: the local
+     * archive is untouched and the copy is retried.
+     */
+    case BACKUP_SHIP_TIMEOUT;
+
     // ── Cluster ──────────────────────────────────────────────────────────────
 
     /**

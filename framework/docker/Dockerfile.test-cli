@@ -6,12 +6,18 @@ FROM php:8.4-cli
 # default-mysql-client provides the `mysql` binary the restore engine integration
 # tests replay dumps through (BackupRestorer); the dumps themselves are hand-written
 # fixtures, so mysqldump is not needed here.
+#
+# rsync and openssh-client are the shipping drivers' own binaries: the integration
+# run really copies an archive to sshd-framework-test, which is only a proof if the
+# runner ships with what a deployment would have to install.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     zip \
     unzip \
     libonig-dev \
     default-mysql-client \
+    rsync \
+    openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Align with root composer.json (ext-posix, pcntl, sockets, mbstring, mysqli, …)

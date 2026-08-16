@@ -34,6 +34,9 @@ final class BackupMetadata extends BaseDTO
     public const string verifyOutcome = 'verifyOutcome';
     public const string restoredAt = 'restoredAt';
     public const string restoreDurationSeconds = 'restoreDurationSeconds';
+    public const string shippedAt = 'shippedAt';
+    public const string shipOutcome = 'shipOutcome';
+    public const string shipError = 'shipError';
 
     /**
      * @param string $id Backup id (also the archive/sidecar base name)
@@ -57,6 +60,13 @@ final class BackupMetadata extends BaseDTO
      * @param ?string $restoredAt ISO-8601 instant this archive was last restored from; null means never
      * @param int $restoreDurationSeconds How long that restore took; 0 means "no data", the same way
      *     dumpBytes does - the archive was never restored, or it was before the field existed
+     * @param ?string $shippedAt ISO-8601 instant of the last successful copy off this machine; null
+     *     means never shipped. Only the LOCAL sidecar carries it - it is stamped after the copy has
+     *     left, so the sidecar sitting on the receiver never says it was shipped, on purpose: the
+     *     remote copy is a snapshot of the moment it was taken
+     * @param ?BackupShipOutcome $shipOutcome Outcome of the last copy attempt; only ok/failed are ever
+     *     stored, and an unknown stored value reads back as null
+     * @param ?string $shipError Why the last copy attempt failed; null when none has
      */
     public function __construct(
         public readonly string $id,
@@ -76,6 +86,9 @@ final class BackupMetadata extends BaseDTO
         public readonly ?BackupVerifyOutcome $verifyOutcome = null,
         public readonly ?string $restoredAt = null,
         public readonly int $restoreDurationSeconds = 0,
+        public readonly ?string $shippedAt = null,
+        public readonly ?BackupShipOutcome $shipOutcome = null,
+        public readonly ?string $shipError = null,
     ) {
     }
 
@@ -105,6 +118,9 @@ final class BackupMetadata extends BaseDTO
             $this->verifyOutcome,
             $this->restoredAt,
             $this->restoreDurationSeconds,
+            $this->shippedAt,
+            $this->shipOutcome,
+            $this->shipError,
         );
     }
 
@@ -135,6 +151,9 @@ final class BackupMetadata extends BaseDTO
             $verifyOutcome,
             $this->restoredAt,
             $this->restoreDurationSeconds,
+            $this->shippedAt,
+            $this->shipOutcome,
+            $this->shipError,
         );
     }
 
@@ -168,6 +187,47 @@ final class BackupMetadata extends BaseDTO
             $this->verifyOutcome,
             $restoredAt,
             $durationSeconds,
+            $this->shippedAt,
+            $this->shipOutcome,
+            $this->shipError,
+        );
+    }
+
+    /**
+     * Returns a copy carrying the result of a copy off this machine.
+     *
+     * Written after the fact the way {@see self::withVerification()} is, and for the same reason:
+     * the copy leaves after the backup is already published, so the sidecar it started from
+     * cannot know about it.
+     *
+     * @param ?string $shippedAt ISO-8601 instant of the last successful copy; null means never
+     * @param ?BackupShipOutcome $outcome What that attempt concluded
+     * @param ?string $error Why it failed; null on success
+     * @return self Copy with the shipping recorded
+     */
+    public function withShipping(?string $shippedAt, ?BackupShipOutcome $outcome, ?string $error): self
+    {
+        return new self(
+            $this->id,
+            $this->createdAt,
+            $this->env,
+            $this->scope,
+            $this->connections,
+            $this->sizeBytes,
+            $this->durationSeconds,
+            $this->keep,
+            $this->status,
+            $this->warnings,
+            $this->failureReason,
+            $this->dumpBytes,
+            $this->sha256,
+            $this->verifiedAt,
+            $this->verifyOutcome,
+            $this->restoredAt,
+            $this->restoreDurationSeconds,
+            $shippedAt,
+            $outcome,
+            $error,
         );
     }
 
@@ -217,6 +277,11 @@ final class BackupMetadata extends BaseDTO
             isset($data[self::restoredAt]) ? (string)$data[self::restoredAt] : null,
             // external-boundary: the sidecar is read from disk and may come from an older version
             (int)($data[self::restoreDurationSeconds] ?? 0),
+            isset($data[self::shippedAt]) ? (string)$data[self::shippedAt] : null,
+            BackupShipOutcome::fromString(
+                isset($data[self::shipOutcome]) ? (string)$data[self::shipOutcome] : null,
+            ),
+            isset($data[self::shipError]) ? (string)$data[self::shipError] : null,
         );
     }
 
@@ -273,6 +338,12 @@ final class BackupMetadata extends BaseDTO
             self::verifyOutcome => $this->verifyOutcome?->value,
             self::restoredAt => $this->restoredAt,
             self::restoreDurationSeconds => $this->restoreDurationSeconds,
+            // Always written, nulls included, the way failureReason and sha256 are: a reader has
+            // to tell "this backup has not been copied anywhere" from "this sidecar predates
+            // shipping", and only the presence of the key says which.
+            self::shippedAt => $this->shippedAt,
+            self::shipOutcome => $this->shipOutcome?->value,
+            self::shipError => $this->shipError,
         ];
     }
 }

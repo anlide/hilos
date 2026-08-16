@@ -24,6 +24,7 @@ import {
   BACKUP_SCOPE_FIELD,
   BACKUP_SIZE_BYTES_FIELD,
   BACKUP_CHECKSUM_STATE_FIELD,
+  BACKUP_SHIP_STATE_FIELD,
   BACKUP_DURATION_SECONDS_FIELD,
   BACKUP_STATUS_FIELD,
   BACKUP_RESTORE_OUTCOME_FIELD,
@@ -36,6 +37,7 @@ import {
   createHilosBackupsTable,
   createHilosRestoreProgress,
   formatBackupChecksum,
+  formatBackupShipping,
   formatBackupDuration,
   formatBackupProgressLabel,
   formatBackupSize,
@@ -43,6 +45,7 @@ import {
   hasBackupFailureDetail,
   hasRestoreOutcome,
   isBackupChecksumMismatch,
+  isBackupShipFailed,
   isBackupDeletable,
   isBackupInProgress,
   isBackupKeepable,
@@ -81,6 +84,7 @@ const COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     headerClass: 'text-end',
   },
   { key: BACKUP_CHECKSUM_STATE_FIELD, label: 'Checksum' },
+  { key: BACKUP_SHIP_STATE_FIELD, label: 'Copy' },
   {
     key: BACKUP_DURATION_SECONDS_FIELD,
     label: 'Duration',
@@ -436,6 +440,18 @@ export function HilosBackupPage({ context }: HilosBackupPageProps) {
                 }
               >
                 {formatBackupChecksum(row)}
+              </span>
+            </td>
+            <td className="text-nowrap">
+              <span
+                className={
+                  isBackupShipFailed(row)
+                    ? 'text-danger fw-semibold'
+                    : undefined
+                }
+                title={row.shipError ?? undefined}
+              >
+                {formatBackupShipping(row)}
               </span>
             </td>
             <td className="text-end">{formatBackupDuration(row)}</td>

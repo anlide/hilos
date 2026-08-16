@@ -53,6 +53,21 @@ final class BackupConstants
     /** Reply key: number of index rows the agent holds after re-mirroring. */
     public const string FIELD_HISTORY_COUNT = 'historyCount';
 
+    /**
+     * Command-channel wire name forcing a full shipping pass through {@see BackupAgent}
+     * (test-only `test:backup:ship`). Declared on the agent's AGENT_COMMANDS.
+     *
+     * Test-only for the same reason `test:backup:prune` is: the pass happens on its own on a
+     * tick, and an integration run must not wait for one.
+     */
+    public const string SHIP_COMMAND = 'backup:ship';
+
+    /** Reply key: number of backups the forced shipping pass copied off the machine. */
+    public const string FIELD_SHIPPED_COUNT = 'shippedCount';
+
+    /** Reply key: number of transfers the forced shipping pass failed to complete. */
+    public const string FIELD_SHIP_FAILED_COUNT = 'shipFailedCount';
+
     /** `--at=<ISO-8601>` option: the explicit createdAt the age fixture writes into a sidecar. */
     public const string AT_OPTION = 'at';
 

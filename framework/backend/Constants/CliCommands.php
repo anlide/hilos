@@ -77,6 +77,9 @@ final class CliCommands
     /** @var string Command: Force a backup retention prune through the live agent (test-only) */
     public const string BACKUP_TEST_PRUNE = 'test:backup:prune';
 
+    /** @var string Command: Force a backup shipping pass through the live agent (test-only) */
+    public const string BACKUP_TEST_SHIP = 'test:backup:ship';
+
     /** @var string Command: Force a scheduled backup through the live agent (test-only) */
     public const string BACKUP_TEST_RUN_SCHEDULE = 'test:backup:run-schedule';
 

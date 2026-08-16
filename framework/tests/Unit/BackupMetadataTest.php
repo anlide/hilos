@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Backup\BackupConnectionMeta;
 use Hilos\Backup\BackupMetadata;
 use Hilos\Backup\BackupScope;
+use Hilos\Backup\BackupShipOutcome;
 use Hilos\Backup\BackupStatus;
 use Hilos\Backup\BackupVerifyOutcome;
 use Hilos\Backup\Exception\BackupMetadataIncompleteException;
@@ -190,6 +191,114 @@ final class BackupMetadataTest extends TestCase
         $this->assertNull($metadata->verifyOutcome);
         $this->assertSame(BackupVerifyOutcome::MISMATCH, BackupVerifyOutcome::fromString('mismatch'));
         $this->assertNull(BackupVerifyOutcome::fromString(''));
+    }
+
+    public function testShippingFieldsRoundTripAndLegacySidecarReadsThemAsNull(): void
+    {
+        $metadata = new BackupMetadata(
+            id: 's1',
+            createdAt: '2026-08-16T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 4096,
+            durationSeconds: 3,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            shippedAt: '2026-08-16T04:05:06+00:00',
+            shipOutcome: BackupShipOutcome::OK,
+            shipError: null,
+        );
+
+        $restored = BackupMetadata::fromArray($metadata->toArray());
+        $this->assertSame('2026-08-16T04:05:06+00:00', $restored->shippedAt);
+        $this->assertSame(BackupShipOutcome::OK, $restored->shipOutcome);
+        $this->assertNull($restored->shipError);
+
+        // All three keys are always written, so "not copied anywhere" is told apart from
+        // "written before shipping existed" by the presence of the key alone.
+        $payload = $metadata->toArray();
+        $this->assertArrayHasKey(BackupMetadata::shippedAt, $payload);
+        $this->assertArrayHasKey(BackupMetadata::shipOutcome, $payload);
+        $this->assertArrayHasKey(BackupMetadata::shipError, $payload);
+
+        $legacy = BackupMetadata::fromArray($this->minimalSidecar());
+        $this->assertNull($legacy->shippedAt);
+        $this->assertNull($legacy->shipOutcome);
+        $this->assertNull($legacy->shipError);
+    }
+
+    public function testAnUnknownStoredShipOutcomeReadsBackAsNull(): void
+    {
+        $metadata = BackupMetadata::fromArray(
+            $this->minimalSidecar([BackupMetadata::shipOutcome => 'halfway']),
+        );
+
+        $this->assertNull($metadata->shipOutcome);
+    }
+
+    public function testWithShippingRecordsTheAttemptAndKeepsEveryOtherField(): void
+    {
+        $original = new BackupMetadata(
+            id: 's2',
+            createdAt: '2026-08-16T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::SCHEMA_ONLY,
+            connections: [new BackupConnectionMeta(0, 'db', 4)],
+            sizeBytes: 8192,
+            durationSeconds: 11,
+            keep: true,
+            status: BackupStatus::SUCCESS,
+            warnings: ['note'],
+            dumpBytes: 262144,
+            sha256: str_repeat('ef', 32),
+            verifiedAt: '2026-08-16T01:00:00+00:00',
+            verifyOutcome: BackupVerifyOutcome::OK,
+        );
+
+        $failed = $original->withShipping(null, BackupShipOutcome::FAILED, 'ssh: connect timed out');
+        $this->assertNull($failed->shippedAt);
+        $this->assertSame(BackupShipOutcome::FAILED, $failed->shipOutcome);
+        $this->assertSame('ssh: connect timed out', $failed->shipError);
+        $this->assertTrue($failed->keep);
+        $this->assertSame($original->sha256, $failed->sha256);
+        $this->assertSame($original->verifiedAt, $failed->verifiedAt);
+        $this->assertSame($original->warnings, $failed->warnings);
+        $this->assertSame($original->connections, $failed->connections);
+
+        // The retry clears the error the same way it sets the instant: one call writes all three.
+        $shipped = $failed->withShipping('2026-08-16T06:00:00+00:00', BackupShipOutcome::OK, null);
+        $this->assertSame('2026-08-16T06:00:00+00:00', $shipped->shippedAt);
+        $this->assertSame(BackupShipOutcome::OK, $shipped->shipOutcome);
+        $this->assertNull($shipped->shipError);
+        $this->assertSame(BackupScope::SCHEMA_ONLY, $shipped->scope);
+    }
+
+    public function testTheOtherClonesCarryTheShippingRecordThrough(): void
+    {
+        // Pinning or verifying a backup must not quietly forget that a copy of it exists.
+        $shipped = new BackupMetadata(
+            id: 's3',
+            createdAt: '2026-08-16T00:00:00+00:00',
+            env: 'prod',
+            scope: BackupScope::FULL,
+            connections: [],
+            sizeBytes: 1,
+            durationSeconds: 1,
+            keep: false,
+            status: BackupStatus::SUCCESS,
+            shippedAt: '2026-08-16T02:00:00+00:00',
+            shipOutcome: BackupShipOutcome::OK,
+        );
+
+        foreach ([
+            $shipped->withKeep(true),
+            $shipped->withVerification('2026-08-16T03:00:00+00:00', BackupVerifyOutcome::OK),
+            $shipped->withRestore('2026-08-16T04:00:00+00:00', 12),
+        ] as $clone) {
+            $this->assertSame('2026-08-16T02:00:00+00:00', $clone->shippedAt);
+            $this->assertSame(BackupShipOutcome::OK, $clone->shipOutcome);
+        }
     }
 
     public function testWithKeepAndWithVerificationPreserveEveryOtherField(): void
