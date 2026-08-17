@@ -151,9 +151,9 @@ final class BackupShipPlanner
      * Where one index row's archive is stored locally.
      *
      * The stored name is `<id>-<env>-<scope>` and not the id alone
-     * ({@see BackupCreator::archiveBaseName()}), so a row that names no environment or no scope
-     * cannot be addressed on disk at all - which is a row that predates the fields or was hand
-     * written, not one owed a copy.
+     * ({@see BackupCreator::archiveBaseName()}), so a row that names no scope cannot be
+     * addressed on disk at all - which is a row that predates the field or was hand written,
+     * not one owed a copy. The environment needs no such check: an index row always names one.
      *
      * @param BackupHistory $row Index row to locate
      * @param string $root Local storage root
@@ -162,7 +162,7 @@ final class BackupShipPlanner
     private function archivePath(BackupHistory $row, string $root): ?string
     {
         $scope = BackupScope::fromString($row->scope);
-        if ($scope === null || $row->env === null) {
+        if ($scope === null) {
             return null;
         }
 

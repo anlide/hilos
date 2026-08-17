@@ -53,7 +53,7 @@ final class BackupHistory extends RtState
     public string $createdAt = '';
 
     /** Application environment the backup was taken in. */
-    public ?string $env = null;
+    public string $env = '';
 
     /** Scope value ({@see BackupScope}). */
     public ?string $scope = null;
@@ -159,7 +159,7 @@ final class BackupHistory extends RtState
         $instance = new static();
         $instance->id = (string)$row[self::id];
         $instance->createdAt = (string)$row[self::createdAt];
-        $instance->env = self::stringOrNull($row[self::env] ?? null);
+        $instance->env = (string)$row[self::env];
         $instance->scope = self::stringOrNull($row[self::scope] ?? null);
         $instance->connections = $connections;
         $instance->sizeBytes = (int)($row[self::sizeBytes] ?? 0);

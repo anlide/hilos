@@ -467,7 +467,7 @@ final class BackupCreator
      * different sizes ({@see BackupEstimator::restoreSeconds()}).
      *
      * @param string $id Backup id of the restored archive
-     * @param ?string $env Application environment the archive was taken in
+     * @param string $env Application environment the archive was taken in
      * @param ?string $scope Scope value the archive was captured under
      * @param string $root Backup storage root
      * @param string $restoredAt ISO-8601 instant the restore finished
@@ -477,7 +477,7 @@ final class BackupCreator
      */
     public function recordRestore(
         string $id,
-        ?string $env,
+        string $env,
         ?string $scope,
         string $root,
         string $restoredAt,
@@ -500,13 +500,13 @@ final class BackupCreator
      * CLI path (which holds only the sidecar it read) resolve the same name the same way.
      *
      * @param string $id Backup id
-     * @param ?string $env Application environment the backup was taken in
+     * @param string $env Application environment the backup was taken in
      * @param ?string $scope Backup scope value
      * @param string $root Backup storage root
      * @return string Absolute sidecar path
      * @throws BackupException When the scope or root is invalid
      */
-    private function storedSidecarPath(string $id, ?string $env, ?string $scope, string $root): string
+    private function storedSidecarPath(string $id, string $env, ?string $scope, string $root): string
     {
         $backupScope = BackupScope::fromString($scope);
         if ($backupScope === null) {

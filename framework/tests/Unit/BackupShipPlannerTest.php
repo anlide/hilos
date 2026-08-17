@@ -149,13 +149,15 @@ final class BackupShipPlannerTest extends TestCase
         $this->assertSame($this->root . '/full/paired-test-full.json', $sidecar->localPath);
     }
 
-    public function testARowNamingNoEnvironmentOrScopeIsNotShippable(): void
+    public function testARowNamingNoScopeIsNotShippable(): void
     {
         // The stored name is built from all three, so such a row cannot be addressed on disk at
-        // all - it predates the fields or was hand written, and is not a backup owed a copy.
+        // all - it predates the field or was hand written, and is not a backup owed a copy. The
+        // environment is not checked beside it any more: an index row always names one.
         $state = StateBackupHistory::fromRow([
             StateBackupHistory::id => 'nameless',
             StateBackupHistory::createdAt => '2026-08-16T00:00:00+00:00',
+            StateBackupHistory::env => 'test',
             StateBackupHistory::status => 'success',
         ]);
         $rows = [new BackupHistory($state)];

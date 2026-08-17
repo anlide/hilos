@@ -37,6 +37,9 @@ final class BackupHistoryStateTest extends TestCase
         $history = BackupHistory::fromMetadata($metadata);
 
         $this->assertSame('hist-1', $history->getId());
+        // The row's environment is never absent because this is the only way a row is born, and
+        // the metadata it is born from always names one - which is why the field is not nullable.
+        $this->assertSame('prod', $history->env);
         $this->assertSame('schema-only', $history->scope);
         $this->assertSame('success', $history->status);
         $this->assertSame(2048, $history->sizeBytes);
@@ -63,6 +66,8 @@ final class BackupHistoryStateTest extends TestCase
         $restored = BackupHistory::fromRow($history->toArray());
 
         $this->assertSame('hist-2', $restored->getId());
+        // And it survives the sync wire, so the invariant holds in every worker, not just the writer.
+        $this->assertSame('test', $restored->env);
         $this->assertSame('full', $restored->scope);
         $this->assertSame('error', $restored->status);
         $this->assertSame(6, $restored->durationSeconds);

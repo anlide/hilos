@@ -22,7 +22,7 @@ use Hilos\Runtime\View\Actions\Item\BackupHistoryActions;
  *
  * @property-read string $id Backup id (also the archive/sidecar base name)
  * @property-read string $createdAt ISO-8601 creation timestamp
- * @property-read ?string $env Application environment the backup was taken in; null when the record names none
+ * @property-read string $env Application environment the backup was taken in
  * @property-read ?string $scope Backup scope value; null when the record names none
  * @property-read list<BackupConnectionMeta> $connections Connections captured in the backup
  * @property-read int $sizeBytes Archive size in bytes
