@@ -130,6 +130,16 @@ final class TodoTopologyRegistryTest extends TestCase
         );
     }
 
+    public function testProjectTopologyPassesStartupValidation(): void
+    {
+        // The first check init() runs, and the one every project boots under. It judges
+        // this project's real registry, unlike the framework's TopologyValidatorTest, which
+        // only runs it against invented fixture facades.
+        Hilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testDeclaredFeaturesAreFullyActivated(): void
     {
         // The startup activation check this project boots under: every declared feature has

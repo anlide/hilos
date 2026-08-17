@@ -88,6 +88,11 @@ registry for missing classes, mismatched keys, duplicate signal ownership,
 unknown page/table references, missing page subscription owners, and page-local
 table bindings that should live in `Hilos::PAGE_TABLES`.
 
+Each project pins this check with its own unit test,
+`testProjectTopologyPassesStartupValidation` in its `*TopologyRegistryTest`,
+because the framework's `TopologyValidatorTest` only judges invented fixture
+facades.
+
 ## Feature Declaration
 
 Framework features — `settings`, `hilos_users`, `backup`, `logs`,
