@@ -86,7 +86,9 @@ final class ChatEnvCatalog implements CatalogProviderInterface
             ),
             ChatEnvConstants::OAUTH_GITHUB_CLIENT_ID => self::stringEntry(''),
             ChatEnvConstants::OAUTH_GITHUB_CLIENT_SECRET => self::stringEntry(''),
-            ChatEnvConstants::OAUTH_GITHUB_REDIRECT_URI => self::stringEntry(
+            ChatEnvConstants::OAUTH_GOOGLE_CLIENT_ID => self::stringEntry(''),
+            ChatEnvConstants::OAUTH_GOOGLE_CLIENT_SECRET => self::stringEntry(''),
+            ChatEnvConstants::OAUTH_REDIRECT_URI => self::stringEntry(
                 '/auth/callback',
                 emptyIsMissing: true,
             ),

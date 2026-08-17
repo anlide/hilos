@@ -15,6 +15,10 @@
 // The provider key is stashed before the redirect and read back on return,
 // because the callback URL the provider (or the offline stub) bounces to carries
 // only `code` + `state`, not which provider they belong to.
+//
+// The stretch between the click and the navigation is cancelable (HIL-419): it is
+// the one part of an OAuth login that is still ours, and a Cancel landing inside it
+// stops the redirect for good rather than merely orphaning it.
 import { ActionError, subscribeSignal } from '@hilos/core'
 import type { ProjectSignal, ReadonlySignal } from '@hilos/core'
 
@@ -58,6 +62,56 @@ const OAUTH_PROVIDER_STORAGE_KEY = 'hilos.oauth.provider'
 const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
 
 /**
+ * The redirect currently between the click and the browser leaving this page
+ * (HIL-419): which provider it is for, and whether the person has since canceled.
+ *
+ * Module scope, because the two ends of the window are two different callbacks —
+ * the start dispatch and the authorize signal — and nothing else joins them.
+ */
+interface OAuthAttempt {
+  provider: string
+  canceled: boolean
+}
+
+let attempt: OAuthAttempt | null = null
+
+/**
+ * Open the cancelable window for one redirect: stash the provider for the return
+ * leg and record the attempt, so a Cancel arriving before the authorize signal can
+ * stop the navigation that signal would otherwise perform.
+ *
+ * A canceled attempt never navigates — there is no grace window for a late
+ * success, as there is for a passkey. The two are asymmetric on purpose: a
+ * passkey's late success is a session already raised, a fact, while an OAuth
+ * redirect's is only the START of a trip to a provider, and taking somebody off
+ * the page after they pressed Cancel takes their decision away from them.
+ *
+ * @param provider The provider key the redirect is for.
+ * @param signal Aborted when the person cancels the parked external step.
+ */
+function beginAttempt(provider: string, signal?: AbortSignal): void {
+  sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
+  const started: OAuthAttempt = {
+    provider,
+    canceled: signal?.aborted ?? false,
+  }
+  attempt = started
+  signal?.addEventListener(
+    'abort',
+    () => {
+      started.canceled = true
+      // A signal that aborts after a NEWER attempt started belongs to the old one
+      // and must not clear the new one's stashed provider.
+      if (attempt !== started) {
+        return
+      }
+      sessionStorage.removeItem(OAUTH_PROVIDER_STORAGE_KEY)
+    },
+    { once: true },
+  )
+}
+
+/**
  * Begin an OAuth login for a provider: stash the provider for the return leg and
  * dispatch `oauth_start`. The resolved `done` is the "accepted" ack — the browser
  * is then navigated by the {@link bindOAuthAuthorizeRedirect} handler off the
@@ -65,9 +119,13 @@ const OAUTH_FAILED_MESSAGE = 'OAuth login failed. Please try again.'
  * a rejection (unknown provider, timeout, disconnect) surfaces inline instead.
  *
  * @param provider The provider key to authenticate with, e.g. `oauth:github`.
+ * @param signal Aborted when the person cancels before the browser leaves (HIL-419).
  */
-export function startOAuthLogin(provider: string): Promise<void> {
-  sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
+export function startOAuthLogin(
+  provider: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  beginAttempt(provider, signal)
 
   return actions
     .dispatch(OAUTH_START_ACTION, { provider })
@@ -85,9 +143,13 @@ export function startOAuthLogin(provider: string): Promise<void> {
  * as an explicit result signal rather than a current-user update.
  *
  * @param provider The provider key to link, e.g. `oauth:github`.
+ * @param signal Aborted when the person cancels before the browser leaves (HIL-419).
  */
-export function startOAuthLink(provider: string): Promise<void> {
-  sessionStorage.setItem(OAUTH_PROVIDER_STORAGE_KEY, provider)
+export function startOAuthLink(
+  provider: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  beginAttempt(provider, signal)
 
   return actions
     .dispatch(LINK_OAUTH_START_ACTION, { provider })
@@ -96,15 +158,19 @@ export function startOAuthLink(provider: string): Promise<void> {
 
 /**
  * Register the browser-navigation reaction to the authorize signal: on
- * `hilos_oauth_authorize`, leave for the provider's authorize URL. Register it
- * once at boot (before the socket opens) so the reply to a later `oauth_start`
- * lands. Returns an unsubscribe.
+ * `hilos_oauth_authorize`, leave for the provider's authorize URL — but only while
+ * an attempt is live and uncanceled (HIL-419). Register it once at boot (before
+ * the socket opens) so the reply to a later `oauth_start` lands. Returns an
+ * unsubscribe.
  *
  * @returns Unsubscribe for the registered signal handler.
  */
 export function bindOAuthAuthorizeRedirect(): () => void {
   return connection.on('projectSignal', (signal: ProjectSignal) => {
     if (signal.type !== OAUTH_AUTHORIZE_SIGNAL) {
+      return
+    }
+    if (attempt === null || attempt.canceled) {
       return
     }
     // Validated against the schema at the parse boundary; this is the typed
@@ -119,13 +185,18 @@ export function bindOAuthAuthorizeRedirect(): () => void {
 /**
  * The provider a redirect was started for, read back on the callback route and
  * cleared so a stale value cannot leak into a later attempt. Empty when the route
- * was opened without a preceding start (a direct navigation that cannot succeed).
+ * was opened without a preceding start (a direct navigation that cannot succeed, or
+ * a start the person canceled before the browser left).
+ *
+ * The in-flight attempt closes here too: the trip is over, and what happens next is
+ * the callback's business.
  *
  * @returns The stashed provider key, or an empty string when absent.
  */
 export function takeOAuthProvider(): string {
   const provider = sessionStorage.getItem(OAUTH_PROVIDER_STORAGE_KEY) ?? ''
   sessionStorage.removeItem(OAUTH_PROVIDER_STORAGE_KEY)
+  attempt = null
 
   return provider
 }

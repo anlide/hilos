@@ -22,6 +22,12 @@ use Hilos\Auth\Detection\IdentifierDetector;
  * with nothing to keep in step. `passkey` is deliberately absent - the surface
  * offers a device key on an empty field only (HIL-418).
  *
+ * The OAuth keys stay in this set even though detection never answers with one
+ * (HIL-419). Dropping them is {@see IdentifierDetector}'s decision and belongs to
+ * the framework, which knows the surface has stopped showing provider buttons by
+ * the time an identifier exists; this list answers a different question - what
+ * this demo has wired - and HIL-427 will read it whole.
+ *
  * A settings-owned registry of enabled methods is HIL-427; until it lands the set
  * is what the code wires, which is the honest answer for a demo.
  */

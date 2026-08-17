@@ -580,17 +580,33 @@ export const PASSWORD_FLOW_METHOD: AuthFlowMethodDescriptor = {
 }
 
 /**
- * The GitHub OAuth icon method — shown only while the field is EMPTY (HIL-419
- * revision: tapping a provider mid-address discards the typed identifier, so
- * once the user chose the long road the surface develops it), login-only.
+ * Builds one OAuth provider's icon method — shown only while the field is EMPTY
+ * (HIL-419 revision: tapping a provider mid-address discards the typed
+ * identifier, so once the user chose the long road the surface develops it),
+ * login-only.
+ *
+ * A factory and not a constant per provider: the SHAPE of the descriptor is the
+ * core's to keep identical across every provider and every view, while WHICH
+ * providers exist and what their buttons say is the project's to declare — it is
+ * the project that wired the credentials. A hard-coded provider here would also
+ * be a name three view packages could drift apart on.
+ *
+ * @param providerKey The provider key as the backend registry stores it, e.g. `oauth:github`.
+ * @param label The button caption, e.g. `Continue with GitHub`.
+ * @returns The icon-row descriptor for that provider.
  */
-export const OAUTH_GITHUB_FLOW_METHOD: AuthFlowMethodDescriptor = {
-  key: 'oauth:github',
-  label: 'Continue with GitHub',
-  kind: 'icon',
-  intents: ['login'],
-  visibility: { whenEmpty: true, whenTyping: false },
-  placement: 'icon_row',
+export function oauthFlowMethod(
+  providerKey: string,
+  label: string,
+): AuthFlowMethodDescriptor {
+  return {
+    key: providerKey,
+    label,
+    kind: 'icon',
+    intents: ['login'],
+    visibility: { whenEmpty: true, whenTyping: false },
+    placement: 'icon_row',
+  }
 }
 
 /**

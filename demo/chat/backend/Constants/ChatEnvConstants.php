@@ -33,6 +33,19 @@ final class ChatEnvConstants
     /** GitHub OAuth client secret (env-only). Empty selects the offline stub provider. */
     public const string OAUTH_GITHUB_CLIENT_SECRET = 'OAUTH_GITHUB_CLIENT_SECRET';
 
-    /** SPA callback URL the provider redirects back to after authorization. */
-    public const string OAUTH_GITHUB_REDIRECT_URI = 'OAUTH_GITHUB_REDIRECT_URI';
+    /** Google OAuth client id. Empty selects the offline stub provider (dev/e2e). */
+    public const string OAUTH_GOOGLE_CLIENT_ID = 'OAUTH_GOOGLE_CLIENT_ID';
+
+    /** Google OAuth client secret (env-only). Empty selects the offline stub provider. */
+    public const string OAUTH_GOOGLE_CLIENT_SECRET = 'OAUTH_GOOGLE_CLIENT_SECRET';
+
+    /**
+     * SPA callback URL every provider redirects back to after authorization.
+     *
+     * One key for all of them, not one per provider: the address belongs to this
+     * application, which has a single `/auth/callback` route, and which provider
+     * is coming back is read from the browser's own sessionStorage rather than
+     * from the address it lands on.
+     */
+    public const string OAUTH_REDIRECT_URI = 'OAUTH_REDIRECT_URI';
 }

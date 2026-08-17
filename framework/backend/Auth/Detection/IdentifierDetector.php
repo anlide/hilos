@@ -38,6 +38,13 @@ use Hilos\Hilos;
  * that has nowhere to send it. The registry of enabled methods is HIL-427; until
  * it exists a project assembles the set itself.
  *
+ * One class of key is dropped no matter what a project enables: `oauth:*` never
+ * appears in an answer (HIL-419). Provider buttons live on an empty field and are
+ * gone by the first typed character, so naming them once an identifier exists
+ * told nobody anything - except whoever typed somebody else's address, who was
+ * told which provider its owner uses. The rationale in full, and why it locks no
+ * one out, sits on {@see self::accountMethods}.
+ *
  * This endpoint IS the account-enumeration surface, deliberately so - the epic
  * traded anti-enumeration for a usable single field. What keeps that trade honest
  * is the throttle layer (HIL-420) on the action in front of it, not vagueness
@@ -158,8 +165,20 @@ final class IdentifierDetector
      * (`hilos-ops/mockups/framework/guest/index.html`): a number never carries a
      * password ("телефон — только код"), and a sign-in link is mailed, so it is
      * offered for an address only. Naming either under a phone would reveal an
-     * affordance whose submit the backend then refuses. An OAuth provider is not
-     * gated - its button does not use the typed identifier at all.
+     * affordance whose submit the backend then refuses.
+     *
+     * An OAuth provider is never named here, whatever a project enables (HIL-419).
+     * Its buttons stand on an EMPTY field and vanish with the first character
+     * typed (the visibility revision of 01.08), so by the time an identifier is
+     * detectable no surface is showing them any more and the answer had no
+     * reader. What it did have was a cost: telling whoever typed somebody else's
+     * address which provider that person signs in with. This is a filter and not
+     * a shorter project registry - the enabled set stays whole for HIL-427, and
+     * dropping the keys is detection's own decision.
+     *
+     * No one is locked out by it: an account is found by a VERIFIED email (or a
+     * phone), so `magic_link` always applies to it, and a person who has only ever
+     * used a provider still gets in by the mailed link.
      *
      * @param int $userId Owning user id
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
@@ -173,6 +192,9 @@ final class IdentifierDetector
 
         $methods = [];
         foreach ($this->enabledMethodKeys as $methodKey) {
+            if (str_starts_with($methodKey, AuthMethodKey::OAUTH_PREFIX)) {
+                continue;
+            }
             if ($this->accountHasMethod($identities, $methodKey, $kind)) {
                 $methods[] = $methodKey;
             }
@@ -184,6 +206,10 @@ final class IdentifierDetector
     /**
      * Whether one enabled method key is available to an account under this identifier kind.
      *
+     * OAuth keys never reach this method - {@see self::accountMethods} drops them
+     * before the question is asked - so an unknown key falling through to `false`
+     * here is a project naming a method this framework does not implement.
+     *
      * @param list<ObjectIdentity> $identities Every identity the account owns
      * @param string $methodKey Enabled method key (see AuthMethodKey)
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
@@ -191,16 +217,6 @@ final class IdentifierDetector
      */
     private function accountHasMethod(array $identities, string $methodKey, string $kind): bool
     {
-        if (str_starts_with($methodKey, AuthMethodKey::OAUTH_PREFIX)) {
-            foreach ($identities as $identity) {
-                if ($identity->type === IdentityType::OAUTH && $identity->provider === $methodKey) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         return match ($methodKey) {
             // A sign-in link needs no identity of its own - it is mailed to the address
             // that was typed, and the account is already known to answer at it, so

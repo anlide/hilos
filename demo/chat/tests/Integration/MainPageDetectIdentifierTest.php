@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Auth\ChatAuthMethods;
-use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -18,6 +17,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
@@ -130,15 +130,21 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
     }
 
     /**
-     * An account built by a provider names that provider and does NOT offer a password.
+     * An account built by a provider names NO provider, offers no password, and still has a way in.
      *
-     * This is the case the surface cannot survive being wrong about: revealing a
+     * Both halves matter and both are the surface's to survive. Revealing a
      * password field for an account that has no password enters a flow the backend
-     * refuses, and dropping the provider leaves the person a screen with no way in.
+     * refuses. Naming the provider is the mirror mistake with a different victim:
+     * the answer goes to whoever typed the address, not to its owner, so it hands a
+     * stranger the fact that this person signs in with GitHub - and hands it for
+     * nothing, since the provider buttons vanished with the first typed character
+     * (HIL-419). What is left is `magic_link`, which is not a consolation: the
+     * account was found by its VERIFIED address, so the mailed link always reaches
+     * whoever owns it.
      *
      * @throws HilosException When setup or lookup handling fails
      */
-    public function testOauthAccountNamesItsProviderAndOffersNoPassword(): void
+    public function testOauthAccountNamesNoProviderAndOffersNoPassword(): void
     {
         $agent = $this->bootAgent();
         $this->openSession($agent, 'oauth-ak');
@@ -147,16 +153,15 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
         $this->seedIdentity(
             $userId,
             IdentityType::OAUTH,
-            ChatOAuthConfig::PROVIDER_GITHUB . ':' . RandomHelper::hex(6),
-            ChatOAuthConfig::PROVIDER_GITHUB,
+            OAuthProviderPreset::GITHUB->value . ':' . RandomHelper::hex(6),
+            OAuthProviderPreset::GITHUB->value,
         );
 
         try {
             $detection = $this->detect($agent, 'oauth-ak', $email);
 
             $this->assertSame(IdentifierDetection::STATUS_ACTIVE, $detection->status);
-            $this->assertContains(ChatOAuthConfig::PROVIDER_GITHUB, $detection->methods);
-            $this->assertNotContains(AuthMethodKey::PASSWORD, $detection->methods);
+            $this->assertSame([AuthMethodKey::MAGIC_LINK], $detection->methods);
         } finally {
             $this->cleanUp();
         }
@@ -318,7 +323,8 @@ final class MainPageDetectIdentifierTest extends IntegrationTestCase
             AuthMethodKey::PASSWORD,
             AuthMethodKey::MAGIC_LINK,
             AuthMethodKey::SMS,
-            ChatOAuthConfig::PROVIDER_GITHUB,
+            OAuthProviderPreset::GITHUB->value,
+            OAuthProviderPreset::GOOGLE->value,
         ], ChatAuthMethods::enabledKeys());
     }
 

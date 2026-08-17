@@ -7,7 +7,8 @@
 // thirteen screens, primaryAction, input preservation, and the
 // method-set-agnostic guarantee. HIL-418 adds the cancel that reaches into the
 // ceremony (the abort) and the intent-judged fate of an outcome that lands after
-// it.
+// it. HIL-419 wires TWO providers through the descriptor factory, so the matrix
+// answers for a row rather than for a single button.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applicableChannels,
@@ -20,7 +21,7 @@ import {
   DEFAULT_EXTERNAL_CANCEL_GRACE_MS,
   MAGIC_LINK_FLOW_METHOD,
   MAGIC_LINK_METHOD_KEY,
-  OAUTH_GITHUB_FLOW_METHOD,
+  oauthFlowMethod,
   PASSKEY_FLOW_METHOD,
   PASSWORD_FLOW_METHOD,
   PASSWORD_MIN_LENGTH,
@@ -55,9 +56,23 @@ const INITIAL_FLOW: AuthFlowState = {
   channelKey: null,
 }
 
+/**
+ * The two providers this file's fixture wires, in the order a project's registry
+ * would hand them over — which is the order the icon row draws them in.
+ */
+const OAUTH_GITHUB_FLOW_METHOD = oauthFlowMethod(
+  'oauth:github',
+  'Continue with GitHub',
+)
+const OAUTH_GOOGLE_FLOW_METHOD = oauthFlowMethod(
+  'oauth:google',
+  'Continue with Google',
+)
+
 const ALL_METHODS = [
   PASSWORD_FLOW_METHOD,
   OAUTH_GITHUB_FLOW_METHOD,
+  OAUTH_GOOGLE_FLOW_METHOD,
   PASSKEY_FLOW_METHOD,
   MAGIC_LINK_FLOW_METHOD,
 ]
@@ -137,10 +152,27 @@ describe('classifyIdentifier', () => {
   })
 })
 
+describe('oauthFlowMethod — the shape every provider button shares', () => {
+  it('carries the key and label it is given and nothing else per provider', () => {
+    expect(OAUTH_GOOGLE_FLOW_METHOD.key).toBe('oauth:google')
+    expect(OAUTH_GOOGLE_FLOW_METHOD.label).toBe('Continue with Google')
+  })
+
+  it('places every provider in the icon row, on login only, on an empty field', () => {
+    for (const method of [OAUTH_GITHUB_FLOW_METHOD, OAUTH_GOOGLE_FLOW_METHOD]) {
+      expect(method.kind).toBe('icon')
+      expect(method.placement).toBe('icon_row')
+      expect(method.intents).toEqual(['login'])
+      expect(method.visibility).toEqual({ whenEmpty: true, whenTyping: false })
+    }
+  })
+})
+
 describe('visibleMethodIcons — the matrix on the four input states', () => {
-  it('empty field: whenEmpty icons only (passkey, oauth); magic link hidden', () => {
+  it('empty field: whenEmpty icons only (both providers, passkey); magic link hidden', () => {
     expect(visibleMethodIcons(ALL_METHODS, '', 'unknown', 'login')).toEqual([
       OAUTH_GITHUB_FLOW_METHOD,
+      OAUTH_GOOGLE_FLOW_METHOD,
       PASSKEY_FLOW_METHOD,
     ])
   })
@@ -151,13 +183,13 @@ describe('visibleMethodIcons — the matrix on the four input states', () => {
     ).toEqual([])
   })
 
-  it('typing an email: magic link only (oauth and passkey vanish on typing)', () => {
+  it('typing an email: magic link only (both providers and passkey vanish on typing)', () => {
     expect(
       visibleMethodIcons(ALL_METHODS, 'a@b.com', 'email', 'login'),
     ).toEqual([MAGIC_LINK_FLOW_METHOD])
   })
 
-  it('typing a phone: nothing (magic link is email-only)', () => {
+  it('typing a phone: nothing — the providers vanish here too, magic link is email-only', () => {
     expect(
       visibleMethodIcons(ALL_METHODS, '+79991234567', 'phone', 'login'),
     ).toEqual([])

@@ -10,7 +10,6 @@ import {
   hilosNotificationPreferences,
   NOTIFICATION_SIGNAL_PREFERENCES_CHANGED,
   notificationPreferencesSectionSchema,
-  OAUTH_GITHUB_AUTH_METHOD,
   readString,
   subscribeSignal,
   type EntityRef,
@@ -20,6 +19,7 @@ import {
   type ReadonlySignal,
 } from '@hilos/core'
 
+import { OAUTH_PROVIDERS } from '../../auth/oauthProviders'
 import { connection } from '../../bootstrap/connection'
 import { scopes } from '../../bootstrap/session'
 import { Identities, PasskeyCredentials } from '../../types'
@@ -149,13 +149,6 @@ export const passwordSection: ReadonlySignal<PasswordSection> = computedSignal(
   },
 )
 
-/**
- * The OAuth providers this project offers to link from the profile (HIL-401).
- * Mirrors the redirect methods the sign-in surface exposes (AuthSurface), narrowed
- * to the ones a signed-in user can attach to their account; only GitHub ships now.
- */
-const LINKABLE_OAUTH_METHODS = [OAUTH_GITHUB_AUTH_METHOD]
-
 /** A provider that can still be linked to the current account: its key and button label. */
 export interface AvailableProvider {
   readonly key: string
@@ -167,6 +160,11 @@ export interface AvailableProvider {
  * reactively (HIL-401). A provider drops off the moment its identity appears in
  * {@link profileIdentities} (a link landing), so the Profile "Link an account"
  * buttons reflect the live identity list without a bespoke ack.
+ *
+ * The set comes from {@link OAUTH_PROVIDERS} — this project's own declaration —
+ * rather than from a descriptor the core hard-codes (HIL-419): a provider is
+ * offered here because this demo wired its credentials, which is a fact the
+ * framework has no way of knowing.
  */
 export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
   computedSignal(() => {
@@ -180,9 +178,9 @@ export const availableProviders: ReadonlySignal<readonly AvailableProvider[]> =
         ),
     )
 
-    return LINKABLE_OAUTH_METHODS.filter(
-      (method) => !linked.has(method.key),
-    ).map((method) => ({ key: method.key, label: method.label }))
+    return OAUTH_PROVIDERS.filter((provider) => !linked.has(provider.key)).map(
+      (provider) => ({ key: provider.key, label: provider.label }),
+    )
   })
 
 // The profile page-data slot carrying the notification-preferences section

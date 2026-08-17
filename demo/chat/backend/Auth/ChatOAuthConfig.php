@@ -7,9 +7,11 @@ namespace Demo\Chat\Auth;
 use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
+use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
+use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
@@ -30,9 +32,6 @@ use Hilos\Auth\OAuth\StubOAuthProvider;
  */
 final class ChatOAuthConfig
 {
-    /** The one provider key this demo exposes; matches the frontend auth descriptor. */
-    public const string PROVIDER_GITHUB = 'oauth:github';
-
     /**
      * Lifetime of an in-flight OAuth exchange op after the callback records it: two
      * provider round-trips plus slack, after which the async agent abandons it.
@@ -48,32 +47,32 @@ final class ChatOAuthConfig
      */
     private const int LINK_TOKEN_TTL_SECONDS = 600;
 
-    /** GitHub authorization endpoint. */
-    private const string GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
-
-    /** GitHub token endpoint. */
-    private const string GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-
-    /** GitHub userinfo endpoint. */
-    private const string GITHUB_USERINFO_URL = 'https://api.github.com/user';
-
-    /** GitHub scopes for identity + verified email resolution. */
-    private const string GITHUB_SCOPE = 'read:user user:email';
-
-    /** Userinfo field carrying the immutable GitHub account id. */
-    private const string GITHUB_SUBJECT_KEY = 'id';
-
-    /** Userinfo field carrying the GitHub account email. */
-    private const string GITHUB_EMAIL_KEY = 'email';
-
     /**
-     * Userinfo field carrying the GitHub display name.
+     * The providers this demo enables, each with the env keys carrying its client pair.
      *
-     * `login` and not `name`: a GitHub profile name is optional and often blank,
-     * while the login handle is always there — and a name the provider withheld
-     * costs the new account its human-readable name (HIL-573).
+     * The one place that declares the set, and its order is the order of the icon
+     * row: the registry hands its keys back as configured and the surface draws
+     * them in that order. A row, and not a map keyed by the preset, only because a
+     * PHP constant array cannot be keyed by an enum case.
+     *
+     * A recipe is not here at all — it is the framework's ({@see OAuthProviderPreset}).
+     * A project that needs a provider Hilos ships no preset for builds an
+     * {@see OAuthProviderConfig} by hand and registers it the same way.
+     *
+     * @var list<array{0: OAuthProviderPreset, 1: string, 2: string}> Preset, client id key, client secret key
      */
-    private const string GITHUB_NAME_KEY = 'login';
+    private const array PROVIDER_CREDENTIALS = [
+        [
+            OAuthProviderPreset::GITHUB,
+            ChatEnvConstants::OAUTH_GITHUB_CLIENT_ID,
+            ChatEnvConstants::OAUTH_GITHUB_CLIENT_SECRET,
+        ],
+        [
+            OAuthProviderPreset::GOOGLE,
+            ChatEnvConstants::OAUTH_GOOGLE_CLIENT_ID,
+            ChatEnvConstants::OAUTH_GOOGLE_CLIENT_SECRET,
+        ],
+    ];
 
     /**
      * Builds the synchronous OAuth service for the page actions and the async agent.
@@ -98,42 +97,57 @@ final class ChatOAuthConfig
     }
 
     /**
-     * Builds the configured provider registry (real provider, or offline stub).
+     * Builds the configured provider registry (real providers, or offline stubs).
      *
-     * @return OAuthProviderRegistry Providers keyed by provider key
+     * @return OAuthProviderRegistry Providers keyed by provider key, in enabled order
      */
     public static function buildProviderRegistry(): OAuthProviderRegistry
     {
-        return new OAuthProviderRegistry([self::githubProvider()]);
+        $providers = [];
+        foreach (self::PROVIDER_CREDENTIALS as [$preset, $clientIdKey, $clientSecretKey]) {
+            $providers[] = self::providerFor($preset, $clientIdKey, $clientSecretKey);
+        }
+
+        return new OAuthProviderRegistry($providers);
     }
 
     /**
-     * Resolves the GitHub provider: a real one when credentials are set, the offline stub otherwise.
+     * Resolves one provider: a real one when its credentials are set, the offline stub otherwise.
      *
-     * @return GenericOAuthProvider|StubOAuthProvider Configured provider under PROVIDER_GITHUB
+     * @param OAuthProviderPreset $preset Framework recipe for this provider
+     * @param string $clientIdKey Env key carrying the client id
+     * @param string $clientSecretKey Env key carrying the client secret
+     * @return GenericOAuthProvider|StubOAuthProvider Configured provider under the preset's key
      */
-    private static function githubProvider(): GenericOAuthProvider|StubOAuthProvider
-    {
-        $clientId = Hilos::$env[ChatEnvConstants::OAUTH_GITHUB_CLIENT_ID];
-        $clientSecret = Hilos::$env[ChatEnvConstants::OAUTH_GITHUB_CLIENT_SECRET];
-        $redirectUri = Hilos::$env[ChatEnvConstants::OAUTH_GITHUB_REDIRECT_URI];
+    private static function providerFor(
+        OAuthProviderPreset $preset,
+        string $clientIdKey,
+        string $clientSecretKey,
+    ): GenericOAuthProvider|StubOAuthProvider {
+        $clientId = Hilos::$env[$clientIdKey];
+        $clientSecret = Hilos::$env[$clientSecretKey];
+        $redirectUri = Hilos::$env[ChatEnvConstants::OAUTH_REDIRECT_URI];
 
         if ($clientId === '' || $clientSecret === '') {
-            return new StubOAuthProvider(self::PROVIDER_GITHUB, $redirectUri);
+            return new StubOAuthProvider($preset->value, $redirectUri, self::stubCode($preset));
         }
 
-        return new GenericOAuthProvider(new OAuthProviderConfig(
-            key: self::PROVIDER_GITHUB,
-            clientId: $clientId,
-            clientSecret: $clientSecret,
-            authorizeUrl: self::GITHUB_AUTHORIZE_URL,
-            tokenUrl: self::GITHUB_TOKEN_URL,
-            userInfoUrl: self::GITHUB_USERINFO_URL,
-            scope: self::GITHUB_SCOPE,
-            redirectUri: $redirectUri,
-            subjectKey: self::GITHUB_SUBJECT_KEY,
-            emailKey: self::GITHUB_EMAIL_KEY,
-            nameKey: self::GITHUB_NAME_KEY,
-        ));
+        return new GenericOAuthProvider($preset->config($clientId, $clientSecret, $redirectUri));
+    }
+
+    /**
+     * The canned code one provider's offline stub bounces back with.
+     *
+     * Per provider and not shared: the stub derives its account from the code, so
+     * one code for both would hand them the same `<code>@stub.local` address, and
+     * signing in with the second provider in dev would always land in cross-provider
+     * account linking (HIL-282) instead of a plain sign-in.
+     *
+     * @param OAuthProviderPreset $preset Provider whose stub is being built
+     * @return string Provider name, the part of its key after the `oauth:` prefix
+     */
+    private static function stubCode(OAuthProviderPreset $preset): string
+    {
+        return str_replace(AuthMethodKey::OAUTH_PREFIX, '', $preset->value);
     }
 }

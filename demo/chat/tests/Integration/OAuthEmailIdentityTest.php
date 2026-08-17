@@ -32,7 +32,8 @@ use ReflectionMethod;
  * alongside the `oauth` identity so {@see findVerifiedEmailByUser()} resolves it.
  * A withheld email persists the oauth identity only; a colliding verified email
  * is diverted to the re-auth path before the create-path runs, so no email
- * identity is written. The name of the created account comes from the provider
+ * identity is written — including when the collision is with an account a
+ * DIFFERENT provider created (HIL-419). The name of the created account comes from the provider
  * whenever it fits the profile rename frame, and from `provider:subject`
  * otherwise — never from the address. Requires the test DB reset before run
  * (composer run test:db-reset).
@@ -41,6 +42,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
     private const string PROVIDER = 'oauth:github';
+    private const string SECOND_PROVIDER = 'oauth:google';
 
     /**
      * The primitive writes a verified, secret-less identity with a lowercased identifier.
@@ -97,7 +99,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $email = 'New.User+' . $this->unique() . '@Example.Test';
 
         try {
-            $this->completeLogin($agent, $subject, $email, 'octocat');
+            $this->completeLogin($agent, self::PROVIDER, $subject, $email, 'octocat');
 
             $oauth = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, self::PROVIDER . ':' . $subject);
             $this->assertNotNull($oauth);
@@ -129,7 +131,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $subject = 'sub-noemail-' . $this->unique();
 
         try {
-            $this->completeLogin($agent, $subject, null, 'nameless-mail');
+            $this->completeLogin($agent, self::PROVIDER, $subject, null, 'nameless-mail');
 
             $oauth = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, self::PROVIDER . ':' . $subject);
             $this->assertNotNull($oauth);
@@ -154,7 +156,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $subject = 'sub-bare-' . $this->unique();
 
         try {
-            $this->completeLogin($agent, $subject, null, null);
+            $this->completeLogin($agent, self::PROVIDER, $subject, null, null);
 
             $this->assertSame(self::PROVIDER . ':' . $subject, $this->createdUserName($subject));
         } finally {
@@ -174,8 +176,14 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         $tooShortSubject = 'sub-short-' . $this->unique();
 
         try {
-            $this->completeLogin($agent, $tooLongSubject, null, str_repeat('a', UserActions::NAME_MAX_LENGTH + 1));
-            $this->completeLogin($agent, $tooShortSubject, null, 'a');
+            $this->completeLogin(
+                $agent,
+                self::PROVIDER,
+                $tooLongSubject,
+                null,
+                str_repeat('a', UserActions::NAME_MAX_LENGTH + 1),
+            );
+            $this->completeLogin($agent, self::PROVIDER, $tooShortSubject, null, 'a');
 
             $this->assertSame(self::PROVIDER . ':' . $tooLongSubject, $this->createdUserName($tooLongSubject));
             $this->assertSame(self::PROVIDER . ':' . $tooShortSubject, $this->createdUserName($tooShortSubject));
@@ -199,7 +207,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
             $ownerId = (int)Hilos::$db->users->actions->createWithName('Email Owner')->id;
             Hilos::$db->identities->createMagicLinkIdentity($ownerId, $email);
 
-            $this->completeLogin($agent, $subject, $email, 'colliding-octo');
+            $this->completeLogin($agent, self::PROVIDER, $subject, $email, 'colliding-octo');
 
             $this->assertNull(
                 Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, self::PROVIDER . ':' . $subject),
@@ -213,6 +221,55 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
             $owner = $owners->first();
             $this->assertNotNull($owner);
             $this->assertSame($ownerId, $owner->user_id);
+        } finally {
+            $this->drainSignals();
+        }
+    }
+
+    /**
+     * A second provider reporting the address a first provider's account already holds
+     * takes the re-auth path: no second account, no second email identity (HIL-419).
+     *
+     * The mechanism under test is HIL-282's and it is not per-provider — but until
+     * this demo wired a second provider there was nothing to cross, and one person
+     * arriving at the same address through GitHub one day and Google the next is
+     * the ordinary case, not the exotic one. Getting it wrong splits them into two
+     * accounts silently, which no error ever surfaces.
+     *
+     * @throws HilosException When setup or the completion fails
+     */
+    public function testCompleteOAuthLoginWithASecondProviderOnAnOwnedEmailWritesNoEmailIdentity(): void
+    {
+        $agent = $this->bootAgent();
+        $firstSubject = 'sub-first-' . $this->unique();
+        $secondSubject = 'sub-second-' . $this->unique();
+        $email = 'shared-' . $this->unique() . '@example.test';
+
+        try {
+            $this->completeLogin($agent, self::PROVIDER, $firstSubject, $email, 'first-octo');
+            $first = Hilos::$db->identities->findByIdentity(
+                IdentityType::OAUTH,
+                self::PROVIDER . ':' . $firstSubject,
+            );
+            $this->assertNotNull($first);
+            $firstUserId = $first->userId;
+            $this->assertNotNull($firstUserId);
+
+            $this->completeLogin($agent, self::SECOND_PROVIDER, $secondSubject, $email, 'second-goog');
+
+            $this->assertNull(Hilos::$db->identities->findByIdentity(
+                IdentityType::OAUTH,
+                self::SECOND_PROVIDER . ':' . $secondSubject,
+            ));
+
+            $owners = EntityIdentity::get([
+                EntityIdentity::type => IdentityType::MAGIC_LINK,
+                EntityIdentity::identifier => $email,
+            ]);
+            $this->assertCount(1, $owners);
+            $owner = $owners->first();
+            $this->assertNotNull($owner);
+            $this->assertSame($firstUserId, $owner->user_id);
         } finally {
             $this->drainSignals();
         }
@@ -236,14 +293,20 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
      * Drives the protected completion for a fresh (provider, subject) with a given email and name.
      *
      * @param OAuthAgent $agent Agent under test
+     * @param string $provider Provider key the login is coming back from
      * @param string $subject Provider-immutable account subject
      * @param ?string $email Provider-reported email, or null when the provider withheld it
      * @param ?string $name Provider-reported display name, or null when the provider withheld it
      * @throws HilosException When the completion fails
      */
-    private function completeLogin(OAuthAgent $agent, string $subject, ?string $email, ?string $name): void
-    {
-        $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, self::PROVIDER, 'code', 0.0);
+    private function completeLogin(
+        OAuthAgent $agent,
+        string $provider,
+        string $subject,
+        ?string $email,
+        ?string $name,
+    ): void {
+        $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, $provider, 'code', 0.0);
         $method = new ReflectionMethod(OAuthAgent::class, 'completeOAuthLogin');
         $method->invoke($agent, $op, new OAuthUserInfo($subject, $email, $name));
     }
